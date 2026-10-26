@@ -218,7 +218,7 @@ describe("space catalog auth", () => {
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
       userModelCredential: { findMany: credentialFindMany },
-      spaceModelPreference: { findMany: preferenceFindMany },
+      userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
     return { prisma, credentialFindMany, preferenceFindMany, secretFindMany };
@@ -296,7 +296,7 @@ describe("space catalog auth", () => {
     }
   });
 
-  it("uses the space preference instead of a newer account credential", async () => {
+  it("uses the saved preference instead of a newer account credential", async () => {
     const { prisma, preferenceFindMany } = authPrisma({
       credentials: [
         storedCredential("cred-api", "secret-api", "2026-03-01T00:00:00.000Z"),
@@ -322,7 +322,7 @@ describe("space catalog auth", () => {
     expect(auth.byProvider["openai-codex"]).toBe("oauth");
     expect(preferenceFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: scope.userId, spaceId: scope.spaceId },
+        where: { userId: scope.userId },
       }),
     );
     expect(listsSpark(auth)).toBe(false);
@@ -906,7 +906,7 @@ describe("connected model credential selection", () => {
       },
     ];
     const prisma = {
-      spaceModelPreference: {
+      userModelPreference: {
         findMany: vi.fn(async () => preferences),
         findFirst: vi.fn(
           async ({ where }: { where: { modelId: string } }) =>
@@ -966,7 +966,7 @@ describe("connected model credential selection", () => {
         ),
       ).resolves.toMatchObject({ allowed: expect.arrayContaining(["high"]) });
     }
-    expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+    expect(prisma.userModelPreference.upsert).not.toHaveBeenCalled();
     expect(preferences).toHaveLength(1);
     expect(preferences[0]).toMatchObject({ modelId: "X" });
   });
@@ -986,7 +986,7 @@ describe("connected model validation", () => {
   it("accepts catalog and saved free-form models but rejects unavailable choices", async () => {
     const catalogPrisma = {
       secret: { findFirst: async () => null },
-      spaceModelPreference: { findFirst: async () => null },
+      userModelPreference: { findFirst: async () => null },
       userModelCredential: {
         findMany: vi.fn(async () => []),
         findFirst: async () => credential("xai", null),
@@ -1010,13 +1010,12 @@ describe("connected model validation", () => {
       }) => {
         if (args.where.modelId) {
           if (
-            args.where.spaceId === actor.spaceId &&
             args.where.userId === actor.userId &&
             args.where.modelId === "private-model" &&
             args.where.credential?.provider === "openai-compatible" &&
             args.where.credential?.userId === actor.userId
           ) {
-            return { id: "saved-private-model" };
+            return { credentialId: "saved-private-model" };
           }
           return null;
         }
@@ -1031,7 +1030,7 @@ describe("connected model validation", () => {
       },
     );
     const customPrisma = {
-      spaceModelPreference: { findFirst: preferenceFindFirst },
+      userModelPreference: { findFirst: preferenceFindFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
       secret: { findFirst: async () => null },
     } as unknown as PrismaClient;
@@ -1047,12 +1046,11 @@ describe("connected model validation", () => {
     expect(preferenceFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          spaceId: actor.spaceId,
           userId: actor.userId,
           modelId: "private-model",
           credential: { userId: actor.userId, provider: "openai-compatible" },
         }),
-        select: { id: true },
+        select: { credentialId: true },
       }),
     );
     await expect(
@@ -1066,7 +1064,7 @@ describe("connected model validation", () => {
     ).resolves.toBe("Unknown model for that provider");
 
     const disconnectedPrisma = {
-      spaceModelPreference: { findFirst: async () => null },
+      userModelPreference: { findFirst: async () => null },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
@@ -1114,7 +1112,7 @@ describe("enabled openai-compatible models", () => {
 
   function compatiblePrisma(defaultModel: string, ciphertext: string | null) {
     return {
-      spaceModelPreference: {
+      userModelPreference: {
         findFirst: async (args: { where: { modelId?: string }; select?: unknown }) => {
           if (args.where.modelId !== undefined && args.select) {
             return args.where.modelId === defaultModel ? { id: "preference" } : null;
@@ -1237,7 +1235,7 @@ describe("bot model change validation", () => {
   function changeDeps(connected: Record<string, ReturnType<typeof credential>>) {
     const prisma = {
       // A saved model lives on the space preference, as the picker writes it.
-      spaceModelPreference: {
+      userModelPreference: {
         findFirst: async (args: { where: { credential?: { provider?: string } } }) => {
           const saved = connected[args.where.credential?.provider ?? ""];
           if (!saved?.defaultModel) return null;
@@ -1371,9 +1369,11 @@ describe("live-only catalog validation", () => {
     const prisma = {
       bot: { findMany: savedBots },
       routine: { findMany: async () => [] },
+      spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+      userModelRoleChoice: { findMany: async () => [] },
       spaceModelRoleChoice: { findMany: async () => [] },
       deploymentSettings: { findFirst: async () => null },
-      spaceModelPreference: { findFirst: async () => null, findMany: async () => [] },
+      userModelPreference: { findFirst: async () => null, findMany: async () => [] },
       userModelCredential: { findMany: async () => [selected], findFirst: async () => selected },
       secret: {
         findFirst: vi.fn(async () => ({ id: selected.secretId, ciphertext: "fake-ciphertext" })),

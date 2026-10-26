@@ -1,4 +1,14 @@
-import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
+import type { SettingsScope } from "@rakazo/contracts";
+import {
+  ensureAiDataConsent,
+  readVoiceAudio,
+  readVoiceError,
+  requestDeadline,
+  toUtterances,
+  VOICE_RESPONSE_TIMEOUT_MS,
+  withAbort,
+} from "@rakazo/core";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
@@ -13,14 +23,13 @@ import { errorText, voiceAccountErrorText } from "./user-error";
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
 type SpeechOptions = {
+  /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
+  scope?: SettingsScope;
   voiceId?: string;
   botId?: string;
   messageId?: string;
   speaker?: PlaybackSpeaker;
 };
-export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
-export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
-const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
 // --- Playback status: lets a persistent mini-player show what's speaking and
 // control it, without every screen re-deriving state from the speak calls below.
@@ -186,9 +195,9 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
     }
     const requestContext = await captureApiRequestContext();
     if (!isCurrentSpeech(epoch)) return false;
-    const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
+    const prepared = await rpc(
       "voice/prepare",
-      { text, voiceId: opts.voiceId, botId: opts.botId },
+      { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
       { requestContext },
     );
     if (!isCurrentSpeech(epoch)) return false;
@@ -362,9 +371,17 @@ export async function speakUtterance(
   const requestContext = opts.requestContext ?? (await captureApiRequestContext());
   await ensureAiDataConsent({
     uses: ["voice"],
-    status: () => rpc("aiConsent/status", { uses: ["voice"] }, { requestContext }),
+    status: () =>
+      rpc(
+        "aiConsent/status",
+        { uses: ["voice"], ...(opts.scope ? { settingsScope: opts.scope } : {}) },
+        { requestContext },
+      ),
     prompt: promptAiConsent,
-    allow: (input) => rpc("aiConsent/allow", input, { requestContext }),
+    allow: (input) =>
+      rpc("aiConsent/allow", opts.scope ? { ...input, settingsScope: opts.scope } : input, {
+        requestContext,
+      }),
     coalesceKey: aiConsentCoalesceKey(requestContext),
   });
   return renderUtterance(text, opts, requestContext);
@@ -375,7 +392,7 @@ async function renderUtterance(
   opts: SpeechOptions,
   requestContext: ApiRequestContext,
 ): Promise<Uint8Array> {
-  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS);
+  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
   try {
     const res = await withAbort(
       fetch(`${requestContext.apiBase}/api/voice/speak`, {
@@ -385,10 +402,16 @@ async function renderUtterance(
           origin: "rakazo://",
           ...requestContext.headers,
         },
-        body: JSON.stringify({ text, voiceId: opts.voiceId, botId: opts.botId }),
+        body: JSON.stringify({
+          text,
+          voiceId: opts.voiceId,
+          botId: opts.botId,
+          scope: opts.scope,
+        }),
         signal: deadline.signal,
       }),
       deadline.signal,
+      "Voice request aborted.",
     ).catch((error: unknown) => {
       throw deadline.signal.aborted
         ? error
@@ -400,7 +423,7 @@ async function renderUtterance(
         voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not speak that.")),
       );
     }
-    return await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
+    return await readVoiceAudio(res, deadline.signal);
   } finally {
     deadline.dispose();
   }
@@ -519,7 +542,6 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  const { createAudioPlayer, setAudioModeAsync } = await import("expo-audio");
   await setAudioModeAsync({
     playsInSilentMode: true,
     interruptionMode: "mixWithOthers",
@@ -613,76 +635,4 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
-}
-
-function requestDeadline(timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(new Error("Voice request timed out.")),
-    timeoutMs,
-  );
-  return {
-    signal: controller.signal,
-    dispose() {
-      clearTimeout(timer);
-    },
-  };
-}
-
-async function readVoiceError(
-  response: Response,
-  signal: AbortSignal,
-): Promise<{ error?: string; code?: string }> {
-  const bytes = await readResponseBytes(response, MAX_VOICE_ERROR_BYTES, signal);
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as { error?: string; code?: string })
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-async function readResponseBytes(
-  response: Response,
-  maxBytes: number,
-  signal: AbortSignal,
-): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    cancelResponse(response);
-    throw new Error("Voice response is too large.");
-  }
-  return readBoundedResponseBytes(response, {
-    maxBytes,
-    tooLargeMessage: "Voice response is too large.",
-    read: (operation) => withAbort(operation(), signal),
-  });
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Voice request aborted."));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Voice request aborted."));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
-function cancelResponse(response: Response): void {
-  try {
-    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
 }

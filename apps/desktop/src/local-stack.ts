@@ -3,13 +3,11 @@ import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DockerFailureKind, RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   classifyDockerFailure,
   composeSupportsWaitTimeout,
-  type DockerFailureKind,
   dockerSpawnEnv,
-  type RunDocker,
-  type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";

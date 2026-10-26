@@ -1,5 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as SerenityClientModule from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -25,7 +26,7 @@ const context: AdapterContext = {
 };
 
 vi.mock("./serenity-client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./serenity-client.js")>();
+  const actual = await importOriginal<typeof SerenityClientModule>();
   return {
     ...actual,
     probeSerenity: vi.fn(),

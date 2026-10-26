@@ -1,4 +1,4 @@
-import { readBoundedResponseBytes, speechLocaleTag } from "@rakazo/core";
+import { cancelResponseBody, readJsonObjectWithin, speechLocaleTag, withAbort } from "@rakazo/core";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
 import { errorText, voiceAccountErrorText } from "./user-error.js";
@@ -570,7 +570,7 @@ export class Dictation {
         abort.signal,
       );
       if (this.token !== mine) {
-        cancelResponse(res);
+        cancelResponseBody(res);
         return;
       }
       const body = await readTranscriptionBody(res, abort.signal);
@@ -645,55 +645,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-async function readTranscriptionBody(
-  response: Response,
-  signal: AbortSignal,
-): Promise<{ text?: string; error?: string; code?: string }> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
-    cancelResponse(response);
-    throw new Error("Transcription response is too large.");
-  }
-  const bytes = await readBoundedResponseBytes(response, {
+function readTranscriptionBody(response: Response, signal: AbortSignal) {
+  return readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(response, {
     maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
     tooLargeMessage: "Transcription response is too large.",
-    read: (operation) => withAbort(operation(), signal),
+    signal,
   });
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as { text?: string; error?: string; code?: string })
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request aborted."));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Request aborted."));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        // Prefer abort reason over a bare AbortError from fetch/read.
-        reject(signal.aborted ? (signal.reason ?? error) : error);
-      },
-    );
-  });
-}
-
-function cancelResponse(response: Response): void {
-  try {
-    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
 }
 
 export const dictation = new Dictation();

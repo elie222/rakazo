@@ -107,8 +107,7 @@ it("shows a dismissed secret card as Dismissed, not Saved", async () => {
   await render({ ...secretCard, status: "answered", answer: "" });
   expect(container.textContent).toContain("Saved");
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;
-  expect(card.classList.contains("w-full")).toBe(true);
-  expect(card.classList.contains("max-w-xl")).toBe(false);
+  expect(card.classList.contains("max-w-xl")).toBe(true);
 });
 
 it("offers Dismiss only on secret cards", async () => {
@@ -116,7 +115,7 @@ it("offers Dismiss only on secret cards", async () => {
   expect(button("Dismiss")).toBeUndefined();
 });
 
-it("puts primary Save before equal-width secondary Dismiss", async () => {
+it("puts primary Save before secondary Dismiss at the default button size", async () => {
   await render(secretCard);
   expect(
     [...button("Save")!.parentElement!.querySelectorAll("button")].map((item) => item.textContent),
@@ -126,11 +125,10 @@ it("puts primary Save before equal-width secondary Dismiss", async () => {
   expect(button("Save")!.disabled).toBe(true);
   expect(container.querySelector("input")?.classList.contains("w-full")).toBe(true);
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;
-  expect(card.classList.contains("w-full")).toBe(true);
-  expect(card.classList.contains("max-w-xl")).toBe(false);
+  expect(card.classList.contains("max-w-xl")).toBe(true);
   for (const label of ["Save", "Dismiss"]) {
-    expect(button(label)?.classList.contains("flex-1")).toBe(true);
-    expect(button(label)?.classList.contains("whitespace-normal")).toBe(true);
+    expect(button(label)?.classList.contains("h-8")).toBe(true);
+    expect(button(label)?.classList.contains("flex-1")).toBe(false);
   }
   await type("API key", "example-key");
   expect(button("Save")!.disabled).toBe(false);
@@ -179,7 +177,7 @@ for (const input of ["secret", "login"]) {
     // A login is filled in only by the run's user; see the credential card test below.
     if (input === "login" && !canDismiss) return;
     expect(labels.includes("Save")).toBe(true);
-    expect(button("Save")?.classList.contains("flex-1")).toBe(true);
+    expect(button("Save")?.classList.contains("h-8")).toBe(true);
   });
 }
 
@@ -224,7 +222,7 @@ it("keeps an accepted question choice answered until the block updates", async (
   expect(container.textContent).not.toContain("Answered: Paris");
 });
 
-it("gives question options a fill and border", async () => {
+it("gives question options a borderless fill", async () => {
   await render({
     kind: "ask",
     text: "Which city?",
@@ -234,7 +232,24 @@ it("gives question options a fill and border", async () => {
   const option = button("Paris")!;
   expect(option.disabled).toBe(false);
   expect(option.classList.contains("bg-secondary")).toBe(true);
-  expect(option.classList.contains("border-input")).toBe(true);
+  expect(option.classList.contains("border-border")).toBe(false);
+});
+
+it("sizes approval buttons like the other card buttons", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Send it?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  for (const label of ["Allow once", "Deny"]) {
+    expect(button(label)?.classList.contains("min-h-8")).toBe(true);
+    expect(button(label)?.classList.contains("py-3")).toBe(false);
+  }
 });
 
 it("gives onboarding choices borderless rows and distinct interaction states", async () => {

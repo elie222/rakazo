@@ -17,6 +17,7 @@ import {
   humanizeToolName,
   isCatalogItemConnected,
 } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Badge,
   Button,
@@ -41,7 +42,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { connectedAppMarks } from "../lib/connected-apps";
 import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -978,7 +979,8 @@ export function PluginsOverlay({
                                     title={canAdd ? undefined : t`Manual setup required`}
                                     onClick={() => beginCatalogSurface(result, surface)}
                                   >
-                                    {surface.kind.toUpperCase()} · {canAdd ? t`Add` : t`Manual`}
+                                    <span>{surface.kind.toUpperCase()}</span>
+                                    <span>{canAdd ? t`Add` : t`Manual`}</span>
                                   </Button>
                                 );
                               })}
@@ -1190,13 +1192,16 @@ export function PluginsOverlay({
                           <div className="text-[15.5px] font-medium text-foreground">
                             {source.name}
                           </div>
-                          <div className="truncate text-[13.5px] text-muted-foreground/70">
-                            {source.kind.toUpperCase()} · {source.source} ·{" "}
-                            {source.secretConfigured ? (
-                              <Trans>Credential saved</Trans>
-                            ) : (
-                              <Trans>No auth</Trans>
-                            )}
+                          <div className="flex min-w-0 gap-2 text-[13.5px] text-muted-foreground/70">
+                            <span className="shrink-0">{source.kind.toUpperCase()}</span>
+                            <span className="truncate">{source.source}</span>
+                            <span className="shrink-0">
+                              {source.secretConfigured ? (
+                                <Trans>Credential saved</Trans>
+                              ) : (
+                                <Trans>No auth</Trans>
+                              )}
+                            </span>
                           </div>
                         </div>
                         <Button

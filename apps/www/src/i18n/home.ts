@@ -11,7 +11,6 @@ export type HomeCopy = {
   ogImageAlt: string;
   availableLanguage: string;
   skipToContent: string;
-  starFallback: string;
   nav: {
     home: string;
     primary: string;
@@ -392,7 +391,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
     availableLanguage: "English",
     skipToContent: "Skip to content",
-    starFallback: "Star",
     nav: {
       home: "Rakazo home",
       primary: "Primary",
@@ -512,7 +510,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       "Rakazo. KI-Teamkollegen, die dir wirklich gehören. Deine Keys, dein Modell, deine Maschine.",
     availableLanguage: "German",
     skipToContent: "Zum Inhalt springen",
-    starFallback: "Star",
     nav: {
       home: "Rakazo-Startseite",
       primary: "Hauptnavigation",
@@ -635,7 +632,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     ogImageAlt: "Rakazo. 진짜로 내 것인 AI 팀원. 키, 모델, 머신, 모두 당신 것.",
     availableLanguage: "Korean",
     skipToContent: "본문으로 건너뛰기",
-    starFallback: "Star",
     nav: {
       home: "Rakazo 홈",
       primary: "주 메뉴",
@@ -758,7 +754,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     ogImageAlt: "Rakazo：真正属于你的 AI 队友。密钥、模型、机器，都归你所有。",
     availableLanguage: "Chinese",
     skipToContent: "跳到主要内容",
-    starFallback: "加星",
     nav: {
       home: "Rakazo 首页",
       primary: "主导航",
@@ -882,7 +877,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       "Rakazo。本当に自分のものにできる AI チームメイト。キーもモデルもマシンも、すべてあなたのもの。",
     availableLanguage: "Japanese",
     skipToContent: "本文へスキップ",
-    starFallback: "Star",
     nav: {
       home: "Rakazo ホーム",
       primary: "メインナビゲーション",

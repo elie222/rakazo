@@ -2,7 +2,7 @@ import type { AgentImportMemory, AgentImportSkill } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { buildSkillMd } from "../agent-skill.js";
 import type { AgentImportParse } from "./shared.js";
-import { memoryItem, skillItem } from "./shared.js";
+import { freeName, memoryItem, skillItem } from "./shared.js";
 
 /**
  * Model-facing text pasted into another product, so it stays in English. Keep its section
@@ -137,7 +137,7 @@ function memoryDocuments(lines: string[]): AgentImportMemory[] {
       used.add("memory.md");
       return [memoryItem("MEMORY.md", "MEMORY.md", "MEMORY.md", body)];
     }
-    const path = uniquePath(`${slug(block.heading)}.md`, used);
+    const path = freeName(`${slug(block.heading)}.md`, used, ".md");
     return [memoryItem(path, block.heading, path, `# ${block.heading}\n\n${body}`)];
   });
 }
@@ -156,7 +156,7 @@ function skillDocuments(section: Block): Pick<AgentImportParse, "skills" | "skip
       content = null;
     }
     const item = content
-      ? skillItem(`skills:${uniquePath(slug(block.heading), used)}`, `${content}\n`)
+      ? skillItem(`skills:${freeName(slug(block.heading), used, "")}`, `${content}\n`)
       : null;
     if (item) skills.push(item);
     else skipped.push({ path: `${section.heading}/${block.heading}`, reason: "invalid_skill" });
@@ -176,14 +176,4 @@ function slug(title: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
   return value || "note";
-}
-
-function uniquePath(path: string, used: Set<string>): string {
-  const dot = path.endsWith(".md") ? path.length - 3 : path.length;
-  let candidate = path;
-  for (let n = 2; used.has(candidate.toLowerCase()); n += 1) {
-    candidate = `${path.slice(0, dot)}-${n}${path.slice(dot)}`;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
 }

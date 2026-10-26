@@ -152,6 +152,7 @@ test("an overloaded provider is named instead of a generic error", async ({ page
     { timeout: 30_000 },
   );
   await expect(error).not.toContainText("The model provider returned an error.");
+  await expect(error.getByTestId("composer-error-action")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "overloaded-run-error");
 });
 
@@ -169,7 +170,43 @@ test("a model too small for required instructions offers a model change", async 
     { timeout: 30_000 },
   );
   await expect(error).not.toContainText("Start a new chat");
+  await expect(error.getByTestId("composer-error-action")).toHaveText("Choose a model");
   await captureScreenshot(page, testInfo, "required-context-model-recovery");
+});
+
+test("a provider out of credits offers another model", async ({ page }, testInfo) => {
+  await signup(page, `credits-run-${Date.now()}@rakazo.test`, "password12", "Credits Run");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run out of credits");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText("Your model provider reached its credit limit.", {
+    timeout: 30_000,
+  });
+  const action = error.getByTestId("composer-error-action");
+  await expect(action).toHaveText("Choose a model");
+  await captureScreenshot(page, testInfo, "credit-limit-model-recovery");
+  await action.click();
+  await expect(page.getByTestId("bot-settings")).toBeVisible();
+});
+
+test("a rejected key opens the model connections", async ({ page }, testInfo) => {
+  await signup(page, `rejected-key-${Date.now()}@rakazo.test`, "password12", "Rejected Key");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run with a rejected key");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText(
+    "Your model provider rejected the API key. Check your connection settings.",
+    { timeout: 30_000 },
+  );
+  const action = error.getByTestId("composer-error-action");
+  await expect(action).toHaveText("Replace key");
+  await captureScreenshot(page, testInfo, "rejected-key-connection-recovery");
+  await action.click();
+  await expect(page.getByRole("button", { name: "Close model settings" })).toBeVisible();
 });
 
 test("an approved action the model did not run says so", async ({ page }, testInfo) => {

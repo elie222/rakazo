@@ -34,7 +34,7 @@ describe.skipIf(!enabled)("short original product history", () => {
       });
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-short-history-"));
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(
           {
             id: `synthetic-short-history-${strategy}`,

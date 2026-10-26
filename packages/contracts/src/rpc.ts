@@ -1,3 +1,8 @@
+import type {
+  AnyContractProcedure,
+  InferContractRouterInputs,
+  InferContractRouterOutputs,
+} from "@orpc/contract";
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import {
@@ -38,6 +43,7 @@ import {
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
+  ApprovalModeSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
@@ -130,6 +136,7 @@ import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
+import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -202,6 +209,8 @@ export const appContract = {
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
+          /** The settings copy the reviewed recipients came from, as in `status`. */
+          settingsScope: SettingsScopeSchema.optional(),
         }),
       )
       .output(AiConsentStatusSchema),
@@ -281,10 +290,22 @@ export const appContract = {
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),
     role: oc
-      .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
+      .input(
+        z.object({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
       .output(ModelRoleViewSchema),
     setRole: oc
-      .input(ModelRoleUpdateSchema.extend({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
+      .input(
+        ModelRoleUpdateSchema.extend({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
       .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
@@ -319,6 +340,9 @@ export const appContract = {
           modelId: z.string().optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
           makeDefault: z.boolean().optional(),
+          scope: SettingsScopeSchema.optional(),
+          /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
+          codePage: z.boolean().optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
@@ -943,7 +967,8 @@ export const appContract = {
   messaging: {
     installations: {
       list: oc.output(MessagingInstallationsStatusSchema),
-      start: oc.input(z.object({ botId: Id })).output(z.object({ url: z.string() })),
+      /** Without a bot, the workspace answers as the first bot in the user's default space. */
+      start: oc.input(z.object({ botId: Id.optional() })).output(z.object({ url: z.string() })),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
     status: oc.output(MessagingStatusSchema),
@@ -977,23 +1002,39 @@ export const appContract = {
     },
   },
   approvalRules: {
-    list: oc.output(z.array(ActionApprovalRuleSchema)),
+    list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
     set: oc
       .input(
-        z.object({
-          effect: z.enum(["always_allow", "require_approval"]),
-          matchKind: z.enum(["tool", "connector", "category"]),
+        settingsScopeInput.extend({
+          effect: z.enum(["always_allow", "deny"]),
+          matchKind: z.enum(["tool", "connector", "site"]),
           matchValue: z.string().min(1),
         }),
       )
       .output(ActionApprovalRuleSchema),
-    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    remove: oc
+      .input(settingsScopeInput.extend({ id: Id }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   autoReview: {
-    get: oc.output(ActionAutoReviewSettingsSchema),
+    get: oc.input(settingsScopeInput.optional()).output(ActionAutoReviewSettingsSchema),
     set: oc
-      .input(z.object({ enabled: z.boolean().optional(), skipApprovals: z.boolean().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          mode: ApprovalModeSchema.optional(),
+          enabled: z.boolean().optional(),
+          skipApprovals: z.boolean().optional(),
+        }),
+      )
       .output(ActionAutoReviewSettingsSchema),
+  },
+  /** Which account settings the bound Space overrides for the member. */
+  spaceSettings: {
+    overrides: oc.output(z.array(SpaceSettingSchema)),
+    /** Customizing copies the account's settings into the Space; ending it drops the copy. */
+    setOverride: oc
+      .input(z.object({ setting: SpaceSettingSchema, enabled: z.boolean() }))
+      .output(z.array(SpaceSettingSchema)),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
@@ -1062,8 +1103,8 @@ export const appContract = {
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
-    status: oc.output(VoiceStatusSchema),
-    credentials: oc.output(z.array(VoiceCredentialSchema)),
+    status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
         z
@@ -1077,6 +1118,8 @@ export const appContract = {
             baseUrl: z.string().max(2048).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
+            /** Where the connection becomes the default voice. */
+            scope: SettingsScopeSchema.optional(),
           })
           .superRefine((input, ctx) => {
             if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1093,13 +1136,23 @@ export const appContract = {
       .input(z.object({ provider: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
     setVoice: oc
-      .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          voiceId: z.string().min(1).max(120),
+          provider: z.string().optional(),
+        }),
+      )
       .output(VoiceStatusSchema),
     setSpeechModel: oc
-      .input(z.object({ provider: z.string().min(1), speechModel: z.string().max(64) }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().min(1),
+          speechModel: z.string().max(64),
+        }),
+      )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(z.object({ provider: z.string().optional() }))
+      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(
@@ -1107,6 +1160,7 @@ export const appContract = {
           text: z.string().max(20000),
           voiceId: z.string().max(120).optional(),
           botId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
@@ -1131,3 +1185,24 @@ export const appContract = {
 };
 
 export type AppContract = typeof appContract;
+
+type ProcedurePaths<Router, Prefix extends string = ""> = {
+  [Key in keyof Router & string]: Router[Key] extends AnyContractProcedure
+    ? `${Prefix}${Key}`
+    : ProcedurePaths<Router[Key], `${Prefix}${Key}/`>;
+}[keyof Router & string];
+
+type AtPath<Tree, Path extends string> = Path extends `${infer Head}/${infer Rest}`
+  ? Head extends keyof Tree
+    ? AtPath<Tree[Head], Rest>
+    : never
+  : Path extends keyof Tree
+    ? Tree[Path]
+    : never;
+
+/** A procedure's URL path under `/rpc/`, such as `bots/list`. */
+export type RpcPath = ProcedurePaths<AppContract>;
+type RpcInputs = { [Path in RpcPath]: AtPath<InferContractRouterInputs<AppContract>, Path> };
+type RpcOutputs = { [Path in RpcPath]: AtPath<InferContractRouterOutputs<AppContract>, Path> };
+export type RpcInput<Path extends RpcPath> = RpcInputs[Path];
+export type RpcOutput<Path extends RpcPath> = RpcOutputs[Path];

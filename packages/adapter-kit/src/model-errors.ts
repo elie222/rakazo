@@ -98,6 +98,13 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   ) {
     return false;
   }
+  // Fetch refused a key that is not a valid header value; the quoted key can read like anything.
+  if (
+    /\bheaders\.append: "[\s\S]*" is an invalid header value\.|\bcannot convert argument to a bytestring because\b/.test(
+      text,
+    )
+  )
+    return false;
   // Some providers label payment failures with a generic invalid_request_error code.
   // Their explicit balance error still means a configured backup can serve the call.
   const insufficientBalance = statuses.has(402) && /\binsufficient_balance_error\b/.test(text);

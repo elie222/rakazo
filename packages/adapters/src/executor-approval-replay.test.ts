@@ -11,15 +11,15 @@ import {
   createApprovedEffectReplayQueue,
 } from "./approval-effect.js";
 import {
-  APPROVED_EFFECT_REPLAY_ORDER,
-  approvalReplayEffectToolName,
-  buildApprovalContinuation,
-} from "./executor.js";
-import {
   catalogEntries,
   disambiguateInstalledToolNames,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import {
+  APPROVED_EFFECT_REPLAY_ORDER,
+  approvalReplayEffectToolName,
+  buildApprovalContinuation,
+} from "./run-effects.js";
 
 describe("executor approval replay", () => {
   it.each([

@@ -48,6 +48,7 @@ const CHAT_MOVES = `Moves:
 {"kind":"choose","actionId":"..."}                 press one of the pending card's buttons, by its id
 {"kind":"secret","value":"...","username":"..."}   fill a pending secret card (username only for login cards)
 {"kind":"done","reason":"..."}                     you have nothing more to ask right now, or you give up
+On an approval card, approve when what it shows is what you asked for; deny only something you did not want or that looks wrong.
 Choose "done" when the assistant has finished what you asked and nothing needs your input, or when it is clearly stuck after you have tried to help once.`;
 
 const SCREEN_MOVES = `The assistant handed you its computer screen and is waiting. You see the attached screenshot and control the mouse and keyboard. Do only what the person would do here (for example sign in or enter a code), one action at a time, then give the screen back.
@@ -55,7 +56,8 @@ Moves:
 {"kind":"click","x":0,"y":0}     click at pixel coordinates in the screenshot
 {"kind":"type","text":"..."}      type text into the focused field
 {"kind":"key","key":"Return"}     press a key (xdotool names: Return, Tab, BackSpace, Escape)
-{"kind":"release"}                give the screen back to the assistant`;
+{"kind":"release"}                give the screen back to the assistant
+If a step left the screen unchanged, or you clicked the same spot again, check whether it did anything before repeating it; if not, do something different (type into a field you already clicked, close a pop-up, press Escape, click elsewhere).`;
 
 const MOVE_ATTEMPTS = 3;
 
@@ -193,4 +195,30 @@ export function parseMove(text: string, situation: Situation): UserMove {
       };
   }
   throw new Error(`Simulated user returned an invalid move: ${json.slice(0, 200)}`);
+}
+
+/**
+ * What the person did while holding the screen, as they would remember it. A step that left
+ * the screen unchanged, or that repeats the previous one, is marked so: without that, the model
+ * repeats dead clicks. Pixels alone are not enough, since a clock or caret changes every frame.
+ */
+export function screenStepLog() {
+  const steps: string[] = [];
+  let previous: Uint8Array | undefined;
+  let lastClick: { x: number; y: number } | undefined;
+  return {
+    steps,
+    /** The frame seen before the next step. */
+    saw(frame: Uint8Array) {
+      if (previous && steps.length && Buffer.from(frame).equals(Buffer.from(previous)))
+        steps[steps.length - 1] += " (nothing on screen changed)";
+      previous = frame;
+    },
+    /** `click` is the exact position, so a repeated click is told apart from a nearby one. */
+    did(step: string, click?: { x: number; y: number }) {
+      const repeat = click && lastClick && click.x === lastClick.x && click.y === lastClick.y;
+      lastClick = click;
+      steps.push(repeat ? `${step} (same click as your previous step)` : step);
+    },
+  };
 }

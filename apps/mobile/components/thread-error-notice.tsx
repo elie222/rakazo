@@ -1,9 +1,8 @@
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import { runErrorExplanation } from "../lib/run-error-presentation";
 import { NativeSymbol } from "./native-symbol";
-import { RunErrorActions } from "./run-error-actions";
+import { RunErrorAction } from "./run-error-actions";
 
 /** A list item: its full height participates in scrolling above the composer. */
 export function ThreadErrorNotice({
@@ -11,21 +10,19 @@ export function ThreadErrorNotice({
   summary,
   resetAt,
   onDetails,
-  onConnection,
-  onModel,
+  action,
 }: {
   error: string | null;
   summary: string | null;
   resetAt?: number;
   onDetails?: () => void;
-  onConnection?: () => void;
-  onModel?: () => void;
+  /** The one action that fixes the failure. */
+  action?: { label: string; onPress: () => void } | null;
 }) {
   const { t, locale } = useI18n();
   const tokens = useMobileTokens();
   const { fontScale } = useWindowDimensions();
   if (!error && !summary) return null;
-  const explanation = runErrorExplanation(t, !!onConnection, !!onModel);
   const upcomingReset =
     resetAt && resetAt > Date.now()
       ? t("Resets {date}.", {
@@ -36,13 +33,7 @@ export function ThreadErrorNotice({
           }).format(resetAt),
         })
       : null;
-  const hasBody =
-    (summary && error) ||
-    explanation ||
-    upcomingReset ||
-    onConnection ||
-    onModel ||
-    (summary && onDetails);
+  const hasBody = (summary && error) || upcomingReset || action || (summary && onDetails);
   return (
     <View
       accessibilityRole="alert"
@@ -70,14 +61,10 @@ export function ThreadErrorNotice({
           {summary && error ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{error}</Text>
           ) : null}
-          {explanation || upcomingReset ? (
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
-              {[explanation, upcomingReset].filter(Boolean).join("\n")}
-            </Text>
+          {upcomingReset ? (
+            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
           ) : null}
-          {onConnection || onModel ? (
-            <RunErrorActions onConnection={onConnection} onModel={onModel} />
-          ) : null}
+          {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
           {summary && onDetails ? (
             <Pressable
               accessibilityRole="link"
@@ -92,6 +79,26 @@ export function ThreadErrorNotice({
           ) : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** A failed fetch, kept above the composer and outside both message lists. */
+export function ThreadFetchErrorNotice({
+  error,
+  showingSaved,
+}: {
+  error: string | null;
+  showingSaved: boolean;
+}) {
+  const { t } = useI18n();
+  if (!error) return null;
+  return (
+    <View style={{ paddingBottom: 24 }}>
+      <ThreadErrorNotice
+        error={showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
+        summary={null}
+      />
     </View>
   );
 }

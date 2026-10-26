@@ -11,7 +11,7 @@ export async function loadLinkFavicon(
 ): Promise<{ icon: string | null; retry?: boolean }> {
   const requestContext = await captureApiRequestContext();
   if (requestContext.apiBase !== endpoint) throw new Error("Server changed");
-  const answer = await rpc<{ icon: string | null; retry?: boolean }>(
+  const answer = await rpc(
     "links/favicon",
     { origin },
     { timeoutMs: FAVICON_TIMEOUT_MS, requestContext },

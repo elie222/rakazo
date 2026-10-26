@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { createServer, type RequestListener, type Server } from "node:http";
+import type { RequestListener, Server } from "node:http";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
+import type { ElectronApplication } from "@playwright/test";
+import { _electron as electron, expect, test } from "@playwright/test";
 import { prepareHostComputer } from "../src/host-computer.js";
 
 const APP_MARKER = "Local Rakazo stack ready";

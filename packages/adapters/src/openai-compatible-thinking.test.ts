@@ -1,9 +1,5 @@
-import {
-  clampThinkingLevel,
-  getSupportedThinkingLevels,
-  type Model,
-  Type,
-} from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels, Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";

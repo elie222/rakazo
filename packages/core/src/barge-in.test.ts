@@ -1,5 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { isCallBargeIn, isInterimCallBargeIn } from "./barge-in.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createInterimBargeIn,
+  INTERIM_BARGE_IN_MS,
+  isCallBargeIn,
+  isInterimCallBargeIn,
+} from "./barge-in.js";
 import { spokenMemory } from "./echo.js";
 
 const SPOKEN = "I'm here and hearing you";
@@ -36,5 +41,39 @@ describe("call barge-in", () => {
   it("ignores an empty transcript", () => {
     expect(isCallBargeIn("   ")).toBe(false);
     expect(isInterimCallBargeIn("")).toBe(false);
+  });
+});
+
+describe("interim barge-in countdown", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("cuts in once a phrase stands long enough, and only once", () => {
+    vi.useFakeTimers();
+    const onBargeIn = vi.fn();
+    const interim = createInterimBargeIn(onBargeIn);
+    interim.hear("what about");
+    vi.advanceTimersByTime(INTERIM_BARGE_IN_MS - 1);
+    // A revision that still qualifies keeps the running countdown.
+    interim.hear("what about the deploy");
+    expect(onBargeIn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onBargeIn).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(INTERIM_BARGE_IN_MS);
+    expect(onBargeIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets when the phrase stops qualifying or is cleared", () => {
+    vi.useFakeTimers();
+    const onBargeIn = vi.fn();
+    const interim = createInterimBargeIn(onBargeIn);
+    interim.hear("what about");
+    interim.hear("yeah");
+    vi.advanceTimersByTime(INTERIM_BARGE_IN_MS);
+    interim.hear("what about");
+    interim.clear();
+    vi.advanceTimersByTime(INTERIM_BARGE_IN_MS);
+    expect(onBargeIn).not.toHaveBeenCalled();
   });
 });

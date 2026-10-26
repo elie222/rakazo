@@ -14,7 +14,7 @@ import {
   verifyMcpInstall,
 } from "./installed-connectors.js";
 import { parseConnectorToolArgs, SELECTED_SCHEMA_MAX_BYTES } from "./lazy-tool-catalog.js";
-import { parametersFor } from "./pi-runtime.js";
+import { parametersFor } from "./pi-runtime-tool-parameters.js";
 
 describe("OpenAPI connector import", () => {
   it("uses the bounded catalog for a real large installed OpenAPI source", async () => {

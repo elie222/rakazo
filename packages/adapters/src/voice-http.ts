@@ -1,6 +1,7 @@
 import type { VoiceVerifyResult } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
 /** A 2,000-character utterance should stay far below this, even at high MP3 bitrates. */
@@ -33,14 +34,6 @@ async function readVoiceBytes(
       throw new Error("Voice response is too large.");
     }
     throw error;
-  }
-}
-
-function cancelResponseBody(res: Response): void {
-  try {
-    void Promise.resolve(res.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Provider response cleanup is best-effort and must not delay the size error.
   }
 }
 

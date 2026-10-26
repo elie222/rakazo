@@ -1,4 +1,4 @@
-import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { Bot, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_AVATAR_SHAPE_COUNT,
   BOT_COLORS,
@@ -41,7 +41,7 @@ import { NativeSwitch } from "../components/native-switch";
 import { NativeSymbol } from "../components/native-symbol";
 import { ProfileEditDialog } from "../components/profile-edit-dialog";
 import { Chevron } from "../components/row-accessories";
-import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
 import {
   avatarColor,
@@ -62,10 +62,6 @@ import { thinkingLevelLabel } from "../lib/thinking-level";
 import { errorText } from "../lib/user-error";
 import { stopVoicePlayback } from "../lib/voice";
 
-type BotSettingsRecord = MobileBot & {
-  description?: string;
-};
-
 export default function BotSettingsScreen() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
@@ -78,7 +74,7 @@ export default function BotSettingsScreen() {
   } = useLocalSearchParams<{ botId: string; model?: string; focus?: string }>();
   const scrollRef = useRef<ScrollView>(null);
   const modelY = useRef(0);
-  const [bot, setBot] = useState<BotSettingsRecord | null>(null);
+  const [bot, setBot] = useState<Bot | null>(null);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -159,7 +155,7 @@ export default function BotSettingsScreen() {
 
   useEffect(() => {
     if (!botId) return;
-    void rpc<BotSettingsRecord>("bots/get", { botId })
+    void rpc("bots/get", { botId })
       .then((next) => {
         setBot(next);
         setName(next.name);
@@ -188,11 +184,7 @@ export default function BotSettingsScreen() {
   }, [botId, crossSpaceSave, fleetSave, notifySave, profileSaves]);
 
   useEffect(() => {
-    void Promise.all([
-      rpc<MobileMe>("me"),
-      rpc<MobileModel[]>("models/list"),
-      rpc<MobileModelCredential[]>("models/credentials"),
-    ])
+    void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
       .then(([nextMe, nextCatalog, nextCredentials]) => {
         setMe(nextMe);
         setCatalog(nextCatalog);
@@ -331,6 +323,7 @@ export default function BotSettingsScreen() {
     }
     if (choice !== voiceChoice.current) return;
     try {
+      // Native speech loads only when a voice is previewed, as in lib/voice.
       const Speech = await import("expo-speech");
       if (choice !== voiceChoice.current) return;
       await Speech.stop();
@@ -408,7 +401,7 @@ export default function BotSettingsScreen() {
       }
       // Use key presence so clearing description to "" still persists.
       if (Object.keys(input).length > 1) {
-        const updated = await rpc<BotSettingsRecord | undefined>("bots/update", input);
+        const updated = await rpc("bots/update", input);
         // Saved edits and their history become the baseline, so a retry after a failed switch write
         // does not resend them.
         const { botId: _botId, expectedInstructions: _expected, ...saved } = input;
@@ -566,7 +559,7 @@ export default function BotSettingsScreen() {
                     value=""
                     choices={bot.instructionHistory.map((version) => ({
                       key: version.id,
-                      label: `${new Date(version.createdAt).toLocaleString()} · ${version.reason}`,
+                      label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
                     }))}
                     onChange={(versionId) => {
                       if (pending || instructions !== bot.instructions) return;
@@ -577,7 +570,7 @@ export default function BotSettingsScreen() {
                           {
                             text: t("Restore"),
                             onPress: () => {
-                              void rpc<MobileBot>("bots/restoreInstructions", {
+                              void rpc("bots/restoreInstructions", {
                                 botId: bot.id,
                                 versionId,
                                 expectedInstructions: bot.instructions,

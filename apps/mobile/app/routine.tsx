@@ -34,7 +34,7 @@ export default function RoutineDetail() {
     }
     let cancelled = false;
     setLoading(true);
-    void rpc<Routine[]>("routines/list", { botId })
+    void rpc("routines/list", { botId })
       .then((routines) => {
         if (cancelled) return;
         const match = routines.find((item) => item.id === routineId);

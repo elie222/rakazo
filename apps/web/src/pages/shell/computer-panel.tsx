@@ -13,6 +13,8 @@ type ComputerPanelProps = {
   computer: ComputerStatus | null;
   computerOpen: boolean;
   embeddedScreenUrl: string | null;
+  /** Changes to load the screen again in a new frame. */
+  screenFrameKey?: number;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -36,6 +38,7 @@ export function ComputerPanel({
   computer,
   computerOpen,
   embeddedScreenUrl,
+  screenFrameKey,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -69,6 +72,7 @@ export function ComputerPanel({
           <DesktopKindEmptyState className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80" />
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
           <iframe
+            key={screenFrameKey}
             title={t`Bot screen preview`}
             ref={screenFrameRef}
             src={embeddedScreenUrl}

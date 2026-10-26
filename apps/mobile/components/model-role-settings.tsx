@@ -5,7 +5,10 @@ import type {
   ModelCredential,
   ModelRole,
   ModelRoleChoice,
+  RpcInput,
+  RpcPath,
   ModelRoleSettings as Settings,
+  SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -16,12 +19,14 @@ import {
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  withConnectionName,
 } from "@rakazo/contracts";
-import { createModelRoleSettings } from "@rakazo/core";
+import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
+import type { RpcArgs } from "../lib/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -49,19 +54,11 @@ const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
 const connectKey = (provider: ConnectableProvider) =>
   `connect:${provider.id}:${provider.baseUrl ?? ""}`;
 
-/** Sends the first slot only when it changes. */
-function listPatch(current: Settings, list: ModelRoleChoice[]): Partial<Settings> {
-  if (!current.primary) return { backups: list };
-  const primary = list[0] ?? null;
-  return primary && sameChoice(primary, current.primary)
-    ? { backups: list.slice(1) }
-    : { primary, backups: list.slice(1) };
-}
-
 /** One ordered list per model purpose: the first row runs, the rest take over in order. */
 export function ModelRoleSettings({
   userId,
   spaceId,
+  scope,
   modelRole: role,
   credentials,
   title,
@@ -74,7 +71,9 @@ export function ModelRoleSettings({
   onChanged,
 }: {
   userId: string;
+  /** The Space the calls go to; a Space scope edits its override. */
   spaceId: string;
+  scope: SettingsScope;
   modelRole: ModelRole;
   credentials: ModelCredential[];
   title: string;
@@ -96,26 +95,22 @@ export function ModelRoleSettings({
   const styles = useThemedStyles(createStyles);
   const apiBase = currentApiBase();
   const { controller, send } = useMemo(() => {
-    const requestContext = captureApiRequestContext().then((context) => ({
-      ...context,
-      headers: { ...context.headers, "x-rakazo-space-id": spaceId },
-    }));
-    const send = async <T,>(proc: string, input: object) =>
-      rpc<T>(proc, input, { requestContext: await requestContext });
-    const call = <T,>(proc: string, patch = {}) =>
-      send<T>(proc, { role, expectedUserId: userId, ...patch });
+    const requestContext = captureApiRequestContext(spaceId);
+    const send = async <P extends RpcPath>(proc: P, input: RpcInput<P>) =>
+      rpc(proc, ...([input, { requestContext: await requestContext }] as RpcArgs<P>));
+    const target = { role, expectedUserId: userId };
     return {
       send,
       controller: createModelRoleSettings(
         {
-          load: () => call<Settings>("models/role"),
-          catalog: () => call("models/forRole"),
-          save: (patch) => call<Settings>("models/setRole", patch),
+          load: () => send("models/role", { ...target, scope }),
+          catalog: () => send("models/forRole", target),
+          save: (patch) => send("models/setRole", { ...target, ...patch, scope }),
         },
-        JSON.stringify([apiBase, userId, spaceId, role]),
+        JSON.stringify([apiBase, userId, spaceId, scope, role]),
       ),
     };
-  }, [apiBase, userId, spaceId, role]);
+  }, [apiBase, userId, spaceId, scope, role]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   useEffect(() => {
     void controller.load();
@@ -192,8 +187,11 @@ export function ModelRoleSettings({
     save((current) => {
       const list = current.primary ? [current.primary, ...current.backups] : current.backups;
       if (slot === "add")
-        return listPatch(current, [...list.filter((item) => !sameChoice(item, choice)), choice]);
-      return listPatch(
+        return modelRoleListPatch(current, [
+          ...list.filter((item) => !sameChoice(item, choice)),
+          choice,
+        ]);
+      return modelRoleListPatch(
         current,
         list
           .map((item, index) => (index === slot ? choice : item))
@@ -201,7 +199,7 @@ export function ModelRoleSettings({
       );
     });
   // The first entry becomes the primary; with none, the deployment's default runs.
-  const commit = (next: ModelRoleChoice[]) => save((current) => listPatch(current, next));
+  const commit = (next: ModelRoleChoice[]) => save((current) => modelRoleListPatch(current, next));
   const fill = (slot: Slot, choice: ModelRoleChoice) =>
     slot === "empty" || isPrimarySlot(slot) ? setPrimary(choice) : place(slot, choice);
 
@@ -268,7 +266,7 @@ export function ModelRoleSettings({
           )
           .map((option) => ({
             key: modelRoleChoiceKey(option),
-            label: `${option.connectionName} · ${option.label}`,
+            label: withConnectionName(option.label, option.connectionName),
             modelLabel: option.label,
             providerLabel: option.connectionName,
             provider: option.provider,
@@ -290,10 +288,7 @@ export function ModelRoleSettings({
         return connectRoute(provider, {
           makeDefault,
           onConnected: async (connected) => {
-            const [fresh] = await Promise.all([
-              send<ModelCredential[]>("models/credentials", {}),
-              controller.load(),
-            ]);
+            const [fresh] = await Promise.all([send("models/credentials", {}), controller.load()]);
             const next = pickerRequest(slot, {
               choice: connected,
               credentials: fresh,
@@ -413,7 +408,7 @@ export function ModelRoleSettings({
           ...(showThinking && thinking
             ? [t("Thinking: {level}", { level: thinkingLevelLabel(thinking, t) })]
             : []),
-        ].join(" · ");
+        ].join(", ");
         return (
           <RowMenu
             key={modelRoleChoiceKey(choice)}

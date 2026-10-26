@@ -28,9 +28,8 @@ import {
   availableDesktopPlatforms,
   desktopDownloadHref,
   fetchDesktopDownloads,
-  fetchGithubStars,
   fetchRecentChanges,
-  formatStarCount,
+  githubStarsLabel,
 } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
@@ -55,12 +54,11 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const [stars, desktopDownloads, recentChanges] = await Promise.all([
-  fetchGithubStars(),
+const [starsLabel, desktopDownloads, recentChanges] = await Promise.all([
+  githubStarsLabel(),
   fetchDesktopDownloads(),
   fetchRecentChanges(5),
 ]);
-const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
 const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
@@ -328,7 +326,7 @@ const structuredData = homeStructuredData({
         </div>
         {
           recentChanges.length > 0 && (
-            <RepoCard locale={locale} starsLabel={stars === null ? null : starsLabel} changes={recentChanges} />
+            <RepoCard locale={locale} starsLabel={starsLabel} changes={recentChanges} />
           )
         }
       </section>

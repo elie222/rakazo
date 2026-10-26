@@ -17,7 +17,12 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  cancelResponseBody,
+  requestDeadline,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import {
   boundedComputerActions,
@@ -48,14 +53,6 @@ async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
     return new TextDecoder().decode(bytes).slice(0, 200);
   } catch {
     return "";
-  }
-}
-
-function cancelResponseBody(res: Response): void {
-  try {
-    void Promise.resolve(res.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Error diagnostics are best-effort and must not delay the operation failure.
   }
 }
 
@@ -688,17 +685,6 @@ function parseProcessLine(line: string): ProcessEvent | undefined {
     return { type: "exit", code: record.code };
   }
   return undefined;
-}
-
-function requestDeadline(timeoutMs: number, message: string) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
-  return {
-    signal: controller.signal,
-    dispose() {
-      clearTimeout(timer);
-    },
-  };
 }
 
 function dockerCwd(cwd: string | undefined) {

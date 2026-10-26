@@ -57,7 +57,7 @@ describe("team chat engagement judge", () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
-      spaceModelPreference: {
+      userModelPreference: {
         findFirst: vi.fn(async () => ({
           credential: {
             id: "credential-fixture",
@@ -137,7 +137,7 @@ describe("team chat engagement judge", () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
-      spaceModelPreference: { findFirst: vi.fn(async () => null) },
+      userModelPreference: { findFirst: vi.fn(async () => null) },
       $transaction: async (work: (tx: unknown) => Promise<unknown>) =>
         work({ usageRecord: { createMany } }),
     };
@@ -231,7 +231,7 @@ describe("team chat engagement judge", () => {
         const judge = new ModelTeamChatEngagementJudge({
           prisma: {
             deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
-            spaceModelPreference: {
+            userModelPreference: {
               findFirst: async () =>
                 personal
                   ? {
@@ -287,7 +287,7 @@ describe("team chat engagement judge", () => {
     const judge = new ModelTeamChatEngagementJudge({
       prisma: {
         deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
-        spaceModelPreference: { findFirst: async () => null },
+        userModelPreference: { findFirst: async () => null },
         space: { findUnique: async () => ({ organizationId: "org" }) },
         member: { findUnique: async () => ({ role: "owner" }) },
         billingAccount: { findUnique: async () => null },
@@ -326,7 +326,7 @@ describe("team chat engagement judge", () => {
       const prisma = {
         user: { findUnique },
         deploymentSettings: { findUnique: vi.fn(async () => null) },
-        spaceModelPreference: { findFirst: vi.fn(async () => null) },
+        userModelPreference: { findFirst: vi.fn(async () => null) },
         usageRecord: { create: vi.fn(async () => ({ id: "usage-1" })) },
       };
       let instructions = "";

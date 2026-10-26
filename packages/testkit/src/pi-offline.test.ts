@@ -7,7 +7,8 @@ import { PiAgentRuntime } from "@rakazo/adapters";
 import * as Core from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTextTokens } from "../../adapters/src/context-selection.js";
-import { type ModelEmulatorRequest, startModelEmulator } from "./model-emulator.js";
+import type { ModelEmulatorRequest } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

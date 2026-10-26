@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  BrowserNotificationApi,
+  BrowserNotificationContext,
+} from "./browser-notifications.js";
 import {
-  type BrowserNotificationApi,
-  type BrowserNotificationContext,
   browserNotificationMessage,
   deliverBrowserNotification,
   requestBrowserNotificationPermission,

@@ -6,7 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
-import { passwordResetCapabilities, rpc, sendSignInCode, signInWithCode } from "./api";
+import { passwordResetCapabilities, rpc, sendSignInCode, signIn, signInWithCode } from "./api";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
 
@@ -264,11 +264,9 @@ it.each(["in", "up"])("signs in with an emailed code by default in %s mode", asy
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
   vi.mocked(sendSignInCode).mockResolvedValue();
   vi.mocked(signInWithCode).mockResolvedValue();
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: false });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
-  expect(host.querySelector('input[type="password"]')).toBeNull();
-  expect(button("Forgot password?")).toBeUndefined();
-  expect(button("Use password")!.dataset.prominence).toBe("quiet");
+  expect(button("Use password")).toBeUndefined();
   if (mode === "up") await type(input("Name")!, "Ada");
   await type(input("Email")!, " ada@example.test ");
   await press("Continue");
@@ -305,16 +303,36 @@ it("returns from the code step with the email kept", async () => {
   expect(sendSignInCode).toHaveBeenCalledTimes(2);
 });
 
-it("reveals the password form behind Use password and returns to the code", async () => {
+it("signs in with a typed password and emails a code when it is blank", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
+  vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
-  await press("Use password");
-  expect(host.querySelector('input[type="password"]')).not.toBeNull();
-  expect(host.querySelector('button[data-prominence="primary"]')?.textContent).toBe("Sign in");
   expect(button("Forgot password?")).toBeDefined();
-  await press("Use email code");
-  expect(host.querySelector('input[type="password"]')).toBeNull();
-  expect(host.querySelector('button[data-prominence="primary"]')?.textContent).toBe("Continue");
+  const primary = () => host.querySelector('button[data-prominence="primary"]')?.textContent;
+  expect(primary()).toBe("Continue");
+  await type(input("Email")!, "ada@example.test");
+  await type(input("Password")!, "example-password");
+  expect(primary()).toBe("Sign in");
+  await press("Sign in");
+  expect(signIn).toHaveBeenCalledWith("ada@example.test", "example-password");
+  expect(sendSignInCode).not.toHaveBeenCalled();
+});
+
+it("verifies the code even if a password was typed while it was sent", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
+  let sent!: () => void;
+  vi.mocked(sendSignInCode).mockReturnValue(new Promise<void>((resolve) => (sent = resolve)));
+  vi.mocked(signInWithCode).mockResolvedValue();
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
+  await render();
+  await type(input("Email")!, "ada@example.test");
+  await press("Continue");
+  await type(input("Password")!, "example-password");
+  await act(async () => sent());
+  await type(input("Code")!, "123456");
+  expect(signInWithCode).toHaveBeenCalledWith("ada@example.test", "123456", undefined);
+  expect(signIn).not.toHaveBeenCalled();
 });
 
 it("keeps the password form without code sign-in", async () => {
@@ -343,7 +361,7 @@ it("sends the code on the first Continue but never submits an unfinished code", 
 
 it("opens the app after code sign-in without server setup", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: true } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
@@ -355,7 +373,7 @@ it("opens the app after code sign-in without server setup", async () => {
 
 it("asks the signup survey before opening the app", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
@@ -368,7 +386,7 @@ function buttonNamed(label: string) {
   return [...host.querySelectorAll("button")].find((button) => button.textContent === label);
 }
 
-it("offers a quiet passkey sign-in only in sign-in mode on a supported server", async () => {
+it("offers a secondary passkey sign-in only in sign-in mode on a supported server", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({
     ...capabilities,
     passkeyRpId: "example.invalid",
@@ -380,7 +398,7 @@ it("offers a quiet passkey sign-in only in sign-in mode on a supported server", 
   expect(passkeysAvailable).toHaveBeenLastCalledWith(
     expect.objectContaining({ passkeyRpId: "example.invalid" }),
   );
-  expect(passkey.dataset.prominence).toBe("quiet");
+  expect(passkey.dataset.prominence).toBe("secondary");
   expectBefore(host.querySelector('button[data-prominence="primary"]')!, passkey);
   await act(async () => passkey.click());
   expect(signInWithPasskey).toHaveBeenCalledOnce();
@@ -396,7 +414,7 @@ it("asks the signup survey after an external sign-in creates the account", async
   });
   vi.mocked(passkeysAvailable).mockResolvedValue(true);
   vi.mocked(signInWithPasskey).mockResolvedValue(true);
-  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true } as never);
   await render();
   await act(async () => buttonNamed("Sign in with passkey")!.click());
   expect(router.replace).toHaveBeenCalledWith("/signup-survey");
@@ -441,23 +459,6 @@ it.each(["in", "up"])(
     expect(input("Password")!.type).toBe("password");
   },
 );
-
-it("hides a revealed password after switching authentication methods", async () => {
-  vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  await render();
-  await press("Use password");
-  await type(input("Password")!, "example-password");
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('button[aria-label="Show password"]')!.click(),
-  );
-  expect(input("Password")!.type).toBe("text");
-
-  await press("Use email code");
-  expect(input("Password")).toBeNull();
-  await press("Use password");
-  expect(input("Password")!.type).toBe("password");
-  expect(input("Password")!.value).toBe("example-password");
-});
 
 it("hides a revealed password after switching servers", async () => {
   await render();

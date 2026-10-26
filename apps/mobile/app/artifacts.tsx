@@ -95,7 +95,7 @@ export default function ArtifactsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      rpc<MobileBot[]>("bots/list")
+      rpc("bots/list")
         .then(setBots)
         .catch(() => undefined);
     }, []),

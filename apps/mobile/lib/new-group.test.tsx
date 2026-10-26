@@ -9,17 +9,23 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import NewGroup from "../app/new-group";
 import type { MobileBot } from "./api";
 
-const { rpc, back, push, replace, announce, hardwareBack, nativeHeader } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  back: vi.fn(),
-  push: vi.fn(),
-  replace: vi.fn(),
-  announce: vi.fn(),
-  hardwareBack: { current: undefined as (() => boolean) | undefined },
-  nativeHeader: { current: false },
-}));
+const { rpc, back, push, replace, announce, hardwareBack, nativeHeader, addToSearchInbox } =
+  vi.hoisted(() => ({
+    rpc: vi.fn(),
+    addToSearchInbox: vi.fn(),
+    back: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    announce: vi.fn(),
+    hardwareBack: { current: undefined as (() => boolean) | undefined },
+    nativeHeader: { current: false },
+  }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({ rpc }));
+vi.mock("./search-inbox", () => ({
+  addToSearchInbox,
+  searchInboxSession: () => ({ generation: 4, apiBase: "http://api.test" }),
+}));
 vi.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 56 }));
 vi.mock("expo-router", () => ({
   Stack: {
@@ -315,6 +321,12 @@ it("Skip posts the default name in pick order and routes to the group", async ()
     name: "Writer, Researcher",
     botIds: ["bot-2", "bot-1"],
   });
+  // The new chat's title seats the members before the inbox lists the group.
+  // Only into the session the group was created in.
+  expect(addToSearchInbox).toHaveBeenCalledWith(
+    { kind: "group", group: { id: "group-1", name: "Created" } },
+    { generation: 4, apiBase: "http://api.test" },
+  );
   expect(replace).toHaveBeenCalledWith({
     pathname: "/group-thread",
     params: { groupId: "group-1", name: "Created" },

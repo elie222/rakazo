@@ -40,7 +40,10 @@ export function searchSheetRows(
   query: string,
   hits: readonly SearchHit[],
 ): SearchSheetRow[] {
-  const bots = spaces.flatMap((space) => space.bots);
+  // An archived bot is in the roster only while its read-only chat opens; search skips it.
+  const bots = spaces
+    .flatMap((space) => space.bots)
+    .filter((bot) => !("archivedAt" in bot && bot.archivedAt));
   const groups = spaces.flatMap((space) => space.groups);
   const needle = query.trim().toLowerCase();
   const rows: SearchSheetRow[] = [

@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
@@ -101,6 +102,7 @@ describe("MCP connector managed stdio launch", () => {
 
   function connectorFor(
     options: {
+      stdioEnabled?: boolean;
       allowedCommands?: string[];
       idleMs?: number;
       server?: typeof SERVER;
@@ -132,7 +134,7 @@ describe("MCP connector managed stdio launch", () => {
     };
     const secrets = { load: vi.fn(async () => JSON.stringify({ env })) };
     return new McpConnector(prisma as never, secrets as never, {
-      stdioEnabled: true,
+      stdioEnabled: options.stdioEnabled ?? true,
       allowedCommands: options.allowedCommands ?? ["npx"],
       packagesDir: root,
       idleMs: options.idleMs,
@@ -173,17 +175,33 @@ describe("MCP connector managed stdio launch", () => {
     }
   });
 
-  it("checks the configured launcher against the allowlist before installing", async () => {
-    const connector = connectorFor({ allowedCommands: ["node"] });
-    try {
-      const tools = await connector.discoverTools(contextFor());
-      expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
-      expect(tools[0]?.description).toContain("allowlist");
-      expect(await readdir(root)).toEqual([]);
-    } finally {
-      await connector.close();
-    }
-  });
+  it.each([
+    [{ allowedCommands: ["node"] }, "This stdio command isn't allowed here"],
+    [{ stdioEnabled: false }, "Stdio MCP servers aren't available here"],
+  ])(
+    "refuses a server this deployment can't run before installing, as a warning",
+    async (options, reason) => {
+      const connector = connectorFor(options);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        const tools = await connector.discoverTools(contextFor());
+        expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+        expect(tools[0]?.description).toContain(reason);
+        expect(await readdir(root)).toEqual([]);
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server mail", { reason });
+        await vi.waitFor(() =>
+          expect(healthWrites()).toContainEqual(
+            expect.objectContaining({ healthStatus: "error", healthMessage: reason }),
+          ),
+        );
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    },
+  );
 
   it("tells the model why an assigned server is unavailable, with secrets redacted", async () => {
     await publishPackage(root);

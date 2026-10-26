@@ -78,6 +78,22 @@ export interface PortableFile {
   executable?: boolean;
 }
 
+/**
+ * A workspace file too large to hold in memory. Read `body` to the end before asking the export
+ * for its next file.
+ */
+export interface StreamedPortableFile {
+  path: string;
+  body: AsyncIterable<Uint8Array>;
+  executable?: boolean;
+}
+
+/** Bounds a workspace export may enforce up front, before copying anything. */
+export interface WorkspaceExportLimits {
+  maxBytes: number;
+  maxFiles: number;
+}
+
 export interface ComputerRef {
   id: string;
   botId: string;
@@ -784,6 +800,8 @@ export interface MessagingCapabilities {
 export interface MessagingPlatformDescriptor {
   provider: string;
   capabilities: MessagingCapabilities;
+  /** The line people message to reach this deployment (a phone number), when it has one. */
+  address?: string;
 }
 
 /** Send into an existing conversation, addressed by its opaque thread id. */

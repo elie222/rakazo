@@ -15,8 +15,8 @@ so validation covers CI's Node baseline. Keep package caches inside the ignored
 `.cache/` directory if the sandbox needs a writable cache.
 Install dependencies, generate the database client, and run workspace typechecks,
 affected offline unit tests, and production builds. Use fake build credentials as
-in CI. This task may run on macOS; leave Linux-only host-script checks and desktop
-Electron E2E to CI, and report those limits. Check supported Node versions and run
+in CI. Run Linux host-script checks; leave desktop Electron E2E to CI and report
+that limit. Check supported Node versions and run
 focused tests for any fixes. Keep fixes strictly related to the updates. Do not
 change workflows, agent instructions, secrets, or unrelated code. Do not run
 live-provider tests.

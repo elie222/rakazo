@@ -61,6 +61,8 @@ export interface AppEnv {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
+  voiceSummaryMinChars: number | undefined;
   sandboxSupervisorUrl: string;
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
@@ -223,6 +225,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
@@ -315,6 +318,15 @@ function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMon
     release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
     pseudonymSecret: monitoringPseudonymSecret(source),
   };
+}
+
+function voiceSummaryMinCharsFromEnv(value: string | undefined): number | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) === 0) {
+    throw new Error("VOICE_SUMMARY_MIN_CHARS must be a positive whole number of characters");
+  }
+  return Number(raw);
 }
 
 function optional(value: string | undefined): string | undefined {

@@ -61,8 +61,6 @@ export function PeerMessagesOverlay({
   }, [history.data, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
 
-  const title = `${botName} · ${peerBotName}`;
-
   return (
     <Dialog
       open
@@ -81,8 +79,9 @@ export function PeerMessagesOverlay({
               <BotAvatar color={botColor} identity={botId} size={28} />
               <BotAvatar color={peerBotColor} identity={peerBotId} size={28} />
             </div>
-            <DialogTitle className="truncate text-[15.5px] font-medium text-foreground" dir="auto">
-              {title}
+            <DialogTitle className="flex min-w-0 gap-2 text-[15.5px] font-medium" dir="auto">
+              <span className="truncate text-foreground">{botName}</span>
+              <span className="truncate text-muted-foreground">{peerBotName}</span>
             </DialogTitle>
           </div>
           <DialogClose aria-label={t`Close`} render={<Button variant="ghost" size="sm" />}>

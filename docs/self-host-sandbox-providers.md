@@ -11,6 +11,7 @@ for the sharing and persistence contract.
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
 | Managed remote desktop | `e2b` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -59,6 +60,64 @@ pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are di
 policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
 
+## `kubernetes`
+
+Each computer is one pod in a namespace you choose, created from the published computer image.
+The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
+`KUBECONFIG`), so they normally run in the same cluster. No supervisor or Docker socket is involved.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `KUBERNETES_SANDBOX_NAMESPACE` | `rakazo-sandboxes` | Namespace for computer pods; it must exist |
+| `KUBERNETES_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a digest in production |
+| `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME` | unset | For example `kata` or `gvisor` for a VM or user-space kernel boundary |
+| `KUBERNETES_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` | unset | Container limits, such as `2` and `4Gi` |
+| `KUBERNETES_SANDBOX_POD_LABELS` / `_POD_ANNOTATIONS` | unset | JSON objects of strings, merged into every pod |
+| `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
+
+Each pod runs the image's own user (uid 1000) with no service account token and no service links,
+and is labelled `app.kubernetes.io/name=rakazo-computer` and `rakazo-bot-id=<bot id>`. Commands,
+file transfers and workspace save and restore go through `pods/exec`; save and restore stream the
+home as one tar archive. Screens use the image's desktop gateway on the pod IP, so the API, the
+worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
+display ports from `6100` upward. Pods are ephemeral: the
+saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+
+### Mounted home (optional)
+
+By default each computer's home is copied in when it starts and saved back when it stops. Set
+`KUBERNETES_SANDBOX_HOME_CLAIM` to the PersistentVolumeClaim that holds the API's `DATA_DIR` to
+mount `homes/<home key>` from it at the workspace instead, so the home is never copied, like a
+local Docker computer. The claim must be in the computer namespace, so in practice the computers
+run in the API's namespace. Because a ReadWriteOnce volume is attached to one node,
+`KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE` and `KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS` (a JSON
+object) are required with it and become a required pod affinity to the pods that hold the volume,
+for example `{"app":"rakazo-api"}`. The pod gets `fsGroup: 1000`. An existing pod without the home
+volume keeps copying its files until it is stopped; its next fresh pod mounts the saved home. This applies only to the local home store; with
+`OBJECT_STORAGE_BUCKET` set, the home claim is ignored and homes are copied as usual.
+
+The API and worker service account needs this in the computer namespace:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rakazo-computers
+  namespace: rakazo-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+```
+
+Bind it to the service account the API and worker run as with a `RoleBinding`. A NetworkPolicy
+that admits only the API, worker and web pods to the computer pods, and denies their egress to
+private ranges, is recommended.
+
 ## `none`
 
 Runs API/web without provisioning bot computers.
@@ -88,6 +147,47 @@ Docker and this-Mac computers are never capped. The next use resumes it. Asking 
 takeover restarts the idle timer, and on providers that do not bill while running the run
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
+
+### Computer run time
+
+Each stretch a computer runs at its provider is a row in `computer_runs`, attributed to the
+computer's owner and space. A run starts when the computer becomes ready (boot time is not
+counted) and ends when it stops. `endReason` says how: `stopped`, `idle`, `active_limit`,
+`replaced` (update, recovery, or reset), `gone` (the provider had already stopped or lost
+the sandbox), `deleted`, or `reconciled` (the end was never seen; the worker found the
+computer no longer running). For `gone` and `reconciled`, `endedAt` is when Rakazo
+noticed, so the true end may be earlier. The worker also opens the run of a running
+computer whose start was not recorded. An open run whose computer still reads as running
+is a computer that may be left on. Deleting a user or space keeps their runs with
+`userId` and `spaceId` cleared. This-Mac computers are not recorded.
+
+The table has row-level security, so query it as the database owner. Timestamps are UTC.
+Run hours per user over the last 7 days, counting runs still open up to now:
+
+```sql
+WITH now_utc AS (SELECT now() AT TIME ZONE 'UTC' AS at)
+SELECT r."userId", u.email,
+       round(sum(extract(epoch FROM
+         coalesce(r."endedAt", n.at) - greatest(r."startedAt", n.at - interval '7 days')
+       )) / 3600, 1) AS hours
+FROM computer_runs r
+CROSS JOIN now_utc n
+LEFT JOIN "user" u ON u.id = r."userId"
+WHERE coalesce(r."endedAt", n.at) > n.at - interval '7 days'
+GROUP BY r."userId", u.email
+ORDER BY hours DESC;
+```
+
+Runs open longer than 6 hours:
+
+```sql
+SELECT r."computerId", r."userId", r."spaceId", r.kind, r."startedAt",
+       round(extract(epoch FROM (now() AT TIME ZONE 'UTC') - r."startedAt") / 3600, 1) AS hours_open
+FROM computer_runs r
+WHERE r."endedAt" IS NULL
+  AND r."startedAt" < (now() AT TIME ZONE 'UTC') - interval '6 hours'
+ORDER BY r."startedAt";
+```
 
 ### Linux background-work inspection
 

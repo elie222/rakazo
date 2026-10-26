@@ -2,6 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   CARD_TITLE_ESCAPED_CHARACTERS,
+  composioBatchActions,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -144,6 +145,9 @@ function webFetchSite(toolName: string, args: Record<string, unknown>): string |
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
+  // A Composio batch is named by the actions it runs; "…" stands for an entry that names none.
+  const batch = composioBatchActions(toolName, args);
+  if (batch?.slugs.length) return [...batch.slugs, ...(batch.complete ? [] : ["…"])].join(", ");
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
@@ -172,14 +176,43 @@ function formatApprovalDetail(
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
   const keys =
-    toolName === "web_fetch" ? ["url"] : ["collection", "title", "to", "subject", "amount", "body"];
-  for (const key of keys) {
-    const value = args[key];
-    if (value == null || value === "") continue;
-    lines.push(`${key}: ${String(value)}`);
+    toolName === "web_fetch"
+      ? ["url"]
+      : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
+  const pushArgs = (values: Record<string, unknown>) => {
+    for (const key of keys) {
+      const value = values[key];
+      if (value == null || value === "") continue;
+      lines.push(`${key}: ${String(value)}`);
+    }
+  };
+  if (composioBatchActions(toolName, args)) {
+    for (const item of args.tools as unknown[]) {
+      const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const slug = typeof entry.tool_slug === "string" && entry.tool_slug.trim();
+      lines.push(slug || "…");
+      pushArgs(objectArguments(entry.arguments));
+    }
+  } else {
+    pushArgs(args);
   }
   if (lines.length === 0) return undefined;
   return lines.join("\n");
+}
+
+/** A batch entry's arguments, which Composio accepts as an object or a JSON string. */
+function objectArguments(value: unknown): Record<string, unknown> {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
 }
 
 function pickScopeLabel(args: Record<string, unknown>): string | undefined {

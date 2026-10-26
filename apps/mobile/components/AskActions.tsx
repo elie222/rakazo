@@ -3,21 +3,17 @@ import { useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
+import type { AskAction } from "../lib/ask-action-label";
+import { askActionLabel } from "../lib/ask-action-label";
 import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
-type AskAction = { id: string; label: string };
-
-const KNOWN_ASK_ACTION_LABELS: Record<string, string> = {
-  allow: "Allow once",
-  always: "Always allow",
-  deny: "Deny",
-};
-
 export function AskActions({
   actions,
+  site,
+  approval,
   instructions,
   disabled,
   onAnswer,
@@ -25,6 +21,8 @@ export function AskActions({
   onAccessibilityAction,
 }: {
   actions: AskAction[];
+  site?: string;
+  approval: boolean;
   instructions?: string;
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
@@ -37,7 +35,6 @@ export function AskActions({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
   const submitting = pendingAction !== null;
-  const approval = actions.some((action) => action.id === "allow");
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -126,9 +123,7 @@ export function AskActions({
               >
                 {pendingAction === action.id
                   ? t("Sending…")
-                  : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
-                    ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
-                    : action.label}
+                  : askActionLabel(action, { approval, site }, t)}
               </Text>
             </Pressable>
           );

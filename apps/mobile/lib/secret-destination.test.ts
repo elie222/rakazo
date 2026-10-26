@@ -13,7 +13,7 @@ describe("mobile credential destination label", () => {
       origin: "",
       auth: { type: "command" },
     });
-    expect(label).toBe(`${t("Command variable")} · $NETBIRD_SETUP_KEY`);
+    expect(label).toBe(`${t("Command variable")} $NETBIRD_SETUP_KEY`);
     expect(label).not.toBe("");
   });
 
@@ -46,7 +46,7 @@ describe("mobile credential destination label", () => {
       origin: "",
       auth: { type: "command" },
     });
-    expect(label).toBe(`${localized} · $API_TOKEN`);
+    expect(label).toBe(`${localized} $API_TOKEN`);
     expect(label).not.toContain("Command variable");
   });
 });

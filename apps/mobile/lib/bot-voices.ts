@@ -112,11 +112,11 @@ export async function deviceVoices(): Promise<Voice[]> {
     .sort((a, b) => a.identifier.localeCompare(b.identifier));
 }
 
-/** "en-us-x-iol-local" reads as "en-US · iol": the engine's names are ids, not labels. */
+/** "en-us-x-iol-local" reads as "iol (en-US)": the engine's names are ids, not labels. */
 export function voiceLabel(voice: Voice): string {
   const code = voice.identifier.match(/-x-([a-z0-9]+)-/i)?.[1];
   const name = code ?? (voice.name !== voice.identifier ? voice.name : voice.identifier);
-  return voice.language ? `${voice.language} · ${name}` : name;
+  return voice.language ? `${name} (${voice.language})` : name;
 }
 
 /** The voice a bot speaks with, handing it one no other bot has yet if it has none. */

@@ -34,6 +34,7 @@ import {
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
+  createIdleComputerSweeper,
   createJobReconciler,
   createMessagingContextLoader,
   createMessagingTeamChatHistory,
@@ -47,7 +48,6 @@ import {
   createTicketChangeNotifier,
   createWebProvider,
   deploymentModelUsageLookup,
-  destroyBot,
   EmailEmulator,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -80,11 +80,12 @@ import {
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   toTeamChatInbound,
+  verifyModelServesAgents,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
-import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -118,6 +119,7 @@ import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { deleteAccountContent } from "./account-deletion.js";
 import { mountAppAssociation, nativePasskeys } from "./app-association.js";
 import { storeInboundAttachment } from "./artifacts.js";
 import { createBillingService } from "./billing.js";
@@ -149,6 +151,7 @@ import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { createAuthResponseAudit } from "./security-audit.js";
+import { createSpeechSummarizer } from "./speech-summary.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
@@ -353,8 +356,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     env.mcpAllowPrivateEndpoint,
   );
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins();
+  const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
+  void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
@@ -401,7 +405,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           });
         })
       : undefined;
-  if (localEmailEmulator && !isLoopbackHost(env.apiHost)) {
+  if (localEmailEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
@@ -488,34 +492,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     beforeDeleteUser: async (userId) => {
       // First, so a provider failure aborts deletion before anything is destroyed.
       await billing?.cancelForDeletedUser(userId);
-      const bots = await prisma.bot.findMany({
-        where: { userId },
-        select: { id: true, userId: true, spaceId: true, name: true, archivedAt: true },
-      });
-      await Promise.all(
-        bots.map((bot) =>
-          destroyBot(
-            {
-              prisma,
-              sandbox,
-              home,
-              jobs,
-              artifacts,
-              dataDir: env.dataDir,
-              messagingInstallations,
-            },
-            bot,
-            {
-              operationId: `account-delete:${userId}`,
-              traceId: `account-delete:${userId}`,
-              spaceId: bot.spaceId,
-              userId,
-              botId: bot.id,
-              signal: new AbortController().signal,
-            },
-            { deleteMemories: true },
-          ),
-        ),
+      await deleteAccountContent(
+        {
+          prisma,
+          sandbox,
+          home,
+          jobs,
+          artifacts,
+          dataDir: env.dataDir,
+          messagingInstallations,
+        },
+        userId,
       );
       await removePiUserSessions(env.dataDir, userId);
       await pushTokens
@@ -581,6 +568,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     secretStore: secrets,
     secretHttp: remoteConnectors,
     mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+    mcpStdio: { stdioEnabled: env.mcpStdioEnabled, allowedCommands: env.mcpStdioAllowedCommands },
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
     dataDir: env.dataDir,
@@ -635,11 +623,23 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           prisma,
           securityEventRetentionDays(),
         ),
+        reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
       })
     : undefined;
   reconciler?.start();
 
   const router = createRouter({
+    speechSummary:
+      env.voiceSummaryMinChars === undefined
+        ? undefined
+        : {
+            minChars: env.voiceSummaryMinChars,
+            summarize: createSpeechSummarizer({
+              prisma,
+              runtime,
+              resolveModel: executor.resolveModel,
+            }),
+          },
     analytics,
     cloudAgent,
     codexCatalog,
@@ -663,6 +663,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
+    // The scripted runtime never calls a provider, so neither does its connect.
+    modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
     dataDir: env.dataDir,
     billing,
@@ -670,6 +672,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
+      addresses: Object.fromEntries(
+        (messaging?.platforms() ?? []).flatMap((platform) =>
+          platform.address ? [[platform.provider, platform.address]] : [],
+        ),
+      ),
       openSignup: env.messagingOpenSignup,
     },
     env: {
@@ -799,7 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           c.req.query("state") ?? "",
           c.req.query("code") ?? "",
         );
-        return c.redirect(new URL("/app?messaging", env.webOrigin).toString());
+        return c.redirect(new URL("/app?settings=messaging", env.webOrigin).toString());
       } catch {
         return c.text("Slack connection failed. Return to Rakazo and try again.", 400);
       }
@@ -1306,10 +1313,6 @@ export function isTrustedOrigin(
     [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(originVariants),
   );
   return allowed.has(origin);
-}
-
-function isLoopbackHost(host: string): boolean {
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
 }
 
 function originVariants(origin: string): string[] {

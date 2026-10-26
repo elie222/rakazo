@@ -86,13 +86,12 @@ export function BillingSettingsPanel() {
             <Skeleton className="h-5 w-24" />
           )}
           {price ? (
-            <p className="mt-3 text-[14px] text-foreground/75">
-              {price}
+            <p className="mt-3 flex flex-wrap gap-x-2 text-[14px] text-foreground/75">
+              <span>{price}</span>
               {seats > 1 ? (
-                <>
-                  {" · "}
+                <span className="text-muted-foreground">
                   <Plural value={seats} one="# seat" other="# seats" />
-                </>
+                </span>
               ) : null}
             </p>
           ) : null}

@@ -1,8 +1,8 @@
 import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { selectContext } from "./context-selection.js";
-import { selectBuiltinToolsForRun } from "./executor.js";
 import { resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
 const instructions = [
   "You are a helpful assistant for a small bakery. Answer customer questions about opening hours, prices, allergens and custom cake orders. Keep replies short and friendly, and never promise a delivery time you cannot confirm.",

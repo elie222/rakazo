@@ -12,6 +12,7 @@ export function ComposerError({
   runErrorId,
   onRunErrorPresented,
   onOpenModels,
+  onOpenConnections,
   onDismissError,
   textareaRef,
 }: {
@@ -20,6 +21,7 @@ export function ComposerError({
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
   onOpenModels: () => void;
+  onOpenConnections: () => void;
   onDismissError: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
@@ -62,6 +64,17 @@ export function ComposerError({
   const normalizedRunError = runError
     ? normalizeRunError(runError, translateRunError, i18n.locale || "en")
     : null;
+  // The one action that fixes the failure; a transient one already says to try again.
+  const recovery = sendError ? undefined : normalizedRunError?.recovery;
+  const recoveryAction =
+    recovery === "model"
+      ? { label: t`Choose a model`, onClick: onOpenModels }
+      : recovery === "connection"
+        ? {
+            label: normalizedRunError?.kind === "auth" ? t`Replace key` : t`Connect a model`,
+            onClick: onOpenConnections,
+          }
+        : null;
 
   return sendError || runError ? (
     <div
@@ -83,6 +96,19 @@ export function ComposerError({
         ) : (
           (sendError ?? normalizedRunError?.summary ?? null)
         )}
+        {recoveryAction ? (
+          <>
+            {" "}
+            <button
+              type="button"
+              data-testid="composer-error-action"
+              onClick={recoveryAction.onClick}
+              className="font-medium underline underline-offset-2 hover:text-foreground"
+            >
+              {recoveryAction.label}
+            </button>
+          </>
+        ) : null}
         {!sendError && runError ? (
           <details key={runError} className="mt-1">
             <summary className="w-fit cursor-pointer">{t`Details`}</summary>

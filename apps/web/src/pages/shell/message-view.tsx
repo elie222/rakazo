@@ -331,9 +331,11 @@ export const MessageView = memo(function MessageView({
                 key={i}
                 className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
               >
+                <span className="shrink-0">
+                  {messageProviderLabel(block.provider, block.transport)}
+                </span>
                 <span>
-                  {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
-                  {block.text}
+                  {block.fromLabel}: {block.text}
                 </span>
               </div>
             );

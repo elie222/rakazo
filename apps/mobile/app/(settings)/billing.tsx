@@ -22,7 +22,7 @@ export default function BillingScreen() {
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
   const refresh = useCallback(async () => {
-    const next = await rpc<BillingStatus>("billing/status");
+    const next = await rpc("billing/status");
     setStatus(next);
     setAmount(
       ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
@@ -32,7 +32,7 @@ export default function BillingScreen() {
     useCallback(() => {
       let active = true;
       const load = () => {
-        void rpc<BillingStatus>("billing/status")
+        void rpc("billing/status")
           .then((next) => {
             if (active) {
               setStatus(next);
@@ -120,7 +120,7 @@ export default function BillingScreen() {
                     await rpc("billing/setMonthlyCredits", { amountCents: amount });
                     await refresh();
                   } else {
-                    const result = await rpc<{ url: string }>("billing/purchaseCredits", {
+                    const result = await rpc("billing/purchaseCredits", {
                       amountCents: amount,
                       monthly: true,
                     });
@@ -139,7 +139,7 @@ export default function BillingScreen() {
               onPressAction={({ nativeEvent }) =>
                 void action(async () => {
                   const amountCents = ModelCreditAmountSchema.parse(Number(nativeEvent.event));
-                  const result = await rpc<{ url: string }>("billing/purchaseCredits", {
+                  const result = await rpc("billing/purchaseCredits", {
                     amountCents,
                     monthly: false,
                   });
@@ -159,7 +159,7 @@ export default function BillingScreen() {
                 disabled={pending}
                 onPress={() =>
                   void action(async () => {
-                    const result = await rpc<{ url: string }>("billing/portal");
+                    const result = await rpc("billing/portal");
                     await Linking.openURL(result.url);
                   })
                 }

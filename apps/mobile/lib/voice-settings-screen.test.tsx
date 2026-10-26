@@ -23,6 +23,7 @@ vi.mock("expo-router", () => ({
       if (mocks.focused) callback();
     }, [callback, mocks.focused]);
   },
+  useLocalSearchParams: () => ({}),
 }));
 vi.mock("./call-sounds", () => ({
   loadCallSoundsEnabled: mocks.calls,

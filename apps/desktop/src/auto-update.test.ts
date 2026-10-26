@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ElectronAutoUpdater, UpdaterEvent } from "./auto-update.js";
 import {
   classifyUpdaterFailure,
   DesktopUpdateController,
-  type ElectronAutoUpdater,
   initialUpdateState,
   MIN_CHECK_INTERVAL_MS,
   reduceUpdateState,
   shouldCheck,
-  type UpdaterEvent,
   updaterSupport,
 } from "./auto-update.js";
 

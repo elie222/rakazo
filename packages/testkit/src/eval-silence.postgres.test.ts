@@ -133,7 +133,7 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-silence-eval-"));
       let evidence: Evidence | undefined;
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(
           {
             ...scenario,

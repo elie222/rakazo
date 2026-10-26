@@ -89,6 +89,9 @@ describe("Pi runtime errors", () => {
     '402: {"message":"This request requires more credits.","code":402}',
     "You have no credits remaining. Add credits to continue using the API.",
     'xai API error (400): 400 "Incorrect API key provided."',
+    "Your authentication token has expired. Please try refreshing it.",
+    'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
+    "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',
     'opencode API error (410): {"type":"ModelDeprecated","message":"Model example-free has been deprecated."}',
     '404: {"message":"No endpoints found that support tool use.","code":404}',
@@ -105,6 +108,8 @@ describe("Pi runtime errors", () => {
   it.each([
     "Provider finish_reason: error",
     "Provider stopped with: MALFORMED_FUNCTION_CALL",
+    "Unhandled stop reason: MALFORMED_RESPONSE",
+    "This request was blocked as it seems to violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model outputs.",
     "Provider returned an empty response",
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",

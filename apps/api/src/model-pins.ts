@@ -3,20 +3,24 @@ import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { runAsSystem } from "@rakazo/db";
+import { modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 
-/** The actor's active compatible bot, routine and backup pins matching `filter`. */
+/**
+ * The actor's active compatible bot, routine and role pins on `modelId`. Role rows come from the
+ * account's models (spaceId null) and from the Spaces that override them.
+ */
 async function compatibleModelPins(
   deps: RouterDeps,
   actor: Actor,
-  filter: { spaceId?: string; modelId: string | { notIn: string[] } },
+  modelId: string | { notIn: string[] },
 ) {
   const provider = OPENAI_COMPATIBLE_PROVIDER_ID;
-  const where = { userId: actor.userId, ...filter };
+  const where = { userId: actor.userId, modelId };
   const pin = { spaceId: true, modelId: true } as const;
+  const role = { modelId: true, role: true, position: true, credentialId: true } as const;
   // A connection is the account's, so its pins are checked in every Space it is used in.
-  const [bots, routines, roleChoices] = await runAsSystem(
+  const [bots, routines, accountRoles, spaceRoles] = await runAsSystem(
     "model pins across the account's Spaces",
     () =>
       Promise.all([
@@ -28,16 +32,24 @@ async function compatibleModelPins(
           where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
           select: { ...pin, name: true },
         }),
+        deps.prisma.userModelRoleChoice.findMany({ where: { ...where, provider }, select: role }),
         deps.prisma.spaceModelRoleChoice.findMany({
-          where: { ...where, provider },
-          select: { ...pin, role: true, position: true, credentialId: true },
+          where: {
+            ...where,
+            provider,
+            spaceMember: { settingOverrides: { some: { setting: "models" } } },
+          },
+          select: { ...role, spaceId: true },
         }),
       ]),
   );
-  return { named: [...bots, ...routines], backups: roleChoices };
+  return {
+    named: [...bots, ...routines],
+    backups: [...accountRoles.map((row) => ({ ...row, spaceId: null })), ...spaceRoles],
+  };
 }
 
-type ModelPinRow = { spaceId: string; modelId: string | null; credentialId?: string | null };
+type ModelPinRow = { spaceId: string | null; modelId: string | null; credentialId?: string | null };
 
 /** Refusal naming the bots and routines (plus "backup models") left on a dropped model. */
 function refuseModelPins(
@@ -61,43 +73,25 @@ export async function assertNoDanglingModelPins(
   actorDefault: string,
 ) {
   const stored = secret.kind === "openai_compatible" ? (secret.enabledModelIds ?? []) : [];
-  const [preferences, pins] = await Promise.all([
-    deps.prisma.spaceModelPreference.findMany({
-      where: {
-        userId: actor.userId,
-        credential: { userId: actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID },
-      },
-      select: { spaceId: true, modelId: true, credentialId: true },
-    }),
-    compatibleModelPins(deps, actor, { modelId: { notIn: stored } }),
-  ]);
-  const defaults = new Map(
-    preferences
-      .filter((row) => row.credentialId === connection.id)
-      .map((row) => [row.spaceId, usableModelId(row.modelId)]),
-  );
-  defaults.set(actor.spaceId, usableModelId(actorDefault));
+  const pins = await compatibleModelPins(deps, actor, { notIn: stored });
+  // The connection's own model is the account's, so it stays enabled in every Space.
+  const defaultModel = usableModelId(actorDefault);
   const dangling = new Set<ModelPinRow>();
   for (const row of [...pins.named, ...pins.backups] as ModelPinRow[]) {
-    if (!row.modelId || row.modelId === defaults.get(row.spaceId)) continue;
+    if (!row.modelId || row.modelId === defaultModel) continue;
     // A row pinned to a connection runs only there.
     if (row.credentialId) {
       if (row.credentialId === connection.id) dangling.add(row);
       continue;
     }
+    // Which connection serves a model is the account's choice, the same in every Space.
     const selected = await findConnectedModelCredential(
       deps.prisma,
       deps.secrets,
-      { ...actor, spaceId: row.spaceId },
+      actor,
       OPENAI_COMPATIBLE_PROVIDER_ID,
       row.modelId,
-      {
-        replacement: {
-          credentialId: connection.id,
-          secret,
-          defaultModel: defaults.get(row.spaceId) ?? null,
-        },
-      },
+      { replacement: { credentialId: connection.id, secret, defaultModel } },
     );
     if (selected?.id === connection.id || !selected) dangling.add(row);
   }
@@ -106,8 +100,8 @@ export async function assertNoDanglingModelPins(
 
 /**
  * `models.setDefault` on an openai-compatible connection: a listed secret only accepts an
- * effective id. It changes only this space's default and never the secret, so the only pins
- * it can strand are this space's pins on an outgoing default that is outside the stored list.
+ * effective id. It changes the connection's own model and never the secret, so the only pins
+ * it can strand are pins on an outgoing default that is outside the stored list.
  */
 export async function assertCompatibleDefaultChange(
   deps: RouterDeps,
@@ -123,15 +117,18 @@ export async function assertCompatibleDefaultChange(
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
   if (!outgoing) return;
-  const pins = await compatibleModelPins(deps, actor, {
-    spaceId: actor.spaceId,
-    modelId: outgoing,
-  });
+  const [pins, target] = await Promise.all([
+    compatibleModelPins(deps, actor, outgoing),
+    modelRoleTarget(deps.prisma, actor),
+  ]);
+  const replacedSpaceId = target.scope === "space" ? actor.spaceId : null;
   // The main model's own row is the choice being replaced, not a pin left behind.
   refuseModelPins(
     {
       ...pins,
-      backups: pins.backups.filter((row) => !(row.role === "main" && row.position === 0)),
+      backups: pins.backups.filter(
+        (row) => !(row.role === "main" && row.position === 0 && row.spaceId === replacedSpaceId),
+      ),
     },
     () => true,
   );

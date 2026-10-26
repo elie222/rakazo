@@ -91,6 +91,7 @@ describe("computer recovery preserves live work", () => {
       create: async () => undefined,
       advance: async () => false,
       revisions: async () => new Map(),
+      kinds: async () => new Map(),
     });
     const hydrate = vi.spyOn(home, "hydrate");
     const provision = vi.spyOn(deps.sandbox, "provision");

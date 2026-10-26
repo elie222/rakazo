@@ -106,7 +106,12 @@ vi.mock("react-native", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({
-  useMobileTokens: () => ({ mutedForeground: "#888", background: "#FFF", workingDot: "#3FA266" }),
+  useMobileTokens: () => ({
+    mutedForeground: "#888",
+    background: "#FFF",
+    workingDot: "#3FA266",
+    secondary: "#EEE",
+  }),
 }));
 
 const SHAPE = "#2A92FE::shape_2";
@@ -256,6 +261,12 @@ describe("avatar motion on mobile", () => {
     expect(awake()).toBe(0);
     expect(motion.springs).not.toContainEqual([1, MORPH_SPRING]);
     expect(motion.springs.at(-1)?.[0]).toBe(0);
+  });
+
+  it("holds a photo's place with a plain circle while the photo loads", () => {
+    render(<BotAvatar color="data:image/png;base64,AAAA" identity="bot-p" size={28} />);
+    const circle = container.querySelector('[data-bg="#EEE"]');
+    expect(circle?.getAttribute("data-width")).toBe("28");
   });
 
   it("keeps tiny and photo avatars still", () => {

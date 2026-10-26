@@ -5,6 +5,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { CallRequestBlock } from "@rakazo/core";
 import {
   CALL_CLIENT_NONCE_PREFIX,
+  callIdFromClientNonce,
   callRequestBlock,
   callRequestClientNonce,
   phoneCallSettings,
@@ -15,6 +16,8 @@ import {
   createThreadMessageInTransaction,
   runAsSystem,
 } from "@rakazo/db";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { isUniqueViolation, publishMessage } from "./run-messages.js";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -247,4 +250,100 @@ export async function reconcileCallRequests(deps: { prisma: PrismaClient; jobs: 
         callExpireJob(message.threadId, block.callId, new Date(block.expiresAt)),
       );
   }
+}
+
+/** end_call: titles the call's chat marker and records that the call ended. */
+export async function endCallFromTool(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; threadId: string; botId: string; trigger: string },
+  threadId: string,
+  botId: string,
+  args: Record<string, unknown>,
+  callClientNonceForRun: string | null | undefined,
+  callEndRun: boolean,
+) {
+  const callId = callIdFromClientNonce(callClientNonceForRun);
+  const title = String(args.title ?? "")
+    .trim()
+    .slice(0, 40);
+  const farewell = String(args.farewell ?? "")
+    .trim()
+    .slice(0, 160);
+  // The client may have hung up first and already closed the card: title that
+  // marker instead of leaving a second one behind. The marker's deterministic
+  // nonce is the idempotency key, so a resumed run cannot double-publish.
+  const nonce = callId ? `${CALL_CLIENT_NONCE_PREFIX}${callId}:marker` : undefined;
+  const findMarker = async () =>
+    nonce
+      ? await deps.prisma.message.findUnique({
+          where: { threadId_clientNonce: { threadId: threadId, clientNonce: nonce } },
+          select: { id: true, blocks: true },
+        })
+      : null;
+  let existing = await findMarker();
+  let markerId = "";
+  let changed = true;
+  if (!existing) {
+    try {
+      const marker = await publishMessage(
+        deps,
+        run,
+        "bot",
+        [{ kind: "voice_call", ...(callId ? { callId } : {}), title, farewell }],
+        true,
+        nonce,
+      );
+      markerId = marker?.id ?? "";
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      existing = await findMarker();
+    }
+  }
+  if (existing) {
+    const before = Array.isArray(existing.blocks) ? (existing.blocks as MessageBlock[]) : [];
+    const blocks = before.map((block) =>
+      block.kind === "voice_call" && block.callId === callId
+        ? { ...block, title, ...(farewell ? { farewell } : {}) }
+        : block,
+    );
+    changed = JSON.stringify(blocks) !== JSON.stringify(before);
+    if (changed) {
+      await deps.prisma.message.update({
+        where: { id: existing.id },
+        data: { blocks: blocks as Prisma.InputJsonValue },
+      });
+      await deps.events.append({
+        spaceId: run.spaceId,
+        threadId: threadId,
+        botId,
+        runId: run.id,
+        type: "thread.message.updated",
+        payload: { messageId: existing.id, role: "bot", blocks, callId },
+      });
+    }
+    markerId = existing.id;
+  }
+  if (changed) {
+    await deps.events.append({
+      spaceId: run.spaceId,
+      threadId: threadId,
+      botId,
+      runId: run.id,
+      type: "thread.call.ended",
+      payload: {
+        botId,
+        threadId: threadId,
+        runId: run.id,
+        callId,
+        title,
+        farewell,
+        messageId: markerId,
+      },
+    });
+  }
+  return {
+    ok: callEndRun
+      ? "The call is already closed and now carries your title. The user is reading, not listening: finish any remaining work as a normal chat reply with full formatting."
+      : "Call ended and your farewell was spoken. The user is now reading, not listening: finish any remaining work as a normal chat reply with full formatting.",
+  };
 }

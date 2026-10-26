@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import type {
   AdapterContext,
   AgentHomeStore,
@@ -6,7 +5,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { destroyBot, resolveAgentHomePath, toComputerRef } from "@rakazo/adapters";
+import { destroyBot, removeAgentHome, toComputerRef } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -14,6 +13,7 @@ import {
   deleteClaimedSpaceForMember,
   listClaimedSpaceBots,
   listClaimedSpaceComputers,
+  recordComputerRunEnd,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
@@ -159,6 +159,7 @@ export async function deleteSpaceWithContent(
         },
         data: { state: "stopped", providerRef: null },
       });
+      await recordComputerRunEnd(deps.prisma, computer, "deleted");
     }
     await assertClaim();
     claimActive = false;
@@ -170,12 +171,7 @@ export async function deleteSpaceWithContent(
     // Rows are gone; leftover stored files are unreachable, so cleanup failures only log.
     const cleanup = await Promise.allSettled([
       ...deleted.artifactKeys.map((storageKey) => deps.artifacts.remove(storageKey, context())),
-      ...deleted.homeKeys.map((homeKey) =>
-        rm(resolveAgentHomePath(deps.home, homeKey, deps.dataDir), {
-          recursive: true,
-          force: true,
-        }),
-      ),
+      ...deleted.homeKeys.map((homeKey) => removeAgentHome(deps.home, homeKey, deps.dataDir)),
     ]);
     for (const result of cleanup) {
       if (result.status === "rejected") getLogger().error("space file cleanup", result.reason);

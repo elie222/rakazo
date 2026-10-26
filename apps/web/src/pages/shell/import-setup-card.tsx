@@ -4,7 +4,7 @@ import { isRetiredImportSetup } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
-import { SuccessPop } from "../../components/ai/primitives";
+import { BuiCard, SuccessPop } from "../../components/ai/primitives";
 import { rpc } from "../../lib/rpc";
 import { useImportStatusText } from "./import-status";
 
@@ -76,21 +76,18 @@ export function ImportSetupCard({
   // Rows that cannot be checked keep the full list.
   if (state && block.items.every((item) => isDone(item, state) === true)) {
     return (
-      <div
+      <BuiCard
         data-testid="import-setup-card"
         data-complete="true"
-        className="w-[420px] max-w-full rounded-[20px] bg-card px-[18px] py-[14px] text-[14px] text-foreground"
+        className="w-[420px] max-w-full px-[18px] py-[14px] text-[14px] text-foreground"
       >
         <SuccessPop label={t`Setup complete`} />
-      </div>
+      </BuiCard>
     );
   }
 
   return (
-    <div
-      data-testid="import-setup-card"
-      className="w-[420px] max-w-full rounded-[20px] bg-card px-[18px] py-[14px]"
-    >
+    <BuiCard data-testid="import-setup-card" className="w-[420px] max-w-full px-[18px] py-[14px]">
       <p className="text-[15.5px] text-foreground/90">
         <Trans>Finish setting up</Trans>
       </p>
@@ -103,7 +100,7 @@ export function ImportSetupCard({
               ? text.need({ kind: "api_key", provider: item.providerName ?? item.provider })
               : item.kind === "routine"
                 ? text.need({ kind: "turn_on" })
-                : item.needs.map(text.need).join(" · ");
+                : item.needs.map(text.need).join(", ");
           const target: ImportSetupTarget | null =
             item.kind === "model"
               ? { kind: "models" }
@@ -122,8 +119,12 @@ export function ImportSetupCard({
                 <p className="truncate text-[14px] text-foreground" dir="auto">
                   {name}
                 </p>
-                <p className="text-[12.5px] text-muted-foreground" dir="auto">
-                  {isVerifiable(item) ? detail : `${detail} · ${t`Check this yourself`}`}
+                <p
+                  className="flex flex-wrap gap-x-2 text-[12.5px] text-muted-foreground"
+                  dir="auto"
+                >
+                  <span>{detail}</span>
+                  {isVerifiable(item) ? null : <span>{t`Check this yourself`}</span>}
                 </p>
               </div>
               {done ? (
@@ -148,6 +149,6 @@ export function ImportSetupCard({
           );
         })}
       </ul>
-    </div>
+    </BuiCard>
   );
 }

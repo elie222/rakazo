@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Badge,
   Button,
@@ -33,7 +34,7 @@ import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { McpServerHealthLine } from "../components/McpServerHealthLine";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -75,10 +76,13 @@ function oauthActionLabel(server: McpServer, pending: boolean): string {
 export function McpServersOverlay({
   onClose,
   editServerId,
+  stdioEnabled,
 }: {
   onClose: () => void;
   /** Opens with this server's form, as an import's setup checklist does. */
   editServerId?: string;
+  /** Whether this deployment runs stdio servers. */
+  stdioEnabled: boolean;
 }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState<McpServer | null>(null);
@@ -190,6 +194,7 @@ export function McpServersOverlay({
 
   function resetForm() {
     setEditing(null);
+    if (!stdioEnabled) setTransport("streamable_http");
     setName("");
     setEndpoint("");
     setSecret("");
@@ -491,7 +496,9 @@ export function McpServersOverlay({
                   <TabsList className="w-full">
                     <TabsTrigger value="streamable_http">HTTP</TabsTrigger>
                     <TabsTrigger value="sse">SSE</TabsTrigger>
-                    <TabsTrigger value="stdio">STDIO</TabsTrigger>
+                    {stdioEnabled || editing?.transport === "stdio" ? (
+                      <TabsTrigger value="stdio">STDIO</TabsTrigger>
+                    ) : null}
                   </TabsList>
                 </Tabs>
                 {transport === "stdio" ? (

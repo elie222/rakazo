@@ -64,14 +64,18 @@ export function InboxSwipeRow({
         key={action}
         label={t(label)}
         systemImage={systemImage}
-        role={(swipe && action === "archive") || action === "delete" ? "destructive" : undefined}
+        // A swipe button is never given the destructive role, which makes SwiftUI remove the
+        // row at the tap even when the request then fails; Archive is red by its tint instead.
+        role={!swipe && action === "delete" ? "destructive" : undefined}
         modifiers={
           swipe
             ? [
                 labelStyle("iconOnly"),
                 ...(action === "read" || action === "unread"
                   ? [tint(PlatformColor("systemBlue"))]
-                  : []),
+                  : action === "archive"
+                    ? [tint(PlatformColor("systemRed"))]
+                    : []),
               ]
             : undefined
         }

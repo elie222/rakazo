@@ -160,6 +160,7 @@ function fixture(runId = "run-1") {
         return { count: 1 };
       }),
     },
+    chatGroup: { findMany: vi.fn(async () => []) },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
@@ -192,8 +193,8 @@ function fixture(runId = "run-1") {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Update shared state" })),
     },
     connection: { findMany: vi.fn(async () => []) },
-    spaceModelPreference: { findFirst: vi.fn(async () => null) },
-    spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
+    userModelPreference: { findFirst: vi.fn(async () => null) },
+    userModelRoleChoice: { findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -232,8 +233,9 @@ function fixture(runId = "run-1") {
         },
       ),
     },
-    actionApprovalRule: { findMany: vi.fn(async () => []) },
-    actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
+    spaceSettingOverride: { findUnique: async () => null },
+    userActionApprovalRule: { findMany: vi.fn(async () => []) },
+    userActionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
     externalEffect,
   };
   const pauseRunForInput = vi.fn(async () => {
@@ -822,5 +824,22 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.memoryCommit).not.toHaveBeenCalled();
     expect(f.effects).toHaveLength(1);
     expect(f.results[0]).toEqual({ ok: true, legacy: true });
+  });
+});
+
+describe("add_mcp_server", () => {
+  it("refuses a stdio server this deployment can't run", async () => {
+    const f = fixture();
+    f.setCalls([
+      {
+        name: "add_mcp_server",
+        args: { name: "Files", transport: "stdio", command: "npx" },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.results[0]).toEqual({ error: "Stdio MCP servers aren't available here" });
   });
 });

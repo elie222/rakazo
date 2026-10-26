@@ -1,11 +1,14 @@
 import type { RunErrorTranslator } from "@rakazo/core";
 
-export function runErrorExplanation(t: RunErrorTranslator, connection: boolean, model: boolean) {
-  return connection
-    ? t("Add your own key or pick another model.")
-    : model
-      ? t("Choose another model to keep chatting.")
-      : null;
+/** The label of the one action that fixes the failure; transient failures have none. */
+export function runErrorActionLabel(
+  t: RunErrorTranslator,
+  error: { recovery?: "connection" | "model"; kind?: string },
+) {
+  if (error.recovery === "model") return t("Change model");
+  if (error.recovery === "connection")
+    return error.kind === "auth" ? t("Replace key") : t("Add Model");
+  return null;
 }
 
 /** Only human-readable fields leave this boundary. Copy retains the original diagnostic. */

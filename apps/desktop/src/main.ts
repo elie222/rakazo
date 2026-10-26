@@ -8,12 +8,8 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell } from "
 import type { AppDocumentState } from "./app-document-state.js";
 import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
 import { createAppOpener } from "./app-opener.js";
-import {
-  DesktopUpdateController,
-  type ElectronAutoUpdater,
-  LAUNCH_CHECK_DELAY_MS,
-  updaterSupport,
-} from "./auto-update.js";
+import type { ElectronAutoUpdater } from "./auto-update.js";
+import { DesktopUpdateController, LAUNCH_CHECK_DELAY_MS, updaterSupport } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
@@ -42,6 +38,7 @@ import {
   forwardedRendererRequestInit,
   isRendererAssetMiss,
 } from "./renderer-assets.js";
+import { revealSecondInstanceWindow, secondInstanceWindow } from "./second-instance.js";
 import { installSessionPermissions } from "./session-permissions.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -107,6 +104,7 @@ const updaterEnvironment = {
 };
 const desktopUpdater = new DesktopUpdateController(
   updaterEnvironment,
+  // Loaded only when a packaged build actually checks for updates.
   async () => {
     const module = await import("electron-updater");
     return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
@@ -1059,7 +1057,21 @@ function safeOrigin(targetUrl: string) {
   }
 }
 
+// A second launch on Linux/Windows would rerun host-computer setup, overwrite
+// the saved token and restart the local stack under the running instance.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = secondInstanceWindow(setupWindow, mainWindow);
+    if (win === null) return;
+    revealSecondInstanceWindow(win);
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   try {

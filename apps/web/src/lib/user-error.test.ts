@@ -19,6 +19,12 @@ describe("authErrorText", () => {
     }
   });
 
+  it("replaces Better Auth's raw too-long password message with the limit", () => {
+    expect(
+      authErrorText({ code: "PASSWORD_TOO_LONG", message: "Password too long" }, "Fallback"),
+    ).toBe("Password must be 128 characters or fewer");
+  });
+
   it("keeps messages from older servers", () => {
     expect(authErrorText({ message: "Registration is closed" }, "Fallback")).toBe(
       "Registration is closed",

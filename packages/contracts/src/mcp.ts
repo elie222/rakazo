@@ -3,15 +3,6 @@ import * as z from "zod";
 export const McpTransportSchema = z.enum(["streamable_http", "sse", "stdio"]);
 export type McpTransport = z.infer<typeof McpTransportSchema>;
 
-export function isLocalMcpHost(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "[::1]" ||
-    hostname === "::1"
-  );
-}
-
 export const McpRemoteEndpointSchema = z
   .string()
   .max(2048)

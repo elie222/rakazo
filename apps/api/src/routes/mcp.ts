@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   persistPreparedSecret,
   prepareApiInstall,
@@ -14,11 +15,16 @@ import type { Prisma } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { searchIntegrationCatalog } from "../integration-catalog.js";
-import { resolveMcpApprovalCards, revertConnectedMcpApprovals } from "../mcp-approval.js";
+import {
+  queueMcpConnectedRun,
+  resolveMcpApprovalCards,
+  revertConnectedMcpApprovals,
+} from "../mcp-approval.js";
 import { buildMcpUpdateMaterial } from "../mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
+  assertMcpStdioCommand,
   MCP_OAUTH_PENDING_MESSAGE,
   mayUsePrivateEndpoint,
   mcpAssignmentDto,
@@ -32,7 +38,7 @@ import {
   startOnboarding,
 } from "../onboarding.js";
 import type { RouterContext } from "./context.js";
-import { computerContext } from "./shared.js";
+import { computerContext, isUniqueViolation } from "./shared.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -269,9 +275,17 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
         create: authed.mcp.servers.create.handler(async ({ context, input }) => {
           const stored = await prepareMcpServer(context.actor, input);
-          const row = await deps.prisma.$transaction((tx) =>
-            insertMcpServer(tx, context.actor, input, stored),
-          );
+          const row = await deps.prisma
+            .$transaction((tx) => insertMcpServer(tx, context.actor, input, stored))
+            .catch((error: unknown) => {
+              // The slug comes from the name, so this is a second server with the same name.
+              if (isUniqueViolation(error)) {
+                throw new ORPCError("CONFLICT", {
+                  message: "An MCP server with that name already exists.",
+                });
+              }
+              throw error;
+            });
           return announceMcpServer(row, context.actor);
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
@@ -329,6 +343,7 @@ export function mcpRoutes(ctx: RouterContext) {
               await assertMcpRemoteEndpoint(nextEndpoint, deps);
             }
             if (config.transport === "stdio") {
+              assertMcpStdioCommand(config.command, deps);
               await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
             }
             const endpointChanged = existing.endpoint !== nextEndpoint;
@@ -560,7 +575,7 @@ export function mcpRoutes(ctx: RouterContext) {
                 }),
               ]);
               if (!bot || !server) throw new IsolationError();
-              return tx.botMcpServer.upsert({
+              const assignment = await tx.botMcpServer.upsert({
                 where: { botId_serverId: { botId: bot.id, serverId: server.id } },
                 create: {
                   spaceId: context.actor.spaceId,
@@ -572,10 +587,25 @@ export function mcpRoutes(ctx: RouterContext) {
                 },
                 update: {},
               });
+              const runId =
+                input.threadId && decision.resolved
+                  ? await queueMcpConnectedRun(tx, context.actor, {
+                      botId: bot.id,
+                      serverId: server.id,
+                      threadId: input.threadId,
+                    })
+                  : null;
+              return { assignment, runId };
             },
           );
           if (!row) throw new IsolationError();
-          return mcpAssignmentDto(row);
+          if (row.runId) {
+            // The queued run is durable; a missed wake is repaired by the reconciler.
+            await deps.jobs.enqueue(runContinueJob(row.runId)).catch((error) => {
+              getLogger().error("mcp connected enqueue", error);
+            });
+          }
+          return mcpAssignmentDto(row.assignment);
         }),
         dismiss: authed.mcp.assignments.dismiss.handler(async ({ context, input }) => {
           // Not now resolves the card only. Assignments are never touched

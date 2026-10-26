@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { readBoundedResponseBytes } from "./response-bytes.js";
+import {
+  readBoundedResponseBytes,
+  readJsonObjectWithin,
+  readResponseWithin,
+} from "./response-bytes.js";
 
 const options = {
   maxBytes: 4,
@@ -90,5 +94,53 @@ describe("readBoundedResponseBytes", () => {
     );
     arrayBuffer.mockResolvedValue(new ArrayBuffer(4));
     await expect(readBoundedResponseBytes(response, options)).resolves.toEqual(new Uint8Array(4));
+  });
+});
+
+describe("readResponseWithin", () => {
+  const within = {
+    maxBytes: 4,
+    tooLargeMessage: "Too large.",
+    signal: new AbortController().signal,
+  };
+
+  it("refuses an oversized declared length before reading and releases the body", async () => {
+    const response = new Response("12345", { headers: { "content-length": "5" } });
+    const cancel = vi.spyOn(response.body as ReadableStream, "cancel");
+    await expect(readResponseWithin(response, within)).rejects.toThrow("Too large.");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("reads a body within the budget and stops when the signal aborts", async () => {
+    await expect(readResponseWithin(new Response("1234"), within)).resolves.toEqual(
+      new TextEncoder().encode("1234"),
+    );
+    const controller = new AbortController();
+    const stalled = new Response(new ReadableStream({ start() {} }));
+    const pending = readResponseWithin(stalled, { ...within, signal: controller.signal });
+    controller.abort(new Error("stop"));
+    await expect(pending).rejects.toThrow("stop");
+  });
+});
+
+describe("readJsonObjectWithin", () => {
+  const within = {
+    maxBytes: 64,
+    tooLargeMessage: "Too large.",
+    signal: new AbortController().signal,
+  };
+
+  it("returns a JSON object and reads anything else as empty", async () => {
+    await expect(readJsonObjectWithin(new Response('{"error":"no"}'), within)).resolves.toEqual({
+      error: "no",
+    });
+    await expect(readJsonObjectWithin(new Response("<html>"), within)).resolves.toEqual({});
+    await expect(readJsonObjectWithin(new Response("3"), within)).resolves.toEqual({});
+  });
+
+  it("still fails an oversized body", async () => {
+    await expect(readJsonObjectWithin(new Response("x".repeat(65)), within)).rejects.toThrow(
+      "Too large.",
+    );
   });
 });

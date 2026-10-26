@@ -20,7 +20,7 @@ import {
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
-import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
@@ -98,11 +98,14 @@ export function defaultCatalogModelId(
     : "disconnected";
   const authByProvider: Partial<Record<string, ModelCredentialAuthKind>> =
     authKind === "disconnected" ? {} : { [provider]: authKind };
-  const entry = listAvailablePiCatalog(authByProvider).find(
+  const entries = offeredCatalog(listAvailablePiCatalog(authByProvider)).filter(
     (item) => item.provider === canonicalPiProviderId(provider),
   );
-  return usableModelId(entry?.id);
+  return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
 }
+
+/** A run pinned to a provider the user has no connection for. */
+export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
 
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
@@ -151,10 +154,9 @@ export async function modelCredentialAuthKindsForSpace(
         createdAt: true,
       },
     }),
-    prisma.spaceModelPreference.findMany({
-      where: { userId: scope.userId, spaceId: scope.spaceId },
+    prisma.userModelPreference.findMany({
+      where: { userId: scope.userId },
       select: {
-        id: true,
         modelId: true,
         thinkingLevel: true,
         updatedAt: true,
@@ -571,7 +573,7 @@ export async function validateBotModelChange(
           return { ok: false, error: "Unsupported thinking level" };
         return { ok: true, provider, model, thinkingLevel: input.thinkingLevel ?? null };
       }
-      return { ok: false, error: "Connect that model provider first" };
+      return { ok: false, error: PINNED_PROVIDER_NOT_CONNECTED };
     }
     const inCatalog =
       isCatalogModelChoice(provider, model) ||
@@ -738,7 +740,7 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
@@ -756,15 +758,14 @@ export async function validateConnectedModelChoice(
       ? undefined
       : "Unknown model for that provider";
   }
-  const savedChoice = await prisma.spaceModelPreference.findFirst({
+  const savedChoice = await prisma.userModelPreference.findFirst({
     where: {
-      spaceId: actor.spaceId,
       userId: actor.userId,
       modelId,
       credential: { userId: actor.userId, provider },
       ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
     },
-    select: { id: true },
+    select: { credentialId: true },
   });
   if (savedChoice) return undefined;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
@@ -843,7 +844,7 @@ export function pinnedModelCredentialError(
   credential: { defaultModel: string | null } | null,
 ): string | undefined {
   if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   // The enabled list lives in the secret, so the run path checks openai-compatible ids.
   if (choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
   const modelId = usableModelId(choice.modelId);

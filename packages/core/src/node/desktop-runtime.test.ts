@@ -147,6 +147,12 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
+  it("binds IPv6 computer gateways and probes IPv6 loopback", () => {
+    const command = terminalCommand("control", "terminal", "/work", { ...env, bindHost: "::" });
+    expect(command).toContain("--token-source=/tmp/rakazo/desktop-targets :::6100 8>&-");
+    expect(command).toContain("/dev/tcp/::1/6100");
+  });
+
   it.each([
     "",
     "example.test",

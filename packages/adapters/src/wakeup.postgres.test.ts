@@ -1,9 +1,10 @@
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import type { BackgroundJob, BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createDeadJobPruner,
   createReservedGraphileJobWorkerHost,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -597,6 +598,51 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await publisher.close();
       await appPool.end();
       await workerPool.end();
+    }
+  });
+
+  it("prunes only exhausted jobs past retention, keeping retry notices and live jobs", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const prefix = `contract:prune:${Date.now()}`;
+    const jobs = {
+      oldDead: { name: "computer.sleep", payload: { computerId: "old-dead" } },
+      recentDead: { name: "computer.sleep", payload: { computerId: "recent-dead" } },
+      lockedDead: { name: "computer.sleep", payload: { computerId: "locked-dead" } },
+      oldLive: { name: "computer.sleep", payload: { computerId: "old-live" } },
+      notice: { name: "routine.retry", payload: { runId: "notice" } },
+    } as const;
+    const keys = Object.keys(jobs).map((name) => `${prefix}:${name}`);
+    try {
+      for (const [name, job] of Object.entries(jobs)) {
+        await publisher.enqueue({ ...job, replaceKey: `${prefix}:${name}` } as BackgroundJob);
+      }
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = case when key = $2 then 1 else max_attempts end,
+             locked_at = case when key = $3 then now() else null end,
+             locked_by = case when key = $3 then 'contract-worker' else null end,
+             updated_at = case when key = $4 then now() else now() - interval '8 days' end
+         where key = any($1::text[])`,
+        [keys, `${prefix}:oldLive`, `${prefix}:lockedDead`, `${prefix}:recentDead`],
+      );
+
+      await createDeadJobPruner(testPool())();
+
+      const remaining = await testPool().query<{ key: string }>(
+        "select key from graphile_worker._private_jobs where key = any($1::text[]) order by key",
+        [keys],
+      );
+      expect(remaining.rows.map((row) => row.key.slice(prefix.length + 1)).sort()).toEqual([
+        "lockedDead",
+        "notice",
+        "oldLive",
+        "recentDead",
+      ]);
+    } finally {
+      await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
+        keys,
+      ]);
+      await publisher.close();
     }
   });
 

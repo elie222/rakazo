@@ -1,4 +1,5 @@
-import type { LogEvent, LogFormat, LogSink } from "./types.js";
+import { errorSummary } from "./serialize-error.js";
+import type { LogEvent, LogFormat, LogSink, SerializedError } from "./types.js";
 
 const SKIP_PRETTY = new Set(["timestamp", "level", "message"]);
 
@@ -23,10 +24,19 @@ function formatPretty(event: LogEvent): string {
   const fields: string[] = [];
   for (const [key, value] of Object.entries(event)) {
     if (SKIP_PRETTY.has(key) || value === undefined) continue;
-    fields.push(`${key}=${formatField(value)}`);
+    fields.push(
+      `${key}=${key === "error" ? formatError(value as SerializedError) : formatField(value)}`,
+    );
   }
   const suffix = fields.length > 0 ? ` ${fields.join(" ")}` : "";
   return `${time} ${event.level.toUpperCase().padEnd(5)} ${event.message}${suffix}`;
+}
+
+// In full, unlike other fields: the code and meta sit after a long message.
+function formatError(error: SerializedError): string {
+  const meta = error.meta ? ` meta=${JSON.stringify(error.meta)}` : "";
+  const cause = error.cause ? ` cause=${formatError(error.cause)}` : "";
+  return `${error.name}: ${errorSummary(error.message, error.code)}${meta}${cause}`;
 }
 
 function formatField(value: unknown): string {

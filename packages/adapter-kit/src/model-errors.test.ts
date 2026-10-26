@@ -77,6 +77,12 @@ describe("transient model errors", () => {
     ["auth failure mentioning a connection error", { status: 401, message: "Connection error." }],
     ["cancellation", new Error("Request was aborted")],
     ["unknown", new Error("Model stream ended without a terminal event")],
+    [
+      "a key that is not a valid header value",
+      new TypeError(
+        'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
+      ),
+    ],
   ])("treats %s as permanent", (_label, error) => {
     expect(isTransientModelError(error)).toBe(false);
   });

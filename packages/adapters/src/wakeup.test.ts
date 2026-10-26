@@ -1,6 +1,7 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InMemoryJobQueue } from "./wakeup.js";
+import { createDeadJobPruner, DEAD_JOB_RETENTION_DAYS, InMemoryJobQueue } from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
   return {
@@ -424,5 +425,44 @@ describe("InMemoryJobQueue", () => {
       name: "run.continue",
       payload: { runId: "run-rollback" },
     });
+  });
+});
+
+describe("createDeadJobPruner", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  it("deletes old exhausted jobs in batches about once an hour and logs the count", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    let now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rowCount: 1_000 })
+      .mockResolvedValueOnce({ rowCount: 3 })
+      .mockResolvedValue({ rowCount: 0 });
+    const prune = createDeadJobPruner({ query } as never);
+
+    await prune();
+    await prune();
+
+    expect(query).toHaveBeenCalledTimes(2);
+    const [sql, params] = query.mock.calls[0]!;
+    expect(params).toEqual([DEAD_JOB_RETENTION_DAYS, 1_000]);
+    // Only exhausted, unlocked rows, rechecked by the delete itself, and never retry notices.
+    expect(sql).toContain("dead.attempts >= dead.max_attempts and dead.locked_at is null");
+    expect(sql).toContain("jobs.attempts >= jobs.max_attempts and jobs.locked_at is null");
+    expect(sql).toContain("tasks.identifier <> 'routine.retry'");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ message: "jobs.dead_pruned", "jobs.removed": 1_003 }),
+    );
+
+    now += 60 * 60 * 1000;
+    await prune();
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(sink.events.filter((event) => event.message === "jobs.dead_pruned")).toHaveLength(1);
   });
 });

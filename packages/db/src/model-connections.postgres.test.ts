@@ -38,7 +38,8 @@ describePostgres("model connections (PostgreSQL)", () => {
   const personal = `model-connections-personal-${suffix}`;
   const work = `model-connections-work-${suffix}`;
   const azure = `model-connections-azure-${suffix}`;
-  const scope = { userId, spaceId };
+  // A Space's own copy; the account's shares the same code path.
+  const scope = { userId, spaceId, scope: "space" as const };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
 

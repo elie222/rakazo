@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { ActionApprovalRule, ApprovalMode } from "./action-approval.js";
 import {
-  type ActionApprovalRule,
   applyJudgeDecision,
+  approvalModeFromPreference,
+  approvalPreferenceFromMode,
+  COMPOSIO_MULTI_EXECUTE_TOOL,
+  composioBatchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -13,6 +17,7 @@ import {
   planActionGate,
   resolveActionApproval,
   resolveActionApprovalDetail,
+  resolveActionApprovalForTools,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -335,137 +340,211 @@ describe("resolveActionApproval", () => {
 });
 
 describe("planActionGate", () => {
-  const consequential = true;
+  const unruled = { decision: "allow" as const, source: "default" as const, matchingRules: [] };
+  const allowed = {
+    decision: "allow" as const,
+    source: "always_allow" as const,
+    matchingRules: [],
+  };
+  const asked = {
+    decision: "ask" as const,
+    source: "require_approval" as const,
+    matchingRules: [],
+  };
+  const blocked = { decision: "deny" as const, source: "deny" as const, matchingRules: [] };
+  const gate = (
+    mode: ApprovalMode,
+    overrides: Partial<Parameters<typeof planActionGate>[0]> = {},
+  ) =>
+    planActionGate({
+      resolved: unruled,
+      mode,
+      consequential: true,
+      checkerConfigured: true,
+      ...overrides,
+    });
 
-  it("allows without judging when approvals are skipped, except under a require rule", () => {
-    const gate = (decision: "ask" | "allow") =>
-      planActionGate({
-        resolved: {
-          decision,
-          source: decision === "ask" ? "require_approval" : "default",
-          matchingRules: [],
-        },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-        newDestination: true,
-        skipApprovals: true,
-      });
-    expect(gate("allow")).toBe("allow");
+  it("runs an unlisted change in Never ask, judges it in Auto and asks in Ask", () => {
+    expect(gate("never")).toBe("allow");
+    expect(gate("auto")).toBe("judge");
     expect(gate("ask")).toBe("ask");
   });
 
-  it("lets require_approval win without judging", () => {
-    expect(
-      planActionGate({
-        resolved: {
-          decision: "ask",
-          source: "require_approval",
-          matchingRules: [],
-        },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-      }),
-    ).toBe("ask");
+  it("asks in Auto when no approval model is set up", () => {
+    expect(gate("auto", { checkerConfigured: false })).toBe("ask");
   });
 
-  it("lets always_allow skip the judge", () => {
-    expect(
-      planActionGate({
-        resolved: {
-          decision: "allow",
-          source: "always_allow",
-          matchingRules: [],
-        },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-      }),
-    ).toBe("allow");
-  });
-
-  it("judges consequential default actions when auto review is ready", () => {
-    expect(
-      planActionGate({
-        resolved: { decision: "allow", source: "default", matchingRules: [] },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-      }),
-    ).toBe("judge");
-  });
-
-  it("stays YOLO when auto review is off or checker missing", () => {
-    expect(
-      planActionGate({
-        resolved: { decision: "allow", source: "default", matchingRules: [] },
-        consequential,
-        autoReviewEnabled: false,
-        checkerConfigured: true,
-      }),
-    ).toBe("allow");
-    expect(
-      planActionGate({
-        resolved: { decision: "allow", source: "default", matchingRules: [] },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: false,
-      }),
-    ).toBe("allow");
-  });
-
-  it("sends a new site to Auto Review, even with a rule for the whole tool", () => {
-    const gate = (source: "default" | "always_allow") =>
-      planActionGate({
-        resolved: { decision: "allow", source, matchingRules: [] },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-        newDestination: true,
-      });
-    expect(gate("default")).toBe("judge");
-    expect(gate("always_allow")).toBe("judge");
-  });
-
-  it("asks before a new site when Auto Review is off or has no checker", () => {
-    for (const [autoReviewEnabled, checkerConfigured] of [
-      [false, true],
-      [true, false],
-    ] as const) {
-      expect(
-        planActionGate({
-          resolved: { decision: "allow", source: "always_allow", matchingRules: [] },
-          consequential,
-          autoReviewEnabled,
-          checkerConfigured,
-          newDestination: true,
-        }),
-      ).toBe("ask");
+  it("runs an allowlisted change in every mode without judging", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(gate(mode, { resolved: allowed })).toBe("allow");
     }
   });
 
-  it("lets a require_approval rule ask about a new site without judging", () => {
-    expect(
-      planActionGate({
-        resolved: { decision: "ask", source: "require_approval", matchingRules: [] },
-        consequential,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
-        newDestination: true,
-      }),
-    ).toBe("ask");
+  it("refuses a blocked action in every mode, even one a person must approve", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(gate(mode, { resolved: blocked })).toBe("deny");
+      expect(gate(mode, { resolved: blocked, mandatory: true })).toBe("deny");
+      expect(gate(mode, { resolved: blocked, consequential: false })).toBe("deny");
+    }
   });
 
-  it("does not judge non-consequential tools", () => {
+  it("runs reads in every mode", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(gate(mode, { consequential: false })).toBe("allow");
+    }
+  });
+
+  it("keeps an older ask rule asking, except in Never ask, which never waits", () => {
+    expect(gate("never", { resolved: asked })).toBe("allow");
+    expect(gate("auto", { resolved: asked })).toBe("ask");
+    expect(gate("ask", { resolved: asked })).toBe("ask");
+  });
+
+  it("asks a person for an approval nothing else may give, in Auto and Ask", () => {
+    expect(gate("auto", { mandatory: true, resolved: allowed })).toBe("ask");
+    expect(gate("ask", { mandatory: true, resolved: allowed })).toBe("ask");
+  });
+
+  it("in Never ask runs it for the owner's own run and refuses it when outside text could steer it", () => {
+    expect(gate("never", { mandatory: true, steerable: false })).toBe("allow");
+    expect(gate("never", { mandatory: true, steerable: true })).toBe("deny");
+  });
+
+  it("only lets the approval model check a read outside content may have chosen", () => {
+    const read = { consequential: false, reviewOnly: true };
+    expect(gate("auto", read)).toBe("judge");
+    expect(gate("auto", { ...read, checkerConfigured: false })).toBe("allow");
+    expect(gate("ask", read)).toBe("allow");
+    expect(gate("never", read)).toBe("allow");
+  });
+
+  it("judges a new site in Auto even with a rule for the whole tool, and asks in Ask", () => {
+    expect(gate("auto", { resolved: allowed, newDestination: true })).toBe("judge");
+    expect(gate("auto", { newDestination: true, checkerConfigured: false })).toBe("ask");
+    expect(gate("ask", { resolved: allowed, newDestination: true })).toBe("ask");
+    expect(gate("never", { newDestination: true })).toBe("allow");
+  });
+});
+
+describe("approval modes from stored preferences", () => {
+  it("maps both ways", () => {
+    for (const mode of ["never", "auto", "ask"] as const) {
+      expect(approvalModeFromPreference(approvalPreferenceFromMode(mode))).toBe(mode);
+    }
+    expect(approvalModeFromPreference({ enabled: true, skipApprovals: true })).toBe("never");
+    expect(approvalModeFromPreference({ enabled: false, skipApprovals: false })).toBe("ask");
+  });
+});
+
+describe("block rules", () => {
+  const rule = (
+    effect: ActionApprovalRule["effect"],
+    matchKind: ActionApprovalRule["matchKind"],
+    matchValue: string,
+  ): ActionApprovalRule => ({ effect, matchKind, matchValue });
+
+  it("wins over a narrower allow", () => {
     expect(
-      planActionGate({
-        resolved: { decision: "allow", source: "default", matchingRules: [] },
-        consequential: false,
-        autoReviewEnabled: true,
-        checkerConfigured: true,
+      resolveActionApprovalDetail({
+        toolName: "GMAIL_SEND_EMAIL",
+        connectorKind: "gmail",
+        rules: [
+          rule("deny", "connector", "gmail"),
+          rule("always_allow", "tool", "gmail_send_email"),
+        ],
       }),
+    ).toMatchObject({ decision: "deny", source: "deny" });
+  });
+
+  it("blocks Composio's code tools, which can call any action, unless it is for a site", () => {
+    const resolve = (deny: ActionApprovalRule) =>
+      resolveActionApprovalDetail({
+        toolName: "COMPOSIO_REMOTE_WORKBENCH",
+        rules: [deny],
+      }).decision;
+    expect(resolve(rule("deny", "tool", "GMAIL_SEND_EMAIL"))).toBe("deny");
+    expect(resolve(rule("deny", "site", "example.com"))).toBe("allow");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "COMPOSIO_REMOTE_WORKBENCH",
+        rules: [rule("always_allow", "tool", "GMAIL_SEND_EMAIL")],
+      }).decision,
     ).toBe("allow");
+  });
+
+  it("refuses a blocked tool in a change watch", () => {
+    expect(
+      watchToolRefusal({
+        toolName: "gmail_list_messages",
+        readOnly: true,
+        rules: [rule("deny", "tool", "gmail_list_messages")],
+      }),
+    ).toContain("blocked");
+  });
+});
+
+describe("Composio batches", () => {
+  it("lists each action a batch runs, and flags an entry that names none", () => {
+    expect(
+      composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, {
+        tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }, { tool_slug: "GMAIL_SEND_EMAIL" }],
+      }),
+    ).toEqual({ slugs: ["GMAIL_SEND_EMAIL"], complete: true });
+    expect(
+      composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, {
+        tools: [{ tool_slug: "SLACK_SEND_MESSAGE" }, { arguments: {} }],
+      }),
+    ).toEqual({ slugs: ["SLACK_SEND_MESSAGE"], complete: false });
+    expect(composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, { tools: [] })).toEqual({
+      slugs: [],
+      complete: false,
+    });
+    expect(composioBatchActions("GMAIL_SEND_EMAIL", { tools: [] })).toBeUndefined();
+  });
+
+  const rules: ActionApprovalRule[] = [
+    { effect: "always_allow", matchKind: "tool", matchValue: "GMAIL_SEND_EMAIL" },
+    { effect: "deny", matchKind: "tool", matchValue: "HUBSPOT_DELETE_CONTACT" },
+  ];
+
+  it("allows a batch by rule only when every action is allowed", () => {
+    expect(
+      resolveActionApprovalForTools({ tools: [{ name: "GMAIL_SEND_EMAIL" }], rules }),
+    ).toMatchObject({ decision: "allow", source: "always_allow" });
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "GMAIL_SEND_EMAIL" }, { name: "SLACK_SEND_MESSAGE" }],
+        rules,
+      }),
+    ).toMatchObject({ decision: "allow", source: "default" });
+  });
+
+  it("blocks the whole batch when one action, the batch tool or its connector is blocked", () => {
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "GMAIL_SEND_EMAIL" }, { name: "HUBSPOT_DELETE_CONTACT" }],
+        rules,
+      }).decision,
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "GMAIL_SEND_EMAIL" }],
+        wrapper: { name: COMPOSIO_MULTI_EXECUTE_TOOL, connectorKind: "composio" },
+        rules: [...rules, { effect: "deny", matchKind: "connector", matchValue: "composio" }],
+      }).decision,
+    ).toBe("deny");
+  });
+
+  it("never lets an allow rule on the batch tool allow its actions", () => {
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "SLACK_SEND_MESSAGE" }],
+        wrapper: { name: COMPOSIO_MULTI_EXECUTE_TOOL },
+        rules: [
+          { effect: "always_allow", matchKind: "tool", matchValue: COMPOSIO_MULTI_EXECUTE_TOOL },
+        ],
+      }),
+    ).toMatchObject({ decision: "allow", source: "default" });
   });
 });
 
@@ -616,6 +695,15 @@ describe("toolResultTaintsRun", () => {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });
+});
+
+it("classifies schedule_update like schedule_create", () => {
+  for (const name of ["schedule_create", "schedule_update"]) {
+    expect(toolRequiresApproval(name, false)).toBe(false);
+    expect(toolRequiresExplicitApproval(name)).toBe(false);
+    expect(toolResultTaintsRun(name)).toBe(false);
+    expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
+  }
 });
 
 it("requires human confirmation to approve an agent connection", () => {

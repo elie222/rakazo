@@ -60,8 +60,9 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
-import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE, PiAgentRuntime } from "./pi-runtime.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 
 const primary = model("provider-a", "primary", 32_768);
@@ -2622,6 +2623,25 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
 
     expect(providers()).toEqual([primary.provider, backupA.provider]);
     expect(events).toContainEqual(expect.objectContaining({ type: "text", text: "from backup" }));
+  });
+
+  it("leaves retries to the backup instead of the provider SDK", async () => {
+    vi.stubEnv("MODEL_STREAM_MAX_RETRIES", "1");
+    try {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [{ type: "text", text: "Ready" }], "stop")),
+      );
+
+      await run(request(backups()));
+      await run(request());
+
+      // A hung primary would otherwise wait out its timeout twice before the switch.
+      expect(providerState.stream.mock.calls.map(([, , options]) => options.maxRetries)).toEqual([
+        0, 1,
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it.each([["403 forbidden", "403 Forbidden"]])(

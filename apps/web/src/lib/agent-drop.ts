@@ -1,15 +1,10 @@
+import type { AgentImportReader } from "@rakazo/core";
 import {
   AGENT_IMPORT_ARCHIVE_LIMITS,
   agentImportFolder,
   isAgentHome,
   openAgentImportArchive,
 } from "@rakazo/core";
-
-export type DroppedAgent = {
-  paths: string[];
-  read: (path: string) => Promise<string> | string;
-  size: (path: string) => number | undefined;
-};
 
 export type CapturedDrop = { entries: FileSystemEntry[]; files: readonly File[] };
 
@@ -33,7 +28,7 @@ export function mightBeAgent(drop: CapturedDrop): boolean {
 }
 
 /** Null unless the drop is an OpenClaw or Hermes home. Lists names only; uploads nothing. */
-export async function droppedAgent(drop: CapturedDrop): Promise<DroppedAgent | null> {
+export async function droppedAgent(drop: CapturedDrop): Promise<AgentImportReader | null> {
   const entry = drop.entries[0];
   if (drop.entries.length === 1 && entry?.isDirectory) {
     return folderSource(entry as FileSystemDirectoryEntry);
@@ -49,7 +44,7 @@ export async function droppedAgent(drop: CapturedDrop): Promise<DroppedAgent | n
   }
 }
 
-async function folderSource(root: FileSystemDirectoryEntry): Promise<DroppedAgent | null> {
+async function folderSource(root: FileSystemDirectoryEntry): Promise<AgentImportReader | null> {
   const entries = new Map<string, FileSystemFileEntry>();
   await walk(root, entries);
   const paths = [...entries.keys()];

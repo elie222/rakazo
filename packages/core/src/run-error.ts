@@ -1,3 +1,4 @@
+import type { RunErrorKind } from "@rakazo/contracts";
 import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
@@ -14,6 +15,13 @@ export const MODEL_OUTPUT_LIMIT_ERROR = "The model hit its output limit before w
 /** The bot's instructions and tools alone do not fit the selected model's context window. */
 export const MODEL_CONTEXT_TOO_SMALL_ERROR =
   "This model's context window is too small. Choose another model.";
+
+/** A run that starts with no model the user can reach. */
+export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before running bots.";
+
+/** A deployment model run while the organization has not chosen Rakazo credits. */
+export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
+  "Connect your own API key in Models or choose Rakazo credits in Billing.";
 
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
@@ -68,8 +76,14 @@ const MODEL_OUTPUT_RUN_ERRORS = new Set([
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   APPROVED_ACTION_NOT_RUN_ERROR,
 ]);
+/** App advice whose fix is connecting a model. */
+const MODEL_CONNECTION_RUN_ERRORS = new Set([
+  MISSING_MODEL_RUN_ERROR,
+  HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+]);
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
+  ...MODEL_CONNECTION_RUN_ERRORS,
   COMPUTER_RATE_LIMIT_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
@@ -141,32 +155,33 @@ export function parseModelFallbackFailure(
 }
 
 /**
- * Whose problem a failed run is. Every kind except "output" is the user's provider account,
- * key, plan or model choice; "output" is a model that returned nothing usable.
- */
-export type RunErrorKind =
-  | "key"
-  | "credit"
-  | "spending"
-  | "rate"
-  | "auth"
-  | "access"
-  | "model"
-  | "context"
-  | "output";
-
-/**
- * Fixed failure strings from the model runtime's stop-reason mapping and from provider APIs
- * that reject a model's malformed tool call or empty reply. Never matched against model prose.
+ * Fixed failure strings from the model runtime's stop-reason mapping (including a stop reason
+ * it does not know yet, such as Gemini's MALFORMED_RESPONSE, and a refusal), from Anthropic's
+ * policy blocks, and from provider APIs that reject a model's malformed tool call or empty
+ * reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b|The model refused to complete the request\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+
+/**
+ * Fetch refuses to send a key that is not a valid header value, such as one pasted with a code
+ * sample around it or with non-Latin characters. Its message quotes the key, so it is checked
+ * before anything reads that text.
+ */
+const MALFORMED_KEY_HEADER =
+  /^(?:TypeError: )?(?:Headers\.append: "[\s\S]*" is an invalid header value\.|Cannot convert argument to a ByteString because the character at index \d+ has a value of \d+ which is greater than 255\.)$/;
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
   /\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support)\b|\bnot supported (?:with|by|for) (?:this|the) model\b/i;
 
-/** Keep provider diagnostics available without exposing them in the visible summary. */
+/**
+ * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
+ * is the one action that fixes the failure: "connection" opens the model connections (a
+ * rejected or capped key, or no model at all) and "model" picks another model (a provider out
+ * of quota or credits, refusing the model to the account, or unable to serve it). Transient
+ * failures carry none: their summary already says to try again.
+ */
 export function normalizeRunError(
   details: string,
   translate: RunErrorTranslator = english,
@@ -211,7 +226,9 @@ export function normalizeRunError(
   if (APP_RUN_ERRORS.has(trimmed)) {
     return MODEL_OUTPUT_RUN_ERRORS.has(trimmed)
       ? { summary: details, details, kind: "output" }
-      : { summary: details, details };
+      : MODEL_CONNECTION_RUN_ERRORS.has(trimmed)
+        ? { summary: translate(trimmed), details, recovery: "connection" }
+        : { summary: details, details };
   }
   if (trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR) {
     return {
@@ -219,6 +236,16 @@ export function normalizeRunError(
       details,
       recovery: "model",
       kind: "context",
+    };
+  }
+  if (MALFORMED_KEY_HEADER.test(trimmed)) {
+    return {
+      summary: translate("{provider} rejected the API key. Check your connection settings.", {
+        provider: translate("Your model provider"),
+      }),
+      details,
+      recovery: "connection",
+      kind: "auth",
     };
   }
   const error = asRecord(record.error);
@@ -267,7 +294,6 @@ export function normalizeRunError(
       )) &&
     !financialQuota
   ) {
-    recovery = "connection";
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
@@ -276,19 +302,32 @@ export function normalizeRunError(
       signals,
     )
   ) {
-    recovery = "connection";
-    period = /\bweekly\b/i.test(message)
-      ? "weekly"
-      : /\bmonthly\b/i.test(message)
-        ? "monthly"
-        : /\bdaily\b/i.test(message)
-          ? "daily"
-          : "none";
-    kind = /\bkey\b|key_limit/i.test(signals)
+    // "Monthly included credits" in an upsell names no limit period.
+    const limitPeriod = message.match(
+      /\b(daily|weekly|monthly)\b(?:\s+\w+){0,2}\s+(?:limit|quota|cap|budget)|\b(?:limit|quota)\b[^.]{0,20}?\b(daily|weekly|monthly)\b|\bper[ -](day)\b/i,
+    );
+    period = limitPeriod?.[3]
+      ? "daily"
+      : (((limitPeriod?.[1] ?? limitPeriod?.[2])?.toLowerCase() as
+          | "daily"
+          | "weekly"
+          | "monthly"
+          | undefined) ?? "none");
+    // OpenRouter names the limit that tripped. "Make sure your key is on the correct account"
+    // in a credit error is not a key limit.
+    const limitSource = typeof metadata.limit_source === "string" ? metadata.limit_source : "";
+    kind = (
+      limitSource
+        ? /key_limit/.test(limitSource)
+        : /key[_ ]limit|\bkey\b[^.]{0,30}\blimit\b/i.test(signals)
+    )
       ? "key"
       : /credit|insufficient_quota/i.test(signals)
         ? "credit"
         : "spending";
+    // A capped key is fixed by connecting another; an account out of money or quota is not, but
+    // another model keeps the user going.
+    recovery = kind === "key" ? "connection" : "model";
     summary = translate(RUN_ERROR_LIMIT_MESSAGES[kind][period], { provider });
     const reset =
       message.match(
@@ -316,6 +355,14 @@ export function normalizeRunError(
       }
     }
   } else if (
+    typeof payload.param === "string" &&
+    /^max_(?:completion_|output_)?tokens$/.test(payload.param)
+  ) {
+    // The model's own output cap is below what every run asks for, so retrying cannot help.
+    recovery = "model";
+    kind = "context";
+    summary = translate(MODEL_CONTEXT_TOO_SMALL_ERROR);
+  } else if (
     status === 413 ||
     /context[_ -](?:length|window)|maximum context|exceeds the model context|prompt is too long|too many tokens|request too large/i.test(
       signals,
@@ -326,13 +373,12 @@ export function normalizeRunError(
       "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
     );
   } else if (status === 429) {
-    recovery = "connection";
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 401 ||
     ((status === 403 ||
-      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error/i.test(
+      /(?:invalid|incorrect)[_ -](?:api[_ -])?key|api[_ -]?key[_ -](?:invalid|expired)|authentication_error|\bauthentication token has expired\b/i.test(
         signals,
       )) &&
       /auth|unauthorized|invalid|key/i.test(signals))
@@ -343,8 +389,9 @@ export function normalizeRunError(
       provider,
     });
   } else if (status === 403) {
-    // The key works, but the provider refuses this model to the account or plan.
-    recovery = "connection";
+    // The key works, but the provider refuses this model to the account or plan, or serves it
+    // only inside its own apps.
+    recovery = "model";
     kind = "access";
     summary = translate("{provider} denied access to this model.", { provider });
   } else if (
@@ -356,7 +403,7 @@ export function normalizeRunError(
   ) {
     recovery = "model";
     kind = "model";
-    summary = translate("{provider} could not find the requested model.", { provider });
+    summary = translate("{provider} can't run this model.", { provider });
   } else if (
     status === 502 ||
     status === 503 ||
@@ -371,7 +418,6 @@ export function normalizeRunError(
       signals,
     )
   ) {
-    recovery = "connection";
     summary = translate("{provider} couldn't be reached. Check that it's running.", { provider });
   } else if (
     status === 408 ||

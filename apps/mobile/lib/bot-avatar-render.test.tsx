@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { avatarIdentitySeed, organicAvatarPath, shippedBotAvatarShapePath } from "@rakazo/core";
+import { botEyeColor } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -40,8 +41,8 @@ vi.mock("react-native-reanimated", () => {
 vi.mock("react-native-svg", () => {
   const element =
     (tag: string) =>
-    ({ children, ...props }: { children?: ReactNode; d?: string }) =>
-      createElement(tag, { "data-d": props.d }, children);
+    ({ children, ...props }: { children?: ReactNode; d?: string; fill?: string }) =>
+      createElement(tag, { "data-d": props.d, "data-fill": props.fill }, children);
   return {
     default: element("svg"),
     Ellipse: element("ellipse"),
@@ -53,7 +54,7 @@ vi.mock("react-native-svg", () => {
 
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({
-  useMobileTokens: () => ({ background: "#FFF", workingDot: "#3FA266" }),
+  useMobileTokens: () => ({ background: "#FFF", workingDot: "#3FA266", secondary: "#7676801F" }),
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
@@ -84,6 +85,11 @@ describe("BotAvatar", () => {
   it("draws a plain-colour bot with the organic body for its identity", () => {
     const view = render("#3EC5A8");
     expect(bodies(view)).toEqual([organicAvatarPath(avatarIdentitySeed("bot-1"))]);
+    // Its eyes take the shared eye ink, the same as a group title's still faces.
+    expect(Array.from(view.querySelectorAll("rect"), (eye) => eye.dataset.fill)).toEqual([
+      botEyeColor,
+      botEyeColor,
+    ]);
     expect(view.querySelector("img")).toBeNull();
     expect(view.querySelector("ellipse")).toBeNull();
   });

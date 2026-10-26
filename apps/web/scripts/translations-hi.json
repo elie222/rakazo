@@ -147,7 +147,6 @@
   "Connect remote or local tool servers and choose which agents can use them.": "रिमोट या लोकल टूल सर्वर कनेक्ट करें और चुनें कि कौन से एजेंट उनका उपयोग कर सकते हैं।",
   "Connect Treg": "Treg कनेक्ट करें",
   "Connected": "कनेक्टेड",
-  "Connected. Its tools are available from your next message.": "कनेक्टेड। इसके टूल आपके अगले संदेश से उपलब्ध हैं।",
   "Connected {0}.": "{0} कनेक्ट किया गया।",
   "Connecting…": "कनेक्ट हो रहा है…",
   "Connection to {0} is still pending. You can close this and check again.": "{0} से कनेक्शन अभी लंबित है। आप इसे बंद करके बाद में जांच सकते हैं।",

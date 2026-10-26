@@ -85,7 +85,7 @@ def derive(seed):
     for i, (days, hours) in enumerate(times):
         day = today + datetime.timedelta(days=days)
         label = f"{day.strftime('%a')} {day.day} {day.strftime('%b')}, {hours}"
-        slots.append({"id": f"slot-{i + 1}", "label": label, "full": i == full})
+        slots.append({"id": f"slot-{i + 1}", "label": label, "date": day.isoformat(), "full": i == full})
     return {
         "password": f"fresh-{rng.choice(WORDS)}-{rng.randrange(10, 100)}",
         "outOfStock": sorted(rng.sample(STAPLES, 2)),

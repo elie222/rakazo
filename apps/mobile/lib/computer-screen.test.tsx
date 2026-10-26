@@ -19,7 +19,11 @@ const folds = vi.hoisted(() => ({
 const screens = vi.hoisted(() => ({
   mounts: 0,
   error: undefined as undefined | (() => void),
-  message: undefined as undefined | ((event: { nativeEvent: { data: string } }) => void),
+  onMessage: undefined as
+    | ((event: { nativeEvent: { data: string; url?: string } }) => void)
+    | undefined,
+  source: "",
+  onLoadStart: undefined as (() => void) | undefined,
 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -118,11 +122,15 @@ vi.mock("react-native-webview", () => {
     WebView: (props: {
       accessibilityElementsHidden?: boolean;
       importantForAccessibility?: string;
-      onMessage?: (event: { nativeEvent: { data: string } }) => void;
+      onMessage?: (event: { nativeEvent: { data: string; url?: string } }) => void;
       onError?: () => void;
+      source?: { uri: string };
+      onLoadStart?: () => void;
     }) => {
-      screens.message = props.onMessage;
+      screens.onMessage = props.onMessage;
       screens.error = props.onError;
+      screens.source = props.source?.uri ?? "";
+      screens.onLoadStart = props.onLoadStart;
       useEffect(() => {
         screens.mounts += 1;
       }, []);
@@ -206,7 +214,8 @@ vi.mock("../components/computer-mode-picker", () => {
   };
 });
 
-vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test", rpc }));
+const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
+vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
 
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>
@@ -247,10 +256,10 @@ const botWorking: ComputerStatus = {
   terminalAvailable: false,
 };
 
-function respond(status: ComputerStatus) {
+function respond(status: ComputerStatus, screenUrl = "https://screen.example.test/embed") {
   rpc.mockImplementation(async (method: string) => {
     if (method === "computer/status") return status;
-    if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+    if (method === "computer/screenUrl") return { url: screenUrl };
     return {};
   });
 }
@@ -355,7 +364,9 @@ describe("computer screen", () => {
     );
     const view = await render();
     act(() =>
-      screens.message?.({ nativeEvent: { data: JSON.stringify({ rakazoScreen: "connected" }) } }),
+      screens.onMessage?.({
+        nativeEvent: { data: JSON.stringify({ rakazoScreen: "connected" }), url: screens.source },
+      }),
     );
     token = "second";
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
@@ -385,17 +396,17 @@ describe("computer screen", () => {
   });
 
   it("shows a fixed reason for a failed report and retries a healthy screen", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     respond(botWorking);
     const view = await render();
+    const report = (data: Record<string, string>) =>
+      act(() =>
+        screens.onMessage?.({ nativeEvent: { data: JSON.stringify(data), url: screens.source } }),
+      );
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
-    expect(screens.message).toBeTypeOf("function");
-    act(() =>
-      screens.message?.({
-        nativeEvent: { data: JSON.stringify({ rakazoScreen: "failed", detail: "private token" }) },
-      }),
-    );
+    expect(screens.onMessage).toBeTypeOf("function");
+    report({ rakazoScreen: "failed" });
     expect(view.textContent).toContain("Could not connect to the computer screen");
-    expect(view.textContent).not.toContain("private token");
     const mounted = screens.mounts;
     const retry = Array.from(view.querySelectorAll("button")).find(
       (button) => button.textContent === "Retry screen",
@@ -404,19 +415,14 @@ describe("computer screen", () => {
     await act(async () => retry?.click());
     await settle();
     expect(screens.mounts).toBeGreaterThan(mounted);
-    act(() =>
-      screens.message?.({ nativeEvent: { data: JSON.stringify({ rakazoScreen: "connected" }) } }),
-    );
+    report({ rakazoScreen: "connected" });
     expect(view.textContent).not.toContain("Could not connect to the computer screen");
-    act(() =>
-      screens.message?.({
-        nativeEvent: {
-          data: JSON.stringify({ rakazoScreen: "disconnected", detail: "private close reason" }),
-        },
-      }),
-    );
+    // The first drop after connecting reconnects by itself; only a drop it can't ride out shows.
+    report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).not.toContain("The screen connection closed.");
+    report({ rakazoScreen: "disconnected" });
     expect(view.textContent).toContain("The screen connection closed.");
-    expect(view.textContent).not.toContain("private close reason");
+    vi.useRealTimers();
   });
 
   it("opens the full window from the preview without taking control from the bot", async () => {
@@ -721,6 +727,162 @@ describe("computer screen", () => {
       "false",
     );
   });
+  describe("when a connected screen drops", () => {
+    // A screen through the web server's proxy, which answers the status-only probe.
+    async function openScreen(
+      screenUrl = "https://api.example.test/novnc/session/control/1.t/vnc.html",
+    ) {
+      respond(
+        { ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null },
+        screenUrl,
+      );
+      const view = await render();
+      await act(async () => preview(view).click());
+      await settle();
+      return view;
+    }
+    async function post(data: string, url = screens.source) {
+      await act(async () => screens.onMessage?.({ nativeEvent: { data, url } }));
+      await settle();
+    }
+    async function load() {
+      await act(async () => screens.onLoadStart?.());
+    }
+    const wait = (ms: number) =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+      });
+
+    it("loads the screen again by itself once, a second after the drop", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      expect(screens.mounts).toBe(opened);
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      expect(fetchStub).toHaveBeenCalledTimes(1);
+      // It asks the server's status-only probe, never the computer's page itself.
+      expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toContain("rakazo_probe=1");
+
+      // A second drop soon after is left showing; Retry is the user's.
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+    });
+
+    it("waits for a screen the API can't check yet before loading it again", async () => {
+      const statuses = [503, 503, 200];
+      const fetchStub = vi.fn(async () => ({ status: statuses.shift() ?? 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(2200);
+      await settle();
+      // Still waiting: two unavailable answers, no reload yet.
+      expect(screens.mounts).toBe(opened);
+      await wait(1100);
+      await settle();
+      expect(fetchStub).toHaveBeenCalledTimes(3);
+      expect(screens.mounts).toBe(opened + 1);
+    });
+
+    it("stops waiting when the screen is closed", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 503 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      const view = await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      const asked = fetchStub.mock.calls.length;
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      await wait(2200);
+      expect(fetchStub.mock.calls.length).toBeLessThanOrEqual(asked + 1);
+    });
+
+    it("probes a screen the web server serves on another port than the API", async () => {
+      // The default setup: the app talks to the API on :3100, and screens are sealed for the
+      // web server on :5173.
+      apiBase.current = "http://192.168.1.10:3100";
+      try {
+        const fetchStub = vi.fn(async () => ({ status: 204 }) as Response);
+        vi.stubGlobal("fetch", fetchStub);
+        await openScreen("http://192.168.1.10:5173/novnc/session/control/1.t/vnc.html");
+        await load();
+        await post('{"rakazoScreen":"connected"}');
+        const opened = screens.mounts;
+        await post('{"rakazoScreen":"disconnected"}');
+        await wait(1100);
+        await settle();
+        expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toBe(
+          "http://192.168.1.10:5173/novnc/session/control/1.t/vnc.html?rakazo_probe=1",
+        );
+        expect(screens.mounts).toBe(opened + 1);
+      } finally {
+        apiBase.current = "https://api.example.test";
+      }
+    });
+
+    it("loads a screen outside the proxy again without probing it", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen("https://screen.example.test/embed");
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      expect(fetchStub).not.toHaveBeenCalled();
+    });
+
+    it("only hears states from the screen's own page", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({ status: 200 }) as Response),
+      );
+      await openScreen();
+      await load();
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"connected"}', "https://elsewhere.example.test/page");
+      await post('{"rakazoScreen":"disconnected"}', "https://elsewhere.example.test/page");
+      await post('{"rakazoScreen":"connected"}', undefined as unknown as string);
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened);
+    });
+
+    it("doesn't reload a screen that never connected or posted something else", async () => {
+      await openScreen();
+      await load();
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await post('{"rakazoScreen":"connected","detail":"x"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await post('{"rakazoScreen":"reconnect"}');
+      await post("not json");
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened);
+    });
+  });
+
   describe("while the computer boots", () => {
     const stopped: ComputerStatus = { ...botWorking, state: "stopped", busyBotName: null };
     const idle: ComputerStatus = { ...botWorking, busyBotName: null };
