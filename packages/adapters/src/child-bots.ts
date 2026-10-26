@@ -435,6 +435,9 @@ export async function destroyBot(
         WHERE id = ${bot.id} AND "spaceId" = ${bot.spaceId}
         FOR UPDATE
       `;
+      // A concurrent removal of the same bot committed while this one waited for the lock;
+      // it owns the deletion and the cleanup that follows.
+      if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
       const deleteMemories = (await options.within?.(tx))?.deleteMemories ?? options.deleteMemories;
       const botArtifacts = await tx.artifact.findMany({
@@ -489,6 +492,7 @@ export async function destroyBot(
       };
     }),
   );
+  if (!deletion) return;
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );

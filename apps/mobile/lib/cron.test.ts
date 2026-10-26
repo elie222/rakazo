@@ -19,6 +19,13 @@ describe("cronLabels", () => {
     expect(formatCron("*/5 * * * *", labels)).toBe("每5分钟");
   });
 
+  it("translates schedules into Traditional Chinese", () => {
+    resetI18nForTests("zh-TW");
+    const labels = cronLabels();
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 8:00 AM");
+    expect(formatCron("*/5 * * * *", labels)).toBe("每 5 分鐘");
+  });
+
   it("uses Russian case forms for intervals", () => {
     resetI18nForTests("ru");
     const labels = cronLabels();

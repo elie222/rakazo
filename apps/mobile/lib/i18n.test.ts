@@ -107,11 +107,19 @@ describe("mobile i18n", () => {
 
   it("preserves interpolations in every non-English catalog", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
+    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
     const { JA_MESSAGES } = await import("./locales/ja");
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES, JA_MESSAGES]) {
+    for (const messages of [
+      ZH_MESSAGES,
+      ZH_TW_MESSAGES,
+      RU_MESSAGES,
+      DE_MESSAGES,
+      NL_MESSAGES,
+      JA_MESSAGES,
+    ]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
         const tokens = (message: string) =>
@@ -125,6 +133,7 @@ describe("mobile i18n", () => {
 
   it("translates every mobile chrome t() id in every non-English catalog", async () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
+    const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
@@ -178,7 +187,14 @@ describe("mobile i18n", () => {
       const source = readFileSync(file, "utf8");
       for (const id of translationIds(source)) ids.add(id);
     }
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES, JA_MESSAGES]) {
+    for (const messages of [
+      ZH_MESSAGES,
+      ZH_TW_MESSAGES,
+      RU_MESSAGES,
+      DE_MESSAGES,
+      NL_MESSAGES,
+      JA_MESSAGES,
+    ]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
@@ -274,4 +290,24 @@ describe("mobile i18n", () => {
     expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-CN");
     expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-CN");
   });
+});
+
+it("restores Traditional Chinese after saving the language choice", async () => {
+  const { getItemAsync, setItemAsync } = await import("expo-secure-store");
+  const { applyMobileUiDirection } = await import("./ui-direction");
+  const { bootstrapI18n, dateLocaleForUi, resetI18nForTests, setUiLocale, t } = await import(
+    "./i18n"
+  );
+  const { ZH_TW_MESSAGES } = await import("./locales/zh-TW");
+  await setUiLocale("zh-TW");
+  expect(setItemAsync).toHaveBeenLastCalledWith("rakazo.uiLocale", "zh-TW");
+  resetI18nForTests();
+  vi.mocked(getItemAsync).mockResolvedValue("zh-TW");
+  await expect(bootstrapI18n()).resolves.toBe("zh-TW");
+  expect(dateLocaleForUi()).toBe("zh-TW");
+  expect(applyMobileUiDirection).toHaveBeenLastCalledWith("zh-TW");
+  expect(t("Language")).toBe(ZH_TW_MESSAGES.Language);
+  expect(t("Delete {name}?", { name: "Scout" })).toBe(
+    ZH_TW_MESSAGES["Delete {name}?"]?.replace("{name}", "Scout"),
+  );
 });

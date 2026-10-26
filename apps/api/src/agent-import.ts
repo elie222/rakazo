@@ -1190,11 +1190,13 @@ export async function undoAgentImport(
     await tx.bot.update({ where: { id: botId }, data: { archivedAt: at } });
     return at;
   });
+  let removedAdded = false;
   try {
     await services.destroyBot(actor, botId, {
       deleteMemories: false,
       // Runs after the bot row is locked: the rest is decided again under the locks.
       within: async (tx) => {
+        removedAdded = true;
         const { plan, current, removed, events } = await removeAdded(tx, input.importId);
         result = current.infoFor(removed);
         changed = events;
@@ -1212,6 +1214,8 @@ export async function undoAgentImport(
     }
     throw error;
   }
+  // A removal of the bot that committed first deleted it without undoing the import.
+  if (!removedAdded) throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
   await announce();
   return result;
 }

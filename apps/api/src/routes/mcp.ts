@@ -38,7 +38,7 @@ import {
   startOnboarding,
 } from "../onboarding.js";
 import type { RouterContext } from "./context.js";
-import { computerContext } from "./shared.js";
+import { computerContext, isUniqueViolation } from "./shared.js";
 
 export function mcpRoutes(ctx: RouterContext) {
   const {
@@ -275,9 +275,17 @@ export function mcpRoutes(ctx: RouterContext) {
         }),
         create: authed.mcp.servers.create.handler(async ({ context, input }) => {
           const stored = await prepareMcpServer(context.actor, input);
-          const row = await deps.prisma.$transaction((tx) =>
-            insertMcpServer(tx, context.actor, input, stored),
-          );
+          const row = await deps.prisma
+            .$transaction((tx) => insertMcpServer(tx, context.actor, input, stored))
+            .catch((error: unknown) => {
+              // The slug comes from the name, so this is a second server with the same name.
+              if (isUniqueViolation(error)) {
+                throw new ORPCError("CONFLICT", {
+                  message: "An MCP server with that name already exists.",
+                });
+              }
+              throw error;
+            });
           return announceMcpServer(row, context.actor);
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {

@@ -1392,6 +1392,7 @@ describe("MCP pre-registered OAuth client", () => {
       material: () => JSON.parse(values.get("cipher-1")!),
       server: () => server,
       secrets,
+      prisma,
     };
   }
 
@@ -1415,6 +1416,25 @@ describe("MCP pre-registered OAuth client", () => {
     expect(server()?.secretId).toBe("secret-1");
     expect(material()).toMatchObject({
       oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+
+  it("reports a second server with the same name as a conflict", async () => {
+    const { client, prisma } = harness();
+    vi.mocked(prisma.mcpServer.create).mockRejectedValueOnce(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+
+    await expect(
+      client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "gmail",
+        name: "Gmail",
+        endpoint: "http://localhost:3100/mcp",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "An MCP server with that name already exists.",
     });
   });
 

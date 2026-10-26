@@ -1,13 +1,27 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
+import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
   it("translates sign-out failures in every supported language", () => {
-    for (const locale of ["de", "es", "fr", "hi", "ja", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of [
+      "de",
+      "es",
+      "fr",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -56,6 +70,7 @@ describe("lingui catalogs", () => {
       "ru",
       "tr",
       "zh-CN",
+      "zh-TW",
     ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
@@ -140,6 +155,7 @@ describe("lingui catalogs", () => {
       "ru",
       "tr",
       "zh-CN",
+      "zh-TW",
     ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
@@ -158,7 +174,21 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "he", "hi", "ja", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = [
+      "de",
+      "es",
+      "fr",
+      "he",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -222,4 +252,27 @@ describe("lingui catalogs", () => {
       }
     }
   });
+});
+
+it("keeps source placeholders and JSX markers in Traditional Chinese translations", async () => {
+  const readCatalog = async (locale: string) => {
+    const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
+    return formatter().parse(readFileSync(filename, "utf8"), {
+      locale,
+      sourceLocale: "en",
+      filename,
+    });
+  };
+  const source = await readCatalog("en");
+  const translated = await readCatalog("zh-TW");
+  expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
+  const markers = (value: string) =>
+    [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
+  for (const [id, entry] of Object.entries(source)) {
+    const message = entry.message ?? entry.translation ?? id;
+    // Untranslated entries fall back to English, as in every other catalog.
+    const translation = translated[id]?.translation;
+    if (!translation?.trim()) continue;
+    expect(markers(translation), message).toEqual(markers(message));
+  }
 });

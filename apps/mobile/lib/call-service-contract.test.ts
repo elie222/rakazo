@@ -36,6 +36,7 @@ describe("Android call foreground service", () => {
     const directories = {
       en: "values",
       "zh-CN": "values-zh-rCN",
+      "zh-TW": "values-zh-rTW",
       ru: "values-ru",
       de: "values-de",
       nl: "values-nl",

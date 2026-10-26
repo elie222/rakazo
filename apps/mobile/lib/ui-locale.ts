@@ -1,4 +1,4 @@
-export const UI_LOCALES = ["en", "zh-CN", "ru", "de", "nl", "ja"] as const;
+export const UI_LOCALES = ["en", "zh-CN", "zh-TW", "ru", "de", "nl", "ja"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
@@ -7,6 +7,7 @@ export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
 export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   en: "English",
   "zh-CN": "简体中文",
+  "zh-TW": "繁體中文",
   ru: "Русский",
   de: "Deutsch",
   nl: "Nederlands",
@@ -23,6 +24,7 @@ export function isUiLocale(value: string | null | undefined): value is UiLocale 
   return (
     value === "en" ||
     value === "zh-CN" ||
+    value === "zh-TW" ||
     value === "ru" ||
     value === "de" ||
     value === "nl" ||
@@ -34,7 +36,17 @@ export function isUiLocale(value: string | null | undefined): value is UiLocale 
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
   if (!raw) return "en";
   const normalized = raw.trim().toLowerCase().replace(/_/g, "-");
-  // Simplified Chinese only. Do not fold zh-TW / zh-HK / zh-Hant into zh-CN.
+  // Explicit script takes precedence over region (for example zh-Hans-TW).
+  const [language, scriptOrRegion] = normalized.split("-");
+  if (
+    language === "zh" &&
+    (scriptOrRegion === "hant" ||
+      scriptOrRegion === "tw" ||
+      scriptOrRegion === "hk" ||
+      scriptOrRegion === "mo")
+  ) {
+    return "zh-TW";
+  }
   if (
     normalized === "zh" ||
     normalized === "zh-cn" ||

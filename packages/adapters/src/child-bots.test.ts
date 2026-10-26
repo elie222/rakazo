@@ -63,7 +63,7 @@ const context = {
 
 function noGroupMemberships() {
   return {
-    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
     chatGroup: {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -296,7 +296,7 @@ describe("destroyBot", () => {
     const deleteArtifacts = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        $queryRaw: vi.fn().mockResolvedValue([]),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -380,11 +380,60 @@ describe("destroyBot", () => {
     expect(removeArtifact).toHaveBeenCalledWith("stored-artifact", context);
   });
 
+  it("leaves the deletion to a concurrent removal that already deleted the bot", async () => {
+    const createDeletion = vi.fn();
+    const deleteBot = vi.fn();
+    const removeArtifact = vi.fn();
+    const within = vi.fn();
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        artifact: { findMany: vi.fn(), deleteMany: vi.fn() },
+        botDeletion: { create: createDeletion },
+        bot: { delete: deleteBot },
+      }),
+    );
+    const prisma = {
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+
+    await destroyBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        artifacts: { remove: removeArtifact } as unknown as ArtifactStore,
+      },
+      {
+        id: "bot-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        name: "Researcher",
+        archivedAt: null,
+      },
+      context,
+      { deleteMemories: false, within },
+    );
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(within).not.toHaveBeenCalled();
+    expect(createDeletion).not.toHaveBeenCalled();
+    expect(deleteBot).not.toHaveBeenCalled();
+    expect(removeArtifact).not.toHaveBeenCalled();
+  });
+
   it("deletes the waiting one-time answer of a run it cancels", async () => {
     const deleteSecrets = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        $queryRaw: vi.fn().mockResolvedValue([]),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -2178,7 +2227,7 @@ function runInWorkspace(cwd: string, argv: readonly string[]) {
 function deletionPrisma(team: { id: string }) {
   const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback({
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
       chatGroup: {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),

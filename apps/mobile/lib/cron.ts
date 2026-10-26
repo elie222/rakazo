@@ -36,7 +36,7 @@ function unitLabelSingular(unit: CronUnit): string {
  */
 export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
   if (locale === "en") return ENGLISH_CRON_LABELS;
-  const listSeparator = locale === "ja" || locale === "zh-CN" ? "、" : ", ";
+  const listSeparator = locale === "ja" || locale === "zh-CN" || locale === "zh-TW" ? "、" : ", ";
   return {
     oneTime: t("One-time"),
     everyHour: t("Every hour"),
@@ -59,7 +59,7 @@ export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
       if (locale === "ru") return russianInterval(n, unit);
       const unitLabel = n === 1 ? unitLabelSingular(unit) : unitLabelPlural(unit);
       // zh/ja read most naturally as one suffix phrase ("每5分钟", "5分ごと").
-      if (locale === "zh-CN" || locale === "ja") {
+      if (locale === "zh-CN" || locale === "zh-TW" || locale === "ja") {
         return { lead: "", detail: t("every {n} {unit}", { n, unit: unitLabel }) };
       }
       return { lead: t("Every"), detail: t("{n} {unit}", { n, unit: unitLabel }) };
