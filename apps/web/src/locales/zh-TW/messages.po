@@ -4407,6 +4407,10 @@ msgstr "將 {0} 移出群組"
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr "要移除 {secretName} 嗎？此機器人將無法再使用它。"
 
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Remove {site}"
+msgstr "移除 {site}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"
 msgstr "移除變化觸發器"

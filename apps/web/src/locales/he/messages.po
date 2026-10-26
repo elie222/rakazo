@@ -4406,6 +4406,10 @@ msgstr ""
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr "להסיר את {secretName}? הבוט הזה לא יוכל עוד להשתמש בו."
 
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Remove {site}"
+msgstr "הסרת {site}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"
 msgstr ""

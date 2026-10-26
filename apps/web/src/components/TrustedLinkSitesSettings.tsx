@@ -32,6 +32,7 @@ export function TrustedLinkSitesSettings() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground"
+              aria-label={t`Remove ${site}`}
               onClick={() => void removeSite(site)}
             >
               <Trans>Remove</Trans>

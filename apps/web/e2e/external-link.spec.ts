@@ -89,7 +89,7 @@ test("always opening a site skips the prompt until it is removed in Settings", a
   const removed = page.waitForResponse(
     (response) => response.url().includes("/rpc/trustedLinkSites/remove") && response.ok(),
   );
-  await group.getByRole("button", { name: "Remove", exact: true }).click();
+  await group.getByRole("button", { name: "Remove example.test", exact: true }).click();
   await removed;
   await expect(group).toHaveCount(0);
   expect(await rpc<string[]>(page, "trustedLinkSites/list", {})).toEqual([]);

@@ -4406,6 +4406,10 @@ msgstr "{0}をグループから外す"
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr "{secretName}を削除しますか？このボットはこれを使用できなくなります。"
 
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Remove {site}"
+msgstr "{site} を削除"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"
 msgstr "変更トリガーを削除"

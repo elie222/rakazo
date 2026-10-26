@@ -23,35 +23,49 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * The server, signed-in session, and space a read belongs to. A session change (sign-in,
- * sign-out, server switch) also clears the cache, so data never crosses an auth boundary.
+ * The server and signed-in session a read belongs to. A session change (sign-in, sign-out,
+ * server switch) also clears the cache, so data never crosses an auth boundary.
  */
-function scopeKey(spaceId?: string): string[] {
-  return [
-    `server:${currentApiBase()}`,
-    `session:${currentSessionGeneration()}`,
-    `space:${spaceId ?? selectedSpaceId() ?? ""}`,
-  ];
+function sessionScope(): string[] {
+  return [`server:${currentApiBase()}`, `session:${currentSessionGeneration()}`];
 }
 
-/**
- * One rpc read in the current scope. Its answer is only cached under the scope it was sent in.
- * A `spaceId` sends it to that Space instead of the selected one.
- */
-export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
+function spaceScope(spaceId?: string): string[] {
+  return [...sessionScope(), `space:${spaceId ?? selectedSpaceId() ?? ""}`];
+}
+
+function scopedRpcQuery<P extends RpcPath>(
+  scopeKey: () => string[],
+  proc: P,
+  input?: RpcInput<P>,
+  spaceId?: string,
+) {
   type T = RpcOutput<P>;
-  const scope = scopeKey(spaceId);
+  const scope = scopeKey();
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
   const queryFn: QueryFunction<T> = async ({ signal }) => {
-    if (scopeKey(spaceId).join("\n") !== scope.join("\n"))
+    if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t("Something went wrong. Try again."));
     const requestContext = await captureApiRequestContext(spaceId);
     const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
-    if (scopeKey(spaceId).join("\n") !== scope.join("\n"))
+    if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t("Something went wrong. Try again."));
     return answer;
   };
   return { queryKey, queryFn };
+}
+
+/**
+ * One rpc read in the current scope (server, session, space). Its answer is only cached under
+ * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
+ */
+export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, spaceId);
+}
+
+/** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
+export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
+  return scopedRpcQuery(sessionScope, proc, input);
 }
 
 /** Forgets every cached read; the session registers this so sign-out never shows old data. */

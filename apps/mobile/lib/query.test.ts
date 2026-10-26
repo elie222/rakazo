@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { queryClient, rpcQuery } from "./query";
+import { accountRpcQuery, queryClient, rpcQuery } from "./query";
 
 const scope = vi.hoisted(() => ({
   apiBase: "https://app.example.test",
@@ -59,5 +59,18 @@ describe("rpcQuery keys", () => {
     answer.resolve("space b data");
     await expect(fetching).rejects.toThrow();
     expect(queryClient.getQueryData(read.queryKey)).toBeUndefined();
+  });
+
+  it("keep the user's own reads under one key in every space, per session and server", () => {
+    const key = () => JSON.stringify(accountRpcQuery("trustedLinkSites/list").queryKey);
+    const first = key();
+    scope.spaceId = "space-b";
+    expect(key()).toBe(first);
+    scope.spaceId = null;
+    expect(key()).toBe(first);
+    scope.generation = 2;
+    const otherSession = key();
+    scope.apiBase = "https://other.example.test";
+    expect(new Set([first, otherSession, key()]).size).toBe(3);
   });
 });

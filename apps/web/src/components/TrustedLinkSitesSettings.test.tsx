@@ -16,7 +16,8 @@ vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    String.raw({ raw: parts }, ...values);
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
@@ -70,7 +71,13 @@ it("lists trusted sites and removes one", async () => {
   await vi.waitFor(() => expect(rows()).toEqual(["alice.github.io", "example.com"]));
   expect(view.container.textContent).toContain("Trusted sites");
 
-  const remove = view.container.querySelectorAll("button")[1];
+  const removes = [...view.container.querySelectorAll("button")];
+  expect(removes.map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Remove alice.github.io",
+    "Remove example.com",
+  ]);
+  expect(removes.map((button) => button.textContent)).toEqual(["Remove", "Remove"]);
+  const remove = removes[1];
   await act(async () => remove?.click());
   expect(rpcMock.trustedLinkSites.remove).toHaveBeenCalledWith({ site: "example.com" });
   await vi.waitFor(() => expect(rows()).toEqual(["alice.github.io"]));
