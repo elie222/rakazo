@@ -26,6 +26,17 @@ function fixture() {
 }
 
 describe("Novita SDK translation", () => {
+  it("safety-pauses an uncertain command start even when no handle was received", async () => {
+    const { desktop, source, pause, handle } = fixture();
+    source.commands.run.mockRejectedValueOnce(new TimeoutError("start event timed out"));
+    await expect(desktop.commands.run("side-effect", {})).rejects.toMatchObject({
+      name: "SandboxUnsafeStopError",
+    });
+    expect(pause).toHaveBeenCalledOnce();
+    expect(handle.kill).not.toHaveBeenCalled();
+    expect(source.commands.run).toHaveBeenCalledOnce();
+  });
+
   it("passes shell options and waits for the native command handle", async () => {
     const { desktop, source, handle } = fixture();
     const signal = new AbortController().signal;

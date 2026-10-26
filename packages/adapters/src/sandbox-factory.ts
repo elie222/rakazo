@@ -20,6 +20,7 @@ export interface SandboxProviderOptions {
   e2bApiKey?: string;
   novitaApiKey?: string;
   sandboxTemplate?: string;
+  onUnsafeStop?: (providerRef: string) => Promise<void>;
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
@@ -69,6 +70,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new NovitaSandboxProvider({
         apiKey: opts.novitaApiKey,
         template: opts.sandboxTemplate,
+        onUnsafeStop: opts.onUnsafeStop,
       });
     case "daytona":
       if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");

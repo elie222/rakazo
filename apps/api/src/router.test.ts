@@ -8570,3 +8570,99 @@ describe("API-key live model catalog", () => {
     },
   );
 });
+
+describe("quarantined computer stop", () => {
+  it.each(["already-quarantined", "before-claim", "during-stop"])(
+    "preserves the recovery fence (%s)",
+    async (race) => {
+      const row = {
+        id: "computer",
+        kind: "novita",
+        providerRef: "guest",
+        homeKey: "home",
+        scope: "dedicated",
+        state: race === "already-quarantined" ? "quarantined" : "running",
+        controlHolder: "none",
+        controlLeaseId: null,
+        controlBotId: null,
+        controlRunId: null,
+        homeRevision: "saved",
+        screenGeneration: 1,
+      };
+      const endRun = vi.fn();
+      const updateMany = vi.fn(async ({ where, data }) => {
+        if (race === "before-claim") row.state = "quarantined";
+        if (typeof where.state === "string" && where.state !== row.state) return { count: 0 };
+        if (where.state?.notIn?.includes(row.state)) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      });
+      const prisma = {
+        bot: {
+          findFirst: vi.fn(async () => {
+            const snapshot = { ...row };
+            return {
+              id: "bot",
+              spaceId: "space",
+              userId: "user",
+              screenGeneration: 1,
+              thread: { id: "thread" },
+              computer: snapshot,
+            };
+          }),
+        },
+        computer: { updateMany },
+        computerRun: { updateMany: endRun },
+        computerExecutionLease: {
+          deleteMany: vi.fn(async () => ({ count: 0 })),
+          findUnique: vi.fn(async () => null),
+        },
+        run: { findFirst: vi.fn(async () => null) },
+      } as unknown as PrismaClient;
+      const checkpoint = vi
+        .spyOn(adapters, "checkpointAndStopComputer")
+        .mockImplementation(async () => {
+          if (race === "during-stop") row.state = "quarantined";
+        });
+      const deps = {
+        prisma,
+        sandbox: { stop: vi.fn(async () => undefined) },
+        jobs: { cancel: vi.fn(async () => undefined) },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          sandboxProvider: "novita",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "test-secret",
+        },
+      } as unknown as RouterDeps;
+      try {
+        const handler = new RPCHandler(createRouter(deps));
+        const { response } = await handler.handle(
+          new Request("http://127.0.0.1/rpc/computer/stop", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: { botId: "bot" } }),
+          }),
+          {
+            prefix: "/rpc",
+            context: {
+              actor: {
+                userId: "user",
+                spaceId: "space",
+                email: "user@rakazo.test",
+                isDeploymentOwner: true,
+              },
+            },
+          },
+        );
+        expect(response.status).toBe(race === "before-claim" ? 409 : 200);
+        expect(row.state).toBe("quarantined");
+        expect(endRun).not.toHaveBeenCalled();
+        if (race !== "during-stop") expect(checkpoint).not.toHaveBeenCalled();
+      } finally {
+        checkpoint.mockRestore();
+      }
+    },
+  );
+});

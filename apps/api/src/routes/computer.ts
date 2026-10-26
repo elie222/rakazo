@@ -128,12 +128,23 @@ export function computerRoutes(ctx: RouterContext) {
       stop: authed.computer.stop.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
+        // A repeated Stop must not turn an unsafe guest back into an auto-startable one.
+        if (bot.computer.state === "quarantined") {
+          if (bot.computer.providerRef)
+            await deps.sandbox.stop(
+              toComputerRef(bot.computer),
+              computerContext(context.actor, bot.id, "stop"),
+            );
+          return computerStatus(deps, context.actor, input.botId);
+        }
         const controlLeaseId = bot.computer.controlLeaseId;
         const now = new Date();
         const claimed = await deps.prisma.computer.updateMany({
           where: {
             id: bot.computer.id,
-            state: { not: "suspending" },
+            state: { notIn: ["suspending", "quarantined"] },
+            providerRef: bot.computer.providerRef,
+            kind: bot.computer.kind,
             maintenanceId: null,
             executionLeases: {
               none: { botId: { not: bot.id }, expiresAt: { gt: now } },
@@ -179,8 +190,13 @@ export function computerRoutes(ctx: RouterContext) {
               end = "gone";
             }
           }
-          await deps.prisma.computer.update({
-            where: { id: bot.computer.id },
+          const stopped = await deps.prisma.computer.updateMany({
+            where: {
+              id: bot.computer.id,
+              state: "suspending",
+              providerRef: bot.computer.providerRef,
+              kind: bot.computer.kind,
+            },
             data: {
               state: "stopped",
               controlHolder: "none",
@@ -190,6 +206,7 @@ export function computerRoutes(ctx: RouterContext) {
               controlRunId: null,
             },
           });
+          if (stopped.count !== 1) return computerStatus(deps, context.actor, input.botId);
           await recordComputerRunEnd(deps.prisma, bot.computer, end);
         } catch (error) {
           await deps.prisma.computer

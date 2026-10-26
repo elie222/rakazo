@@ -79,6 +79,11 @@ export interface RemoteDesktopSdk {
     options: ReturnType<typeof remoteDesktopCreateOptions>,
   ): Promise<RemoteDesktop>;
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<RemoteDesktop>;
+  connectRunning?(
+    id: string,
+    options: { apiKey: string; timeoutMs: number },
+  ): Promise<RemoteDesktop>;
+  keepAlive?(id: string, options: { apiKey: string; timeoutMs: number }): Promise<void>;
   pause(id: string, options: { apiKey: string }): Promise<unknown>;
   kill(id: string, options: { apiKey: string }): Promise<boolean>;
 }
@@ -170,13 +175,14 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     };
   }
 
-  private async box(computer: ComputerRef): Promise<RemoteDesktop> {
+  private async box(computer: ComputerRef, resume = false): Promise<RemoteDesktop> {
     const id = sandboxId(computer);
     const existing = this.boxes.get(id);
     if (existing) {
       const lastTouched = this.lastTouchedAt.get(id) ?? 0;
       // Fresh enough that the command keepalive's first extension lands before the timeout.
-      if (Date.now() - lastTouched < extendEveryMs()) return existing;
+      if (!(resume && this.config.sdk.connectRunning) && Date.now() - lastTouched < extendEveryMs())
+        return existing;
       try {
         await existing.setTimeout(sandboxIdleMs());
         this.lastTouchedAt.set(id, Date.now());
@@ -187,17 +193,19 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
         this.drop(id, existing);
       }
     }
-    return this.connect(id);
+    return this.connect(id, resume);
   }
 
-  private connect(id: string): Promise<RemoteDesktop> {
+  private connect(id: string, resume = false): Promise<RemoteDesktop> {
     const cached = this.boxes.get(id);
     if (cached) return Promise.resolve(cached);
     const pending = this.connections.get(id);
     if (pending) return pending;
     let connection!: Promise<RemoteDesktop>;
-    connection = this.config.sdk
-      .connect(id, { apiKey: this.config.apiKey, timeoutMs: sandboxIdleMs() })
+    const connect = resume
+      ? this.config.sdk.connect
+      : (this.config.sdk.connectRunning ?? this.config.sdk.connect);
+    connection = connect(id, { apiKey: this.config.apiKey, timeoutMs: sandboxIdleMs() })
       .catch((error: unknown) => {
         throw isBeingKilled(error) ? sandboxGoneError(this.config.label, id, error) : error;
       })
@@ -259,12 +267,15 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === this.config.id) {
       try {
-        const desktop = await this.box({
-          id: request.providerRef,
-          providerRef: request.providerRef,
-          kind: this.config.id,
-          botId: request.botId,
-        });
+        const desktop = await this.box(
+          {
+            id: request.providerRef,
+            providerRef: request.providerRef,
+            kind: this.config.id,
+            botId: request.botId,
+          },
+          true,
+        );
         return {
           id: desktop.sandboxId,
           botId: request.botId,
@@ -441,6 +452,13 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
+    if (this.config.sdk.keepAlive) {
+      await this.config.sdk.keepAlive(sandboxId(computer), {
+        apiKey: this.config.apiKey,
+        timeoutMs: sandboxIdleMs(),
+      });
+      return;
+    }
     // Force box()'s probe: extend the timeout, or reconnect, which resumes the sandbox and
     // throws when it is gone or the key no longer works.
     this.lastTouchedAt.delete(sandboxId(computer));
