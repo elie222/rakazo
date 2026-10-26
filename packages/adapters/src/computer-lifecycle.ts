@@ -476,6 +476,7 @@ export async function provisionComputer(
       provisioned && (!reconnecting || provisioned.fresh === true)
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
+    const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
     try {
       await deps.prisma.computer.updateMany({
         where: {
@@ -487,13 +488,14 @@ export async function provisionComputer(
         },
         data: {
           state:
-            (reconnecting || rollbackError) &&
-            (isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError))
+            (reconnecting || rollbackError) && unsafeStop
               ? "quarantined"
               : reconnecting
                 ? "running"
                 : "error",
-          ...(!reconnecting && rollbackError && provisioned
+          ...((!reconnecting || (unsafeStop && provisioned?.fresh === true)) &&
+          rollbackError &&
+          provisioned
             ? { providerRef: provisioned.providerRef, kind: provisioned.kind }
             : {}),
         },

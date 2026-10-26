@@ -1215,9 +1215,13 @@ describe("computer provisioning", () => {
     }
   });
 
-  it.each([false, true])(
-    "retains a fresh provider reference when rollback also fails (unsafe stop=%s)",
-    async (unsafeStop) => {
+  it.each([
+    { unsafeStop: false, reconnecting: false },
+    { unsafeStop: true, reconnecting: false },
+    { unsafeStop: true, reconnecting: true },
+  ])(
+    "retains a fresh provider reference when rollback also fails (unsafe stop=$unsafeStop, reconnecting=$reconnecting)",
+    async ({ unsafeStop, reconnecting }) => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-prepare-rollback-failure-"));
       const prepareError = unsafeStop
         ? new SandboxUnsafeStopError("provider preparation failed", new Error("stop unconfirmed"))
@@ -1236,10 +1240,10 @@ describe("computer provisioning", () => {
           findUniqueOrThrow: vi.fn().mockResolvedValue({
             id: "computer-1",
             homeKey: "bot-1",
-            providerRef: null,
+            providerRef: reconnecting ? "old-provider" : null,
             kind: "e2b",
             scope: "dedicated",
-            state: "stopped",
+            state: reconnecting ? "running" : "stopped",
             controlLeaseId: null,
             updatedAt: new Date("2024-01-01T00:00:00.000Z"),
           }),
@@ -1273,7 +1277,7 @@ describe("computer provisioning", () => {
             maintenanceId: null,
             id: "computer-1",
             state: "booting",
-            providerRef: null,
+            providerRef: reconnecting ? "old-provider" : null,
             kind: "e2b",
             updatedAt: expect.any(Date),
           },
