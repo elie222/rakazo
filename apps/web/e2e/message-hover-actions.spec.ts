@@ -1,4 +1,4 @@
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Locator, Page, Route, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
@@ -69,7 +69,7 @@ async function expectRailAtRest(page: Page, row: Locator) {
   await expect(rail).toHaveCSS("pointer-events", "none");
 }
 
-async function expectHeaderAboveHoveredRow(page: Page, row: Locator) {
+async function expectHeaderAboveHoveredRow(page: Page, testInfo: TestInfo, row: Locator) {
   const placement = await row.evaluate((element) => {
     const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
     const header = document.querySelector<HTMLElement>('[data-testid="bot-settings-trigger"]');
@@ -119,6 +119,7 @@ async function expectHeaderAboveHoveredRow(page: Page, row: Locator) {
       return Boolean(header && topmost && header.contains(topmost));
     }, placement.headerPoint);
     expect(headerReceivesHit).toBe(true);
+    await captureScreenshot(page, testInfo, "message-hover-under-header-desktop");
   } finally {
     await row.evaluate((element, originalScrollTop) => {
       const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
@@ -352,7 +353,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
   await page.setViewportSize({ width: 1280, height: 812 });
-  await expectHeaderAboveHoveredRow(page, parentRow);
+  await expectHeaderAboveHoveredRow(page, testInfo, parentRow);
 });
 
 test("a message with an attachment centers hover actions on its text bubble", async ({
