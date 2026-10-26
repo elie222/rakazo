@@ -642,6 +642,49 @@ function mapRun(run: {
   };
 }
 
+/**
+ * Admit a confirmed image against the model each recipient run will use: the waiting runs this
+ * text answers, otherwise the run that would take it as steering, otherwise the bot's default.
+ */
+async function assertImageRecipients(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  target: { threadId: string },
+  text: string | undefined,
+  attachmentBlocks: MessageBlock[],
+  recipient: {
+    botId: string;
+    runs: Array<ImageAdmissionRun & { id: string }>;
+    imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+  },
+) {
+  if (!attachmentBlocks.some((block) => block.kind === "image")) return;
+  const { botId, runs } = recipient;
+  const answered = [];
+  for (const run of runs.filter((run) => run.status === "waiting_input")) {
+    const eligible = await eligibleWaitingTextAnswer(tx, {
+      spaceId: actor.spaceId,
+      threadId: target.threadId,
+      runId: run.id,
+      answeredByUserId: actor.userId,
+      answer: text ?? "",
+    });
+    if (eligible) answered.push(run);
+  }
+  const current =
+    runs.find(steersUserMessage) ?? runs.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
+  for (const run of answered.length ? answered : [current]) {
+    await assertThreadImageInput(
+      tx as unknown as PrismaClient,
+      actor,
+      botId,
+      attachmentBlocks,
+      run && (isConversationalRun(run.trigger) || run.status === "waiting_input") ? run : undefined,
+      recipient.imageAdmission,
+    );
+  }
+}
+
 /** Intent changes the message representation, never the owned artifact. */
 function sendAttachmentBlocks(
   blocks: Extract<MessageBlock, { kind: "image" | "file" }>[],
@@ -776,44 +819,12 @@ export async function sendThreadMessage(
             thinkingLevel: true,
           },
         });
-        const recipients = [];
-        if (
-          input.imageHandling === "confirm" &&
-          attachmentBlocks.some((block) => block.kind === "image")
-        ) {
-          for (const run of activeRuns.filter((run) => run.status === "waiting_input")) {
-            if (
-              await eligibleWaitingTextAnswer(tx, {
-                spaceId: actor.spaceId,
-                threadId: target.threadId,
-                runId: run.id,
-                answeredByUserId: actor.userId,
-                answer: input.text ?? "",
-              })
-            )
-              recipients.push(run);
-          }
-        }
-        const current =
-          activeRuns.find(steersUserMessage) ??
-          activeRuns.find((run) =>
-            QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
-          );
-        for (const run of input.imageHandling === "confirm"
-          ? recipients.length
-            ? recipients
-            : [current]
-          : []) {
-          await assertThreadImageInput(
-            tx as unknown as PrismaClient,
-            actor,
-            target.botId,
-            attachmentBlocks,
-            ((run && isConversationalRun(run.trigger)) || run?.status === "waiting_input"
-              ? run
-              : undefined) as ImageAdmissionRun | undefined,
-            deps.imageAdmission,
-          );
+        if (input.imageHandling === "confirm") {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
+            botId: target.botId,
+            runs: activeRuns,
+            imageAdmission: deps.imageAdmission,
+          });
         }
         const blocks = buildUserMessageBlocks(
           input.text,
@@ -1009,44 +1020,13 @@ export async function sendThreadMessage(
           thinkingLevel: true,
         },
       });
-      for (const botId of targetBotIds) {
-        const runs = activeRuns.filter((run) => run.botId === botId);
-        const waiting = [];
-        if (
-          input.imageHandling === "confirm" &&
-          attachmentBlocks.some((block) => block.kind === "image")
-        ) {
-          for (const run of runs.filter((run) => run.status === "waiting_input")) {
-            if (
-              await eligibleWaitingTextAnswer(tx, {
-                spaceId: actor.spaceId,
-                threadId: target.threadId,
-                runId: run.id,
-                answeredByUserId: actor.userId,
-                answer: input.text ?? "",
-              })
-            )
-              waiting.push(run);
-          }
-        }
-        const current =
-          runs.find(steersUserMessage) ??
-          runs.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
-        for (const run of input.imageHandling === "confirm"
-          ? waiting.length
-            ? waiting
-            : [current]
-          : []) {
-          await assertThreadImageInput(
-            tx as unknown as PrismaClient,
-            actor,
+      if (input.imageHandling === "confirm") {
+        for (const botId of targetBotIds) {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
             botId,
-            attachmentBlocks,
-            (run && (isConversationalRun(run.trigger) || run.status === "waiting_input")
-              ? run
-              : undefined) as ImageAdmissionRun | undefined,
-            deps.imageAdmission,
-          );
+            runs: activeRuns.filter((run) => run.botId === botId),
+            imageAdmission: deps.imageAdmission,
+          });
         }
       }
       const blocks = buildUserMessageBlocks(
