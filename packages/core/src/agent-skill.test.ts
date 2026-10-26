@@ -285,6 +285,24 @@ describe("skill prompt helpers", () => {
     expect(extractRoutineSkillMentions("@garden", [" ", ""])).toEqual([]);
   });
 
+  it("keeps the catalog name when regex case matching differs from lowercasing", () => {
+    expect(extractRoutineSkillMentions("@ς", ["Σ"])).toEqual(["Σ"]);
+    expect(extractRoutineSkillMentions("@ς tools", ["Σ", "Σ tools"])).toEqual(["Σ tools"]);
+    expect(extractRoutineSkillMentions("@ς @σ", ["Σ"])).toEqual(["Σ"]);
+    expect(extractRoutineSkillMentions("@µ", ["μ"])).toEqual(["μ"]);
+    expect(
+      expandSkillReferencesInPrompt("@ς", [
+        {
+          name: "Σ",
+          description: "Greek skill",
+          source: "user",
+          readOnly: false,
+          content: "Greek instructions.",
+        },
+      ]),
+    ).toBe("Use skill: Σ\n\nGreek instructions.");
+  });
+
   it.each([
     ["Run @garden tools", false],
     ["Run @garden then @garden tools", true],
