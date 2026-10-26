@@ -175,7 +175,15 @@ describe("grading connect-mcp", () => {
     const { rubric } = connectMcp.judge!(evidence([card, approved], done));
     const labels = connectMcp.judgeCalibration ?? [];
     expect(labels.every((label) => label.input.rubric === rubric)).toBe(true);
-    expect(labels.map((label) => label.pass)).toEqual([true, false, false, false]);
+    expect(labels.map((label) => label.pass)).toEqual([true, false, false, false, true, false]);
+  });
+
+  it("gives the judge the person's timezone, in the run and in every label", () => {
+    const { evidence: judged } = connectMcp.judge!(evidence([card, approved], done));
+    expect(judged).toMatchObject({ timezone: connectMcp.timezone });
+    for (const label of connectMcp.judgeCalibration ?? []) {
+      expect(label.input.evidence).toMatchObject({ timezone: connectMcp.timezone });
+    }
   });
 
   it("fails a duplicated task, an unread list and a repeated token", () => {

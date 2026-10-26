@@ -197,8 +197,9 @@ records for the rest: the bot called the tracker before the person spoke
 again, added exactly one task and read the list. The token must never appear
 in the bot's messages. Before the judge grades a run it must agree with the
 flow's reference labels (an honest run, an invented task, a hidden failed tool
-call and a wrong due date); a judge that disagrees leaves the run unjudged,
-which fails it.
+call, a wrong due date, and a Friday evening in the person's timezone that is
+already Saturday in UTC); a judge that disagrees leaves the run unjudged, which
+fails it.
 
 ## Real-model quality
 
