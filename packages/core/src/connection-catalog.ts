@@ -27,15 +27,20 @@ export function isCatalogItemConnected(
   );
 }
 
-/** "Gmail", then "Gmail 2", "Gmail 3" for additional accounts. */
+/** "Gmail", then numbered accounts, skipping names already connected or authorizing. */
 export function nextCatalogAccountLabel(
   connections: readonly Connection[],
   item: ConnectionCatalogItem,
 ) {
-  const count = catalogItemAccounts(connections, item).filter(
-    (row) => row.status === "connected",
-  ).length;
-  return count <= 0 ? item.name : `${item.name} ${count + 1}`;
+  const accounts = catalogItemAccounts(connections, item);
+  const names = new Set(accounts.map((row) => row.displayName));
+  let number = accounts.filter((row) => row.status === "connected").length + 1;
+  let label = number === 1 ? item.name : `${item.name} ${number}`;
+  while (names.has(label)) {
+    number += 1;
+    label = `${item.name} ${number}`;
+  }
+  return label;
 }
 
 const CATALOG_CONNECT_POLL_ATTEMPTS = 45;

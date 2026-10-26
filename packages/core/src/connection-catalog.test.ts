@@ -39,6 +39,61 @@ describe("connection catalog", () => {
     expect(nextCatalogAccountLabel([account("a", "connected")], item)).toBe("Gmail 2");
   });
 
+  it.each(["removed", "revoked"])("avoids collisions after an account is %s", (removed) => {
+    const rows = [account("Gmail", "connected"), account("Gmail 3", "connected")];
+    if (removed === "revoked") rows.push(account("Gmail 2", "revoked"));
+    expect(nextCatalogAccountLabel(rows, item)).toBe("Gmail 4");
+  });
+
+  it.each([
+    { rows: [account("Gmail", "pending")], expected: "Gmail 2" },
+    {
+      rows: [account("Gmail", "connected"), account("Gmail 2", "pending")],
+      expected: "Gmail 3",
+    },
+    {
+      rows: [
+        account("Gmail", "connected"),
+        account("Gmail 4", "connected"),
+        account("Gmail 3", "pending"),
+      ],
+      expected: "Gmail 5",
+    },
+  ])("skips occupied live account names: $expected", ({ rows, expected }) => {
+    expect(nextCatalogAccountLabel(rows, item)).toBe(expected);
+    expect(nextCatalogAccountLabel([...rows].reverse(), item)).toBe(expected);
+  });
+
+  it("checks display names rather than account IDs", () => {
+    const rows = [{ ...account("stable-id", "connected"), displayName: "Gmail 2" }];
+    expect(nextCatalogAccountLabel(rows, item)).toBe("Gmail 3");
+  });
+
+  it("does not reserve names from inactive accounts or other catalog apps", () => {
+    const rows = [
+      account("Gmail", "connected"),
+      account("Gmail 2", "revoked"),
+      account("Gmail 2", "error"),
+      account("Gmail 2", "connected", "slack"),
+      { ...account("Gmail 2", "connected"), connectorId: "pipedream" },
+    ];
+    expect(nextCatalogAccountLabel(rows, item)).toBe("Gmail 2");
+  });
+
+  it("passes an unoccupied default name to the connection request", async () => {
+    const begin = vi.fn().mockResolvedValue({ connectionId: "new", authorizationUrl: null });
+    await connectCatalogItem(
+      { ...item, noAuth: true },
+      [account("Gmail", "connected"), account("Gmail 3", "connected")],
+      { begin, complete: vi.fn(), openUrl: vi.fn(), signal: new AbortController().signal },
+    );
+    expect(begin).toHaveBeenCalledWith({
+      connectorId: item.connectorId,
+      provider: item.slug,
+      displayName: "Gmail 4",
+    });
+  });
+
   it("opens authorization and resolves once the connection completes", async () => {
     const openUrl = vi.fn();
     const complete = vi
