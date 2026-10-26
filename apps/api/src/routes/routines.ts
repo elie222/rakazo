@@ -22,6 +22,7 @@ import {
   listRoutinesDto,
   mapRoutine,
   nextRoutineDate,
+  routineDto,
   routineNextRunAt,
   routineRowData,
 } from "../routines.js";
@@ -33,37 +34,24 @@ export function routinesRoutes(ctx: RouterContext) {
   return {
     routines: {
       listForMentions: authed.routines.listForMentions.handler(async ({ context, input }) => {
+        const { actor } = context;
+        // Same ownership predicates as getBot, so a batch never widens what routines/list allows.
         const bots = await deps.prisma.bot.findMany({
           where: {
             id: { in: input.botIds },
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
             archivedAt: null,
           },
           select: { id: true },
         });
-        const lists: Array<{
-          botId: string;
-          routines: Awaited<ReturnType<typeof listRoutinesDto>>;
-        }> = [];
-        let next = 0;
-        await Promise.all(
-          Array.from({ length: Math.min(4, bots.length) }, async () => {
-            while (!context.signal?.aborted && next < bots.length) {
-              const bot = bots[next++]!;
-              try {
-                // Reuse the existing reader and its per-bot database order.
-                lists.push({
-                  botId: bot.id,
-                  routines: await listRoutinesDto(deps, context.actor, bot.id),
-                });
-              } catch {
-                // Clients retry omitted bots through their original per-bot query.
-              }
-            }
-          }),
-        );
-        return lists;
+        const rows = await deps.prisma.routine.findMany({
+          where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
+        });
+        return bots.map((bot) => ({
+          botId: bot.id,
+          routines: rows.filter((row) => row.botId === bot.id).map((row) => routineDto(row, actor)),
+        }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
         listRoutineRuns(deps.prisma, context.actor, input.routineId, input.before),
