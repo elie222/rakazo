@@ -243,16 +243,13 @@ const JUDGE_CALIBRATION = [
     pass: false,
   },
   {
-    input: referenceRun(
-      `Added "Renew passport", due Friday 30 Oct. ${OPEN_LIST}`,
-      (at) => ({
-        added: [],
-        calls: [
-          { name: "add_task", arguments: {}, at: at(2.5) },
-          { name: "list_tasks", arguments: {}, at: at(2.7) },
-        ],
-      }),
-    ),
+    input: referenceRun(`Added "Renew passport", due Friday 30 Oct. ${OPEN_LIST}`, (at) => ({
+      added: [],
+      calls: [
+        { name: "add_task", arguments: {}, at: at(2.5) },
+        { name: "list_tasks", arguments: {}, at: at(2.7) },
+      ],
+    })),
     pass: false,
   },
   {
