@@ -14,7 +14,7 @@ export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
 
 export function openAiCompatAllowPublicHosts(): boolean {
-  return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC === "1";
+  return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";
 }
 
 export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
@@ -101,9 +101,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   const builtInPublicHost =
     url.protocol === "https:" && url.port === "" && BUILT_IN_PUBLIC_MODEL_HOSTS.has(url.hostname);
   if (!allowPublic && !builtInPublicHost) {
-    throw new Error(
-      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them. A private reverse proxy on localhost or an RFC1918 address does not need that gate.",
-    );
+    throw new Error("Public model endpoints are disabled on this server.");
   }
   return url;
 }

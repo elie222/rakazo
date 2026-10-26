@@ -26,6 +26,7 @@ import type {
   verifyModelServesAgents,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
+import type { NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
 import { accountRoutes } from "./routes/account.js";
@@ -111,6 +112,7 @@ export interface RouterDeps {
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
     ticketBoardEnabled?: boolean;
+    navLinks?: NavLink[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;

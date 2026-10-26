@@ -252,7 +252,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent).",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent). Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
     inputSchema: {
       type: "object",
       properties: {
@@ -283,7 +283,7 @@ export const builtinAgentTools: ConnectorTool[] = [
                   text: { type: "string" },
                   key: { type: "string" },
                   modifiers: { type: "array", items: { type: "string" } },
-                  direction: { type: "string", enum: ["up", "down"] },
+                  direction: { type: "string", enum: ["up", "down", "left", "right"] },
                   amount: { type: "number" },
                   ms: { type: "number" },
                   application: { type: "string" },

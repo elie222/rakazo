@@ -357,6 +357,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "每月 ${0}"
@@ -708,11 +709,6 @@ msgstr "回答"
 msgid "Answered"
 msgstr "已回答"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "已回答：{0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "已回答：{answer}"
@@ -887,6 +883,7 @@ msgstr "頭像工作室"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1031,10 +1028,6 @@ msgstr "撥號中…"
 msgid "Calls"
 msgstr "通話"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "可編輯和整理它建立的機器人"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "無法連線伺服器。"
@@ -1102,6 +1095,10 @@ msgstr "更改 {name}"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "更改 {title}"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "更換模型"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1226,6 +1223,7 @@ msgid "Choose folder"
 msgstr "選擇資料夾"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "選擇 Rakazo 的使用方式"
 
@@ -2768,6 +2766,10 @@ msgstr "忘記密碼？"
 msgid "Free"
 msgstr "免費"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "免費方案將於 {day} 結束"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "週五"
@@ -2913,10 +2915,6 @@ msgstr "你是如何知道我們的？"
 msgid "How often"
 msgstr "頻率"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "其他機器人如何瞭解它"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "如何檢查"
@@ -2936,6 +2934,15 @@ msgstr "如果聽到了，說明語音已就緒。"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "忽略"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未設定圖片輸入。"
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未設定圖片輸入。"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4752,6 +4759,10 @@ msgstr "排程例行任務"
 msgid "Scopes (optional)"
 msgstr "範圍（選填）"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "螢幕未連線"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4833,6 +4844,10 @@ msgstr "請在 10 分鐘內從 {linkApp} 將 <0>{linkCode}</0> 傳送到 <1>{lin
 msgid "Send answer"
 msgstr "傳送回答"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "以檔案傳送"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "傳送刪除驗證碼"
@@ -4856,6 +4871,10 @@ msgstr "按 Enter 傳送"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "正在傳送…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5206,6 +5225,11 @@ msgstr "提交"
 msgid "Subscribe"
 msgstr "訂閱"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "以每月 ${0} 訂閱"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "需要訂閱"
@@ -5298,6 +5322,10 @@ msgstr "正在測試…"
 msgid "The bot and what its import added will be removed."
 msgstr "此機器人及其匯入新增的內容將被移除。"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "機器人可以使用這個檔案，但看不到圖片內容。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "連線超時。"
@@ -5315,6 +5343,18 @@ msgstr "模型回傳了無法使用的回覆，請再試一次。"
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "供應商正在限制請求頻率。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "螢幕連線已關閉。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "螢幕沒有回應。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "螢幕連結已過期。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5410,6 +5450,15 @@ msgstr "此匯入已使用過。請重新選擇檔案。"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "這臺 Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型無法讀取圖片。請選擇支援圖片的模型。"
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型無法讀取圖片。請選擇支援圖片的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5684,6 +5733,10 @@ msgstr "正在更新團隊電腦"
 msgid "Updating…"
 msgstr "正在更新…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "升級"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr "立即升級"
@@ -5780,6 +5833,10 @@ msgstr "使用此伺服器自己的 {hostCredentialSource} 憑證存取 {selecte
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr "使用你的 API 金鑰"
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "正在使用你的 API 金鑰。免費方案將於 {freeUntil} 結束。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

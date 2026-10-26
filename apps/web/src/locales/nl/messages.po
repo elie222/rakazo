@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -707,11 +708,6 @@ msgstr "Antwoorden"
 msgid "Answered"
 msgstr "Beantwoord"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "Beantwoord: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "Beantwoord: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatarstudio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1030,10 +1027,6 @@ msgstr "Belt…"
 msgid "Calls"
 msgstr "Aanroepen"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "Kan gemaakte bots bewerken en ordenen"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "De server is niet bereikbaar."
@@ -1101,6 +1094,10 @@ msgstr "{name} wijzigen"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "{title} wijzigen"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Model wijzigen"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1225,6 +1222,7 @@ msgid "Choose folder"
 msgstr "Map kiezen"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2767,6 +2765,10 @@ msgstr "Wachtwoord vergeten?"
 msgid "Free"
 msgstr "Gratis"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Gratis abonnement eindigt op {day}"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "vrijdag"
@@ -2912,10 +2914,6 @@ msgstr ""
 msgid "How often"
 msgstr "Hoe vaak"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "Hoe andere bots deze zien"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "Hoe te controleren"
@@ -2935,6 +2933,15 @@ msgstr "Als je dat hoorde, is de stem klaar."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "Negeren"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4751,6 +4758,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "Scopes (optioneel)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Scherm niet verbonden"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4832,6 +4843,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Antwoord verzenden"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Als bestand verzenden"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Verwijderingscode verzenden"
@@ -4855,6 +4870,10 @@ msgstr "Verzenden met Enter"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Bezig met verzenden…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5205,6 +5224,11 @@ msgstr "Versturen"
 msgid "Subscribe"
 msgstr "Abonneren"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Abonneren voor ${0} / maand"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Abonnement vereist"
@@ -5297,6 +5321,10 @@ msgstr "Bezig met testen…"
 msgid "The bot and what its import added will be removed."
 msgstr "De bot en wat de import heeft toegevoegd worden verwijderd."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "De bot kan het bestand gebruiken, maar ziet de afbeelding niet."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "De verbinding is verlopen."
@@ -5314,6 +5342,18 @@ msgstr "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "De aanbieder beperkt het aantal verzoeken."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "De schermverbinding is gesloten."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Het scherm reageerde niet."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "De schermlink is verlopen."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5409,6 +5449,15 @@ msgstr "Deze import is al gebruikt. Kies de bestanden opnieuw."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "deze Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5683,6 +5732,10 @@ msgstr "Teamcomputer bijwerken"
 msgid "Updating…"
 msgstr "Bezig met bijwerken…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Upgraden"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5779,6 +5832,10 @@ msgstr "Gebruikt de eigen {hostCredentialSource}-gegevens van deze server om toe
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Je eigen API-sleutel wordt gebruikt. Gratis abonnement eindigt op {freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

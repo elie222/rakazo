@@ -74,6 +74,9 @@ async function main() {
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
+      process.env.RAKAZO_NAV_LINKS = JSON.stringify([
+        { id: "clients", label: "Clients", path: "/ext/clients/" },
+      ]);
     }
     // Playwright/E2E force the offline cloud-agent emulator; clear Cursor keys so cards never hit a live VM.
     process.env.CLOUD_AGENT_PROVIDER = "emulator";

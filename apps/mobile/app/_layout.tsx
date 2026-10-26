@@ -436,6 +436,7 @@ function LayoutContent() {
                         ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
                       })}
                     />
+                    <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

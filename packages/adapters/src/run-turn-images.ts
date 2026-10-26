@@ -384,6 +384,7 @@ export async function claimRunSteering(
   seenIds: string[],
   context: Parameters<typeof loadCurrentTurnImages>[2],
   pendingTurnFiles: MessageBlock[][],
+  currentTurn: { messageId?: string; hasImages: boolean },
 ): Promise<AgentSteeringMessage[]> {
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
   return Promise.all(
@@ -408,7 +409,17 @@ export async function claimRunSteering(
         ]
           .filter(Boolean)
           .join("\n\n"),
-        images,
+        // A legacy run without sourceMessageId may resolve this same
+        // message as its current turn. Its images are already supplied.
+        images:
+          item.messageId === currentTurn.messageId && currentTurn.hasImages ? undefined : images,
+        imageFileFallback: Boolean(
+          images?.length &&
+            files.length &&
+            !item.blocks.some(
+              (block) => block.kind === "image" && block.imageHandling === "confirm",
+            ),
+        ),
       };
     }),
   );

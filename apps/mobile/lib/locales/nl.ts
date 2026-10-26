@@ -1,4 +1,15 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "Niet verzonden. Tik voor opties",
+  "Image input is not configured for this model.":
+    "Afbeeldingsinvoer is niet ingesteld voor dit model.",
+  "Send as file": "Als bestand verzenden",
+  "The bot can use the file but won't see the picture.":
+    "De bot kan het bestand gebruiken, maar ziet de afbeelding niet.",
+  "This model cannot read images. Choose a model that supports images.":
+    "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt.",
+  "Could not connect to the computer screen": "Kan geen verbinding maken met het computerscherm",
+  "Retry screen": "Scherm opnieuw verbinden",
+  "The screen connection closed.": "De schermverbinding is gesloten.",
   Approvals: "Goedkeuringen",
   "Never ask": "Nooit vragen",
   Auto: "Auto",
@@ -26,8 +37,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Export: "Exporteren",
   "Edit avatar": "Avatar bewerken",
   "Add open work": "Open taak toevoegen",
-  "Can edit and organise bots it creates": "Kan gemaakte bots bewerken en ordenen",
-  "How other bots see it": "Hoe andere bots deze zien",
   Permissions: "Machtigingen",
   "Open work": "Open taken",
   "When it finishes or needs input": "Als de bot klaar is of invoer nodig heeft",
@@ -423,6 +432,18 @@ export const NL_MESSAGES: Record<string, string> = {
   Profile: "Profiel",
   Routines: "Routines",
   "Could not load routines": "Routines laden mislukt",
+  "{count} on": "{count} aan",
+  "Ask this Bot in chat to set up a routine.":
+    "Vraag deze Bot in de chat om een routine in te stellen.",
+  "{name}, On": "{name}, aan",
+  "{name}, Off": "{name}, uit",
+  "Active: {name}": "Actief: {name}",
+  "Delete {name}": "{name} verwijderen",
+  "Delete this routine?": "Deze routine verwijderen?",
+  "This permanently deletes the routine and its run history.":
+    "Hiermee worden de routine en de uitvoergeschiedenis definitief verwijderd.",
+  "Could not delete routine": "Routine verwijderen mislukt",
+  "Could not update routine": "Routine bijwerken mislukt",
   Bot: "Bot",
   "Close computer": "Computer sluiten",
   "Computer keyboard": "Computertoetsenbord",
@@ -962,6 +983,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "Je abonnement of API-sleutel",
   "Free. ChatGPT, Claude, or any model provider.":
     "Gratis. ChatGPT, Claude of elke modelaanbieder.",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "{price} per maand. ChatGPT, Claude of elke modelaanbieder.",
+  "Free plan ends": "Gratis abonnement eindigt",
+  Subscribe: "Abonneren",
   "Use my subscription or API key": "Mijn abonnement of API-sleutel gebruiken",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Maandelijks tegoed vervalt bij verlenging. Los gekocht tegoed verloopt niet.",
@@ -1041,6 +1066,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "op de 1e om {time}",
   "on day {day} at {time}": "op dag {day} om {time}",
   "Every hour at :{minute}": "Elk uur om :{minute}",
+  "Every {n} hours at :{minute}": "Elke {n} uur om :{minute}",
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",

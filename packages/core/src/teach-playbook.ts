@@ -55,12 +55,18 @@ function describePointer(event: TeachRecordingEvent): string {
   return `${action === "click" ? "Click" : action} ${button} button at (${event.x ?? 0}, ${event.y ?? 0}).`;
 }
 
+/** The way a scroll goes; anything else scrolls down, as before. */
+export function scrollDirection(value: unknown): "up" | "down" | "left" | "right" {
+  return value === "up" || value === "left" || value === "right" ? value : "down";
+}
+
 function describeScroll(event: TeachRecordingEvent): string {
-  const direction = event.type === "up" ? "up" : "down";
+  const direction = scrollDirection(event.type);
   const amount = Number(event.text ?? 3);
+  const at = event.x !== undefined && event.y !== undefined ? ` at (${event.x}, ${event.y})` : "";
   return Number.isFinite(amount) && amount > 1
-    ? `Scroll ${direction} ${amount} times.`
-    : `Scroll ${direction}.`;
+    ? `Scroll ${direction} ${amount} times${at}.`
+    : `Scroll ${direction}${at}.`;
 }
 
 const REDACTED_INPUT = "[redacted input]";

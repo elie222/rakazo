@@ -1,7 +1,8 @@
-import { useLingui } from "@lingui/react/macro";
-import type { Bot } from "@rakazo/contracts";
+import { Trans, useLingui } from "@lingui/react/macro";
+import type { Bot, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
+  Button,
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
@@ -13,6 +14,8 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { PasskeyOffer } from "../../components/PasskeyOffer";
 import { SidebarFooter } from "../../components/SidebarFooter";
+import { useBilling } from "../../components/SubscriptionGate";
+import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import type { Panel } from "../../lib/right-panel-state";
 import { clearSpaceSelection } from "../../lib/rpc";
@@ -47,6 +50,7 @@ export function ShellSidebar({
   footerLogos,
   user,
   ticketBoardEnabled,
+  navLinks,
   openSettings,
   openIntegrations,
 }: {
@@ -70,6 +74,7 @@ export function ShellSidebar({
   footerLogos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
   ticketBoardEnabled: boolean;
+  navLinks: NavLink[];
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
 }) {
@@ -242,6 +247,7 @@ export function ShellSidebar({
           logos={footerLogos}
           user={user}
           ticketBoardEnabled={ticketBoardEnabled}
+          navLinks={navLinks}
           closeMobileSidebar={() => setMobileOpen(false)}
           navigate={navigate}
           openSettings={openSettings}
@@ -257,6 +263,7 @@ function ShellSidebarFooter({
   logos,
   user,
   ticketBoardEnabled,
+  navLinks,
   closeMobileSidebar,
   navigate,
   openSettings,
@@ -266,12 +273,20 @@ function ShellSidebarFooter({
   logos: Array<{ name: string; logo?: string | null }>;
   user: User | undefined;
   ticketBoardEnabled: boolean;
+  navLinks: NavLink[];
   closeMobileSidebar: () => void;
   navigate: (path: string) => void;
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
+  const { status: billing, showPlans } = useBilling();
+  const freeUntil =
+    billing?.funding === "byok" &&
+    billing.byokFreeUntil &&
+    new Date(billing.byokFreeUntil) > new Date()
+      ? billing.byokFreeUntil
+      : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [logOutError, setLogOutError] = useState<string | null>(null);
   const { signingOut, logOut } = useSignOut(() => {
@@ -279,51 +294,72 @@ function ShellSidebarFooter({
     navigate("/");
   }, setLogOutError);
   const { label: userName, initial: initials } = accountDisplay(user ?? {}, t`You`);
+  const day = freeUntil ? formatBillingDate(freeUntil, i18n.locale || "en") : "";
   return (
-    <SidebarFooter
-      mini={mini}
-      logos={logos}
-      name={userName}
-      initials={initials}
-      image={user?.image}
-      email={user?.email}
-      open={menuOpen}
-      onOpenChange={(open) => {
-        setMenuOpen(open);
-        if (!open) setLogOutError(null);
-      }}
-      onIntegrations={() => {
-        setMenuOpen(false);
-        openIntegrations();
-      }}
-      onBoard={
-        ticketBoardEnabled
-          ? () => {
-              setMenuOpen(false);
-              closeMobileSidebar();
-              navigate("/app/board");
-            }
-          : undefined
-      }
-      onArtifacts={() => {
-        setMenuOpen(false);
-        closeMobileSidebar();
-        navigate("/app/artifacts");
-      }}
-      onSettings={() => {
-        setMenuOpen(false);
-        openSettings("general");
-      }}
-      onUsage={() => {
-        setMenuOpen(false);
-        openSettings("usage");
-      }}
-      onLogOut={() => {
-        setLogOutError(null);
-        void logOut();
-      }}
-      signingOut={signingOut}
-      logOutError={logOutError}
-    />
+    <>
+      {freeUntil && !mini ? (
+        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-sm text-muted-foreground">
+          <span className="min-w-0 truncate">
+            <Trans>Free plan ends {day}</Trans>
+          </span>
+          {billing?.canManage ? (
+            <Button variant="outline" size="sm" onClick={showPlans}>
+              <Trans>Upgrade</Trans>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <SidebarFooter
+        mini={mini}
+        logos={logos}
+        name={userName}
+        initials={initials}
+        image={user?.image}
+        email={user?.email}
+        open={menuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (!open) setLogOutError(null);
+        }}
+        onIntegrations={() => {
+          setMenuOpen(false);
+          openIntegrations();
+        }}
+        onBoard={
+          ticketBoardEnabled
+            ? () => {
+                setMenuOpen(false);
+                closeMobileSidebar();
+                navigate("/app/board");
+              }
+            : undefined
+        }
+        links={navLinks}
+        onLink={(link) => {
+          setMenuOpen(false);
+          closeMobileSidebar();
+          navigate(`/app/x/${link.id}`);
+        }}
+        onArtifacts={() => {
+          setMenuOpen(false);
+          closeMobileSidebar();
+          navigate("/app/artifacts");
+        }}
+        onSettings={() => {
+          setMenuOpen(false);
+          openSettings("general");
+        }}
+        onUsage={() => {
+          setMenuOpen(false);
+          openSettings("usage");
+        }}
+        onLogOut={() => {
+          setLogOutError(null);
+          void logOut();
+        }}
+        signingOut={signingOut}
+        logOutError={logOutError}
+      />
+    </>
   );
 }

@@ -209,30 +209,55 @@ it("keeps an accepted question choice answered until the block updates", async (
   const onAnswer = vi.fn(async () => undefined);
   await render(block, undefined, onAnswer);
 
-  await act(async () => button("Paris")!.click());
+  await act(async () => button("AParis")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("paris", undefined);
-  expect(container.textContent).toContain("Answered: Paris");
-  expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).not.toContain("Answered");
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("BLondon")!.disabled).toBe(true);
   expect(container.querySelector(".text-destructive")).toBeNull();
 
   await render({ ...block, status: "answered", answer: "london" });
-  expect(container.textContent).toContain("Answered: London");
-  expect(container.textContent).not.toContain("Answered: Paris");
+  expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
 });
 
-it("gives question options a borderless fill", async () => {
+it("dims a closed question's options without a status line", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={{
+          kind: "ask",
+          text: "Which city?",
+          status: "pending",
+          actions: [{ id: "paris", label: "Paris" }],
+        }}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={async () => undefined}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(button("AParis")!.disabled).toBe(true);
+  expect(container.textContent).not.toContain("No longer active");
+});
+
+it("letters question options and fills them only on hover", async () => {
   await render({
     kind: "ask",
     text: "Which city?",
     status: "pending",
-    actions: [{ id: "paris", label: "Paris" }],
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
   });
-  const option = button("Paris")!;
+  const option = button("BLondon")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-secondary")).toBe(true);
-  expect(option.classList.contains("border-border")).toBe(false);
+  expect(option.classList.contains("bg-secondary")).toBe(false);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("B");
 });
 
 it("sizes approval buttons like the other card buttons", async () => {
@@ -252,7 +277,7 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
-it("gives onboarding choices borderless rows and distinct interaction states", async () => {
+it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
       <ChoiceCard
@@ -266,17 +291,10 @@ it("gives onboarding choices borderless rows and distinct interaction states", a
       />,
     ),
   );
-  const option = [...container.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes("Paris"),
-  )!;
+  const option = button("AParis")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-background")).toBe(true);
-  expect(option.classList.contains("border")).toBe(false);
-  expect(option.classList.contains("border-input")).toBe(false);
-  expect(option.classList.contains("enabled:hover:bg-foreground/5")).toBe(true);
-  expect(option.classList.contains("enabled:active:bg-foreground/15")).toBe(true);
-  expect(option.classList.contains("focus-visible:ring-2")).toBe(true);
-  expect(option.querySelector("span")?.classList.contains("bg-card")).toBe(true);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("A");
 });
 
 it.each([
@@ -370,4 +388,40 @@ it("offers import on the unanswered first-run focus card only", async () => {
     );
     expect(link()).toBeUndefined();
   }
+});
+
+it("quotes an edited reply and marks a sent draft", async () => {
+  const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
+  await render(block);
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).not.toContain("Answered");
+
+  await render({ ...block, answer: "approved" });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(container.textContent).toContain("Sent");
+});
+
+it("quotes a typed answer under the options it did not match", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "Paris",
+    actions: [
+      { id: "berlin", label: "Berlin" },
+      { id: "seoul", label: "Seoul" },
+    ],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Paris");
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "seoul",
+    actions: [{ id: "seoul", label: "Seoul" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
 });

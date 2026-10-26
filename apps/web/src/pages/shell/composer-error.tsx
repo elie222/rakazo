@@ -1,13 +1,16 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
 import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
-import { X } from "lucide-react";
+import { Button } from "@rakazo/ui-web";
+import { FileIcon, X } from "lucide-react";
 import type { RefObject } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { translateRunError } from "../../lib/run-error";
 
 export function ComposerError({
   sendError,
+  imageConfirmation = false,
+  onSendAsFile,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -17,6 +20,9 @@ export function ComposerError({
   textareaRef,
 }: {
   sendError: string | null;
+  /** A recoverable image/model mismatch: a warning with its two ways forward. */
+  imageConfirmation?: boolean;
+  onSendAsFile?: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -27,6 +33,7 @@ export function ComposerError({
 }) {
   const { t } = useLingui();
   const runErrorRef = useRef<HTMLDivElement>(null);
+  const fileNoteId = useId();
   const presentedRunErrorIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!runError || !runErrorId) return;
@@ -76,12 +83,13 @@ export function ComposerError({
           }
         : null;
 
+  const warning = Boolean(sendError) && imageConfirmation;
   return sendError || runError ? (
     <div
       ref={runErrorRef}
       role="alert"
       data-testid="composer-error"
-      className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
+      className={`mb-3 flex items-center gap-2 rounded-[14px] border px-4 py-2 text-[13px] animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none ${warning ? "border-warning/40 bg-warning/10 text-warning" : "border-destructive/40 bg-destructive/10 text-destructive"}`}
     >
       <div className="min-w-0 flex-1">
         {isModelRequiredSendError(sendError) ? (
@@ -96,6 +104,26 @@ export function ComposerError({
         ) : (
           (sendError ?? normalizedRunError?.summary ?? null)
         )}
+        {warning && onSendAsFile ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-describedby={fileNoteId}
+              onClick={onSendAsFile}
+            >
+              <FileIcon data-icon="inline-start" aria-hidden="true" />
+              {t`Send as file`}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onOpenModels}>
+              {t`Change model`}
+            </Button>
+            <p id={fileNoteId} className="basis-full text-xs text-muted-foreground">
+              {t`The bot can use the file but won't see the picture.`}
+            </p>
+          </div>
+        ) : null}
         {recoveryAction ? (
           <>
             {" "}
@@ -126,7 +154,7 @@ export function ComposerError({
           onDismissError();
           window.requestAnimationFrame(() => textareaRef.current?.focus());
         }}
-        className="shrink-0 text-destructive hover:text-foreground"
+        className={`shrink-0 hover:text-foreground ${warning ? "text-warning" : "text-destructive"}`}
       >
         <X size={13} strokeWidth={2} />
       </button>

@@ -1,4 +1,3 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   deploymentModelRole,
   hasHostedModelCredits,
@@ -10,16 +9,7 @@ import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, canonicalPiProviderId } from "@rakazo/contracts";
 import type { RouterDeps } from "../router.js";
 
-export function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
-  return {
-    operationId,
-    traceId: operationId,
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId,
-    signal: new AbortController().signal,
-  };
-}
+export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
 
 function hostCredentials(active: boolean, provider: string) {
   return active
@@ -38,6 +28,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   return {
     ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
+    navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
     userId: actor.userId,
     email: user.email,
@@ -106,6 +97,8 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
       }).primary,
     settings,
+    funding,
+    hasDeployment,
     needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
   };
 }

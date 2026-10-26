@@ -1,4 +1,14 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "未傳送。點一下查看選項",
+  "Image input is not configured for this model.": "此模型尚未設定圖片輸入。",
+  "Send as file": "以檔案傳送",
+  "The bot can use the file but won't see the picture.":
+    "機器人可以使用這個檔案，但看不到圖片內容。",
+  "This model cannot read images. Choose a model that supports images.":
+    "此模型無法讀取圖片。請選擇支援圖片的模型。",
+  "Could not connect to the computer screen": "無法連線至電腦螢幕",
+  "Retry screen": "重新連線螢幕",
+  "The screen connection closed.": "螢幕連線已關閉。",
   "Approval model": "核准模型",
   "Main model": "主模型",
   "Add fallback": "新增備援模型",
@@ -19,8 +29,6 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Export: "匯出",
   "Edit avatar": "編輯頭像",
   "Add open work": "新增待辦事項",
-  "Can edit and organise bots it creates": "可編輯和整理它建立的機器人",
-  "How other bots see it": "其他機器人如何瞭解它",
   Permissions: "權限",
   "Open work": "待辦事項",
   "When it finishes or needs input": "完成或需要輸入時",
@@ -338,6 +346,17 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not load model settings": "無法載入模型設定",
   "Could not load routine": "無法載入例行任務",
   "Could not load routines": "無法載入例行任務",
+  "{count} on": "{count} 個已開啟",
+  "Ask this Bot in chat to set up a routine.": "在聊天中請此 Bot 設定一個例行任務。",
+  "{name}, On": "{name}，開啟",
+  "{name}, Off": "{name}，關閉",
+  "Active: {name}": "啟用：{name}",
+  "Delete {name}": "刪除 {name}",
+  "Delete this routine?": "要刪除此例行任務嗎？",
+  "This permanently deletes the routine and its run history.":
+    "這將永久刪除該例行任務及其執行紀錄。",
+  "Could not delete routine": "無法刪除例行任務",
+  "Could not update routine": "無法更新例行任務",
   "Get notified when this Bot finishes or needs input": "在此機器人完成或需要輸入時收到通知",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "無法載入桌面。此裝置無法存取螢幕地址。",
@@ -957,6 +976,10 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Manage billing": "管理帳務",
   "Your subscription or API key": "你的訂閱或 API 金鑰",
   "Free. ChatGPT, Claude, or any model provider.": "免費。ChatGPT、Claude 或任意模型供應商。",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "每月 {price}。ChatGPT、Claude 或任意模型供應商。",
+  "Free plan ends": "免費方案結束於",
+  Subscribe: "訂閱",
   "Use my subscription or API key": "使用我的訂閱或 API 金鑰",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "每月額度在續訂時到期。單次加值額度不會過期。",
@@ -1063,6 +1086,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "1 日 {time}",
   "on day {day} at {time}": "{day} 日 {time}",
   "Every hour at :{minute}": "每小時 {minute} 分",
+  "Every {n} hours at :{minute}": "每 {n} 小時 {minute} 分",
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",

@@ -353,6 +353,7 @@ services:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
+      RAKAZO_NAV_LINKS:
       VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"

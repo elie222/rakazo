@@ -72,6 +72,7 @@ import {
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionSteps,
+  controlHandlesActions,
   createDockerStreamDemuxer,
   currentComputerScreens,
   demuxDockerStream,
@@ -652,7 +653,9 @@ app.post("/computers/:id/actions", async (c) => {
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
     );
-    const control = computerControlEndpoint(info);
+    const endpoint = computerControlEndpoint(info);
+    const control =
+      endpoint && controlHandlesActions(info.Config.Labels, body.actions) ? endpoint : undefined;
     const attempt = await attemptComputerControl(
       control
         ? () =>

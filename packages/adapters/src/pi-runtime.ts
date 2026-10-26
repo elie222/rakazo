@@ -19,7 +19,11 @@ import type {
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
-import { MISSING_TOOL_FINAL_RESPONSE_ERROR, modelFallbackFailure } from "@rakazo/core";
+import {
+  MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  MODEL_IMAGE_INPUT_ERROR,
+  modelFallbackFailure,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
@@ -232,6 +236,11 @@ export class PiAgentRuntime implements AgentRuntime {
         const tools = toAgentTools(toolDefs, host);
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
+        let hasCurrentImages = Boolean(
+          request.currentRunRequiresImageInput ||
+            (request.currentTurnImages?.length && !request.currentTurnImageFileFallback) ||
+            initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
+        );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(request.turnCheckpoint, {
@@ -341,8 +350,11 @@ export class PiAgentRuntime implements AgentRuntime {
           backupOutcomes: new Map(),
           selfRecoveries: 0,
           cutReplies: new WeakSet(),
-          stream: (target, ctx, options) =>
-            reliableModelStream(
+          stream: (target, ctx, options) => {
+            if (hasCurrentImages && !target.model.input.includes("image")) {
+              throw new Error(MODEL_IMAGE_INPUT_ERROR);
+            }
+            return reliableModelStream(
               target.models,
               target.model,
               ctx,
@@ -369,7 +381,8 @@ export class PiAgentRuntime implements AgentRuntime {
                   },
                 ),
               target.config.cacheCapabilities?.retentionMode,
-            ),
+            );
+          },
           onContextLimit: (contextWindow) => {
             const target = resizeRuntimeTarget(activeStreamTarget, contextWindow);
             activeStreamTarget = target;
@@ -426,6 +439,8 @@ export class PiAgentRuntime implements AgentRuntime {
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
+            if (steering.some((item) => item.images?.length && !item.imageFileFallback))
+              hasCurrentImages = true;
             for (const item of steering) {
               const images = toPiImages(item.images);
               agent.steer({

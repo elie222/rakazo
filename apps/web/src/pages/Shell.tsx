@@ -52,6 +52,7 @@ import {
   getComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
+import { desktopBridge } from "../lib/desktop";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -775,6 +776,7 @@ function SpaceShell() {
         footerLogos={footerLogos}
         user={session.data?.user}
         ticketBoardEnabled={Boolean(bootstrapMe?.ticketBoardEnabled)}
+        navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
       />
@@ -920,6 +922,8 @@ function SpaceShell() {
               pendingAttachments={composer.activePendingAttachments}
               attachmentNotice={composer.attachmentNotice}
               sendError={sendError}
+              imageConfirmation={composer.imageConfirmation}
+              onDraftEdited={composer.clearImageConfirmation}
               onOpenModels={() => {
                 // A group's failed run belongs to one member; change that bot's model.
                 const failedBotId =

@@ -2239,6 +2239,19 @@ describe("PiOAuthLogins hand-off between API processes", () => {
     expect(other.seen).toEqual([]);
   });
 
+  it("queries the hand-off by owner columns when the caller passes its whole actor", async () => {
+    const { store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const actor = { ...member, email: "member@example.test", isDeploymentOwner: false };
+    await expect(
+      apiProcess(store).logins.submit(started.loginId, actor, "the-code"),
+    ).resolves.toEqual({ ok: true });
+    expect(store?.prisma.modelOAuthSession.findFirst).toHaveBeenCalledWith({
+      where: { id: started.loginId, ...member, createdAt: { gte: expect.any(Date) } },
+      select: { ciphertext: true },
+    });
+  });
+
   it("does not resume an expired sign-in", async () => {
     const { rows, store } = handoffStore();
     const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });

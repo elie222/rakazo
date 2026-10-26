@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "${0} / 月"
@@ -707,11 +708,6 @@ msgstr "応答"
 msgid "Answered"
 msgstr "回答済み"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "回答済み: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "回答済み: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatar Studio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1030,10 +1027,6 @@ msgstr "発信中…"
 msgid "Calls"
 msgstr "呼び出し"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "自分が作成したボットを編集・整理できます"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "サーバーに接続できません。"
@@ -1101,6 +1094,10 @@ msgstr "{name} を変更"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "{title} を変更"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "モデルを変更"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1225,6 +1222,7 @@ msgid "Choose folder"
 msgstr "フォルダを選択"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "Rakazoの使い方を選択"
 
@@ -2767,6 +2765,10 @@ msgstr "パスワードをお忘れですか？"
 msgid "Free"
 msgstr "無料"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "無料プランは{day}に終了します"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "金曜日"
@@ -2912,10 +2914,6 @@ msgstr "Rakazoを何で知りましたか？"
 msgid "How often"
 msgstr "頻度"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "他のボットからの見え方"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "確認方法"
@@ -2935,6 +2933,15 @@ msgstr "これが聞こえたら、音声の準備は完了です。"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "無視"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "このモデルでは画像入力が設定されていません。"
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "このモデルでは画像入力が設定されていません。"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4751,6 +4758,10 @@ msgstr "スケジュール済みのルーティン"
 msgid "Scopes (optional)"
 msgstr "スコープ（任意）"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "画面が接続されていません"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4832,6 +4843,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "回答を送信"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "ファイルとして送信"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "削除コードを送信"
@@ -4855,6 +4870,10 @@ msgstr "Enterで送信"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "送信中…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5205,6 +5224,11 @@ msgstr "送信"
 msgid "Subscribe"
 msgstr "申し込む"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "月額 ${0} で登録"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "サブスクリプションが必要です"
@@ -5297,6 +5321,10 @@ msgstr "テスト中…"
 msgid "The bot and what its import added will be removed."
 msgstr "ボットと、そのインポートで追加されたものが削除されます。"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "ボットはファイルを利用できますが、画像の内容は見えません。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "接続がタイムアウトしました。"
@@ -5314,6 +5342,18 @@ msgstr "モデルが利用できない応答を返しました。もう一度お
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "プロバイダーがリクエストを制限しています。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "画面の接続が閉じられました。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "画面から応答がありませんでした。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "画面リンクの有効期限が切れました。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5409,6 +5449,15 @@ msgstr "このインポートはすでに使用されています。もう一度
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "このMac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "このモデルは画像を読み取れません。画像に対応したモデルを選択してください。"
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "このモデルは画像を読み取れません。画像に対応したモデルを選択してください。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5683,6 +5732,10 @@ msgstr "チームのコンピューターを更新中"
 msgid "Updating…"
 msgstr "更新中…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "アップグレード"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr "今すぐアップグレード"
@@ -5779,6 +5832,10 @@ msgstr "このサーバー自身の{hostCredentialSource}認証情報を使用�
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr "APIキーを使用中"
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "自分の API キーを使用中。無料プランは{freeUntil}に終了します。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

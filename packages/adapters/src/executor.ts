@@ -14,6 +14,7 @@ import {
   isOwnerStartedRun,
   isTerminal,
   MISSING_MODEL_RUN_ERROR,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
   messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -34,6 +35,7 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  spaceHasModelAccess,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -587,6 +589,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
           run.sourceMessageId,
         );
         const turnBlocks = currentTurnMessage?.blocks;
+        // A run owns its source message and steering bound to it, including waiting-input
+        // replies. message.runId alone is display linkage: a send during background work
+        // points at that run but waits for its continuation. Read independently of history.
+        const currentRunImageMessages = await deps.prisma.message.findMany({
+          where: {
+            threadId: thread.id,
+            OR: [
+              ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              { steeringMessages: { some: { runId, botId: run.botId } } },
+            ],
+            role: "user",
+            blocks: { array_contains: [{ kind: "image" }] },
+          },
+          select: { id: true, blocks: true },
+          orderBy: { seq: "asc" },
+        });
+        // The content extension decrypts imageHandling after filtering on plain kind.
+        const confirmedRunImages = currentRunImageMessages.flatMap((message) =>
+          (message.blocks as MessageBlock[]).filter(
+            (block) => block.kind === "image" && block.imageHandling === "confirm",
+          ),
+        );
+        const currentRunRequiresImageInput = confirmedRunImages.length > 0;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -712,6 +737,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         if (!runModelProvider || !runModelId) {
           await failRunBeforeModel(MISSING_MODEL_RUN_ERROR, true);
+          return;
+        }
+        if (
+          (await modelCreditBillingEnabled(deps)) &&
+          !(await spaceHasModelAccess(deps.prisma, run.spaceId))
+        ) {
+          await failRunBeforeModel(MODEL_ACCESS_REQUIRED_RUN_ERROR, true);
           return;
         }
         // An incompatible saved model is a configuration error. Record it on the run.
@@ -1365,6 +1397,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 .join("\n\n"),
               history: runtimeHistory,
               currentTurnImages,
+              currentRunRequiresImageInput,
+              currentTurnImageFileFallback: Boolean(
+                currentTurnImages?.length &&
+                  currentTurnFiles.length &&
+                  !turnBlocks?.some(
+                    (block) => block.kind === "image" && block.imageHandling === "confirm",
+                  ),
+              ),
               tools,
               model: {
                 provider: runModelProvider,
@@ -1490,6 +1530,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   seenIds,
                   context,
                   pendingTurnFiles,
+                  {
+                    messageId: currentTurnMessage?.id,
+                    hasImages: Boolean(currentTurnImages?.length),
+                  },
                 ),
             },
             context,
