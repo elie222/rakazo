@@ -240,6 +240,19 @@ describe("ChatMarkdown", () => {
     expect(html).toContain('data-testid="table-card"');
   });
 
+  it.each([
+    '<img alt="Chart" data-alt="Decorative">',
+    '<img title="1 > 0" alt="Chart">',
+    '<img alt="Chart" title="alt=Decorative">',
+  ])("renders the real table image description as text: %s", (image) => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{`| Description |\n| --- |\n| ${image} |`}</ChatMarkdown>,
+    );
+    expect(html).toContain(">Chart</span>");
+    expect(html).not.toContain("Decorative");
+    expect(html).not.toContain("<img");
+  });
+
   it("preserves spacing and image descriptions when table HTML is skipped", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown>

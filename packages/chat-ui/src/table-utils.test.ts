@@ -116,6 +116,22 @@ describe("extractTable", () => {
     ]);
   });
 
+  it.each([
+    '<img alt="Chart" data-alt="Decorative">',
+    '<img title="1 > 0" alt="Chart">',
+    '<img alt="Chart" title="alt=Decorative">',
+  ])("uses the real image description for copied and exported rows: %s", (html) => {
+    const extracted = extractTable(
+      table([
+        row(cell("th", "Description")),
+        row({ tagName: "td", children: [{ type: "raw", value: html }] }),
+      ]),
+    );
+    expect(extracted?.rows).toEqual([["Chart"]]);
+    expect(tableToTsv(extracted!.columns, extracted!.rows)).toBe("Description\nChart");
+    expect(tableToCsv(extracted!.columns, extracted!.rows)).toBe("Description\nChart");
+  });
+
   it("returns null for malformed nodes", () => {
     expect(extractTable(undefined)).toBeNull();
     expect(extractTable({})).toBeNull();

@@ -7,8 +7,18 @@
  */
 export function droppedTableHtmlText(html: string): string | null {
   if (/^<br[\s/>]/i.test(html)) return " ";
-  const alt = html.match(/<img[^>]*\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i);
-  return alt ? decodeHtmlEntities(alt[1] ?? alt[2] ?? alt[3] ?? "") : null;
+  const image = html.match(/^<img(?=[\s/>])((?:[^"'<>]|"[^"]*"|'[^']*')*)>/i);
+  if (!image) return null;
+  // Consume whole attributes so names and quoted values cannot impersonate alt.
+  const attributes = image[1]?.matchAll(
+    /\s([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g,
+  );
+  for (const attribute of attributes ?? []) {
+    if (attribute[1]?.toLowerCase() === "alt") {
+      return decodeHtmlEntities(attribute[2] ?? attribute[3] ?? attribute[4] ?? "");
+    }
+  }
+  return null;
 }
 
 function decodeHtmlEntities(value: string): string {
