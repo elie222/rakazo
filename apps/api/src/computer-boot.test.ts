@@ -214,8 +214,8 @@ describe("computer stop", () => {
     expect(stop).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
       discardUnsaved: true,
     });
-    expect(prisma.computer.update).toHaveBeenCalledWith({
-      where: { id: "computer-1" },
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", state: "suspending", providerRef: "boat-1", kind: "boat" },
       data: expect.objectContaining({ state: "stopped" }),
     });
     expect(prisma.computerRun.updateMany).toHaveBeenCalledWith(
