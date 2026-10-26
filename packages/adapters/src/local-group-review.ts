@@ -6,7 +6,8 @@
  * specialist stage, or finalize. Stops at budget/supersession and never replays
  * old work. No internal planner text is added as a visible chat message.
  */
-import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
+import type { JobPublisher } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";

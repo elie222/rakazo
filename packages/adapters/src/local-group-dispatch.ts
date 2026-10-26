@@ -7,7 +7,8 @@
  * stage to the original owner for evidence synthesis and optional deepening.
  * Group names and predefined occupations never affect scheduling.
  */
-import { type JobPublisher, runContinueJob } from "@rakazo/adapter-kit";
+import type { JobPublisher } from "@rakazo/adapter-kit";
+import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
