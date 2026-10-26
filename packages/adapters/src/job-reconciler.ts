@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
@@ -120,10 +121,16 @@ export function createJobReconciler(
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
   },
-  options: { intervalMs?: number; batchSize?: number } = {},
+  options: { intervalMs?: number; batchSize?: number; maxPagesPerPass?: number } = {},
 ) {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const maxPagesPerPass = options.maxPagesPerPass ?? 10;
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new Error("Invalid batch size");
+  if (!Number.isSafeInteger(maxPagesPerPass) || maxPagesPerPass < 1) {
+    throw new Error("Invalid page budget");
+  }
+  let stopping = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let reconciling: Promise<void> | undefined;
   let lastCompletedAt = Date.now();
@@ -135,6 +142,7 @@ export function createJobReconciler(
 
   const reconcileOnce = async () => {
     if (reconciling) return reconciling;
+    if (stopping) return;
     reconciling = (async () => {
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
@@ -171,236 +179,275 @@ export function createJobReconciler(
       } catch (error) {
         getLogger().error("stuck work reconciliation", error);
       }
-      controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
-      const runCursorFilter = runCursor
-        ? {
-            OR: [
-              { updatedAt: { gt: runCursor.at } },
-              { updatedAt: runCursor.at, id: { gt: runCursor.id } },
-            ],
-          }
-        : undefined;
-      const routineCursorFilter = routineCursor
-        ? {
-            OR: [
-              { nextRunAt: { gt: routineCursor.at } },
-              { nextRunAt: routineCursor.at, id: { gt: routineCursor.id } },
-            ],
-          }
-        : undefined;
-      const controlCursorFilter = controlCursor
-        ? controlCursor.at
+      // Direct run dispatch has its own recovery scan. Keep the legacy run scan,
+      // auxiliary work and outcome delivery at their once-per-tick cadence.
+      // Drain scheduled work with a bounded budget and a yield between pages.
+      let routinesDone = false;
+      let controlsDone = false;
+      for (let page = 0; page < maxPagesPerPass && !stopping; page += 1) {
+        if (page > 0 && deps.leadership && !(await deps.leadership.tryAcquire())) return;
+        controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
+        const runCursorFilter = runCursor
           ? {
               OR: [
-                { controlLeaseExpiresAt: { gt: controlCursor.at } },
-                {
-                  controlLeaseExpiresAt: controlCursor.at,
-                  id: { gt: controlCursor.id },
-                },
-                { controlLeaseExpiresAt: null },
+                { updatedAt: { gt: runCursor.at } },
+                { updatedAt: runCursor.at, id: { gt: runCursor.id } },
               ],
             }
-          : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
-        : undefined;
-      const [runs, routines, controls, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
-        deps.prisma.run.findMany({
-          where: {
-            AND: [
-              {
-                OR: [
-                  { status: "queued" },
-                  {
-                    status: { in: ["leased", "running"] },
-                    leaseExpiresAt: { lte: now },
-                  },
-                ],
-              },
-              ...(runCursorFilter ? [runCursorFilter] : []),
-            ],
-          },
-          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: { id: true, status: true, updatedAt: true },
-        }),
-        deps.prisma.routine.findMany({
-          where: {
-            AND: [
-              {
-                active: true,
-                nextRunAt: { lte: new Date(now.getTime() + ROUTINE_LOOKAHEAD_MS) },
-              },
-              ...(routineCursorFilter ? [routineCursorFilter] : []),
-            ],
-          },
-          orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: { id: true, nextRunAt: true },
-        }),
-        deps.prisma.computer.findMany({
-          where: {
-            AND: [
-              { controlLeaseId: { not: null } },
-              {
-                OR: [
-                  { controlLeaseExpiresAt: null },
-                  {
-                    controlLeaseExpiresAt: {
-                      lte: controlScanDeadline,
-                    },
-                  },
-                ],
-              },
-              ...(controlCursorFilter ? [controlCursorFilter] : []),
-            ],
-          },
-          orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: {
-            id: true,
-            controlBotId: true,
-            controlLeaseId: true,
-            controlLeaseExpiresAt: true,
-          },
-        }),
-        deps.prisma.messagingOutbound.findFirst({
-          where: {
-            status: "pending",
-            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-          },
-          select: { id: true },
-        }),
-        deps.prisma.run.findMany({
-          where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
-          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: { id: true },
-        }),
-      ]);
-
-      const events = deps.events;
-      if (events) {
-        const outcomes = await deps.prisma.run.findMany({
-          where: {
-            trigger: "bot_message",
-            botOutcomeReturnedAt: null,
-            OR: [
-              { status: { in: ["completed", "failed"] } },
-              { status: "cancelled", error: { in: [...stuckWorkStatusMessages()] } },
-            ],
-          },
-          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-          take: batchSize,
-          select: {
-            id: true,
-            spaceId: true,
-            threadId: true,
-            botId: true,
-            userId: true,
-            sourceMessageId: true,
-            status: true,
-            error: true,
-            bot: { select: { name: true } },
-          },
-        });
-        await Promise.all(
-          outcomes.map(async (run) => {
-            const stuckCancel = run.status === "cancelled";
-            const transcript =
-              run.status === "failed" || stuckCancel
-                ? { text: "", progressOnly: false }
-                : await botRunOutcomeText(deps.prisma, run.id);
-            const text = stuckCancel
-              ? (run.error ?? "")
-              : run.status === "failed"
-                ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
-                : transcript.text ||
-                  "The delegated bot completed its turn without a written summary.";
-            // Loop-guard stops complete without an error; their persisted final text
-            // is the only marker available when the executor's outcome delivery fails.
-            const loopGuardStop = isLoopGuardStopText(transcript.text);
-            // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
-            // concurrent or earlier return is replayed instead of double-posted. Progress-only
-            // transcripts (all mid-turn user-progress messages) return as status.
-            const intent =
-              run.status === "failed" ||
-              stuckCancel ||
-              !transcript.text.trim() ||
-              transcript.progressOnly
-                ? "status"
-                : ("result" as const);
-            const returned = await returnBotMessageOutcome(
-              { prisma: deps.prisma, jobs: deps.jobs, events },
-              run,
-              { id: run.botId, name: run.bot.name },
-              text,
-              intent,
-              { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
-            ).catch((error) => {
-              getLogger().error("bot message outcome reconciliation", error);
-              return false;
-            });
-            if (!returned) {
-              await deps.prisma.run.updateMany({
-                where: { id: run.id, botOutcomeReturnedAt: null },
-                data: { updatedAt: new Date() },
-              });
+          : undefined;
+        const routineCursorFilter = routineCursor
+          ? {
+              OR: [
+                { nextRunAt: { gt: routineCursor.at } },
+                { nextRunAt: routineCursor.at, id: { gt: routineCursor.id } },
+              ],
             }
-          }),
-        );
+          : undefined;
+        const controlCursorFilter = controlCursor
+          ? controlCursor.at
+            ? {
+                OR: [
+                  { controlLeaseExpiresAt: { gt: controlCursor.at } },
+                  {
+                    controlLeaseExpiresAt: controlCursor.at,
+                    id: { gt: controlCursor.id },
+                  },
+                  { controlLeaseExpiresAt: null },
+                ],
+              }
+            : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
+          : undefined;
+        const [runs, routines, controls, dueOutbound, unmirroredMessagingRuns]: [
+          Array<{ id: string; status: string; updatedAt: Date }>,
+          Array<{ id: string; nextRunAt: Date | null }>,
+          Array<{
+            id: string;
+            controlBotId: string | null;
+            controlLeaseId: string | null;
+            controlLeaseExpiresAt: Date | null;
+          }>,
+          { id: string } | null,
+          Array<{ id: string }>,
+        ] = await Promise.all([
+          page > 0
+            ? []
+            : deps.prisma.run.findMany({
+                where: {
+                  AND: [
+                    {
+                      OR: [
+                        { status: "queued" },
+                        {
+                          status: { in: ["leased", "running"] },
+                          leaseExpiresAt: { lte: now },
+                        },
+                      ],
+                    },
+                    ...(runCursorFilter ? [runCursorFilter] : []),
+                  ],
+                },
+                orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: { id: true, status: true, updatedAt: true },
+              }),
+          routinesDone
+            ? []
+            : deps.prisma.routine.findMany({
+                where: {
+                  AND: [
+                    {
+                      active: true,
+                      nextRunAt: { lte: new Date(now.getTime() + ROUTINE_LOOKAHEAD_MS) },
+                    },
+                    ...(routineCursorFilter ? [routineCursorFilter] : []),
+                  ],
+                },
+                orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: { id: true, nextRunAt: true },
+              }),
+          controlsDone
+            ? []
+            : deps.prisma.computer.findMany({
+                where: {
+                  AND: [
+                    { controlLeaseId: { not: null } },
+                    {
+                      OR: [
+                        { controlLeaseExpiresAt: null },
+                        {
+                          controlLeaseExpiresAt: {
+                            lte: controlScanDeadline,
+                          },
+                        },
+                      ],
+                    },
+                    ...(controlCursorFilter ? [controlCursorFilter] : []),
+                  ],
+                },
+                orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: {
+                  id: true,
+                  controlBotId: true,
+                  controlLeaseId: true,
+                  controlLeaseExpiresAt: true,
+                },
+              }),
+          page > 0
+            ? null
+            : deps.prisma.messagingOutbound.findFirst({
+                where: {
+                  status: "pending",
+                  OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+                },
+                select: { id: true },
+              }),
+          page > 0
+            ? []
+            : deps.prisma.run.findMany({
+                where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+                orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+                take: batchSize,
+                select: { id: true },
+              }),
+        ]);
+
+        const events = deps.events;
+        if (events && page === 0) {
+          const outcomes = await deps.prisma.run.findMany({
+            where: {
+              trigger: "bot_message",
+              botOutcomeReturnedAt: null,
+              OR: [
+                { status: { in: ["completed", "failed"] } },
+                { status: "cancelled", error: { in: [...stuckWorkStatusMessages()] } },
+              ],
+            },
+            orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+            take: batchSize,
+            select: {
+              id: true,
+              spaceId: true,
+              threadId: true,
+              botId: true,
+              userId: true,
+              sourceMessageId: true,
+              status: true,
+              error: true,
+              bot: { select: { name: true } },
+            },
+          });
+          await Promise.all(
+            outcomes.map(async (run) => {
+              const stuckCancel = run.status === "cancelled";
+              const transcript =
+                run.status === "failed" || stuckCancel
+                  ? { text: "", progressOnly: false }
+                  : await botRunOutcomeText(deps.prisma, run.id);
+              const text = stuckCancel
+                ? (run.error ?? "")
+                : run.status === "failed"
+                  ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
+                  : transcript.text ||
+                    "The delegated bot completed its turn without a written summary.";
+              // Loop-guard stops complete without an error; their persisted final text
+              // is the only marker available when the executor's outcome delivery fails.
+              const loopGuardStop = isLoopGuardStopText(transcript.text);
+              // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
+              // concurrent or earlier return is replayed instead of double-posted. Progress-only
+              // transcripts (all mid-turn user-progress messages) return as status.
+              const intent =
+                run.status === "failed" ||
+                stuckCancel ||
+                !transcript.text.trim() ||
+                transcript.progressOnly
+                  ? "status"
+                  : ("result" as const);
+              const returned = await returnBotMessageOutcome(
+                { prisma: deps.prisma, jobs: deps.jobs, events },
+                run,
+                { id: run.botId, name: run.bot.name },
+                text,
+                intent,
+                { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
+              ).catch((error) => {
+                getLogger().error("bot message outcome reconciliation", error);
+                return false;
+              });
+              if (!returned) {
+                await deps.prisma.run.updateMany({
+                  where: { id: run.id, botOutcomeReturnedAt: null },
+                  data: { updatedAt: new Date() },
+                });
+              }
+            }),
+          );
+        }
+
+        // A queued run already has a job while it waits out failure backoff.
+        // Default replace would zero that job's attempts and run it now. keepExisting
+        // leaves the job while attempts remain, and still replaces one that is exhausted.
+        // A locked job whose worker died is never unlocked, so it is replaced: any lock
+        // for a run whose lease expired, and for a queued run only a lock older than
+        // a lease, since a live worker finishing a failed attempt still holds it.
+        const abandonedQueuedLockAt = new Date(now.getTime() - ABANDONED_QUEUED_LOCK_MS);
+        const publications = await Promise.allSettled([
+          ...runs.map((run) =>
+            deps.jobs.enqueue({
+              ...runContinueJob(run.id),
+              keepExisting: true,
+              replaceLockedBefore: run.status === "queued" ? abandonedQueuedLockAt : now,
+            }),
+          ),
+          ...routines.flatMap((routine) =>
+            routine.nextRunAt
+              ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
+              : [],
+          ),
+          ...controls.flatMap((computer) =>
+            computer.controlLeaseId
+              ? [
+                  scheduleComputerControlExpiry(
+                    deps.jobs,
+                    computer.id,
+                    computer.controlLeaseId,
+                    computer.controlLeaseExpiresAt ?? now,
+                  ),
+                ]
+              : [],
+          ),
+          ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
+          ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
+        ]);
+
+        // Do not advance or retry a page until every attempted publication settles.
+        const failed = publications.find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") throw failed.reason;
+
+        if (page === 0) {
+          const lastRun = runs.at(-1);
+          runCursor =
+            runs.length === batchSize && lastRun
+              ? { at: lastRun.updatedAt, id: lastRun.id }
+              : undefined;
+        }
+        const lastRoutine = routines.at(-1);
+        routineCursor =
+          routines.length === batchSize && lastRoutine?.nextRunAt
+            ? { at: lastRoutine.nextRunAt, id: lastRoutine.id }
+            : undefined;
+        const lastControl = controls.at(-1);
+        controlCursor =
+          controls.length === batchSize && lastControl
+            ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
+            : undefined;
+        if (!controlCursor) controlScanDeadline = undefined;
+        routinesDone ||= !routineCursor;
+        controlsDone ||= !controlCursor;
+        if (routinesDone && controlsDone) break;
+        if (page + 1 < maxPagesPerPass) await setImmediate();
       }
-
-      // A queued run already has a job while it waits out failure backoff.
-      // Default replace would zero that job's attempts and run it now. keepExisting
-      // leaves the job while attempts remain, and still replaces one that is exhausted.
-      // A locked job whose worker died is never unlocked, so it is replaced: any lock
-      // for a run whose lease expired, and for a queued run only a lock older than
-      // a lease, since a live worker finishing a failed attempt still holds it.
-      const abandonedQueuedLockAt = new Date(now.getTime() - ABANDONED_QUEUED_LOCK_MS);
-      await Promise.all([
-        ...runs.map((run) =>
-          deps.jobs.enqueue({
-            ...runContinueJob(run.id),
-            keepExisting: true,
-            replaceLockedBefore: run.status === "queued" ? abandonedQueuedLockAt : now,
-          }),
-        ),
-        ...routines.flatMap((routine) =>
-          routine.nextRunAt
-            ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
-            : [],
-        ),
-        ...controls.flatMap((computer) =>
-          computer.controlLeaseId
-            ? [
-                scheduleComputerControlExpiry(
-                  deps.jobs,
-                  computer.id,
-                  computer.controlLeaseId,
-                  computer.controlLeaseExpiresAt ?? now,
-                ),
-              ]
-            : [],
-        ),
-        ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
-        ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
-      ]);
-
-      const lastRun = runs.at(-1);
-      runCursor =
-        runs.length === batchSize && lastRun
-          ? { at: lastRun.updatedAt, id: lastRun.id }
-          : undefined;
-      const lastRoutine = routines.at(-1);
-      routineCursor =
-        routines.length === batchSize && lastRoutine?.nextRunAt
-          ? { at: lastRoutine.nextRunAt, id: lastRoutine.id }
-          : undefined;
-      const lastControl = controls.at(-1);
-      controlCursor =
-        controls.length === batchSize && lastControl
-          ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
-          : undefined;
-      if (!controlCursor) controlScanDeadline = undefined;
     })()
       .then(() => {
         lastCompletedAt = Date.now();
@@ -421,11 +468,13 @@ export function createJobReconciler(
     lastCompletedAt: () => lastCompletedAt,
     start() {
       if (timer) return;
+      stopping = false;
       reconcileSafely();
       timer = setInterval(reconcileSafely, intervalMs);
       timer.unref?.();
     },
     async stop() {
+      stopping = true;
       if (timer) clearInterval(timer);
       timer = undefined;
       await reconciling?.catch(() => undefined);
