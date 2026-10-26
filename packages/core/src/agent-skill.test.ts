@@ -266,6 +266,45 @@ describe("skill prompt helpers", () => {
     ]);
   });
 
+  it.each([
+    ["@garden tools", ["garden tools"]],
+    ["@garden", ["garden"]],
+    ["@garden then @garden tools", ["garden tools", "garden"]],
+    ["@garden tools then @garden", ["garden tools", "garden"]],
+    ["(@GARDEN TOOLS), @garden tools. @GARDEN", ["garden tools", "garden"]],
+    ["Email@garden tools and @gardener", []],
+  ])("matches the longest catalog name at each mention in %j", (prompt, expected) => {
+    expect(extractRoutineSkillMentions(prompt, ["garden", "garden tools"])).toEqual(expected);
+  });
+
+  it("escapes catalog names and ignores blank names", () => {
+    expect(extractRoutineSkillMentions("@garden.tools", ["garden", "garden.tools"])).toEqual([
+      "garden.tools",
+    ]);
+    expect(extractRoutineSkillMentions("@gardenXtools", ["garden.tools"])).toEqual([]);
+    expect(extractRoutineSkillMentions("@garden", [" ", ""])).toEqual([]);
+  });
+
+  it.each([
+    ["Run @garden tools", false],
+    ["Run @garden then @garden tools", true],
+    ["Run @garden tools then @garden", true],
+  ])("expands only the skills explicitly mentioned in %j", (prompt, includesShortSkill) => {
+    const skills = ["garden", "garden tools"].map((name) => ({
+      name,
+      description: name,
+      source: "user" as const,
+      readOnly: false,
+      content: `Instructions for ${name}.`,
+    }));
+    const expanded = expandSkillReferencesInPrompt(prompt, skills);
+    expect(expanded.split("Instructions for garden tools.")).toHaveLength(2);
+    expect(expanded.includes("Instructions for garden.")).toBe(includesShortSkill);
+    expect(expanded.endsWith(includesShortSkill ? "Run then" : "Run")).toBe(true);
+    expect(expanded).not.toContain("@");
+    expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+  });
+
   it("expands forced and mentioned skills into the prompt", () => {
     const skills = [
       {

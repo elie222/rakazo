@@ -165,13 +165,20 @@ export function extractRoutineSkillMentions(prompt: string, knownNames?: string[
       .map((name) => name.trim())
       .filter(Boolean)
       .sort((a, b) => b.length - a.length);
+    if (sorted.length === 0) return [];
+    // Match each mention once so a longer name does not also select its prefix.
+    const re = new RegExp(
+      `(?:^|[\\s(,])@(${sorted.map(escapeRegExp).join("|")})(?=[\\s,.)]|$)`,
+      "gi",
+    );
+    const mentioned = new Set(
+      [...prompt.matchAll(re)].map((match) => (match[1] ?? "").toLowerCase()),
+    );
     const found: string[] = [];
     const seen = new Set<string>();
     for (const name of sorted) {
-      const re = new RegExp(`(?:^|[\\s(,])@${escapeRegExp(name)}(?=[\\s,.)]|$)`, "gi");
-      if (!re.test(prompt)) continue;
       const key = name.toLowerCase();
-      if (seen.has(key)) continue;
+      if (!mentioned.has(key) || seen.has(key)) continue;
       seen.add(key);
       found.push(name);
     }
