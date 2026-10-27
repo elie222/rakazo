@@ -32,9 +32,22 @@ async function main() {
       `Unknown section ${unknown.join(", ")}. Choose from: ${catalog.map((section) => section.id).join(", ")}`,
     );
   }
-  const sections = requested.length
+  const requestedSections = requested.length
     ? catalog.filter((section) => requested.includes(section.id))
     : catalog;
+  const quotaFixtureEnabled = process.env.IOS_SCREENSHOT_MODEL_QUOTA_FIXTURE === "true";
+  if (requested.includes("usage") && !quotaFixtureEnabled) {
+    throw new Error(
+      'Run "pnpm ios:usage-screenshot" to capture Usage with deterministic quota data.',
+    );
+  }
+  const sections =
+    requested.length || quotaFixtureEnabled
+      ? requestedSections
+      : requestedSections.filter((section) => section.id !== "usage");
+  if (requested.length === 0 && !quotaFixtureEnabled) {
+    console.log('usage\tskipped\tuse "pnpm ios:usage-screenshot" for fixture-backed quota data');
+  }
 
   const udid = requiredEnv("SIM_UDID");
   const apiUrl = requiredEnv("RAKAZO_API_URL").replace(/\/$/, "");
@@ -57,6 +70,7 @@ async function main() {
     email,
     emptyEmail,
     password,
+    includeQuotaProvider: quotaFixtureEnabled,
   });
 
   const results: SectionResult[] = [];

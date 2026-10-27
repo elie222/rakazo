@@ -1169,7 +1169,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Connect {name}": "Подключить {name}",
   "Could not load wallet": "Не удалось загрузить кошелёк",
   "Could not update wallet": "Не удалось обновить кошелёк",
-Allowance: "Лимит",
+  Allowance: "Лимит",
   "Could not load usage": "Не удалось загрузить использование",
   "Last known usage": "Последние известные данные",
   "No connected providers": "Нет подключённых провайдеров",

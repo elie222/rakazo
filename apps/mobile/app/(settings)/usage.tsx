@@ -45,16 +45,22 @@ export default function Usage() {
         if (active()) setQuotas((current) => ({ ...current, [credentialId]: quota }));
       } catch {
         if (active()) {
-          setQuotas((current) => ({
-            ...current,
-            [credentialId]: {
-              credentialId,
-              status: "unavailable",
-              observedAt: null,
-              checkedAt: new Date().toISOString(),
-              windows: [],
-            },
-          }));
+          setQuotas((current) => {
+            const previous = current[credentialId];
+            return {
+              ...current,
+              [credentialId]:
+                previous && (previous.status === "fresh" || previous.status === "stale")
+                  ? { ...previous, status: "stale" }
+                  : {
+                      credentialId,
+                      status: "unavailable",
+                      observedAt: null,
+                      checkedAt: new Date().toISOString(),
+                      windows: [],
+                    },
+            };
+          });
         }
       } finally {
         if (active()) setQuotaLoading((current) => ({ ...current, [credentialId]: false }));
@@ -118,8 +124,8 @@ export default function Usage() {
       credential,
       label,
       quota: quotas[credential.id] ?? null,
-      mainRank: modelUsageRoleRank(mainRole, credential.id, credential.provider),
-      approvalRank: modelUsageRoleRank(approvalRole, credential.id, credential.provider),
+      mainRank: modelUsageRoleRank(mainRole, credential.id, credentials ?? []),
+      approvalRank: modelUsageRoleRank(approvalRole, credential.id, credentials ?? []),
     };
   });
   const sortedEntries = sortModelUsageEntries(

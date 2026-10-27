@@ -1,4 +1,4 @@
-import type { ModelQuota } from "@rakazo/contracts";
+import type { ModelCredential, ModelQuota } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { modelUsageRoleRank, sortModelUsageEntries } from "./model-usage-sort.js";
 
@@ -66,8 +66,66 @@ describe("provider usage sorting", () => {
           backups: [{ provider: "compatible", modelId: "backup", credentialId: "ten" }],
         },
         "ten",
-        "compatible",
+        [],
       ),
     ).toBe(1);
+  });
+
+  it("resolves a role without a credential id to the account that owns its model", () => {
+    const credentials: ModelCredential[] = [
+      {
+        id: "unused-codex",
+        provider: "openai-codex",
+        label: "Unused",
+        hasKey: true,
+        isDefault: false,
+        modelId: "gpt-5.6-sol",
+        preferenceRank: 0,
+      },
+      {
+        id: "main-codex",
+        provider: "openai-codex",
+        label: "Main",
+        hasKey: true,
+        isDefault: true,
+        modelId: "gpt-6-luna",
+        preferenceRank: 1,
+      },
+    ];
+    const role = {
+      primary: { provider: "openai-codex", modelId: "gpt-6-luna" },
+      backups: [],
+    };
+    expect(modelUsageRoleRank(role, "main-codex", credentials)).toBe(0);
+    expect(modelUsageRoleRank(role, "unused-codex", credentials)).toBeNull();
+  });
+
+  it("resolves unpinned compatible roles to the connection that enables the model", () => {
+    const credentials: ModelCredential[] = [
+      {
+        id: "preferred",
+        provider: "openai-compatible",
+        label: "Preferred",
+        hasKey: true,
+        isDefault: true,
+        modelId: "other-model",
+        preferenceRank: 0,
+        enabledModelIds: ["other-model"],
+      },
+      {
+        id: "serving",
+        provider: "openai-compatible",
+        label: "Serving",
+        hasKey: true,
+        isDefault: false,
+        enabledModelIds: ["main-model"],
+      },
+    ];
+    const role = {
+      primary: { provider: "openai-compatible", modelId: "main-model" },
+      backups: [],
+    };
+    expect(modelUsageRoleRank(role, "serving", credentials)).toBe(0);
+    expect(modelUsageRoleRank(role, "preferred", credentials)).toBeNull();
   });
 });

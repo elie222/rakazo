@@ -57,7 +57,13 @@ async function main() {
     env: process.env,
     stdio: "inherit",
   });
-  execFileSync("adb", ["shell", "pm", "grant", "com.rakazo.app", "android.permission.POST_NOTIFICATIONS"]);
+  execFileSync("adb", [
+    "shell",
+    "pm",
+    "grant",
+    "com.rakazo.app",
+    "android.permission.POST_NOTIFICATIONS",
+  ]);
   const thirdParties = new ThirdPartyConnectorEmulator();
   const pipedream = new PipedreamConnector(
     {

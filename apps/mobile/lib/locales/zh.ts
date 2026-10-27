@@ -1126,7 +1126,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect {name}": "连接 {name}",
   "Could not load wallet": "无法加载钱包",
   "Could not update wallet": "无法更新钱包",
-Allowance: "额度",
+  Allowance: "额度",
   "Could not load usage": "无法加载用量",
   "Last known usage": "上次已知用量",
   "No connected providers": "没有已连接的提供商",

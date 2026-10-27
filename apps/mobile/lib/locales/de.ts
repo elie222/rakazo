@@ -1138,7 +1138,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connect {name}": "{name} verbinden",
   "Could not load wallet": "Wallet konnte nicht geladen werden",
   "Could not update wallet": "Wallet konnte nicht aktualisiert werden",
-Loading: "Laden",
+  Loading: "Laden",
   Allowance: "Kontingent",
   "Could not load usage": "Nutzung konnte nicht geladen werden",
   "Last known usage": "Zuletzt bekannte Nutzung",

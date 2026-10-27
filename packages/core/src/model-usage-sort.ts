@@ -1,4 +1,9 @@
-import type { ModelQuota, ModelRoleView } from "@rakazo/contracts";
+import type {
+  ModelCredential,
+  ModelQuota,
+  ModelRoleChoice,
+  ModelRoleView,
+} from "@rakazo/contracts";
 
 export const MODEL_USAGE_SORT_KEY = "rakazo.modelUsageSort";
 export const MODEL_USAGE_SORT_INVERTED_KEY = "rakazo.modelUsageSortInverted";
@@ -36,14 +41,38 @@ export type ModelUsageSortEntry = {
 export function modelUsageRoleRank(
   role: ModelRoleView | null | undefined,
   credentialId: string,
-  provider: string,
+  credentials: readonly ModelCredential[] = [],
 ): number | null {
   if (!role) return null;
   const choices = [role.primary, ...role.backups].filter((choice) => choice !== null);
-  const rank = choices.findIndex((choice) =>
-    choice.credentialId ? choice.credentialId === credentialId : choice.provider === provider,
+  const rank = choices.findIndex(
+    (choice) => resolveRoleChoiceCredentialId(choice, credentials) === credentialId,
   );
   return rank < 0 ? null : rank;
+}
+
+function resolveRoleChoiceCredentialId(
+  choice: ModelRoleChoice,
+  credentials: readonly ModelCredential[],
+): string | undefined {
+  if (choice.credentialId) return choice.credentialId;
+  const candidates = credentials.filter((credential) => credential.provider === choice.provider);
+  const preferences = candidates
+    .filter((credential) => credential.preferenceRank !== undefined)
+    .sort((left, right) => left.preferenceRank! - right.preferenceRank!);
+  const selected =
+    preferences.find((credential) => credential.modelId === choice.modelId) ??
+    preferences[0] ??
+    candidates[0];
+  if (!selected || choice.provider !== "openai-compatible") return selected?.id;
+  if (selected.modelId === choice.modelId || selected.enabledModelIds?.includes(choice.modelId))
+    return selected.id;
+  return (
+    candidates.find(
+      (credential) =>
+        credential.id !== selected.id && credential.enabledModelIds?.includes(choice.modelId),
+    )?.id ?? selected.id
+  );
 }
 
 export function sortModelUsageEntries<T extends ModelUsageSortEntry>(

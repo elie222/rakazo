@@ -83,16 +83,20 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
       label,
       accountLabel,
       quota: quotaQueries[index]?.data,
-      mainRank: modelUsageRoleRank(mainRole.data, credential.id, credential.provider),
-      approvalRank: modelUsageRoleRank(approvalRole.data, credential.id, credential.provider),
+      mainRank: modelUsageRoleRank(mainRole.data, credential.id, credentials.data ?? []),
+      approvalRank: modelUsageRoleRank(approvalRole.data, credential.id, credentials.data ?? []),
       sortLabel: `${label} ${accountLabel ?? ""}`,
     };
   });
+  const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
   const sortedEntries = sortModelUsageEntries(
     entries.map(({ sortLabel, ...entry }) => ({ ...entry, label: sortLabel })),
     order,
     inverted,
-  );
+  ).flatMap(({ id }) => {
+    const entry = entriesById.get(id);
+    return entry ? [entry] : [];
+  });
   const regularOrderLabel =
     order === "quota" ? t`Most remaining` : order === "alphabetical" ? t`A–Z` : t`Primary first`;
   const invertedOrderLabel =

@@ -16,7 +16,7 @@ test("connected account quota shows remaining windows and refreshes", async ({
           {
             id: credentialId,
             provider: "anthropic",
-            label: "Claude subscription",
+            label: "Work",
             hasKey: true,
             isDefault: false,
             authKind: "oauth",
@@ -51,6 +51,8 @@ test("connected account quota shows remaining windows and refreshes", async ({
   await openUserSettings(page, "usage");
   const quota = page.getByTestId("provider-quota-stack").getByTestId("connection-quota");
   await expect(quota).toBeVisible();
+  await expect(quota.locator("h3")).not.toContainText("Work");
+  await expect(quota.getByText("Work", { exact: true })).toHaveCount(1);
   await expect(quota).toContainText("9% remaining");
   await expect(quota).toContainText("100% remaining");
   await expect(quota.locator("time").first()).toHaveAttribute(

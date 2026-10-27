@@ -1130,7 +1130,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Connect {name}": "{name} verbinden",
   "Could not load wallet": "Kan wallet niet laden",
   "Could not update wallet": "Kan wallet niet bijwerken",
-Loading: "Laden",
+  Loading: "Laden",
   Allowance: "Tegoed",
   "Could not load usage": "Gebruik kon niet worden geladen",
   "Last known usage": "Laatst bekende gebruik",

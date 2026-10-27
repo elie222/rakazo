@@ -1162,7 +1162,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Connect {name}": "{name}に接続",
   "Could not load wallet": "ウォレットを読み込めませんでした",
   "Could not update wallet": "ウォレットを更新できませんでした",
-Allowance: "利用枠",
+  Allowance: "利用枠",
   "Could not load usage": "使用量を読み込めませんでした",
   "Last known usage": "最後に確認した使用量",
   "No connected providers": "接続済みのプロバイダーはありません",
