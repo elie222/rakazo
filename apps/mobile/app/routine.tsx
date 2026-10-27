@@ -28,7 +28,7 @@ export default function RoutineDetail() {
     error: loadError,
     readSinceShown,
     failedSinceShown,
-  } = useBotRoutines(botId ?? "", { poll: false });
+  } = useBotRoutines(botId ?? "");
   const routine = routines?.find((item) => item.id === routineId) ?? null;
   const error =
     !botId || !routineId
@@ -61,7 +61,9 @@ export default function RoutineDetail() {
             }}
           >
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
-              {routineStatusLine(routine)}
+              {routineStatusLine(
+                failedSinceShown ? { ...routine, scheduleDelayed: false } : routine,
+              )}
             </Text>
           </View>
           <View style={{ gap: 8 }}>

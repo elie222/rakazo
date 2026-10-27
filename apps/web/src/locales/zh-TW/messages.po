@@ -4817,6 +4817,10 @@ msgstr "正在儲存…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "回答是或否，或一句話說明。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "排程執行延遲"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr "排程例行任務"

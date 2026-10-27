@@ -4816,6 +4816,10 @@ msgstr "저장 중…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "예약 실행 지연"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

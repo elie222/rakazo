@@ -27,7 +27,10 @@ function routineSchedule(routine: Routine, zone: string | undefined): string {
 }
 
 export function routineStatusLine(routine: Routine): string {
-  return [routine.active ? t("Active") : t("Paused"), routineSchedule(routine, routine.timezone)]
+  return [
+    routine.active ? (routine.scheduleDelayed ? t("Schedule delayed") : t("Active")) : t("Paused"),
+    routineSchedule(routine, routine.timezone),
+  ]
     .filter(Boolean)
     .join(", ");
 }
@@ -36,7 +39,7 @@ export function routineStatusLine(routine: Routine): string {
 export function routineRowDetail(routine: Routine, deviceTimeZone: string | undefined): string {
   return [
     routineSchedule(routine, routine.timezone === deviceTimeZone ? undefined : routine.timezone),
-    routine.active ? "" : t("Paused"),
+    routine.active ? (routine.scheduleDelayed ? t("Schedule delayed") : "") : t("Paused"),
   ]
     .filter(Boolean)
     .join(", ");

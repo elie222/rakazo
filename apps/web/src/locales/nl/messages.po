@@ -4816,6 +4816,10 @@ msgstr "Bezig met opslaan…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Zeg ja of nee, of antwoord in een zin."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Geplande uitvoering vertraagd"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

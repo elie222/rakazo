@@ -4816,6 +4816,10 @@ msgstr "שומר…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "ההפעלה המתוזמנת מתעכבת"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

@@ -4816,6 +4816,10 @@ msgstr "保存中…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "「はい」か「いいえ」、または文章で答えてください。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "予定の実行が遅れています"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr "スケジュール済みのルーティン"

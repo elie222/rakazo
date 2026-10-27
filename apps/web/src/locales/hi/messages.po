@@ -4816,6 +4816,10 @@ msgstr "सहेजा जा रहा है…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "हां या ना कहें, या एक वाक्य में उत्तर दें।"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "निर्धारित निष्पादन में देरी"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

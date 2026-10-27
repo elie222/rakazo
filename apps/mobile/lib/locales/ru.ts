@@ -1141,6 +1141,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} — {to}",
   "Every {day}": "Каждую неделю: {day}",
   "Every {days} and {last}": "Каждую неделю: {days} и {last}",
+  "Schedule delayed": "Запуск по расписанию задерживается",
   "Run history": "История запусков",
   "No runs yet": "Запусков пока нет",
   "Load older runs": "Загрузить более ранние запуски",

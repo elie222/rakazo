@@ -4816,6 +4816,10 @@ msgstr "Enregistrement en cours…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Dites oui ou non, ou répondez en une phrase."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Exécution planifiée retardée"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

@@ -4816,6 +4816,10 @@ msgstr "Сохранение…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Скажите «да» или «нет» или ответьте предложением."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Запуск по расписанию задерживается"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

@@ -4816,6 +4816,10 @@ msgstr "Wird gespeichert…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Antworte mit Ja oder Nein oder in einem Satz."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Ausführung verzögert"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

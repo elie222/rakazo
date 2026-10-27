@@ -4816,6 +4816,10 @@ msgstr "Kaydediliyor…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Evet ya da hayır de veya bir cümleyle yanıtla."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Zamanlanmış çalıştırma gecikti"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr ""

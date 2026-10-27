@@ -347,6 +347,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
   await page.setViewportSize({ width: 1280, height: 812 });
+  await expect(page.getByTestId("bots-sidebar")).toBeVisible();
+  await page.getByTestId("bot-settings-trigger").hover({ trial: true });
   await expectHeaderAboveHoveredRow(page, testInfo, parentRow);
 });
 

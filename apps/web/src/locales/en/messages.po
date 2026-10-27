@@ -4816,6 +4816,10 @@ msgstr "Saving…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Say yes or no, or answer in a sentence."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Schedule delayed"
+msgstr "Schedule delayed"
+
 #: src/components/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr "Scheduled routines"
