@@ -3,7 +3,6 @@ appId: com.rakazo.app
 # Restart without clearing app data, so a dev client's bundler URL stays put.
 - launchApp:
     stopApp: true
-    clearKeychain: true
 - openLink: "rakazo:///account"
 - tapOn:
     text: "Open"
