@@ -5,6 +5,7 @@ import {
   buildPlotParts,
   CHART_CATALOG,
   parsePlotData,
+  plotSvgToPng,
   renderPlotSpecToSvg,
   searchChartCatalog,
   supportedPlotNames,
@@ -148,7 +149,62 @@ describe("render_plot", () => {
     expect(svg.querySelector("svg")?.getAttribute("y")).toBe("0");
   });
 
-  it("fits an oversized grapheme without splitting it or adding an empty row", () => {
+  it.each(["👨‍👩‍👧‍👦", "🇨🇦", "👍🏽", "1️⃣", "é"])(
+    "keeps the natural size of the grapheme %j when it fits",
+    (label) => {
+      const svg = exportedCategories([label], 160);
+      const line = svg.querySelector("text > tspan")!;
+      expect(line.textContent).toBe(label);
+      expect(line.parentElement?.children).toHaveLength(1);
+      expect(line.hasAttribute("textLength")).toBe(false);
+      expect(line.hasAttribute("lengthAdjust")).toBe(false);
+      expect(line.hasAttribute("font-size")).toBe(false);
+    },
+  );
+
+  it("wraps repeated joined emoji without splitting or enlarging their graphemes", () => {
+    const grapheme = "👨‍👩‍👧‍👦";
+    const svg = exportedCategories([grapheme.repeat(20)], 160);
+    const text = svg.querySelector("text")!;
+    const lines = Array.from(text.children);
+    expect(text.textContent).toBe(grapheme.repeat(20));
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      const segments = Array.from(
+        new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(line.textContent!),
+        ({ segment }) => segment,
+      );
+      expect(segments.length).toBeGreaterThan(1);
+      expect(segments.every((segment) => segment === grapheme)).toBe(true);
+      expect(line.hasAttribute("textLength")).toBe(false);
+      expect(line.hasAttribute("font-size")).toBe(false);
+    }
+  });
+
+  it("keeps joined emoji out of the PNG legend's right gutter with fallback fonts", async () => {
+    const svg = exportedCategories(["👨‍👩‍👧‍👦".repeat(20)], 160);
+    const png = await plotSvgToPng(svg.outerHTML);
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(png).metadata();
+    const scale = metadata.width! / 160;
+    const plotY = Number(svg.querySelector("svg")?.getAttribute("y"));
+    const gutter = await sharp(png)
+      .removeAlpha()
+      .extract({ left: 152 * scale, top: 0, width: 8 * scale, height: plotY * scale })
+      .raw()
+      .toBuffer();
+    expect(gutter.every((channel) => channel === 255)).toBe(true);
+  });
+
+  it("does not charge a combining mark as another glyph on a narrow canvas", () => {
+    const svg = exportedCategories(["é"], 40);
+    const line = svg.querySelector("text > tspan")!;
+    expect(line.textContent).toBe("é");
+    expect(line.hasAttribute("font-size")).toBe(false);
+    expect(line.hasAttribute("textLength")).toBe(false);
+  });
+
+  it("shrinks an oversized grapheme without splitting it or adding an empty row", () => {
     const label = "👨‍👩‍👧‍👦";
     const svg = exportedCategories([label], 40);
     const swatch = Array.from(svg.children).find((element) => element.tagName === "rect");
@@ -156,8 +212,10 @@ describe("render_plot", () => {
     expect(swatch?.getAttribute("y")).toBe("5");
     expect(line.textContent).toBe(label);
     expect(line.parentElement?.children).toHaveLength(1);
-    expect(line.getAttribute("textLength")).toBe("9");
-    expect(line.getAttribute("lengthAdjust")).toBe("spacingAndGlyphs");
+    expect(line.hasAttribute("textLength")).toBe(false);
+    expect(line.hasAttribute("lengthAdjust")).toBe(false);
+    expect(Number(line.getAttribute("font-size"))).toBeGreaterThan(0);
+    expect(Number(line.getAttribute("font-size"))).toBeLessThan(12);
     expect(svg.querySelector("svg")?.getAttribute("y")).toBe("24");
   });
 

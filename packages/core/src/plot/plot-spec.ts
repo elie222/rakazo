@@ -405,7 +405,7 @@ export function renderPlotSpecToSvg(
     const labelLines = lines
       .map(
         (line, index) =>
-          `<tspan x="${swatchX + 15}" dy="${index === 0 ? 0 : 16}"${line.fit ? ` textLength="${line.width}" lengthAdjust="spacingAndGlyphs"` : ""}>${escapeXml(line.text)}</tspan>`,
+          `<tspan x="${swatchX + 15}" dy="${index === 0 ? 0 : 16}"${line.fontSize ? ` font-size="${line.fontSize}"` : ""}>${escapeXml(line.text)}</tspan>`,
       )
       .join("");
     header.push(
@@ -423,27 +423,42 @@ export function renderPlotSpecToSvg(
 }
 
 function wrapLegendLabel(label: string, maxWidth: number) {
-  const lines: { text: string; width: number; fit: boolean }[] = [];
+  const lines: { text: string; width: number }[] = [];
   let text = "";
   let width = 0;
   // Conservative 12px-font advances work without browser layout in the server
-  // DOM. Keep natural glyph sizes; only fit a single oversized grapheme.
+  // DOM. Emoji budgets count visible bases for fallback fonts, not code units,
+  // joiners, variation selectors, or modifiers.
   for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
     label,
   )) {
-    const ordinary = /^[a-z0-9]$/.test(segment) && segment !== "m" && segment !== "w";
-    const wide = "MWmw".includes(segment) || segment.charCodeAt(0) > 127;
-    const advance = segment === " " ? 6 : ordinary ? 9 : segment.length * (wide ? 14 : 12);
+    const bases = Array.from(
+      segment.replace(/\p{Mark}|\p{Emoji_Modifier}|\p{Default_Ignorable_Code_Point}/gu, ""),
+    );
+    const emoji = /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(segment);
+    const advance = emoji
+      ? Math.max(28, bases.length * 14)
+      : bases.reduce((sum, base) => {
+          const ordinary = /^[a-z0-9]$/.test(base) && base !== "m" && base !== "w";
+          const wide = "MWmw".includes(base) || base.codePointAt(0)! > 127;
+          return sum + (base === " " ? 6 : ordinary ? 9 : wide ? 14 : 12);
+        }, 0);
     if (text && width + advance > maxWidth) {
-      lines.push({ text, width, fit: width > maxWidth });
+      lines.push({ text, width });
       text = "";
       width = 0;
     }
     text += segment;
     width += advance;
   }
-  lines.push({ text, width, fit: width > maxWidth });
-  return lines.map((line) => ({ ...line, width: Math.min(line.width, maxWidth) }));
+  lines.push({ text, width });
+  return lines.map((line) => ({
+    text: line.text,
+    width: Math.min(line.width, maxWidth),
+    // Shrink an oversized grapheme; textLength could instead enlarge it when
+    // its natural width is smaller than our conservative estimate.
+    fontSize: line.width > maxWidth ? (12 * maxWidth) / line.width : undefined,
+  }));
 }
 
 function categoricalSwatches(scale: Plot.Scale | undefined): { label: string; color: string }[] {

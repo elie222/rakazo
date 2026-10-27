@@ -11,7 +11,9 @@
 
       const params = new URLSearchParams(location.search);
       const long = params.has("long");
-      const labels = long
+      const labels = params.has("graphemes")
+        ? ["👨‍👩‍👧‍👦", "🇨🇦", "👍🏽", "1️⃣", "é", "👨‍👩‍👧‍👦".repeat(20)]
+        : long
         ? ["A very long category label without losing any text", "W".repeat(80), "类别😀".repeat(16), "iiiiii", "<&\" export"]
         : Array.from({ length: 10 }, (_, i) => `Category ${i + 1}`);
       document.body.insertAdjacentHTML(
