@@ -18,6 +18,7 @@ const models = vi.hoisted(() => ({
   forRole: vi.fn(),
   setRole: vi.fn(),
   credentials: vi.fn(),
+  quota: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
   rename: vi.fn(),
@@ -333,6 +334,13 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  models.quota.mockResolvedValue({
+    credentialId: "connection",
+    status: "unsupported",
+    observedAt: null,
+    checkedAt: new Date().toISOString(),
+    windows: [],
+  });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
   models.forRole.mockImplementation(() => models.list());
@@ -876,7 +884,12 @@ it("lists not-connected providers by name alone", async () => {
   const view = await renderSettings();
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["DeepSeek", "OpenAI-compatible", "Ollama Cloud"]);
+    expect(pickerOptions()).toEqual([
+      "DeepSeek",
+      "OpenAI-compatible",
+      "Ollama Cloud",
+      "CommandCode",
+    ]);
     expect(document.querySelectorAll("[cmdk-group-heading]")).toHaveLength(0);
   } finally {
     await view.unmount();
@@ -1100,7 +1113,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
   const view = await renderSettings(false);
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["fixture-model"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "CommandCode"]);
   } finally {
     await view.unmount();
   }
@@ -1121,7 +1134,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   const view = await renderSettings(false);
   try {
     await openPicker("Add fallback");
-    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud", "CommandCode"]);
     await choose("Ollama Cloud");
     expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
   } finally {

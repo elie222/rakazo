@@ -72,6 +72,7 @@ describe("settings links", () => {
     expect(isSettingsLink("rakazo:///model-picker")).toBe(false);
     expect(isSettingsLink("rakazo:///model-connection")).toBe(false);
     expect(isSettingsLink("rakazo://voice")).toBe(true);
+    expect(isSettingsLink("rakazo:///usage")).toBe(true);
     expect(isSettingsLink("rakazo:///account?focus=usage")).toBe(true);
     expect(isSettingsLink("rakazo://integrations/")).toBe(true);
     expect(isSettingsLink("/change-password")).toBe(true);

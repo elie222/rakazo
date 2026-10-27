@@ -318,6 +318,10 @@ msgstr "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut."
 msgid "{remaining} left"
 msgstr "Noch {remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
@@ -388,6 +392,10 @@ msgstr ""
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "Zugangsdaten für das Abonnement sind sicher gespeichert."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -653,6 +661,10 @@ msgstr "Einmal erlauben"
 msgid "Allow writing"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
 msgstr ""
@@ -660,6 +672,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "Einmal erlaubt"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "Alphabetisch"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -776,6 +792,7 @@ msgstr "Anwenden"
 msgid "Approval boundaries"
 msgstr "Bestätigungsgrenzen"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "Freigabemodell"
@@ -911,6 +928,10 @@ msgstr "Zurück"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Zurück zur Anmeldung"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "Backups zuerst"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -1388,6 +1409,11 @@ msgstr "Befehl"
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "Befehlsvariable"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -1890,6 +1916,10 @@ msgstr "Dieser Chat konnte nicht geladen werden."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "Datei konnte nicht geladen werden."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3200,9 +3230,17 @@ msgstr "Letzte Prüfung {0}: geändert"
 msgid "Last check {0}: no changes"
 msgstr "Letzte Prüfung {0}: keine Änderungen"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "Wenigstes Restguthaben"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3264,6 +3302,11 @@ msgstr "Ältere Ausführungen laden"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "Webbilder automatisch laden"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3332,6 +3375,7 @@ msgstr "Niedrig"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "Hauptmodell"
@@ -3614,6 +3658,7 @@ msgstr "Montag"
 msgid "month"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monatlich"
@@ -3633,6 +3678,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr ""
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "Meistes Restguthaben"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -3800,6 +3849,10 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
+msgstr ""
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -4077,6 +4130,10 @@ msgstr "Optionaler Header-Wert"
 msgid "Or paste an API key"
 msgstr "Oder einen API-Schlüssel einfügen"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "Reihenfolge"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organisations-API-Schlüssel"
@@ -4265,6 +4322,10 @@ msgstr "Vorherige Seite"
 msgid "Previous settings sections"
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "Primärmodell zuerst"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr ""
@@ -4302,6 +4363,14 @@ msgstr "Pull Request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "In Warteschlange"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -4421,6 +4490,7 @@ msgstr "Weiterleitungs-URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "Aktualisieren"
 
@@ -4447,6 +4517,10 @@ msgstr "Kontrolle abgeben"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "Neu laden"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "Verbleibendes Kontingent"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
@@ -4601,9 +4675,17 @@ msgstr ""
 msgid "Reset password"
 msgstr "Passwort zurücksetzen"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Reset unknown"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Setze dein Passwort zurück"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -4961,6 +5043,10 @@ msgstr "Servername"
 msgid "Server URL"
 msgstr "Server-URL"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr ""
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5159,6 +5245,10 @@ msgstr "Gerade wurde etwas mit demselben Namen hinzugefügt. Versuche es erneut.
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Etwas Ausgewähltes funktioniert hier nicht. Entferne das Häkchen und versuche es erneut."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "Sortieren nach"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -5793,6 +5883,10 @@ msgstr "Anweisungen aktualisieren?"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -5830,7 +5924,7 @@ msgstr "Hochladen"
 msgid "Urgent"
 msgstr ""
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "Nutzung"
@@ -5941,6 +6035,10 @@ msgstr "Wird geprüft…"
 msgid "Version"
 msgstr ""
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5997,6 +6095,10 @@ msgstr "Wochentage"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "Wochenenden"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6181,3 +6283,7 @@ msgstr "Dein Stimmanbieter hat kein Guthaben mehr."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Der Schlüssel deines Stimmanbieters wurde abgelehnt."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"

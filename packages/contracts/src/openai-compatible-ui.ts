@@ -1,4 +1,22 @@
 /** UI preset only; saved connections use the OpenAI-compatible provider. */
+export const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+
+export function isOpenCodeGoBaseUrl(baseUrl: string | undefined): boolean {
+  return baseUrl === OPENCODE_GO_BASE_URL || baseUrl === `${OPENCODE_GO_BASE_URL}/`;
+}
+
+export const COMMANDCODE_BASE_URL = "https://api.commandcode.ai/provider/v1";
+
+export function isCommandCodeBaseUrl(baseUrl: string | undefined): boolean {
+  return baseUrl === COMMANDCODE_BASE_URL || baseUrl === `${COMMANDCODE_BASE_URL}/`;
+}
+
+export function compatibleApiKeyRequired(baseUrl: string | undefined): boolean {
+  return (
+    isOllamaCloudBaseUrl(baseUrl) || isCommandCodeBaseUrl(baseUrl) || isOpenCodeGoBaseUrl(baseUrl)
+  );
+}
+
 export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
 
 export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
@@ -10,7 +28,13 @@ export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
 }
 
 export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
-  return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
+  return isOllamaCloudBaseUrl(baseUrl)
+    ? "Ollama Cloud"
+    : isCommandCodeBaseUrl(baseUrl)
+      ? "CommandCode"
+      : isOpenCodeGoBaseUrl(baseUrl)
+        ? "OpenCode Go"
+        : fallback;
 }
 
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
@@ -25,7 +49,7 @@ export function openAiCompatibleConnectReady(input: {
   return Boolean(
     input.baseUrl.trim() &&
       input.modelId.trim() &&
-      (!isOllamaCloudBaseUrl(input.baseUrl) || input.apiKey?.trim()),
+      (!compatibleApiKeyRequired(input.baseUrl) || input.apiKey?.trim()),
   );
 }
 
@@ -35,9 +59,7 @@ export function openAiCompatibleProbeSuccessMessage(modelCount: number): string 
     : "Server found. Enter a model name.";
 }
 
-/** The canonical endpoint the server stores: trailing slashes dropped, `/v1` added only when no
- * path segment is already a version (`v1`, `v4`, `v1beta`, ...), so gateways that route models by
- * path (`/v1/some-model`) keep their URL verbatim. */
+/** The canonical endpoint the server stores: trailing slashes dropped, `/v1` added when no `/vN`. */
 export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
   const trimmed = raw.trim();
   let url: URL;
@@ -53,8 +75,8 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
     throw new Error("Base URL must not contain credentials");
   }
   let path = url.pathname.replace(/\/+$/, "") || "";
-  const VERSION_SEGMENT = /^v\d+[a-z]*$/;
-  if (!path.split("/").some((segment) => VERSION_SEGMENT.test(segment))) {
+  const VERSIONED_API_ROOT = /\/v\d+$/;
+  if (!VERSIONED_API_ROOT.test(path)) {
     path = path ? `${path}/v1` : "/v1";
   }
   return `${url.origin}${path}`;
@@ -87,7 +109,10 @@ export function savedCompatibleEndpointMatches(
   savedBaseUrl: string | undefined,
 ): boolean {
   try {
-    return Boolean(savedBaseUrl) && normalizeOpenAiCompatibleBaseUrl(baseUrl) === savedBaseUrl;
+    return (
+      Boolean(savedBaseUrl) &&
+      normalizeOpenAiCompatibleBaseUrl(baseUrl) === normalizeOpenAiCompatibleBaseUrl(savedBaseUrl!)
+    );
   } catch {
     return false;
   }

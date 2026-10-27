@@ -318,6 +318,10 @@ msgstr "{provider} לא הגיב בזמן. אפשר לנסות שוב."
 msgid "{remaining} left"
 msgstr "נותרו {remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# מושב} other {# מושבים}}"
@@ -388,6 +392,10 @@ msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש ל�
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "א–ת"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -653,6 +661,10 @@ msgstr "אישור חד-פעמי"
 msgid "Allow writing"
 msgstr "לאפשר כתיבה"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
 msgstr ""
@@ -660,6 +672,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "אושר פעם אחת"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "לפי סדר אלפביתי"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -776,6 +792,7 @@ msgstr "החלה"
 msgid "Approval boundaries"
 msgstr "גבולות אישור"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "מודל אישור"
@@ -911,6 +928,10 @@ msgstr "חזרה"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "גיבויים תחילה"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -1388,6 +1409,11 @@ msgstr "פקודה"
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "משתנה פקודה"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -1890,6 +1916,10 @@ msgstr "לא ניתן לטעון את הצ׳אט הזה."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "לא ניתן לטעון את הקובץ הזה."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3200,9 +3230,17 @@ msgstr ""
 msgid "Last check {0}: no changes"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "מאוחר יותר"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "הכי מעט שנותרו"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3264,6 +3302,11 @@ msgstr "טעינת הרצות ישנות יותר"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "טעינה אוטומטית של תמונות מהרשת"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3332,6 +3375,7 @@ msgstr "נמוך"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "אותיות לטיניות קטנות, ספרות, מקפים וקווים תחתונים, ובהתחלה אות."
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "מודל ראשי"
@@ -3614,6 +3658,7 @@ msgstr "יום שני"
 msgid "month"
 msgstr "חודש"
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
@@ -3633,6 +3678,10 @@ msgstr "עוד"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "פעולות נוספות במחשב"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "הכי הרבה שנותרו"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -3801,6 +3850,10 @@ msgstr "אין בוטים"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "אין בוטים תואמים"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4077,6 +4130,10 @@ msgstr "ערך header אופציונלי"
 msgid "Or paste an API key"
 msgstr "או הדבקת מפתח API"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "סדר"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
@@ -4265,6 +4322,10 @@ msgstr "העמוד הקודם"
 msgid "Previous settings sections"
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "ראשית"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "עדיפות"
@@ -4302,6 +4363,14 @@ msgstr "Pull request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "בתור"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -4421,6 +4490,7 @@ msgstr "כתובת הפניה (Redirect URI)"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "רענון"
 
@@ -4447,6 +4517,10 @@ msgstr "שחרור השליטה"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "טעינה מחדש"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "יתרה שנותרה"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/VaultSettings.tsx
@@ -4601,9 +4675,17 @@ msgstr "לאפס את המחשב?"
 msgid "Reset password"
 msgstr "איפוס סיסמה"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Reset unknown"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "איפוס הסיסמה"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -4961,6 +5043,10 @@ msgstr "שם השרת"
 msgid "Server URL"
 msgstr "URL של השרת"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr ""
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5159,6 +5245,10 @@ msgstr "משהו עם אותו שם נוסף זה עתה. יש לנסות שוב
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "משהו שבחרת לא יכול לעבוד כאן. יש לבטל את הסימון ולנסות שוב."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "מיון לפי"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -5793,6 +5883,10 @@ msgstr "לעדכן את ההוראות?"
 msgid "Update progress"
 msgstr "התקדמות העדכון"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "עודכן {updated}"
@@ -5830,7 +5924,7 @@ msgstr "העלאה"
 msgid "Urgent"
 msgstr "דחוף"
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "שימוש"
@@ -5941,6 +6035,10 @@ msgstr "מאמת…"
 msgid "Version"
 msgstr "גרסה"
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr ""
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -5997,6 +6095,10 @@ msgstr "שני עד שישי"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "סופי שבוע"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6181,3 +6283,7 @@ msgstr "לספק הקול שלך נגמר הקרדיט."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "ספק הקול שלך דחה את המפתח."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "ת–א"

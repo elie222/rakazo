@@ -2,10 +2,13 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  COMMANDCODE_BASE_URL,
   cloudflareModelRouting,
+  compatibleApiKeyRequired,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   isCloudflareModelProvider,
+  isCommandCodeBaseUrl,
   isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -297,7 +300,11 @@ export function OnboardingPage() {
       .flatMap((entry) => {
         const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
         return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+          ? [
+              item,
+              { value: "ollama-preset", label: t`Ollama Cloud` },
+              { value: "commandcode-preset", label: t`CommandCode` },
+            ]
           : [item];
       });
     return { main, rest };
@@ -347,7 +354,8 @@ export function OnboardingPage() {
     if (
       option === providerOptionValue(provider, providerAuth) &&
       !presetBaseUrl &&
-      !isOllamaCloudBaseUrl(baseUrl)
+      !isOllamaCloudBaseUrl(baseUrl) &&
+      !isCommandCodeBaseUrl(baseUrl)
     )
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
@@ -638,9 +646,11 @@ export function OnboardingPage() {
                     ? CREDITS_OPTION
                     : isOpenAiCompatible && isOllamaCloudBaseUrl(baseUrl)
                       ? "ollama-preset"
-                      : provider
-                        ? providerOptionValue(provider, providerAuth)
-                        : null
+                      : isOpenAiCompatible && isCommandCodeBaseUrl(baseUrl)
+                        ? "commandcode-preset"
+                        : provider
+                          ? providerOptionValue(provider, providerAuth)
+                          : null
                 }
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
@@ -655,6 +665,8 @@ export function OnboardingPage() {
                   setCredits(false);
                   if (value === "ollama-preset")
                     selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL);
+                  else if (value === "commandcode-preset")
+                    selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, COMMANDCODE_BASE_URL);
                   else selectProvider(value);
                 }}
                 items={providerItems}
@@ -985,9 +997,13 @@ export function OnboardingPage() {
                         aria-label={t`API key`}
                         value={apiKey}
                         onChange={(e) => updateApiKey(e.target.value)}
-                        required={isOllamaCloudBaseUrl(baseUrl)}
+                        required={compatibleApiKeyRequired(baseUrl)}
                         placeholder={
-                          isOllamaCloudBaseUrl(baseUrl) ? t`Ollama API key` : t`Optional`
+                          isOllamaCloudBaseUrl(baseUrl)
+                            ? t`Ollama API key`
+                            : isCommandCodeBaseUrl(baseUrl)
+                              ? t`API key`
+                              : t`Optional`
                         }
                         type="password"
                         autoComplete="new-password"

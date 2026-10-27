@@ -275,11 +275,12 @@ async function notConnectedChoices() {
   return modelPickerRequest(route.params.requestId)!.connectChoices ?? [];
 }
 
-it("offers deployment-funded providers and Ollama Cloud once among providers to connect", async () => {
+it("offers deployment-funded providers and service presets once among providers to connect", async () => {
   expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
     "Anthropic",
     "OpenRouter",
     "Ollama Cloud",
+    "CommandCode",
   ]);
 });
 
@@ -289,6 +290,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
     expect((await notConnectedChoices()).map((choice) => choice.label)).toEqual([
       "Anthropic",
       "OpenRouter",
+      "CommandCode",
     ]);
   } finally {
     saved.baseUrl = savedEndpoint;

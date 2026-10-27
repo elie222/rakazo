@@ -20,6 +20,7 @@ const settingsScreens = new Set([
   "signup-survey",
   "space",
   "team-conversation",
+  "usage",
   "vault",
   "voice",
   "wallet",

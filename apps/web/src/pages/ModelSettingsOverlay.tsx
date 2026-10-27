@@ -1,9 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import {
+  COMMANDCODE_BASE_URL,
   compatibleConnectionName,
   connectionDisplayName,
-  isOllamaCloudBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -98,26 +98,23 @@ export function ModelSettingsOverlay({
   const providers: ConnectableProvider[] = groups
     .filter((group) => !credentialByProvider.has(group.id))
     .map((group) => ({ id: group.id, name: group.name }));
-  if (
-    groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
-    !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
-  )
-    providers.push({
-      id: OPENAI_COMPATIBLE_PROVIDER_ID,
-      name: t`Ollama Cloud`,
-      baseUrl: OLLAMA_CLOUD_BASE_URL,
-    });
+  const compatiblePresets: ConnectableProvider[] = [
+    { id: OPENAI_COMPATIBLE_PROVIDER_ID, name: t`Ollama Cloud`, baseUrl: OLLAMA_CLOUD_BASE_URL },
+    { id: OPENAI_COMPATIBLE_PROVIDER_ID, name: t`CommandCode`, baseUrl: COMMANDCODE_BASE_URL },
+  ];
+  const hasCompatiblePreset = (baseUrl: string) =>
+    credentials.some(
+      (entry) =>
+        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
+        savedCompatibleEndpointMatches(baseUrl, entry.baseUrl),
+    );
+  if (groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID))
+    providers.push(...compatiblePresets.filter((preset) => !hasCompatiblePreset(preset.baseUrl!)));
   // Adding another account is open to every provider, connected or not.
   const allProviders: ConnectableProvider[] = [
     ...groups.map((group) => ({ id: group.id, name: group.name })),
     ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
-      ? [
-          {
-            id: OPENAI_COMPATIBLE_PROVIDER_ID,
-            name: t`Ollama Cloud`,
-            baseUrl: OLLAMA_CLOUD_BASE_URL,
-          },
-        ]
+      ? compatiblePresets
       : []),
   ];
   const connectionName = (entry: ModelCredential) => {
