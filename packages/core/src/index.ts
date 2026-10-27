@@ -83,6 +83,7 @@ export * from "./speech-text.js";
 export * from "./stuck-work.js";
 export * from "./teach-playbook.js";
 export * from "./teach-recording.js";
+export * from "./text-boundary.js";
 export * from "./text-direction.js";
 export * from "./thread-message-updates.js";
 export * from "./thread-scroll.js";
