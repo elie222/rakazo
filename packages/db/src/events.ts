@@ -1223,13 +1223,17 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: { messageId: message.id, role: "bot", blocks: input.blocks },
     });
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { userId: true },
+    });
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
       type: "run.waiting_input",
       runId: input.runId,
-      payload: {},
+      payload: run?.userId ? { userId: run.userId } : {},
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
     const continuationRunId = await createPendingSteeringRun(tx, input);

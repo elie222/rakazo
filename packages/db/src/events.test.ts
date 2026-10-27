@@ -970,9 +970,13 @@ describe("pauseRunForInput", () => {
     expect(tx.computerExecutionLease.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "pauses atomically and starts pending steering (pending=%s)",
-    async (pending) => {
+  it.each([
+    { pending: false, owner: "persisted-owner" },
+    { pending: true, owner: "persisted-owner" },
+    { pending: false, owner: null },
+  ])(
+    "pauses atomically with persisted owner $owner (pending=$pending)",
+    async ({ pending, owner }) => {
       const fanout = new TestFanout();
       const publish = vi.spyOn(fanout, "publish");
       const tx = {
@@ -983,6 +987,7 @@ describe("pauseRunForInput", () => {
           create: vi.fn().mockResolvedValue({ id: "continuation-1" }),
           findUnique: vi.fn().mockResolvedValue({
             status: "running",
+            userId: owner,
             createdAt: new Date("2026-08-16T12:00:00.000Z"),
             threadId: "thread-1",
           }),
@@ -1041,6 +1046,7 @@ describe("pauseRunForInput", () => {
             attemptId: "attempt-1",
             leaseOwner: "worker-1",
             leaseFence: 3,
+            ...{ userId: "untrusted-owner" },
             blocks: [{ kind: "ask", text: "Which city?" }],
           },
           fanout,
@@ -1075,7 +1081,15 @@ describe("pauseRunForInput", () => {
       );
       expect(tx.run.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: "running", leaseFence: 3 }),
+          where: {
+            id: "run-1",
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            botId: "bot-1",
+            status: "running",
+            leaseOwner: "worker-1",
+            leaseFence: 3,
+          },
           data: { status: "waiting_input", leaseOwner: null, leaseExpiresAt: null },
         }),
       );
@@ -1083,6 +1097,17 @@ describe("pauseRunForInput", () => {
         "thread.message.created",
         "run.waiting_input",
       ]);
+      expect(tx.run.findUnique).toHaveBeenCalledWith({
+        where: { id: "run-1" },
+        select: { userId: true },
+      });
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          runId: "run-1",
+          type: "run.waiting_input",
+          payload: owner ? { userId: owner } : {},
+        }),
+      });
       expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 8 }));
     },
   );
@@ -2511,6 +2536,47 @@ describe("answerRunInput", () => {
     ).rejects.toThrow(AnswerTooLongError);
     expect(store).not.toHaveBeenCalled();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects input when the run is no longer waiting", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      run: { findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
+      message: { findFirst: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const store = vi.fn();
+
+    await expect(
+      answerRunInput(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "fake-key",
+        },
+        undefined,
+        { store },
+      ),
+    ).resolves.toBe(false);
+    expect(tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "run-1",
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          status: "waiting_input",
+        },
+      }),
+    );
+    expect(tx.message.findFirst).not.toHaveBeenCalled();
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(store).not.toHaveBeenCalled();
   });
 
   it("rejects an already answered prompt without queuing the run", async () => {

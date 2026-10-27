@@ -1097,7 +1097,7 @@ export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 
 /** A run as live events report it, before a refresh brings the full record. */
-type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId">> & { status: string };
+type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId" | "userId">> & { status: string };
 
 /**
  * A thread as the screen holds it: live events patch it between refreshes, and a saved chat
@@ -1458,6 +1458,10 @@ export function applyMobileThreadEvent(
     const messages = prev.messages.filter((message) => message.id !== progressId);
     const progressCleared = messages.length !== prev.messages.length;
     const runId = event.runId;
+    const userId =
+      event.type === "run.waiting_input" && typeof event.payload?.userId === "string"
+        ? event.payload.userId
+        : undefined;
     const knownInRun = Boolean(runId && prev.run?.id === runId);
     const knownInActive = Boolean(
       runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
@@ -1465,10 +1469,18 @@ export function applyMobileThreadEvent(
     // Peer bot_message runs are omitted from snapshots while busy; the first wait
     // event is how an open thread learns they need ask/takeover UI.
     const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
-    const runChanged = Boolean(knownInRun && prev.run && prev.run.status !== status);
+    const runChanged = Boolean(
+      knownInRun &&
+        prev.run &&
+        (prev.run.status !== status || (userId !== undefined && prev.run.userId !== userId)),
+    );
     const activeRunChanged = Boolean(
       knownInActive &&
-        prev.activeRuns?.some((candidate) => candidate.id === runId && candidate.status !== status),
+        prev.activeRuns?.some(
+          (candidate) =>
+            candidate.id === runId &&
+            (candidate.status !== status || (userId !== undefined && candidate.userId !== userId)),
+        ),
     );
     const computer =
       event.type === "computer.takeover.requested" && prev.computer?.busyBotName
@@ -1484,6 +1496,7 @@ export function applyMobileThreadEvent(
         id: runId,
         status,
         ...(event.botId ? { botId: event.botId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
       };
       const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
       const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
@@ -1499,10 +1512,15 @@ export function applyMobileThreadEvent(
         activeRuns,
       };
     }
-    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
+    const run =
+      runChanged && prev.run
+        ? { ...prev.run, status, ...(userId !== undefined ? { userId } : {}) }
+        : prev.run;
     const activeRuns = activeRunChanged
       ? prev.activeRuns?.map((candidate) =>
-          candidate.id === runId ? { ...candidate, status } : candidate,
+          candidate.id === runId
+            ? { ...candidate, status, ...(userId !== undefined ? { userId } : {}) }
+            : candidate,
         )
       : prev.activeRuns;
     return { ...prev, cursor, run, activeRuns, messages, computer };
