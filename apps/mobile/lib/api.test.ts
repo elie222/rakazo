@@ -2221,6 +2221,111 @@ describe("mobile API authentication", () => {
     await expect(pendingA).resolves.toBe(true);
     expect(selectedSpaceId()).toBe("space-b");
     expect(storage.get("rakazo.space_id")).toBe("space-b");
+    expect(resumeLiveNotifications).toHaveBeenCalledTimes(1);
+    expect(resumeLiveNotifications).toHaveBeenLastCalledWith(
+      currentApiBase(),
+      expect.anything(),
+      "space-b",
+    );
+  });
+
+  it("does not restore the first selection after switching away and back", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseFirstA!: () => void;
+    let firstA = true;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a" && firstA) {
+        firstA = false;
+        await new Promise<void>((resolve) => {
+          releaseFirstA = resolve;
+        });
+      }
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(firstA).toBe(false));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    await expect(selectSpace("space-a")).resolves.toBe(true);
+    releaseFirstA();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+    expect(resumeLiveNotifications).toHaveBeenCalledTimes(2);
+    expect(resumeLiveNotifications).toHaveBeenLastCalledWith(
+      currentApiBase(),
+      "fake-token",
+      "space-a",
+    );
+  });
+
+  it("does not restore an obsolete selection after its token read finishes", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseToken!: () => void;
+    let tokenReadHeld = false;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token" && !tokenReadHeld) {
+        tokenReadHeld = true;
+        await new Promise<void>((resolve) => {
+          releaseToken = resolve;
+        });
+      }
+      return storage.get(key) ?? null;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    await loadApiBase();
+
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(tokenReadHeld).toBe(true));
+    await expect(selectSpace("space-b")).resolves.toBe(true);
+    releaseToken();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-b");
+    expect(storage.get("rakazo.space_id")).toBe("space-b");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-b");
+  });
+
+  it("restores notifications for the previous selection when a newer persist fails", async () => {
+    const storage = new Map<string, string>([["rakazo.session_token", "fake-token"]]);
+    let releaseA!: () => void;
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-a") {
+        await new Promise<void>((resolve) => {
+          releaseA = resolve;
+        });
+      }
+      if (key === "rakazo.space_id" && value === "space-b") throw new Error("device locked");
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    const pendingA = selectSpace("space-a");
+    await vi.waitFor(() => expect(selectedSpaceId()).toBe("space-a"));
+    // Let rollback's recovery write complete without waiting on the older write.
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.space_id" && value === "space-b") throw new Error("device locked");
+      storage.set(key, value);
+    });
+    await expect(selectSpace("space-b")).resolves.toBe(false);
+    releaseA();
+    await expect(pendingA).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-a");
+    expect(storage.get("rakazo.space_id")).toBe("space-a");
+    expect(resumeLiveNotifications).toHaveBeenCalledOnce();
+    expect(resumeLiveNotifications).toHaveBeenCalledWith(currentApiBase(), "fake-token", "space-a");
   });
 
   it("keeps a later A claim when an earlier A→B→A persist fails", async () => {

@@ -214,14 +214,28 @@ export async function selectSpace(id: string) {
     if (cachedSpaceId === id && spaceSelectionGeneration === claimGeneration) {
       cachedSpaceId = previousSpaceId;
       bumpSpaceSelectionGeneration();
+      const rollbackGeneration = spaceSelectionGeneration;
       if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
+      if (previousSpaceId)
+        await resumeSelectedSpaceNotifications(previousSpaceId, rollbackGeneration);
     }
     return false;
   }
-  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-    () => undefined,
-  );
+  await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
+}
+
+async function resumeSelectedSpaceNotifications(id: string, generation: number): Promise<void> {
+  const apiBase = currentApiBase();
+  const sessionGeneration = currentSessionGeneration();
+  const token = await loadSessionToken();
+  if (
+    generation !== spaceSelectionGeneration ||
+    sessionGeneration !== currentSessionGeneration() ||
+    apiBase !== currentApiBase()
+  )
+    return;
+  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
 }
 
 export function selectedSpaceId(): string | null {
