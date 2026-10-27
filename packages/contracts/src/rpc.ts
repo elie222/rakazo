@@ -43,6 +43,20 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  ConnectorSchema,
+  CreateConnectorInput,
+  CreateGlobalBotInput,
+  GlobalBotSchema,
+  PublishGlobalBotInput,
+  SetGlobalBotConnectorsInput,
+  SetSpaceGlobalBotEnabledInput,
+  SetSpacePermissionsInput,
+  SpaceGlobalBotSchema,
+  SpacePermissionsViewSchema,
+  UpdateConnectorInput,
+  UpdateGlobalBotInput,
+} from "./global-bots.js";
+import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -393,6 +407,35 @@ export const appContract = {
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  globalBots: {
+    listPublished: oc.output(z.array(GlobalBotSchema)),
+    get: oc.input(z.object({ globalBotId: Id })).output(GlobalBotSchema),
+    admin: {
+      create: oc.input(CreateGlobalBotInput).output(GlobalBotSchema),
+      update: oc.input(UpdateGlobalBotInput).output(GlobalBotSchema),
+      publish: oc.input(PublishGlobalBotInput).output(GlobalBotSchema),
+      setConnectors: oc.input(SetGlobalBotConnectorsInput).output(GlobalBotSchema),
+    },
+  },
+  connectors: {
+    admin: {
+      list: oc.output(z.array(ConnectorSchema)),
+      get: oc.input(z.object({ connectorId: Id })).output(ConnectorSchema),
+      create: oc.input(CreateConnectorInput).output(ConnectorSchema),
+      update: oc.input(UpdateConnectorInput).output(ConnectorSchema),
+      remove: oc
+        .input(z.object({ connectorId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+    },
+  },
+  spaceGlobalBots: {
+    list: oc.output(z.array(SpaceGlobalBotSchema)),
+    setEnabled: oc.input(SetSpaceGlobalBotEnabledInput).output(SpaceGlobalBotSchema),
+  },
+  spacePermissions: {
+    get: oc.output(SpacePermissionsViewSchema),
+    set: oc.input(SetSpacePermissionsInput).output(SpacePermissionsViewSchema),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),

@@ -17,6 +17,7 @@ import { threadsForUser, withPrimaryThread, withPrimaryThreads } from "./bot-thr
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
+import { botRosterWhere, ensureUserThreadForBot } from "./global-bots.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
@@ -97,6 +98,7 @@ function mapBot(
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
     spawnKey?: string | null;
+    globalBotId?: string | null;
   },
   preview = "",
   status = "idle",
@@ -143,6 +145,7 @@ function mapBot(
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
+    globalBotId: bot.globalBotId ?? null,
     incomingCall,
   };
 }
@@ -359,26 +362,28 @@ export function createRepos(
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
+      const rows = await prisma.bot.findMany({
+        where: botRosterWhere(actor, options),
+        include: {
+          threads: threadsForUser(actor.userId),
+          runs: activeRunSelection,
+          computer: { select: { scope: true } },
+        },
+        orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+      });
+      // Opening (and listing) a Global bot creates the caller's (botId, userId) thread.
+      const withThreads = await Promise.all(
+        rows.map(async (bot) => {
+          if (bot.threads?.[0]) return bot;
+          // Personal bots keep a thread from create; only Global instances open lazily.
+          if (bot.userId != null || !bot.globalBotId) return bot;
+          const thread = await ensureUserThreadForBot(prisma, actor, bot);
+          return { ...bot, threads: [thread] };
+        }),
+      );
       const bots = await withNewestThreadMessages(
         prisma,
-        await withLatestBotRuns(
-          prisma,
-          withPrimaryThreads(
-            await prisma.bot.findMany({
-              where: {
-                spaceId: actor.spaceId,
-                userId: actor.userId,
-                archivedAt: options.archived ? { not: null } : null,
-              },
-              include: {
-                threads: threadsForUser(actor.userId),
-                runs: activeRunSelection,
-                computer: { select: { scope: true } },
-              },
-              orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-            }),
-          ),
-        ),
+        await withLatestBotRuns(prisma, withPrimaryThreads(withThreads)),
         SIDEBAR_PREVIEW_MESSAGE_WINDOW,
       );
       const callThreadIds = capabilities.phoneCallsEnabled
@@ -496,12 +501,16 @@ export function createRepos(
         where: {
           id: botId,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
+          OR: [{ userId: actor.userId }, { userId: null, globalBotId: { not: null } }],
         },
         include: { threads: threadsForUser(actor.userId), computer: true },
       });
       if (!bot) throw new IsolationError();
+      if (!bot.threads[0]) {
+        const thread = await ensureUserThreadForBot(prisma, actor, bot);
+        return withPrimaryThread({ ...bot, threads: [thread] });
+      }
       return withPrimaryThread(bot);
     },
 

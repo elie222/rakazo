@@ -106,6 +106,13 @@ function vaultScope(actor: Actor, vault?: SettingsScope) {
   return { userId: actor.userId, spaceId: actor.spaceId, vault };
 }
 
+/** Shared Global instances are enabled in space settings, not edited like personal bots. */
+function assertPersonalBot(bot: { globalBotId?: string | null }) {
+  if (bot.globalBotId) {
+    throw new ORPCError("FORBIDDEN", { message: "Shared Global bots cannot be edited here" });
+  }
+}
+
 async function saveVaultCredential(
   deps: RouterDeps,
   scope: ReturnType<typeof vaultScope>,
@@ -297,6 +304,7 @@ export function botsRoutes(ctx: RouterContext) {
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
+        assertPersonalBot(source);
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
@@ -341,6 +349,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        assertPersonalBot(existing);
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -414,6 +423,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        assertPersonalBot(bot);
         if (!bot.thread) throw new IsolationError();
         try {
           await commitBotUpdate({
@@ -435,6 +445,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        assertPersonalBot(bot);
         if (!bot.computer) throw new IsolationError();
         const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
         if (currentMode === input.mode) {
@@ -500,6 +511,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       archive: authed.bots.archive.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        assertPersonalBot(bot);
         await archiveBot(
           {
             prisma: deps.prisma,
@@ -516,6 +528,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restore: authed.bots.restore.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        assertPersonalBot(bot);
         if (!bot.archivedAt) return { ok: true as const };
         try {
           if (bot.computer) {
@@ -533,11 +546,14 @@ export function botsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        assertPersonalBot(bot);
         await removeBot(context.actor, input.botId, { deleteMemories: input.deleteMemories });
         return { ok: true as const };
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        assertPersonalBot(bot);
         const plaintext = randomBytes(32).toString("base64url");
         const stored = await deps.secrets.put(plaintext, {
           operationId: "bots.rotateWebhookSecret",

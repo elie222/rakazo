@@ -125,6 +125,8 @@ export const BotSchema = z.object({
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
   spawnKey: z.string().nullable(),
+  /** Catalog Global bot this space instance materialises; null for user-made bots. */
+  globalBotId: Id.nullable().optional(),
   /** The bot is ringing the user right now. */
   incomingCall: z
     .object({

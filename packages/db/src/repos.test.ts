@@ -30,7 +30,7 @@ const baseBot = {
   memoryScope: null as string | null,
   createdAt: new Date("2026-08-19T00:00:00.000Z"),
   updatedAt: new Date("2026-08-19T00:00:00.000Z"),
-  thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+  threads: [{ id: "thread-1", unread: false, messages: [], runs: [] }],
   runs: [],
   computer: null,
 };
@@ -73,7 +73,7 @@ describe("createRepos.listBots", () => {
           ["one", "two"].map((id) => ({
             ...baseBot,
             id,
-            thread: { ...baseBot.thread, id: `thread-${id}`, messages: [] },
+            threads: [{ ...baseBot.threads[0], id: `thread-${id}`, messages: [] }],
           })),
         ),
       },
@@ -104,7 +104,7 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
+            threads: [{ ...baseBot.threads[0], messages: [] }],
           },
         ]),
       },
@@ -155,7 +155,7 @@ describe("createRepos.listBots", () => {
     const findMany = vi.fn(async () => [
       {
         ...baseBot,
-        thread: { ...baseBot.thread, messages: [] },
+        threads: [{ ...baseBot.threads[0], messages: [] }],
       },
     ]);
     const prisma = {
@@ -208,7 +208,7 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
+            threads: [{ ...baseBot.threads[0], messages: [] }],
           },
         ]),
       },
@@ -301,7 +301,7 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
+            threads: [{ ...baseBot.threads[0], messages: [] }],
           },
         ]),
       },
@@ -350,7 +350,7 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: { ...baseBot.thread, messages: [] },
+            threads: [{ ...baseBot.threads[0], messages: [] }],
           },
         ]),
       },
@@ -382,7 +382,7 @@ describe("createRepos.listBots", () => {
           {
             ...baseBot,
             updatedAt: new Date("2026-08-21T09:00:00.000Z"),
-            thread: { ...baseBot.thread, messages: [] },
+            threads: [{ ...baseBot.threads[0], messages: [] }],
           },
         ]),
       },
@@ -429,11 +429,13 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         sectionId: null,
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         parentBotId: null,
-        thread: {
-          id: "thread-2",
-          unread: true,
-          runs: [{ id: "run-failed", status: "failed" }],
-        },
+        threads: [
+          {
+            id: "thread-2",
+            unread: true,
+            runs: [{ id: "run-failed", status: "failed" }],
+          },
+        ],
         runs: [{ status: "running" }],
       },
     ]);
@@ -478,7 +480,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
       },
     ]);
     const query = findMany.mock.calls[0]![0];
-    expect(query.select.thread).toEqual(
+    expect(query.select.threads).toEqual(
       expect.objectContaining({
         select: expect.not.objectContaining({
           messages: expect.anything(),
@@ -548,7 +550,7 @@ it("finds incoming calls independently of the sidebar message window", async () 
     bot: {
       findMany: vi.fn(async () => [
         baseBot,
-        { ...baseBot, id: "bot-2", thread: { ...baseBot.thread, id: "thread-2" } },
+        { ...baseBot, id: "bot-2", threads: [{ ...baseBot.threads[0], id: "thread-2" }] },
       ]),
     },
     message: { findMany: messageQuery },

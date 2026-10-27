@@ -2,6 +2,7 @@ import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  ensureUserThreadForBot,
   IsolationError,
   threadsForUser,
   withPrimaryThread,
@@ -15,11 +16,20 @@ export type BotThreadDeps = {
 
 export async function requireBotThread(deps: BotThreadDeps, actor: Actor, botId: string) {
   const row = await deps.prisma.bot.findFirst({
-    where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
+    where: {
+      id: botId,
+      spaceId: actor.spaceId,
+      archivedAt: null,
+      OR: [{ userId: actor.userId }, { userId: null, globalBotId: { not: null } }],
+    },
     include: { threads: threadsForUser(actor.userId) },
   });
   if (!row) throw new IsolationError();
-  const bot = withPrimaryThread(row);
+  let bot = withPrimaryThread(row);
+  if (!bot.thread) {
+    const thread = await ensureUserThreadForBot(deps.prisma, actor, row);
+    bot = withPrimaryThread({ ...row, threads: [thread] });
+  }
   if (!bot.thread) throw new IsolationError();
   return { bot, thread: bot.thread };
 }
