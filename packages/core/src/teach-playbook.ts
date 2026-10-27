@@ -74,7 +74,7 @@ const REDACTED_INPUT = "[redacted input]";
 function redactSensitiveText(text: string): string {
   const trimmed = text.trim();
   if (/password|secret|token|api[_-]?key/i.test(trimmed)) return REDACTED_INPUT;
-  return trimmed;
+  return text;
 }
 
 function isTypedCharacter(key: string): boolean {
