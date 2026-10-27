@@ -374,7 +374,12 @@ describe("parametersFor OpenAI wire fidelity", () => {
       type: "object",
       properties: {
         projectId: { type: "string" },
-        action: { anyOf: [{ const: "start" }, { const: "stop" }] },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
       },
       required: ["projectId", "action"],
     });
@@ -401,7 +406,12 @@ describe("parametersFor OpenAI wire fidelity", () => {
       type: "object",
       properties: {
         projectId: { type: "string" },
-        action: { anyOf: [{ const: "start" }, { const: "stop" }] },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
       },
       required: ["projectId", "action"],
     });
@@ -429,7 +439,12 @@ describe("parametersFor OpenAI wire fidelity", () => {
       type: "object",
       properties: {
         projectId: { type: "string" },
-        action: { anyOf: [{ const: "start" }, { const: "stop" }] },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
       },
       required: ["projectId", "action"],
     });

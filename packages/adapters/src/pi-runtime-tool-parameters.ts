@@ -200,7 +200,9 @@ export function jsonSchemaParameters(
       )) ||
     (Array.isArray(schema.oneOf) && Array.isArray(schema.anyOf))
   ) {
-    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
+    return Type.Unsafe({
+      ...(enrichStringConsts({ ...schema, ...options }) as Record<string, unknown>),
+    }) as unknown as ReturnType<typeof Type.Object>;
   }
   const alternatives = Array.isArray(schema.oneOf)
     ? schema.oneOf
@@ -231,6 +233,61 @@ export function jsonSchemaParameters(
 }
 
 type FieldOptions = { description?: string };
+
+/** Add gateway-compatible string discriminators without rebuilding or mutating the schema. */
+function enrichStringConsts(value: unknown): unknown {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return value;
+  const schema = value as Record<string, unknown>;
+  const result = { ...schema };
+  if (typeof schema.const === "string") {
+    if (!("type" in schema)) result.type = "string";
+    if (!("enum" in schema) || (Array.isArray(schema.enum) && schema.enum.includes(schema.const))) {
+      result.enum = [schema.const];
+    }
+  }
+
+  for (const key of [
+    "properties",
+    "patternProperties",
+    "$defs",
+    "definitions",
+    "dependentSchemas",
+    "dependencies",
+  ]) {
+    const map = schema[key];
+    if (map != null && typeof map === "object" && !Array.isArray(map)) {
+      result[key] = Object.fromEntries(
+        Object.entries(map).map(([name, child]) => [name, enrichStringConsts(child)]),
+      );
+    }
+  }
+  for (const key of ["allOf", "anyOf", "oneOf", "prefixItems"]) {
+    const variants = schema[key];
+    if (Array.isArray(variants)) result[key] = variants.map(enrichStringConsts);
+  }
+  for (const key of [
+    "items",
+    "additionalItems",
+    "additionalProperties",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+    "contains",
+    "propertyNames",
+    "not",
+    "if",
+    "then",
+    "else",
+    "contentSchema",
+  ]) {
+    const child = schema[key];
+    if (child !== undefined) {
+      result[key] = Array.isArray(child)
+        ? child.map(enrichStringConsts)
+        : enrichStringConsts(child);
+    }
+  }
+  return result;
+}
 
 /** Carry the parameter description when rebuilding its TypeBox node. */
 function fieldOptions(definition: Record<string, unknown>): FieldOptions {
