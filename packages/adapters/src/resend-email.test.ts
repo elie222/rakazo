@@ -30,6 +30,17 @@ describe("ResendEmailProvider", () => {
     }
   });
 
+  it("sends the configured reply-to address", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id: "email-1" }));
+    await new ResendEmailProvider(
+      { ...config, replyTo: "founder@example.test" },
+      { fetch: request },
+    ).send(message);
+    expect(JSON.parse(request.mock.calls[0]![1]!.body as string)).toMatchObject({
+      reply_to: "founder@example.test",
+    });
+  });
+
   it("gives separate deliveries different keys", async () => {
     const request = vi
       .fn<typeof fetch>()

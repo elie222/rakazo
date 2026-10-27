@@ -283,11 +283,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("passes the stored credential state so a stale account-change retire skips a rotated row", async () => {
-    // The caller wires the failed state into a matchesFailedSecret predicate
-    // over the secret row's current ciphertext. The row was rewritten by a
-    // concurrent successful refresh, so the stale account-change failure must
-    // not delete the newer credential — and without the failed state the
-    // fence is absent and the delete would proceed.
+    // The row was rewritten by a concurrent successful refresh, so the stale
+    // account-change failure must not delete the newer credential.
     const stored = credential({ refresh: "refresh-token", expires: 1, accountId: "acct-a" });
     const rotated = serializeModelSecret({
       kind: "oauth",

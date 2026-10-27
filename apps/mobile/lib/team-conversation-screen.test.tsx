@@ -16,6 +16,9 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
+vi.mock("./user-error", () => ({
+  errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
+}));
 vi.mock("./i18n", () => ({
   useI18n: () => ({
     t: (message: string, values: Record<string, string> = {}) =>
@@ -116,7 +119,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.mocked(rpc).mockImplementation(async (path: string) => {
+  vi.mocked(rpc).mockImplementation((async (path: string) => {
     if (path === "bots/list") {
       return [{ id: "bot-1", name: "Chief", teamChatAmbientEnabled: false, teamChatRules: "" }];
     }
@@ -139,7 +142,7 @@ beforeEach(() => {
       };
     }
     return { ok: true };
-  });
+  }) as never);
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -194,4 +197,19 @@ it("saves typed hours while the field still has focus", async () => {
       automatedSenderPolicies: { B_GITHUB: { name: "GitHub", mode: "rollup", rollupHours: 12 } },
     }),
   );
+});
+
+it("offers a retry when the room fails to load, then shows its settings", async () => {
+  const load = vi.mocked(rpc).getMockImplementation()!;
+  vi.mocked(rpc).mockImplementationOnce((async () => {
+    throw new Error("offline");
+  }) as never);
+  await act(async () => root.render(<TeamConversationSettings />));
+  expect(container.textContent).not.toContain("Chief default");
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+
+  await click("Retry");
+  expect(vi.mocked(rpc).getMockImplementation()).toBe(load);
+  expect(container.textContent).toContain("Chief default");
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });

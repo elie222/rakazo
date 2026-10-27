@@ -9,13 +9,12 @@ import type {
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,
-  type PrismaClient,
   parseComputerMode,
   recordComputerRunEnd,
   recordComputerRunStart,
-  type ThreadEvents,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -35,7 +34,7 @@ import {
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
-import { isSandboxGoneError } from "./sandbox-errors.js";
+import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
 type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
@@ -45,11 +44,9 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 /**
- * A booting claim newer than an execution-lease TTL is treated as live, not abandoned.
  * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
- * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Align with
- * EXECUTION_LEASE_MS (a crashed team worker's lease would expire then). Slow dedicated boots
- * past this window stay protected while their run worker lease still heartbeats.
+ * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Slow dedicated
+ * boots past this window stay protected while their run worker lease still heartbeats.
  */
 const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
 
@@ -74,10 +71,8 @@ function isLiveSuspending(
  *
  * Whoever moves a computer to "booting" holds its execution lease for the whole provision,
  * renewed on the run heartbeat, so a booting row whose only live lease is our own belongs to
- * a worker that died between the claim and its own failure handler. Before this nothing
- * cleared that state -- the claim took only stopped/suspended/error rows and replaceComputer
- * refused a booting one -- so the computer stayed wedged for good and every run on its bot
- * retried forever.
+ * a worker that died between the claim and its own failure handler. Without reclaiming it the
+ * computer stays wedged and every run on its bot retries forever.
  *
  * Used only when claiming an abandoned "booting" row. End-of-boot writes fence on the claim
  * stamp (updatedAt) instead: fencing them with this predicate too would let a second Team bot
@@ -239,9 +234,7 @@ export async function provisionComputer(
   const suspendStamp = existing.state === "suspending" ? existing.updatedAt : null;
   const suspendClaimIsStale = suspendStamp !== null && isAbandonedLifecycleClaim(suspendStamp);
   // A fresh booting claim (or one whose run lease is still live) cannot be reclaimed after
-  // the wait either, so do not block workers for the full boot-wait window. Shared Postgres
-  // journeys previously hung createApp stop() while continueRun sat in that wait against a
-  // wedged mid-boot row left by an earlier suite.
+  // the wait either, so do not block workers for the full boot-wait window.
   if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
     throw new ComputerBusyError();
   }
@@ -334,26 +327,57 @@ export async function provisionComputer(
     if (!reconnecting && deps.home instanceof ObjectAgentHomeStore)
       await deps.home.hydrate(existing.homeKey);
     await onProgress?.("recreating");
-    const ref = await getLogger().withContext(
-      { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
-      () =>
-        deps.sandbox.provision(
-          {
-            botId: existing.homeKey,
-            homePath,
-            providerRef: existing.providerRef ?? undefined,
-            providerKind: existing.kind as ComputerRef["kind"],
-            // A save from an older release has no time; the provider keeps its own state then.
-            savedAt:
-              existing.homeRevision === "empty"
-                ? undefined
-                : (existing.homeRevisionAt ?? undefined),
-          },
-          context,
-        ),
-    );
+    const provision = () =>
+      getLogger().withContext(
+        { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
+        () =>
+          deps.sandbox.provision(
+            {
+              botId: existing.homeKey,
+              homePath,
+              providerRef: existing.providerRef ?? undefined,
+              providerKind: existing.kind as ComputerRef["kind"],
+              // A save from an older release has no time; the provider keeps its own state then.
+              savedAt:
+                existing.homeRevision === "empty"
+                  ? undefined
+                  : (existing.homeRevisionAt ?? undefined),
+            },
+            context,
+          ),
+      );
+    let ref = await provision();
     provisioned = ref;
-    await deps.sandbox.prepare(ref, context);
+    try {
+      await deps.sandbox.prepare(ref, context);
+    } catch (error) {
+      if (
+        !isSandboxDamagedError(error) ||
+        !(await claimAutoRecovery(deps.prisma, existing, claimStamp))
+      )
+        throw error;
+      // Stopping keeps the provider's last good copy of a system that can no longer run anything,
+      // and starting again resumes it, or replaces it from the saved workspace when that is newer.
+      log.warn("computer.auto_recover", { provider: ref.kind, step: "stop", error });
+      try {
+        // A computer this call just created holds nothing yet; make another rather than leave
+        // it behind while starting again would create a second one.
+        if (ref.fresh) await deps.sandbox.destroy(ref, context);
+        else await deps.sandbox.stop(ref, context, { discardUnsaved: true });
+        ref = await provision();
+        provisioned = ref;
+        await deps.sandbox.prepare(ref, context);
+      } catch (failure) {
+        log.warn("computer.auto_recover", { provider: ref.kind, step: "failed", error: failure });
+        // Recover stays the way out; a failure on the way says less than the damage itself.
+        throw isSandboxDamagedError(failure) ? failure : error;
+      }
+      log.warn("computer.auto_recover", {
+        provider: ref.kind,
+        step: "recovered",
+        operation: ref.fresh ? "replaced" : "resumed",
+      });
+    }
     const replacement =
       ref.fresh === true ||
       !existing.providerRef ||
@@ -433,6 +457,7 @@ export async function provisionComputer(
     log.warn("computer.provision_failed", {
       provider: existing.kind,
       durationMs: Math.round(performance.now() - started),
+      error,
     });
     // A failed reconnect never owns an existing workspace, even if setup failed.
     const rollbackError =
@@ -471,6 +496,24 @@ export async function provisionComputer(
   }
 }
 
+/**
+ * Takes the one automatic recovery a damaged computer gets until a later save shows it works
+ * again, so one that comes back damaged is not stopped and started on every use.
+ */
+async function claimAutoRecovery(
+  prisma: PrismaClient,
+  computer: { id: string; homeRevisionAt: Date | null; autoRecoveredAt: Date | null },
+  claimStamp: Date,
+): Promise<boolean> {
+  const last = computer.autoRecoveredAt;
+  if (last && !(computer.homeRevisionAt && computer.homeRevisionAt > last)) return false;
+  const claimed = await prisma.computer.updateMany({
+    where: { id: computer.id, state: "booting", updatedAt: claimStamp, autoRecoveredAt: last },
+    data: { autoRecoveredAt: new Date(), updatedAt: claimStamp },
+  });
+  return claimed.count === 1;
+}
+
 async function waitForComputerReady(
   prisma: PrismaClient,
   computerId: string,
@@ -505,7 +548,12 @@ async function rollbackProvisionedComputer(
         await sandbox.destroy(computer, context);
       }
     } else {
-      await sandbox.stop(computer, context);
+      // Nothing on a damaged computer can be read, so only the provider's last good copy is left.
+      if (isSandboxDamagedError(cause)) {
+        await sandbox.stop(computer, context, { discardUnsaved: true });
+      } else {
+        await sandbox.stop(computer, context);
+      }
     }
     return undefined;
   } catch (error) {
@@ -1027,6 +1075,8 @@ export async function replaceComputer(
         controlLeaseExpiresAt: null,
         controlBotId: null,
         controlRunId: null,
+        // The replacement is a new machine; damage to the old one is no reason to hold it back.
+        autoRecoveredAt: null,
         updatedAt: claimStamp,
       },
     });

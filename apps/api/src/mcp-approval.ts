@@ -4,7 +4,6 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, IsolationError, withTransactionRetry } from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
 
-/** Dependencies for resolving pending MCP approval cards in a bot's threads. */
 export type McpApprovalDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -164,8 +163,6 @@ export async function resolveMcpApprovalCards<T>(
             ? (block: ApprovalBlock) => block.status !== "connected"
             : isOpen;
         const painted = await rewriteCards(tx, actor, threads, input, selectable);
-        // Only a card decision can lose to a dismissal that already committed.
-        // Settings and onboarding approve without a threadId and must still assign.
         const dismissalWon =
           input.threadId !== undefined &&
           painted.flipped === 0 &&

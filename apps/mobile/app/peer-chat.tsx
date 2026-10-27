@@ -6,7 +6,6 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { glassHeaderOptions } from "../components/glass-title";
-import type { MobileMessagePage } from "../lib/api";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -42,11 +41,7 @@ export default function PeerChat() {
     void loadPeerHistory({
       signal: abort.signal,
       loadPage: (before, signal) =>
-        rpc<MobileMessagePage>(
-          "threads/messages",
-          { botId, before, includePeerRuns: true },
-          { signal },
-        ),
+        rpc("threads/messages", { botId, before, includePeerRuns: true }, { signal }),
     })
       .then((messages) => {
         if (abort.signal.aborted) return;

@@ -16,3 +16,11 @@ export function isSandboxGoneError(error: unknown): boolean {
   }
   return false;
 }
+
+/** A computer whose system cannot start programs, reported as `SandboxDamagedError`. */
+export function isSandboxDamagedError(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (current.name === "SandboxDamagedError") return true;
+  }
+  return false;
+}

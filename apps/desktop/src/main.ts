@@ -2,18 +2,25 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
+import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
+import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
 import type { Session } from "electron";
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  safeStorage,
+  session,
+  shell,
+} from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
 import { createAppOpener } from "./app-opener.js";
-import {
-  DesktopUpdateController,
-  type ElectronAutoUpdater,
-  LAUNCH_CHECK_DELAY_MS,
-  updaterSupport,
-} from "./auto-update.js";
+import type { ElectronAutoUpdater } from "./auto-update.js";
+import { DesktopUpdateController, LAUNCH_CHECK_DELAY_MS, updaterSupport } from "./auto-update.js";
 import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
@@ -61,6 +68,8 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
+import type { UserDeviceAccess } from "./user-device.js";
+import { createUserDeviceAccess, deviceName } from "./user-device.js";
 import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
 import {
   browserWindowOptions,
@@ -108,6 +117,7 @@ const updaterEnvironment = {
 };
 const desktopUpdater = new DesktopUpdateController(
   updaterEnvironment,
+  // Loaded only when a packaged build actually checks for updates.
   async () => {
     const module = await import("electron-updater");
     return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
@@ -121,6 +131,7 @@ let launchUpdateCheckScheduled = false;
 let localStack: LocalStackController;
 let hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
 let requestingComputerAccess = false;
+let userDevices: UserDeviceAccess | undefined;
 
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
@@ -301,6 +312,12 @@ function createWindow(url: string, partition: string | null) {
     if (external !== null) void shell.openExternal(external);
     return { action: "deny" };
   });
+  // Signing in lands on a new page; pair then instead of waiting for the next launch.
+  const pairAfterNavigation = () => {
+    if (mainWindow === win) void userDevices?.pair();
+  };
+  win.webContents.on("did-navigate", pairAfterNavigation);
+  win.webContents.on("did-navigate-in-page", pairAfterNavigation);
   win.webContents.on("will-navigate", (event, navigationUrl) => {
     if (targetOrigin !== null && safeOrigin(navigationUrl) === targetOrigin) return;
     event.preventDefault();
@@ -670,7 +687,7 @@ function installApplicationMenu() {
   };
   const revokeComputerAccess: Electron.MenuItemConstructorOptions = {
     label: "Revoke Local Computer Access",
-    visible: hostComputer?.isEnabled() === true,
+    visible: remoteServerOrigin() === null && hostComputer?.isEnabled() === true,
     click: () => {
       void hostComputer
         ?.revoke()
@@ -951,7 +968,52 @@ function syncHostComputerAccess() {
       !mainWindow.isDestroyed() &&
       appWindowTargets.get(mainWindow) === localStack.webUrl(),
   );
+  void userDevices?.select(remoteServerOrigin()).catch(() => undefined);
   installApplicationMenu();
+}
+
+/** The server the app window shows, unless it is the app-managed local stack. */
+function remoteServerOrigin() {
+  if (currentSetup?.mode === "new" || mainWindow === null || mainWindow.isDestroyed()) return null;
+  const target = appWindowTargets.get(mainWindow);
+  return target === undefined ? null : safeOrigin(target);
+}
+
+/** The trust boundary: only a click on Allow here lets bots use this computer. */
+async function confirmComputerAccess(where: string, revokeWhere: string) {
+  const options: Electron.MessageBoxOptions = {
+    type: "warning",
+    title: "Allow local computer access?",
+    message: "Allow bots to use this computer?",
+    detail: `Bots on ${where} can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access ${revokeWhere}.`,
+    buttons: ["Cancel", "Allow"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const win = mainWindow !== null && !mainWindow.isDestroyed() ? mainWindow : null;
+  const result = await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+  return result.response === 1;
+}
+
+/** A bot asks while the person may be elsewhere, so bring the prompt to them. */
+function confirmRemoteComputerAccess(host: string) {
+  if (mainWindow !== null && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isVisible()) mainWindow.show();
+    else if (!mainWindow.isFocused()) app.dock?.bounce("informational");
+  }
+  return confirmComputerAccess(host, "in Settings");
+}
+
+function deviceTokenCipher() {
+  return {
+    // Linux without a keyring falls back to a fixed key; keep the token off disk there.
+    available: async () =>
+      (await safeStorage.isAsyncEncryptionAvailable()) &&
+      !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
+    encrypt: (value: string) => safeStorage.encryptStringAsync(value),
+    decrypt: async (value: Buffer) => (await safeStorage.decryptStringAsync(value)).result,
+  };
 }
 
 /** Drop the previous app window after the new server is opened and persisted. */
@@ -1082,6 +1144,29 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
+  userDevices = createUserDeviceAccess({
+    userDataDir,
+    cipher: deviceTokenCipher(),
+    device: async () => ({
+      name: await deviceName(),
+      platform:
+        process.platform === "win32" || process.platform === "linux" ? process.platform : "darwin",
+    }),
+    confirm: (host) => confirmRemoteComputerAccess(host),
+    // The app window's session carries the sign-in for that server; the token never reaches it.
+    fetch: (url, init) =>
+      (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.session : net).fetch(url, {
+        ...init,
+        bypassCustomProtocolHandlers: true,
+      }),
+    connect: (origin, token, events) =>
+      startUserDeviceClient({
+        serverUrl: origin,
+        token,
+        root: path.join(userDataDir, "computers"),
+        ...events,
+      }),
+  });
   localStack = new LocalStackController({
     hostComputer: hostComputer?.connection,
     platform: process.platform,
@@ -1217,18 +1302,8 @@ app.whenReady().then(async () => {
         await persistHostChoice("this-mac");
         return true;
       }
-      const result = await dialog.showMessageBox(mainWindow!, {
-        type: "warning",
-        title: "Allow local computer access?",
-        message: "Allow bots to use this computer?",
-        detail:
-          "Bots on this local instance can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access from the app menu.",
-        buttons: ["Cancel", "Allow"],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      });
-      if (result.response !== 1 || !isManagedComputerRequest(event)) return false;
+      const allowed = await confirmComputerAccess("this local instance", "from the app menu");
+      if (!allowed || !isManagedComputerRequest(event)) return false;
       hostComputer.activate(true);
       await hostComputer.grant();
       try {
@@ -1252,6 +1327,27 @@ app.whenReady().then(async () => {
         installApplicationMenu();
       }
     }
+  });
+  /** The remote server's own page in the app window, never a frame or another window. */
+  const remoteDeviceOrigin = (event: Electron.IpcMainInvokeEvent) => {
+    const origin = remoteServerOrigin();
+    return fromMainWindow(event) &&
+      event.senderFrame === event.sender.mainFrame &&
+      origin !== null &&
+      safeOrigin(event.senderFrame.url) === origin
+      ? origin
+      : null;
+  };
+  const deviceState = async (origin: string | null): Promise<RakazoDesktopDevice | null> => {
+    const state = origin === null ? null : userDevices?.state(origin);
+    return state ? { ...state, name: await deviceName() } : null;
+  };
+  ipcMain.handle("desktop.device.state", (event) => deviceState(remoteDeviceOrigin(event)));
+  ipcMain.handle("desktop.device.setAllowed", async (event, allowed: unknown) => {
+    const origin = remoteDeviceOrigin(event);
+    if (origin === null || typeof allowed !== "boolean") return null;
+    await userDevices?.setAllowed(origin, allowed);
+    return deviceState(remoteDeviceOrigin(event));
   });
   ipcMain.handle(
     "desktop.badge.set",
@@ -1484,5 +1580,6 @@ app.on("before-quit", () => {
   // Containers keep running; only an in-flight pull/up is cut short.
   hostComputer?.activate(false);
   void hostComputer?.close();
+  userDevices?.close();
   localStack?.abort();
 });

@@ -222,9 +222,7 @@ export function createMcpServers(
     }
   };
   /**
-   * After a server is created, reconfigured or its OAuth connected: show `installing` (stdio
-   * may have to download a package) and probe in the background so the settings page turns
-   * ok/error without a click. Returns the row with the health the caller should display.
+   * Shows `installing` (stdio may have to download a package) and probes in the background.
    * Never throws; a probe problem must not fail the save.
    */
   const beginMcpProbe = async (

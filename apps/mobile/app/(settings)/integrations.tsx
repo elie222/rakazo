@@ -3,6 +3,7 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
+  RpcOutput,
 } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
@@ -51,7 +52,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
-type ConnectionTool = { name: string; description: string };
+type ConnectionTool = RpcOutput<"connections/tools">[number];
 
 const LOGO_SIZE = 32;
 
@@ -223,7 +224,7 @@ export default function Integrations() {
     }
     const generation = ++refreshGeneration.current;
     const sourceGeneration = ++sourcesGeneration.current;
-    void rpc<McpServer[]>("mcp/servers/list")
+    void rpc("mcp/servers/list")
       .then((servers) => {
         if (
           mounted.current &&
@@ -244,7 +245,7 @@ export default function Integrations() {
         )
           setMcpError(errorText(reason, t("Could not load MCP servers")));
       });
-    void rpc<CapabilityInstall[]>("capabilities/list")
+    void rpc("capabilities/list")
       .then((installs) => {
         if (
           mounted.current &&
@@ -263,8 +264,8 @@ export default function Integrations() {
     let next: IntegrationsSnapshot;
     try {
       // The catalog call reconciles connection rows, so list them after it.
-      const catalog = await rpc<ConnectionCatalogItem[]>("connections/catalog");
-      const connections = await rpc<Connection[]>("connections/list");
+      const catalog = await rpc("connections/catalog");
+      const connections = await rpc("connections/list");
       next = { catalog, connections };
     } catch (reason) {
       if (!mounted.current || focus !== focusGeneration.current) return;
@@ -333,7 +334,7 @@ export default function Integrations() {
     }
     let cancelled = false;
     setToolsLoading(true);
-    void rpc<ConnectionTool[]>("connections/tools", {
+    void rpc("connections/tools", {
       connectorId: detailKey.connectorId,
       provider: detailKey.slug,
     })
@@ -402,12 +403,8 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       const result = await connectCatalogItem(item, connections, {
-        begin: (input) =>
-          rpc<{ connectionId: string; authorizationUrl: string | null }>(
-            "connections/begin",
-            input,
-          ),
-        complete: (input) => rpc<Connection>("connections/complete", input),
+        begin: (input) => rpc("connections/begin", input),
+        complete: (input) => rpc("connections/complete", input),
         openUrl: (url) => Linking.openURL(url),
         signal: controller.signal,
         isCurrent,
@@ -462,7 +459,7 @@ export default function Integrations() {
     setPending(`rename:${row.id}`);
     setCatalogError(null);
     try {
-      const updated = await rpc<Connection>("connections/rename", {
+      const updated = await rpc("connections/rename", {
         connectionId: row.id,
         displayName,
       });

@@ -5,6 +5,7 @@ import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { secretFieldTraits } from "../lib/secret-field-traits";
+import { useSecretSheetClose } from "../lib/secret-sheet-close";
 import { NativeActionButton } from "./native-action-button";
 
 /**
@@ -34,8 +35,6 @@ export function SecretAskSheet({
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const closeState = useRef<"open" | "closing" | "closed">("open");
   const incomplete = !username.trim() || password.length === 0;
 
   function clear() {
@@ -43,34 +42,11 @@ export function SecretAskSheet({
     setPassword("");
   }
 
-  // iOS offers to save the password when a sheet goes away while its username or password field
-  // still holds text. Closing empties and locks both fields first. The native commands run in
-  // order, so the field being edited ends editing only after both are empty and reports its
-  // text; the sheet closes a frame after that report, or after a delay if no field was edited.
-  function close() {
-    if (closeState.current !== "open") return;
-    closeState.current = "closing";
-    clear();
-    setClosing(true);
-    for (const input of [usernameInput, passwordInput]) input.current?.clear();
-    for (const input of [usernameInput, passwordInput]) input.current?.blur();
-  }
-
-  function finishClosing() {
-    if (closeState.current !== "closing") return;
-    closeState.current = "closed";
-    requestAnimationFrame(() => onClose());
-  }
-
-  function endEditing(text: string) {
-    if (text === "") finishClosing();
-  }
-
-  useEffect(() => {
-    if (!closing) return;
-    const timer = setTimeout(finishClosing, 500);
-    return () => clearTimeout(timer);
-  }, [closing]);
+  const { close, closing, endEditing } = useSecretSheetClose(
+    [usernameInput, passwordInput],
+    clear,
+    onClose,
+  );
 
   useEffect(() => {
     if (!pending) close();

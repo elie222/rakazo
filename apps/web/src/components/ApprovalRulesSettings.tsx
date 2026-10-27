@@ -6,10 +6,11 @@ import type {
   SettingsScope,
 } from "@rakazo/contracts";
 import { humanizeToolName } from "@rakazo/core";
+import { writeSaved } from "@rakazo/core/query";
 import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";

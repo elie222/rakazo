@@ -29,18 +29,10 @@ export type McpMaterialUpdate =
   | { action: "keep" }
   | { action: "store"; material: McpSecretMaterial };
 
-/** Compute the next encrypted credential blob for an MCP server update.
- *
- * - "keep": the update carries no credential data; leave the stored blob as is.
- * - "store": rewrite the blob. An empty material means credentials were
- *   cleared entirely — the caller should delete the secret row and null the
- *   server's secretId instead of storing an empty object.
- *
- * env/headers/files use full-replace semantics (the update payload is the
- * complete set), matching the create handler; files are kept when omitted and
- * only exist for stdio servers. OAuth state is preserved unless the
- * endpoint changed, since tokens issued for one endpoint must never be sent to
- * another server. */
+/** An empty "store" material means credentials were cleared: the caller deletes the secret
+ * row and nulls `secretId` instead of storing an empty object. env/headers are full-replace;
+ * files are kept when omitted. OAuth state is dropped when the endpoint changed, since tokens
+ * issued for one endpoint must never be sent to another server. */
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,

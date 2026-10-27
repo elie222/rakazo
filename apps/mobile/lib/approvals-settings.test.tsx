@@ -84,6 +84,10 @@ vi.mock("@expo/ui/community/menu", () => ({
       ),
     ),
 }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
 vi.mock("../components/native-segmented-control", () => ({
   NativeSegmentedControl: ({
     options,
@@ -259,4 +263,23 @@ it("keeps a saved mode when a read that started before the save lands after it",
   await act(async () => (container.querySelector('[role="radio"]') as HTMLElement | null)?.click());
   await act(async () => resolveRead(stale));
   expect(modes()).not.toContain("Ask*");
+});
+
+function retry() {
+  return [...container.querySelectorAll("button")].find((node) => node.textContent === "Retry");
+}
+
+it("offers a retry when the first load fails, then shows the settings", async () => {
+  state.settings = { ...state.settings, checkerAvailable: true };
+  state.rpc.mockImplementationOnce(async () => {
+    throw new Error("offline");
+  });
+  await render();
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(modes()).toEqual(["Never ask", "Ask"]);
+
+  await act(async () => retry()!.click());
+  expect(modes()).toEqual(["Never ask", "Auto", "Ask*"]);
+  expect(retry()).toBeUndefined();
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });

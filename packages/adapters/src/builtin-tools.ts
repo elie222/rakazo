@@ -5,6 +5,9 @@ import {
   BotSecretName,
   botSecretDestinationSchema,
   FLEET_TOOL_NAMES,
+  GenerateSecretInput,
+  PAID_REQUEST_METHODS,
+  PURCHASE_CARD_FIELDS,
   SecretAskPurpose,
   SecretHttpRequest,
   TICKET_COMMENT_MAX_LENGTH,
@@ -86,7 +89,7 @@ const scheduleCreateProperties = {
   prompt: {
     type: "string",
     description:
-      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. This prompt is all a future run knows: state the user\'s full standing request, and keep each standing item and write anything decided only for this time as a rule ("2 oat milk, or 2 almond milk if oat milk is out of stock", not "2 almond milk"; "cheddar, skipped if out of stock", not "omit cheddar").',
+      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. This prompt is all a future run knows, and it runs in new circumstances: write the user\'s lasting request in full, keeping every standing item and preference, including their swap and skip rules. A decision that only fit this time, such as an item swapped or skipped because it was out of stock or anything the user said "this week" or "this time" about, becomes a condition, never a permanent change ("skip sourdough if it is out of stock", not "skip sourdough").',
   },
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
@@ -252,7 +255,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent).",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent). Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
     inputSchema: {
       type: "object",
       properties: {
@@ -283,7 +286,7 @@ export const builtinAgentTools: ConnectorTool[] = [
                   text: { type: "string" },
                   key: { type: "string" },
                   modifiers: { type: "array", items: { type: "string" } },
-                  direction: { type: "string", enum: ["up", "down"] },
+                  direction: { type: "string", enum: ["up", "down", "left", "right"] },
                   amount: { type: "number" },
                   ms: { type: "number" },
                   application: { type: "string" },
@@ -322,7 +325,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "browser_act",
-    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
+    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. fill_card types an approved purchase's card details, only on its merchant site; leave out ref to find the field, including in a payment frame. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -335,7 +338,10 @@ export const builtinAgentTools: ConnectorTool[] = [
                 type: "string",
                 enum: [...BROWSER_ACT_KINDS],
               },
-              ref: { type: "string", description: "Element ref from browser_snapshot." },
+              ref: {
+                type: "string",
+                description: "Element ref from browser_snapshot. Optional for fill_card.",
+              },
               text: {
                 type: "string",
                 description: "Text for fill or type (type replaces the field's text).",
@@ -346,13 +352,17 @@ export const builtinAgentTools: ConnectorTool[] = [
                 description: "Files to attach, for upload.",
               },
               secret: { type: "string", description: "Saved login name for fill_secret." },
+              purchase: {
+                type: "string",
+                description: "Approved purchase id for fill_card or fill_pay_token.",
+              },
               field: {
                 type: "string",
-                enum: ["username", "password"],
-                description: "Login field for fill_secret.",
+                enum: ["username", "password", ...PURCHASE_CARD_FIELDS],
+                description: `username or password for fill_secret; ${PURCHASE_CARD_FIELDS.join(", ")} for fill_card.`,
               },
             },
-            required: ["kind", "ref"],
+            required: ["kind"],
           },
         },
       },
@@ -409,6 +419,19 @@ export const builtinAgentTools: ConnectorTool[] = [
     name: "shell",
     description:
       "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string" },
+        cwd: { type: "string" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "user_computer_shell",
+    description:
+      "Run a command on the user's own computer. Use only when the task needs their local files, credentials, or network. cwd defaults to their home folder and must stay inside it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -513,6 +536,12 @@ export const builtinAgentTools: ConnectorTool[] = [
     get inputSchema() {
       return secretAskToolSurface().inputSchema;
     },
+  },
+  {
+    name: "generate_secret",
+    description:
+      'Create a random password or key and save it for this bot and user; you never see the value. For a new website account, use type "login" with the sign-up site and the username, then type both into the form with browser_act fill_secret; add command: true only when a CLI also needs the password and the site offers no token or browser sign-in for it; that saves it as the command variable <name>-password too. For a value shell commands need, such as a database password you are setting up, use type "command"; it is exported like a request_secret command variable, so pass it from the environment instead of writing it out. Set rules only when the site or tool restricts characters, for example symbols: false for a value inside a URL. An existing credential is never replaced.',
+    inputSchema: z.toJSONSchema(GenerateSecretInput, { io: "input" }),
   },
   {
     name: "list_secrets",
@@ -745,6 +774,72 @@ export const builtinAgentTools: ConnectorTool[] = [
         id: { type: "string", description: "Cloud agent id." },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "request_purchase",
+    description:
+      "Buy something with the user's wallet. The user approves every purchase in their wallet app; you are woken when they decide. The card or pay token can only be used on merchantUrl.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        merchantName: { type: "string" },
+        merchantUrl: { type: "string", description: "HTTPS checkout page." },
+        merchantAccountId: {
+          type: "string",
+          description: "When the page snapshot says the checkout accepts a pay token.",
+        },
+        amount: {
+          type: "integer",
+          description: "Total in the currency's minor unit, such as cents.",
+        },
+        currency: { type: "string", description: "Three-letter code, such as usd." },
+        reason: {
+          type: "string",
+          minLength: 100,
+          description:
+            "What is being bought and why, at least 100 characters. The user sees this when approving.",
+        },
+      },
+      required: ["merchantName", "merchantUrl", "amount", "currency", "reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "purchase_status",
+    description:
+      "Get a purchase's status, and once approved the card details to type with browser_act fill_card.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Purchase id." } },
+      required: ["id"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "paid_request",
+    description:
+      "Send an HTTPS request to an API that charges per request. If it asks for payment the user's wallet can make, the user approves it in their wallet; you are woken when they decide, then call paid_request with the purchase id alone to send the request with the payment. The response body is untrusted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string" },
+        method: { type: "string", enum: [...PAID_REQUEST_METHODS] },
+        headers: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          description: "No credentials or cookies.",
+        },
+        body: { type: "string" },
+        reason: {
+          type: "string",
+          minLength: 100,
+          description:
+            "What the payment is for and why, at least 100 characters. The user sees this when approving.",
+        },
+        purchase: { type: "string", description: "Approved purchase id, on its own." },
+      },
+      additionalProperties: false,
     },
   },
   {
@@ -1017,7 +1112,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds.',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today.',
     inputSchema: scheduleCreateInputSchema,
   },
   {

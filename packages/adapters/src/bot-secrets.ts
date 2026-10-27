@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { BotSecretDestination } from "@rakazo/contracts";
+import type { BotSecretDestination, SettingsScope } from "@rakazo/contracts";
 import {
   BotSecretAuth,
   BotSecretName,
@@ -8,25 +8,61 @@ import {
   commandVariableName,
   commandVariableProblem,
   decodeLoginSecret,
+  encodeLoginSecret,
+  GeneratedSecretRules,
+  GenerateSecretInput,
   isPrivateNetworkHost,
+  loginCommandName,
   SecretHttpRequest,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { withTransactionRetry } from "@rakazo/db";
+import { lockSpaceSettings, settingsTarget, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
+import { generateSecretValue } from "./secret-generator.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
-export type BotSecretScope = { userId: string; spaceId: string; botId: string };
-function scopeFields({ userId, spaceId, botId }: BotSecretScope): BotSecretScope {
-  return { userId, spaceId, botId };
+/**
+ * The member a credential call acts for, in one Space. `vault` picks the account's vault or the
+ * Space's own; omitted, it is whichever this Space uses, which is what bots read and write.
+ */
+export type BotSecretScope = { userId: string; spaceId: string; vault?: SettingsScope };
+type VaultClient = Pick<PrismaClient, "spaceSettingOverride">;
+
+/**
+ * Orders a vault write after any change of vault (the member's settings lock) and after every
+ * other write by the member, since Spaces without their own vault share the account's.
+ */
+async function lockVault(tx: Pick<Prisma.TransactionClient, "$queryRaw">, scope: BotSecretScope) {
+  await lockSpaceSettings(tx, scope);
+  await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${scope.userId} FOR UPDATE`;
+}
+
+export const SPACE_VAULT_NOT_IN_USE = "This Space uses the account vault";
+
+/**
+ * A write aimed at a Space's own vault is refused once the Space stops customizing credentials,
+ * since nothing would read it and it would only wait to be deleted.
+ */
+async function assertVaultInUse(client: VaultClient, scope: BotSecretScope) {
+  if (scope.vault !== "space") return;
+  if ((await settingsTarget(client, scope, "credentials")) !== "space") {
+    throw new Error(SPACE_VAULT_NOT_IN_USE);
+  }
+}
+
+/** The vault rows a call reads and writes: the account's (no Space) or the Space's own. */
+async function vaultFields(client: VaultClient, scope: BotSecretScope) {
+  const target = await settingsTarget(client, scope, "credentials", scope.vault);
+  return { userId: scope.userId, spaceId: target === "space" ? scope.spaceId : null };
 }
 
 const metadata = { name: true, origin: true, auth: true } as const;
 
+const SECRET_ALREADY_SAVED = "A credential with this name is already saved";
 const UNUSABLE_CREDENTIAL = "Credential cannot be used with this authentication method";
 
 /** `encodeURIComponent` throws on an unpaired surrogate. */
@@ -128,11 +164,10 @@ export async function loadBotCommandEnvironment(
   scope: BotSecretScope,
   unsetVariables?: Set<string>,
 ): Promise<Record<string, string>> {
-  const rows = await prisma.botSecret.findMany({
-    where: scopeFields(scope),
+  const rows = await prisma.vaultCredential.findMany({
+    where: await vaultFields(prisma, scope),
     select: { id: true, name: true, auth: true, ciphertext: true },
     orderBy: { name: "asc" },
-    take: 100,
   });
   const environment: Record<string, string> = {};
   for (const row of rows) {
@@ -153,15 +188,14 @@ export async function loadBotCommandEnvironment(
 }
 
 /**
- * The environment for one shell command: the space variables, with this bot's command variables
- * loaded fresh over them (the bot's own value wins a name clash). The bot's values are handed to
- * `registerRedactions` before this returns, so the command's output is redacted.
+ * The environment for one shell command: the command variables of the vault this Space uses,
+ * loaded fresh. The values are handed to `registerRedactions` before this returns, so the
+ * command's output is redacted.
  */
 export async function shellCommandEnvironment(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
-  spaceEnvironment: Record<string, string>;
   registerRedactions: (values: string[]) => void;
 }): Promise<{ env: Record<string, string>; unsetEnv: string[] }> {
   const unsetVariables = new Set<string>();
@@ -174,10 +208,7 @@ export async function shellCommandEnvironment(input: {
   // Encoded forms too, as secret_request does, so an accidental `base64` or URL-encoding of a
   // value is still redacted from command output.
   input.registerRedactions(commandCredentialRedactions(botEnvironment));
-  const environment = { ...input.spaceEnvironment, ...botEnvironment };
-  // A failed bot credential still shadows the space credential with the same name.
-  for (const variable of unsetVariables) delete environment[variable];
-  return { env: environment, unsetEnv: [...unsetVariables] };
+  return { env: botEnvironment, unsetEnv: [...unsetVariables] };
 }
 
 /** Another command credential of this bot that is exported as the same variable. */
@@ -188,10 +219,9 @@ export async function findCommandVariableConflict(
 ): Promise<string | undefined> {
   if (destination.auth.type !== "command") return undefined;
   const variable = commandVariableName(destination.name);
-  const rows = await client.botSecret.findMany({
-    where: { ...scopeFields(scope), name: { not: destination.name } },
+  const rows = await client.vaultCredential.findMany({
+    where: { ...(await vaultFields(client, scope)), name: { not: destination.name } },
     select: { name: true, auth: true },
-    take: 100,
   });
   return rows.find(
     (row) => isCommandCredential(row.auth) && commandVariableName(row.name) === variable,
@@ -375,8 +405,8 @@ export function sameSecretDestination(
 }
 
 export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope, name: string) {
-  const row = await prisma.botSecret.findFirst({
-    where: { ...scopeFields(scope), name },
+  const row = await prisma.vaultCredential.findFirst({
+    where: { ...(await vaultFields(prisma, scope)), name },
     select: metadata,
   });
   return row ? normalizeSecretDestination(row) : null;
@@ -388,6 +418,8 @@ export async function prepareBotSecret(input: {
   scope: BotSecretScope;
   destination: BotSecretDestination;
   plaintext: string;
+  /** Refuse instead of replacing a credential saved under this name, even by a concurrent call. */
+  createOnly?: boolean;
 }) {
   const { prisma, secretStore, scope, plaintext } = input;
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
@@ -400,15 +432,18 @@ export async function prepareBotSecret(input: {
       throw new Error(UNUSABLE_CREDENTIAL);
     }
   } else credentialHeader(destination, plaintext);
-  const existing = await prisma.botSecret.findFirst({
-    where: { ...scopeFields(scope), name: destination.name },
+  await assertVaultInUse(prisma, scope);
+  const vault = await vaultFields(prisma, scope);
+  const existing = await prisma.vaultCredential.findFirst({
+    where: { ...vault, name: destination.name },
   });
   function validate(row: typeof existing, count: number) {
+    if (row && input.createOnly) throw new Error(SECRET_ALREADY_SAVED);
     if (row && !sameSecretDestination(normalizeSecretDestination(row), destination))
       throw new Error("Remove the existing credential before changing its destination");
     if (!row && count >= 100) throw new Error("Credential limit reached");
   }
-  validate(existing, await prisma.botSecret.count({ where: scopeFields(scope) }));
+  validate(existing, await prisma.vaultCredential.count({ where: vault }));
   const id = existing?.id ?? randomBytes(12).toString("hex");
   const stored = await secretStore.put(
     plaintext,
@@ -425,11 +460,15 @@ export async function prepareBotSecret(input: {
     id,
     ciphertext: stored.ciphertext,
     async store(tx: Prisma.TransactionClient) {
-      await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
-      const current = await tx.botSecret.findFirst({
-        where: { ...scopeFields(scope), name: destination.name },
+      await lockVault(tx, scope);
+      await assertVaultInUse(tx, scope);
+      const current = await tx.vaultCredential.findFirst({
+        where: { ...vault, name: destination.name },
       });
-      validate(current, await tx.botSecret.count({ where: scopeFields(scope) }));
+      if (JSON.stringify(await vaultFields(tx, scope)) !== JSON.stringify(vault)) {
+        throw Object.assign(new Error("Vault changed while saving; retry"), { code: "P2034" });
+      }
+      validate(current, await tx.vaultCredential.count({ where: vault }));
       const conflict = await findCommandVariableConflict(tx, scope, destination);
       if (conflict) {
         throw new Error(
@@ -439,10 +478,10 @@ export async function prepareBotSecret(input: {
       if (current?.id !== existing?.id)
         throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
       if (current)
-        await tx.botSecret.update({ where: { id }, data: { ciphertext: stored.ciphertext } });
+        await tx.vaultCredential.update({ where: { id }, data: { ciphertext: stored.ciphertext } });
       else
-        await tx.botSecret.create({
-          data: { id, ...scopeFields(scope), ...destination, ciphertext: stored.ciphertext },
+        await tx.vaultCredential.create({
+          data: { id, ...vault, ...destination, ciphertext: stored.ciphertext },
         });
     },
   };
@@ -460,12 +499,109 @@ export async function storeBotSecret(input: Parameters<typeof prepareBotSecret>[
   });
 }
 
+/** Save a generated login and the command variable holding its password together, or neither. */
+async function storeLoginWithCommand(
+  login: Parameters<typeof prepareBotSecret>[0],
+  command: Parameters<typeof prepareBotSecret>[0],
+) {
+  const { prisma, secretStore } = login;
+  await withTransactionRetry(async () => {
+    const preparedLogin = await prepareBotSecret(login);
+    // Prepared inside, so a refused command variable still cleans up the login's stored value.
+    await persistPreparedSecret(prisma, secretStore, preparedLogin, async () => {
+      const preparedCommand = await prepareBotSecret(command);
+      await persistPreparedSecret(prisma, secretStore, preparedCommand, () =>
+        prisma.$transaction(async (tx) => {
+          await preparedLogin.store(tx);
+          await preparedCommand.store(tx);
+        }),
+      );
+    });
+  });
+}
+
+/**
+ * Generate a random value and save it as a new login (with its username, for one site) or a
+ * command variable. A login can also save its password as a command variable, for a CLI. Only its redaction forms are returned, for the run to hide; the model sees
+ * the saved name, never the value. An existing credential is never overwritten: a site or
+ * service may already use its value.
+ */
+export async function generateBotSecret(input: {
+  prisma: PrismaClient;
+  secretStore: SecretStore;
+  scope: BotSecretScope;
+  args: unknown;
+}): Promise<{ result: Record<string, unknown>; redactions?: string[] }> {
+  const parsed = GenerateSecretInput.safeParse(input.args);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
+      .join("; ");
+    return { result: { error: `Invalid secret — ${detail}` } };
+  }
+  const { name, type, origin, username } = parsed.data;
+  // The same normalization as request_secret, so a sign-up page URL saves its origin.
+  const { destination, error } = resolveRequestSecretDestination({
+    credential: { name, origin, auth: { type } },
+  });
+  if (!destination) return { result: { error } };
+  const command: BotSecretDestination | undefined = parsed.data.command
+    ? { name: loginCommandName(name), origin: "", auth: { type: "command" } }
+    : undefined;
+  const existing = await findBotSecret(input.prisma, input.scope, name);
+  if (existing) {
+    return {
+      result: sameSecretDestination(existing, destination)
+        ? {
+            error:
+              type === "login"
+                ? "A login with this name is already saved for this site; fill it with browser_act fill_secret. Use another name for a different account."
+                : "A command variable with this name is already saved; use it as it is, or use another name.",
+            ...botSecretToolView(existing),
+          }
+        : { error: "A credential with this name already exists. Use another name." },
+    };
+  }
+  if (command && (await findBotSecret(input.prisma, input.scope, command.name))) {
+    return {
+      result: {
+        error: `A credential named ${command.name} already exists. Use another name for the login.`,
+      },
+    };
+  }
+  const value = generateSecretValue(parsed.data.rules ?? GeneratedSecretRules.parse({}));
+  const save = {
+    prisma: input.prisma,
+    secretStore: input.secretStore,
+    scope: input.scope,
+    createOnly: true,
+  };
+  const plaintext = username ? encodeLoginSecret({ username, password: value }) : value;
+  try {
+    if (command) {
+      await storeLoginWithCommand(
+        { ...save, destination, plaintext },
+        { ...save, destination: command, plaintext: value },
+      );
+    } else await storeBotSecret({ ...save, destination, plaintext });
+    return {
+      result: {
+        saved: true,
+        ...botSecretToolView(destination),
+        ...(command ? { command: botSecretToolView(command) } : {}),
+      },
+      redactions: passwordRedactionForms(value),
+    };
+  } catch (error) {
+    return { result: { error: error instanceof Error ? error.message : "Secret was not saved." } };
+  }
+}
+
 export async function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope) {
-  const rows = await prisma.botSecret.findMany({
-    where: scopeFields(scope),
+  const rows = await prisma.vaultCredential.findMany({
+    where: await vaultFields(prisma, scope),
     select: metadata,
     orderBy: { name: "asc" },
-    take: 100,
   });
   return rows.map(botSecretToolView);
 }
@@ -473,30 +609,49 @@ export async function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope
 // Owner-facing view: destination and timestamps only, never the row id or ciphertext.
 const ownerMetadata = { ...metadata, createdAt: true, updatedAt: true } as const;
 
-export function listBotSecretMetadata(prisma: PrismaClient, scope: BotSecretScope) {
-  return prisma.botSecret.findMany({
-    where: scopeFields(scope),
+export async function listBotSecretMetadata(prisma: PrismaClient, scope: BotSecretScope) {
+  return prisma.vaultCredential.findMany({
+    where: await vaultFields(prisma, scope),
     select: ownerMetadata,
     orderBy: { name: "asc" },
-    take: 100,
   });
 }
 
-export function getBotSecretMetadata(
+export async function getBotSecretMetadata(
   client: PrismaClient | Prisma.TransactionClient,
   scope: BotSecretScope,
   name: string,
 ) {
-  return client.botSecret.findFirst({
-    where: { ...scopeFields(scope), name },
+  return client.vaultCredential.findFirst({
+    where: { ...(await vaultFields(client, scope)), name },
     select: ownerMetadata,
   });
 }
 
+/**
+ * A saved value for its owner to read. Only for the owner-facing reveal, which confirms the
+ * person first; bots never read values. A login returns its username and password.
+ */
+export async function revealBotSecret(input: {
+  prisma: PrismaClient;
+  secretStore: Pick<SecretStore, "load">;
+  scope: BotSecretScope;
+  name: string;
+}): Promise<{ username: string; password: string } | { value: string } | null> {
+  const row = await input.prisma.vaultCredential.findFirst({
+    where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
+  });
+  if (!row) return null;
+  const plaintext = await input.secretStore.load(row.ciphertext, row.id);
+  return BotSecretAuth.safeParse(row.auth).data?.type === "login"
+    ? decodeLoginSecret(plaintext)
+    : { value: plaintext };
+}
+
 export async function forgetBotSecret(prisma: PrismaClient, scope: BotSecretScope, name: string) {
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
-    await tx.botSecret.deleteMany({ where: { ...scopeFields(scope), name } });
+    await lockVault(tx, scope);
+    await tx.vaultCredential.deleteMany({ where: { ...(await vaultFields(tx, scope)), name } });
   });
   return { removed: true };
 }
@@ -512,8 +667,8 @@ export async function requestWithBotSecret(input: {
   registerRedactions?: (values: string[]) => void;
 }): Promise<unknown> {
   const request = SecretHttpRequest.parse(input.request);
-  const row = await input.prisma.botSecret.findFirst({
-    where: { ...scopeFields(input.scope), name: request.name },
+  const row = await input.prisma.vaultCredential.findFirst({
+    where: { ...(await vaultFields(input.prisma, input.scope)), name: request.name },
   });
   if (!row) return { error: "Credential is unavailable. Use request_secret to save it first." };
   const destination = normalizeSecretDestination(row);
@@ -621,8 +776,8 @@ export async function loadLoginPasswordRedactions(
   scope: BotSecretScope,
 ): Promise<string[]> {
   // Every saved login, however many other credentials the bot has.
-  const rows = await prisma.botSecret.findMany({
-    where: { ...scopeFields(scope), auth: { path: ["type"], equals: "login" } },
+  const rows = await prisma.vaultCredential.findMany({
+    where: { ...(await vaultFields(prisma, scope)), auth: { path: ["type"], equals: "login" } },
     select: { id: true, auth: true, ciphertext: true },
   });
   const forms = new Set<string>();
@@ -654,8 +809,8 @@ export async function resolveLoginFill(input: {
   name: string;
   field: LoginField;
 }): Promise<{ text: string; origin: string; redactions: string[] } | { error: string }> {
-  const row = await input.prisma.botSecret.findFirst({
-    where: { ...scopeFields(input.scope), name: input.name },
+  const row = await input.prisma.vaultCredential.findFirst({
+    where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
   });
   if (!row) return { error: "Login is unavailable. Use request_secret to save it first." };
   if (isCommandCredential(row.auth)) {

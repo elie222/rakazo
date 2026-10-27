@@ -69,6 +69,8 @@ export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
     onDayAt: (day, time) => t("on day {day} at {time}", { day, time }),
     hourAtMinute: (minute) =>
       t("Every hour at :{minute}", { minute: String(minute).padStart(2, "0") }),
+    hoursAtMinute: (hours, minute) =>
+      t("Every {n} hours at :{minute}", { n: hours, minute: String(minute).padStart(2, "0") }),
     daySpan: (fromName, toName) => t("{from} to {to}", { from: fromName, to: toName }),
     everyDays: (names) =>
       names.length === 1

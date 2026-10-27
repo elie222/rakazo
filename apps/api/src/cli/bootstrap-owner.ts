@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { contentKeyProviderFromEnv } from "@rakazo/adapters";
 import { createAuth } from "@rakazo/auth";
 import { bootstrapUserSpace, createDb, runAsSystem } from "@rakazo/db";
 
@@ -8,7 +9,9 @@ function required(name: string): string {
   return value;
 }
 
-const { prisma, pool } = createDb(required("DATABASE_URL"));
+const { prisma, pool } = createDb(required("DATABASE_URL"), {
+  keyProvider: contentKeyProviderFromEnv(),
+});
 try {
   await runAsSystem("private account bootstrap", bootstrap);
 } finally {

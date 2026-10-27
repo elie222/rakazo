@@ -138,7 +138,6 @@ describe("avatar motion on mobile", () => {
   });
   const render = (node: ReactNode) => act(() => root.render(node));
   const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
-  /** Whether the avatar's clip clock started. */
   const clockStarted = () => motion.timings.some(([, duration]) => duration === CLOCK_MS);
   /** The last wake-up target: 1 moving, 0 still or only blinking. */
   const awake = () =>
@@ -360,7 +359,6 @@ describe("activity mark", () => {
     { id: "bot-a", color: SHAPE, status: "running" },
     { id: "bot-b", color: "#FF781C", status: "running" },
   ];
-  /** The mark's grow-in spring. */
   const grewIn = () => motion.springs.some(([, config]) => config === MARK_SPRING);
 
   it("opens its row and grows in only once the chat is at the newest message", () => {

@@ -92,7 +92,6 @@ import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
-/** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
   const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
@@ -117,7 +116,7 @@ export default function Account() {
     t,
     errorText,
     updateAccountName,
-    refresh: () => rpc<MobileMe>("me"),
+    refresh: () => rpc("me"),
     onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
     onRefreshed: setMe,
     setNameDraft,
@@ -188,10 +187,10 @@ export default function Account() {
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
 
   useEffect(() => {
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<UsageSummary>("usage/summary")
+    void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
     if (Platform.OS === "android") {
@@ -665,6 +664,10 @@ export default function Account() {
               { title: t("Models"), href: "/models" },
               { title: t("Voice"), href: "/voice" },
               { title: t("Approvals"), href: "/approvals" },
+              { title: t("Vault"), href: "/vault" },
+              ...(me?.paymentWalletProvider
+                ? [{ title: t("Wallet"), href: "/wallet" } as const]
+                : []),
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Messaging"), href: "/messaging" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },

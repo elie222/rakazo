@@ -41,13 +41,8 @@ export type SpaceDeletionDeps = {
   messagingInstallations?: Parameters<typeof destroyBot>[0]["messagingInstallations"];
 };
 
-/** Delete one of the actor's Spaces with everything in it; the owner-only rules live in the db layer.
- *
- * Runs in the request: each bot goes through `destroyBot` (runs, routines, sandbox,
- * files, sessions, artifacts, memories), then leftover team sandboxes, then the
- * Space row, whose cascade removes groups, threads, memories, preferences and
- * memberships. A worker that dies mid-way leaves the Space claimed; after the
- * claim goes stale, deleting again resumes from what is left. */
+/** The owner-only rules live in the db layer. A worker that dies mid-way leaves the Space
+ * claimed; after the claim goes stale, deleting again resumes from what is left. */
 export async function deleteSpaceWithContent(
   deps: SpaceDeletionDeps,
   actor: Pick<Actor, "spaceId" | "userId">,

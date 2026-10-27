@@ -40,7 +40,6 @@ test("saves a website login from a username and password card without echoing ei
 
   const username = `fake-user-${stamp}@example.test`;
   const password = `fake-password-${stamp}`;
-  // Both fields are required before the login can be saved.
   await passwordField.fill(password);
   await expect(save).toBeDisabled();
   await usernameField.fill(username);

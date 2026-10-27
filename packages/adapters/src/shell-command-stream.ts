@@ -71,7 +71,9 @@ function turnReturnedRunningShell(turn: {
   toolResults: Array<{ toolName?: string; details?: unknown }>;
 }): boolean {
   return turn.toolResults.some(
-    (result) => result.toolName === "shell" && isRunningShellCommand(result.details),
+    (result) =>
+      (result.toolName === "shell" || result.toolName === "user_computer_shell") &&
+      isRunningShellCommand(result.details),
   );
 }
 

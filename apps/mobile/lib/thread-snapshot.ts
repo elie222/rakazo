@@ -1,4 +1,4 @@
-import type { MobileSnapshot } from "./api";
+import type { MobileGroup, MobileSnapshot } from "./api";
 
 function equalValue(previous: unknown, next: unknown): boolean {
   if (Object.is(previous, next)) return true;
@@ -33,4 +33,15 @@ export function reconcileVisibleThreadSnapshot(
   const { cursor: _previousCursor, ...previousVisible } = previous;
   const { cursor: _nextCursor, ...nextVisible } = next;
   return equalValue(previousVisible, nextVisible) ? previous : next;
+}
+
+/** A group chat's members in its order, once the chat or its group list has loaded them. */
+export function threadGroupMembers(
+  groupId: string | undefined,
+  snap: Pick<MobileSnapshot, "members"> | null,
+  groups: readonly Pick<MobileGroup, "id" | "members">[],
+) {
+  return groupId
+    ? (snap?.members ?? groups.find((group) => group.id === groupId)?.members)
+    : undefined;
 }

@@ -1,5 +1,7 @@
-import { constants, type Stats } from "node:fs";
-import { type FileHandle, lstat, open, opendir, readlink } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { constants } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
+import { lstat, open, opendir, readlink } from "node:fs/promises";
 import path from "node:path";
 
 const DIRECTORY_OPEN_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;

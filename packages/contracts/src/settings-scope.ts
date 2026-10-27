@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Member settings that follow the account unless a Space overrides them. */
-export const SpaceSettingSchema = z.enum(["models", "voice", "confirmations"]);
+export const SpaceSettingSchema = z.enum(["models", "voice", "confirmations", "credentials"]);
 export type SpaceSetting = z.infer<typeof SpaceSettingSchema>;
 
 /**

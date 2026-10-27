@@ -495,7 +495,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await saved.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
-    // Closing without saving leaves the stored connection as it was.
     await page
       .getByTestId("model-connection")
       .getByRole("button", { name: "Close", exact: true })
@@ -574,7 +573,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await expect(connect).toBeHidden();
   await pickReopenedModel(page, "Scripted runtime (local verification)");
   await expect(mainList.getByTestId("model-role-row-1")).toContainText("Scripted runtime");
-  // The output limit lives with the saved connection.
   const limits = await manageModelConnection(page, "Scripted");
   await limits.getByText("Advanced", { exact: true }).click();
   await limits.getByLabel("Maximum output tokens").fill("8192");
@@ -592,7 +590,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     .getByRole("button", { name: "Close", exact: true })
     .click();
   await expect(limits).toBeHidden();
-  // A limits-only save keeps the page open and confirms on it.
   const manage = await manageModelConnection(page, "Scripted");
   await manage.getByText("Advanced", { exact: true }).click();
   await manage.getByLabel("Maximum output tokens").fill("16384");
@@ -615,7 +612,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await manage.getByText("Advanced", { exact: true }).click();
   await expect(manage.getByLabel("Maximum output tokens")).toHaveValue("16384");
 
-  // A saved replacement closes the dialog and keeps the main model.
   await storedKey.fill("fake-scripted-key-two");
   await manage.getByRole("button", { name: "Replace API key" }).click();
   await expect(manage).toBeHidden();
@@ -695,11 +691,9 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await cancelledByButton;
   await expect(codex.getByText("TEST-CODE")).toBeHidden();
 
-  // A canceled attempt leaves sign-in reusable.
   await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
   await expect(codex.getByText("TEST-CODE")).toBeVisible();
 
-  // Closing the dialog abandons the attempt.
   const cancelled = page.waitForRequest((request) =>
     request.url().includes("/rpc/models/cancelOAuth"),
   );
@@ -733,7 +727,6 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.keyboard.press("Escape");
   await expect(reopened).toBeHidden();
 
-  // Disconnect removes the credential and empties the main model slot.
   await manageModelConnection(page, "Scripted");
   await manage.getByRole("button", { name: "Disconnect", exact: true }).click();
   const confirmDisconnect = page.getByRole("alertdialog");
@@ -869,7 +862,6 @@ test("catalog models keep a space default thinking level per saved model", async
   const primary = page.getByTestId("model-role-main").getByTestId("model-role-row-1");
   const rowOptions = primary.getByRole("button", { name: / options$/ });
 
-  // A non-reasoning main model never offers the control.
   const scripted = await openModelConnection(page, "Scripted");
   await scripted.getByLabel("API key").fill("fake-scripted-key");
   await scripted.getByRole("button", { name: "Connect API key" }).click();
@@ -901,7 +893,6 @@ test("catalog models keep a space default thinking level per saved model", async
   await expect(page.getByRole("menuitemradio", { name: "Default", exact: true })).toBeChecked();
   await captureScreenshot(page, testInfo, "catalog-model-thinking");
   await high.click();
-  // The main model row surfaces the effective effort while the model can think.
   await expect(primary.getByText("Thinking: High", { exact: true })).toBeVisible();
 
   await expect
@@ -915,7 +906,6 @@ test("catalog models keep a space default thinking level per saved model", async
     })
     .toBe("high");
 
-  // The level persists across reloads while the same model stays selected.
   await page.reload();
   await openUserSettings(page, "models");
   await expect(primary.getByText("Thinking: High", { exact: true })).toBeVisible();

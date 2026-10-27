@@ -19,7 +19,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const scope = { userId: "user-1", spaceId: "space-1" };
+// These rows sit in the Space's own vault, so lookups match their spaceId.
+const ownVault = { findUnique: vi.fn(async () => ({ setting: "credentials" })) };
 const destination: BotSecretDestination = {
   name: "example_api",
   origin: "https://api.example.test",
@@ -46,7 +48,10 @@ async function fixture(auth = destination.auth) {
       ? row
       : null,
   );
-  const prisma = { botSecret: { findFirst } } as unknown as PrismaClient;
+  const prisma = {
+    spaceSettingOverride: ownVault,
+    vaultCredential: { findFirst },
+  } as unknown as PrismaClient;
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
   const registerRedactions = vi.fn();
   const input = {
@@ -116,7 +121,7 @@ describe("authenticated secret requests", () => {
     },
   );
 
-  it.each(["userId", "spaceId", "botId"] as const)(
+  it.each(["userId", "spaceId"] as const)(
     "denies a different %s before decrypting or sending",
     async (key) => {
       const { input, fetch } = await fixture();
@@ -222,7 +227,10 @@ describe("authenticated secret requests", () => {
     );
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://192.168.2.10:8080/v1/items" },
@@ -262,7 +270,10 @@ describe("authenticated secret requests", () => {
     const findFirst = vi.fn(async () => row);
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://nas.local:8080/v1/items" },
@@ -310,8 +321,7 @@ describe("resolveRequestSecretDestination", () => {
   });
 
   it("accepts a valid credential object supplied beside connectionId", () => {
-    // The flattened tool schema allows both fields, and the executor used to
-    // reject that pair before it ever checked that the credential was valid.
+    // The flattened tool schema allows both fields.
     const resolved = resolveRequestSecretDestination({
       ...documented,
       connectionId: "conn_1",
@@ -818,7 +828,12 @@ describe("saved website logins", () => {
         : null,
     );
     const findMany = vi.fn(async (query) => matchingRows([row], query));
-    return { prisma: { botSecret: { findFirst, findMany } } as unknown as PrismaClient };
+    return {
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst, findMany },
+      } as unknown as PrismaClient,
+    };
   }
 
   it("hides every saved password when the bot has more than 100 credentials", async () => {
@@ -835,7 +850,8 @@ describe("saved website logins", () => {
     );
     rows.push({ ...scope, ...login, ...encrypted });
     const prisma = {
-      botSecret: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
     } as unknown as PrismaClient;
     expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
   });
@@ -857,7 +873,7 @@ describe("saved website logins", () => {
     // Only the run that fills a login hides its username.
     expect(redacted).toContain(`Signed in as ${username}`);
     expect(
-      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, botId: "bot-2" }),
+      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, userId: "user-2" }),
     ).toEqual([]);
   });
 
@@ -881,7 +897,10 @@ describe("saved website logins", () => {
 
   it("skips an unreadable login and logs only its id", async () => {
     const row = { ...scope, ...login, id: "login-broken", ciphertext: "not-a-ciphertext" };
-    const prisma = { botSecret: { findMany: vi.fn(async () => [row]) } } as unknown as PrismaClient;
+    const prisma = {
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async () => [row]) },
+    } as unknown as PrismaClient;
     const warn = vi.fn();
     const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
     try {

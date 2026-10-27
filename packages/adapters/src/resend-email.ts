@@ -5,6 +5,7 @@ import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/ada
 interface ResendEmailConfig {
   apiKey: string;
   from: string;
+  replyTo?: string;
 }
 
 interface ResendEmailDependencies {
@@ -62,7 +63,11 @@ export class ResendEmailProvider implements TransactionalEmailProvider {
     const signal = AbortSignal.timeout(this.timeoutMs);
     // Reuse only within this delivery: a later sign-in request must get a new email.
     const idempotencyKey = randomUUID();
-    const body = JSON.stringify({ from: this.config.from, ...message });
+    const body = JSON.stringify({
+      from: this.config.from,
+      ...(this.config.replyTo ? { reply_to: this.config.replyTo } : {}),
+      ...message,
+    });
     for (let attempt = 0; ; attempt++) {
       let retry = true;
       let failure = "Resend email request failed";

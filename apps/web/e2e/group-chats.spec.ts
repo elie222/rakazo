@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   captureScreenshot,
@@ -116,7 +117,8 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await groupName.fill("Unsaved Draft team name");
   const sidebar = page.locator("aside").first();
   await sidebar.getByRole("button", { name: /^Review team/ }).click();
-  await expect(groupName).toHaveValue("Review team");
+  await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
+  await expect(desktopSettings).toHaveAttribute("data-panel", "closed");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(groupName).toHaveValue("Draft team");
   await page.route("**/rpc/groups/update", async (route) => route.abort("failed"));
@@ -201,7 +203,9 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.getByRole("button", { name: "Edit first" }).click();
   await page.getByRole("textbox", { name: "Answer" }).fill("Paris");
   await page.getByRole("button", { name: "Send answer" }).click();
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
+    timeout: 30_000,
+  });
 
   const firstMessage = transcript.locator("[data-message-id]").first();
   await firstMessage.hover();
@@ -235,12 +239,12 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await sidebar.getByRole("button", { name: /^Review team/ }).click();
   await reviewSnapshotIntercepted;
   await expect(page).toHaveURL(new RegExp(`/app/g/${reviewGroup.id}$`));
-  await expect(page.getByTestId("transcript")).not.toContainText("Answered: Paris");
+  await expect(page.getByTestId("transcript").getByTestId("ask-answer")).toHaveCount(0);
   releaseReviewSnapshot();
   await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
   await page.unroute("**/rpc/threads/get");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible();
 
   await composer.fill(
     "@Researcher write path notes/group-preview.md and attach it to the thread says # Group artifact",
@@ -256,7 +260,6 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
   await expect(page.getByTestId("app-rail")).toHaveCount(0);
-  // Chat fills the phone width.
   const transcriptBox = await transcript.boundingBox();
   expect(transcriptBox?.x).toBeLessThanOrEqual(16);
   expect(transcriptBox?.width).toBeGreaterThan(390 - 24);

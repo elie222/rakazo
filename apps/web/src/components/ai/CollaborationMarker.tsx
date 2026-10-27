@@ -1,4 +1,5 @@
-import { BotAvatar, Button, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
+import type { GroupAvatarMember } from "@rakazo/ui-web";
+import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 
 /**
@@ -21,13 +22,13 @@ export function CollaborationMarker({
   replies?: { expanded: boolean; label: string; onToggle: () => void };
 }) {
   return (
-    <div className="flex justify-start">
+    <div className="flex min-w-0 max-w-full justify-start">
       <button
         type="button"
         data-testid="peer-receipt-chip"
         aria-label={ariaLabel}
         onClick={onClick}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground/75"
+        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground/75"
       >
         <BotAvatar color={color} identity={identity} size={16} />
         <span dir="auto" className="truncate">
@@ -42,7 +43,7 @@ export function CollaborationMarker({
           aria-expanded={replies.expanded}
           aria-label={replies.label}
           onClick={replies.onToggle}
-          className="rounded-full text-muted-foreground"
+          className="ml-1 shrink-0 rounded-full text-muted-foreground"
         >
           <ChevronDown
             size={14}

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
+import { shortenedTextLength, textBoundary } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
@@ -45,12 +46,14 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
   }
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
     const longest = refs.reduce<ReturnType<typeof reference> | undefined>(
-      (best, ref) => (!best || ref.text.length > best.text.length ? ref : best),
+      (best, ref) =>
+        shortenedTextLength(ref.text) > 0 && (!best || ref.text.length > best.text.length)
+          ? ref
+          : best,
       undefined,
     );
-    if (!longest || longest.text.length < 2)
-      throw new Error("History metadata exceeds response budget");
-    longest.text = longest.text.slice(0, Math.floor(longest.text.length / 2));
+    if (!longest) throw new Error("History metadata exceeds response budget");
+    longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
     longest.truncated = true;
     longest.nextTextOffset = longest.textOffset + longest.text.length;
   }
@@ -131,6 +134,10 @@ function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0)
         query)
       : query;
   if (query) textOffset = Math.max(0, text.toLowerCase().indexOf(matchedTerm.toLowerCase()) - 40);
+  textOffset = textBoundary(text, textOffset);
+  const excerpt = text.slice(textOffset, textBoundary(text, textOffset + maxLength));
+  const nextTextOffset =
+    textOffset + excerpt.length < text.length ? textOffset + excerpt.length : null;
   return {
     messageId: row.id,
     seq: row.seq,
@@ -138,10 +145,10 @@ function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0)
     createdAt: row.createdAt.toISOString(),
     runId: row.runId,
     replyToMessageId: row.replyToMessageId,
-    text: text.slice(textOffset, textOffset + maxLength),
+    text: excerpt,
     textOffset,
-    nextTextOffset: textOffset + maxLength < text.length ? textOffset + maxLength : null,
-    truncated: textOffset > 0 || textOffset + maxLength < text.length,
+    nextTextOffset,
+    truncated: textOffset > 0 || nextTextOffset !== null,
   };
 }
 

@@ -1,4 +1,5 @@
-import { type MessageBlock, type MessageReaction, MessageReactionSchema } from "@rakazo/contracts";
+import type { MessageBlock, MessageReaction } from "@rakazo/contracts";
+import { MessageReactionSchema } from "@rakazo/contracts";
 
 type ReactionMessage = {
   id: string;

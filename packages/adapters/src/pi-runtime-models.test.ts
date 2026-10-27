@@ -7,7 +7,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { listPiCatalog } from "./pi-models.js";
 import { resolveModelAuth } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
-import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime.js";
+import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime-models.js";
 
 function requestModel(id: string, baseUrl: string): Pick<AgentRunRequest, "model"> {
   return {

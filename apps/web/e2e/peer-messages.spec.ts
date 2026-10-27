@@ -230,7 +230,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
     .getAttribute("data-message-id");
   const replyRow = transcript.locator(`[data-message-id="${replyId}"]`);
 
-  // A reaction stays with its folded reply.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "React" }).click();
   await page.getByRole("button", { name: "👍", exact: true }).click();
@@ -247,7 +246,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await expect(reactions).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 
-  // A reply quote opens its folded parent.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "Reply", exact: true }).click();
   await composer.fill("peer-fold-quote");

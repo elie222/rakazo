@@ -148,7 +148,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "36-account-menu");
 
-  // A failed sign-out keeps the user in place and says so instead of silently bouncing back.
   await page.route("**/api/auth/sign-out", (route) => route.fulfill({ status: 500, body: "" }), {
     times: 1,
   });

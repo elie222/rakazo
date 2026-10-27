@@ -6,6 +6,7 @@ import {
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
+  connectionMaxTokensField,
   credentialForModel,
   filterModelCatalog,
   filterModelChoices,
@@ -591,4 +592,13 @@ it("offers managed models without a personal key and hides unconnected providers
     "hosted::large",
   ]);
   expect(connectedModelChoices([{ provider: "hosted", label: "Hosted" }], catalog)).toHaveLength(2);
+});
+
+describe("connectionMaxTokensField", () => {
+  it("shows the saved limit, or the default an OpenAI-compatible endpoint would send", () => {
+    expect(connectionMaxTokensField("openai-compatible", undefined)).toBe("4096");
+    expect(connectionMaxTokensField("openai-compatible", 8_000)).toBe("8000");
+    expect(connectionMaxTokensField("anthropic", undefined)).toBe("");
+    expect(connectionMaxTokensField("anthropic", 2_000)).toBe("2000");
+  });
 });

@@ -42,6 +42,7 @@ function database() {
   const tables = new Map<string, Row[]>([
     ["secret", []],
     ["botSecret", []],
+    ["vaultCredential", []],
     ["integrationProviderConfig", []],
     ["user", [{ id: "user" }]],
     ["space", [{ id: "space", organizationId: "organization" }]],
@@ -122,11 +123,16 @@ function database() {
     };
   }
   client.$queryRaw = async (query: { sql: string; values: unknown[] }) => {
+    // Every member is in their Space, so the settings lock (a tagged template) finds the row.
+    if (Array.isArray(query) && query.join("").includes('FROM "space_members"')) {
+      return [{ locked: 1 }];
+    }
     if (!query.sql) return [];
     const table = query.sql.match(/FROM "([^"]+)"/)?.[1];
     const names: Record<string, string> = {
       secrets: "secret",
       bot_secrets: "botSecret",
+      vault_credentials: "vaultCredential",
       integration_provider_configs: "integrationProviderConfig",
       user: "user",
       spaces: "space",
@@ -553,6 +559,7 @@ describe("prepared run-secret writes", () => {
         : undefined;
       Object.assign(prisma, {
         run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+        spaceSettingOverride: { findUnique: async () => null },
         message: {
           findFirst: async () => ({
             blocks: [

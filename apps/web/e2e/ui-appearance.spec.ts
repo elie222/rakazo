@@ -244,7 +244,6 @@ test("sidebar footer keeps the account identity readable and installs a ready de
   await updateButton.evaluate((el) => el.blur());
 
   // Width changes must drop marks before taking space from the label or padding.
-  // Measure the fixed controls and label, then target the middle of each band.
   // Marks need 26px initially and 22px per additional mark, leaving 11px margin.
   const fixedWidth = await pill.evaluate((el) => {
     const style = getComputedStyle(el);

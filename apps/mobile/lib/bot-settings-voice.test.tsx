@@ -810,12 +810,6 @@ describe("bot settings device voice menu", () => {
     );
   });
 
-  it("shows a management subtitle instead of a help control", async () => {
-    await render();
-    expect(container.textContent).toContain("Can edit and organise bots it creates");
-    expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
-  });
-
   it("persists bot management toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();

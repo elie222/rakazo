@@ -112,12 +112,10 @@ export function createComputerRefresh(options: {
       screenLoaded = false;
     },
     isActive: () => active,
-    /** Stop the poll timer while the app is in the background. */
     pause() {
       paused = true;
       invalidate();
     },
-    /** Resume immediately after returning to the foreground. */
     resume() {
       if (!active || !paused) return;
       paused = false;

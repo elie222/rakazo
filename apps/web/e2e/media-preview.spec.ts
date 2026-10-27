@@ -72,3 +72,11 @@ test("generated MP4 opens a playable preview with download", async ({ page }, te
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
+
+test("a large file card shows its size in GB", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/media-preview.html?large=1");
+  const card = page.getByRole("button", { name: /backup\.zip/ });
+  await expect(card).toContainText("1.5 GB");
+  await expect(card).not.toContainText("MB");
+  await captureScreenshot(page, testInfo, "file-card-large-size");
+});

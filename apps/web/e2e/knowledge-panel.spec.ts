@@ -70,7 +70,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     releaseSave();
   }
 
-  // The save persisted: reopen the document and find the marker.
   await memoryRow.click();
   await expect(docEditor).toHaveValue(new RegExp(marker));
   await captureScreenshot(page, testInfo, "84-space-memory-saved");
@@ -138,7 +137,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.getByLabel("Close memory settings").click();
   await expect(page.getByLabel("Close memory settings")).toHaveCount(0);
 
-  // Bot memory is directly available in its settings panel.
   const seededDocs = await rpc<MemoryDocument[]>(page, "memory/list", {
     botId: activeBotId(page),
     scope: "bot",

@@ -23,6 +23,10 @@ x-app-environment: &app-environment
   DATA_DIR: /data
   ENCRYPTION_KEY:
   ENCRYPTION_MASTER_KEYS:
+  MASTER_KEY_PROVIDER:
+  AWS_KMS_KEY_ARN:
+  AWS_KMS_ACCESS_KEY_ID:
+  AWS_KMS_SECRET_ACCESS_KEY:
   # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
   # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host.md#shared-storage-migration).
@@ -39,6 +43,7 @@ x-app-environment: &app-environment
   MAX_UPLOAD_SIZE_MB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
+  USER_DEVICES_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
@@ -195,6 +200,8 @@ x-app-environment: &app-environment
   CREATEOS_SANDBOX_SHAPE:
   CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
   CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+  PAYMENT_WALLET_PROVIDER: ${PAYMENT_WALLET_PROVIDER:-none}
+  PAYMENT_WALLET_CLIENT_ID: ${PAYMENT_WALLET_CLIENT_ID:-}
   CURSOR_API_KEY: ${CURSOR_API_KEY:-}
   # Tools and integrations
   WEB_PROVIDER:
@@ -337,16 +344,36 @@ services:
       timeout: 5s
       retries: 20
 
+  # Applies migrations as the database owner, creates the runtime login, and exits. Only this
+  # container gets the owner login: the API and worker connect as rakazo_app, which row-level
+  # security binds, so code running in either cannot find a login that bypasses it.
+  migrate:
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    working_dir: /app/apps/api
+    command: ["pnpm", "db:deploy"]
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1536m
+    environment:
+      DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+    networks:
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
     # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
     # process before its graceful shutdown finishes in-flight requests and jobs.
     working_dir: /app/apps/api
-    command:
-      - bash
-      - -lc
-      - pnpm db:deploy && exec env -u DATABASE_MIGRATION_URL node --enable-source-maps dist/index.js
+    command: ["node", "--enable-source-maps", "dist/index.js"]
     init: true
     security_opt:
       - no-new-privileges:true
@@ -358,8 +385,6 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
-      # Owner login for migrations; the start command drops it before serving.
-      DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       # Sign-in, sessions, billing and inbound webhooks: API only.
       API_HOST: "0.0.0.0"
       API_PORT:
@@ -391,9 +416,12 @@ services:
       EMAIL_API_KEY:
       SMTP_URL:
       EMAIL_FROM:
+      EMAIL_REPLY_TO:
+      WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
+      CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
@@ -401,6 +429,8 @@ services:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
+      RAKAZO_NAV_LINKS:
+      VOICE_SUMMARY_MIN_CHARS:
     ports:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:
@@ -412,6 +442,8 @@ services:
       postgres:
         condition: service_healthy
       data-init:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
       supervisor:
         condition: service_healthy
@@ -482,6 +514,9 @@ services:
     mem_limit: 512m
     environment:
       NODE_ENV: production
+      # vite preview bundles its config with Rolldown, which starts one thread per host CPU.
+      # Keep that fixed so pids_limit holds on many-core hosts (#2430).
+      RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
       # Set only by the packaged desktop app. Its authenticated probe prevents a
@@ -491,6 +526,7 @@ services:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
+      CRISP_WEBSITE_ID:
     ports:
       - "127.0.0.1:${RAKAZO_WEB_PORT:-5173}:5173"
     networks:

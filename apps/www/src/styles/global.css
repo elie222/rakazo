@@ -40,6 +40,12 @@
   --indigo-soft: #e2e2fd;
   --green: #1f7f5f;
   --green-soft: #d6f3e9;
+  --amber: #d9822b;
+  --amber-soft: #fdecd3;
+  --violet: #8b5cf6;
+  --violet-soft: #ece3fd;
+  --rose: #e0457b;
+  --rose-soft: #fce1ea;
   --shadow-soft: 0 2px 16px rgba(0, 0, 0, 0.03);
   --shadow-demo: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
   --radius-card: 20px;
@@ -517,6 +523,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 }
 
 .feature-card {
+  overflow: hidden;
   border-radius: 20px;
   padding: 26px;
 }
@@ -762,7 +769,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 .selfhost__intro {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
@@ -830,6 +837,9 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 }
 
 .site-footer__legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   color: #a0a0a0;
   font-size: 13.5px;
 }
@@ -840,20 +850,86 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 }
 
 .site-footer__languages {
-  display: flex;
-  flex-wrap: wrap;
   color: var(--muted);
   font-size: 14px;
 }
 
-.site-footer__languages a + a::before {
-  content: "·";
-  margin: 0 10px;
-  color: var(--muted);
-  pointer-events: none;
+.language-menu {
+  position: relative;
 }
 
-.site-footer__languages a[aria-current="page"],
+.language-menu summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--body);
+  cursor: pointer;
+  list-style: none;
+}
+
+.language-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.language-menu summary:hover,
+.language-menu summary:focus-visible,
+.language-menu[open] summary {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.language-menu svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.language-menu[open] .language-menu__chevron {
+  transform: rotate(180deg);
+}
+
+.language-menu ul {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 2px 8px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  list-style: none;
+}
+
+.language-menu a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.language-menu a:hover,
+.language-menu a:focus-visible {
+  background: var(--surface-soft);
+}
+
+.language-menu a[aria-current="true"] {
+  color: var(--ink);
+  font-weight: 500;
+}
+
 .site-footer__column a[aria-current="page"] {
   color: var(--ink);
 }
@@ -881,8 +957,8 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   font-size: 14px;
 }
 
-.site-footer__languages a:hover,
-.site-footer__languages a:focus-visible,
+.language-menu a:hover,
+.language-menu a:focus-visible,
 .site-footer__column a:hover,
 .site-footer__column a:focus-visible {
   color: var(--ink);
@@ -1568,6 +1644,11 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 
 .product-demo__card-arrow {
   color: var(--panel-muted);
+}
+
+[dir="rtl"] .product-demo__card-arrow {
+  display: inline-block;
+  transform: scaleX(-1);
 }
 
 .product-demo__composer {
@@ -3402,3 +3483,162 @@ button.product-demo__dock-icon {
   flex: none;
 }
 
+
+.channels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 56px;
+}
+
+.channel-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  margin: 36px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.channel-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.channel-tile__logo {
+  display: flex;
+  flex: none;
+}
+
+.channel-tile__logo svg {
+  width: 28px;
+  height: 28px;
+}
+
+.channel-tile__name {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.self-host-tag {
+  margin-left: auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--muted-2);
+  font-size: 11px;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.self-host-tag:hover,
+.self-host-tag:focus-visible {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.slack-mock {
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-demo);
+  font-size: 14px;
+  user-select: none;
+}
+
+.slack-mock__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.slack-mock__logo svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.slack-mock__message {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px 4px;
+}
+
+.slack-mock__message:last-child {
+  padding-bottom: 20px;
+}
+
+.slack-mock__message > img,
+.slack-mock__person {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.slack-mock__person {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--indigo-soft);
+  color: var(--indigo);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.slack-mock__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.slack-mock__name time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.slack-mock__app {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--surface-soft);
+  color: var(--muted-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.slack-mock p {
+  margin: 3px 0 0;
+  color: var(--body);
+  line-height: 1.5;
+}
+
+.slack-mock mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--blue-soft-2);
+  color: var(--blue);
+}
+
+@media (max-width: 960px) {
+  .channels {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}

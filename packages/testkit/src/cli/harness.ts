@@ -2,9 +2,9 @@ import { execSync } from "node:child_process";
 import { globSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import type { createApp } from "../../../../apps/api/src/app.ts";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { runProcess } from "./process.js";
 
@@ -74,6 +74,11 @@ async function main() {
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
+      // The offline wallet, so Settings shows Wallet and sign-in completes without a provider.
+      process.env.PAYMENT_WALLET_PROVIDER = "emulator";
+      process.env.RAKAZO_NAV_LINKS = JSON.stringify([
+        { id: "clients", label: "Clients", path: "/ext/clients/" },
+      ]);
     }
     // Playwright/E2E force the offline cloud-agent emulator; clear Cursor keys so cards never hit a live VM.
     process.env.CLOUD_AGENT_PROVIDER = "emulator";
@@ -186,12 +191,13 @@ async function main() {
         EmailEmulator,
         PipedreamConnector,
         ThirdPartyConnectorEmulator,
+        UserDeviceEmulator,
       },
       { createApp },
       { drainUnscopedDatabaseAccess },
     ] = await Promise.all([
       import("@rakazo/adapters"),
-      import("../../../../apps/api/src/app.ts"),
+      import("@rakazo/api/app"),
       import("@rakazo/db"),
     ]);
     const { serve } = await import("@hono/node-server");
@@ -207,6 +213,8 @@ async function main() {
       { fetch: thirdParties.fetch, resolveHostname: thirdParties.resolveHostname },
     );
     const email = new EmailEmulator();
+    // Scripted runs only: a real model would see a computer it could use in every spec.
+    const userDevices = agentRuntime === "scripted" ? new UserDeviceEmulator() : undefined;
     const handles = await createApp({
       databaseUrl,
       modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
@@ -220,6 +228,7 @@ async function main() {
         resolveHostname: thirdParties.resolveHostname,
       },
       integrationsCatalogUrl: "https://catalog.example.test/",
+      userDevices,
     });
     let activeRequests = 0;
     const requestWaiters = new Set<() => void>();
@@ -227,6 +236,11 @@ async function main() {
       fetch: async (request) => {
         if (new URL(request.url).pathname === "/__e2e/emails") {
           return Response.json(email.sent, { headers: { "cache-control": "no-store" } });
+        }
+        if (new URL(request.url).pathname === "/__e2e/user-device-requests") {
+          return Response.json(userDevices?.requests ?? [], {
+            headers: { "cache-control": "no-store" },
+          });
         }
         activeRequests += 1;
         try {

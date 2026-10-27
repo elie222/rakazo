@@ -68,7 +68,6 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
-vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 
 import { BotSettings } from "./bot-panel";
 
@@ -188,7 +187,6 @@ describe("BotSettings help", () => {
     expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
     expect(speechRow?.lastElementChild).toBe(speechToggle);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain("Can edit and organise bots it creates");
     expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();

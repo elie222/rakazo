@@ -1,3 +1,4 @@
+import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import type { CronLabels } from "./cron.js";
 import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
@@ -36,6 +37,41 @@ export type MentionPickerConnector = {
   authStatus: "connected" | "needs_auth";
   connectionId?: string;
 };
+
+/**
+ * Connected apps first, then catalog apps the user could still connect. A catalog
+ * entry already covered by a connected row (same provider or name) is skipped.
+ */
+export function mentionConnectorsFrom(
+  connections: readonly Pick<Connection, "id" | "displayName" | "provider" | "status">[],
+  catalog: readonly Pick<
+    ConnectionCatalogItem,
+    "connectorId" | "slug" | "name" | "connected" | "noAuth"
+  >[],
+): MentionPickerConnector[] {
+  const connected = connections.filter((row) => row.status === "connected");
+  const options: MentionPickerConnector[] = connected.map((row) => ({
+    id: row.id,
+    name: row.displayName,
+    authStatus: "connected",
+    connectionId: row.id,
+  }));
+  for (const item of catalog) {
+    if (item.connected || item.noAuth) continue;
+    const covered = connected.some(
+      (row) =>
+        row.provider.toLowerCase() === item.slug.toLowerCase() ||
+        row.displayName.toLowerCase() === item.name.toLowerCase(),
+    );
+    if (covered) continue;
+    options.push({
+      id: `catalog:${item.connectorId}:${item.slug}`,
+      name: item.name,
+      authStatus: "needs_auth",
+    });
+  }
+  return options;
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -481,7 +481,7 @@ export const Transcript = memo(function Transcript({
               ) : null}
               <div
                 data-message-id={message.id}
-                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
+                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-[1]"}
               >
                 <div
                   className={

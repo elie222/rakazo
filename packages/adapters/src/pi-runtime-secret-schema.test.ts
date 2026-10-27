@@ -2,24 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import {
-  jsonField,
-  jsonSchemaParameters,
-  parametersFor,
-  prepareRequestSecretArguments,
-} from "./pi-runtime.js";
+import { jsonField, jsonSchemaParameters, parametersFor } from "./pi-runtime-tool-parameters.js";
+import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";
 
 /**
- * `pi-runtime` used to re-declare `request_secret`'s parameters by hand, and the
- * copy omitted `credential`. The model therefore never saw the one argument that
- * makes a credential persist: `request_secret` calls arrived with only
- * `{label, purpose}`, the submitted value had nowhere to be stored, and the tool
- * looked broken from the outside.
- *
- * These assert the canonical schema still carries what the executor requires, so
- * a future hand-rolled override has to fail here rather than silently drop a
- * field again — including the credential XOR connectionId exclusivity the
- * executor enforces.
+ * The canonical schema must carry what the executor requires, so a hand-rolled
+ * override fails here rather than silently dropping `credential` from the model.
  */
 function toolNamed(name: string) {
   const tool = builtinAgentTools.find((entry) => entry.name === name);
@@ -132,11 +120,9 @@ describe("request_secret parameters", () => {
   });
 
   it("exposes OpenAI-compatible parameters.type object for local servers", () => {
-    // LM Studio and similar validators reject tools[].function.parameters without
-    // type === "object" (and often without properties). request_secret is the
-    // builtin that previously serialized as a bare anyOf union. Anthropic rejects
-    // a root union outright, so the wire shape is one object with both destinations;
-    // the executor still enforces credential XOR connectionId.
+    // LM Studio and similar validators reject parameters without type === "object",
+    // and Anthropic rejects a root union, so the wire shape is one object with both
+    // destinations; the executor still enforces credential XOR connectionId.
     const wire = JSON.parse(JSON.stringify(parametersFor(toolNamed("request_secret")))) as {
       type?: unknown;
       properties?: Record<string, unknown>;
@@ -333,9 +319,8 @@ describe("prepareRequestSecretArguments", () => {
 
 describe("jsonField union handling", () => {
   it("converts a discriminated union instead of defaulting to string", () => {
-    // BotSecretAuth converts to oneOf with no sibling `type`. Treating that as a
-    // string told the model to send `auth: "bearer"`, which the executor then
-    // rejected -- observed twice against the live deployment.
+    // BotSecretAuth converts to oneOf with no sibling `type`; as a string the model
+    // would send `auth: "bearer"`, which the executor rejects.
     const authSchema = {
       oneOf: [
         { type: "object", properties: { type: { type: "string", const: "bearer" } } },
@@ -356,9 +341,7 @@ describe("jsonField union handling", () => {
 
 describe("jsonField const handling", () => {
   it("preserves a const so the model knows the only accepted value", () => {
-    // BotSecretAuth's discriminator is {type: {type:"string", const:"bearer"}}.
-    // Degrading that to a plain string left the model guessing: recorded calls
-    // sent auth.type as "api_key" and "authorization_bearer" before this.
+    // A plain string would leave the model guessing the discriminator value.
     // enumUnion wraps literals, so the value lands inside a single-member union.
     expect(JSON.stringify(jsonField({ type: "string", const: "bearer" }))).toContain(
       '"const":"bearer"',

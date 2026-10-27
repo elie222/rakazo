@@ -1,6 +1,6 @@
 import type { Routine } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { routineRowDetail, routineStatusLine, sortRoutinesByNextRun } from "./routine.js";
+import { routineRowDetail, routineStatusLine } from "./routine.js";
 
 function routine(partial: Partial<Routine>): Routine {
   return {
@@ -100,32 +100,5 @@ describe("routineRowDetail", () => {
     expect(routineRowDetail(routine({ crons: ["0 6 * * *"] }), undefined)).toBe(
       "Every day at 6:00 AM (UTC)",
     );
-  });
-});
-
-describe("sortRoutinesByNextRun", () => {
-  it("puts the soonest run first, then routines without one, oldest first on ties", () => {
-    const sorted = sortRoutinesByNextRun([
-      routine({ id: "none-new", createdAt: "2026-03-01T00:00:00.000Z" }),
-      routine({ id: "later", nextRunAt: "2026-10-20T09:00:00.000Z" }),
-      routine({ id: "none-old", createdAt: "2026-02-01T00:00:00.000Z" }),
-      routine({
-        id: "soon-new",
-        nextRunAt: "2026-10-19T09:00:00.000Z",
-        createdAt: "2026-05-01T00:00:00.000Z",
-      }),
-      routine({
-        id: "soon-old",
-        nextRunAt: "2026-10-19T09:00:00.000Z",
-        createdAt: "2026-04-01T00:00:00.000Z",
-      }),
-    ]);
-    expect(sorted.map((item) => item.id)).toEqual([
-      "soon-old",
-      "soon-new",
-      "later",
-      "none-old",
-      "none-new",
-    ]);
   });
 });

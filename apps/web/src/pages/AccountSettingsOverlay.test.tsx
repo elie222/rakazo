@@ -100,6 +100,7 @@ vi.mock("../components/ai/primitives", () => ({ SuccessPop: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   ComputersUnavailableHint: () => null,
 }));
+vi.mock("../components/ComputerDeviceSettings", () => ({ ComputerDeviceSettings: () => null }));
 vi.mock("../components/DesktopUpdates", () => ({ DesktopUpdateSection: () => null }));
 vi.mock("../lib/auth", () => ({ authClient: { changePassword: vi.fn(), updateUser: vi.fn() } }));
 vi.mock("../lib/i18n", () => ({

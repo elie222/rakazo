@@ -5,16 +5,18 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
+import { fetchFresh } from "@rakazo/core/query";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api";
+import type { MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
@@ -24,7 +26,7 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
-import { fetchFresh, queryClient, rpcQuery } from "../../lib/query";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -46,22 +48,20 @@ export default function Models() {
   const router = useRouter();
   const { t } = useI18n();
   const me =
-    useQuery({ ...rpcQuery<MobileMe>("me", undefined, spaceId), enabled: false }, queryClient)
-      .data ?? null;
+    useQuery({ ...rpcQuery("me", undefined, spaceId), enabled: false }, queryClient).data ?? null;
   const catalog =
-    useQuery(
-      { ...rpcQuery<MobileModel[]>("models/list", undefined, spaceId), enabled: false },
-      queryClient,
-    ).data ?? noModels;
+    useQuery({ ...rpcQuery("models/list", undefined, spaceId), enabled: false }, queryClient)
+      .data ?? noModels;
   const credentials =
     useQuery(
       {
-        ...rpcQuery<MobileModelCredential[]>("models/credentials", undefined, spaceId),
+        ...rpcQuery("models/credentials", undefined, spaceId),
         enabled: false,
       },
       queryClient,
     ).data ?? noCredentials;
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const openedRef = useRef(false);
   const pickerRequestRef = useRef<string | null>(null);
   const connectionRequestRef = useRef<string | null>(null);
@@ -80,16 +80,19 @@ export default function Models() {
     async (reuse = false) => {
       try {
         await Promise.all([
-          fetchFresh(rpcQuery<MobileMe>("me", undefined, spaceId), { reuse }),
-          fetchFresh(rpcQuery<MobileModel[]>("models/list", undefined, spaceId), { reuse }),
-          fetchFresh(rpcQuery<MobileModelCredential[]>("models/credentials", undefined, spaceId), {
+          fetchFresh(queryClient, rpcQuery("me", undefined, spaceId), { reuse }),
+          fetchFresh(queryClient, rpcQuery("models/list", undefined, spaceId), {
+            reuse,
+          }),
+          fetchFresh(queryClient, rpcQuery("models/credentials", undefined, spaceId), {
             reuse,
           }),
         ]);
-        setError(null);
+        setLoadError(null);
       } catch (err) {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err)) setError(errorText(err, t("Could not load model settings")));
+        if (!isCancelledError(err))
+          setLoadError(errorText(err, t("Could not load model settings")));
       }
     },
     [spaceId, t],
@@ -218,7 +221,7 @@ export default function Models() {
   }
 
   // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
-  if (!me && !error) {
+  if (!me && !loadError) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
         <ActivityIndicator color={native.secondaryLabel} />
@@ -226,6 +229,8 @@ export default function Models() {
     );
   }
 
+  const failure = error ?? loadError;
+  const shownError = error ?? (me ? loadError : null);
   const shared = {
     credentials,
     providers,
@@ -244,9 +249,18 @@ export default function Models() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error ? (
+        {failure && !me ? (
+          <LoadFailure
+            message={failure}
+            onRetry={() => {
+              setError(null);
+              setLoadError(null);
+              void load();
+            }}
+          />
+        ) : shownError ? (
           <Text accessibilityRole="alert" style={styles.error}>
-            {error}
+            {shownError}
           </Text>
         ) : null}
         {me ? (

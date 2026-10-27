@@ -111,12 +111,14 @@ describe("server image publish workflow", () => {
   it("checks credentials before publishing Depot tags or making native digests available", () => {
     const nativeSteps = workflow.jobs.build.steps;
     const nativeScan = nativeSteps.findIndex((step) =>
-      step.run?.includes('check-image.sh "$IMAGE" "$PLATFORM"'),
+      step.run?.includes("check-image.sh /tmp/rootfs.tar"),
     );
     const upload = nativeSteps.findIndex((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
     expect(nativeScan).toBeGreaterThanOrEqual(0);
+    const nativeBuild = nativeSteps.find((step) => step.id === "build");
+    expect(nativeBuild?.with?.outputs).toContain("type=tar,dest=/tmp/rootfs.tar");
     expect(upload).toBeGreaterThan(nativeScan);
     const depotSteps = workflow.jobs["build-depot"].steps;
     const depotScan = depotSteps.findIndex((step) => step.run?.includes("check-image.sh"));

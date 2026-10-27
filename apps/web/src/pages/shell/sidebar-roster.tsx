@@ -507,7 +507,7 @@ export function SidebarRoster({
                           <div
                             dir="auto"
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
-                            className={`mt-1 line-clamp-2 text-label break-words whitespace-normal ${
+                            className={`mt-1 truncate text-label ${
                               workStatusLabel
                                 ? "font-semibold text-status-working"
                                 : item.chat.unread

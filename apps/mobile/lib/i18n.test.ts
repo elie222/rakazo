@@ -18,7 +18,6 @@ vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
 
-/** Recursively collect source files used to validate mobile translation coverage. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -156,12 +155,15 @@ describe("mobile i18n", () => {
       "Your Anthropic",
       "Your model provider",
       "The model provider returned an error.",
+      "Connect a model in Settings before running bots.",
+      "Connect your own API key in Models or choose Rakazo credits in Billing.",
       "{provider} is rate limiting requests. Try again shortly.",
       "{summary} Resets {date}.",
       "{provider} rejected the API key. Check your connection settings.",
-      "{provider} could not find the requested model.",
+      "{provider} can't run this model.",
       "{provider} denied access to this model.",
       "The model returned an unusable response. Try again.",
+      "The model hit its output limit before finishing its reply.",
       "This model's context window is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",

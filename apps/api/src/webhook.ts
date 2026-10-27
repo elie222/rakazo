@@ -3,14 +3,13 @@ import { hasValidBearerToken } from "@rakazo/core";
 import type { Hono } from "hono";
 import { mountGithubWebhookRoute } from "./github-webhook.js";
 import { readBoundedBody } from "./http-body.js";
+import type { WebhookDeps, WebhookSecretCache } from "./webhook-inbound.js";
 import {
   deliverWebhookEvent,
   formatWebhookPrompt,
   loadWebhookTarget,
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
-  type WebhookDeps,
-  type WebhookSecretCache,
 } from "./webhook-inbound.js";
 
 export {

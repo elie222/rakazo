@@ -15,6 +15,11 @@
       "development": "./src/client-build.ts",
       "default": "./src/client-build.ts"
     },
+    "./network-host": {
+      "types": "./src/network-host.ts",
+      "development": "./src/network-host.ts",
+      "default": "./src/network-host.ts"
+    },
     "./content-security-policy": {
       "types": "./src/content-security-policy.ts",
       "development": "./src/content-security-policy.ts",

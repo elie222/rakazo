@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import type { Locator, Page, Route, TestInfo } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 /** Submit from the Send control so an in-flight prior send cannot swallow Enter. */
@@ -68,6 +69,66 @@ async function expectRailAtRest(page: Page, row: Locator) {
   await expect(rail).toHaveCSS("pointer-events", "none");
 }
 
+async function expectHeaderAboveHoveredRow(page: Page, testInfo: TestInfo, row: Locator) {
+  const placement = await row.evaluate((element) => {
+    const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
+    const header = document.querySelector<HTMLElement>('[data-testid="bot-settings-trigger"]');
+    if (!transcript || !header) throw new Error("missing transcript or chat header");
+
+    // Make even a short thread scrollable so the row can sit underneath the header.
+    const originalScrollTop = transcript.scrollTop;
+    const spacer = document.createElement("div");
+    spacer.dataset.layerTestSpacer = "";
+    spacer.style.height = `${transcript.clientHeight}px`;
+    spacer.style.flexShrink = "0";
+    transcript.append(spacer);
+
+    const transcriptBox = transcript.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    const headerPoint = {
+      x: headerBox.left + headerBox.width / 2,
+      y: headerBox.top + headerBox.height / 2,
+    };
+    const rowBox = element.getBoundingClientRect();
+    const rowCenterContentY =
+      rowBox.top - transcriptBox.top + transcript.scrollTop + rowBox.height / 2;
+    transcript.scrollTop = rowCenterContentY - (headerPoint.y - transcriptBox.top);
+    const movedRowBox = element.getBoundingClientRect();
+
+    return {
+      originalScrollTop,
+      headerPoint,
+      hoverPoint: { x: movedRowBox.left + 1, y: headerPoint.y },
+      overlapsHeader:
+        movedRowBox.left < headerPoint.x &&
+        movedRowBox.right > headerPoint.x &&
+        movedRowBox.top < headerPoint.y &&
+        movedRowBox.bottom > headerPoint.y,
+    };
+  });
+
+  try {
+    expect(placement.overlapsHeader).toBe(true);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    // The header's empty gutter passes pointer events through to keep the row hovered.
+    await page.mouse.move(placement.hoverPoint.x, placement.hoverPoint.y);
+    await expect(row.getByTestId("message-hover-rail")).toHaveCSS("opacity", "1");
+    const headerReceivesHit = await page.evaluate(({ x, y }) => {
+      const header = document.querySelector<HTMLElement>('[data-testid="bot-settings-trigger"]');
+      const topmost = document.elementFromPoint(x, y);
+      return Boolean(header && topmost && header.contains(topmost));
+    }, placement.headerPoint);
+    expect(headerReceivesHit).toBe(true);
+    await captureScreenshot(page, testInfo, "message-hover-under-header-desktop");
+  } finally {
+    await row.evaluate((element, originalScrollTop) => {
+      const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
+      transcript?.querySelector("[data-layer-test-spacer]")?.remove();
+      if (transcript) transcript.scrollTop = originalScrollTop;
+    }, placement.originalScrollTop);
+  }
+}
+
 test("message hover shows beside-bubble actions; reply links to parent", async ({
   page,
 }, testInfo) => {
@@ -131,7 +192,6 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(toolbar.getByRole("button", { name: "More" })).toBeVisible();
   const react = toolbar.getByRole("button", { name: "React" });
   await expect(react).toBeVisible();
-  // Default reaction matches Reply/More: muted control color, not yellow.
   await expect
     .poll(async () => {
       const mutedColor = await toolbar
@@ -142,7 +202,6 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     })
     .toBe(true);
 
-  // User bubble (right): icons sit to the left, vertically centered — not under the bubble.
   const frame = parentRow.getByTestId("message-bubble-frame");
   await expect
     .poll(async () => {
@@ -160,14 +219,12 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     })
     .toEqual({ beside: true, flush: true, centered: true, notBelow: true });
 
-  // User bubble is a muted elevated surface (not cream invert / bright pill).
   const userSurface = parentRow.getByTestId("message-user-bubble");
   await expect(userSurface).toBeVisible();
   await expect
     .poll(async () => userSurface.evaluate((el) => getComputedStyle(el).backgroundColor))
     .not.toMatch(/^rgb\(241,\s*241,\s*239\)$/); // not cream primary foreground
 
-  // Long user bubble: rail stays ~6px beside the bubble edge, not the full row width.
   const longText = `hover-long-${stamp}-${"x".repeat(220)}`;
   await sendComposerMessage(page, composer, longText);
   const longRow = transcript
@@ -196,11 +253,9 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
   await captureScreenshot(page, testInfo, "message-user-actions-hover-desktop");
-  // Default transcript shot: rail at rest (no hover pin, mouse clear).
   await expectRailAtRest(page, parentRow);
   await captureScreenshot(page, testInfo, "message-user-bubble-desktop");
 
-  // Clip shot of bubble + rail for gallery geometry.
   await revealHoverRail(parentRow);
   const railBox = await rail.boundingBox();
   const frameBox = await frame.boundingBox();
@@ -291,6 +346,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await parentRow.scrollIntoViewIfNeeded();
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
+  await page.setViewportSize({ width: 1280, height: 812 });
+  await expectHeaderAboveHoveredRow(page, testInfo, parentRow);
 });
 
 test("a message with an attachment centers hover actions on its text bubble", async ({
@@ -444,7 +501,6 @@ test.describe("touch message actions", () => {
     const rail = row.getByTestId("message-hover-rail");
     await expect(rail).toHaveCSS("opacity", "1");
     await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeVisible();
-    // Touch puts the action row in-flow under the bubble, not beside it.
     const botBubble = row.getByTestId("message-bot-bubble").first();
     const bubbleBox = await botBubble.boundingBox();
     const railBox = await rail.boundingBox();

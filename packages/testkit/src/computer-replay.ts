@@ -14,12 +14,12 @@ import {
   PiAgentRuntime,
 } from "@rakazo/adapters";
 import { CONTACTS_CSV, CONTACTS_PATH, EXPORT_FIXTURE_URL } from "./computer-replay-fixture.js";
-import {
-  type ModelEmulatorRequest,
-  type ModelEmulatorResponse,
-  type ModelEmulatorStep,
-  startModelEmulator,
+import type {
+  ModelEmulatorRequest,
+  ModelEmulatorResponse,
+  ModelEmulatorStep,
 } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 
 export function computerReplayContext(): AdapterContext {
   return {

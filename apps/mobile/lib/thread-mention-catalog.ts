@@ -1,4 +1,6 @@
 import type { Connection, ConnectionCatalogItem, Routine } from "@rakazo/contracts";
+import type { MentionPickerConnector } from "@rakazo/core";
+import { createRoutineMentionBatcher, mentionConnectorsFrom } from "@rakazo/core";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
@@ -6,17 +8,11 @@ import { currentSessionGeneration, subscribeSessionGeneration } from "./session"
 type MentionBot = { id: string; name: string };
 type MentionCatalog = {
   routines: Array<Routine & { botName: string }>;
-  connectors: Array<{
-    id: string;
-    name: string;
-    authStatus: "connected" | "needs_auth";
-    connectionId?: string;
-  }>;
+  connectors: MentionPickerConnector[];
 };
 type MentionCatalogState = MentionCatalog & { scope: string; activation: symbol | null };
 
 const EMPTY_CATALOG: MentionCatalog = { routines: [], connectors: [] };
-const ROUTINE_REQUEST_CONCURRENCY = 4;
 
 export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot[]) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
@@ -100,60 +96,39 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
         return;
       }
       const options = { signal: abort.signal, requestContext };
+      const requestOptions = (signal?: AbortSignal) => {
+        if (!isCurrent()) throw new Error("Request aborted.");
+        return { ...options, signal };
+      };
       const lists: MentionCatalog["routines"][] = new Array(bots.length);
-      let nextBot = 0;
-      async function loadRoutines() {
-        while (isCurrent() && nextBot < bots.length) {
-          const index = nextBot++;
-          const bot = bots[index]!;
+      const loadRoutineMentions = createRoutineMentionBatcher(
+        (botIds, signal) => rpc("routines/listForMentions", { botIds }, requestOptions(signal)),
+        (botId, signal) => rpc("routines/list", { botId }, requestOptions(signal)),
+      );
+      const routines = Promise.all(
+        bots.map(async (bot, index) => {
           try {
-            const rows = await rpc<Routine[]>("routines/list", { botId: bot.id }, options);
+            const rows = await loadRoutineMentions(bot.id, abort.signal);
             if (!isCurrent()) return;
             lists[index] = rows.map((routine) => ({ ...routine, botName: bot.name }));
           } catch {
             failed = true;
             lists[index] = [];
           }
-        }
-      }
-      const routines = Promise.all(
-        Array.from({ length: Math.min(ROUTINE_REQUEST_CONCURRENCY, bots.length) }, loadRoutines),
+        }),
       ).then(() => update({ routines: lists.flat() }));
       const connectors = Promise.all([
-        rpc<Connection[]>("connections/list", {}, options).catch(() => {
+        rpc("connections/list", {}, options).catch(() => {
           failed = true;
           return [] as Connection[];
         }),
-        rpc<ConnectionCatalogItem[]>("connections/catalog", {}, options).catch(() => {
+        rpc("connections/catalog", {}, options).catch(() => {
           failed = true;
           return [] as ConnectionCatalogItem[];
         }),
       ]).then(([connections, catalog]) => {
         if (!isCurrent()) return;
-        const connected = connections.filter((row) => row.status === "connected");
-        const connectors: MentionCatalog["connectors"] = connected.map((row) => ({
-          id: row.id,
-          name: row.displayName,
-          authStatus: "connected",
-          connectionId: row.id,
-        }));
-        for (const item of catalog) {
-          if (item.connected || item.noAuth) continue;
-          if (
-            connected.some(
-              (row) =>
-                row.provider.toLowerCase() === item.slug.toLowerCase() ||
-                row.displayName.toLowerCase() === item.name.toLowerCase(),
-            )
-          )
-            continue;
-          connectors.push({
-            id: `catalog:${item.connectorId}:${item.slug}`,
-            name: item.name,
-            authStatus: "needs_auth",
-          });
-        }
-        update({ connectors });
+        update({ connectors: mentionConnectorsFrom(connections, catalog) });
       });
       await Promise.all([routines, connectors]);
       if (failed) allowRetry();

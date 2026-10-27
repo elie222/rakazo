@@ -18,7 +18,7 @@ import type {
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { McpOAuthEnvField } from "@rakazo/contracts";
 import {
-  isLocalMcpHost,
+  isLocalhostOrLoopbackIp,
   mcpOAuthEnvReferences,
   resolveMcpOAuthEnv,
   resolveMcpOAuthFileTemplate,
@@ -33,7 +33,6 @@ import {
   sanitizeConnectorError,
 } from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
-import { appendToolCompletionAudit } from "./executor.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,
@@ -62,6 +61,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
   session: McpSession;
@@ -378,10 +378,7 @@ export class McpConnector implements ConnectorProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const tools = await this.authorizedTools(context);
     if (tools.length <= DIRECT_TOOL_LIMIT) return tools;
-    // The catalog wrappers must not be named `mcp_*`: Anthropic rejects Claude Code OAuth
-    // requests that carry a tool whose name starts with "mcp_" (single underscore) with a
-    // misleading "You're out of extra usage" 400, on every model. Direct MCP tools are
-    // `mcp__server__tool` (double underscore) and are accepted; keep the wrappers off "mcp_".
+    // Keep wrappers off "mcp_": see lazyCatalogTools.
     return lazyCatalogTools(catalogToolPrefix("mcp"), "mcp", "MCP", catalogEntries(tools));
   }
 
@@ -389,6 +386,12 @@ export class McpConnector implements ConnectorProvider {
     call: ConnectorCall,
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
+    if (!call.route && call.tool.startsWith("mcp__")) {
+      return resolveCatalogCall(
+        { ...call, args: { id: call.tool, arguments: call.args } },
+        catalogEntries(await this.authorizedTools(context)),
+      );
+    }
     // Wrappers have no resourceId; real tools always do.
     if (call.route?.resourceId || call.route?.toolName !== CATALOG_EXECUTE) return undefined;
     return resolveCatalogCall(call, catalogEntries(await this.authorizedTools(context)));
@@ -1120,7 +1123,8 @@ export class McpConnector implements ConnectorProvider {
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
         const endpoint = new URL(server.endpoint);
-        const localHttp = endpoint.protocol === "http:" && isLocalMcpHost(endpoint.hostname);
+        const localHttp =
+          endpoint.protocol === "http:" && isLocalhostOrLoopbackIp(endpoint.hostname);
         const allowPrivateEndpoint = this.options.allowPrivateEndpoint === true;
         const authProvider =
           !localHttp && this.oauth

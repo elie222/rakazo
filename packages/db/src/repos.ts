@@ -450,7 +450,10 @@ export function createRepos(
                 includeDelegatedReplyText: false,
               },
             );
-            preview = previewFromBlocks(visible[0]?.blocks);
+            for (const message of visible) {
+              preview = previewFromBlocks(message.blocks);
+              if (preview) break;
+            }
             if (preview || messages.length === 0 || !bot.thread || attempt === 4) break;
             const oldest = messages[messages.length - 1];
             if (!oldest) break;

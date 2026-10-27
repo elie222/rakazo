@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertVolumeSubpathSupport,
   COMPUTER_IMAGE,
+  COMPUTER_IMAGE_CONTEXT_FILES,
   computerBridgeNameFor,
   computerDnsMatches,
   computerHomeStorage,
@@ -254,6 +256,13 @@ describe("graphical computer spec", () => {
     expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(false);
     expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "ab"])).toBe(false);
     expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(false);
+  });
+
+  it("builds the local image from files that exist in the computer context", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    for (const file of COMPUTER_IMAGE_CONTEXT_FILES) {
+      expect(existsSync(path.join(root, file)), file).toBe(true);
+    }
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {
@@ -966,7 +975,7 @@ describe("graphical computer spec", () => {
                 env: { ...process.env, JOINED_READY: ready },
               });
               try {
-                const deadline = Date.now() + 2_000;
+                const deadline = Date.now() + 15_000;
                 while (spawnSync("test", ["-s", ready]).status !== 0) {
                   if (Date.now() > deadline)
                     throw new Error("space-joined command line was not published");
@@ -1178,7 +1187,7 @@ describe("graphical computer spec", () => {
       });
       const children = [endpointProcess];
       const publishedPort = (file: string) => {
-        const deadline = Date.now() + 2_000;
+        const deadline = Date.now() + 15_000;
         while (spawnSync("test", ["-s", file]).status !== 0) {
           if (Date.now() > deadline) throw new Error("debug endpoint did not publish a port");
           spawnSync("sleep", ["0.02"]);

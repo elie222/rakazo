@@ -148,7 +148,7 @@ async function runAfterFill(
         defaultModelId: "openai/gpt-4o",
       })),
     },
-    botSecret: { findMany: vi.fn(async () => botSecrets) },
+    vaultCredential: { findMany: vi.fn(async () => botSecrets) },
     externalEffect: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),

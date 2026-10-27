@@ -59,8 +59,11 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 vi.mock("react-native-svg", () => ({
-  SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) =>
-    createElement("svg", { "data-uri": uri, onClick: onError }),
+  SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) => {
+    if (uri.includes("unrenderable"))
+      throw new SyntaxError('Expected transform functions but "t" found.');
+    return createElement("svg", { "data-uri": uri, onClick: onError });
+  },
 }));
 vi.mock("react-native", () => {
   const View = ({ children, testID }: { children?: ReactNode; testID?: string }) => (
@@ -222,6 +225,18 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
+it("falls back when SVG artwork throws while rendering", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    await render(<ConnectorIcon name="Example" logo="https://example.test/unrenderable.svg" />);
+    expect(container.textContent).toBe("E");
+    expect(container.querySelector("svg")).toBeNull();
+    await render(<ConnectorIcon name="Example" logo="https://example.test/new.svg" />);
+    expect(container.querySelector("svg")).not.toBeNull();
+  } finally {
+    error.mockRestore();
+  }
+});
 it("retries extensionless artwork as SVG before falling back", async () => {
   const logo = "https://logos.example.test/api/gmail";
   await render(<ConnectorIcon name="Example" logo={logo} />);

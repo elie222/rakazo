@@ -233,6 +233,17 @@ describe("web markdown website links", () => {
     await view.cleanup();
   });
 
+  it("keeps the destination when a bare URL is shortened at an emoji", async () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}%F0%9F%98%80tail`;
+    const view = await renderLinks(`<${href}>`, { load: async () => ({ icon: null }) });
+    expect(view.container.querySelector(".rk-chat-link-label")?.textContent).toBe(
+      `example.com/${prefix}…`,
+    );
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(href);
+    await view.cleanup();
+  });
+
   it("shows the globe until an icon arrives, and when there is none", async () => {
     let resolve: (answer: { icon: string | null }) => void = () => undefined;
     const view = await renderLinks("[Docs](https://icon-c.example.test/docs)", {

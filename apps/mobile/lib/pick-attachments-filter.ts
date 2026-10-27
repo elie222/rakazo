@@ -1,5 +1,6 @@
 import type { AttachmentMimeType } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
+import { newClientId } from "@rakazo/core";
 
 export type PickedAttachment = {
   id: string;
@@ -56,17 +57,16 @@ export function filterPickedAttachments(
       skipped.push({ name: candidate.name, reason });
       continue;
     }
-    attachments.push(pickedAttachment(candidate, existingCount + attachments.length));
+    attachments.push(pickedAttachment(candidate));
   }
   return { attachments, skipped };
 }
 
 export function pickedAttachment(
   candidate: Parameters<typeof filterPickedAttachments>[1][number],
-  index: number,
 ): PickedAttachment {
   return {
-    id: `${candidate.name}-${candidate.size}-${index}`,
+    id: newClientId(),
     name: candidate.name,
     mimeType: candidate.mimeType as AttachmentMimeType,
     contentBase64: candidate.contentBase64,

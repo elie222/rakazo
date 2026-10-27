@@ -107,8 +107,7 @@ it("shows a dismissed secret card as Dismissed, not Saved", async () => {
   await render({ ...secretCard, status: "answered", answer: "" });
   expect(container.textContent).toContain("Saved");
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;
-  expect(card.classList.contains("w-full")).toBe(true);
-  expect(card.classList.contains("max-w-xl")).toBe(false);
+  expect(card.classList.contains("max-w-xl")).toBe(true);
 });
 
 it("offers Dismiss only on secret cards", async () => {
@@ -116,7 +115,7 @@ it("offers Dismiss only on secret cards", async () => {
   expect(button("Dismiss")).toBeUndefined();
 });
 
-it("puts primary Save before equal-width secondary Dismiss", async () => {
+it("puts primary Save before secondary Dismiss at the default button size", async () => {
   await render(secretCard);
   expect(
     [...button("Save")!.parentElement!.querySelectorAll("button")].map((item) => item.textContent),
@@ -126,11 +125,10 @@ it("puts primary Save before equal-width secondary Dismiss", async () => {
   expect(button("Save")!.disabled).toBe(true);
   expect(container.querySelector("input")?.classList.contains("w-full")).toBe(true);
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;
-  expect(card.classList.contains("w-full")).toBe(true);
-  expect(card.classList.contains("max-w-xl")).toBe(false);
+  expect(card.classList.contains("max-w-xl")).toBe(true);
   for (const label of ["Save", "Dismiss"]) {
-    expect(button(label)?.classList.contains("flex-1")).toBe(true);
-    expect(button(label)?.classList.contains("whitespace-normal")).toBe(true);
+    expect(button(label)?.classList.contains("h-8")).toBe(true);
+    expect(button(label)?.classList.contains("flex-1")).toBe(false);
   }
   await type("API key", "example-key");
   expect(button("Save")!.disabled).toBe(false);
@@ -179,7 +177,7 @@ for (const input of ["secret", "login"]) {
     // A login is filled in only by the run's user; see the credential card test below.
     if (input === "login" && !canDismiss) return;
     expect(labels.includes("Save")).toBe(true);
-    expect(button("Save")?.classList.contains("flex-1")).toBe(true);
+    expect(button("Save")?.classList.contains("h-8")).toBe(true);
   });
 }
 
@@ -211,33 +209,98 @@ it("keeps an accepted question choice answered until the block updates", async (
   const onAnswer = vi.fn(async () => undefined);
   await render(block, undefined, onAnswer);
 
-  await act(async () => button("Paris")!.click());
+  await act(async () => button("AParis")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("paris", undefined);
-  expect(container.textContent).toContain("Answered: Paris");
-  expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).not.toContain("Answered");
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("BLondon")!.disabled).toBe(true);
   expect(container.querySelector(".text-destructive")).toBeNull();
 
   await render({ ...block, status: "answered", answer: "london" });
-  expect(container.textContent).toContain("Answered: London");
-  expect(container.textContent).not.toContain("Answered: Paris");
+  expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
 });
 
-it("gives question options a fill and border", async () => {
+it("dims a closed question's options without a status line", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={{
+          kind: "ask",
+          text: "Which city?",
+          status: "pending",
+          actions: [{ id: "paris", label: "Paris" }],
+        }}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={async () => undefined}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(button("AParis")!.disabled).toBe(true);
+  expect(container.textContent).not.toContain("No longer active");
+});
+
+it("letters question options and fills them only on hover", async () => {
   await render({
     kind: "ask",
     text: "Which city?",
     status: "pending",
-    actions: [{ id: "paris", label: "Paris" }],
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
   });
-  const option = button("Paris")!;
+  const option = button("BLondon")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-secondary")).toBe(true);
-  expect(option.classList.contains("border-input")).toBe(true);
+  expect(option.classList.contains("bg-secondary")).toBe(false);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("B");
 });
 
-it("gives onboarding choices borderless rows and distinct interaction states", async () => {
+it("sizes approval buttons like the other card buttons", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Send it?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  for (const label of ["Allow once", "Deny"]) {
+    expect(button(label)?.classList.contains("min-h-8")).toBe(true);
+    expect(button(label)?.classList.contains("py-3")).toBe(false);
+  }
+});
+
+it("says a user's-computer approval allows the rest of the chat", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Run on your computer?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow for this chat" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render({ ...block, detail: "hostname", detailFormat: "code" });
+  const detail = container.querySelector('[data-testid="ask-detail"]');
+  expect(detail?.textContent).toBe("hostname");
+  // The card is muted, so the command sits on the page background to read as a snippet.
+  expect(detail?.classList.contains("bg-background")).toBe(true);
+  expect(detail?.classList.contains("bg-muted")).toBe(false);
+  expect(button("Allow for this chat")).toBeTruthy();
+  expect(button("Allow once")).toBeUndefined();
+  await render({ ...block, status: "answered", answer: "allow" });
+  expect(container.textContent).toContain("Allowed for this chat");
+});
+
+it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
       <ChoiceCard
@@ -251,17 +314,10 @@ it("gives onboarding choices borderless rows and distinct interaction states", a
       />,
     ),
   );
-  const option = [...container.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes("Paris"),
-  )!;
+  const option = button("AParis")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-background")).toBe(true);
-  expect(option.classList.contains("border")).toBe(false);
-  expect(option.classList.contains("border-input")).toBe(false);
-  expect(option.classList.contains("enabled:hover:bg-foreground/5")).toBe(true);
-  expect(option.classList.contains("enabled:active:bg-foreground/15")).toBe(true);
-  expect(option.classList.contains("focus-visible:ring-2")).toBe(true);
-  expect(option.querySelector("span")?.classList.contains("bg-card")).toBe(true);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("A");
 });
 
 it.each([
@@ -355,4 +411,40 @@ it("offers import on the unanswered first-run focus card only", async () => {
     );
     expect(link()).toBeUndefined();
   }
+});
+
+it("quotes an edited reply and marks a sent draft", async () => {
+  const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
+  await render(block);
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).not.toContain("Answered");
+
+  await render({ ...block, answer: "approved" });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(container.textContent).toContain("Sent");
+});
+
+it("quotes a typed answer under the options it did not match", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "Paris",
+    actions: [
+      { id: "berlin", label: "Berlin" },
+      { id: "seoul", label: "Seoul" },
+    ],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Paris");
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "seoul",
+    actions: [{ id: "seoul", label: "Seoul" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
 });

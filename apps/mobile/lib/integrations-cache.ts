@@ -49,7 +49,7 @@ export async function integrationsCacheScope(): Promise<IntegrationsCacheScope> 
     identity.generation !== generation ||
     identity.selectionId !== spaceId
   ) {
-    const user = rpc<Pick<Me, "userId" | "spaceId">>("me");
+    const user = rpc("me");
     const entry = { apiBase, generation, selectionId: spaceId, user };
     identity = entry;
     void user.catch(() => {

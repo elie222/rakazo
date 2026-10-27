@@ -3,6 +3,7 @@ import type {
   ArtifactStore,
   JobPublisher,
   MemoryStore,
+  PaymentWalletProvider,
   ProductAnalytics,
   SandboxProvider,
   SecretStore,
@@ -23,8 +24,10 @@ import type {
   PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
+  verifyModelServesAgents,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
+import type { NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing.js";
 import { accountRoutes } from "./routes/account.js";
@@ -38,9 +41,11 @@ import { mcpRoutes } from "./routes/mcp.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { messagingRoutes } from "./routes/messaging.js";
 import { modelsRoutes } from "./routes/models.js";
+import { paymentWalletRoutes } from "./routes/payment-wallet.js";
 import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
 import { threadsRoutes } from "./routes/threads.js";
+import type { VoiceDeps } from "./voice.js";
 
 export { nextConnectionLabel } from "./model-credentials.js";
 export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
@@ -51,6 +56,8 @@ export interface RouterDeps {
   pushTokens: PushTokenStore;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
+  /** The deployment's wallet provider; absent hides purchases. */
+  paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;
   events: ThreadEvents;
   boardEvents: BoardEvents;
@@ -68,14 +75,11 @@ export interface RouterDeps {
   providerCatalog?: ProviderCatalogCache;
   /** HTTP transport for model connection checks and catalog probes. */
   modelConnectionFetch?: typeof fetch;
+  /** One real request proving a newly keyed model can serve agents; absent skips it. */
+  modelConnectionCheck?: typeof verifyModelServesAgents;
   /** Site icons for links; defaults to the per-process cache that fetches them. */
   favicons?: FaviconResolver;
-  /**
-   * Detached refresh for a stored credential whose bearer expired — the live
-   * catalog path calls it instead of refreshing inline. Defaults to the
-   * runtime's locked `kickModelCredentialRefresh`; injectable for tests so a
-   * catalog read never reaches the real OAuth refresh endpoint.
-   */
+  /** Detached refresh for an expired bearer, so the live catalog never refreshes inline. */
   refreshExpiredModelCredential?: (
     scope: { userId: string; spaceId: string },
     secretId: string,
@@ -84,17 +88,12 @@ export interface RouterDeps {
   integrationSettings?: IntegrationProviderSettings;
   composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
-  /**
-   * The API process's MCP connector, used to launch/list an MCP server once so its health
-   * is visible (`mcp.servers.test` and the probe after create/update/OAuth). Without it
-   * servers are simply never probed from here.
-   */
+  /** Probes MCP server health; without it servers are never probed from here. */
   mcp?: Pick<McpConnector, "probe">;
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   dataDir: string;
-  /** Present when the external messaging surface is enabled. */
   messagingInstallations?: MessagingInstallations;
   messaging?: {
     enabled: boolean;
@@ -104,8 +103,10 @@ export interface RouterDeps {
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
   billing?: BillingService;
+  speechSummary?: VoiceDeps["speechSummary"];
   env: {
     ticketBoardEnabled?: boolean;
+    navLinks?: NavLink[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
@@ -124,7 +125,6 @@ export interface RouterDeps {
     integrationsCatalogUrl?: string;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
-    /** Whether MCP stdio servers can run, and the commands they may launch. */
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
   };
@@ -148,5 +148,6 @@ export function createRouter(deps: RouterDeps) {
     ...connectionsRoutes(ctx),
     ...messagingRoutes(ctx),
     ...contentRoutes(ctx),
+    ...paymentWalletRoutes(ctx),
   });
 }

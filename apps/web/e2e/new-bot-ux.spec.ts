@@ -116,7 +116,6 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await page.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
 
-  // An organic body picked in the dialog is the body the new bot gets.
   await page.getByTestId("create-menu-trigger").click();
   await picker.getByTestId("create-new-bot").click();
   await expect(createDialog).toBeVisible();
@@ -200,7 +199,6 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   const stamp = Date.now();
   await signup(page, `focus-delay-${stamp}@rakazo.test`, "password12", "Focus Delay");
   await completeOnboarding(page);
-  // First bot from onboarding shows the focus card immediately.
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
 
   await page.clock.install();

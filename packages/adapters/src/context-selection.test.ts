@@ -266,6 +266,65 @@ describe("bounded context selection", () => {
     expect(read).toContain("Earlier result shortened after you read it");
     expect(read).not.toContain("unavailable");
   });
+  it("keeps history snapshot topic and outcome within whole Unicode characters", () => {
+    const payload = {
+      untrusted: true,
+      messages: [],
+      snapshots: [{ topic: `${"a".repeat(79)}😀tail`, outcome: `${"b".repeat(79)}😀tail` }],
+    };
+    const result = JSON.parse(
+      shortenToolResultText(JSON.stringify(payload), 1000, { name: "read_history" }),
+    );
+    expect(result.snapshots[0].topic).toBe("a".repeat(79));
+    expect(result.snapshots[0].outcome).toBe("b".repeat(79));
+  });
+  it("keeps history reference truncation and continuation on a Unicode boundary", () => {
+    const ref = { text: "aaa😀bbb", textOffset: 7, nextTextOffset: null, truncated: false };
+    for (const payload of [
+      { untrusted: true, messages: [ref], runs: [] },
+      { untrusted: true, messages: [], runs: [{ outcomes: [ref] }] },
+    ]) {
+      const size = JSON.stringify({ ...payload, contextTruncated: true }).length - 1;
+      const result = JSON.parse(
+        shortenToolResultText(JSON.stringify(payload), size, { name: "read_history" }),
+      );
+      const shortened = result.messages[0] ?? result.runs[0].outcomes[0];
+      expect(shortened.text).toBe("aaa");
+      expect(shortened.nextTextOffset).toBe(10);
+      expect(shortened.truncated).toBe(true);
+    }
+  });
+  it("shortens another reference when a single emoji cannot be shortened", () => {
+    const ref = (text: string) => ({ text, textOffset: 4, nextTextOffset: null, truncated: false });
+    const payload = { untrusted: true, messages: [ref("😀"), ref("ab")] };
+    const size = JSON.stringify({ ...payload, contextTruncated: true }).length - 1;
+    const result = JSON.parse(
+      shortenToolResultText(JSON.stringify(payload), size, { name: "search_history" }),
+    );
+    expect(result.messages[0].text).toBe("😀");
+    expect(result.messages[1]).toMatchObject({ text: "a", nextTextOffset: 5, truncated: true });
+  });
+  it("can shorten an emoji followed by another character and retries if nothing can shrink", () => {
+    const ref = { text: "😀a", textOffset: 4, nextTextOffset: null, truncated: false };
+    const payload = { untrusted: true, messages: [ref] };
+    const size = JSON.stringify({ ...payload, contextTruncated: true }).length - 1;
+    const result = JSON.parse(
+      shortenToolResultText(JSON.stringify(payload), size, { name: "read_history" }),
+    );
+    expect(result.messages[0]).toMatchObject({ text: "😀", nextTextOffset: 6, truncated: true });
+    const retry = JSON.parse(
+      shortenToolResultText(JSON.stringify(payload), 1, {
+        name: "read_history",
+        arguments: { messageId: "example" },
+      }),
+    );
+    expect(retry).toMatchObject({
+      untrusted: true,
+      contextTruncated: true,
+      needsRetry: true,
+      retry: { messageId: "example", limit: 1 },
+    });
+  });
   it("shortens history JSON evidence while preserving exact original offsets and pagination", () => {
     const original = 'Quoted "value" and newline\n'.repeat(500);
     const payload = {

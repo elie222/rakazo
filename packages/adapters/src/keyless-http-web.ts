@@ -9,7 +9,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
 import { clampMaxChars, clampMaxResults } from "./web-limits.js";
-import { fetchSafeWebText, type ResolveHostname } from "./web-ssrf.js";
+import type { ResolveHostname } from "./web-ssrf.js";
+import { fetchSafeWebText } from "./web-ssrf.js";
 
 export {
   clampMaxChars,
@@ -46,11 +47,7 @@ export const duckDuckGoHtmlSearchBackend: KeylessHtmlSearchBackend = {
   parse: parseDuckDuckGoResults,
 };
 
-/**
- * Keyless HTTP web search + page fetch. No API key, no sandbox, no JS execution.
- * Search uses a pluggable HTML backend (default: DuckDuckGo HTML). Fetch uses
- * Mozilla Readability with a lightweight HTML-strip fallback.
- */
+/** No API key, no sandbox, no JS execution. */
 export class KeylessHttpWebProvider implements WebProvider {
   private readonly fetchImpl?: typeof globalThis.fetch;
   private readonly resolveHostname?: ResolveHostname;

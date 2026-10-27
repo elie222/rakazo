@@ -6,8 +6,9 @@ import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
+  COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
-  checkpointAndRecordComputerWorkspace,
+  checkpointAndStopComputer,
   clearInactiveUserComputerControl,
   computerSupportsTerminal,
   computerSupportsUpdate,
@@ -41,17 +42,18 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, scrollDirection } from "@rakazo/core";
+import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd, PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, parseComputerMode, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { scrollPoint } from "../computer-input.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
   toComputerStatus,
 } from "../computer-status.js";
 import type { RouterDeps } from "../router.js";
-import { addScreenProxyCapability } from "../screen-proxy.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, isRecordNotFound } from "./shared.js";
 
@@ -170,8 +172,7 @@ export function computerRoutes(ctx: RouterContext) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
             try {
-              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-              await deps.sandbox.stop(ref, ctx);
+              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             } catch (error) {
               // The sandbox is already gone: nothing left to checkpoint or stop.
               if (!isSandboxGoneError(error)) throw error;
@@ -457,9 +458,9 @@ export function computerRoutes(ctx: RouterContext) {
               : input.kind === "scroll"
                 ? {
                     kind: "scroll" as const,
-                    direction:
-                      input.payload.direction === "up" ? ("up" as const) : ("down" as const),
+                    direction: scrollDirection(input.payload.direction),
                     amount: Number(input.payload.amount ?? 3),
+                    ...scrollPoint(input.payload),
                     sensitive,
                   }
                 : {
@@ -721,7 +722,7 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: error.message });
+              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
             }
             return clearGoneSandbox(deps, computer, error);
           });
@@ -1025,7 +1026,6 @@ async function bindWaitingTakeoverToControl(
     if (!waitingForTakeover) return;
     if (input.controlRunId === executionLease.runId) return;
 
-    // Confirm the locked lease row still matches before writing controlRunId.
     const leaseStillCurrent = await tx.computerExecutionLease.count({
       where: {
         computerId: input.computerId,

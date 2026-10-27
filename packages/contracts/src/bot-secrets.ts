@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { Id } from "./ids.js";
+import { isCloudMetadataHost, isPrivateNetworkHost } from "./network-host.js";
+import { settingsScopeInput } from "./settings-scope.js";
 
 // An opaque reference handle: matched exactly by secret_request/forget_secret,
 // displayed in list_secrets. Never interpolated into shells, env, or URLs, so
@@ -146,32 +148,6 @@ function commandVariableNameIssue(credentialName: string): string | undefined {
   return undefined;
 }
 
-/** Hosts inside a deployment's own network (loopback, RFC1918, CGNAT, .local). */
-export function isPrivateNetworkHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host === "::1") return true;
-  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (host.endsWith(".local")) return true;
-  if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  return false;
-}
-
-/** Provider metadata endpoints that must never become credential targets,
- * even though they sit inside otherwise-private ranges (CGNAT / link-local). */
-export function isCloudMetadataHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return (
-    host === "169.254.169.254" ||
-    host === "169.254.170.2" ||
-    host === "100.100.100.200" ||
-    host === "metadata.google.internal" ||
-    host === "metadata.goog"
-  );
-}
-
 function botSecretOriginSchema(allowPrivateHttpOrigin: boolean) {
   return z
     .string()
@@ -258,6 +234,78 @@ export function decodeLoginSecret(plaintext: string): LoginSecretValue {
   return LoginSecretValue.parse(JSON.parse(plaintext));
 }
 
+export const GENERATED_SECRET_SYMBOLS = "!@#$%^&*-_=+?";
+
+/** Character rules for a password or other value the backend generates and saves for a bot. */
+export const GeneratedSecretRules = z
+  .object({
+    length: z.number().int().min(8).max(128).default(20),
+    lowercase: z.boolean().default(true),
+    uppercase: z.boolean().default(true),
+    digits: z.boolean().default(true),
+    symbols: z.boolean().default(true),
+    // Printable ASCII punctuation only, for sites and tools that accept just a few symbols.
+    allowedSymbols: z
+      .string()
+      .regex(/^[!-/:-@[-`{-~]{1,32}$/, "Use only punctuation characters")
+      .optional(),
+  })
+  .refine(
+    (rules) => rules.lowercase || rules.uppercase || rules.digits || rules.symbols,
+    "Allow at least one kind of character",
+  );
+export type GeneratedSecretRules = z.infer<typeof GeneratedSecretRules>;
+
+/** A login is saved for one site with its username; a command variable reaches shell commands. */
+export const GenerateSecretInput = z
+  .object({
+    name: BotSecretName,
+    type: z.enum(["login", "command"]),
+    origin: z.string().min(1).max(2048).optional(),
+    username: LoginSecretValue.shape.username.optional(),
+    // A login's password also saved as the command variable `<name>-password`, for a CLI.
+    command: z.boolean().optional(),
+    rules: GeneratedSecretRules.optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.type === "command") {
+      if (input.command !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["command"],
+          message: "Only a login can also be saved as a command variable",
+        });
+      }
+      if (input.origin !== undefined || input.username !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["type"],
+          message: "A command variable has no site or username",
+        });
+      }
+      return;
+    }
+    if (input.origin === undefined) {
+      ctx.addIssue({ code: "custom", path: ["origin"], message: "A login needs its site" });
+    }
+    if (input.username === undefined) {
+      ctx.addIssue({ code: "custom", path: ["username"], message: "A login needs a username" });
+    }
+    if (input.command && !BotSecretName.safeParse(loginCommandName(input.name)).success) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["name"],
+        message: "Use a name of at most 55 characters to also save a command variable",
+      });
+    }
+  });
+
+/** The command variable a generated login's password is also saved as. */
+export function loginCommandName(loginName: string): string {
+  return `${loginName}-password`;
+}
+export type GenerateSecretInput = z.infer<typeof GenerateSecretInput>;
+
 /** Written atomically with the protected value, distinct from action approval. */
 export function botSecretSubmissionSchema(options?: { allowPrivateHttpOrigin?: boolean }) {
   return z.object({ credentialSaved: botSecretDestinationSchema(options) });
@@ -289,6 +337,19 @@ export const BotSecretPutInput = z.object({
   value: z.string().min(1).max(BOT_SECRET_VALUE_MAX_LENGTH),
 });
 export type BotSecretPutInput = z.infer<typeof BotSecretPutInput>;
+
+/** A credential the owner saves in a vault: the account's or, with scope "space", the Space's. */
+export const VaultPutInput = settingsScopeInput.extend({
+  destination: BotSecretDestinationInput,
+  value: BotSecretPutInput.shape.value,
+});
+export type VaultPutInput = z.infer<typeof VaultPutInput>;
+
+export const VaultRevealInput = settingsScopeInput.extend({ name: StoredBotSecretName });
+
+/** A saved value shown to its owner after they confirm it's them: a login's fields, or the value. */
+export const VaultRevealed = z.union([LoginSecretValue, z.object({ value: z.string() })]);
+export type VaultRevealed = z.infer<typeof VaultRevealed>;
 
 /**
  * What the owner can see about a saved credential. It never carries the protected value.

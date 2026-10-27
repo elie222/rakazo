@@ -7,8 +7,8 @@ import {
   browserSnapshotFromTool,
   parseBrowserActions,
 } from "./browser-tools.js";
-import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./executor.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
+import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 
 const context: AdapterContext = {
   operationId: "1",
@@ -689,7 +689,7 @@ describe("browser tools", () => {
     [
       "an unsupported kind",
       [{ kind: "press", ref: "e1" }],
-      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret",
+      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret, fill_card, fill_pay_token",
     ],
     ["no actions", [], "browser_act requires at least one action"],
     [

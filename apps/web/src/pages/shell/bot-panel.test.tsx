@@ -93,7 +93,6 @@ vi.mock("./avatar-studio-popover", () => ({
     />
   ),
 }));
-vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => <h3>Open work</h3> }));
 vi.mock("../KnowledgeSection", () => ({
   KnowledgeSection: () => <h3>Memory and skills</h3>,

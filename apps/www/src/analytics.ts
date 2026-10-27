@@ -11,3 +11,8 @@ if (posthogKey) {
     });
   });
 }
+
+export function capture(event: string) {
+  if (!posthogKey) return;
+  void import("posthog-js").then(({ default: posthog }) => posthog.capture(event));
+}

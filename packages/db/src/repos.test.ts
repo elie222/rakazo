@@ -240,6 +240,57 @@ describe("createRepos.listBots", () => {
     ]);
   });
 
+  it("uses text from the same window after a chart-only peer relay", async () => {
+    const messageFindMany = vi.fn(async () => [
+      { seq: 1, blocks: [{ kind: "text", text: "Earlier-window answer" }] },
+    ]);
+    const prisma = {
+      bot: { findMany: vi.fn(async () => [baseBot]) },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer", trigger: "bot_message" }]) },
+      $queryRaw: vi.fn(async () => [
+        {
+          id: "chart-reply",
+          threadId: "thread-1",
+          seq: 4,
+          role: "bot",
+          runId: "run-peer",
+          blocks: [{ kind: "chart", name: "Results", spec: {}, data: [] }],
+        },
+        {
+          id: "relay-receipt",
+          threadId: "thread-1",
+          seq: 3,
+          role: "bot",
+          runId: "run-peer",
+          replyToMessageId: "sent",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Coder",
+              text: "Peer result",
+              intent: "result",
+            },
+          ],
+        },
+        {
+          id: "answer",
+          threadId: "thread-1",
+          seq: 2,
+          role: "bot",
+          runId: null,
+          blocks: [{ kind: "text", text: "Current-window answer" }],
+        },
+      ]),
+      message: { findMany: messageFindMany },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Current-window answer" }),
+    ]);
+    expect(messageFindMany).not.toHaveBeenCalled();
+  });
+
   it("scans older messages when the newest window is only peer output", async () => {
     const messageFindMany = vi.fn(async () => [
       { seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Older visible answer" }] },

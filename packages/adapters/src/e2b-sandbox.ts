@@ -32,7 +32,6 @@ import { isSandboxGoneError } from "./sandbox-errors.js";
 const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
 
-/** The part of an E2B desktop sandbox handle this adapter uses. */
 export interface E2BDesktop {
   readonly sandboxId: string;
   setTimeout(timeoutMs: number): Promise<void>;

@@ -14,7 +14,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   await completeOnboarding(page);
   const settings = await openUserSettings(page);
   // Below the desktop breakpoint, where the section list scrolls sideways.
-  await page.setViewportSize({ width: 767, height: 700 });
+  await page.setViewportSize({ width: 640, height: 700 });
   const nav = settings.getByTestId("settings-nav");
   const next = settings.getByRole("button", { name: "Next settings sections" });
   const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);

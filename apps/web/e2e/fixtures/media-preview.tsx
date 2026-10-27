@@ -4,7 +4,9 @@ import { ArtifactFileCard } from "../../src/components/ArtifactFileCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import "../../src/styles.css";
 
-const audio = new URLSearchParams(location.search).has("audio");
+const params = new URLSearchParams(location.search);
+const audio = params.has("audio");
+const large = params.has("large");
 await bootstrapI18n();
 createRoot(document.getElementById("root")!).render(
   <I18nProvider i18n={i18n}>
@@ -12,10 +14,10 @@ createRoot(document.getElementById("root")!).render(
       <div className="max-w-md">
         <ArtifactFileCard
           target={{ botId: "demo-bot" }}
-          artifactId={audio ? "demo-audio" : "demo-video"}
-          name={audio ? "audio.wav" : "generated-video.mp4"}
-          mimeType={audio ? "audio/wav" : "video/mp4"}
-          size={audio ? 16044 : 902}
+          artifactId={large ? "demo-archive" : audio ? "demo-audio" : "demo-video"}
+          name={large ? "backup.zip" : audio ? "audio.wav" : "generated-video.mp4"}
+          mimeType={large ? "application/zip" : audio ? "audio/wav" : "video/mp4"}
+          size={large ? 1610612736 : audio ? 16044 : 902}
         />
       </div>
     </main>

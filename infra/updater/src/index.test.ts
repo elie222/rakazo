@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import type { ServerUpdateRun } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import type { UpdaterCommandRunner } from "./index.js";
 import {
   commandEnvironment,
   createUpdaterApp,
   restoreCheckoutArgv,
   runHostCommand,
-  type UpdaterCommandRunner,
 } from "./index.js";
 import { resolveUpdaterConfig } from "./updater-logic.js";
 
@@ -41,11 +41,11 @@ async function deployment(env = "RAKAZO_IMAGE_TAG=v1.0.0\nRAKAZO_IMAGE_TAG_PREVI
 }
 
 function ok(output = "") {
-  return { ok: true, exitCode: 0, output };
+  return { ok: true, exitCode: 0, stdout: output, output };
 }
 
 function failed(output: string) {
-  return { ok: false, exitCode: 1, output };
+  return { ok: false, exitCode: 1, stdout: "", output };
 }
 
 function request(app: ReturnType<typeof createUpdaterApp>, pathname: string, body?: unknown) {
@@ -535,6 +535,7 @@ describe("runHostCommand", () => {
     expect(refused).toEqual({
       ok: false,
       exitCode: null,
+      stdout: "",
       output: "Refusing to run an unexpected program.",
     });
     await expect(readFile(marker, "utf8")).rejects.toThrow();
@@ -543,6 +544,7 @@ describe("runHostCommand", () => {
     expect(nul).toEqual({
       ok: false,
       exitCode: null,
+      stdout: "",
       output: "Refusing to run an unexpected program.",
     });
   });

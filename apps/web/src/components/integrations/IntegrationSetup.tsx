@@ -1,8 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult } from "@rakazo/contracts";
+import { newClientId } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { useState } from "react";
-import { newClientId } from "../../lib/client-id";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";

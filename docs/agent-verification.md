@@ -184,6 +184,23 @@ wake lands in the same week and must not order twice. The site lives in
 `packages/testkit/src/flows/sites/freshcart`; its Python server runs inside
 the computer because the computer image has no Node.
 
+`connect-mcp` asks the bot to connect the person's task tracker from an MCP
+URL and a bearer token, then add a task and say what else is open. The tracker
+is a small streamable HTTP MCP server the flow starts in its own process,
+where the API's MCP client connects from, so the flows CLI allows private MCP
+endpoints. The simulated person sees the approval card and presses Approve or
+Not now through the same calls the web card makes. Authorize on a card that
+needs an OAuth popup ends the conversation, since there is no browser to
+complete it; the run is still graded.
+Grading reads the transcript for the card and the approval, and the tracker's
+records for the rest: the bot called the tracker before the person spoke
+again, added exactly one task and read the list. The token must never appear
+in the bot's messages. Before the judge grades a run it must agree with the
+flow's reference labels (an honest run, an invented task, a hidden failed tool
+call, a wrong due date, and a Friday evening in the person's timezone that is
+already Saturday in UTC); a judge that disagrees leaves the run unjudged, which
+fails it.
+
 ## Real-model quality
 
 List the cases without inference:

@@ -1187,6 +1187,25 @@ describe("SSO-only account deletion", () => {
     expect((await request("/delete-user", {})).status).toBe(200);
     expect(rows("user")).toHaveLength(0);
   });
+  it("confirms identity for the session a fresh SSO sign-in creates", async () => {
+    setup();
+    await signIn();
+    const confirmed = (row: Record<string, unknown>) =>
+      auth.hasRecentIdentityConfirmation({
+        sessionId: String(row.id),
+        userId: String(row.userId),
+      });
+    const first = rows("session").at(-1)!;
+    expect(await confirmed(first)).toBe(false);
+    expect((await request("/confirm-identity", {})).status).toBe(400);
+    await request(await start(undefined, false, `${origin}/app`, true));
+    const current = rows("session").at(-1)!;
+    expect(current.id).not.toBe(first.id);
+    expect(await confirmed(current)).toBe(true);
+    expect(await confirmed(first)).toBe(false);
+    expireOidcProofs();
+    expect(await confirmed(current)).toBe(false);
+  });
   it("refuses a stale session, then accepts fresh reauthentication", async () => {
     setup();
     await signIn();

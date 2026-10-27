@@ -1,5 +1,5 @@
-import { ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { FetchError, ResponseError } from "@boatdev/sdk";
+import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
@@ -131,6 +131,53 @@ describe("Boat API errors", () => {
       name: "AbortError",
     });
     expect(call).toHaveBeenCalledOnce();
+  });
+
+  it("reports a lost connection as unresponsive without resending the call", async () => {
+    const lost = new FetchError(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+      }),
+      "The request failed and the interceptors did not return an alternative response",
+    );
+    const call = vi.fn(async () => {
+      throw lost;
+    });
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((error as Error).cause).toBe(lost);
+    expect(call).toHaveBeenCalledOnce();
+  });
+
+  it("retries once when the connection drops during the TLS handshake", async () => {
+    const call = vi
+      .fn(async () => "answered")
+      .mockRejectedValueOnce(
+        new FetchError(
+          new TypeError("fetch failed", {
+            cause: Object.assign(
+              new Error(
+                "Client network socket disconnected before secure TLS connection was established",
+              ),
+              { code: "ECONNRESET" },
+            ),
+          }),
+          "The request failed and the interceptors did not return an alternative response",
+        ),
+      );
+    await expect(wrapBoatCall(call, "fake-key")()).resolves.toBe("answered");
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a cancelled request's error as it is", async () => {
+    const cancelled = new FetchError(
+      new DOMException("This operation was aborted", "AbortError"),
+      "The request failed and the interceptors did not return an alternative response",
+    );
+    const call = wrapBoatCall(async () => {
+      throw cancelled;
+    }, "fake-key");
+    await expect(call()).rejects.toBe(cancelled);
   });
 
   it("does not replace cancellation and network errors", async () => {

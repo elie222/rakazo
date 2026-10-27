@@ -191,7 +191,6 @@ describe("an import whose attempt did not commit", () => {
     await expect(
       createImportedBot(attempt, actor, { ...input, spawnKey: "onboarding:first" }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
-    // Nothing that only follows a committed import ran.
     expect(afterModelKey).not.toHaveBeenCalled();
     expect(announceRoutine).not.toHaveBeenCalled();
   });

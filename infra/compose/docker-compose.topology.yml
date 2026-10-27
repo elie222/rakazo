@@ -95,6 +95,8 @@ services:
       SANDBOX_PROVIDER: docker
       CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
       CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+      PAYMENT_WALLET_PROVIDER: ${PAYMENT_WALLET_PROVIDER:-none}
+      PAYMENT_WALLET_CLIENT_ID: ${PAYMENT_WALLET_CLIENT_ID:-}
       CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       AGENT_RUNTIME: scripted
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.

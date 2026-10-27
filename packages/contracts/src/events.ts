@@ -202,7 +202,14 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("steps"),
-    steps: z.array(z.object({ label: z.string(), count: z.number().int().positive() })),
+    steps: z.array(
+      z.object({
+        label: z.string(),
+        count: z.number().int().positive(),
+        /** What the bot wrote just before this step, kept out of its reply. */
+        note: z.string().optional(),
+      }),
+    ),
     durationMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
@@ -269,6 +276,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("image"),
+    /** Explicit visual input requested by a confirmation-aware client. */
+    imageHandling: z.literal("confirm").optional(),
     artifactId: Id,
     mimeType: z.string(),
     name: z.string(),

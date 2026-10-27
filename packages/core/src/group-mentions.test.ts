@@ -3,6 +3,7 @@ import {
   hasMentionToken,
   inferHandoffTargetBotId,
   inferHandoffTargetName,
+  memberName,
   resolveGroupTargetBotIds,
 } from "./group-mentions.js";
 
@@ -54,6 +55,141 @@ describe("resolveGroupTargetBotIds", () => {
         explicitMentions: ["b"],
       }),
     ).toEqual(["b"]);
+  });
+
+  it.each([undefined, ["review"]])(
+    "prefers the complete multi-word name with explicit mentions %j",
+    (explicitMentions) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@Design Review please review",
+          members: [
+            { id: "design", name: "Design" },
+            { id: "review", name: "Design Review" },
+          ],
+          explicitMentions,
+        }),
+      ).toEqual(["review"]);
+    },
+  );
+
+  it.each([undefined, ["helper"]])(
+    "does not broadcast a longer member name with explicit mentions %j",
+    (explicitMentions) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@EVERYONE Helper please review",
+          members: [...members, { id: "helper", name: "Everyone Helper" }],
+          explicitMentions,
+        }),
+      ).toEqual(["helper"]);
+    },
+  );
+
+  it.each(["@Design and @Design Review", "@Design Review and @Design"])(
+    "keeps separately written prefix mentions in %s",
+    (text) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text,
+          members: [
+            { id: "design", name: "Design" },
+            { id: "review", name: "Design Review" },
+          ],
+        }),
+      ).toEqual(["design", "review"]);
+    },
+  );
+
+  it("keeps an explicit prefix bot alongside a longer text mention", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@Design Review please review",
+        members: [
+          { id: "design", name: "Design" },
+          { id: "review", name: "Design Review" },
+        ],
+        explicitMentions: ["design"],
+      }),
+    ).toEqual(["design", "review"]);
+  });
+
+  it.each(["@Everyone Helper and @everyone", "@everyone and @Everyone Helper"])(
+    "keeps an actual broadcast in %s",
+    (text) => {
+      const roster = [...members, { id: "helper", name: "Everyone Helper" }];
+      expect(resolveGroupTargetBotIds({ text, members: roster })).toEqual([
+        "a",
+        "b",
+        "c",
+        "helper",
+      ]);
+    },
+  );
+
+  it("matches literal punctuation and Unicode names without overlapping prefixes", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "(@design.review), @ÉQUIPE (UX) and @ſupport team.",
+        members: [
+          { id: "default", name: "Default" },
+          { id: "design", name: "Design" },
+          { id: "review", name: "Design.Review" },
+          { id: "equipe", name: "Équipe" },
+          { id: "ux", name: " Équipe (UX) " },
+          { id: "support", name: "Support Team" },
+        ],
+      }),
+    ).toEqual(["review", "ux", "support"]);
+  });
+
+  it("keeps all members with the same complete name", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@Design Review",
+        members: [
+          { id: "design", name: "Design" },
+          { id: "review1", name: " Design Review " },
+          { id: "review2", name: "design review" },
+          { id: "blank", name: " " },
+        ],
+      }),
+    ).toEqual(["review1", "review2"]);
+  });
+
+  it.each([
+    ["@Équipe (UX)@Writer please review", ["ux", "writer"]],
+    ["@Équipe (UX)@everyone please review", ["default", "ux", "writer"]],
+  ])("keeps adjacent mentions in %s", (text, expected) => {
+    expect(
+      resolveGroupTargetBotIds({
+        text,
+        members: [
+          { id: "default", name: "Default" },
+          { id: "ux", name: "Équipe (UX)" },
+          { id: "writer", name: "Writer" },
+        ],
+      }),
+    ).toEqual(expected);
+  });
+
+  it("preserves reserved everyone precedence over an identically named member", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@everyone",
+        members: [...members, { id: "everyone", name: "Everyone" }],
+      }),
+    ).toEqual(["a", "b", "c", "everyone"]);
+  });
+
+  it("ignores embedded and incomplete tokens before falling back", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "contact@everyone name@Writer @Writer-more @Writer2",
+        members,
+      }),
+    ).toEqual(["a"]);
+    expect(resolveGroupTargetBotIds({ text: "@everyone", members: [] })).toEqual([]);
   });
 
   it("matches multi-word and Unicode names without prefix collisions", () => {
@@ -117,5 +253,15 @@ describe("inferHandoffTargetBotId", () => {
         { id: "research", name: "Research Writer" },
       ]),
     ).toBe("research");
+  });
+});
+
+describe("memberName", () => {
+  it("finds a member's roster name by bot id", () => {
+    const members = [{ botId: "b1", name: "Chief" }];
+    expect(memberName(members, "b1")).toBe("Chief");
+    expect(memberName(members, "b2")).toBeUndefined();
+    expect(memberName(members, undefined)).toBeUndefined();
+    expect(memberName(undefined, "b1")).toBeUndefined();
   });
 });
