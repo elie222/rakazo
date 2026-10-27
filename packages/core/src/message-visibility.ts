@@ -163,7 +163,11 @@ export function foldPeerReplies<T extends PresentableMessage>(
     if (
       (!includeText && !relayRunIds.has(message.runId)) ||
       !message.blocks.some(
-        (block) => block.kind === "text" || block.kind === "file" || block.kind === "image",
+        (block) =>
+          block.kind === "text" ||
+          block.kind === "file" ||
+          block.kind === "image" ||
+          block.kind === "chart",
       )
     )
       return false;
