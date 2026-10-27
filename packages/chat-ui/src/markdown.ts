@@ -375,7 +375,12 @@ export function linkLabel(text: string, href: string): string {
   const host = url.host.replace(/^www\./i, "");
   const path = decodedUrl(url.pathname.replace(/\/+$/, "")).replace(HIDDEN_PATH_CHARACTERS, "");
   const room = Math.max(SHORT_LINK_LABEL_MAX - host.length, SHORT_LINK_PATH_MIN);
-  return path.length > room ? `${host}${path.slice(0, room - 1)}…` : `${host}${path}`;
+  if (path.length <= room) return `${host}${path}`;
+  let end = room - 1;
+  const before = path.charCodeAt(end - 1);
+  const after = path.charCodeAt(end);
+  if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) end--;
+  return `${host}${path.slice(0, end)}…`;
 }
 
 /** The origin a link's site icon is looked up by, or undefined for links that get no icon. */
