@@ -119,7 +119,10 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
         </p>
       ) : null}
       {!compact && credentials.isSuccess && groups.length ? (
-        <div className="mb-3 flex items-center justify-end gap-2">
+        <div
+          data-testid="usage-sort-controls"
+          className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 sm:flex sm:justify-end"
+        >
           <span className="text-sm text-muted-foreground">
             <Trans>Sort by</Trans>
           </span>
@@ -127,7 +130,11 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
             value={order}
             onValueChange={(value) => setModelUsageSort(value as ModelUsageSort)}
           >
-            <SelectTrigger aria-label={t`Sort by`} data-testid="usage-sort-order" className="w-48">
+            <SelectTrigger
+              aria-label={t`Sort by`}
+              data-testid="usage-sort-order"
+              className="w-full max-w-48 sm:w-48"
+            >
               <SelectValue>
                 {order === "main-model"
                   ? t`Main model`

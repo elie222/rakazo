@@ -65,6 +65,12 @@ test("connected account quota shows remaining windows and refreshes", async ({
   await expect(quota).toContainText("0% remaining");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(quota).toBeVisible();
+  await expect(page.getByTestId("usage-sort-controls")).toHaveJSProperty(
+    "scrollWidth",
+    await page.getByTestId("usage-sort-controls").evaluate((element) => element.clientWidth),
+  );
+  const settings = await page.getByTestId("user-settings").boundingBox();
+  expect(settings?.height).toBeLessThan(760);
   await captureScreenshot(page, testInfo, "model-quota-narrow");
   expect(errors).toEqual([]);
 });
