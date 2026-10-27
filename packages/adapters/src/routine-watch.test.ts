@@ -779,6 +779,63 @@ describe("tickRoutineWatch on a computer", () => {
     expect(JSON.stringify(result.state)).not.toContain("ghp_quote");
   });
 
+  it("tracks command JSON that contains a content array", async () => {
+    const secret = 'ghp_quote"slash\\secretToken';
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine, updateMany, messages } = setupComputer(
+      { kind: "command", command: "cat doc.json", track: ["id"] },
+      {
+        stdout: JSON.stringify({
+          id: "doc-1",
+          title: `Note ${secret}`,
+          content: [{ type: "text", text: "Hello" }],
+        }),
+      },
+      undefined,
+      {
+        vault,
+        secretStore: {
+          async load(ciphertext: string) {
+            if (ciphertext === "cipher-gh") return secret;
+            throw new Error("unreadable");
+          },
+        },
+      },
+    );
+    routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: {},
+      detail: null,
+    } as never;
+    const tick = await tickRoutineWatch(deps, routine, target, scheduledAt);
+    expect(tick.run).toBe(true);
+    if (!tick.run) return;
+    expect(tick.state.entries).toHaveProperty("doc-1");
+    expect(tick.state.detail).toBe("New: Note [redacted]");
+    expect(tick.state.detail).not.toContain(secret);
+    expect(JSON.stringify(tick.state)).not.toContain("ghp_quote");
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(JSON.stringify(messages)).not.toContain("paused");
+  });
+
   it("runs a desktop command with the computer's shell", async () => {
     const command = "gh api user";
     const shells = [

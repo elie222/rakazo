@@ -519,7 +519,7 @@ function redactedRanges(value: string, secrets: Iterable<string>): Array<[number
   return ranges;
 }
 
-export function redactSecrets(value: string, secrets: string[]): string {
+export function redactSecrets(value: string, secrets: readonly string[]): string {
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {

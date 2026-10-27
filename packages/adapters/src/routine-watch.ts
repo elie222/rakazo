@@ -209,7 +209,11 @@ function itemFields(signature: string | undefined): string | undefined {
  * anywhere in the result that carries the first field is an item; that field
  * is its identity, and the rest decide whether it was updated.
  */
-export function readItems(data: unknown, track: readonly string[]): Reading {
+export function readItems(
+  data: unknown,
+  track: readonly string[],
+  secrets: readonly string[] = [],
+): Reading {
   const [identity, ...fields] = track;
   const items = new Map<string, { fields: string[]; titles: string[] }>();
   let count = 0;
@@ -232,7 +236,7 @@ export function readItems(data: unknown, track: readonly string[]): Reading {
     }
     for (const child of Object.values(record)) visit(child);
   };
-  visit(resultJson(data));
+  visit(redactJsonStrings(resultJson(data), secrets));
   // IDs can repeat in nested results. Preserve every object's values, independent of order.
   const entries = Object.fromEntries(
     [...items].map(([id, item]) => [
@@ -277,7 +281,8 @@ function resultJson(data: unknown): unknown {
   }
 }
 
-function redactJsonStrings(value: unknown, secrets: string[]): unknown {
+function redactJsonStrings(value: unknown, secrets: readonly string[]): unknown {
+  if (!secrets.length) return value;
   if (typeof value === "string") return redactSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, secrets));
   if (value && typeof value === "object") {
@@ -463,11 +468,9 @@ async function readComputer(
         `The check command exited with ${result.code}${stderr ? `: ${clip(stderr)}` : "."}`,
       );
     }
-    // Tracked output is JSON. Scrub strings after parse: a quote or backslash in a secret
-    // is escaped in the text, so redacting that text misses the secret and can break the JSON.
-    if (watch.track) {
-      return readItems(redactJsonStrings(resultJson(result.stdout), revealed), watch.track);
-    }
+    // Pass the raw JSON. Parsing it here makes a `content` array look like an MCP envelope
+    // on the second parse, and the watch pauses.
+    if (watch.track) return readItems(result.stdout, watch.track, revealed);
     const stdout = redactSecrets(result.stdout, revealed);
     return { fingerprint: sha256(stdout), detail: clip(stdout) || null };
   }
