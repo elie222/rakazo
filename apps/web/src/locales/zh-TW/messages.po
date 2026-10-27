@@ -4361,7 +4361,6 @@ msgstr "重新導向 URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "重新整理"
 
@@ -5868,10 +5867,6 @@ msgstr "正在驗證…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "版本"
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "檢視聊天"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

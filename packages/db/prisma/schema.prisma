@@ -777,6 +777,7 @@ model Run {
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   @@index([routineId])
   @@map("runs")
 }

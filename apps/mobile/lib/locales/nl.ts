@@ -1073,4 +1073,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Run history": "Rungeschiedenis",
+  "No runs yet": "Nog geen runs",
+  "Load older runs": "Oudere runs laden",
+  "Could not load run history": "Rungeschiedenis laden mislukt",
 };

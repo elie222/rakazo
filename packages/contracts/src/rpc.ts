@@ -134,7 +134,12 @@ import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
-import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
+import {
+  ROUTINE_HISTORY_PAGE_SIZE,
+  RoutineHistorySchema,
+  RoutineRunCursorSchema,
+  RunsListOutputSchema,
+} from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
@@ -667,7 +672,13 @@ export const appContract = {
       .output(z.array(z.object({ botId: Id, routines: z.array(RoutineSchema) }))),
     list: oc.input(botId).output(z.array(RoutineSchema)),
     history: oc
-      .input(z.object({ routineId: Id, before: RoutineRunCursorSchema.optional() }))
+      .input(
+        z.object({
+          routineId: Id,
+          before: RoutineRunCursorSchema.optional(),
+          limit: z.number().int().min(1).max(ROUTINE_HISTORY_PAGE_SIZE).optional(),
+        }),
+      )
       .output(RoutineHistorySchema),
     create: oc.input(CreateRoutineInput).output(RoutineSchema),
     update: oc

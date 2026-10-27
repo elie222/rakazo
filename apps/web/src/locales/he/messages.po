@@ -4360,7 +4360,6 @@ msgstr "כתובת הפניה (Redirect URI)"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "רענון"
 
@@ -5867,10 +5866,6 @@ msgstr "מאמת…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "גרסה"
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "צפייה בצ׳אט"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

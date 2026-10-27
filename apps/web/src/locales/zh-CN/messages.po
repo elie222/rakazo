@@ -4360,7 +4360,6 @@ msgstr "重定向 URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "刷新"
 
@@ -5867,10 +5866,6 @@ msgstr "正在校验…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr ""
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "查看聊天"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

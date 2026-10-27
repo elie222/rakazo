@@ -6,7 +6,12 @@ import type {
   ProductEvent,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { anySignal, isRunTerminalEvent, runThreadSubscription } from "@rakazo/core";
+import {
+  anySignal,
+  createRefreshCoalescer,
+  isRunTerminalEvent,
+  runThreadSubscription,
+} from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -287,6 +292,8 @@ export function useThreadSync({
       : (queryClient.getQueryData(threadKey) ??
         (seed?.thread?.botId === active.id ? seed.thread : undefined));
     if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
+    const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
+    const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
     void runThreadSubscription({
       signal: abort.signal,
@@ -340,12 +347,12 @@ export function useThreadSync({
           isRunTerminalEvent(event) ||
           event.type === "thread.cleared"
         ) {
-          void refreshBots().catch(() => undefined);
+          void sidebarRefresh.invalidate().catch(() => undefined);
         }
         if (event.type === "thread.message.created") {
           const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
           if (blocks.some((block) => block.kind === "child_bot")) {
-            void refreshBots().catch(() => undefined);
+            void sidebarRefresh.invalidate().catch(() => undefined);
           }
           if (event.payload.role === "bot") markBotReadIfVisible(active.id);
         }
@@ -355,13 +362,15 @@ export function useThreadSync({
           event.type === "skill.teaching.stopped"
         ) {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void refreshThread(active.id).catch(() => undefined);
+          void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
       },
     });
     return () => {
+      sidebarRefresh.dispose();
+      snapshotRefresh.dispose();
       abort.abort();
       const left = snapshotRef.current;
       if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
@@ -379,6 +388,8 @@ export function useThreadSync({
     const threadKey = cachedThreadKey({ groupId });
     const cachedThread = pendingJump ? undefined : queryClient.getQueryData(threadKey);
     if (cachedThread && snapshotRef.current?.groupId !== groupId) commitSnapshot(cachedThread);
+    const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
+    const snapshotRefresh = createRefreshCoalescer(() => refreshGroupThread(groupId));
     const abort = new AbortController();
     void runThreadSubscription({
       signal: abort.signal,
@@ -421,15 +432,17 @@ export function useThreadSync({
           event.type === "group.updated" ||
           isRunTerminalEvent(event)
         ) {
-          void refreshBots().catch(() => undefined);
+          void sidebarRefresh.invalidate().catch(() => undefined);
         }
         if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void refreshGroupThread(groupId).catch(() => undefined);
+          void snapshotRefresh.invalidate().catch(() => undefined);
         }
       },
     });
     return () => {
+      sidebarRefresh.dispose();
+      snapshotRefresh.dispose();
       abort.abort();
       const left = snapshotRef.current;
       if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);

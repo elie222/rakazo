@@ -5,6 +5,7 @@ import {
   BotSecretName,
   botSecretDestinationSchema,
   FLEET_TOOL_NAMES,
+  GenerateSecretInput,
   SecretAskPurpose,
   SecretHttpRequest,
   TICKET_COMMENT_MAX_LENGTH,
@@ -513,6 +514,12 @@ export const builtinAgentTools: ConnectorTool[] = [
     get inputSchema() {
       return secretAskToolSurface().inputSchema;
     },
+  },
+  {
+    name: "generate_secret",
+    description:
+      'Create a random password or key and save it for this bot and user; you never see the value. For a new website account, use type "login" with the sign-up site and the username, then type both into the form with browser_act fill_secret; add command: true only when a CLI also needs the password and the site offers no token or browser sign-in for it; that saves it as the command variable <name>-password too. For a value shell commands need, such as a database password you are setting up, use type "command"; it is exported like a request_secret command variable, so pass it from the environment instead of writing it out. Set rules only when the site or tool restricts characters, for example symbols: false for a value inside a URL. An existing credential is never replaced.',
+    inputSchema: z.toJSONSchema(GenerateSecretInput, { io: "input" }),
   },
   {
     name: "list_secrets",

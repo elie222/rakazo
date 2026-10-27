@@ -4360,7 +4360,6 @@ msgstr "URI de redirection"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "Actualiser"
 
@@ -5867,10 +5866,6 @@ msgstr "Vérification en cours…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "Version"
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "Voir la conversation"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

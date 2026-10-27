@@ -1092,4 +1092,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Run history": "執行紀錄",
+  "No runs yet": "還沒有執行紀錄",
+  "Load older runs": "載入更早的執行紀錄",
+  "Could not load run history": "無法載入執行歷史紀錄",
 };

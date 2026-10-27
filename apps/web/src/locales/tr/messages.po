@@ -4360,7 +4360,6 @@ msgstr "Yönlendirme URI'si"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "Yenile"
 
@@ -5867,10 +5866,6 @@ msgstr "Doğrulanıyor…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr ""
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "Sohbeti görüntüle"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

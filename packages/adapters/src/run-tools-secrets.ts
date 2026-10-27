@@ -16,6 +16,7 @@ import {
   findBotSecret,
   findCommandVariableConflict,
   forgetBotSecret,
+  generateBotSecret,
   listBotSecrets,
   normalizeSecretDestination,
   requestWithBotSecret,
@@ -47,6 +48,17 @@ export const secretTools: ToolHandlers = {
     const parsed = BotSecretName.safeParse(args.name);
     if (!parsed.success) return call.finish({ error: "A valid credential name is required." });
     return call.finish(await forgetBotSecret(deps.prisma, run, parsed.data));
+  },
+  async generate_secret(ctx, call) {
+    const { deps, run } = ctx;
+    const { result, redactions } = await generateBotSecret({
+      prisma: deps.prisma,
+      secretStore: deps.secretStore,
+      scope: run,
+      args: call.args,
+    });
+    if (redactions) addRunSecrets(ctx, redactions);
+    return call.finish(result);
   },
   async secret_request(ctx, call) {
     const { deps, run, context } = ctx;

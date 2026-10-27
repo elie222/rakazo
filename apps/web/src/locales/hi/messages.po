@@ -4360,7 +4360,6 @@ msgstr "रीडायरेक्ट URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "रीफ़्रेश करें"
 
@@ -5867,10 +5866,6 @@ msgstr "पुष्टि की जा रही है…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr ""
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "चैट देखें"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

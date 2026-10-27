@@ -4360,7 +4360,6 @@ msgstr "Omleidings-URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "Vernieuwen"
 
@@ -5867,10 +5866,6 @@ msgstr "Bezig met verifiëren…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "Versie"
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "Chat bekijken"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx

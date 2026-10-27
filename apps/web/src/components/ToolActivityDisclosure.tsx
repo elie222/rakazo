@@ -1,5 +1,6 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
+import { formatCompactDuration } from "@rakazo/core";
 import {
   Collapsible,
   CollapsibleContent,
@@ -7,7 +8,7 @@ import {
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { formatToolActivityDuration, toolStepCount } from "../lib/tool-activity-view";
+import { toolStepCount } from "../lib/tool-activity-view";
 
 type ToolStep = Extract<ThreadMessage["blocks"][number], { kind: "steps" }>["steps"][number];
 
@@ -75,7 +76,7 @@ export function ToolActivityDisclosure({
   durationMs?: number;
   children: ReactNode;
 }) {
-  const duration = formatToolActivityDuration(durationMs);
+  const duration = formatCompactDuration(durationMs);
   const toolCount = stepCount;
   return (
     <Collapsible

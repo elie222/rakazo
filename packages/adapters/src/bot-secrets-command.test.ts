@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { redactAgentCommandResult } from "./agent-environment.js";
 import {
@@ -16,70 +15,9 @@ import {
   shellCommandEnvironment,
   storeBotSecret,
 } from "./bot-secrets.js";
+import { fakeDatabase } from "./bot-secrets.test-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { EncryptedSecretStore } from "./secrets.js";
-
-// No database is available offline, so these run against an in-memory stand-in for the
-// bot_secrets table. Encryption, validation, and redaction are the real implementations.
-type Row = {
-  id: string;
-  userId: string;
-  spaceId: string;
-  botId: string;
-  name: string;
-  origin: string;
-  auth: unknown;
-  ciphertext: string;
-};
-type Where = Record<string, unknown>;
-
-function matches(row: Row, where: Where) {
-  return Object.entries(where).every(([key, value]) => {
-    const field = row[key as keyof Row];
-    if (value && typeof value === "object" && "not" in value) return field !== value.not;
-    return field === value;
-  });
-}
-
-function fakeDatabase() {
-  let rows: Row[] = [];
-  const botSecret = {
-    findFirst: vi.fn(
-      async ({ where }: { where: Where }) => rows.find((r) => matches(r, where)) ?? null,
-    ),
-    findMany: vi.fn(async ({ where, take }: { where: Where; take?: number }) =>
-      rows
-        .filter((row) => matches(row, where))
-        .sort((left, right) => left.name.localeCompare(right.name))
-        .slice(0, take ?? rows.length),
-    ),
-    count: vi.fn(
-      async ({ where }: { where: Where }) => rows.filter((r) => matches(r, where)).length,
-    ),
-    create: vi.fn(async ({ data }: { data: Row }) => {
-      rows.push({ ...data });
-    }),
-    update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
-      Object.assign(rows.find((row) => row.id === where.id)!, data);
-    }),
-    deleteMany: vi.fn(async ({ where }: { where: Where }) => {
-      const before = rows.length;
-      rows = rows.filter((row) => !matches(row, where));
-      return { count: before - rows.length };
-    }),
-  };
-  const client: Record<string, unknown> = {
-    botSecret,
-    secret: { count: vi.fn(async () => 0) },
-    integrationProviderConfig: { count: vi.fn(async () => 0) },
-    $queryRaw: vi.fn(async () => []),
-  };
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
-  return {
-    rows: () => rows,
-    prisma: client as unknown as PrismaClient,
-  };
-}
 
 const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");

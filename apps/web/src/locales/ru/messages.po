@@ -4360,7 +4360,6 @@ msgstr "URI перенаправления"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
-#: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "Обновить"
 
@@ -5867,10 +5866,6 @@ msgstr "Проверка…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr ""
-
-#: src/pages/RoutineRunHistory.tsx
-msgid "View chat"
-msgstr "Открыть чат"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
