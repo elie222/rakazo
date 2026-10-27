@@ -177,20 +177,37 @@ export function jsonSchemaParameters(
   schema: Record<string, unknown>,
   options: FieldOptions = {},
 ): ReturnType<typeof Type.Object> {
-  // Keep intersections intact until parametersFor flattens root combinators.
-  // Rebuilding only properties here drops allOf-only fields and their constraints.
-  if (Array.isArray(schema.allOf)) {
+  // Keep intersections and union siblings intact until parametersFor flattens them.
+  if (
+    Array.isArray(schema.allOf) ||
+    [schema.oneOf, schema.anyOf].some(
+      (variants) =>
+        Array.isArray(variants) &&
+        variants.some(
+          (variant) =>
+            typeof variant === "boolean" ||
+            (variant != null && typeof variant === "object" && "patternProperties" in variant),
+        ),
+    ) ||
+    ((Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) &&
+      Object.keys(schema).some(
+        (key) =>
+          key !== "oneOf" &&
+          key !== "anyOf" &&
+          key !== "title" &&
+          key !== "description" &&
+          !(key === "type" && schema.type === "object"),
+      )) ||
+    (Array.isArray(schema.oneOf) && Array.isArray(schema.anyOf))
+  ) {
     return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
   }
-  // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
-  // must stay a union. Falling through to properties would drop the exclusivity
-  // and re-expose both destinations as optional siblings.
   const alternatives = Array.isArray(schema.oneOf)
     ? schema.oneOf
     : Array.isArray(schema.anyOf)
       ? schema.anyOf
       : undefined;
-  if (alternatives && alternatives.length > 0 && schema.properties == null) {
+  if (alternatives && alternatives.length > 0) {
     return Type.Union(
       alternatives.map((variant) => jsonSchemaParameters(variant as Record<string, unknown>)),
       options,
