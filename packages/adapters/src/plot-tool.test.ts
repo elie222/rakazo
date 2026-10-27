@@ -83,6 +83,84 @@ describe("render_plot", () => {
     expect(color.legend).toBe(true);
   });
 
+  function exportedCategories(labels: string[], width = 640, title?: string) {
+    const spec: PlotSpec = {
+      width,
+      height: 200,
+      title,
+      marks: [{ type: "dot", options: { x: "x", y: "y", fill: "category" } }],
+    };
+    const data = labels.map((category, x) => ({ category, x, y: x + 1 }));
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    return new JSDOM(svg, { contentType: "image/svg+xml" }).window.document.documentElement;
+  }
+
+  it.each([undefined, "Categories"])("wraps ten exported legend entries with title %j", (title) => {
+    const labels = Array.from({ length: 10 }, (_, i) => `Category ${i + 1}`);
+    const svg = exportedCategories(labels, 640, title);
+    const swatches = Array.from(svg.children).filter((element) => element.tagName === "rect");
+    const rows = new Set(swatches.map((swatch) => swatch.getAttribute("y")));
+    expect(swatches).toHaveLength(10);
+    expect(rows.size).toBe(2);
+    const headerHeight = (title ? 28 : 0) + 48;
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe(String(headerHeight));
+    expect(svg.getAttribute("height")).toBe(String(200 + headerHeight));
+    expect(svg.getAttribute("viewBox")).toBe(`0 0 640 ${200 + headerHeight}`);
+    for (const label of labels) expect(svg.textContent).toContain(label);
+  });
+
+  it.each([64, 160, 320])("keeps long exported legend labels within a %ipx canvas", (width) => {
+    const labels = [
+      "A very long category label without losing any text",
+      "W".repeat(80),
+      "类别😀".repeat(16),
+    ];
+    const svg = exportedCategories(labels, width);
+    const text = Array.from(svg.children).filter((element) => element.tagName === "text");
+    expect(text).toHaveLength(labels.length);
+    for (const label of labels) expect(text.map((element) => element.textContent)).toContain(label);
+    for (const element of text) {
+      const lines = Array.from(element.querySelectorAll("tspan"));
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines) {
+        expect(Number(line.getAttribute("x"))).toBeLessThan(width - 8);
+      }
+    }
+    const plotY = Number(svg.querySelector("svg")?.getAttribute("y"));
+    const lastText = text.at(-1)!;
+    const lastBaseline = Number(lastText.getAttribute("y")) + (lastText.children.length - 1) * 16;
+    expect(plotY).toBeGreaterThan(lastBaseline);
+    expect(Number(svg.getAttribute("height"))).toBe(200 + plotY);
+  });
+
+  it("preserves single-row and legend-free export heights", () => {
+    const singleRow = exportedCategories(["Adelie", "Chinstrap", "Gentoo"], 640, "Species");
+    expect(singleRow.getAttribute("height")).toBe("252");
+    expect(singleRow.querySelector("svg")?.getAttribute("y")).toBe("52");
+    const noLegend = renderPlotSpecToSvg(
+      { height: 200, marks: [{ type: "frame" }] },
+      undefined,
+      dom(),
+    );
+    const svg = new JSDOM(noLegend, { contentType: "image/svg+xml" }).window.document
+      .documentElement;
+    expect(svg.getAttribute("height")).toBe("200");
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe("0");
+  });
+
+  it("fits an oversized grapheme without splitting it or adding an empty row", () => {
+    const label = "👨‍👩‍👧‍👦";
+    const svg = exportedCategories([label], 40);
+    const swatch = Array.from(svg.children).find((element) => element.tagName === "rect");
+    const line = svg.querySelector("text > tspan")!;
+    expect(swatch?.getAttribute("y")).toBe("5");
+    expect(line.textContent).toBe(label);
+    expect(line.parentElement?.children).toHaveLength(1);
+    expect(line.getAttribute("textLength")).toBe("9");
+    expect(line.getAttribute("lengthAdjust")).toBe("spacingAndGlyphs");
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe("24");
+  });
+
   const xlink = "http://www.w3.org/1999/xlink";
   const linkedDot = { type: "dot", options: { x: "x", y: "y", href: "url" } };
 
