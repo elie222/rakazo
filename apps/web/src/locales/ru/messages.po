@@ -4219,6 +4219,7 @@ msgstr "Вставьте OpenAI-совместимый адрес со свое�
 msgid "Paste the reply"
 msgstr "Вставьте ответ"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "Вставьте свой ключ API"

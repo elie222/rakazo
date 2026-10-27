@@ -4219,6 +4219,7 @@ msgstr "Pega la dirección compatible con OpenAI de tu servidor. Rakazo agrega /
 msgid "Paste the reply"
 msgstr "Pega la respuesta"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "Pega tu clave de API"

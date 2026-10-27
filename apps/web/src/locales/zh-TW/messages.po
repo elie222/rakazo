@@ -4220,6 +4220,7 @@ msgstr "貼上伺服器的 OpenAI 相容地址。需要時 Rakazo 會補上 /v1�
 msgid "Paste the reply"
 msgstr "貼上回覆"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "貼上你的 API 金鑰"

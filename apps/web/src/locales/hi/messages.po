@@ -4219,6 +4219,7 @@ msgstr "अपने सर्वर से OpenAI-संगत पता पे
 msgid "Paste the reply"
 msgstr "जवाब पेस्ट करें"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "अपनी API कुंजी पेस्ट करें"

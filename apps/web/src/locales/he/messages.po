@@ -4219,6 +4219,7 @@ msgstr "יש להדביק את הכתובת התואמת ל-OpenAI מהשרת. R
 msgid "Paste the reply"
 msgstr "הדביקו את התשובה"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "יש להדביק את מפתח ה-API"

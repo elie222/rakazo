@@ -4219,6 +4219,7 @@ msgstr "サーバーのOpenAI互換アドレスを貼り付けてください。
 msgid "Paste the reply"
 msgstr "返信を貼り付け"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "APIキーを貼り付け"

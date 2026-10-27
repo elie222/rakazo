@@ -4219,6 +4219,7 @@ msgstr "Plak het OpenAI-compatibele adres van je server. Rakazo voegt zo nodig /
 msgid "Paste the reply"
 msgstr "Plak het antwoord"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "Plak je API-sleutel"
