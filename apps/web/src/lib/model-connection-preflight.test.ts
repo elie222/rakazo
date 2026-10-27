@@ -82,6 +82,58 @@ describe("loadStoredModelAuth", () => {
     ).resolves.toMatchObject({ storedAuthKind: null, credentialUnreadable: true });
   });
 
+  it("uses the selected connection when multiple rows share a model", async () => {
+    const api = {
+      id: "api",
+      provider: "anthropic",
+      modelId: "claude",
+      authKind: "api_key" as const,
+    };
+    const oauth = {
+      id: "oauth",
+      provider: "anthropic",
+      modelId: "claude",
+      authKind: "oauth" as const,
+    };
+    for (const rows of [
+      [api, oauth],
+      [oauth, api],
+    ]) {
+      const stored = await loadStoredModelAuth("anthropic", async () => rows, "claude", "oauth");
+      expect(stored.storedAuthKind).toBe("oauth");
+      await expect(
+        loadStoredModelAuth("anthropic", async () => rows, "another-model", "api"),
+      ).resolves.toMatchObject({ storedAuthKind: "api_key" });
+      expect(
+        await runModelConnectionPreflight({ authKind: "oauth", provider: "anthropic", ...stored }),
+      ).toMatchObject({ ok: true });
+    }
+  });
+
+  it("does not substitute a different connection for an explicit ID", async () => {
+    const rows = [
+      { id: "oauth", provider: "anthropic", modelId: "claude", authKind: "oauth" as const },
+      { id: "other-provider", provider: "openai", modelId: "claude", authKind: "oauth" as const },
+      { id: "unreadable", provider: "anthropic", modelId: "claude" },
+    ];
+    for (const id of ["missing", "other-provider", "", null]) {
+      await expect(
+        loadStoredModelAuth("anthropic", async () => rows, "claude", id),
+      ).resolves.toEqual({
+        storedAuthKind: null,
+        credentialLookupFailed: false,
+        credentialUnreadable: false,
+      });
+    }
+    await expect(
+      loadStoredModelAuth("anthropic", async () => rows, "claude", "unreadable"),
+    ).resolves.toEqual({
+      storedAuthKind: null,
+      credentialLookupFailed: false,
+      credentialUnreadable: true,
+    });
+  });
+
   it("uses the credential that owns the selected model, not the newest provider row", async () => {
     const credentials = async () => [
       { provider: "anthropic", authKind: "oauth" as const, modelId: "claude-new" },

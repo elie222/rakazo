@@ -1218,6 +1218,51 @@ it.each([undefined, "api_key", "oauth"])(
   },
 );
 
+it("tests the selected subscription connection when another connection has the same model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "api",
+      label: "API",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "api_key",
+    },
+    {
+      id: "oauth",
+      label: "Subscription",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "oauth",
+    },
+  ]);
+  models.role.mockImplementation(async ({ role }: { role: string }) => ({
+    primary:
+      role === "main"
+        ? { provider: "anthropic", modelId: "claude-fixture", credentialId: "oauth" }
+        : null,
+    backups: [],
+  }));
+  const view = await renderSettings();
+  try {
+    await manage();
+    await click(buttons(view.container, "Test connection")[0]);
+    expect(view.container.textContent).toContain("A subscription credential is stored securely.");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
   models.list.mockResolvedValue([
