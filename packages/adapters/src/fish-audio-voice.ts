@@ -24,6 +24,7 @@ const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
 /** Top-scored public voices for the picker — not a full catalog crawl. */
 const PUBLIC_MODEL_PAGES = 5;
+const PUBLIC_MODEL_CONCURRENCY = 2;
 /** User-owned libraries are smaller; still hard-capped. */
 const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
@@ -64,18 +65,29 @@ export class FishAudioVoiceProvider implements VoiceProvider {
 
   /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
-    const signal = voiceDeadline(context.signal, LIST_VOICES_DEADLINE_MS);
+    const controller = new AbortController();
+    const signal = voiceDeadline(
+      AbortSignal.any([context.signal, controller.signal]),
+      LIST_VOICES_DEADLINE_MS,
+    );
     const listContext = { ...context, signal };
-    const [publicModels, ownModels] = await Promise.all([
-      fetchModels(apiKey, listContext, false),
-      fetchModels(apiKey, listContext, true),
-    ]);
-    const seen = new Set<string>();
-    return [...ownModels, ...publicModels].map(modelToVoice).filter((voice): voice is VoiceInfo => {
-      if (!voice || seen.has(voice.id)) return false;
-      seen.add(voice.id);
-      return true;
-    });
+    try {
+      const [publicModels, ownModels] = await Promise.all([
+        fetchModels(apiKey, listContext, false),
+        fetchModels(apiKey, listContext, true),
+      ]);
+      const seen = new Set<string>();
+      return [...ownModels, ...publicModels]
+        .map(modelToVoice)
+        .filter((voice): voice is VoiceInfo => {
+          if (!voice || seen.has(voice.id)) return false;
+          seen.add(voice.id);
+          return true;
+        });
+    } finally {
+      // Stop sibling or speculative requests when the listing finishes or fails.
+      controller.abort();
+    }
   }
 
   /** Synthesize one Rakazo utterance as bounded MP3 audio. */
@@ -143,24 +155,58 @@ async function fetchModels(
 ): Promise<Array<Record<string, unknown>>> {
   const maxPages = own ? OWN_MODEL_PAGES : PUBLIC_MODEL_PAGES;
   const models: Array<Record<string, unknown>> = [];
-  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
-    const params = new URLSearchParams({
-      page_size: String(MODEL_PAGE_SIZE),
-      page_number: String(pageNumber),
-      sort_by: "score",
-    });
-    if (own) params.set("self", "true");
-    const res = await fetch(`${API}/model?${params}`, {
-      headers: fishAudioHeaders(apiKey),
-      signal: context.signal,
-    });
-    const body = await readFishResponse(res);
-    if (!res.ok) rejectFish(res.status, "listing voices", body, apiKey);
-    const items = modelsFrom(body);
-    models.push(...items);
-    if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) break;
+  let pageNumber = 1;
+  let batchSize = 1;
+  while (pageNumber <= maxPages) {
+    // Only prefetch public pages backed by a known total, within the existing cap.
+    const pending = Array.from({ length: Math.min(batchSize, maxPages - pageNumber + 1) }, (_, i) =>
+      fetchModelPage(apiKey, context, own, pageNumber + i).then(
+        (page) => ({ page }),
+        (error: unknown) => ({ error }),
+      ),
+    );
+    for (const request of pending) {
+      const result = await request;
+      context.signal.throwIfAborted();
+      if ("error" in result) throw result.error;
+      const { body, ok, status } = result.page;
+      if (!ok) rejectFish(status, "listing voices", body, apiKey);
+      const items = modelsFrom(body);
+      models.push(...items);
+      if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) return models;
+      pageNumber++;
+      const total = (body as { total?: unknown } | null)?.total;
+      batchSize =
+        !own && typeof total === "number" && Number.isFinite(total)
+          ? Math.min(
+              PUBLIC_MODEL_CONCURRENCY,
+              Math.max(1, Math.ceil(total / MODEL_PAGE_SIZE) - pageNumber + 1),
+            )
+          : 1;
+    }
   }
   return models;
+}
+
+/** Read one page; classify HTTP errors only if the ordered walk still needs it. */
+async function fetchModelPage(
+  apiKey: string,
+  context: AdapterContext,
+  own: boolean,
+  pageNumber: number,
+) {
+  context.signal.throwIfAborted();
+  const params = new URLSearchParams({
+    page_size: String(MODEL_PAGE_SIZE),
+    page_number: String(pageNumber),
+    sort_by: "score",
+  });
+  if (own) params.set("self", "true");
+  const res = await fetch(`${API}/model?${params}`, {
+    headers: fishAudioHeaders(apiKey),
+    signal: context.signal,
+  });
+  return { body: await readFishResponse(res), ok: res.ok, status: res.status };
 }
 
 /** Decide whether another Fish Audio model page should be requested. */
