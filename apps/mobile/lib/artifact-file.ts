@@ -14,9 +14,10 @@ export function artifactShareFileName(name: string, mimeType: string): string {
       ? trimmed.slice(0, -ext.length)
       : trimmed;
   const stem = stemSource
-    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
+    .replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "_")
     .replace(/^\.+/, "")
     .replace(/^_+|_+$/g, "")
-    .slice(0, 80);
-  return `${stem || "attachment"}${ext}`;
+    .slice(0, 80)
+    .replace(/[\uD800-\uDBFF]$/u, "");
+  return `${stem && !/^[\p{M}_]+$/u.test(stem) ? stem : "attachment"}${ext}`;
 }
