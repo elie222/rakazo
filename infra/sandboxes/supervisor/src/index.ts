@@ -84,6 +84,7 @@ import {
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
+  pageBrowserNotReady,
   parseObservation,
   preferComputerControl,
   quiesceBrowserProfilesCommand,
@@ -91,6 +92,7 @@ import {
   resetManagedScreensCommand,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  screenRecentlyEnsured,
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
@@ -560,15 +562,18 @@ app.post("/computers/:id/browser", async (c) => {
     .parse(await c.req.json());
   const carriesSavedLogin =
     body.command === "act" && body.actions.some((step) => "origin" in step && step.origin);
-  try {
-    const { container, layout } = await managedScreen(
+  const screen = (reuseRecent: boolean) =>
+    managedScreen(
       c.req.param("id"),
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
+      true,
+      reuseRecent,
     );
-    const result = await runContainerCommand(
+  const runHelper = ({ container, layout }: Awaited<ReturnType<typeof screen>>) =>
+    runContainerCommand(
       container,
       // Arguments go over stdin: origin-bound fills carry saved logins and cards, and argv is
       // readable by any process in the computer, including the bot's own shell. Other commands
@@ -596,6 +601,12 @@ app.post("/computers/:id/browser", async (c) => {
         stdin: `${JSON.stringify(body)}\n`,
       },
     );
+  try {
+    const reusable = await screen(true);
+    let result = await runHelper(reusable);
+    // A reused screen skipped setup, so a browser that has since exited gets it before one retry.
+    if (reusable.reused && pageBrowserNotReady(result))
+      result = await runHelper(await screen(false));
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
@@ -1315,11 +1326,53 @@ async function managedScreen(
   screenId: string | undefined,
   screenLeaseId: string | undefined,
   restoreControl = true,
+  reuseRecent = false,
 ) {
   const { container } = await managedContainer(id, botId, spaceId);
-  return withComputerScreenLock(id, () =>
-    ensureManagedScreen(id, container, botId, screenId, screenLeaseId, restoreControl),
-  );
+  return withComputerScreenLock(id, async () => {
+    if (reuseRecent) {
+      const recent = await recentManagedScreen(id, container, botId, screenId, screenLeaseId);
+      if (recent) return recent;
+    }
+    const screen = await ensureManagedScreen(
+      id,
+      container,
+      botId,
+      screenId,
+      screenLeaseId,
+      restoreControl,
+    );
+    return { ...screen, reused: false };
+  });
+}
+
+/** Skip the setup script for a screen set up moments ago on this boot; callers hold the screen lock. */
+async function recentManagedScreen(
+  id: string,
+  container: Docker.Container,
+  botId: string | undefined,
+  screenId: string | undefined,
+  screenLeaseId: string | undefined,
+) {
+  const info = await container.inspect();
+  const startedAt = info.State?.StartedAt;
+  const assigned = currentComputerScreens(computerScreens, computerScreenBoots, id, startedAt);
+  const screenKey = screenId || botId || id;
+  const slot = assigned?.get(screenKey);
+  if (!assigned || !startedAt || computerScreenBoots.get(id) !== startedAt) return undefined;
+  if (!slot?.viewToken || !screenRecentlyEnsured(slot, Date.now())) return undefined;
+  // Still fence the lease: an older execution must not drive this screen.
+  const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);
+  return {
+    container,
+    info,
+    layout: screenPorts(index),
+    index,
+    screenKey,
+    browserProfile: browserProfilePathForScreen(screenKey),
+    viewToken: slot.viewToken,
+    reused: true,
+  };
 }
 
 async function ensureManagedScreen(
@@ -1344,6 +1397,8 @@ async function ensureManagedScreen(
     if (info.State?.StartedAt === screen.info.State?.StartedAt) {
       // Confirm the pending boot marker only after setup completes against the same boot.
       if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
+      const slot = computerScreens.get(id)?.get(screen.screenKey);
+      if (slot) slot.ensuredAt = Date.now();
       try {
         await rejoinComputerNetwork(info);
       } catch (error) {
