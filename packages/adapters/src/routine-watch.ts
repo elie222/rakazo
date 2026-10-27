@@ -6,12 +6,13 @@ import type {
   ConnectorProvider,
   JobPublisher,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
-import { connectorKindFromToolName, watchToolRefusal } from "@rakazo/core";
+import { connectorKindFromToolName, redactSecrets, watchToolRefusal } from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -20,10 +21,12 @@ import {
   parseComputerMode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { shellCommandEnvironment } from "./bot-secrets.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -53,6 +56,8 @@ export type RoutineWatchDeps = {
   connector?: ConnectorProvider;
   /** The shell tool's desktop-protection guard: why a command is refused on a graphical computer. */
   commandRefusal?: (command: string) => string | undefined;
+  /** Decrypts Vault command credentials. Absent, a command watch runs without them. */
+  secretStore?: SecretStore;
 };
 
 export type RoutineWatchTarget = {
@@ -410,14 +415,44 @@ async function readComputer(
   if (watch.kind === "command") {
     // Runs this shell command on the bot's computer every interval, in its folder,
     // without a model or per-run approval: equivalent to the bot running it itself.
-    const result = await run(deps, computer, ctx, ["sh", "-lc", watch.command ?? ""], cwd);
+    const secrets = new Set<string>();
+    const secretStore = deps.secretStore;
+    const commandEnvironment = secretStore
+      ? await shellCommandEnvironment({
+          prisma: deps.prisma,
+          secretStore,
+          scope: { spaceId: routine.spaceId, userId: routine.userId },
+          registerRedactions: (values) => {
+            for (const value of values) secrets.add(value);
+          },
+        })
+      : undefined;
+    const shellEnvironment =
+      bot.computer.kind === "desktop" ? await deps.sandbox.environment?.(computer, ctx) : undefined;
+    const argv = shellEnvironment
+      ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
+      : ["sh", "-lc", watch.command ?? ""];
+    const result = await run(
+      deps,
+      computer,
+      ctx,
+      argv,
+      cwd,
+      commandEnvironment && {
+        env: Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
+        unsetEnv: commandEnvironment.unsetEnv,
+      },
+    );
+    const revealed = [...secrets];
+    const stdout = redactSecrets(result.stdout, revealed);
+    const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {
       throw new RoutineWatchError(
-        `The check command exited with ${result.code}${result.stderr ? `: ${clip(result.stderr)}` : "."}`,
+        `The check command exited with ${result.code}${stderr ? `: ${clip(stderr)}` : "."}`,
       );
     }
-    if (watch.track) return readItems(result.stdout, watch.track);
-    return { fingerprint: sha256(result.stdout), detail: clip(result.stdout) || null };
+    if (watch.track) return readItems(stdout, watch.track);
+    return { fingerprint: sha256(stdout), detail: clip(stdout) || null };
   }
 
   const paths = (watch.paths ?? []).map((path) => {
@@ -467,6 +502,7 @@ async function run(
   ctx: AdapterContext,
   argv: string[],
   cwd: string | undefined,
+  launch?: { env?: Record<string, string>; unsetEnv: string[] },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   let stdout = "";
   let stderr = "";
@@ -474,7 +510,13 @@ async function run(
   try {
     for await (const event of deps.sandbox.execute(
       computer,
-      { argv, cwd, timeoutMs: CHECK_TIMEOUT_MS },
+      {
+        argv,
+        cwd,
+        timeoutMs: CHECK_TIMEOUT_MS,
+        ...(launch?.env ? { env: launch.env } : {}),
+        ...(launch ? { unsetEnv: launch.unsetEnv } : {}),
+      },
       ctx,
     )) {
       if (event.type === "stdout") stdout += event.data;
