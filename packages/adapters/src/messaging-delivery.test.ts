@@ -1,7 +1,7 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
-import { MessagingSendError } from "./chat-sdk-surface.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
 import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
@@ -9,6 +9,7 @@ import {
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
 } from "./messaging-delivery.js";
+import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-1",
@@ -1192,6 +1193,61 @@ describe("deliverMessagingOutbound conversation order", () => {
       context,
     );
     expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending", "sent"]);
+  });
+});
+
+describe("WhatsApp rendered outbound delivery", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps surrogate pairs intact after Markdown rendering and preserves retry behavior", async () => {
+    // The adapter expands this auto-link so the emoji begins at UTF-16 offset 4095.
+    const link = `www.${"a".repeat(2000)}.test`;
+    const body = `${link} ${"x".repeat(65)}😀zzz`;
+    const rendered = `[${link}](http://${link}) ${"x".repeat(65)}😀zzz`;
+    expect(body.length).toBeLessThan(4096);
+    expect(rendered.indexOf("😀")).toBe(4095);
+    const sends: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init: RequestInit) => {
+        const payload = JSON.parse(String(init.body)) as { text: { body: string } };
+        sends.push(payload.text.body);
+        if (sends.length === 2) {
+          return Response.json({ error: { message: "temporary error", code: 1 } }, { status: 500 });
+        }
+        return Response.json({ messages: [{ id: `wamid.${sends.length}` }] });
+      }),
+    );
+    const messaging = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        whatsappAccessToken: "test-token",
+        whatsappPhoneNumberId: "123",
+        whatsappAppSecret: "test-secret",
+        whatsappVerifyToken: "test-verify",
+      }),
+    );
+    const deps = createDeps({
+      identity: {
+        provider: "whatsapp",
+        address: "15551234567",
+        dmThreadId: "whatsapp:123:15551234567",
+      },
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: body }] }],
+    });
+    await deliverMessagingOutbound({ ...deps, messaging }, { runId: "run-1" }, context);
+
+    expect(deps.rows).toHaveLength(1);
+    expect(deps.rows[0]!.status).toBe("pending");
+    expect(sends).toHaveLength(2);
+    expect(sends.every((text) => text.length <= 4096 && !/[\uD800-\uDFFF]/u.test(text))).toBe(true);
+    expect(sends.join("")).toBe(rendered);
+    deps.rows[0]!.nextAttemptAt = new Date(Date.now() - 1);
+    await deliverMessagingOutbound({ ...deps, messaging }, { runId: "run-1" }, context);
+
+    // The existing queue retries the whole row when a later SDK send fails.
+    expect(sends.slice(2)).toEqual(sends.slice(0, 2));
+    expect(deps.rows).toHaveLength(1);
+    expect(deps.rows[0]!.status).toBe("sent");
   });
 });
 

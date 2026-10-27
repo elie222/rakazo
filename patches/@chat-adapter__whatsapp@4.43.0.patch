@@ -1,0 +1,33 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -675,7 +675,7 @@
+     )
+   };
+ }
+-function splitMessage(text2) {
++function splitMessage(text2, keepSurrogatePairs = false) {
+   if (text2.length <= WHATSAPP_MESSAGE_LIMIT) {
+     return [text2];
+   }
+@@ -689,6 +689,11 @@
+     }
+     if (breakIndex === -1 || breakIndex < WHATSAPP_MESSAGE_LIMIT / 2) {
+       breakIndex = WHATSAPP_MESSAGE_LIMIT;
++    }
++    if (keepSurrogatePairs && breakIndex > 0 &&
++        /[\uD800-\uDBFF]/.test(remaining[breakIndex - 1]) &&
++        /[\uDC00-\uDFFF]/.test(remaining[breakIndex])) {
++      breakIndex--;
+     }
+     chunks.push(remaining.slice(0, breakIndex).trimEnd());
+     remaining = remaining.slice(breakIndex).trimStart();
+@@ -1529,7 +1534,7 @@
+    * boundaries (\n), and finally at the character limit as a last resort.
+    */
+   splitMessage(text2) {
+-    return splitMessage(text2);
++    return splitMessage(text2, true);
+   }
+   /**
+    * Send a single text message via the Cloud API (must be within the
