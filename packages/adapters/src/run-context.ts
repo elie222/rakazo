@@ -8,7 +8,7 @@ import type {
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
-import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
+import type { ComputerMode, MessageBlock, SpacePermission } from "@rakazo/contracts";
 import type { ToolCallStreak } from "@rakazo/core";
 import { createStreamingRedactor } from "@rakazo/core";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -192,6 +192,13 @@ export interface RunTools {
   approvedReplays: ApprovedEffectReplayQueue;
 }
 
+/** Space RBAC for connector tools when this run is a shared Global bot instance. */
+export type GlobalBotRunAuth = {
+  globalBotId: string;
+  role: string;
+  permissions: ReadonlySet<SpacePermission>;
+};
+
 export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
   /** Exact URLs a web search returned; fetching one needs no approval. */
   searchResultUrls: Set<string>;
@@ -229,6 +236,8 @@ export interface RunContext {
   source: RunSource;
   computer: RunComputerContext;
   tools: RunTools;
+  /** Present when `bot.globalBotId` is set; gates connector tools via finance.* permissions. */
+  globalBot: GlobalBotRunAuth | null;
   trust: RunTrust;
   memory: {
     semantic: SemanticMemoryProvider | null;

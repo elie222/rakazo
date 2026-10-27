@@ -105,6 +105,7 @@ import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
 import { lazyRunComputer } from "./run-computer.js";
 import type {
+  GlobalBotRunAuth,
   RunComputerUseState,
   RunContext,
   RunLeaseState,
@@ -168,6 +169,11 @@ import {
 } from "./run-turn-images.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
+import {
+  loadGlobalBotConnectorPacks,
+  loadSpaceActorPermissions,
+  resolveGlobalBotPackSkills,
+} from "./global-bot-connectors.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 import {
   continueRunClaimFence,
@@ -450,6 +456,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
         ]);
+        let agentSkillCatalog = agentSkills;
+        let globalBotAuth: GlobalBotRunAuth | null = null;
+        if (bot.globalBotId) {
+          const packs = await loadGlobalBotConnectorPacks(deps.prisma, bot.globalBotId);
+          const packSkills = await resolveGlobalBotPackSkills(
+            deps.prisma,
+            { spaceId: run.spaceId, userId: run.userId },
+            packs,
+          );
+          if (packSkills.length) {
+            const seen = new Set(agentSkillCatalog.map((skill) => skill.id));
+            agentSkillCatalog = [
+              ...agentSkillCatalog,
+              ...packSkills.filter((skill) => !seen.has(skill.id)),
+            ];
+          }
+          const spaceAuth = await loadSpaceActorPermissions(deps.prisma, {
+            spaceId: run.spaceId,
+            userId: run.userId,
+          });
+          globalBotAuth = {
+            globalBotId: bot.globalBotId,
+            role: spaceAuth.role,
+            permissions: spaceAuth.permissions,
+          };
+        }
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -1141,6 +1173,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             connectedPlugins,
             approvedReplays: approvedEffectReplays,
           },
+          globalBot: globalBotAuth,
           trust: { ...trustLoaders, searchResultUrls },
           memory: { semantic: semanticMemory, scope: memoryScope },
           scripted,
@@ -1168,14 +1201,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "\n",
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
-        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
+        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkillCatalog);
         const missingImagesInstruction = missingTurnImagesInstruction(
           turnBlocks,
           currentTurnImages,
         );
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
-          agentSkills,
+          agentSkillCatalog,
         );
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),

@@ -62,6 +62,10 @@ import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-sele
 import { callMediaTool } from "./run-tools-files.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
+import {
+  connectorToolPermissionNeeded,
+  denyConnectorToolMessage,
+} from "./global-bot-connectors.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
@@ -131,6 +135,14 @@ export async function gateToolCall(
   const declaredReadOnly = viaConnector
     ? (resolvedTool ?? ctx.tools.connector.get(name))?.readOnly
     : undefined;
+  // Shared Global bots (e.g. Dana) gate connector tools by space finance permissions
+  // before the usual per-user approval rules run.
+  if (viaConnector && ctx.globalBot) {
+    const needed = connectorToolPermissionNeeded(name, declaredReadOnly);
+    if (!ctx.globalBot.permissions.has(needed)) {
+      return { result: { error: denyConnectorToolMessage(name, needed) } };
+    }
+  }
   // A Composio batch names its actions in tools[].tool_slug, so rules and the read/write
   // check look at each action, never the batch tool. An entry naming no action asks.
   const composioBatch = composioBatchActions(name, args);

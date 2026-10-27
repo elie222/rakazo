@@ -83,6 +83,22 @@ export const SetGlobalBotConnectorsInput = z.object({
 });
 export type SetGlobalBotConnectorsInput = z.infer<typeof SetGlobalBotConnectorsInput>;
 
+/**
+ * MCP binding for a Connector pack on a Global bot.
+ * `serverSlugs` names space MCP servers exposed when that Global bot runs.
+ */
+export const ConnectorMcpConfigSchema = z.object({
+  serverSlugs: z.array(CatalogSlug).default([]),
+  /** When set for a slug, only those tool names are offered; otherwise all tools. */
+  allowedToolsBySlug: z.record(z.string(), z.array(z.string().min(1).max(200))).optional(),
+});
+export type ConnectorMcpConfig = z.infer<typeof ConnectorMcpConfigSchema>;
+
+export function parseConnectorMcpConfig(value: unknown): ConnectorMcpConfig {
+  const parsed = ConnectorMcpConfigSchema.safeParse(value ?? {});
+  return parsed.success ? parsed.data : { serverSlugs: [] };
+}
+
 export const ConnectorSchema = z.object({
   id: Id,
   slug: CatalogSlug,

@@ -61,7 +61,18 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import {
+  loadGlobalBotConnectorPacks,
+  resolveGlobalBotPackMcpAccess,
+} from "./global-bot-connectors.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+
+type AuthorizedMcpServer = {
+  serverId: string;
+  server: McpServer;
+  allowAllTools: boolean;
+  allowedTools: unknown;
+};
 
 type SessionEntry = {
   session: McpSession;
@@ -394,7 +405,11 @@ export class McpConnector implements ConnectorProvider {
     return resolveCatalogCall(call, catalogEntries(await this.authorizedTools(context)));
   }
 
-  private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
+  /**
+   * BotMcpServer rows for this user, plus MCP servers named by Connector packs on a
+   * Global bot instance (so Dana and peers get pack tools without per-user assigns).
+   */
+  private async resolveAuthorizedServers(context: AdapterContext): Promise<AuthorizedMcpServer[]> {
     if (!context.botId) return [];
     const assignments = await this.prisma.botMcpServer.findMany({
       where: {
@@ -405,6 +420,55 @@ export class McpConnector implements ConnectorProvider {
       },
       include: { server: true },
     });
+    const authorized: AuthorizedMcpServer[] = assignments.map((assignment) => ({
+      serverId: assignment.serverId,
+      server: assignment.server,
+      allowAllTools: assignment.allowAllTools,
+      allowedTools: assignment.allowedTools,
+    }));
+    const seen = new Set(authorized.map((row) => row.serverId));
+    // Personal-bot fixtures may omit prisma.bot; skip pack binding when unavailable.
+    const bot = await this.prisma.bot
+      ?.findFirst?.({
+        where: { id: context.botId, spaceId: context.spaceId },
+        select: { globalBotId: true },
+      })
+      .catch(() => null);
+    if (!bot?.globalBotId) return authorized;
+    try {
+      const packs = await loadGlobalBotConnectorPacks(this.prisma, bot.globalBotId);
+      const packAccess = await resolveGlobalBotPackMcpAccess(this.prisma, {
+        spaceId: context.spaceId,
+        userId: context.userId,
+        packs,
+      });
+      const missingIds = packAccess.map((row) => row.serverId).filter((id) => !seen.has(id));
+      if (missingIds.length === 0) return authorized;
+      const servers = await this.prisma.mcpServer.findMany({
+        where: { id: { in: missingIds }, enabled: true },
+      });
+      const byId = new Map(servers.map((server) => [server.id, server]));
+      for (const access of packAccess) {
+        if (seen.has(access.serverId)) continue;
+        const server = byId.get(access.serverId);
+        if (!server) continue;
+        seen.add(access.serverId);
+        authorized.push({
+          serverId: access.serverId,
+          server,
+          allowAllTools: access.allowAllTools,
+          allowedTools: access.allowedTools,
+        });
+      }
+    } catch {
+      // Pack tables may be absent in older connector unit fixtures.
+    }
+    return authorized;
+  }
+
+  private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
+    if (!context.botId) return [];
+    const assignments = await this.resolveAuthorizedServers(context);
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
@@ -446,7 +510,7 @@ export class McpConnector implements ConnectorProvider {
           );
           this.discoveryBackoff.delete(key);
           this.unavailable.delete(key);
-          void this.recordHealth(assignment.server.id, {
+          void this.recordHealth(assignment.serverId, {
             status: "ok",
             message: null,
             toolCount: listed.tools.length,
@@ -595,16 +659,8 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tools require a bot context" };
       return;
     }
-    const assignment = await this.prisma.botMcpServer.findFirst({
-      where: {
-        botId: context.botId,
-        serverId: call.route.resourceId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        server: { enabled: true },
-      },
-      include: { server: true },
-    });
+    const authorized = await this.resolveAuthorizedServers(context);
+    const assignment = authorized.find((row) => row.serverId === call.route?.resourceId);
     if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
       const reason =
         this.unavailable.get(this.sessionKey(assignment.server, context)) ??

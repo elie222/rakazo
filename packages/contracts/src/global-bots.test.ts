@@ -4,6 +4,7 @@ import {
   CreateConnectorInput,
   CreateGlobalBotInput,
   GlobalBotSchema,
+  parseConnectorMcpConfig,
   SetSpacePermissionsInput,
   UpdateGlobalBotInput,
 } from "./global-bots.js";
@@ -84,5 +85,19 @@ describe("SetSpacePermissionsInput", () => {
         roles: [{ role: "member", permissions: ["finance.read", "finance.write"] }],
       }).roles[0]?.permissions,
     ).toEqual(["finance.read", "finance.write"]);
+  });
+});
+
+describe("parseConnectorMcpConfig", () => {
+  it("defaults empty configs and keeps allowlists", () => {
+    expect(parseConnectorMcpConfig(undefined)).toEqual({ serverSlugs: [] });
+    expect(parseConnectorMcpConfig({ serverSlugs: ["books"], allowedToolsBySlug: { books: ["list"] } })).toEqual({
+      serverSlugs: ["books"],
+      allowedToolsBySlug: { books: ["list"] },
+    });
+  });
+
+  it("falls back when the payload is invalid", () => {
+    expect(parseConnectorMcpConfig({ serverSlugs: ["BAD SLUG"] })).toEqual({ serverSlugs: [] });
   });
 });
