@@ -10,7 +10,8 @@ test("asks before running a command on the user's computer", async ({ page }, te
   await composer.fill("run hostname on my computer");
   await page.keyboard.press("Enter");
 
-  await expect(page.getByText("Run on your computer?", { exact: true })).toBeVisible({
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript.getByText("Run on your computer?", { exact: true })).toBeVisible({
     timeout: 60_000,
   });
   const allow = page.getByRole("button", { name: "Allow for this chat", exact: true });
@@ -19,7 +20,6 @@ test("asks before running a command on the user's computer", async ({ page }, te
   await captureScreenshot(page, testInfo, "user-computer-approval-card");
 
   await allow.click();
-  const transcript = page.getByTestId("transcript");
   await expect(transcript.getByText("Allowed for this chat", { exact: true })).toBeVisible();
 
   // The emulated desktop (see UserDeviceEmulator) records what it ran; tool output is not
