@@ -1,6 +1,7 @@
 import { attachmentMaxBytes } from "@rakazo/contracts";
+import * as core from "@rakazo/core";
 import { inferAttachmentMimeType } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
@@ -86,10 +87,38 @@ describe("filterPickedAttachments", () => {
       size: 12,
       contentBase64: "aGVsbG8=",
     };
+    const ids = vi.spyOn(core, "newClientId").mockReturnValueOnce("a").mockReturnValueOnce("b");
     const result = filterPickedAttachments(0, [candidate, candidate]);
-    expect(result.attachments.map((attachment) => attachment.id)).toEqual([
-      "notes.txt-12-0",
-      "notes.txt-12-1",
+    ids.mockRestore();
+    expect(result.attachments).toHaveLength(2);
+    expect(new Set(result.attachments.map((attachment) => attachment.id)).size).toBe(2);
+    expect(result.skipped).toEqual([]);
+  });
+  it("keeps identities distinct after removing an earlier pick and selecting more files", () => {
+    const a = { name: "first.txt", mimeType: "text/plain", size: 4, contentBase64: "YWFhYQ==" };
+    const b = { name: "same.txt", mimeType: "text/plain", size: 4, contentBase64: "YmJiYg==" };
+    const c = { ...b, contentBase64: "Y2NjYw==" };
+    const d = { ...b, contentBase64: "ZGRkZA==" };
+    const ids = vi.spyOn(core, "newClientId");
+    ids
+      .mockReturnValueOnce("a")
+      .mockReturnValueOnce("b")
+      .mockReturnValueOnce("c")
+      .mockReturnValueOnce("d");
+    const first = filterPickedAttachments(0, [a, b]);
+    const remaining = first.attachments.slice(1);
+    const next = filterPickedAttachments(remaining.length, [c, d]);
+    ids.mockRestore();
+    const attachments = [...remaining, ...next.attachments];
+
+    expect(first.skipped).toEqual([]);
+    expect(next.skipped).toEqual([]);
+    expect(attachments.map(({ contentBase64 }) => contentBase64)).toEqual([
+      b.contentBase64,
+      c.contentBase64,
+      d.contentBase64,
     ]);
+    expect(new Set(attachments.map(({ id }) => id)).size).toBe(3);
+    expect(new Set([...first.attachments, ...next.attachments].map(({ id }) => id)).size).toBe(4);
   });
 });
