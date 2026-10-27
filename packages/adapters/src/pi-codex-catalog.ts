@@ -299,6 +299,25 @@ function codexAccountHandle(
   };
 }
 
+/**
+ * The account's own row for this slug, when the catalog can be read.
+ * Missing, unreadable, and failed catalogs return undefined so callers keep
+ * the static answer instead of inventing one.
+ */
+export async function codexLiveModel(
+  catalog: CodexLiveCatalog | undefined,
+  userId: string,
+  secret: StoredModelSecret,
+  modelId: string,
+  opts?: CodexLiveReadOptions,
+): Promise<CodexCatalogModel | undefined> {
+  if (!catalog || secret.kind !== "oauth") return undefined;
+  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
+  if (!account) return undefined;
+  const models = await catalog.read(userId, account, opts).catch(() => undefined);
+  return models?.find((model) => model.slug === modelId);
+}
+
 /** Consulted only when the static auth gate already rejected a catalog model. */
 export async function codexLiveListsModel(
   catalog: CodexLiveCatalog | undefined,
@@ -307,11 +326,7 @@ export async function codexLiveListsModel(
   modelId: string,
   opts?: CodexLiveReadOptions,
 ): Promise<boolean> {
-  if (!catalog || secret.kind !== "oauth") return false;
-  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
-  if (!account) return false;
-  const models = await catalog.read(userId, account, opts).catch(() => undefined);
-  return Boolean(models?.some((model) => model.slug === modelId));
+  return Boolean(await codexLiveModel(catalog, userId, secret, modelId, opts));
 }
 
 /**
@@ -432,9 +447,12 @@ export function applyCodexLiveCatalog(
 
 function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCatalogEntry {
   const thinkingLevels = liveThinkingLevels(model);
+  // The account list decides image input for bundled and live-only slugs.
+  // A text-only answer must win over an image-capable sibling guess.
+  const withImages = { ...entry, images: model.supportsImages };
   return thinkingLevels
-    ? { ...entry, reasoning: true, thinkingLevels }
-    : { ...entry, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withImages, reasoning: true, thinkingLevels }
+    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

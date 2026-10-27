@@ -61,7 +61,7 @@ const HANG_UP_PROMPT =
   "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
 export function threadsRoutes(ctx: RouterContext) {
-  const { deps, authed, callsEnabled } = ctx;
+  const { deps, authed, callsEnabled, codexCatalog } = ctx;
   return {
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {
@@ -171,6 +171,7 @@ export function threadsRoutes(ctx: RouterContext) {
                   secrets: deps.secrets,
                   deployment,
                   hostedProvider: funding?.funding === "credits" ? deployment?.provider : undefined,
+                  codexCatalog,
                 }
               : undefined,
           },

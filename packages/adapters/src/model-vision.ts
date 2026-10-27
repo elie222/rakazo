@@ -2,9 +2,10 @@ import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
-import { liveModelSibling } from "./pi-live-model.js";
+import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
@@ -81,12 +82,13 @@ export function resolveModelRefForVisionCheck(
 
 /**
  * Unknown models are treated as text-only. An explicit connection capability
- * override is honored for OpenAI-compatible models.
+ * override is honored for OpenAI-compatible models. For Codex, `acceptsImages`
+ * is the account catalog's answer when a run has one, and is left unused when absent.
  */
 export function modelAcceptsImageInput(
   provider: string,
   modelId: string,
-  acceptsImages = false,
+  acceptsImages?: boolean,
 ): boolean {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id) return false;
@@ -102,6 +104,9 @@ export function modelAcceptsImageInput(
     model = models.getModel("openrouter", resolved.id);
   }
   model ??= liveModelSibling(models, resolved.provider, resolved.id);
+  if (model && resolved.provider === CHATGPT_OAUTH_PROVIDER) {
+    model = withLiveImageInput(model, acceptsImages);
+  }
   return Boolean(model?.input.includes("image"));
 }
 
