@@ -728,6 +728,57 @@ describe("tickRoutineWatch on a computer", () => {
     expect(saved).not.toContain(secret);
   });
 
+  it("scrubs a quote and backslash inside tracked command JSON", async () => {
+    const secret = 'ghp_quote"slash\\secretToken';
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine } = setupComputer(
+      { kind: "command", command: "gh issue list --json", track: ["id", "status"] },
+      {
+        stdout: JSON.stringify([{ id: "1", title: `Issue ${secret}`, status: secret }]),
+      },
+      undefined,
+      {
+        vault,
+        secretStore: {
+          async load(ciphertext: string) {
+            if (ciphertext === "cipher-gh") return secret;
+            throw new Error("unreadable");
+          },
+        },
+      },
+    );
+    routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: {},
+      detail: null,
+    } as never;
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.detail).toBe("New: Issue [redacted]");
+    const entry = result.state.entries?.["1"];
+    expect(entry).toContain("[redacted]");
+    expect(entry).not.toContain("ghp_quote");
+    expect(result.state.detail).not.toContain(secret);
+    expect(JSON.stringify(result.state)).not.toContain("ghp_quote");
+  });
+
   it("runs a desktop command with the computer's shell", async () => {
     const command = "gh api user";
     const shells = [

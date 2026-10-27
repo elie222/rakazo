@@ -277,6 +277,19 @@ function resultJson(data: unknown): unknown {
   }
 }
 
+function redactJsonStrings(value: unknown, secrets: string[]): unknown {
+  if (typeof value === "string") return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, secrets));
+  if (value && typeof value === "object") {
+    const redacted: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      redacted[redactSecrets(key, secrets)] = redactJsonStrings(child, secrets);
+    }
+    return redacted;
+  }
+  return value;
+}
+
 function isMcpEnvelope(data: unknown): boolean {
   return Array.isArray((data as { content?: unknown } | null)?.content);
 }
@@ -444,14 +457,18 @@ async function readComputer(
       },
     );
     const revealed = [...secrets];
-    const stdout = redactSecrets(result.stdout, revealed);
     const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {
       throw new RoutineWatchError(
         `The check command exited with ${result.code}${stderr ? `: ${clip(stderr)}` : "."}`,
       );
     }
-    if (watch.track) return readItems(stdout, watch.track);
+    // Tracked output is JSON. Scrub strings after parse: a quote or backslash in a secret
+    // is escaped in the text, so redacting that text misses the secret and can break the JSON.
+    if (watch.track) {
+      return readItems(redactJsonStrings(resultJson(result.stdout), revealed), watch.track);
+    }
+    const stdout = redactSecrets(result.stdout, revealed);
     return { fingerprint: sha256(stdout), detail: clip(stdout) || null };
   }
 
