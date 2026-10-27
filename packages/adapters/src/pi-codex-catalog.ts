@@ -40,7 +40,8 @@ export type CodexCatalogModel = {
   slug: string;
   reasoningEfforts: string[];
   contextWindow?: number;
-  supportsImages: boolean;
+  /** Absent when the account list omits `input_modalities`. */
+  supportsImages?: boolean;
   supportsFastTier: boolean;
 };
 
@@ -169,7 +170,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
     if (typeof entry.slug !== "string" || !isValidSlug(entry.slug)) return undefined;
     const reasoningEfforts = parseReasoningEfforts(entry.supported_reasoning_levels);
     const contextWindow = parseContextWindow(entry.context_window);
-    const supportsImages = stringListContains(entry.input_modalities, "image");
+    const supportsImages = parseSupportsImages(entry.input_modalities);
     const supportsFastTier = stringListContains(entry.additional_speed_tiers, "fast");
     if (
       reasoningEfforts === INVALID ||
@@ -183,7 +184,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
       slug: entry.slug,
       reasoningEfforts,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
-      supportsImages,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
       supportsFastTier,
     });
   }
@@ -214,6 +215,12 @@ function parseContextWindow(value: unknown): number | undefined | typeof INVALID
     return INVALID;
   }
   return value;
+}
+
+/** Omitted or null modalities are unknown. A present list is an explicit yes or no. */
+function parseSupportsImages(value: unknown): boolean | undefined | typeof INVALID {
+  if (value === undefined || value === null) return undefined;
+  return stringListContains(value, "image");
 }
 
 function stringListContains(value: unknown, expected: string): boolean | typeof INVALID {
@@ -447,9 +454,9 @@ export function applyCodexLiveCatalog(
 
 function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCatalogEntry {
   const thinkingLevels = liveThinkingLevels(model);
-  // The account list decides image input for bundled and live-only slugs.
-  // A text-only answer must win over an image-capable sibling guess.
-  const withImages = { ...entry, images: model.supportsImages };
+  // An explicit account answer decides image input. An omitted list keeps the entry's own.
+  const withImages =
+    model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
   return thinkingLevels
     ? { ...withImages, reasoning: true, thinkingLevels }
     : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };

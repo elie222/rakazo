@@ -219,8 +219,57 @@ describe("current image send admission", () => {
           message: "This model cannot read images. Choose a model that supports images.",
         });
       }
+      expect(configuration.codexCatalog.read).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({ accountId: "acct-live" }),
+        { waitMs: 0 },
+      );
     },
   );
+
+  it("keeps a bundled Codex model's images when the account omits input modalities", async () => {
+    const { tx, send } = fixture();
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openai-codex",
+      modelId: "gpt-6.1-sol",
+    });
+    tx.userModelCredential.findFirst.mockResolvedValue({
+      id: "credential-1",
+      provider: "openai-codex",
+      secretId: "secret-1",
+      defaultModel: "gpt-6.1-sol",
+    });
+    const read = vi.fn(async () => [
+      {
+        slug: "gpt-6.1-sol",
+        reasoningEfforts: [],
+        supportsFastTier: false,
+      },
+    ]);
+    await expect(
+      send({
+        deployment: null,
+        secrets: {
+          load: vi.fn(async () =>
+            JSON.stringify({
+              type: "oauth",
+              access: "access-token",
+              refresh: "refresh-token",
+              expires: Date.now() + 3_600_000,
+              accountId: "acct-live",
+            }),
+          ),
+        },
+        codexCatalog: { read },
+      }),
+    ).resolves.toMatchObject({ runId: "run-1" });
+    expect(read).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ accountId: "acct-live" }),
+      { waitMs: 0 },
+    );
+  });
 
   it("asks to configure image input for a legacy custom connection that never set it", async () => {
     const { tx, send } = fixture();

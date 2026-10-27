@@ -116,8 +116,10 @@ export async function assertThreadImageInput(
         });
         if (row) {
           const secret = parseModelSecret(await configuration.secrets.load(row.ciphertext, row.id));
-          const live = await codexLiveModel(configuration.codexCatalog, actor.userId, secret, id);
-          if (live) supportsImages = live.supportsImages;
+          const live = await codexLiveModel(configuration.codexCatalog, actor.userId, secret, id, {
+            waitMs: 0,
+          });
+          if (live?.supportsImages !== undefined) supportsImages = live.supportsImages;
         }
       } catch {
         // An unreadable secret keeps the bundled or unknown answer.
