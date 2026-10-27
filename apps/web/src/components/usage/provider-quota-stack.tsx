@@ -60,12 +60,15 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
     () => false as ModelUsageSortInverted,
   );
   const entries = groups.map(({ credential }, index) => {
-    const providerName = providerDisplayName(
-      credential.provider,
-      catalog.data?.find((entry) => entry.provider === credential.provider)?.providerName ??
-        credential.provider,
-      credential.authKind,
-    );
+    const providerName =
+      credential.provider === "openai-codex"
+        ? "Codex"
+        : providerDisplayName(
+            credential.provider,
+            catalog.data?.find((entry) => entry.provider === credential.provider)?.providerName ??
+              credential.provider,
+            credential.authKind,
+          );
     const label =
       credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? compatibleConnectionName(credential.baseUrl, providerName)

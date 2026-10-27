@@ -75,6 +75,8 @@ export interface RouterDeps {
   providerCatalog?: ProviderCatalogCache;
   /** HTTP transport for model connection checks and catalog probes. */
   modelConnectionFetch?: typeof fetch;
+  /** Provider quota transport; defaults to the dispatcher-backed provider fetch. */
+  modelQuotaFetch?: typeof fetch;
   /** One real request proving a newly keyed model can serve agents; absent skips it. */
   modelConnectionCheck?: typeof verifyModelServesAgents;
   /** Site icons for links; defaults to the per-process cache that fetches them. */

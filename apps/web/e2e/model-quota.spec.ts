@@ -48,9 +48,8 @@ test("connected account quota shows remaining windows and refreshes", async ({
       },
     }),
   );
-  await openUserSettings(page, "models");
-  await page.getByTestId(`model-provider-${credentialId}`).getByRole("button").click();
-  const quota = page.getByTestId("connection-quota");
+  await openUserSettings(page, "usage");
+  const quota = page.getByTestId("provider-quota-stack").getByTestId("connection-quota");
   await expect(quota).toBeVisible();
   await expect(quota).toContainText("9% remaining");
   await expect(quota).toContainText("100% remaining");

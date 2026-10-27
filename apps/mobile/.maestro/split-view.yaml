@@ -19,8 +19,8 @@ tags:
 - extendedWaitUntil:
     visible: "Sign up for Rakazo"
     timeout: 30000
-- tapOn: "Sign in"
 - runFlow: helpers/server.yaml
+- tapOn: "Sign in"
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
 - tapOn: "Password"

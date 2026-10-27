@@ -228,6 +228,7 @@ type CreateAppOverrides = Partial<AppEnv> & {
   billing?: BillingProvider;
   remoteConnectors?: RemoteConnectorDependencies;
   modelConnectionFetch?: typeof fetch;
+  modelQuotaFetch?: typeof fetch;
   logger?: Logger;
   runtime?: AgentRuntime;
   contextStrategy?: AgentContextStrategy;
@@ -249,6 +250,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     billing: billingOverride,
     remoteConnectors,
     modelConnectionFetch,
+    modelQuotaFetch,
     logger: loggerOverride,
     runtime: runtimeOverride,
     contextStrategy,
@@ -705,6 +707,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
+    modelQuotaFetch,
     // The scripted runtime never calls a provider, so neither does its connect.
     modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
