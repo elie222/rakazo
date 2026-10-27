@@ -11,6 +11,7 @@ function fixture() {
     spaceId: "space-1",
     email: "fixture@example.test",
     isDeploymentOwner: false,
+    role: "owner",
   } satisfies Actor;
   const bot = {
     id: "bot-1",

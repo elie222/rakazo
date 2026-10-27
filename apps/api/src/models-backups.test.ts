@@ -12,6 +12,7 @@ const owner: Actor = {
   spaceId: "space-one",
   email: "one@rakazo.test",
   isDeploymentOwner: true,
+  role: "owner",
 };
 
 function setup(

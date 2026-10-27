@@ -282,6 +282,7 @@ function messagingDeps(
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: false,
+    role: "owner",
   } satisfies Actor;
   return {
     prisma,

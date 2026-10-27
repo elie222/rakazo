@@ -21,6 +21,7 @@ const actor = {
   userId: "user-1",
   email: "user@rakazo.test",
   isDeploymentOwner: true,
+  role: "owner",
 } satisfies Actor;
 
 const FAKE_VALUE = "fake-value-SENTINEL-1";

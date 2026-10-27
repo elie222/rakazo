@@ -48,6 +48,7 @@ function fixture(blocks: unknown[]) {
     spaceId: "space",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   };
   return { deps, actor, tx };
 }
@@ -328,6 +329,7 @@ describe("queueMcpConnectedRun", () => {
     spaceId: "space",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   };
   const input = { botId: "bot", serverId: "srv-a", threadId: "thread" };
 

@@ -55,6 +55,7 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
         userId: ids.userId,
         email: "fake@example.test",
         isDeploymentOwner: false,
+      role: "owner",
       });
       bots.push(ids.botId);
     }

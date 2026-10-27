@@ -197,11 +197,11 @@ export async function loadWebhookTarget(
       spaceId: true,
       userId: true,
       webhookSecretId: true,
-      thread: { select: { id: true } },
+      threads: { take: 1, select: { id: true } },
     },
   });
 
-  if (!bot?.thread || !bot.webhookSecretId) {
+  if (!bot?.userId || !bot.threads[0] || !bot.webhookSecretId) {
     cache.delete(botId);
     return null;
   }
@@ -241,7 +241,7 @@ export async function loadWebhookTarget(
       userId: bot.userId,
       webhookSecretId: bot.webhookSecretId,
     },
-    threadId: bot.thread.id,
+    threadId: bot.threads[0].id,
     expected,
   };
 }

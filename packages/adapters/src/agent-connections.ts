@@ -331,12 +331,12 @@ async function deliverToConnectedAgent(
 
   const target = await deps.prisma.bot.findUnique({
     where: { id: targetIdentity.botId },
-    select: { id: true, name: true, archivedAt: true, thread: { select: { id: true } } },
+    select: { id: true, name: true, archivedAt: true, threads: { take: 1, select: { id: true } } },
   });
-  if (!target || target.archivedAt || !target.thread) {
+  if (!target || target.archivedAt || !target.threads[0]) {
     return { ok: false, error: "that agent is not available" };
   }
-  const targetThreadId = target.thread.id;
+  const targetThreadId = target.threads[0].id;
   const deliveryKey = input.deliveryKey ? `agent-message:${input.deliveryKey}` : undefined;
   const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message });
 

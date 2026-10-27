@@ -50,6 +50,7 @@ it.skipIf(!databaseUrl).each([
       expect(procedure === "me" ? json : json.me).toMatchObject({
         canChooseHostComputer: fixture.expected,
         isDeploymentOwner: false,
+      role: "owner",
       });
     }
   } finally {

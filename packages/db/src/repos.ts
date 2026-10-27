@@ -13,6 +13,7 @@ import {
   userVisibleMessages,
 } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
+import { threadsForUser, withPrimaryThread, withPrimaryThreads } from "./bot-threads.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
@@ -188,7 +189,8 @@ export function createRepos(
         sectionId: true,
         updatedAt: true,
         parentBotId: true,
-        thread: {
+        threads: {
+          ...threadsForUser(actor.userId),
           select: {
             id: true,
             unread: true,
@@ -198,7 +200,11 @@ export function createRepos(
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
-    const bots = await withNewestThreadMessages(prisma, await withLatestBotRuns(prisma, rows), 1);
+    const bots = await withNewestThreadMessages(
+      prisma,
+      await withLatestBotRuns(prisma, withPrimaryThreads(rows)),
+      1,
+    );
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       const activeRun = primaryActiveRun(bot.runs);
@@ -357,19 +363,21 @@ export function createRepos(
         prisma,
         await withLatestBotRuns(
           prisma,
-          await prisma.bot.findMany({
-            where: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              archivedAt: options.archived ? { not: null } : null,
-            },
-            include: {
-              thread: true,
-              runs: activeRunSelection,
-              computer: { select: { scope: true } },
-            },
-            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-          }),
+          withPrimaryThreads(
+            await prisma.bot.findMany({
+              where: {
+                spaceId: actor.spaceId,
+                userId: actor.userId,
+                archivedAt: options.archived ? { not: null } : null,
+              },
+              include: {
+                threads: threadsForUser(actor.userId),
+                runs: activeRunSelection,
+                computer: { select: { scope: true } },
+              },
+              orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+            }),
+          ),
         ),
         SIDEBAR_PREVIEW_MESSAGE_WINDOW,
       );
@@ -491,10 +499,10 @@ export function createRepos(
           userId: actor.userId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
-        include: { thread: true, computer: true },
+        include: { threads: threadsForUser(actor.userId), computer: true },
       });
       if (!bot) throw new IsolationError();
-      return bot;
+      return withPrimaryThread(bot);
     },
 
     async createBot(
@@ -644,23 +652,26 @@ export function createRepos(
             },
           });
           await input.seed?.(tx, created.id);
-          return tx.bot.findFirstOrThrow({
-            where: { id: created.id },
-            include: { thread: true, computer: true },
-          });
+          return withPrimaryThread(
+            await tx.bot.findFirstOrThrow({
+              where: { id: created.id },
+              include: { threads: threadsForUser(actor.userId), computer: true },
+            }),
+          );
         });
 
       const findBySpawnKey = async () => {
         if (!input.spawnKey) return null;
-        return prisma.bot.findUnique({
+        const found = await prisma.bot.findUnique({
           where: {
             spaceId_spawnKey: {
               spaceId: actor.spaceId,
               spawnKey: input.spawnKey,
             },
           },
-          include: { thread: true, computer: true },
+          include: { threads: threadsForUser(actor.userId), computer: true },
         });
+        return found ? withPrimaryThread(found) : null;
       };
 
       let bot: Awaited<ReturnType<typeof insertBot>>;
@@ -731,11 +742,13 @@ export function createRepos(
             botId,
             kind,
           });
-          return tx.bot.update({
-            where: { id: botId },
-            data: { computerId: computer.id },
-            include: { thread: true, computer: true },
-          });
+          return withPrimaryThread(
+            await tx.bot.update({
+              where: { id: botId },
+              data: { computerId: computer.id },
+              include: { threads: threadsForUser(actor.userId), computer: true },
+            }),
+          );
         }),
       );
       return mapBot(updated);

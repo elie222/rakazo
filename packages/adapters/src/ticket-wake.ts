@@ -20,14 +20,15 @@ export async function wakeTicketAssignee(
     if (!status.success || isTicketCompletedStatus(status.data)) return null;
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
-      select: { id: true, userId: true, thread: { select: { id: true } } },
+      select: { id: true, userId: true, threads: { take: 1, select: { id: true } } },
     });
-    if (!bot?.thread) return null;
+    if (!bot?.userId || !bot.threads[0]) return null;
+    const threadId = bot.threads[0].id;
     const task = await tx.task.create({
       data: {
         spaceId: input.spaceId,
         botId: bot.id,
-        threadId: bot.thread.id,
+        threadId,
         userId: bot.userId,
         prompt: `Work on ticket ${ticket.board.ticketPrefix}-${ticket.number}. Read it with ticket_get. Keep progress in ticket comments and update its status with ticket_update. Use ask or approval cards when user input is needed.`,
         status: "queued",
@@ -37,7 +38,7 @@ export async function wakeTicketAssignee(
       data: {
         spaceId: input.spaceId,
         botId: bot.id,
-        threadId: bot.thread.id,
+        threadId,
         userId: bot.userId,
         taskId: task.id,
         trigger: "tickets",

@@ -76,14 +76,14 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     const bot = await runAsSystem("test fixture", () =>
       prisma.bot.findUnique({
         where: { id: result.botId },
-        include: { thread: true },
+        include: { threads: true },
       }),
     );
     expect(bot).toBeTruthy();
     expect(bot!.spaceId).toBe(result.spaceId);
     expect(bot!.userId).toBe(result.userId);
-    expect(bot!.thread).toBeTruthy();
-    expect(result.threadId).toBe(bot!.thread!.id);
+    expect(bot!.threads[0]).toBeTruthy();
+    expect(result.threadId).toBe(bot!.threads[0]!.id);
 
     const identity = await asSystem(prisma).messagingIdentity.findUnique({
       where: { provider_address: { provider, address } },

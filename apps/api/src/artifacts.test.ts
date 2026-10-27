@@ -15,6 +15,7 @@ const actor: Actor = {
   spaceId: "space-1",
   email: "owner@example.com",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 function listRow(id: string, familyId: string, createdAt = "2026-09-01T00:00:00.000Z") {

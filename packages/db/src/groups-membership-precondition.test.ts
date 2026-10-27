@@ -7,6 +7,7 @@ const actor = {
   userId: "user-1",
   email: "test@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 function fixture(activeIds: string[]) {

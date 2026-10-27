@@ -9,6 +9,7 @@ const actor = {
   spaceId: "space-1",
   email: "fixture@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 } satisfies Actor;
 const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
 

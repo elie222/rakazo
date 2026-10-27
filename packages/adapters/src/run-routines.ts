@@ -122,7 +122,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
   const bot = await deps.prisma.bot.findUnique({
     where: { id: routine.botId },
-    include: { thread: true },
+    include: { threads: true },
   });
   if (bot?.archivedAt) {
     // Archiving pauses a bot's routines; re-pause one that slipped back to active.
@@ -132,7 +132,8 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     });
     return;
   }
-  if (!bot?.thread) return;
+  if (!bot?.threads[0]) return;
+  const botThread = bot.threads[0];
   const targetThread = routine.threadId
     ? await deps.prisma.thread.findFirst({
         where: {
@@ -151,7 +152,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         select: { id: true },
       })
     : null;
-  const thread = targetThread ?? bot.thread;
+  const thread = targetThread ?? botThread;
   // A change trigger checks first, without a model; only news becomes a run.
   const watchTick =
     routine.watch == null

@@ -15,6 +15,7 @@ const actor: Actor = {
   spaceId: "space-1",
   email: "user@rakazo.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 function mount(

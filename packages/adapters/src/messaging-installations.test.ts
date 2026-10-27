@@ -9,6 +9,7 @@ const actor: Actor = {
   userId: "user-a",
   email: "fake@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 function fixture() {
   let session: {

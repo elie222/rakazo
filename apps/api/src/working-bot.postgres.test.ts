@@ -28,7 +28,7 @@ describe.skipIf(!enabled)("working bot visibility (PostgreSQL)", () => {
         { signupsEnabled: undefined, signupAllowlist: undefined },
       ),
     );
-    const actor: Actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false };
+    const actor: Actor = { ...identity, email: "fixture@example.test", isDeploymentOwner: false, role: "owner" };
     try {
       await runAsTenant(actor, async () => {
         const repos = createRepos(prisma);

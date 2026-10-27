@@ -9,6 +9,7 @@ const actor = {
   spaceId: "space-1",
   email: "owner@example.com",
   isDeploymentOwner: true,
+  role: "owner",
 };
 
 type Row = Record<string, unknown>;

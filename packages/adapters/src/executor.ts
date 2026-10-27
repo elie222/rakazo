@@ -1276,7 +1276,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   userId: run.userId,
                   archivedAt: null,
                   id: { not: bot.id },
-                  thread: { isNot: null },
+                  threads: { some: {} },
                 },
                 select: { id: true, name: true, title: true, description: true },
                 orderBy: { createdAt: "asc" },

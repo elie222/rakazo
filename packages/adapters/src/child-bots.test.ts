@@ -121,7 +121,7 @@ describe("spawned bot creation", () => {
           spawnKey: "tool-call-1",
         },
       },
-      include: { thread: true },
+      include: { threads: true },
     });
     expect(result).toEqual({
       ok: true,

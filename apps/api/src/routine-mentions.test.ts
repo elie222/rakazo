@@ -10,6 +10,7 @@ const actor = {
   userId: "user-a",
   email: "actor@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 } satisfies Actor;
 const routine = (botId: string, id: string) => ({
   id,

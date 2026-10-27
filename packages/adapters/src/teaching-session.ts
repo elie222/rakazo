@@ -235,18 +235,18 @@ async function finalizeTeachingRecording(
     // good when the process dies in between, because retries see a draft and skip it.
     const bot = await tx.bot.findUnique({
       where: { id: skill.botId },
-      include: { thread: true },
+      include: { threads: true },
     });
     let stopped: { threadId: string; seq: number } | null = null;
-    if (bot?.thread) {
+    if (bot?.threads[0]) {
       const event = await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
-        threadId: bot.thread.id,
+        threadId: bot.threads[0]!.id,
         botId: skill.botId,
         type: "skill.teaching.stopped",
         payload: { skillId: skill.id, reason },
       });
-      stopped = { threadId: bot.thread.id, seq: event.seq };
+      stopped = { threadId: bot.threads[0]!.id, seq: event.seq };
     }
     return { skill: updated, stopped };
   });
@@ -396,10 +396,10 @@ async function emitSkillDraftMessages(
   deps: TeachingSessionDeps,
   actor: Actor,
   skill: TaughtSkillRow,
-  bot: { id: string; thread: { id: string } | null },
+  bot: { id: string; threads: Array<{ id: string }> },
 ): Promise<void> {
-  if (skill.status !== "draft" || !bot.thread) return;
-  const threadId = bot.thread.id;
+  if (skill.status !== "draft" || !bot.threads[0]) return;
+  const threadId = bot.threads[0].id;
   const published = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${skill.id} FOR UPDATE`;
     let created = await findSkillDraftMessage(tx, threadId, skill.id);
@@ -448,7 +448,7 @@ export async function completeTeachingSession(
   );
   const bot = await deps.prisma.bot.findUnique({
     where: { id: finalized.botId },
-    include: { thread: true, computer: true },
+    include: { threads: true, computer: true },
   });
   if (!bot) throw new IsolationError();
   await releaseTeachingComputerControlForBot(
@@ -470,14 +470,20 @@ export async function expireTaughtSkillTeaching(
 ): Promise<TaughtSkillRow | null> {
   const skill = await deps.prisma.taughtSkill.findUnique({ where: { id: skillId } });
   if (!skill) return null;
-  const actor = { spaceId: skill.spaceId, userId: skill.userId } as Actor;
+  const actor = {
+    spaceId: skill.spaceId,
+    userId: skill.userId,
+    email: "",
+    isDeploymentOwner: false,
+    role: "owner",
+  } satisfies Actor;
   if (skill.status !== "recording") {
     const leaseId = parseRecording(skill.recording).controlLeaseId;
     if (leaseId) await releaseTeachingComputerControlForBot(deps, actor, skill.botId, leaseId);
     if (skill.status === "draft") {
       const bot = await deps.prisma.bot.findUnique({
         where: { id: skill.botId },
-        include: { thread: true },
+        include: { threads: true },
       });
       if (bot) await emitSkillDraftMessages(deps, actor, skill, bot);
     }
@@ -488,7 +494,7 @@ export async function expireTaughtSkillTeaching(
   }
   const bot = await deps.prisma.bot.findUnique({
     where: { id: skill.botId },
-    include: { thread: true, computer: true },
+    include: { threads: true, computer: true },
   });
   if (!bot) return skill;
   const stopSnapshot = bot.computer?.providerRef

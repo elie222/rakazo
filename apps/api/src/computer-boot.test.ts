@@ -29,6 +29,7 @@ const actor = {
   userId: "user-1",
   email: "user@example.test",
   isDeploymentOwner: true,
+  role: "owner",
 } satisfies Actor;
 
 function routerDeps(prisma: PrismaClient) {

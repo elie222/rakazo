@@ -17,6 +17,7 @@ dbTests("own-key trial", () => {
     spaceId,
     email: `trial-${stamp}@rakazo.test`,
     isDeploymentOwner: false,
+    role: "owner",
   };
   const provider = new BillingEmulator({ modelCredits: true, namespace: `trial-${stamp}` });
   let prisma: PrismaClient,

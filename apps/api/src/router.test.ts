@@ -83,6 +83,7 @@ describe("account preferences", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
@@ -600,6 +601,7 @@ describe("model setup gate", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     return { actor, handler: new RPCHandler(createRouter(deps)) };
   }
@@ -779,6 +781,7 @@ describe("thread answer delivery", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
 
@@ -847,6 +850,7 @@ describe("oversized one-time answer", () => {
       userId: "user-1",
       email: "user@example.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const answer = `fake-code-${"x".repeat(16_400)}`;
     const { response } = await new RPCHandler(createRouter(deps)).handle(
@@ -899,6 +903,7 @@ describe("secret request dismissal", () => {
       userId: "user-1",
       email: "user@example.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
     const send = (json: Record<string, unknown>) =>
@@ -1038,6 +1043,7 @@ describe("thread stream authorization", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const stillAuthorized = vi.fn().mockResolvedValue(true);
     const client = createRouterClient(createRouter(deps), {
@@ -1138,6 +1144,7 @@ describe("MCP server deletion", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
 
@@ -1283,6 +1290,7 @@ describe("MCP prepared credential updates", () => {
       userId: "user",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     await client.mcp.servers.update({ id: "server", secret: "updated-key" });
@@ -1998,6 +2006,7 @@ describe("MCP server health", () => {
             userId: "owner-1",
             email: "owner@rakazo.test",
             isDeploymentOwner: true,
+            role: "owner",
             ...actor,
           },
         } as never,
@@ -2017,6 +2026,7 @@ describe("MCP server health", () => {
               userId: "owner-1",
               email: "owner@rakazo.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
           } as never,
         }),
@@ -2290,6 +2300,7 @@ describe("MCP server health", () => {
             userId: "owner-1",
             email: "owner@rakazo.test",
             isDeploymentOwner: true,
+          role: "owner",
           },
         } as never,
       });
@@ -2431,6 +2442,7 @@ describe("connections.begin", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
 
@@ -2535,6 +2547,7 @@ describe("connections.begin", () => {
               userId: "user-1",
               email: "user@rakazo.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
           },
         },
@@ -2673,6 +2686,7 @@ describe("connections.complete", () => {
               userId: "user-1",
               email: "user@rakazo.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
           },
         },
@@ -2754,6 +2768,7 @@ describe("connections.complete", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
 
@@ -2842,6 +2857,7 @@ describe("connections.complete", () => {
                 userId: "user-1",
                 email: "user@rakazo.test",
                 isDeploymentOwner: true,
+              role: "owner",
               },
             },
           },
@@ -2934,6 +2950,7 @@ describe("connections.complete", () => {
               userId: "user-1",
               email: "user@rakazo.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
             signal,
           },
@@ -3051,6 +3068,7 @@ describe("connections.complete", () => {
             userId: "user-1",
             email: "user@rakazo.test",
             isDeploymentOwner: true,
+          role: "owner",
           },
         } as never,
       },
@@ -3113,6 +3131,7 @@ describe("updater owner gate", () => {
       userId: "user-2",
       email: "member@rakazo.test",
       isDeploymentOwner: false,
+    role: "owner",
     } satisfies Actor;
 
     const { response } = await handler.handle(
@@ -3134,6 +3153,7 @@ describe("updater owner gate", () => {
       userId: "user-1",
       email: "owner@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
 
     const { response } = await handler.handle(
@@ -3155,6 +3175,7 @@ describe("updater owner gate", () => {
       userId: "user-1",
       email: "owner@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
 
     const { response } = await handler.handle(
@@ -3176,6 +3197,7 @@ describe("computer screen url", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const computerRow = {
     id: "computer-1",
@@ -3317,6 +3339,7 @@ describe("computer terminal and file transfer", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const controlled = {
     controlHolder: "user",
@@ -3648,6 +3671,7 @@ describe("integration setup authorization", () => {
             spaceId: "space",
             email: "member@rakazo.test",
             isDeploymentOwner: false,
+          role: "owner",
           },
         },
       },
@@ -3701,6 +3725,7 @@ describe("OpenAI-compatible model probes", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const baseUrl = "https://127.0.0.1:8000/v1";
   const stored = JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" });
@@ -4017,6 +4042,7 @@ describe("model credential persistence", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
 
   function persistDeps(options?: {
@@ -4104,6 +4130,7 @@ describe("model credential persistence", () => {
     const response = await call(handler, "models/connect", privateConnect, {
       ...actor,
       isDeploymentOwner: false,
+    role: "owner",
     });
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
@@ -4754,6 +4781,7 @@ describe("model disconnect", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const connection = (id: string) => ({
     id,
@@ -4856,6 +4884,7 @@ describe("bot intro run", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
 
@@ -4998,6 +5027,7 @@ describe("codex catalog auth", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const spark = "gpt-5.3-codex-spark";
   const luna = "gpt-6-luna";
@@ -5086,6 +5116,7 @@ describe("codex live catalog", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const spark = "gpt-5.3-codex-spark";
   const luna = "gpt-6-luna";
@@ -5604,6 +5635,7 @@ describe("model set default auth", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const spark = "gpt-5.3-codex-spark";
   const luna = "gpt-6-luna";
@@ -5989,6 +6021,7 @@ describe("bot model auth on save", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const spark = "gpt-5.3-codex-spark";
   const luna = "gpt-6-luna";
@@ -6261,6 +6294,7 @@ describe("bot restore computer quota", () => {
               userId: "user-1",
               email: "user@rakazo.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
           },
         },
@@ -6329,6 +6363,7 @@ describe("group restore with archived bots", () => {
               userId: "user-1",
               email: "user@example.test",
               isDeploymentOwner: true,
+            role: "owner",
             },
           },
         },
@@ -6537,6 +6572,7 @@ describe("routines.update", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const routine = {
     id: "routine-1",
@@ -6760,6 +6796,7 @@ describe("openai-compatible enabled models", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const compatible = "openai-compatible";
   const baseUrl = "https://10.0.0.5:8443/v1";
@@ -7682,6 +7719,7 @@ describe("threads.answerCall and threads.declineCall", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
     const call = (path: string, json: Record<string, unknown>) =>
@@ -7798,6 +7836,7 @@ describe("threads.endCall", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
     const handler = new RPCHandler(createRouter(deps));
     return {
@@ -7979,6 +8018,7 @@ describe("groups.archive", () => {
       userId: "user-1",
       email: "user@rakazo.test",
       isDeploymentOwner: true,
+    role: "owner",
     } satisfies Actor;
 
     const { response } = await new RPCHandler(createRouter(deps)).handle(
@@ -8034,6 +8074,7 @@ describe("boards.rename", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
 
   function boardRow(ticketPrefix = "RAK") {
@@ -8115,6 +8156,7 @@ describe("boards.tickets.list", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
 
   function listDeps() {
@@ -8160,6 +8202,7 @@ describe("export.bot", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
   const roots: string[] = [];
 
@@ -8307,6 +8350,7 @@ describe("link favicons", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: false,
+    role: "owner",
   } satisfies Actor;
 
   it("answers a signed-in reader with the resolved icon for an origin", async () => {
@@ -8424,6 +8468,7 @@ describe("routine watch creation boundaries", () => {
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   } satisfies Actor;
 
   function fixture() {
@@ -8540,6 +8585,7 @@ describe("API-key live model catalog", () => {
         spaceId: "space-test",
         email: "user@example.test",
         isDeploymentOwner: false,
+      role: "owner",
       } satisfies Actor;
       const client = createRouterClient(createRouter(deps), { context: { actor } as never });
       const entries = await client.models.list();

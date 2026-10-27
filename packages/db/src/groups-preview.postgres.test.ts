@@ -61,6 +61,7 @@ interface Actor {
   spaceId: string;
   email: string;
   isDeploymentOwner: boolean;
+  role: string;
 }
 
 interface SeededGroup {
@@ -106,6 +107,7 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
       spaceId: owner.spaceId,
       email: "groups-preview@example.com",
       isDeploymentOwner: false,
+      role: "owner",
     };
     await asSystem(prisma).bot.update({
       where: { id: provisioned.botId },

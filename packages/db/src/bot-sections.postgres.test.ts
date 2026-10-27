@@ -27,6 +27,7 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
     spaceId: identity.spaceId,
     email: "sections@example.com",
     isDeploymentOwner: false,
+    role: "owner",
   });
   const botInput = (name: string) => ({
     name,

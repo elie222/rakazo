@@ -500,12 +500,12 @@ async function recordTakeoverHandback(
   try {
     const bot = await deps.prisma.bot.findFirst({
       where: { id: botId },
-      select: { thread: { select: { id: true } } },
+      select: { threads: { take: 1, select: { id: true } } },
     });
-    if (!bot?.thread) return;
+    if (!bot?.threads[0]) return;
     await deps.events.append({
       spaceId: handback.spaceId,
-      threadId: bot.thread.id,
+      threadId: bot.threads[0]!.id,
       botId,
       ...(runId ? { runId } : {}),
       type: "computer.takeover.released",
@@ -550,7 +550,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         traceId: updateId,
         botId: update.botId,
         spaceId: update.computer.spaceId,
-        userId: bot.userId,
+        userId: bot.userId ?? "",
         signal: controller.signal,
       },
       "none",

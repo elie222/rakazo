@@ -9,6 +9,7 @@ const actor: Actor = {
   userId: "user-1",
   email: "user@rakazo.test",
   isDeploymentOwner: true,
+  role: "owner",
 };
 
 function savedSkill(name: string, source = "user") {

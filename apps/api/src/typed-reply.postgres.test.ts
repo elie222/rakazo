@@ -68,7 +68,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         color: "primary",
         thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
       },
-      include: { thread: true },
+      include: { threads: true },
     });
     peerBotId = peer.id;
     peerThreadId = peer.thread!.id;
@@ -80,7 +80,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         members: { create: [{ botId }, { botId: peerBotId }] },
         thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
       },
-      include: { thread: true },
+      include: { threads: true },
     });
     groupTarget = {
       kind: "group",

@@ -37,6 +37,7 @@ function fixture(catalog: unknown[]) {
     spaceId: "space",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
+    role: "owner",
   };
   return { deps, actor, tx };
 }

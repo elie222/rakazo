@@ -211,10 +211,15 @@ export class TeamChatBridge {
     });
     throwIfStopped();
     if (!target) throw new Error(`Team chat target bot ${this.deps.botId} was not found`);
-    this.target = target;
+    const targetUserId = target.userId;
+    if (!targetUserId) {
+      throw new Error(`Team chat target bot ${this.deps.botId} has no owner`);
+    }
+    const ownedTarget: TargetBot = { ...target, userId: targetUserId };
+    this.target = ownedTarget;
     // Release abandoned routes before any later setup that might throw and leave
     // start() unfinished (for example transcript mirroring).
-    await this.recoverInterruptedRoutineRoutes(target);
+    await this.recoverInterruptedRoutineRoutes(ownedTarget);
     throwIfStopped();
     await this.mirrorMissingMessages();
     throwIfStopped();
@@ -1079,6 +1084,9 @@ export class TeamChatBridge {
       },
     });
     if (!policy) return;
+    const policyUserId = policy.userId;
+    if (!policyUserId) return;
+    const judgeBot = { ...policy, userId: policyUserId };
     const byConversation = new Map<string, typeof observed>();
     for (const message of observed) {
       const batch = byConversation.get(message.externalConversationId) ?? [];
@@ -1089,8 +1097,8 @@ export class TeamChatBridge {
     for (const messages of byConversation.values()) {
       const conversation = messages[0]?.externalConversation;
       if (!conversation) continue;
-      const ambientEnabled = conversation.teamChatAmbientEnabled ?? policy.teamChatAmbientEnabled;
-      const rules = conversation.teamChatRules ?? policy.teamChatRules;
+      const ambientEnabled = conversation.teamChatAmbientEnabled ?? judgeBot.teamChatAmbientEnabled;
+      const rules = conversation.teamChatRules ?? judgeBot.teamChatRules;
       const parsedPolicies = AutomatedSenderPoliciesSchema.safeParse(
         conversation.automatedSenderPolicies,
       );
@@ -1133,7 +1141,7 @@ export class TeamChatBridge {
           }
         : this.deps.judge
           ? await this.deps.judge.decide({
-              bot: policy,
+              bot: judgeBot,
               channelId: latest.externalConversation.conversationId,
               channelName: latest.externalConversation.displayName ?? undefined,
               rules,

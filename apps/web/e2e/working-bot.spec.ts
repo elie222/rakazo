@@ -21,7 +21,7 @@ test("delegated work stays working and stoppable with a newer queued run", async
   try {
     const stored = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
-      include: { thread: true },
+      include: { threads: true },
     });
     const threadId = stored.thread!.id;
     const scope = { spaceId: stored.spaceId, botId: bot.id, threadId, userId: stored.userId };

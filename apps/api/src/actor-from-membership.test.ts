@@ -8,6 +8,7 @@ const actor = {
   spaceId: "space-support",
   email: "owner@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 function prisma(options: { membership: boolean; failure?: Error }) {

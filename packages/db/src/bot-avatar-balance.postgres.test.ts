@@ -24,6 +24,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     spaceId: owner.spaceId,
     email: "avatars@example.com",
     isDeploymentOwner: false,
+    role: "owner",
   });
   const botInput = (name: string) => ({
     name,

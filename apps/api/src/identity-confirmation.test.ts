@@ -8,6 +8,7 @@ const actor = {
   spaceId: "space-1",
   email: "person@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 it("passes a session that recently confirmed its identity", async () => {

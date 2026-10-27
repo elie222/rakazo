@@ -84,7 +84,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
         archivedAt: archived ? new Date() : null,
         thread: { create: { spaceId, userId: owner, unread } },
       },
-      include: { thread: true },
+      include: { threads: true },
     });
   }
 

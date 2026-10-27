@@ -8,6 +8,7 @@ const actor: Actor = {
   spaceId: "space-1",
   email: "owner@example.com",
   isDeploymentOwner: true,
+  role: "owner",
 };
 
 function sqlText(query: unknown): string {

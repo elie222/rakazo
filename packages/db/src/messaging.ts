@@ -110,6 +110,7 @@ export async function provisionMessagingIdentity(
         spaceId,
         email: user.email,
         isDeploymentOwner: false,
+        role: "owner",
       },
       {
         name: "Assistant",

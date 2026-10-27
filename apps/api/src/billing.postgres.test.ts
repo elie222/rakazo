@@ -21,6 +21,7 @@ describePostgres("billing service (PostgreSQL)", () => {
     spaceId,
     email: `${ownerId}@rakazo.test`,
     isDeploymentOwner: false,
+    role: "owner",
   };
   const member: Actor = { ...owner, userId: memberId, email: `${memberId}@rakazo.test` };
   const emulator = new BillingEmulator();

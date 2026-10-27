@@ -9,6 +9,7 @@ const actor: Actor = {
   spaceId: "space-1",
   email: "user@rakazo.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 const price = { amount: 1000, currency: "usd", interval: "month" as const, intervalCount: 1 };
 

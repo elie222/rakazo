@@ -35,11 +35,11 @@ postgres("call isolation and cooldown (PostgreSQL)", () => {
               userId,
               name: suffix,
               color: "ink",
-              thread: { create: { spaceId, userId } },
+              threads: { create: { spaceId, userId } },
             },
-            include: { thread: true },
+            include: { threads: true },
           });
-          const threadId = bot.thread!.id;
+          const threadId = bot.threads[0]!.id;
           const task = await prisma.task.create({
             data: {
               spaceId,

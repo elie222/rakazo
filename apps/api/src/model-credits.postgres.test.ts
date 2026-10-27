@@ -17,6 +17,7 @@ dbTests("model credit billing service", () => {
     spaceId,
     email: `credit-${stamp}@rakazo.test`,
     isDeploymentOwner: false,
+    role: "owner",
   };
   const provider = new BillingEmulator({ modelCredits: true, namespace: `credits-${stamp}` });
   let prisma: PrismaClient,

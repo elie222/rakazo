@@ -39,7 +39,12 @@ import {
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { clearEndedRunState, expireComputerExecutionLeases, IsolationError } from "@rakazo/db";
+import {
+  clearEndedRunState,
+  expireComputerExecutionLeases,
+  IsolationError,
+  withPrimaryThread,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 export interface TaughtSkillsDeps {
@@ -143,10 +148,12 @@ async function ensureGraphicalComputer(
     } finally {
       await releaseComputerExecutionLease(deps.prisma, lease);
     }
-    bot = await deps.prisma.bot.findUniqueOrThrow({
-      where: { id: bot.id },
-      include: { thread: true, computer: true },
-    });
+    bot = withPrimaryThread(
+      await deps.prisma.bot.findUniqueOrThrow({
+        where: { id: bot.id },
+        include: { threads: true, computer: true },
+      }),
+    );
   }
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
     throw new ORPCError("BAD_REQUEST", { message: "Computer must be running to teach" });
@@ -213,11 +220,13 @@ async function updateSkillDraftMessage(
     status?: "draft" | "saved";
   },
 ): Promise<void> {
-  const bot = await deps.prisma.bot.findUnique({
+  const row = await deps.prisma.bot.findUnique({
     where: { id: skill.botId },
-    include: { thread: true },
+    include: { threads: true },
   });
-  if (!bot?.thread) return;
+  if (!row) return;
+  const bot = withPrimaryThread(row);
+  if (!bot.thread) return;
 
   const messages = await deps.prisma.message.findMany({
     where: { threadId: bot.thread.id, role: "bot" },
@@ -285,7 +294,7 @@ export async function stopTeachingSession(
   }
   const bot = await deps.prisma.bot.findUnique({
     where: { id: current.botId },
-    include: { thread: true, computer: true },
+    include: { threads: true, computer: true },
   });
   if (!bot) throw new IsolationError();
   const stopSnapshot =
@@ -315,11 +324,12 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     },
 
     async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
-      let bot = await deps.prisma.bot.findFirst({
+      const found = await deps.prisma.bot.findFirst({
         where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
-        include: { thread: true, computer: true },
+        include: { threads: true, computer: true },
       });
-      if (!bot) throw new IsolationError();
+      if (!found) throw new IsolationError();
+      let bot = withPrimaryThread(found);
       const alreadyRecording = await deps.prisma.taughtSkill.findFirst({
         where: { botId, status: "recording" },
         select: { id: true },
@@ -454,10 +464,11 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           name: name ?? (skill.name || skill.goal.slice(0, 80)),
         },
       });
-      const bot = await deps.prisma.bot.findUnique({
+      const found = await deps.prisma.bot.findUnique({
         where: { id: row.botId },
-        include: { thread: true },
+        include: { threads: true },
       });
+      const bot = found ? withPrimaryThread(found) : null;
       await updateSkillDraftMessage(deps, actor, row, {
         name: row.name,
         playbook: parsePlaybook(row.playbook),
@@ -480,11 +491,13 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       if (skill.status !== "saved" && skill.status !== "draft") {
         throw new ORPCError("BAD_REQUEST", { message: "Skill must be saved or drafted first" });
       }
-      const bot = await deps.prisma.bot.findUnique({
+      const found = await deps.prisma.bot.findUnique({
         where: { id: skill.botId },
-        include: { thread: true },
+        include: { threads: true },
       });
-      if (!bot?.thread) throw new IsolationError();
+      if (!found) throw new IsolationError();
+      const bot = withPrimaryThread(found);
+      if (!bot.thread) throw new IsolationError();
       const playbook = parsePlaybook(skill.playbook);
       const taskPrompt =
         prompt ?? formatSkillRunPrompt(skill.name || skill.goal.slice(0, 80), playbook, true);

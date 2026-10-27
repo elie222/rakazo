@@ -71,6 +71,7 @@ interface Actor {
   spaceId: string;
   email: string;
   isDeploymentOwner: boolean;
+  role: string;
 }
 
 interface SenderRow {
@@ -148,6 +149,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       spaceId: spaceA,
       email: "external-preview@example.com",
       isDeploymentOwner: false,
+      role: "owner",
     };
     const other = await runAsSystem("test fixture", () =>
       createSpaceForMember(prisma, {

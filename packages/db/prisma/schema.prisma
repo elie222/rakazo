@@ -338,6 +338,8 @@ model Space {
   board                       Board?
   tickets                     Ticket[]
   ticketComments              TicketComment[]
+  spaceGlobalBots             SpaceGlobalBot[]
+  rolePermissions             SpaceRolePermission[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -518,7 +520,11 @@ model Bot {
   id                String            @id @default(cuid())
   spaceId           String
   space             Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId            String
+  /// Null for shared Global bot instances materialised for a space.
+  userId            String?
+  /// Catalog Global bot this row materialises; null for user-made bots.
+  globalBotId       String?
+  globalBot         GlobalBot?        @relation(fields: [globalBotId], references: [id], onDelete: Restrict)
   name              String
   title             String            @default("")
   description       String            @default("")
@@ -540,7 +546,8 @@ model Bot {
   children          Bot[]             @relation("BotChildren")
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
-  thread            Thread?
+  /// Personal bots keep one thread; Global instances have one thread per chatting userId.
+  threads           Thread[]
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
@@ -576,7 +583,9 @@ model Bot {
   externalConversations ExternalConversation[]
 
   @@unique([spaceId, spawnKey])
+  @@unique([spaceId, globalBotId])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
+  @@index([globalBotId])
   @@index([sectionId])
   @@index([computerId])
   @@index([parentBotId])
@@ -654,7 +663,8 @@ model Thread {
   id                          String     @id @default(cuid())
   spaceId                     String
   space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  botId                       String?    @unique
+  /// Bot-owned threads: unique per (botId, userId) so Global bots scale to many chatters.
+  botId                       String?
   bot                         Bot?       @relation(fields: [botId], references: [id], onDelete: Cascade)
   groupId                     String?    @unique
   group                       ChatGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -676,7 +686,9 @@ model Thread {
   runs                        Run[]
   routines                    Routine[]
 
+  @@unique([botId, userId])
   @@index([spaceId])
+  @@index([botId, userId])
   @@map("threads")
 }
 
@@ -1969,4 +1981,88 @@ model MessagingInstallSession {
   expiresAt DateTime
   @@index([expiresAt])
   @@map("messaging_install_sessions")
+}
+
+/// Deployment-published catalog bot (e.g. Dana). Spaces enable instances via SpaceGlobalBot.
+model GlobalBot {
+  id                   String               @id @default(cuid())
+  slug                 String               @unique
+  name                 String
+  title                String               @default("")
+  description          String               @default("")
+  instructions         String               @default("")
+  color                String
+  modelProvider        String?
+  modelId              String?
+  thinkingLevel        String?
+  disabledBuiltinTools String[]             @default([])
+  publishedAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  connectors           GlobalBotConnector[]
+  spaceEnablements     SpaceGlobalBot[]
+  bots                 Bot[]
+
+  @@map("global_bots")
+}
+
+/// Versioned pack of MCP config + skill refs bound to Global bots (and later user bots).
+model Connector {
+  id          String               @id @default(cuid())
+  slug        String               @unique
+  name        String
+  description String               @default("")
+  /// Skill ids/names packaged with this connector.
+  skillRefs   Json                 @default("[]")
+  /// MCP server template / config used when materialising space installs.
+  mcpConfig   Json                 @default("{}")
+  version     String               @default("1")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  globalBots  GlobalBotConnector[]
+
+  @@map("connectors")
+}
+
+model GlobalBotConnector {
+  globalBotId String
+  connectorId String
+  globalBot   GlobalBot @relation(fields: [globalBotId], references: [id], onDelete: Cascade)
+  connector   Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@id([globalBotId, connectorId])
+  @@index([connectorId])
+  @@map("global_bot_connectors")
+}
+
+/// Space-level enablement of a published Global bot (one shared Bot instance per space).
+model SpaceGlobalBot {
+  id              String    @id @default(cuid())
+  spaceId         String
+  globalBotId     String
+  space           Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  globalBot       GlobalBot @relation(fields: [globalBotId], references: [id], onDelete: Cascade)
+  enabledByUserId String?
+  enabledAt       DateTime  @default(now())
+
+  @@unique([spaceId, globalBotId])
+  @@index([spaceId])
+  @@index([globalBotId])
+  @@map("space_global_bots")
+}
+
+/// Optional per-space overrides of role → permission. Missing rows use product defaults.
+model SpaceRolePermission {
+  id         String   @id @default(cuid())
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  role       String
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([spaceId, role, permission])
+  @@index([spaceId, role])
+  @@map("space_role_permissions")
 }

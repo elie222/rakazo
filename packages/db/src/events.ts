@@ -1427,9 +1427,10 @@ export async function finalizeComputerControlRelease(
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId },
-      select: { thread: { select: { id: true } } },
+      select: { threads: { take: 1, select: { id: true } } },
     });
-    if (!bot?.thread) return { threadId: null, seq: null, runId };
+    if (!bot?.threads[0]) return { threadId: null, seq: null, runId };
+    const botThread = bot.threads[0];
 
     // The card lives on the run thread. A group run is not the bot's own thread.
     // Computer row is already locked above. Lock the thread after that, before
@@ -1461,7 +1462,7 @@ export async function finalizeComputerControlRelease(
 
     const event = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
-      threadId: runThreadId ?? bot.thread.id,
+      threadId: runThreadId ?? botThread.id,
       botId: input.botId,
       runId: runId ?? undefined,
       type: "computer.takeover.released",

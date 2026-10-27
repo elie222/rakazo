@@ -109,6 +109,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       userId: id,
       email: `${id}@example.test`,
       isDeploymentOwner: false,
+      role: "owner",
     };
     const sandbox = new FakeSandboxProvider();
     const ref = await sandbox.provision(

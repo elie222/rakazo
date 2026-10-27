@@ -30,6 +30,7 @@ export async function requireMembership(
     select: {
       userId: true,
       spaceId: true,
+      role: true,
       member: { select: { user: { select: { email: true } } } },
     },
   });
@@ -41,6 +42,7 @@ export async function requireMembership(
     spaceId: membership.spaceId,
     email: membership.member.user.email,
     isDeploymentOwner: false,
+    role: membership.role,
   };
 }
 

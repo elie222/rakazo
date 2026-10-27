@@ -79,6 +79,7 @@ export async function spawnBot(
     spaceId: input.spawnedBy.spaceId,
     email: "",
     isDeploymentOwner: false,
+    role: "owner",
   };
   let duplicate = false;
   let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
@@ -107,16 +108,17 @@ export async function spawnBot(
           spawnKey: input.spawnKey,
         },
       },
-      include: { thread: true },
+      include: { threads: true },
     });
     if (!existing) throw error;
-    if (!existing.thread) throw new Error(`Spawned bot ${existing.id} is missing its thread`);
+    const existingThread = existing.threads[0];
+    if (!existingThread) throw new Error(`Spawned bot ${existing.id} is missing its thread`);
     duplicate = true;
     created = {
       id: existing.id,
       name: existing.name,
       title: existing.title,
-      threadId: existing.thread.id,
+      threadId: existingThread.id,
     };
   }
 
@@ -214,7 +216,7 @@ type BotLifecycleDeps = {
   dataDir?: string;
   artifacts?: ArtifactStore;
   messagingInstallations?: {
-    removeForBot(bot: { id: string; spaceId: string; userId: string }): Promise<void>;
+    removeForBot(bot: { id: string; spaceId: string; userId: string | null }): Promise<void>;
   };
 };
 
@@ -222,7 +224,7 @@ type LifecycleBot = {
   id: string;
   spaceId: string;
   name: string;
-  userId: string;
+  userId: string | null;
   archivedAt: Date | null;
   computerId?: string | null;
   webhookSecretId?: string | null;
@@ -304,7 +306,7 @@ export async function archiveBot(
         scopeKey: computerScopeKey({
           mode: "dedicated",
           spaceId: bot.spaceId,
-          userId: bot.userId,
+          userId: bot.userId ?? "",
           botId: bot.id,
         }),
       },
@@ -395,7 +397,7 @@ export async function destroyBot(
         scopeKey: computerScopeKey({
           mode: "dedicated",
           spaceId: bot.spaceId,
-          userId: bot.userId,
+          userId: bot.userId ?? "",
           botId: bot.id,
         }),
       },
@@ -424,7 +426,7 @@ export async function destroyBot(
     await (options.strictTeardown ? destroyed : destroyed.catch(() => undefined));
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
-  await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
+  if (bot.userId) await removePiBotSessions(deps.dataDir, bot.userId, bot.id);
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
@@ -793,7 +795,7 @@ async function removeTeamBotWorkspace(
   const [own, legacy] = await Promise.all([
     deps.prisma.computer.findUnique({
       where: {
-        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: bot.userId }),
+        scopeKey: computerScopeKey({ mode: "team", spaceId: bot.spaceId, userId: bot.userId ?? "" }),
       },
     }),
     deps.prisma.computer.findUnique({ where: { homeKey: legacyTeamHomeKey(bot.spaceId) } }),

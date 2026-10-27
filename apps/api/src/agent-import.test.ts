@@ -9,6 +9,7 @@ const actor: Actor = {
   spaceId: "space-1",
   email: "user@example.test",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 /**

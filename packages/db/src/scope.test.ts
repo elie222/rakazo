@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { IsolationError, requireMembership } from "./scope.js";
 
-function prismaForMembership(found: boolean) {
+function prismaForMembership(found: boolean, role = "owner") {
   return {
     spaceMember: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string; spaceId?: string } }) =>
@@ -10,6 +10,7 @@ function prismaForMembership(found: boolean) {
           ? {
               userId: where.userId,
               spaceId: where.spaceId ?? "space-default",
+              role,
               member: { user: { email: "owner@example.test" } },
             }
           : null,
@@ -22,18 +23,20 @@ function prismaForMembership(found: boolean) {
 }
 
 describe("requireMembership", () => {
-  it("scopes the actor without granting privileges to a stored deployment owner", async () => {
-    const prisma = prismaForMembership(true);
+  it("scopes the actor with the space membership role", async () => {
+    const prisma = prismaForMembership(true, "member");
 
     await expect(requireMembership(prisma, "user-1", "space-support")).resolves.toEqual({
       userId: "user-1",
       spaceId: "space-support",
       email: "owner@example.test",
       isDeploymentOwner: false,
+      role: "member",
     });
     expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: "user-1", spaceId: "space-support" },
+        select: expect.objectContaining({ role: true }),
       }),
     );
   });

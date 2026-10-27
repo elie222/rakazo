@@ -9,8 +9,20 @@ export const ActorSchema = z.object({
   email: z.string().email(),
   /** Deprecated wire field. App accounts have no deployment role; always false. */
   isDeploymentOwner: z.boolean(),
+  /** SpaceMember.role for the active space (`owner` | `member`, or comma-separated). */
+  role: z.string().min(1),
 });
 export type Actor = z.infer<typeof ActorSchema>;
+
+/** Permissions checked for Global bots / Connectors (e.g. Dana finance tools). */
+export const SpacePermission = z.enum(["finance.read", "finance.write"]);
+export type SpacePermission = z.infer<typeof SpacePermission>;
+
+/** Product defaults when a space has no SpaceRolePermission rows for a role token. */
+export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly SpacePermission[]>> = {
+  owner: ["finance.read", "finance.write"],
+  member: ["finance.read"],
+};
 
 export const BOT_COLORS = [
   "#3EC5A8",

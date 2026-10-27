@@ -18,7 +18,13 @@ describePostgres("archived groups and their bots (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let owner: { userId: string; spaceId: string };
-  let actor: { userId: string; spaceId: string; email: string; isDeploymentOwner: boolean };
+  let actor: {
+    userId: string;
+    spaceId: string;
+    email: string;
+    isDeploymentOwner: boolean;
+    role: string;
+  };
   let computers = 0;
 
   const signup = { signupsEnabled: undefined, signupAllowlist: undefined };
@@ -71,7 +77,7 @@ describePostgres("archived groups and their bots (PostgreSQL)", () => {
     owner = await runAsSystem("test fixture", () =>
       provisionMessagingIdentity(prisma, { provider, address }, signup),
     );
-    actor = { ...owner, email: "groups@example.test", isDeploymentOwner: false };
+    actor = { ...owner, email: "groups@example.test", isDeploymentOwner: false, role: "owner" };
   });
 
   afterEach(() => {

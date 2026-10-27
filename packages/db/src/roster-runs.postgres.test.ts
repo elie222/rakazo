@@ -46,6 +46,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
     spaceId,
     email: "roster@example.com",
     isDeploymentOwner: false,
+    role: "owner",
   });
   const expected = [
     { name: "Failed", status: "idle", runErrorId: "" as string | null },

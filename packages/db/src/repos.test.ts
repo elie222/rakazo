@@ -9,6 +9,7 @@ const actor: Actor = {
   spaceId: "ws-1",
   email: "test@example.com",
   isDeploymentOwner: false,
+  role: "owner",
 };
 
 const baseBot = {

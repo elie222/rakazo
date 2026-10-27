@@ -22,6 +22,7 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
     spaceId: owner.spaceId,
     email: "bot-manager@example.com",
     isDeploymentOwner: false,
+    role: "owner",
   });
   const botInput = (name: string, parentBotId?: string) => ({
     name,

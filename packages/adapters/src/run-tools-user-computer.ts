@@ -28,7 +28,7 @@ export function userComputerOwner(input: {
   sourceRole: string | undefined;
   messagingChannelRun: boolean;
   runUserId: string;
-  botUserId: string;
+  botUserId: string | null;
 }): string | undefined {
   if (input.trigger !== "user" && input.trigger !== "follow_up") return undefined;
   if (input.sourceRole !== "user" || input.messagingChannelRun) return undefined;

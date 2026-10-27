@@ -60,6 +60,7 @@ interface Actor {
   spaceId: string;
   email: string;
   isDeploymentOwner: boolean;
+  role: string;
 }
 
 interface SeededBot {
@@ -113,6 +114,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       spaceId: owner.spaceId,
       email: "space-bots-preview@example.com",
       isDeploymentOwner: false,
+      role: "owner",
     };
     await asSystem(prisma).bot.update({
       where: { id: provisioned.botId },

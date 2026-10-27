@@ -74,6 +74,7 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     spaceId: identity.spaceId,
     email: "listbots@example.com",
     isDeploymentOwner: false,
+    role: "owner",
   });
   const botInput = (name: string) => ({
     name,
