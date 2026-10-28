@@ -98,6 +98,9 @@ describe("Pi runtime errors", () => {
     '400: {"message":"`tool calling` is not supported with this model","type":"invalid_request_error"}',
     '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM)."}',
     MODEL_CONTEXT_TOO_SMALL_ERROR,
+    '400: {"code":"400","message":"Unsupported model example-model"}',
+    '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
+    'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();

@@ -44,11 +44,9 @@ const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
 /**
- * A booting claim newer than an execution-lease TTL is treated as live, not abandoned.
  * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
- * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Align with
- * EXECUTION_LEASE_MS (a crashed team worker's lease would expire then). Slow dedicated boots
- * past this window stay protected while their run worker lease still heartbeats.
+ * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Slow dedicated
+ * boots past this window stay protected while their run worker lease still heartbeats.
  */
 const BOOT_CLAIM_STALE_MS = EXECUTION_LEASE_MS;
 
@@ -73,10 +71,8 @@ function isLiveSuspending(
  *
  * Whoever moves a computer to "booting" holds its execution lease for the whole provision,
  * renewed on the run heartbeat, so a booting row whose only live lease is our own belongs to
- * a worker that died between the claim and its own failure handler. Before this nothing
- * cleared that state -- the claim took only stopped/suspended/error rows and replaceComputer
- * refused a booting one -- so the computer stayed wedged for good and every run on its bot
- * retried forever.
+ * a worker that died between the claim and its own failure handler. Without reclaiming it the
+ * computer stays wedged and every run on its bot retries forever.
  *
  * Used only when claiming an abandoned "booting" row. End-of-boot writes fence on the claim
  * stamp (updatedAt) instead: fencing them with this predicate too would let a second Team bot
@@ -238,9 +234,7 @@ export async function provisionComputer(
   const suspendStamp = existing.state === "suspending" ? existing.updatedAt : null;
   const suspendClaimIsStale = suspendStamp !== null && isAbandonedLifecycleClaim(suspendStamp);
   // A fresh booting claim (or one whose run lease is still live) cannot be reclaimed after
-  // the wait either, so do not block workers for the full boot-wait window. Shared Postgres
-  // journeys previously hung createApp stop() while continueRun sat in that wait against a
-  // wedged mid-boot row left by an earlier suite.
+  // the wait either, so do not block workers for the full boot-wait window.
   if (existing.state === "booting" && reclaimStamp !== null && !bootClaimIsStale) {
     throw new ComputerBusyError();
   }

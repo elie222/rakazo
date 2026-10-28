@@ -48,14 +48,9 @@ type IdentityRow = {
 };
 
 /**
- * Automatic mirror, not a send tool: every text-bearing bot message of a
- * messaging run is copied into the uniform outbox and sent (with its images
- * and files on DM platforms that can send them), so delivery does
- * not depend on prompt compliance. DM runs go to the owner's conversation;
- * channel runs go to the group with an attribution prefix and are fanned
- * out internally to peer approved bots (agent-to-agent traffic never
- * transits the messaging provider). Also drains pending outbox rows (invites
- * and intros are enqueued by the channels slice).
+ * Automatic mirror, not a send tool, so delivery does not depend on prompt
+ * compliance. Agent-to-agent fan-out stays internal and never transits the
+ * messaging provider. Also drains outbox rows the channels slice enqueued.
  */
 export async function deliverMessagingOutbound(
   deps: MessagingDeliveryDeps,
@@ -647,7 +642,6 @@ async function resolveDirectThread(
   return threadId;
 }
 
-/** Exponential backoff per attempt, capped at one minute. */
 function messagingOutboundRetryDelayMs(attempts: number): number {
   return Math.min(2 ** attempts * 1000, 60_000);
 }

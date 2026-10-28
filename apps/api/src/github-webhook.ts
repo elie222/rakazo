@@ -166,7 +166,6 @@ export function githubWebhookPath(botId: string): string {
   return `/api/v1/bots/${botId}/github`;
 }
 
-/** Mount the signed GitHub delivery route onto the shared webhook deps. */
 export function mountGithubWebhookRoute(
   app: Hono,
   deps: WebhookDeps,

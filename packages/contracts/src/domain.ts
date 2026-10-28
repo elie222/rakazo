@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
-import { BotAvatarValueSchema } from "./bot-avatar.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import {
   cloudflareGatewayRoutingId,
@@ -30,8 +30,8 @@ export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 /**
- * Deprecated: bots have one avatar style. Kept so app versions that still send or read it
- * keep working; the server ignores a sent style and always reports "organic".
+ * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
+ * app versions; the legacy settings endpoint still always reports "organic".
  */
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 
@@ -98,6 +98,7 @@ export const BotSchema = z.object({
   selfUpdateInstructions: z.boolean().optional(),
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
   sectionId: Id.nullable(),
@@ -150,6 +151,7 @@ export const GroupMemberSchema = z.object({
   botId: Id,
   name: z.string(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   status: z.string().optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
@@ -241,6 +243,7 @@ export const SpaceBotSchema = BotSchema.pick({
   name: true,
   title: true,
   color: true,
+  avatarSet: true,
   notifyOnFinish: true,
   pinned: true,
   sectionId: true,
@@ -370,6 +373,11 @@ export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
 export const CreateBotInput = z.object({
+  /** Optional reserved identity so a creation preview uses the final bot seed. */
+  id: z
+    .string()
+    .regex(/^c[a-z0-9]{24}$/)
+    .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
@@ -377,7 +385,8 @@ export const CreateBotInput = z.object({
   notifyOnFinish: z.boolean().default(true),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
-  /** Organic body family (0-9) to draw the new bot with; the server picks an id that hashes to it. */
+  avatarSet: BotAvatarSetSchema.optional(),
+  /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
   computerMode: ComputerModeSchema.default("team"),
   /** Idempotency key within a space (unique with spaceId). */
@@ -408,6 +417,7 @@ export const UpdateBotInput = z
     selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
     pinned: z.boolean().optional(),
     memoryScope: MemoryScopeSchema.nullable().optional(),
     sectionId: Id.nullable().optional(),
@@ -478,7 +488,6 @@ export function routineModelIssues(
   }
 }
 
-/** Maximum parent count in one routine mention lookup. */
 export const ROUTINE_MENTION_BATCH_MAX = 100;
 
 export const RoutineSchema = z.object({
@@ -643,6 +652,25 @@ export type TaughtSkill = z.infer<typeof TaughtSkillSchema>;
 export const AgentSkillSourceSchema = z.enum(["user", "builtin", "plugin"]);
 export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
 
+/** Where an account-owned item is available: every space, or these (starting with the one it was added in). */
+export const SpaceAvailabilitySchema = z.object({
+  allSpaces: z.boolean(),
+  spaceIds: z.array(Id).min(1),
+});
+export type SpaceAvailability = z.infer<typeof SpaceAvailabilitySchema>;
+
+export const AvailabilityKindSchema = z.enum(["skill", "mcpServer", "install"]);
+export type AvailabilityKind = z.infer<typeof AvailabilityKindSchema>;
+
+/** One of the user's own items, across all their spaces, for choosing what a space can use. */
+export const AccountItemSchema = z.object({
+  kind: AvailabilityKindSchema,
+  id: Id,
+  name: z.string(),
+  availability: SpaceAvailabilitySchema,
+});
+export type AccountItem = z.infer<typeof AccountItemSchema>;
+
 export const AgentSkillSchema = z.object({
   id: Id,
   name: z.string(),
@@ -650,6 +678,8 @@ export const AgentSkillSchema = z.object({
   content: z.string(),
   source: AgentSkillSourceSchema,
   readOnly: z.boolean(),
+  /** Absent for built-in skills, which every space has. */
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -661,6 +691,7 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   description: true,
   source: true,
   readOnly: true,
+  availability: true,
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
 
@@ -774,9 +805,86 @@ export const CapabilityInstallSchema = z.object({
   digest: z.string().nullable(),
   secretConfigured: z.boolean(),
   config: z.record(z.string(), z.unknown()),
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
 });
 export type CapabilityInstall = z.infer<typeof CapabilityInstallSchema>;
+
+export const PluginPreviewSkillSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** Paths of the reference files that install with the skill. */
+  files: z.array(z.string()).optional(),
+});
+export const PluginPreviewMcpServerSchema = z.object({
+  name: z.string(),
+  transport: z.enum(["streamable_http", "sse"]),
+  endpoint: z.string(),
+  staticHeaderKeys: z.array(z.string()),
+});
+export const PluginPreviewSkippedSchema = z.object({
+  kind: z.enum([
+    "mcp_stdio",
+    "mcp_invalid",
+    "skill_invalid",
+    "editor_only",
+    "unsupported_transport",
+    "unsupported_field",
+  ]),
+  name: z.string(),
+  reason: z.string(),
+});
+export const PluginPreviewSchema = z.object({
+  format: z.enum(["agent-plugins", "cursor", "grok"]),
+  name: z.string(),
+  version: z.string().nullable(),
+  description: z.string(),
+  author: z.string().nullable(),
+  homepage: z.string().nullable(),
+  repository: z.string().nullable(),
+  license: z.string().nullable(),
+  keywords: z.array(z.string()),
+  resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+  /** Immutable source for confirming this preview, present on new API responses. */
+  pinnedSource: z.string().optional(),
+  /** The source an install of this preview is saved under. */
+  installedSource: z.string().optional(),
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  skills: z.array(PluginPreviewSkillSchema),
+  mcpServers: z.array(PluginPreviewMcpServerSchema),
+  skipped: z.array(PluginPreviewSkippedSchema),
+});
+export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
+
+/** A plugin installs as up to two independent parts: its MCP connector and its skills. */
+export const PluginPartSchema = z.enum(["connector", "skills"]);
+export type PluginPart = z.infer<typeof PluginPartSchema>;
+
+export const PluginMarketplaceEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  keywords: z.array(z.string()),
+  category: z.string().nullable(),
+  logo: z.string().nullable(),
+  homepage: z.string().nullable(),
+  domains: z.array(z.string()),
+  registry: z.string(),
+  source: z.string(),
+  installedSource: z.string(),
+  /** Whether installing adds a remote MCP connector; plugins without one are skill packs. */
+  hasConnector: z.boolean(),
+  /** Skills, sub-agents and commands, which all install as skills. */
+  skillCount: z.number().int().nonnegative(),
+});
+export type PluginMarketplaceEntry = z.infer<typeof PluginMarketplaceEntrySchema>;
+export const PluginMarketplaceCatalogSchema = z.object({
+  entries: z.array(PluginMarketplaceEntrySchema),
+  unavailableRegistries: z.array(z.string()),
+  skippedEntries: z.number().int().nonnegative(),
+});
+export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
 
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
@@ -896,6 +1004,7 @@ export type McpServerHealth = z.infer<typeof McpServerHealthSchema>;
 export const McpServerSchema = z.object({
   id: Id,
   spaceId: Id,
+  installId: Id.nullable().optional(),
   slug: z.string(),
   name: z.string(),
   description: z.string(),
@@ -914,6 +1023,7 @@ export const McpServerSchema = z.object({
   health: McpServerHealthSchema,
   enabled: z.boolean(),
   revision: z.number().int().positive(),
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -1145,15 +1255,12 @@ export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
-/** Largest completion-token limit exposed by model settings. */
 export const MAX_MODEL_MAX_TOKENS = 131_072;
 
 /** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
-/** Largest context window exposed by model settings. */
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
-/** Parse the optional per-connection image limit entered in model settings. */
 export function parseModelMaxImagesPerPrompt(
   value: string,
   supportsImages = true,
@@ -1163,7 +1270,6 @@ export function parseModelMaxImagesPerPrompt(
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 1000 ? parsed : undefined;
 }
 
-/** Parse the optional completion-token limit entered in model settings. */
 export function parseModelMaxTokens(value: string): number | undefined {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_MODEL_MAX_TOKENS
@@ -1171,7 +1277,6 @@ export function parseModelMaxTokens(value: string): number | undefined {
     : undefined;
 }
 
-/** Parse the optional context-window limit entered in model settings. */
 export function parseModelContextWindow(value: string): number | undefined {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_MODEL_CONTEXT_WINDOW
@@ -1623,10 +1728,11 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
-  /** True when this deployment bills model usage. */
   billingEnabled: z.boolean(),
   /** True until a user of a billing deployment answers or skips the signup survey. Absent from older servers. */
   needsSignupSurvey: z.boolean().optional(),
+  /** The wallet bots can spend from, when this deployment offers one. Absent from older servers. */
+  paymentWalletProvider: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 });
 export type Me = z.infer<typeof MeSchema>;
 
@@ -1659,6 +1765,11 @@ export type SignupSurvey = z.infer<typeof SignupSurveySchema>;
 export function signupSurveyAsksTeamSize(use: SignupSurvey["use"]): boolean {
   return use === "work" || use === "both";
 }
+
+/** Where checkout returns: the mobile app's in-app browser instead of the web app. */
+export const BillingClientSchema = z.literal("mobile").optional();
+/** The deep link the API sends a mobile checkout back to; it closes the in-app browser. */
+export const MOBILE_BILLING_CALLBACK_URL = "rakazo://billing";
 
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),
@@ -1716,7 +1827,10 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }),
+  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }).extend({
+    color: z.string().optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
+  }),
   memory: z.array(z.object({ path: z.string(), content: z.string() })),
   routines: z.array(RoutineSchema.pick({ name: true, prompt: true, crons: true, timezone: true })),
   files: z.array(

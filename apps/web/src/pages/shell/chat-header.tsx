@@ -53,7 +53,13 @@ export function ChatHeader({
         {inGroup ? (
           <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
         ) : active ? (
-          <BotAvatar color={active.color} identity={active.id} size={26} status={active.status} />
+          <BotAvatar
+            avatarSet={active.avatarSet}
+            color={active.color}
+            identity={active.id}
+            size={26}
+            status={active.status}
+          />
         ) : null}
         <span className="min-w-0">
           <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">

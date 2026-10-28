@@ -13,7 +13,6 @@ export const HTML_VIEWER_PATH = "/html-viewer.html";
 export const CSP_REPORT_PATH = "/api/csp-report";
 const CSP_REPORT_GROUP = "csp";
 
-/** The `Reporting-Endpoints` header that names the policy's `report-to` group. */
 export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`;
 
 const APP_DIRECTIVES: Record<string, string[]> = {

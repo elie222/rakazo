@@ -77,6 +77,12 @@ describe("device token storage", () => {
 });
 
 describe("remote computer access", () => {
+  const accesses: ReturnType<typeof createUserDeviceAccess>[] = [];
+  // select() pairs in the background; its token write must land before the directory is removed.
+  afterEach(async () => {
+    await Promise.all(accesses.splice(0).map((access) => access.pair()));
+  });
+
   function setup(overrides: Partial<Parameters<typeof createUserDeviceAccess>[0]> = {}) {
     const requests: { url: string; init: RequestInit }[] = [];
     const clients: {
@@ -119,6 +125,7 @@ describe("remote computer access", () => {
       },
       ...overrides,
     });
+    accesses.push(access);
     return { access, requests, clients };
   }
 
@@ -261,11 +268,35 @@ describe("remote computer access", () => {
 
   it("ignores a page asking for a server it no longer shows", async () => {
     const confirm = vi.fn(async () => true);
-    const { access } = setup({ confirm });
+    let respond = () => {};
+    let pairingStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      pairingStarted = resolve;
+    });
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          respond = () => resolve(Response.json({ deviceId: "device-1", token: "device-token" }));
+          pairingStarted();
+        }),
+    );
+    const { access, clients } = setup({ confirm, fetch });
     await access.select(origin);
-    await access.setAllowed(other, true);
-    expect(confirm).not.toHaveBeenCalled();
-    expect(await readDeviceConsent(userData, other)).toBeNull();
+    const pairing = access.pair();
+    await started;
+    try {
+      await access.setAllowed(other, true);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(await readDeviceConsent(userData, other)).toBeNull();
+    } finally {
+      respond();
+      await pairing;
+    }
+    expect(clients).toHaveLength(1);
+    expect(await readPairedDevice(userData, origin, cipher)).toEqual({
+      token: "device-token",
+      deviceId: "device-1",
+    });
   });
 
   it("retries a signed-out pairing on the next page load but not a refused one", async () => {

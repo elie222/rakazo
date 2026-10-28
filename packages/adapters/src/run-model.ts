@@ -33,11 +33,12 @@ import {
 } from "./model-selection.js";
 import { modelIdSupportsImages } from "./model-vision.js";
 import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
-import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import { codexLiveModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import {
+  CHATGPT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   kickModelCredentialRefresh,
   matchesFailedOAuthSecret,
@@ -267,26 +268,32 @@ async function resolveModelKeyMaterial(
       const resolveAuth = () =>
         resolveModelAuth(plaintext, credential.provider, { persist, retire });
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
+      let liveCodex: Awaited<ReturnType<typeof codexLiveModel>> | undefined;
       const authError = validateModelAuthAvailability(provider, modelId, plaintext);
       if (authError) {
         // A statically excluded Codex model may still run when the backend's
         // per-account catalog lists it for this credential. The catalog path
         // never refreshes or writes credentials, so resolve inside this lock
         // first — rotating a stale token the way any run would — then ask.
-        let liveListed = false;
         if (deps.codexCatalog && parseModelSecret(plaintext).kind === "oauth") {
           resolved = await resolveAuth();
-          liveListed = await codexLiveListsModel(
-            deps.codexCatalog,
-            userId,
-            resolved.secret,
-            modelId,
-            { waitMs: CODEX_LIVE_RUN_WAIT_MS },
-          );
+          liveCodex = await codexLiveModel(deps.codexCatalog, userId, resolved.secret, modelId, {
+            waitMs: CODEX_LIVE_RUN_WAIT_MS,
+          });
         }
-        if (!liveListed) throw new UnavailableModelForAuthError(authError);
+        if (!liveCodex) throw new UnavailableModelForAuthError(authError);
       }
       resolved ??= await resolveAuth();
+      if (
+        !liveCodex &&
+        deps.codexCatalog &&
+        provider === CHATGPT_OAUTH_PROVIDER &&
+        resolved.secret.kind === "oauth"
+      ) {
+        liveCodex = await codexLiveModel(deps.codexCatalog, userId, resolved.secret, modelId, {
+          waitMs: CODEX_LIVE_RUN_WAIT_MS,
+        });
+      }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
@@ -306,13 +313,14 @@ async function resolveModelKeyMaterial(
       }
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-        resolved.secret.kind === "openai_compatible" &&
-        (modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
-          // Legacy secrets have no per-model list, so keep their existing
-          // capability scoped to the model saved in the space preference.
-          (resolved.secret.visionModelIds === undefined &&
-            credential.supportsImages === true &&
-            credential.defaultModel?.trim() === modelId.trim()));
+        resolved.secret.kind === "openai_compatible"
+          ? modelIdSupportsImages(resolved.secret.visionModelIds, modelId) ||
+            // Legacy secrets have no per-model list, so keep their existing
+            // capability scoped to the model saved in the space preference.
+            (resolved.secret.visionModelIds === undefined &&
+              credential.supportsImages === true &&
+              credential.defaultModel?.trim() === modelId.trim())
+          : liveCodex?.supportsImages;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
       cloudflareProviderEnv({ provider, accountId, gatewayId });

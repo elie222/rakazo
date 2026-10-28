@@ -182,7 +182,6 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await page.getByRole("button", { name: "Connect my own", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
 
-  // Own-key organizations from before the plan was paid see when their free period ends.
   status = billingStatus({
     access: true,
     trialAvailable: false,
@@ -210,7 +209,6 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await expect(page).not.toHaveURL(/[?&]plans/);
   await expect(page.getByText("Chief").first()).toBeVisible();
 
-  // The plan choice has its own link, and Subscribe pays for the plan instead of reopening setup.
   await page.goto("/app?plans");
   // The bare route redirects to the first chat and keeps the link's `plans` param.
   await expect(page).toHaveURL(/\/app\/[^/?]+\?plans$/);

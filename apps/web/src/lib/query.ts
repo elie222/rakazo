@@ -56,7 +56,6 @@ export function spaceSeedKey(userId: string | null, spaceId: string | null) {
   return spaceQueries(userId, spaceId).bootstrap.queryKey({ input: {} });
 }
 
-/** A bot chat or a group chat. */
 export type ChatTarget =
   | { botId: string; groupId?: undefined }
   | { groupId: string; botId?: undefined };

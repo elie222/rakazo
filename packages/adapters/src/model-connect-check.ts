@@ -1,7 +1,7 @@
 import type { Context } from "@earendil-works/pi-ai";
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
-import { normalizeRunError } from "@rakazo/core";
+import { MODEL_REQUEST_LIMIT_ERROR, normalizeRunError } from "@rakazo/core";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { resolveRuntimeModel } from "./pi-runtime-models.js";
@@ -16,7 +16,6 @@ export const MODEL_CONNECT_CHECK_TIMEOUT_MS = 15_000;
  */
 const MODEL_CONNECT_CHECK_MAX_TOKENS = 1024;
 
-/** One turn shaped like an agent's: a system prompt, a user message, and a tool. */
 const CHECK_CONTEXT: Context = {
   systemPrompt: "Reply with OK.",
   messages: [{ role: "user", content: "OK?", timestamp: 0 }],
@@ -77,5 +76,6 @@ export async function verifyModelServesAgents(
   const result = await stream.result();
   if (result.stopReason !== "error" || !result.errorMessage) return;
   const failure = normalizeRunError(result.errorMessage);
+  if (failure.kind === "context") throw new Error(MODEL_REQUEST_LIMIT_ERROR);
   if (failure.kind && BLOCKING_KINDS.has(failure.kind)) throw new Error(failure.summary);
 }

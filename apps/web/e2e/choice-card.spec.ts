@@ -14,7 +14,6 @@ test("onboarding choices show borderless rows in both themes", async ({ page }, 
       theme,
     );
     await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
-    // Rows only fill on hover.
     await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
   }
@@ -67,7 +66,6 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await expect(toronto).toBeVisible();
   await expect(lisbon).toBeVisible();
 
-  // Options render as a vertical full-width list, not wrapping chips.
   const berlinBox = await berlin.boundingBox();
   const seoulBox = await seoul.boundingBox();
   const torontoBox = await toronto.boundingBox();

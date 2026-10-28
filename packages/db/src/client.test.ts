@@ -39,6 +39,16 @@ describe("createDb", () => {
     expect(pool.options.max).toBe(4);
   });
 
+  it("lets a transaction wait for a busy pool past Prisma's 2s default", async () => {
+    const { prisma, pool } = createDb("postgres://rakazo:rakazo@127.0.0.1:9/rakazo");
+    pools.push(pool);
+    const released = new Error("connection freed after 2.5s");
+    pool.connect = (() =>
+      new Promise((_, reject) => setTimeout(() => reject(released), 2_500))) as Pool["connect"];
+
+    await expect(prisma.$transaction(async () => "done")).rejects.toThrow(released.message);
+  });
+
   it("refuses local master keys when a key manager is configured", () => {
     vi.stubEnv("MASTER_KEY_PROVIDER", "aws-kms");
     try {

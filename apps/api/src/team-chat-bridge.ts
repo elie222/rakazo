@@ -783,12 +783,9 @@ export class TeamChatBridge {
   }
 
   /**
-   * Promote expired deferred leases. If wakeMessageRoutines already persisted a
-   * routine run (crash before resolveDeferredMessage), mark the row ignored so
-   * recovery cannot also start a TeamChat agent run for the same provider event.
-   * Expired routing ownership is cleared (not promoted) so a later reconcile can
-   * take over; live wakes re-hold the heartbeat after renewal loss. Ambient judge
-   * reasons are not ownership and may promote.
+   * Promote expired deferred leases. If a routine run was already persisted (crash before
+   * resolveDeferredMessage), mark the row ignored so recovery cannot also start a TeamChat
+   * agent run for the same provider event. Expired routing ownership is cleared, not promoted.
    */
   private async recoverExpiredDeferredMessages(target: TargetBot, now: Date): Promise<void> {
     const expired = await this.deps.prisma.externalMessage.findMany({
@@ -843,9 +840,7 @@ export class TeamChatBridge {
           // Same-process wake still delivering; keep exclusive ownership.
           continue;
         }
-        // Lease expired and no local wake: drop orphaned ownership so a later
-        // reconcile can promote. Live wakes re-hold the heartbeat after renewal
-        // loss, or are tracked in inFlightRoutineWakes above.
+        // Lease expired and no local wake: drop orphaned ownership so a later reconcile can promote.
         await this.deps.prisma.externalMessage.updateMany({
           where: {
             id: message.id,
@@ -1576,12 +1571,9 @@ export class TeamChatBridge {
       return;
     }
     if (current.status === "delivered") return;
-    // Once reserved for delivery, stay in delivering. Restoring the pre-reserve
-    // "running" status would let reconciliation send again after a lost ack.
-    // A queueing failure happened before the run was linked and can safely be
-    // retried from received. Once linked, preserve running so the shared run
-    // reconciler can recover a failed continuation enqueue without creating a
-    // second message/run from this stale snapshot.
+    // Restoring the pre-reserve status would let reconciliation send again after a lost ack.
+    // Queueing failed before the run was linked, so it can retry from received; once linked,
+    // keep running so the run reconciler recovers it without a second message/run.
     const status = current.status === "queueing" ? "received" : current.status;
     // Conditional write: if reserveDelivery finalized between the read and this
     // update, leave the delivered/unconfirmed row alone.

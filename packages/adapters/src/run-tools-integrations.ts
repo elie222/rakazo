@@ -5,7 +5,7 @@ import { connectApp } from "./connect-app.js";
 import { addMcpServerFromTool } from "./mcp-server-tool.js";
 import type { RunContext } from "./run-context.js";
 import { runScopedToolExecutionId } from "./run-effects.js";
-import { flushProgress, publishMidTurnNarration } from "./run-progress.js";
+import { flushProgress, publishMidTurnNarration, showNarrationStatus } from "./run-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -92,7 +92,7 @@ export const integrationTools: ToolHandlers = {
     const { deps, run, runId, context } = ctx;
     const { args, executionId, applied } = call;
     await flushProgress(ctx);
-    await publishMidTurnNarration(ctx, true);
+    await showNarrationStatus(ctx, await publishMidTurnNarration(ctx, true));
     return call.finish(
       await connectApp(
         deps,

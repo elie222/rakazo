@@ -21,7 +21,6 @@ import { isVitestRuntime } from "./test-runtime.js";
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
 
-/** The tool-router session surface the connector uses. */
 export type ComposioSession = Pick<
   SdkSession,
   "sessionId" | "toolkits" | "tools" | "execute" | "authorize"
@@ -872,7 +871,13 @@ export class ConnectorRegistry implements ConnectorProvider {
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined> {
     const connectorId = call.route?.connectorId;
-    if (!connectorId) return undefined;
+    if (!connectorId) {
+      for (const provider of this.providers.values()) {
+        const resolved = await provider.resolveCall?.(call, context);
+        if (resolved) return resolved;
+      }
+      return undefined;
+    }
     const provider = this.providers.get(connectorId);
     return provider?.resolveCall?.({ ...call, tool: call.route?.toolName ?? call.tool }, context);
   }

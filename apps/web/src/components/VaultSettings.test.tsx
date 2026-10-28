@@ -64,6 +64,25 @@ vi.mock("@rakazo/ui-web", () => ({
   Input: (props: ComponentProps<"input">) => <input {...props} />,
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+  Label: ({ htmlFor: _htmlFor, ...props }: ComponentProps<"label">) => <span {...props} />,
+  Switch: ({
+    checked,
+    onCheckedChange,
+    size: _size,
+    ...props
+  }: Omit<ComponentProps<"button">, "onChange"> & {
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    size?: string;
+  }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange(!checked)}
+      {...props}
+    />
+  ),
 }));
 
 import { REVEAL_MS, VaultSettings } from "./VaultSettings";
@@ -257,15 +276,58 @@ describe("VaultSettings", () => {
     expect(container.innerHTML).not.toContain(FAKE_VALUE);
   });
 
-  it("encodes a website login with encodeLoginSecret", async () => {
+  const loginRows = () => [
+    ...container.querySelectorAll<HTMLElement>('[data-testid="login-field"]'),
+  ];
+
+  async function setInput(input: HTMLInputElement, value: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function fillLoginRow(index: number, label: string, value: string) {
+    const row = () => loginRows()[index]!;
+    await setInput(row().querySelector<HTMLInputElement>('input[aria-label="Label"]')!, label);
+    await setInput(row().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value);
+  }
+
+  async function clickButton(row: HTMLElement, selector: string) {
+    await act(async () => row.querySelector<HTMLElement>(selector)!.click());
+  }
+
+  it("encodes a website login's fields with encodeLoginSecret", async () => {
     vault.put.mockResolvedValue(rows[3]);
     await render();
     await click("credential-add");
     await type("credential-name", "portal2");
     await type("credential-origin", "https://portal.example.com");
     await type("credential-auth-type", "login");
-    await type("credential-username", " jamie ");
-    await type("credential-value", FAKE_VALUE);
+
+    expect(
+      loginRows().map((row) => [
+        row.querySelector<HTMLInputElement>('input[aria-label="Label"]')!.value,
+        row.querySelector('[role="switch"]')!.getAttribute("aria-checked"),
+      ]),
+    ).toEqual([
+      ["Username", "false"],
+      ["Password", "true"],
+    ]);
+    await fillLoginRow(0, "Account number", " 12345678 ");
+    await fillLoginRow(1, "Password", FAKE_VALUE);
+    await act(async () => {
+      [...container.querySelectorAll("button")].find((b) => b.textContent === "Add field")!.click();
+    });
+    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
+    await fillLoginRow(2, "Postcode", "AB1 2CD");
+    expect(
+      loginRows()[2]!.querySelector<HTMLInputElement>('input[aria-label="Postcode"]')!.type,
+    ).toBe("password");
+    await clickButton(loginRows()[2]!, '[role="switch"]');
+    expect(
+      loginRows()[2]!.querySelector<HTMLInputElement>('input[aria-label="Postcode"]')!.type,
+    ).toBe("text");
     await click("credential-add-save");
 
     expect(vault.put).toHaveBeenCalledWith({
@@ -275,8 +337,31 @@ describe("VaultSettings", () => {
         origin: "https://portal.example.com",
         auth: { type: "login" },
       },
-      value: encodeLoginSecret({ username: "jamie", password: FAKE_VALUE }),
+      value: encodeLoginSecret({
+        fields: [
+          { label: "Account number", value: "12345678", hidden: false },
+          { label: "Password", value: FAKE_VALUE, hidden: true },
+          { label: "Postcode", value: "AB1 2CD", hidden: false },
+        ],
+      }),
     });
+    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+  });
+
+  it("can't save a login until every field has its own label and a value", async () => {
+    await render();
+    await click("credential-add");
+    await type("credential-name", "portal2");
+    await type("credential-origin", "https://portal.example.com");
+    await type("credential-auth-type", "login");
+    await fillLoginRow(0, "Code", "fake-code");
+    await fillLoginRow(1, "code", FAKE_VALUE);
+    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
+
+    await clickButton(loginRows()[1]!, '[aria-label="Remove"]');
+    expect(loginRows()).toHaveLength(1);
+    expect(loginRows()[0]!.querySelector('[aria-label="Remove"]')).toBeNull();
+    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(false);
   });
 
   it("replaces a value on the same destination", async () => {
@@ -492,12 +577,20 @@ describe("VaultSettings show", () => {
     expect(container.innerHTML).not.toContain(FAKE_VALUE);
   });
 
-  it("shows a website login's username and password", async () => {
-    vault.reveal.mockResolvedValue({ username: "jamie", password: FAKE_VALUE });
+  it("shows each field of a website login with its label", async () => {
+    vault.reveal.mockResolvedValue({
+      fields: [
+        { label: "Username", value: "jamie", hidden: false },
+        { label: "PIN", value: FAKE_VALUE, hidden: true },
+      ],
+    });
     await render();
     await click("credential-show-portal");
-    expect(text("credential-revealed-username")).toBe("jamie");
-    expect(text("credential-revealed-password")).toBe(FAKE_VALUE);
+    expect(
+      [...container.querySelectorAll('[data-testid="credential-revealed-field"]')].map(
+        (field) => field.parentElement!.textContent,
+      ),
+    ).toEqual(["Usernamejamie", `PIN${FAKE_VALUE}`]);
   });
 
   it("asks the person to confirm it's them, then retries", async () => {

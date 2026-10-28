@@ -17,6 +17,7 @@ export const RUN_TRIGGERS = [
   "webhook",
   "messaging",
   "cloud_agent",
+  "purchase",
   "created",
   "tickets",
 ] as const;

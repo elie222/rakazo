@@ -45,7 +45,8 @@ export function boardsRoutes(ctx: RouterContext) {
       rename: boardEnabled.boards.rename.handler(async ({ context, input }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
         const nextPrefix = input.ticketPrefix?.toUpperCase();
-        if (nextPrefix !== undefined && nextPrefix !== board.ticketPrefix) {
+        const changesPrefix = nextPrefix !== undefined && nextPrefix !== board.ticketPrefix;
+        if (changesPrefix) {
           const tickets = await deps.prisma.ticket.count({
             where: { boardId: board.id, spaceId: context.actor.spaceId },
           });
@@ -55,13 +56,39 @@ export function boardsRoutes(ctx: RouterContext) {
             });
           }
         }
-        const row = await deps.prisma.board.update({
-          where: { id: board.id },
-          data: {
-            ...(input.name !== undefined ? { name: input.name } : {}),
-            ...(nextPrefix !== undefined ? { ticketPrefix: nextPrefix } : {}),
-          },
-        });
+        // Only a changed prefix is written: replaying a case-only value could
+        // restore a prefix that a concurrent rename already replaced.
+        const data = {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(changesPrefix ? { ticketPrefix: nextPrefix } : {}),
+        };
+        let row: BoardRow;
+        if (changesPrefix) {
+          // The write itself must still require an empty board: createTicket
+          // commits its first insert after this count ran, so only this check
+          // stops the prefix from retroactively changing existing ticket refs.
+          // nextNumber closes the lock-wait gap: createTicket's transaction
+          // increments this same row, and Postgres rechecks a scalar predicate
+          // against the committed row, while the tickets subquery can keep its
+          // pre-wait snapshot and miss the inserted ticket.
+          const [updated] = await deps.prisma.board.updateManyAndReturn({
+            where: {
+              id: board.id,
+              spaceId: context.actor.spaceId,
+              nextNumber: board.nextNumber,
+              tickets: { none: {} },
+            },
+            data,
+          });
+          if (!updated) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Cannot change the ticket prefix once tickets exist.",
+            });
+          }
+          row = updated;
+        } else {
+          row = await deps.prisma.board.update({ where: { id: board.id }, data });
+        }
         return toBoardDto(row);
       }),
       subscribe: boardEnabled.boards.subscribe.handler(async function* ({ context }) {

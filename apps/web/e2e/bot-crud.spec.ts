@@ -34,7 +34,6 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await dialog.getByPlaceholder("Name your Bot").fill("New Bot");
   await dialog.getByRole("button", { name: "Create", exact: true }).click();
   await createAborted;
-  // Failed create keeps the dialog open over the current bot chat.
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await expect(dialog).toBeVisible();
   await expect(dialog.getByTestId("create-bot-error")).toBeVisible();

@@ -25,7 +25,6 @@ test("titled sidebar section expands and collapses", async ({ page }, testInfo) 
   const toggle = projects.getByRole("button", { name: /Collapse Projects|Expand Projects/ });
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-  // Rest (no hover): move pointer off the header before capturing.
   await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "sidebar-section-expanded");
 

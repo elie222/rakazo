@@ -1,4 +1,3 @@
-/** Catalog id for the Cloudflare AI Gateway provider shipped by the model runtime. */
 export const CLOUDFLARE_AI_GATEWAY_PROVIDER_ID = "cloudflare-ai-gateway";
 
 /**

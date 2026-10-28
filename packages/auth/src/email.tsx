@@ -5,10 +5,11 @@ import { lightTokens } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Body, Container, Head, Html, Link, render, Text, toPlainText } from "react-email";
 
-async function message(
+export async function message(
   to: string,
   subject: string,
   content: ReactNode,
+  headers?: Record<string, string>,
 ): Promise<TransactionalEmail> {
   const html = await render(
     <Html lang="en">
@@ -24,10 +25,10 @@ async function message(
       </Body>
     </Html>,
   );
-  return { to, subject, html, text: toPlainText(html) };
+  return { to, subject, html, text: toPlainText(html), ...(headers ? { headers } : {}) };
 }
 
-const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
+export const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
 
 export function verificationEmail(email: string, url: string): Promise<TransactionalEmail> {
   return message(

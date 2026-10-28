@@ -4065,11 +4065,18 @@ describe("stopThreadRuns", () => {
       }),
     ]);
     // The terminal seqs sit above every deleted progress seq, so max(seq) never
-    // rewinds below an applied cursor — the freeze regression.
+    // rewinds below an applied cursor.
     expect(Math.max(...created.map((data) => data.seq as number))).toBeGreaterThan(1);
     expect(writes.lastIndexOf("event.create")).toBeLessThan(writes.indexOf("event.deleteMany"));
     expect(transaction.event.deleteMany).toHaveBeenCalledWith({
-      where: { type: "thread.progress", runId: { in: ["run-a", "run-b"] } },
+      where: {
+        OR: [
+          { type: "thread.progress" },
+          { type: "thread.meta", payload: { equals: { activity: { thinking: true } } } },
+          { type: "thread.meta", payload: { equals: { activity: { thinking: false } } } },
+        ],
+        runId: { in: ["run-a", "run-b"] },
+      },
     });
     expect(notify).toHaveBeenCalledWith("thread-1", 3);
     // A stopped run never resumes to read a waiting secret answer.

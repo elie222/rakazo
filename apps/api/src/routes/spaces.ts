@@ -297,6 +297,7 @@ async function memberSpaceNavigation(
           name: bot.name,
           title: bot.title,
           color: bot.color,
+          avatarSet: bot.avatarSet,
           notifyOnFinish: bot.notifyOnFinish,
           pinned: bot.pinned,
           sectionId: bot.sectionId,

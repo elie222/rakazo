@@ -34,6 +34,8 @@ const { element, account } = vi.hoisted(() => ({
       unknown
     >,
     push: vi.fn(),
+    approvals: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true },
+    rules: [] as { id: string }[],
   },
 }));
 
@@ -86,6 +88,7 @@ vi.mock("expo-router", () => {
 });
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
 vi.mock("../components/app-mark", () => ({ AppMark: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -106,12 +109,14 @@ vi.mock("../components/settings-group", () => ({
   SettingsLabel: element("span"),
   SettingsRow: ({
     title,
+    value,
     accessibilityRole,
     chevron,
     disabled,
     onPress,
   }: {
     title: string;
+    value?: string;
     accessibilityRole?: string;
     chevron?: string;
     disabled?: boolean;
@@ -123,6 +128,7 @@ vi.mock("../components/settings-group", () => ({
         type: "button",
         role: accessibilityRole,
         "data-chevron": chevron,
+        "data-value": value,
         "data-row": "",
         disabled,
         onClick: onPress,
@@ -140,7 +146,15 @@ vi.mock("./api", () => ({
   loadSessionToken: vi.fn(async () => "token"),
   passwordResetCapabilities: vi.fn(async () => ({})),
   requestAccountDeletionCode: vi.fn(),
-  rpc: vi.fn(async (method: string) => (method === "me" ? account.me : {})),
+  rpc: vi.fn(async (method: string) =>
+    method === "me"
+      ? account.me
+      : method === "autoReview/get"
+        ? account.approvals
+        : method === "approvalRules/list"
+          ? account.rules
+          : {},
+  ),
   selectedSpaceId: () => "space-1",
   signOut: vi.fn(),
   updateAccountName: vi.fn(),
@@ -221,6 +235,7 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   account.me = { userId: "user-1", name: "Tester", email: "tester@example.test" };
+  account.rules = [];
   vi.mocked(fetchAccountSecurity).mockResolvedValue(security());
 });
 
@@ -239,7 +254,6 @@ it("offers no avatar style choice in account settings", async () => {
   root = createRoot(container);
   await act(async () => root?.render(<Account />));
 
-  // The screen rendered its neighbouring settings.
   expect(container.querySelector('[aria-label="Appearance"]')).not.toBeNull();
   expect(container.textContent).toContain("Language");
   expect(container.querySelector('[aria-label="Avatar style"]')).toBeNull();
@@ -402,6 +416,7 @@ it.each([false, true])(
         "Approvals",
         "Vault",
         "Integrations",
+        "Skills",
         "Messaging",
         "AI data sharing",
       ];
@@ -417,7 +432,6 @@ it.each([false, true])(
       expect(events).toEqual(["close", "/artifacts"]);
       for (const [title, href] of [
         ["Models", "/models"],
-        ["Approvals", "/approvals"],
         ["Vault", "/vault"],
         ["Messaging", "/messaging"],
       ]) {
@@ -437,3 +451,28 @@ it.each([false, true])(
     }
   },
 );
+
+it("shows the approval mode as the Approvals row's value, with Rules only once there are some", async () => {
+  let view = await renderAccount();
+  const approvals = view.button("Approvals")!;
+  expect(approvals.dataset.value).toBe("Ask");
+  expect(approvals.dataset.chevron).toBeUndefined();
+  // The mode opens a menu in place; there is no screen for it.
+  await act(async () => approvals.click());
+  expect(account.push).not.toHaveBeenCalled();
+  expect(view.button("Rules")).toBeUndefined();
+
+  act(() => root?.unmount());
+  container?.remove();
+  account.rules = [{ id: "rule-1" }, { id: "rule-2" }];
+  view = await renderAccount();
+  const titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles.slice(titles.indexOf("Approvals"), titles.indexOf("Approvals") + 3)).toEqual([
+    "Approvals",
+    "Rules",
+    "Vault",
+  ]);
+  expect(view.button("Rules")!.dataset.value).toBe("2");
+  await view.press("Rules");
+  expect(account.push).toHaveBeenCalledWith("/approvals");
+});

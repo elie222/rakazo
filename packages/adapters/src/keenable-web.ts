@@ -47,7 +47,6 @@ export class KeenableWebProvider implements WebProvider {
 
   constructor(private readonly options: KeenableWebOptions = {}) {}
 
-  /** Advertise the same optional web capabilities as other WebProvider adapters. */
   describe() {
     return {
       id: "keenable",
@@ -57,7 +56,6 @@ export class KeenableWebProvider implements WebProvider {
     };
   }
 
-  /** Return bounded search snippets through the existing builtin tool contract. */
   async search(request: WebSearchRequest, context: AdapterContext): Promise<WebSearchHit[]> {
     const query = request.query.trim();
     if (!query) throw new Error("query is required");
@@ -85,7 +83,6 @@ export class KeenableWebProvider implements WebProvider {
       });
   }
 
-  /** Extract readable page markdown within the shared fetch limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
     const signal = this.signal(
@@ -113,13 +110,11 @@ export class KeenableWebProvider implements WebProvider {
     };
   }
 
-  /** Combine caller cancellation with the provider deadline. */
   private signal(parent: AbortSignal, timeoutMs = 30_000) {
     parent.throwIfAborted();
     return combineSignals(parent, AbortSignal.timeout(timeoutMs));
   }
 
-  /** Call one Keenable tool through the guarded transport and validate its JSON result. */
   private async call<T>(
     name: string,
     args: Record<string, unknown>,

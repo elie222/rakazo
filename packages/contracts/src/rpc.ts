@@ -37,12 +37,15 @@ import {
 import {
   BotSecretMetadata,
   BotSecretPutInput,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldInput,
   StoredBotSecretName,
   VaultPutInput,
   VaultRevealed,
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -54,7 +57,9 @@ import {
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
+  AvailabilityKindSchema,
   AvatarStyleSchema,
+  BillingClientSchema,
   BillingStatusSchema,
   BotMcpServerSchema,
   BotSchema,
@@ -99,6 +104,9 @@ import {
   ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PluginMarketplaceCatalogSchema,
+  PluginPartSchema,
+  PluginPreviewSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
@@ -111,6 +119,7 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
+  SpaceAvailabilitySchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -139,6 +148,7 @@ import {
 } from "./integration-settings.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
+import { PaymentWalletStatusSchema } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import {
@@ -234,18 +244,30 @@ export const appContract = {
   me: oc.output(MeSchema),
   billing: {
     status: oc.output(BillingStatusSchema),
+    /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
+    refresh: oc.output(BillingStatusSchema),
     selectFunding: oc
-      .input(z.object({ funding: z.enum(["byok", "credits"]) }))
+      .input(z.object({ funding: z.enum(["byok", "credits"]), client: BillingClientSchema }))
       /** `url` is the checkout to pay for the own-key plan before it has access. */
       .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
     purchaseCredits: oc
-      .input(z.object({ amountCents: ModelCreditAmountSchema, monthly: z.boolean() }))
+      .input(
+        z.object({
+          amountCents: ModelCreditAmountSchema,
+          monthly: z.boolean(),
+          client: BillingClientSchema,
+        }),
+      )
       .output(z.object({ url: z.string().url() })),
     setMonthlyCredits: oc
       .input(z.object({ amountCents: ModelCreditAmountSchema }))
       .output(z.object({ ok: z.literal(true) })),
-    checkout: oc.output(z.object({ url: z.string().url() })),
-    portal: oc.output(z.object({ url: z.string().url() })),
+    checkout: oc
+      .input(z.object({ client: BillingClientSchema }).optional())
+      .output(z.object({ url: z.string().url() })),
+    portal: oc
+      .input(z.object({ client: BillingClientSchema }).optional())
+      .output(z.object({ url: z.string().url() })),
   },
   preferences: {
     update: oc
@@ -562,7 +584,9 @@ export const appContract = {
             answer: z.string(),
             /** Carries the call id for an answer spoken during a call. */
             clientNonce: z.string().min(1).max(200).optional(),
-            /** Only for a login card; `answer` carries its password. */
+            /** A login card's answer, one per requested field; `answer` is then empty. */
+            fields: z.array(LoginFieldInput).min(1).max(LOGIN_FIELD_LIMIT).optional(),
+            /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
             username: z.string().min(1).max(512).optional(),
             /** Turns down a pending secret request; `answer` is then empty. */
             dismiss: z.literal(true).optional(),
@@ -570,8 +594,10 @@ export const appContract = {
           .refine(
             (input) =>
               input.dismiss
-                ? input.answer === "" && !input.username && !input.clientNonce
-                : input.answer.length > 0,
+                ? input.answer === "" && !input.username && !input.fields && !input.clientNonce
+                : input.fields
+                  ? input.answer === "" && !input.username
+                  : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
       )
@@ -811,7 +837,7 @@ export const appContract = {
       .output(z.object({ runId: Id })),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). Pi already understands this format; we persist and inject them. */
+  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). */
   agentSkills: {
     list: oc.output(z.array(AgentSkillCatalogEntrySchema)),
     get: oc
@@ -832,6 +858,27 @@ export const appContract = {
     create: oc.input(CreateAgentSkillInput).output(AgentSkillSchema),
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  availability: {
+    set: oc
+      .input(z.object({ kind: AvailabilityKindSchema, id: Id }).and(SpaceAvailabilitySchema))
+      .output(SpaceAvailabilitySchema),
+    /** The user's own skills, MCP servers, plugins and tool sources across their spaces. */
+    items: oc.output(z.array(AccountItemSchema)),
+    /** Make exactly the listed items available in a space, keeping each one's other spaces. */
+    chooseForSpace: oc
+      .input(
+        z.object({
+          spaceId: Id,
+          items: z.array(z.object({ kind: AvailabilityKindSchema, id: Id })).max(500),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  marketplace: {
+    catalog: oc
+      .input(z.object({ query: z.string().trim().max(200).default("") }))
+      .output(PluginMarketplaceCatalogSchema),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
@@ -856,9 +903,25 @@ export const appContract = {
           source: z.string().min(1).max(2048),
           config: z.record(z.string(), z.unknown()).default({}),
           credential: z.string().max(16_384).optional(),
+          /** Required for plugins: confirms the exact previewed package content. */
+          pluginDigest: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .optional(),
+          /** Plugins only: which parts to add; all supported parts when omitted. */
+          pluginParts: z.array(PluginPartSchema).min(1).max(2).optional(),
         }),
       )
       .output(CapabilityInstallSchema),
+    /** Add or remove parts of an installed plugin at its pinned version; no parts removes it. */
+    pluginParts: oc
+      .input(z.object({ id: Id, parts: z.array(PluginPartSchema).max(2) }))
+      .output(z.object({ install: CapabilityInstallSchema.nullable() })),
+    /** Fetch and parse a plugin repo without installing: shows the skills,
+     * MCP endpoints, variables, and skipped parts before confirmation. */
+    pluginPreview: oc
+      .input(z.object({ source: z.string().min(1).max(2048) }))
+      .output(PluginPreviewSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   mcp: {
@@ -1124,6 +1187,13 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  /** The signed-in user's wallet; absent when the deployment offers none. */
+  paymentWallet: {
+    status: oc.output(PaymentWalletStatusSchema),
+    /** Starts a sign-in the user finishes with the provider; `status` then reports it. */
+    connect: oc.output(PaymentWalletStatusSchema),
+    disconnect: oc.output(PaymentWalletStatusSchema),
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),

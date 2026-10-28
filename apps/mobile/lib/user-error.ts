@@ -45,7 +45,6 @@ export function credentialIssueText(field: CredentialField): string {
   return field === "email" ? t("Enter a valid email") : t("Enter a password");
 }
 
-/** Text for a failed auth response body. */
 export function authErrorText(body: unknown, fallback: string): string {
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
   if (code === "SSO_UNAVAILABLE") return t("SSO is temporarily unavailable. Try again.");

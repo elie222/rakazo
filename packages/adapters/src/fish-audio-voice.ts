@@ -43,7 +43,6 @@ const ASR_LANGUAGE_PATTERN = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
 let invalidAsrModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
-  /** Advertise Fish Audio's model catalog, speech synthesis, and transcription support. */
   describe(): AdapterDescriptor<VoiceCapabilities> {
     return {
       id: "fish-audio",
@@ -53,7 +52,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     };
   }
 
-  /** Verify the user's Fish Audio API key against the model catalog endpoint. */
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
     return verifyVoiceHttpGet({
       url: `${API}/model?page_size=1&page_number=1`,
@@ -90,7 +88,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     }
   }
 
-  /** Synthesize one Rakazo utterance as bounded MP3 audio. */
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
     const model = resolveFishSpeechModel(request.model);
@@ -118,7 +115,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
-  /** Transcribe a browser recording through Fish Audio's multipart ASR endpoint. */
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
@@ -147,7 +143,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 }
 
-/** Fetch public or user-owned Fish Audio voice models within a page budget. */
 async function fetchModels(
   apiKey: string,
   context: AdapterContext,
@@ -209,7 +204,6 @@ async function fetchModelPage(
   return { body: await readFishResponse(res), ok: res.ok, status: res.status };
 }
 
-/** Decide whether another Fish Audio model page should be requested. */
 function modelPageHasMore(body: unknown, pageNumber: number, itemCount: number): boolean {
   if (!body || typeof body !== "object") return false;
   const meta = body as { has_more?: unknown; total?: unknown };
@@ -220,12 +214,10 @@ function modelPageHasMore(body: unknown, pageNumber: number, itemCount: number):
   return itemCount === MODEL_PAGE_SIZE;
 }
 
-/** Build the authorization header shared by Fish Audio requests. */
 function fishAudioHeaders(apiKey: string): Record<string, string> {
   return { authorization: `Bearer ${apiKey}` };
 }
 
-/** True when `value` can be sent as the Fish `model` header. */
 export function isFishSpeechModelId(value: string): boolean {
   return TTS_MODEL_PATTERN.test(value);
 }
@@ -306,7 +298,6 @@ function fishUnreadBody(error: unknown): { message: string } {
   return { message: "response body could not be read" };
 }
 
-/** Log the upstream Fish status and message, then raise the user-facing error. */
 function rejectFish(
   status: number,
   what: string,
@@ -371,7 +362,6 @@ function scrubSecret(text: string, apiKey: string): string {
   return text.split(secret).join("[Redacted]");
 }
 
-/** Extract object-shaped model entries from a Fish Audio list response. */
 function modelsFrom(body: unknown): Array<Record<string, unknown>> {
   if (!body || typeof body !== "object") return [];
   const items = (body as { items?: unknown }).items;
@@ -382,7 +372,6 @@ function modelsFrom(body: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
-/** Convert a Fish Audio model into the provider-neutral voice shape. */
 function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   if (model.dmca_taken_down === true || model.state === "failed") return null;
   const id = asText(model._id) || asText(model.id);
@@ -394,12 +383,10 @@ function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   return { id, label, description };
 }
 
-/** Read a trimmed string field from an untyped provider response. */
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** Format the model language list for the voice picker description. */
 function languageLabel(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value

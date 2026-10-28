@@ -81,10 +81,8 @@ export class PiRuntimeCredentialStore implements CredentialStore {
       } catch (error) {
         const marker = terminalOAuthRefreshErrorMarker(error);
         if (marker && this.retireOAuth) {
-          // The in-flight request is already failing. Await the retirement so
-          // the delete commits before this error surfaces — a detached delete
-          // could still be observed by a concurrent catalog read or be dropped
-          // by worker shutdown. A retire failure never masks the refresh error.
+          // Await the retirement so the delete commits before this error surfaces: a
+          // detached delete could race a catalog read or be dropped by worker shutdown.
           try {
             await this.retireOAuth(
               "terminal-refresh-failure",
@@ -104,13 +102,9 @@ export class PiRuntimeCredentialStore implements CredentialStore {
             current?.type === "oauth" ? oauthCredentialAccountId(current) : undefined;
           const refreshedAccountId = oauthCredentialAccountId(next);
           if (storedAccountId && refreshedAccountId && storedAccountId !== refreshedAccountId) {
-            // The refresh succeeded but belongs to a different account: retire
-            // the stored credential so the next run sees the provider
-            // disconnected, and fail this run instead of persisting or using
-            // the new token. Await the retirement so the delete commits before
-            // the error surfaces, and fence on the stored credential state so
-            // a concurrent successful refresh is not deleted underneath it. A
-            // retire failure is logged and never masks the account-change error.
+            // The refresh belongs to a different account: retire the stored credential
+            // instead of persisting the new token. Fence on the stored state so a
+            // concurrent successful refresh is not deleted underneath it.
             let deleted = false;
             if (this.retireOAuth) {
               try {
@@ -121,8 +115,7 @@ export class PiRuntimeCredentialStore implements CredentialStore {
                     current?.type === "oauth" ? current : undefined,
                   )) === true;
               } catch (retireError) {
-                // A retire failure is logged and never masks the account-change
-                // error. Leave it unmarked so the run can retry.
+                // Leave it unmarked so the run can retry.
                 getLogger().error("model credential retirement failed", retireError);
               }
             }

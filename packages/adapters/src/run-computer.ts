@@ -4,8 +4,7 @@ import type { ComputerRef } from "@rakazo/adapter-kit";
  * A run's computer, started the first time a tool needs it.
  *
  * Remote computers bill while they run, so a run that never touches its computer must not
- * create or resume one. A failed start is kept: every later use rethrows it, and the run
- * treats it as the setup failure it was before starts became lazy.
+ * create or resume one. A failed start is kept: every later use rethrows it as a setup failure.
  */
 export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: () => void) {
   let started: Promise<ComputerRef> | undefined;

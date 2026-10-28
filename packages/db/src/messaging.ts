@@ -140,8 +140,7 @@ export async function provisionMessagingIdentity(
       },
     });
   } catch {
-    // A concurrent first-inbound won the (provider, address) race; report its
-    // result.
+    // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
       throw new Error(`messaging identity for ${provider}:${address} vanished after create failed`);

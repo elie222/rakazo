@@ -27,7 +27,7 @@ import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/a
 import { runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
+import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
 import {
   claimApprovedEffect,
   claimIntendedEffect,
@@ -44,6 +44,7 @@ import {
 import { reviewWithBackups } from "./auto-review-backups.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { findConnectedModelCredential } from "./model-selection.js";
+import { paidRequestEffect } from "./paid-request.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
@@ -150,16 +151,18 @@ export async function gateToolCall(
     );
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(name, connectorProviders);
-  const fetchUrl = name === "web_fetch" ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
+  // paid_request with only a purchase id sends the request its approval already named.
+  const sendsToSite =
+    SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
+  const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
-  if (name === "web_fetch" && !fetchSite)
-    return { result: { error: "url must be an http(s) URL" } };
+  if (sendsToSite && !fetchSite) return { result: { error: "url must be an http(s) URL" } };
   if (fetchUrl && fetchUrl.length > MAX_FETCH_URL_LENGTH)
     return { result: { error: `url must be at most ${MAX_FETCH_URL_LENGTH} characters` } };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
     args = { ...args, url: fetchUrl };
-    effectRequest = args;
+    effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
     name,

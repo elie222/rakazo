@@ -33,6 +33,7 @@ model User {
   avatarStyle                 String                       @default("organic")
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  marketingEmailOptOutAt      DateTime?
   sessions                    Session[]
   accounts                    Account[]
   passkeys                    Passkey[]
@@ -40,6 +41,7 @@ model User {
   invitations                 Invitation[]
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
+  paymentWallet               PaymentWallet?
   secrets                     Secret[]
   mcpServers                  McpServer[]
   botSections                 BotSection[]
@@ -57,6 +59,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  emailSends                  EmailSend[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
   devices                     UserDevice[]
@@ -108,6 +111,16 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@map("push_tokens")
+}
+
+model EmailSend {
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind   String
+  sentAt DateTime @default(now())
+
+  @@id([userId, kind])
+  @@map("email_sends")
 }
 
 model UserDevice {
@@ -324,6 +337,7 @@ model Space {
   mcpServers                  McpServer[]
   mcpOAuthSessions            McpOAuthSession[]
   modelOAuthSessions          ModelOAuthSession[]
+  purchases                   Purchase[]
   botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
@@ -338,6 +352,9 @@ model Space {
   board                       Board?
   tickets                     Ticket[]
   ticketComments              TicketComment[]
+  agentSkillSpaces            AgentSkillSpace[]
+  mcpServerSpaces             McpServerSpace[]
+  capabilityInstallSpaces     CapabilityInstallSpace[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -527,6 +544,7 @@ model Bot {
   instructionHistory Json @default("[]")
   pendingInstructionsRunId String?
   color             String
+  avatarSet         String            @default("rakazo")
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
@@ -888,6 +906,59 @@ model CloudAgent {
   @@map("cloud_agents")
 }
 
+model PaymentWallet {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String
+  status     String
+  ciphertext String
+  verificationUrl String?
+  userCode   String?
+  expiresAt  DateTime?
+  nextPollAt DateTime?
+  pollIntervalMs Int?
+  refreshAt  DateTime?
+  connectedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("payment_wallets")
+}
+
+model Purchase {
+  id           String    @id @default(uuid())
+  operationKey String    @unique
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId       String
+  botId        String
+  threadId     String
+  threadGeneration Int
+  provider     String
+  remoteId     String
+  merchantName String
+  merchantUrl  String
+  amount       Int
+  currency     String
+  status       String
+  approvalUrl  String?
+  nextPollAt   DateTime?
+  wokenStatus  String?
+  cardCiphertext String?
+  credentialType String  @default("card")
+  merchantAccountId String?
+  paymentChallenge String?
+  requestCiphertext String?
+  tokenCiphertext String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([nextPollAt])
+  @@index([spaceId, userId, createdAt])
+  @@map("purchases")
+}
+
 model ExternalEffect {
   id             String   @id @default(cuid())
   spaceId        String
@@ -1013,7 +1084,6 @@ model AgentImport {
 }
 
 /// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
-/// The Pi runtime already understands this format; we persist and inject them.
 /// Distinct from TaughtSkill (demo/record playbooks).
 model AgentSkill {
   id          String   @id @default(cuid())
@@ -1023,12 +1093,21 @@ model AgentSkill {
   name        String
   description String
   content     String
+  /// Text reference files beside SKILL.md, keyed by relative path (plugin skills).
+  files       Json?
   /// user | builtin | plugin — only user skills are writable via API/tools.
   source      String   @default("user")
+  /// Plugin install that created this skill (source = "plugin").
+  installId   String?
+  install     CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces   Boolean  @default(false)
+  availableIn AgentSkillSpace[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([spaceId, userId])
+  @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
   @@map("agent_skills")
 }
@@ -1064,7 +1143,13 @@ model CapabilityInstall {
   digest    String?
   secretId  String?
   config    Json     @default("{}")
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  agentSkills AgentSkill[]
+  mcpServers  McpServer[]
+  availableIn CapabilityInstallSpace[]
 
   @@index([spaceId, userId])
   @@map("capability_installs")
@@ -1278,14 +1363,10 @@ model Artifact {
 model UsageRecord {
   id                 String   @id @default(cuid())
   spaceId            String
-  /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
-  /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
-  /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
-  /// deleting a bot also deletes its runs, `runId` goes null in the same breath — the row
-  /// would keep only space, user, model and token counts.
-  ///
-  /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
-  /// IS the bot id, so a deleted bot's name is still reachable for display.
+  /// Which bot spent this. Deliberately not a relation: usage is spend that really happened,
+  /// and deleting a bot (which also deletes its runs) must not delete the row or blank its
+  /// attribution, as Cascade or SetNull would. The id may dangle; read it with a LEFT JOIN.
+  /// `BotDeletion.id` is the bot id, so a deleted bot's name stays reachable for display.
   botId              String?
   userId             String
   runId              String?
@@ -1383,6 +1464,9 @@ model McpServer {
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
+  /// Plugin install that created this server, if any.
+  installId     String?
+  install       CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
   /// Last launch/discovery outcome: unknown | installing | ok | error.
@@ -1394,9 +1478,13 @@ model McpServer {
   updatedAt     DateTime          @updatedAt
   assignments   BotMcpServer[]
   oauthSessions McpOAuthSession[]
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces     Boolean           @default(false)
+  availableIn   McpServerSpace[]
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])
+  @@index([installId])
   @@map("mcp_servers")
 }
 
@@ -1969,4 +2057,43 @@ model MessagingInstallSession {
   expiresAt DateTime
   @@index([expiresAt])
   @@map("messaging_install_sessions")
+}
+
+/// A further space an account-owned skill is available in, beyond the one it was added in.
+model AgentSkillSpace {
+  skillId String
+  skill   AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  spaceId String
+  space   Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId  String
+
+  @@id([skillId, spaceId])
+  @@index([spaceId, userId])
+  @@map("agent_skill_spaces")
+}
+
+/// A further space an account-owned MCP server is available in, beyond the one it was added in.
+model McpServerSpace {
+  serverId String
+  server   McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  spaceId  String
+  space    Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@id([serverId, spaceId])
+  @@index([spaceId, userId])
+  @@map("mcp_server_spaces")
+}
+
+/// A further space an account-owned plugin or tool source is available in, beyond the one it was added in.
+model CapabilityInstallSpace {
+  installId String
+  install   CapabilityInstall @relation(fields: [installId], references: [id], onDelete: Cascade)
+  spaceId   String
+  space     Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@id([installId, spaceId])
+  @@index([spaceId, userId])
+  @@map("capability_install_spaces")
 }

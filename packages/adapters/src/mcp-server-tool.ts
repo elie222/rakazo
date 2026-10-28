@@ -1,21 +1,17 @@
-import type { MessageBlock } from "@rakazo/contracts";
-import type { McpServer, Prisma } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor-deps.js";
-import { mcpStdioRefusal } from "./mcp-transport.js";
-import { assertSafeRemoteUrl } from "./remote-mcp.js";
-import { isUniqueViolation, persistMessageInTransaction } from "./run-messages.js";
-/** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
- * the executor wires the parsed result into Prisma + the secret store. */
-
-import type { McpTransport } from "@rakazo/contracts";
+import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import {
   McpRemoteEndpointSchema,
   McpTransportSchema,
   mcpOAuthEnvReferences,
 } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
+import type { McpServer, Prisma } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { mcpStdioRefusal } from "./mcp-transport.js";
 import { toStringRecord } from "./memory-provider-factory.js";
+import { assertSafeRemoteUrl } from "./remote-mcp.js";
+import { isUniqueViolation, persistMessageInTransaction } from "./run-messages.js";
 
 export { deriveMcpSlug } from "@rakazo/core";
 

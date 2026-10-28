@@ -1214,6 +1214,61 @@ describe("destroyBot", () => {
     }
   });
 
+  it("treats releasing the screen of a Team Computer whose sandbox is gone as done", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-profile-gone-"));
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const home = new LocalAgentHomeStore(root);
+      const teamHome = home.pathFor("team-workspace-1");
+      await seedProfile(teamHome, "bot-1", "stored-gone");
+      const gone = Object.assign(new Error("Boat sandbox sandbox-1 is gone"), {
+        name: "SandboxNotFoundError",
+      });
+      const team = {
+        id: "team-computer",
+        homeKey: "team-workspace-1",
+        kind: "boat",
+        providerRef: "sandbox-1",
+        scope: "team",
+        state: "running",
+      };
+
+      await destroyBot(
+        {
+          prisma: deletionPrisma(team),
+          sandbox: {
+            releaseScreen: vi.fn().mockRejectedValue(gone),
+            execute: vi.fn().mockRejectedValue(gone),
+          } as unknown as SandboxProvider,
+          home,
+          jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          id: "bot-1",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          name: "Researcher",
+          archivedAt: null,
+          computerId: team.id,
+        },
+        context,
+        { deleteMemories: true },
+      );
+
+      expect(sink.events.map((event) => event.message)).not.toContain("team screen release");
+      expect(sink.events.map((event) => event.message)).not.toContain(
+        "team browser profile cleanup",
+      );
+      await expect(
+        access(path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"))),
+      ).rejects.toThrow();
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes the deleted bot's folder inside a running Docker Team Computer and keeps other folders", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-folder-delete-"));
     try {

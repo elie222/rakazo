@@ -10,7 +10,11 @@ import type {
   ReplyPreview,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
+import {
+  GROUP_MEMBER_MIN,
+  MessageBlock as MessageBlockSchema,
+  resolveBotAvatarSet,
+} from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
@@ -39,6 +43,7 @@ import {
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
+  transientRunEventsWhere,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -292,7 +297,7 @@ async function lockAndLoadGroupMembers(
     include: {
       members: {
         where: { bot: { archivedAt: null } },
-        include: { bot: { select: { id: true, name: true, color: true } } },
+        include: { bot: { select: { id: true, name: true, color: true, avatarSet: true } } },
         orderBy: [{ createdAt: "asc" }, { botId: "asc" }],
       },
     },
@@ -302,6 +307,7 @@ async function lockAndLoadGroupMembers(
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
+    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
   }));
 }
 
@@ -330,6 +336,7 @@ export async function resolveThreadTarget(
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
+      avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
       status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
@@ -404,12 +411,9 @@ export async function threadSnapshot(
             }),
           ]);
           const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
-          // A failed run is only the thread's word while it is still the newest
-          // terminal run; otherwise a stale failure would resurface in the
-          // composer error strip on every load, forever. Instead of comparing
-          // timestamps (equal createdAt values reverse under gt/gte), ask for
-          // the newest terminal run under the same deterministic ordering and
-          // check whether it is this failure.
+          // A failure only surfaces while it is still the newest terminal run, or a stale
+          // failure would reappear on every load. Compare by ordering, not timestamps:
+          // equal createdAt values reverse under gt/gte.
           const newestTerminal =
             run?.status === "failed"
               ? await tx.run.findFirst({
@@ -569,7 +573,6 @@ function pickPrimaryPrivateActiveRun<T extends { status: string }>(
   );
 }
 
-/** Latest terminal by end time (completedAt, else createdAt), then createdAt, then id. */
 function pickLatestTerminalRun<T extends { id: string; createdAt: Date; completedAt: Date | null }>(
   runs: T[],
 ): T | null {
@@ -1492,7 +1495,7 @@ export async function stopThreadRuns(
     if (ids.length) {
       await tx.event.deleteMany({
         where: {
-          type: "thread.progress",
+          ...transientRunEventsWhere(),
           runId: { in: ids },
         },
       });

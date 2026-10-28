@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { AgentImportStatusSchema } from "./agent-import-setup.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
@@ -250,6 +251,9 @@ export const AgentImportCreateInput = z.strictObject({
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
   description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   computerMode: ComputerModeSchema.default("team"),
+  /** Portable appearance when supplied by an exported profile; older imports stay organic. */
+  color: BotAvatarValueSchema.optional(),
+  avatarSet: BotAvatarSetSchema.optional(),
   selection: AgentImportSelectionSchema,
 });
 export type AgentImportCreateInput = z.infer<typeof AgentImportCreateInput>;

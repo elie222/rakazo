@@ -6,14 +6,10 @@ export const SANDBOXED_ARTIFACT_CSP =
 const PLAIN_HTML_DOCTYPE = /^\s*<!doctype\s+html\s*>/i;
 
 /**
- * Wraps bot-authored HTML with a restrictive CSP before it's handed to a
- * sandboxed viewer (a web iframe's `srcdoc`, or a native WebView's `source.html`).
- * The CSP alone isn't the isolation boundary — on web that's the iframe's
- * `sandbox="allow-scripts"` (no `allow-same-origin`); on native it's the
- * WebView never sharing the app's cookies/storage and being blocked from
- * navigating anywhere else. The CSP is a second layer on top: even within
- * that boundary, it blocks outbound network requests a script might still
- * attempt.
+ * The CSP is a second layer, not the isolation boundary: on web that is the iframe's
+ * `sandbox="allow-scripts"` (no `allow-same-origin`); on native it is the WebView never
+ * sharing the app's cookies/storage and being blocked from navigating. Within that
+ * boundary the CSP still blocks outbound network requests a script might attempt.
  */
 export function withSandboxedArtifactCsp(html: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOXED_ARTIFACT_CSP}">`;

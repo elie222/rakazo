@@ -1,4 +1,11 @@
-import type { Bot, Me, Space, SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
+import type {
+  Bot,
+  BotAvatarSet,
+  Me,
+  Space,
+  SpaceMemoryConfig,
+  UsageSummary,
+} from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
@@ -20,6 +27,9 @@ const PeerMessagesOverlay = lazyOverlay(() =>
 const PluginsOverlay = lazyOverlay(() =>
   import("../PluginsOverlay").then((module) => module.PluginsOverlay),
 );
+const SkillsDialog = lazyOverlay(() =>
+  import("../../components/integrations/skills-dialog").then((module) => module.SkillsDialog),
+);
 const McpServersOverlay = lazyOverlay(() =>
   import("../McpServersOverlay").then((module) => module.McpServersOverlay),
 );
@@ -35,7 +45,7 @@ function voiceStatusRefreshTimeout(): Promise<never> {
   });
 }
 
-/** The integrations and MCP overlays the URL opens. */
+/** The integrations, skills and MCP overlays the URL opens. */
 export function AppOverlays({
   overlay,
   setOverlay,
@@ -59,6 +69,7 @@ export function AppOverlays({
           onOpenMcp={() => setOverlay({ kind: "mcp" })}
         />
       ) : null}
+      {overlay?.kind === "skills" ? <SkillsDialog onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "mcp" ? (
         <McpServersOverlay
           editServerId={overlay.serverId}
@@ -112,7 +123,7 @@ export function SettingsOverlays({
   peerConversation: { peerBotId: string; peerBotName: string } | null;
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
-  peerBot: (botId: string) => { color: string } | undefined;
+  peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
   // Read when Usage opens; a reopened Usage shows the last summary while it refreshes.
   const usageQuery = useQuery({ ...queries.usage.summary.queryOptions(), enabled: false });
@@ -147,6 +158,7 @@ export function SettingsOverlays({
             setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
           }
           messagingEnabled={messagingEnabled}
+          paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
           timezone={bootstrapMe?.timezone ?? null}
           onTimezoneChange={async (timezone) => {
             const nextMe = await rpc.preferences.update({ timezone });
@@ -175,9 +187,11 @@ export function SettingsOverlays({
           botId={active.id}
           botName={active.name}
           botColor={active.color}
+          botAvatarSet={active.avatarSet}
           peerBotId={peerConversation.peerBotId}
           peerBotName={peerConversation.peerBotName}
           peerBotColor={peerBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+          peerBotAvatarSet={peerBot(peerConversation.peerBotId)?.avatarSet}
           onClose={() => setPeerConversation(null)}
         />
       ) : null}

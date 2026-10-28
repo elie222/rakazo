@@ -55,7 +55,7 @@ function describePointer(event: TeachRecordingEvent): string {
   return `${action === "click" ? "Click" : action} ${button} button at (${event.x ?? 0}, ${event.y ?? 0}).`;
 }
 
-/** The way a scroll goes; anything else scrolls down, as before. */
+/** The way a scroll goes; anything else scrolls down. */
 export function scrollDirection(value: unknown): "up" | "down" | "left" | "right" {
   return value === "up" || value === "left" || value === "right" ? value : "down";
 }

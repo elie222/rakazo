@@ -6,6 +6,7 @@ import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
+import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -74,6 +75,8 @@ async function main() {
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
+      // The offline wallet, so Settings shows Wallet and sign-in completes without a provider.
+      process.env.PAYMENT_WALLET_PROVIDER = "emulator";
       process.env.RAKAZO_NAV_LINKS = JSON.stringify([
         { id: "clients", label: "Clients", path: "/ext/clients/" },
       ]);
@@ -200,6 +203,7 @@ async function main() {
     ]);
     const { serve } = await import("@hono/node-server");
     const thirdParties = new ThirdPartyConnectorEmulator();
+    const marketplace = new PluginMarketplaceFixture(thirdParties.fetch);
     const pipedream = new PipedreamConnector(
       {
         clientId: "fake-client-id",
@@ -222,9 +226,11 @@ async function main() {
       pipedream,
       email,
       remoteConnectors: {
-        fetch: thirdParties.fetch,
+        fetch: marketplace.fetch,
         resolveHostname: thirdParties.resolveHostname,
       },
+      pluginRepoFetcher: marketplace.repo,
+      pluginMarketplaceRead: marketplace.index,
       integrationsCatalogUrl: "https://catalog.example.test/",
       userDevices,
     });

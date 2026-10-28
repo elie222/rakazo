@@ -39,6 +39,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);
     expect(toolRequiresExplicitApproval("create_space")).toBe(true);
+    // The wallet owner approves every purchase on the provider's side.
+    expect(toolRequiresApproval("request_purchase", false)).toBe(false);
+    expect(toolRequiresApproval("purchase_status", false)).toBe(false);
     expect(toolRequiresExplicitApproval("save_shared_memory")).toBe(false);
     expect(toolRequiresExplicitApproval("archive_bot")).toBe(false);
   });
@@ -148,7 +151,7 @@ describe("isOwnerStartedRun", () => {
 
 describe("unattendedTriggerToolRequiresApproval", () => {
   it("forces approval for webhook-triggered local side effects", () => {
-    for (const name of ["shell", "write_file", "browser_act", "computer_act"]) {
+    for (const name of ["shell", "write_file", "browser_act", "computer_act", "request_purchase"]) {
       expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
     }
   });
@@ -162,6 +165,7 @@ describe("unattendedTriggerToolRequiresApproval", () => {
       "request_takeover",
       "run_subagent",
       "list_fleet",
+      "purchase_status",
     ]) {
       expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
     }

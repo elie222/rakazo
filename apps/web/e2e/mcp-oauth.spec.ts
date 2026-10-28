@@ -2,7 +2,7 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CHANNEL } from "../src/lib/mcp-oauth-channel";
-import { captureScreenshot, completeOnboarding, expandAdvancedSection, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openIntegrationsAdd, signup } from "./helpers";
 
 test("connects an MCP server through the OAuth popup callback", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -88,8 +88,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
-  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
   await expect(page.getByText("Linear MCP", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Access token (optional)")).toBeHidden();
   await captureScreenshot(page, testInfo, "mcp-oauth-ready");
@@ -173,8 +172,7 @@ test("adds an MCP server with a pre-registered OAuth client", async ({ page }, t
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
-  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
 
   await page.getByLabel("Server name").fill("Gmail");
   await page.getByLabel("Server URL").fill("https://gmailmcp.example.test/mcp/v1");

@@ -150,7 +150,6 @@ function DesktopUpdatePrompt({ onLater }: { onLater: (version: string | null) =>
   );
 }
 
-/** Reuse the provider's bridge polling and guarded install action. */
 export function useSidebarUpdate() {
   const updates = useContext(UpdatesContext);
   return {

@@ -19,6 +19,7 @@ import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { desktopBridge } from "./lib/desktop";
+import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
 import { identifyMonitoringUser } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
@@ -91,17 +92,23 @@ export function App() {
   );
 }
 
+const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+
 function SessionApp() {
   const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") ?? "";
+  // A connector sign-in started on another device lands here signed out; finish it after sign-in.
   const signInDestination =
-    searchParams.get("next") === "/integrations/setup" ? "/integrations/setup" : "/app";
+    next === "/integrations/setup" || next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`)
+      ? next
+      : "/app";
   const ticketBoardEnabled = useSyncExternalStore(
     subscribeTicketBoardEnabled,
     getTicketBoardEnabled,
     () => false,
   );
   const session = authClient.useSession();
-  const pathname = useLocation().pathname;
+  const { pathname, search } = useLocation();
   const screen = analyticsScreen(pathname);
   const analyticsUserId = session.data?.user.id;
   const lastScreen = useRef<string | undefined>(undefined);
@@ -124,6 +131,10 @@ function SessionApp() {
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
+  useLayoutEffect(() => {
+    if (gate === "authenticated" || gate === "anonymous")
+      syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+  }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
   }, [gate, analyticsUserId]);
@@ -174,8 +185,14 @@ function SessionApp() {
             />
             <Route path="/reset-password" element={<PasswordResetPage />} />
             <Route
-              path="/mcp/oauth/callback"
-              element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
+              path={MCP_OAUTH_CALLBACK_PATH}
+              element={
+                user ? (
+                  <McpOAuthCallbackPage />
+                ) : (
+                  <Navigate to={`/sign-in?next=${encodeURIComponent(pathname + search)}`} replace />
+                )
+              }
             />
             <Route
               path="/integrations/setup"

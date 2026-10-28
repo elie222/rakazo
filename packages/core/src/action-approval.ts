@@ -26,6 +26,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_cancel",
   "list_fleet",
   "organize_bot",
+  // The wallet owner approves every purchase in the wallet itself; a card here would ask twice.
+  "request_purchase",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -59,6 +61,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_files",
   "list_fleet",
   "list_secrets",
+  "purchase_status",
   "read_file",
   "recall_memory",
   "request_takeover",

@@ -401,6 +401,8 @@ SMTP_URL=smtps://smtp-user:replace-with-password@smtp.example.com:465
 EMAIL_FROM=Rakazo <no-reply@example.com>
 ```
 
+Set `EMAIL_REPLY_TO` to send replies somewhere other than `EMAIL_FROM`.
+
 `EMAIL_PROVIDER=smtp` is optional: an existing `SMTP_URL` continues to select SMTP when no provider
 is specified. `EMAIL_PROVIDER=none` disables external sending. Explicit provider settings take
 precedence over an old `SMTP_URL`; incomplete or unknown provider configurations fail at startup.

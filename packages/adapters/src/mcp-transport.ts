@@ -18,7 +18,6 @@ import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 export type McpRemoteTransport = "streamable-http" | "sse";
 
 export interface McpUrlPolicy {
-  /** Maximum URL length accepted before any network request. */
   maxUrlLength?: number;
   /** Permit plain HTTP only on the configured loopback resource's exact origin.
    * Requests only honour it together with `allowPrivateEndpoint`: loopback is private. */
@@ -275,7 +274,6 @@ export function isAllowedStdioCommand(command: string, allowed: readonly string[
 /** The deployment's stdio settings, as MCP_STDIO_ENABLED and MCP_STDIO_ALLOWED_COMMANDS set them. */
 export type McpStdioPolicy = { stdioEnabled?: boolean; allowedCommands?: readonly string[] };
 
-/** Whether this deployment can run any stdio MCP server. */
 export function mcpStdioAvailable(policy: McpStdioPolicy): boolean {
   return policy.stdioEnabled === true && (policy.allowedCommands?.length ?? 0) > 0;
 }

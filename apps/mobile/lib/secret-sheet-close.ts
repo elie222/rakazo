@@ -10,7 +10,8 @@ import type { TextInput } from "react-native";
  * frame after that report, or after a delay if no field was edited.
  */
 export function useSecretSheetClose(
-  inputs: readonly RefObject<TextInput | null>[],
+  /** The protected fields, in order; a sheet with fields added or removed keeps this current. */
+  inputs: RefObject<readonly (TextInput | null | undefined)[]>,
   clear: () => void,
   onClose: () => void,
 ) {
@@ -22,8 +23,8 @@ export function useSecretSheetClose(
     closeState.current = "closing";
     clear();
     setClosing(true);
-    for (const input of inputs) input.current?.clear();
-    for (const input of inputs) input.current?.blur();
+    for (const input of inputs.current) input?.clear();
+    for (const input of inputs.current) input?.blur();
   }
 
   function finishClosing() {

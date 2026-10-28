@@ -62,7 +62,7 @@ export function BotChipPicker({
                 maxWidth: "100%",
               })}
             >
-              <BotAvatar color={bot.color} identity={id} size={20} />
+              <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={id} size={20} />
               <Text numberOfLines={1} style={{ color: tokens.foreground, flexShrink: 1 }}>
                 {bot.name}
               </Text>
@@ -119,7 +119,13 @@ export function BotChipPicker({
               opacity: pressed ? 0.6 : 1,
             })}
           >
-            <BotAvatar color={bot.color} identity={bot.id} size={36} status={bot.status} />
+            <BotAvatar
+              color={bot.color}
+              avatarSet={bot.avatarSet}
+              identity={bot.id}
+              size={36}
+              status={bot.status}
+            />
             <Text style={{ color: tokens.foreground, fontSize: 16, flex: 1 }}>{bot.name}</Text>
           </Pressable>
         ))}

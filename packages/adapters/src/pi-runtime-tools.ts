@@ -12,7 +12,11 @@ import type {
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { isToolPauseResult } from "./approval-effect.js";
-import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
+import {
+  connectionIdArgument,
+  credentialArgument,
+  loginFieldLabelsArgument,
+} from "./bot-secrets.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -107,11 +111,6 @@ export function normalizeAgentToolName(name: string): string {
   return (normalized || FALLBACK_AGENT_TOOL_NAME).slice(0, MAX_AGENT_TOOL_NAME_LENGTH);
 }
 
-/**
- * Return one valid, unique model-facing name per connector tool.
- * Existing valid names are reserved first so sanitizing a connector cannot
- * rename or shadow a builtin tool with the same valid name.
- */
 const ACTIVITY_DETAIL_LIMIT = 90;
 
 /** One human-readable line describing a tool call, shown live in the thread. */
@@ -153,7 +152,10 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
-  if (toolName === "skill_read") return `Reading skill: ${detail(record.name)}`;
+  if (toolName === "skill_read")
+    return record.file
+      ? `Reading ${detail(record.file)} from ${detail(record.name)}`
+      : `Reading skill: ${detail(record.name)}`;
   if (toolName === "skill_create") return `Creating skill: ${detail(record.name ?? "skill")}`;
   if (toolName === "skill_update")
     return `Updating skill: ${detail(record.name ?? record.skillId)}`;
@@ -164,6 +166,10 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   return `Using ${toolName}`;
 }
 
+/**
+ * Existing valid names are reserved first so sanitizing a connector cannot
+ * rename or shadow a builtin tool with the same valid name.
+ */
 export function normalizeAgentToolNames(tools: readonly ConnectorTool[]): string[] {
   const reservedValidNames = new Set(
     tools.filter((tool) => isProviderSafeAgentToolName(tool.name)).map((tool) => tool.name),
@@ -210,16 +216,10 @@ function stableToolNameHash(name: string): string {
 }
 
 /**
- * Normalize `request_secret` arguments.
- *
  * Missing label/purpose must fail rather than filling Code/otp placeholders.
  * `credential` and `replace` must survive: the executor stores a submitted
- * value only when `credential` is present, and it validates the destination
- * shape itself. An earlier version of this function listed only
- * label/purpose/connectionId, so every credential the model supplied was
- * dropped here and the saved value had nowhere to go. Top-level destination
- * fields and a JSON string credential are folded into `credential` so they
- * are not dropped the same way.
+ * value only when `credential` is present. Top-level destination fields and a
+ * JSON string credential are folded into `credential` so they are not dropped.
  */
 export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
   const label = raw.label == null ? "" : String(raw.label);
@@ -239,6 +239,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
+    ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };
 }
 
@@ -271,7 +272,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         return {
           question: String(raw.question ?? "What should I use?"),
           // Keep a missing/invalid options value as-is so schema minItems can reject it;
-          // do not coerce to [] (that used to look like a valid empty list upstream).
+          // coercing to [] would look like a valid empty list upstream.
           options,
         };
       }

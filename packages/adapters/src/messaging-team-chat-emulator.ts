@@ -157,7 +157,6 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     this.sent.length = 0;
   }
 
-  /** Platform descriptor for mounting beside other messaging platforms in tests. */
   createPlatform(): MessagingPlatform {
     return {
       provider: this.provider,
@@ -177,13 +176,11 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     };
   }
 
-  /** Public handle allocator for test helpers that record outbound sends. */
   allocateHandle(prefix: string): string {
     this.handleCounter += 1;
     return `${prefix}-${this.handleCounter}`;
   }
 
-  /** Shared outbound witness used by compatibility helpers and the full surface. */
   recordSend(threadId: string, body: string, prefix: string): string {
     const handle = this.allocateHandle(prefix);
     this.sent.push({ threadId, body, handle });

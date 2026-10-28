@@ -294,9 +294,8 @@ describe("serenity SSRF fetch path", () => {
   });
 
   it("drives the private-hostname dispatcher with a fetch from the same undici", async () => {
-    // A mismatched fetch throws invalid onRequestStart before the socket opens.
-    // A completed response on the pinned ephemeral port proves the package fetch
-    // accepted the Agent. Omit, builtin, and a captured builtin all pair.
+    // A mismatched fetch throws invalid onRequestStart before the socket opens, so a completed
+    // response proves the package fetch accepted the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
     let hits = 0;
     const server = createServer((_request, response) => {

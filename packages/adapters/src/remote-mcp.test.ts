@@ -380,11 +380,8 @@ describe("remote MCP URL policy", () => {
   });
 
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
-    // A fetch from a different undici than the Agent fails at dispatch with
-    // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent. Node's fetch
-    // is a different major, so omit, builtin, and a captured builtin must
-    // all use the package fetch that matches the Agent.
+    // A fetch from a different undici than the Agent fails at dispatch before the lookup runs,
+    // so failing inside the lookup proves the request reached the guarded Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
 
     const capturedNodeFetch = globalThis.fetch;

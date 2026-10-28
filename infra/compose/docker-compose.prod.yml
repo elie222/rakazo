@@ -199,6 +199,8 @@ x-app-environment: &app-environment
   CREATEOS_SANDBOX_SHAPE:
   CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
   CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+  PAYMENT_WALLET_PROVIDER: ${PAYMENT_WALLET_PROVIDER:-none}
+  PAYMENT_WALLET_CLIENT_ID: ${PAYMENT_WALLET_CLIENT_ID:-}
   CURSOR_API_KEY: ${CURSOR_API_KEY:-}
   # Tools and integrations
   WEB_PROVIDER:
@@ -372,6 +374,8 @@ services:
       EMAIL_API_KEY:
       SMTP_URL:
       EMAIL_FROM:
+      EMAIL_REPLY_TO:
+      WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -474,6 +478,9 @@ services:
     mem_limit: 512m
     environment:
       NODE_ENV: production
+      # vite preview bundles its config with Rolldown, which starts one thread per host CPU.
+      # Keep that fixed so pids_limit holds on many-core hosts (#2430).
+      RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}

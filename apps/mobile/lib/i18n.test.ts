@@ -18,7 +18,6 @@ vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
 
-/** Recursively collect source files used to validate mobile translation coverage. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -166,6 +165,7 @@ describe("mobile i18n", () => {
       "The model returned an unusable response. Try again.",
       "The model hit its output limit before finishing its reply.",
       "This model's context window is too small. Choose another model.",
+      "This connection's request limit is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",
       "{provider} couldn't be reached. Check that it's running.",

@@ -375,7 +375,6 @@ export function buildPlotParts(
   return { plotted, svg, title, swatches: categoricalSwatches(colorScale), width, height };
 }
 
-/** Render a spec to a standalone SVG string using the provided DOM document. */
 export function renderPlotSpecToSvg(
   spec: PlotSpec,
   data: unknown[] | undefined,

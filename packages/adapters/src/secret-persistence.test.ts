@@ -49,9 +49,12 @@ function database() {
     ["organization", [{ id: "organization" }]],
     ["bot", []],
     ["mcpServer", []],
+    ["mcpServerSpace", []],
   ]);
-  const matches = (row: Row, where: Record<string, unknown> = {}) =>
+  const matches = (row: Row, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([key, value]) => {
+      if (key === "OR")
+        return (value as Array<Record<string, unknown>>).some((branch) => matches(row, branch));
       const actual = row[key as keyof Row];
       if (value && typeof value === "object" && "in" in value)
         return (value.in as unknown[]).includes(actual);

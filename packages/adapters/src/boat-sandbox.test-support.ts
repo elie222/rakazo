@@ -119,7 +119,6 @@ export class FakeBoatApi implements BoatSandboxSdk {
   private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
   private startsExhausted = false;
   private rejectAll?: { status: number; code: string; message: string };
-  /** Every create request, in order. */
   readonly creates: CreateSandboxRequest[] = [];
   /** Saved snapshots; the current computer snapshot is ready unless a test removes it. */
   readonly savedSnapshots = new Map<string, SavedSnapshot>([

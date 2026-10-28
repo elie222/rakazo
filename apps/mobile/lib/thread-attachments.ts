@@ -1,10 +1,19 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes } from "@rakazo/contracts";
 import { attachmentsForThread } from "@rakazo/core";
-import { useRef, useState } from "react";
+import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ThreadComposerHandle } from "../components/thread-composer";
 import { t, useI18n } from "./i18n";
+import { isIncomingShareCurrent, retryIncomingShare, takeIncomingShare } from "./incoming-share";
 import type { PickedAttachment } from "./pick-attachments";
-import { pickDocuments, pickFromLibrary, readDroppedFiles, takePhoto } from "./pick-attachments";
+import {
+  pickDocuments,
+  pickFromLibrary,
+  readDroppedFiles,
+  readSharedFiles,
+  takePhoto,
+} from "./pick-attachments";
 import { attachmentCountSkipReason } from "./pick-attachments-filter";
 import { useFileDrop } from "./use-file-drop";
 
@@ -20,7 +29,7 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
   if (maxMatch) {
     return t("{name} (max {count} attachments)", { name, count: maxMatch[1] ?? "" });
   }
-  return `${name} (${item.reason})`;
+  return `${name} (${t(item.reason)})`;
 }
 
 /** The composer's draft attachments, kept per chat, from the picker menu or a file drop. */
@@ -43,6 +52,8 @@ export function useThreadAttachments({
   // Read by a second drop that starts before the first one commits.
   const pendingAttachmentsRef = useRef(pendingAttachments);
   pendingAttachmentsRef.current = pendingAttachments;
+  const importingShare = useRef(false);
+  const [shareImporting, setShareImporting] = useState(false);
 
   const attachActions: MenuAction[] = [
     { id: "library", title: t("Photo library"), image: "photo.on.rectangle" },
@@ -51,6 +62,7 @@ export function useThreadAttachments({
   ];
 
   function attachFrom(source: string) {
+    if (importingShare.current) return;
     if (source === "library") void addAttachments(pickFromLibrary);
     else if (source === "camera") void addAttachments(takePhoto);
     else if (source === "file") void addAttachments(pickDocuments);
@@ -121,5 +133,84 @@ export function useThreadAttachments({
     setAttachmentNotice,
     attachActions,
     attachFrom,
+    importingShare,
+    shareImporting,
+    setShareImporting,
   };
+}
+
+/** Takes an incoming share into this chat once its upload limits are known. */
+export function useIncomingShareImport({
+  attachments,
+  composerRef,
+  readOnly,
+  threadKey,
+  uploadConfig,
+}: {
+  attachments: ReturnType<typeof useThreadAttachments>;
+  composerRef: RefObject<ThreadComposerHandle | null>;
+  readOnly: boolean;
+  threadKey: string | undefined;
+  uploadConfig?: { maxUploadSizeBytes?: number };
+}) {
+  const { importingShare, setShareImporting, setPendingAttachments, setAttachmentNotice } =
+    attachments;
+  // The share a settings refresh interrupted. It is retried on its own, so a
+  // share that arrived in the meantime is left for the picker, not taken here.
+  const interruptedShare = useRef<{ generation: number } | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+  useEffect(() => {
+    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    const interrupted = interruptedShare.current;
+    interruptedShare.current = null;
+    const share = takeIncomingShare();
+    if (!share) return;
+    if (interrupted && share.generation !== interrupted.generation) {
+      retryIncomingShare(share);
+      return;
+    }
+    let active = true;
+    importingShare.current = true;
+    setShareImporting(true);
+    void (async () => {
+      try {
+        const result = await readSharedFiles(
+          share.files,
+          attachments.activePendingAttachments.length,
+          attachmentMaxBytes(uploadConfig),
+        );
+        if (!active || !isIncomingShareCurrent(share)) {
+          retryIncomingShare(share);
+          return;
+        }
+        if (result.failedFiles.length)
+          retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        setPendingAttachments((current) => [
+          ...current,
+          ...result.attachments.map((attachment) => ({ ...attachment, threadKey })),
+        ]);
+        setAttachmentNotice(
+          result.skipped.length
+            ? t("Skipped {items}", {
+                items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+              })
+            : null,
+        );
+        if (share.text) composerRef.current?.insert(share.text);
+      } finally {
+        importingShare.current = false;
+        setShareImporting(false);
+        // Only a pass that settings cancelled is tried again; a file the reader
+        // rejected is reported once instead of looping until the share expires.
+        if (!active && isIncomingShareCurrent(share)) {
+          interruptedShare.current = share;
+          retryIncomingShare(share);
+          setRetryTick((tick) => tick + 1);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [threadKey, readOnly, uploadConfig, retryTick]);
 }

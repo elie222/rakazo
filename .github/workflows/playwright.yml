@@ -50,6 +50,11 @@ on:
 permissions:
   contents: read
 
+# Testcontainers pulls Docker Hub images through Google's public mirror: anonymous Docker Hub pulls
+# from shared runner IPs fail intermittently with "authentication required" or rate limits.
+env:
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
+
 jobs:
   shard:
     name: Web E2E (${{ matrix.shard }}/4)

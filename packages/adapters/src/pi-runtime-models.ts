@@ -1,13 +1,20 @@
-import type { Api, Model, Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  Model,
+  Models,
+  ModelThinkingLevel,
+  ThinkingLevelMap,
+} from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { liveModelSibling } from "./pi-live-model.js";
+import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
@@ -44,12 +51,8 @@ function configuredOpenRouterModel(
   id: string,
   contextWindow = 16_384,
 ): Model<"openai-completions"> {
-  // A configured model can intentionally be newer than Pi's static catalog. Keep
-  // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
-  // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
-  // thinkingLevel "off" becomes effort "none" which those endpoints reject.
-  // Reserve half the conservative fallback window for input. A model card's
-  // configured limits override this placeholder below.
+  // A configured model can be newer than Pi's static catalog. Enable reasoning:
+  // unknown OpenRouter endpoints often mandate it and reject effort "none".
   return {
     id,
     name: id,
@@ -103,6 +106,9 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
         : {}),
       ...(modelConfig.maxTokens !== undefined ? { maxTokens: modelConfig.maxTokens } : {}),
     };
+  }
+  if (model && provider === CHATGPT_OAUTH_PROVIDER) {
+    model = withLiveImageInput(model, modelConfig.acceptsImages);
   }
   const apiKey = modelConfig.oauth
     ? undefined
@@ -213,6 +219,32 @@ export function withOutputBudget(
     config: { ...target.config, maxTokens },
     model: { ...target.model, maxTokens },
   };
+}
+
+const REASONING_EFFORT_CHOICES =
+  /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values are)\b([^.}"]*)/i;
+
+/**
+ * The thinking levels of a model whose endpoint rejected `reasoning_effort` and listed the values
+ * it accepts, with the rest mapped out so the request clamps to an accepted one. Off sends no
+ * effort when the endpoint refuses the off value. Undefined when the error lists nothing usable.
+ */
+export function acceptedReasoningEfforts(
+  model: Model<Api>,
+  errorMessage: string | undefined,
+): ThinkingLevelMap | undefined {
+  const listed = errorMessage?.match(REASONING_EFFORT_CHOICES)?.[1]?.toLowerCase().match(/\w+/g);
+  if (!listed) return undefined;
+  const accepted = new Set(listed);
+  const current = model.thinkingLevelMap ?? {};
+  const levels: ThinkingLevelMap = {};
+  for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const) {
+    const effort = current[level] ?? (level === "xhigh" || level === "max" ? null : level);
+    levels[level] = effort !== null && accepted.has(effort) ? effort : null;
+  }
+  if (Object.values(levels).every((effort) => effort === null)) return undefined;
+  if (typeof current.off === "string" && accepted.has(current.off)) levels.off = current.off;
+  return levels;
 }
 
 type ModelTarget = Pick<AgentRunRequest["model"], "provider" | "id" | "connectionId">;

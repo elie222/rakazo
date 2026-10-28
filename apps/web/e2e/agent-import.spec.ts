@@ -37,7 +37,6 @@ const workspaceFiles: Record<string, string> = {
   "notes.txt": "Not Markdown.\n",
 };
 
-/** A synthetic OpenClaw home: the main workspace, another agent's, managed skills and secrets. */
 const homeFiles: Record<string, string> = {
   "openclaw.json": `{
   // JSON5, as OpenClaw writes it
@@ -112,7 +111,6 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
-  // Import in the New bot dialog swaps the dialog for the import panel; Back swaps it back.
   await openNewBot(page);
   const dialog = page.getByTestId("create-bot-dialog");
   await dialog.getByTestId("create-bot-import").click();
@@ -171,12 +169,9 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
       await expect(boxes.nth(index)).toHaveAccessibleName(name);
     }
   }
-  // Skills, MCP servers and routines all start unticked: each needs the user's tick. Items
-  // that may not work here also say why.
   const skills = homePreview.getByTestId("agent-import-skills");
   await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
-  // Each item has one status: Ready, what it needs, to review first, or not supported.
   await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
   // A ready item needs no label: the checkbox says enough.
   await expect(homePreview.getByText("Ready", { exact: true })).toHaveCount(0);
@@ -260,7 +255,6 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     "Skills",
     "Not imported",
   ]);
-  // Instructions and memory start ticked; a skill waits for the user's tick.
   for (const [section, names, ticked] of [
     ["agent-import-instructions", ["SOUL.md", "AGENTS.md"], true],
     ["agent-import-memory", ["MEMORY.md", "USER.md"], true],
@@ -311,7 +305,6 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     "# Persona\n\nCalm and direct.\n\n# Working instructions\n\nCheck the calendar before suggesting a time.",
   );
   expect(pebble.description).toBe("calm and practical");
-  // An untouched Create imported no skill.
   const pebbleSkills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(pebbleSkills.some((item) => item.name === "weekly-review")).toBe(false);
   const pebbleMemory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: pebbleId });
@@ -388,7 +381,6 @@ function zip(files: Record<string, string>, options: { badCrc?: boolean } = {}):
   return Buffer.concat([...locals, directory, end]);
 }
 
-/** A minimal ustar writer, gzipped, for synthetic backups built at run time. */
 function tarGz(files: Record<string, string>): Buffer {
   const parts: Buffer[] = [];
   for (const [name, content] of Object.entries(files)) {
@@ -503,7 +495,6 @@ test("imports Hermes and OpenClaw backups, reading them on this device", async (
   await panel.getByTestId("agent-import-archive").setInputFiles(broken);
   await expect(panel.getByRole("alert")).toHaveText("This backup could not be read.");
   await captureScreenshot(page, testInfo, "agent-import-backup-error");
-  // A zip that opens but whose file fails its checksum when read says so too.
   const corrupt = testInfo.outputPath("corrupt.zip");
   writeFileSync(corrupt, zip({ "SOUL.md": "Direct.\n" }, { badCrc: true }));
   await panel.getByTestId("agent-import-archive").setInputFiles(corrupt);
@@ -556,20 +547,17 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   await expect(page.getByPlaceholder("Message Undoable")).toBeVisible();
   const botId = activeBotId(page);
 
-  // The server is not given to the bot until the user approves it here.
   const card = page.getByTestId("mcp-approval-card");
   await expect(card).toBeVisible();
   await expect(card.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-approval-card");
 
-  // One checklist of what is left: the server's credentials and turning the routine on.
   const setup = page.getByTestId("import-setup-card");
   await expect(setup.getByRole("listitem")).toHaveText([
     "docsCredentials: AuthorizationOpen",
     "morningPausedOpen",
   ]);
   await captureScreenshot(page, testInfo, "agent-import-setup-checklist");
-  // Open goes straight to the imported server's form; saving keeps the same server.
   await setup.getByRole("button", { name: "Open docs" }).click();
   const mcpDialog = page.getByRole("dialog");
   await expect(mcpDialog.getByText("MCP servers", { exact: true })).toBeVisible();
@@ -616,7 +604,6 @@ test("Undo removes only the import it showed, even after another tab undid it", 
 }, testInfo) => {
   await signup(page, `agent-import-undo-shown-${Date.now()}@rakazo.test`, "password12", "Shown");
   await completeOnboarding(page);
-  // A bot an import made, then a second import added to it.
   const files = [
     { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
     { path: ".openclaw/workspace/IDENTITY.md", content: "- **Name:** Pebble\n" },
@@ -646,7 +633,6 @@ test("Undo removes only the import it showed, even after another tab undid it", 
   await rpc(page, "bots/importUndo", { botId: bot.id, importId: shown.id });
   await dialog.getByRole("button", { name: "Undo import", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveText("This import changed. Try again.");
-  // Nothing was removed, and the dialog now says what Undo would do instead.
   await expect(dialog).toContainText("The bot and what its import added will be removed.");
   await captureScreenshot(page, testInfo, "agent-import-undo-changed");
   const bots = await rpc<Bot[]>(page, "bots/list", {});
@@ -728,7 +714,6 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   await panel.getByTestId("agent-import-folder").setInputFiles(home);
   const preview = panel.getByTestId("agent-import-preview");
   const destination = preview.getByTestId("agent-import-destination");
-  // A new bot is the default; an existing bot is never preselected.
   await expect(destination.getByRole("button", { name: "New bot" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -752,7 +737,6 @@ test("imports into an existing bot only when chosen, keeping its instructions un
     preview.getByRole("button", { name: "Add", exact: true }),
     "bots/importCreate",
   );
-  // Done visibly: the panel closes on that bot's chat, as for a new bot.
   await page.waitForURL(new RegExp(`/app/${chief!.id}$`));
   await expect(page.getByTestId("agent-import")).toHaveCount(0);
   const kept = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
@@ -760,7 +744,6 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: chief!.id });
   expect(memory.map((doc) => doc.path).sort()).toEqual(["MEMORY-2.md", "MEMORY.md"]);
 
-  // Replacing is its own explicit choice, recorded so it can be restored.
   const again = await openImport(page);
   await again.getByTestId("agent-import-folder").setInputFiles(home);
   const second = again.getByTestId("agent-import-preview");
@@ -800,7 +783,6 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   expect(restored.instructions).toBe("Chief's own instructions.");
 });
 
-/** Drops a synthetic folder (as file system entries) or files onto the chat composer. */
 async function dropOnComposer(
   page: Page,
   drop: {
@@ -910,7 +892,6 @@ test("an agent dropped into a chat is offered for import, never uploaded first",
   const panel = page.getByTestId("agent-import-preview");
   await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
   const destination = panel.getByTestId("agent-import-destination");
-  // A new bot is the default; the chat's bot is offered but not chosen.
   await expect(destination.getByRole("button", { name: "New bot" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -928,7 +909,6 @@ test("an agent dropped into a chat is offered for import, never uploaded first",
   await expect(importPanel).toHaveCount(0);
   await expect(page.getByTestId("create-bot-dialog")).toHaveCount(0);
 
-  // A backup can still be attached as a file, as before.
   const backup = Buffer.from(
     zip({ "SOUL.md": "Direct.\n", "config.yaml": "model:\n  provider: openrouter\n" }),
   ).toString("base64");
@@ -940,7 +920,6 @@ test("an agent dropped into a chat is offered for import, never uploaded first",
   await expect(page.getByRole("button", { name: "Remove hermes.zip" })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-drop-attached");
 
-  // An ordinary archive is attached straight away, with no question.
   await dropOnComposer(page, {
     zip: { name: "photos.zip", base64: Buffer.from(zip({ "photo.txt": "x" })).toString("base64") },
   });

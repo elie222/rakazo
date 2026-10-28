@@ -36,33 +36,20 @@ export function isCodexModel(model: Pick<Model<Api>, "api" | "provider">): boole
 export const MODEL_STREAM_IDLE_TIMEOUT_MESSAGE = "Model stream idle timeout";
 
 export interface StreamIdleWatchdog {
-  /** Composed abort signal to hand to the provider request. */
   signal: AbortSignal;
   /** Re-arms the idle bound; invoke on response headers and each delivered event. */
   ping(): void;
   /** Wraps the provider stream so every delivered event re-arms the idle bound. */
   wrap(stream: AssistantMessageEventStream): AssistantMessageEventStream;
-  /** Stops the timer and drops the caller-signal listener. */
   dispose(): void;
 }
 
 /**
- * `timeoutMs` bounds each attempt's time-to-headers. After headers arrive, pi
- * reads the body until it ends or the request signal aborts, so silence can
- * stall a run. The watchdog composes an AbortController into `options.signal`
- * and re-arms on a 2xx `onResponse` — pi invokes it inside the retry loop when
- * an attempt's headers land — and on every stream event the agent consumes.
- * `idleTimeoutMs` of silence aborts the request.
- *
- * Arming only on a successful response — not at stream creation, and not on
- * retryable error headers — keeps each attempt's time-to-headers inside its
- * own `timeoutMs` budget and each retry backoff outside the idle bound. A
- * non-2xx body is bounded separately by `boundRetryableErrorBody`: pi reads it
- * with `response.text()` after the header timeout is gone, and failing that
- * read lets the attempt retry, whereas aborting this signal would also cancel
- * the backoff. pi reports any signal abort as a generic "Request was aborted",
- * so when the watchdog fired the wrapper relabels the terminal error as an
- * idle timeout rather than a caller abort.
+ * `timeoutMs` bounds only time-to-headers; after that pi reads the body until it
+ * ends or the signal aborts, so silence can stall a run. The watchdog arms only on
+ * a 2xx response, keeping time-to-headers and retry backoff outside the idle bound.
+ * pi reports any abort as "Request was aborted", so the wrapper relabels it as an
+ * idle timeout when the watchdog fired.
  */
 export function modelStreamIdleWatchdog(
   upstream: AbortSignal | undefined,
@@ -292,13 +279,9 @@ export function reliableStreamOptions(
     // runs then surface abnormal close 1006 as a terminal model error. SSE has
     // bounded network retries and no long-lived connection between tool turns.
     next = { ...next, transport: "sse" };
-    // Forward the account's compute residency so the Codex backend routes to the
-    // right region. Models.applyAuth resolves auth — including an OAuth refresh
-    // that swaps the stored credential — after these options are built, so the
-    // claim is derived in transformHeaders at request time from the credential
-    // the store holds then. Injection acts like a default header: an explicit
-    // value under any casing wins, and a caller-supplied transformHeaders keeps
-    // the final say.
+    // Compute residency routes the Codex backend to the right region. An OAuth
+    // refresh can swap the credential after these options are built, so the claim
+    // is read in transformHeaders at request time. Explicit headers win.
     const callerTransform = next.transformHeaders;
     next = {
       ...next,

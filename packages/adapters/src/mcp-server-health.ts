@@ -41,7 +41,6 @@ export async function recordMcpServerHealth(
   }
 }
 
-/** Map persisted health columns onto the API DTO. */
 export function mcpServerHealthDto(row: {
   healthStatus: string;
   healthMessage: string | null;

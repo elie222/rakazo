@@ -60,6 +60,9 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "voice.disconnect": { type: "credential.deleted", kind: "voice", fields: ["provider"] },
   "memory.connectProvider": { type: "credential.created", kind: "memory" },
   "memory.disconnectProvider": { type: "credential.deleted", kind: "memory" },
+  // Starting a sign-in replaces any wallet already connected.
+  "paymentWallet.connect": { type: "credential.changed", kind: "payment_wallet" },
+  "paymentWallet.disconnect": { type: "credential.deleted", kind: "payment_wallet" },
   "deployment.update": {
     type: "deployment.settings.changed",
     fields: ["signupsEnabled", "computerHost"],
@@ -98,6 +101,19 @@ export function connectionCreatedEvent(
     userId: actor.userId,
     spaceId: actor.spaceId,
     metadata: { procedure, kind: "connection", connectionId },
+  };
+}
+
+/** A wallet sign-in finishing. Clients poll `paymentWallet.status`, so it records the transition. */
+export function paymentWalletConnectedEvent(actor: {
+  userId: string;
+  spaceId: string;
+}): SecurityEventInput {
+  return {
+    type: "credential.created",
+    userId: actor.userId,
+    spaceId: actor.spaceId,
+    metadata: { procedure: "paymentWallet.status", kind: "payment_wallet" },
   };
 }
 

@@ -59,7 +59,6 @@ export function isValidImageTag(tag: string): boolean {
   return IMAGE_TAG.test(tag);
 }
 
-/** A registry reference the updater is willing to hand to `docker compose` as one env value. */
 export function isValidImageName(name: string): boolean {
   if (name.length === 0 || name.length > 200) return false;
   const segments = name.split("/");
@@ -158,7 +157,6 @@ export function compareReleaseTags(a: ReleaseTag, b: ReleaseTag): number {
   return a.prerelease < b.prerelease ? -1 : 1;
 }
 
-/** Reads `git ls-remote --tags <url>`, which is the tag list without cloning anything. */
 export function parseLsRemoteTags(stdout: string): string[] {
   const tags = new Set<string>();
   for (const line of stdout.split("\n")) {
@@ -213,7 +211,6 @@ export function selectLatestReleaseTag(tags: readonly string[]): string | null {
   return best?.tag ?? null;
 }
 
-/** Selects the newest stable release together with the commit-tagged image CI published for it. */
 export function selectLatestRelease(releases: readonly RemoteRelease[]): RemoteRelease | null {
   let best: { release: ReleaseTag; commit: string } | null = null;
   for (const candidate of releases) {

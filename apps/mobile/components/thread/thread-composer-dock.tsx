@@ -43,7 +43,6 @@ export function ThreadComposerDock({
   attachmentNotice: string | null;
   attachments: readonly PendingAttachment[];
   onRemoveAttachment: (id: string) => void;
-  /** The composer itself. */
   children: ReactNode;
 }) {
   const tokens = mobileTokens();

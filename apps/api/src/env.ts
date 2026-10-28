@@ -47,12 +47,10 @@ export interface AppEnv {
   apiHost: string;
   /** Proxies whose forwarded client address is believed; empty means local networks. */
   trustedProxies: string[];
-  /** The header those proxies set. */
   clientIpHeader: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   encryptionKey: string;
-  /** CONTENT_ENCRYPTION: whether new content is encrypted at rest. */
   contentEncryption: boolean;
   dataDir: string;
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
@@ -75,6 +73,9 @@ export interface AppEnv {
   cloudAgentProvider: string;
   cloudAgentSpaceId: string | undefined;
   cursorApiKey: string | undefined;
+  /** Raw PAYMENT_WALLET_* values; createPaymentWalletProvider resolves them. */
+  paymentWalletProvider: string | undefined;
+  paymentWalletClientId: string | undefined;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
   /** The deployment default model can run; see resolveDeploymentModel. */
@@ -101,8 +102,10 @@ export interface AppEnv {
   expoAccessToken: string | undefined;
   smtpUrl: string | undefined;
   emailProvider?: string;
+  welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
   emailFrom: string | undefined;
+  emailReplyTo?: string;
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
@@ -137,7 +140,6 @@ export interface AppEnv {
   wakeupDriver: string;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
-  /** Package dir, install/startup timeouts and idle reaping for stdio MCP servers. */
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   /** Deployment-owner escape for remote MCP on RFC1918 / Docker-network hosts. */
   mcpAllowPrivateEndpoint: boolean;
@@ -243,6 +245,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     cloudAgentProvider,
     cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
     cursorApiKey: optional(source.CURSOR_API_KEY),
+    paymentWalletProvider: optional(source.PAYMENT_WALLET_PROVIDER),
+    paymentWalletClientId: optional(source.PAYMENT_WALLET_CLIENT_ID),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
     deploymentModelKey: deploymentModel.key,
@@ -270,6 +274,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
+    emailReplyTo: optional(source.EMAIL_REPLY_TO),
+    welcomeEmailEnabled: source.WELCOME_EMAIL_ENABLED === "true",
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),

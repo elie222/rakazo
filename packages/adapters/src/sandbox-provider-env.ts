@@ -26,7 +26,6 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   return requested;
 }
 
-/** Remote computer credentials for the adapter factory. */
 export function sandboxProviderOptionsFromEnv(
   source: NodeJS.ProcessEnv = process.env,
 ): Pick<

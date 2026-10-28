@@ -105,7 +105,6 @@ export function createMessagingTeamChatHistory(
   };
 }
 
-/** Outbound sender that posts through the existing MessagingSurface. */
 export function createMessagingTeamChatSender(
   messaging: MessagingSurface,
 ): (request: TeamChatSendRequest) => Promise<TeamChatSendResult> {

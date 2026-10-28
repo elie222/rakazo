@@ -321,8 +321,7 @@ describe("resolveRequestSecretDestination", () => {
   });
 
   it("accepts a valid credential object supplied beside connectionId", () => {
-    // The flattened tool schema allows both fields, and the executor used to
-    // reject that pair before it ever checked that the credential was valid.
+    // The flattened tool schema allows both fields.
     const resolved = resolveRequestSecretDestination({
       ...documented,
       connectionId: "conn_1",
@@ -810,13 +809,14 @@ describe("saved website logins", () => {
     origin: "https://login.example.test",
     auth: { type: "login" },
   };
+  // Stored as logins were before fields, so these tests also cover that old logins fill as before.
   async function loginFixture(
     username: string,
     auth: object = login.auth,
     origin = login.origin,
     password = "fake-password-1",
+    plaintext = JSON.stringify({ username, password }),
   ) {
-    const plaintext = encodeLoginSecret({ username, password });
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -845,7 +845,7 @@ describe("saved website logins", () => {
       rows.push({ ...scope, name: `api_${index}`, auth: { type: "bearer" }, ciphertext: "unused" });
     const password = "fake-late-password-1";
     const encrypted = await secretStore.put(
-      encodeLoginSecret({ username: "fake-user@example.test", password }),
+      JSON.stringify({ username: "fake-user@example.test", password }),
       { ...scope, ...context },
       { recordId: "login-late" },
     );
@@ -930,11 +930,86 @@ describe("saved website logins", () => {
     const input = { prisma, secretStore, scope, name: "site_login" };
     expect(await resolveLoginFill({ ...input, field: "password" })).toEqual({
       text: "fake-password-1",
+      hidden: true,
       origin: "https://login.example.test",
       redactions: expect.arrayContaining(["fake-password-1", "fake-user@example.test"]),
     });
     expect(await resolveLoginFill({ ...input, field: "username" })).toMatchObject({
       text: "fake-user@example.test",
+      hidden: false,
+    });
+    expect(await resolveLoginFill({ ...input, field: "Password" })).toMatchObject({
+      text: "fake-password-1",
+      hidden: true,
+    });
+  });
+
+  describe("with named fields", () => {
+    const fields = [
+      { label: "ID number", value: "fake-id-1234", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+      { label: "PIN", value: "4321", hidden: true },
+      { label: "Branch", value: "nyc", hidden: false },
+    ];
+    const fieldsFixture = () =>
+      loginFixture("unused", login.auth, login.origin, "unused", encodeLoginSecret({ fields }));
+
+    it("fills a field by its label, whatever its case, with whether it is hidden", async () => {
+      const { prisma } = await fieldsFixture();
+      const input = { prisma, secretStore, scope, name: "site_login" };
+      expect(await resolveLoginFill({ ...input, field: "phone NUMBER" })).toMatchObject({
+        text: "+1 555 0100",
+        hidden: true,
+      });
+      expect(await resolveLoginFill({ ...input, field: "ID number" })).toMatchObject({
+        text: "fake-id-1234",
+        hidden: false,
+      });
+      // A bot that still says username and password gets the first visible and hidden fields.
+      expect(await resolveLoginFill({ ...input, field: "username" })).toMatchObject({
+        text: "fake-id-1234",
+      });
+      expect(await resolveLoginFill({ ...input, field: "password" })).toMatchObject({
+        text: "+1 555 0100",
+      });
+    });
+
+    it("names the login's fields, never their values, when the label isn't one of them", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Email",
+      });
+      expect(result).toEqual({
+        error:
+          'This login has no field named "Email". Its fields: ID number, Phone number, PIN, Branch.',
+      });
+    });
+
+    it("hides every hidden field and the visible ones long enough in the filling run", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Branch",
+      });
+      const redactions = "redactions" in result ? result.redactions : [];
+      for (const value of ["fake-id-1234", "+1 555 0100", "%2B1%20555%200100", "4321"]) {
+        expect(redactions).toContain(value);
+      }
+      expect(redactions).not.toContain("nyc");
+    });
+
+    it("hides only hidden fields long enough in every run", async () => {
+      const { prisma } = await fieldsFixture();
+      const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+      expect(redactions).toEqual(expect.arrayContaining(["+1 555 0100", "%2B1%20555%200100"]));
+      for (const value of ["fake-id-1234", "4321", "nyc"]) expect(redactions).not.toContain(value);
     });
   });
 

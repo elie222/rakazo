@@ -224,10 +224,8 @@ async function waitForWorker(
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const logs = compose(["logs", "--no-color", "--tail", "100", "worker"], true);
-    // apps/worker logs readiness via the structured logger (packages/logging) as
-    // {"timestamp":...,"level":"info","message":"worker ready","service.name":"rakazo-worker"},
-    // not the old plain "rakazo worker ready" console.log line -- match the JSON field directly
-    // rather than a substring that depends on the sink's exact key order.
+    // The worker logs readiness as a structured JSON record; match its message field alone so
+    // the sink's key order does not matter.
     if (logs.includes('"message":"worker ready"')) return;
     await delay(500);
   }

@@ -17,6 +17,7 @@ import {
   IntegrationProviderSettings,
   LocalAgentHomeStore,
   listPiCatalog,
+  ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
   screenLeaseIdForRun,
@@ -928,10 +929,23 @@ describe("secret request dismissal", () => {
       answeredByUserId: "user-1",
       answer: "",
       clientNonce: undefined,
+      fields: undefined,
       username: undefined,
       dismiss: true,
     });
     expect(h.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("passes a login card's fields on with an empty answer", async () => {
+    const h = setup(true);
+    const fields = [
+      { label: "ID number", value: "fake-id-123", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+    ];
+    const { response } = await h.send({ answer: "", fields });
+
+    expect(response.status).toBe(200);
+    expect(h.answerRunInput).toHaveBeenCalledWith(expect.objectContaining({ answer: "", fields }));
   });
 
   it("reports a dismissal the card no longer accepts as a conflict", async () => {
@@ -945,6 +959,19 @@ describe("secret request dismissal", () => {
   it.each([
     ["a dismissal with a value", { answer: "example-password", dismiss: true }],
     ["a dismissal with a username", { answer: "", username: "ada", dismiss: true }],
+    [
+      "a dismissal with fields",
+      { answer: "", fields: [{ label: "Code", value: "x", hidden: true }], dismiss: true },
+    ],
+    [
+      "fields with a value in answer",
+      { answer: "example-password", fields: [{ label: "Code", value: "x", hidden: true }] },
+    ],
+    [
+      "fields with a username",
+      { answer: "", username: "ada", fields: [{ label: "Code", value: "x", hidden: true }] },
+    ],
+    ["fields without hidden", { answer: "", fields: [{ label: "Code", value: "x" }] }],
     ["a dismissal during a call", { answer: "", clientNonce: "call:call-1:x", dismiss: true }],
     ["an empty answer", { answer: "" }],
   ])("rejects %s before it reaches the run", async (_name, json) => {
@@ -1115,9 +1142,11 @@ describe("MCP server deletion", () => {
     const deleteSecrets = vi.fn().mockResolvedValue({ count: 0 });
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn().mockResolvedValue({ id: "server-1", secretId: "old-secret" }),
         delete: deleteServer,
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { deleteMany: deleteSecrets },
       message: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
@@ -1157,8 +1186,8 @@ describe("MCP server deletion", () => {
     expect(deleteSecrets).toHaveBeenCalledWith({
       where: {
         id: "old-secret",
-        spaceId: "workspace-1",
         userId: "user-1",
+        OR: [{ spaceId: "workspace-1" }, { spaceId: null }],
       },
     });
   });
@@ -1197,6 +1226,7 @@ describe("MCP prepared credential updates", () => {
     ]);
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: async () => ({ ...server }),
         update: async ({
           data,
@@ -1207,6 +1237,7 @@ describe("MCP prepared credential updates", () => {
           return { ...server };
         },
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: {
         findFirst: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
         create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
@@ -1326,6 +1357,7 @@ describe("MCP pre-registered OAuth client", () => {
     }
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn(async () => (server ? { ...server } : null)),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           const { revision: _revision, ...rest } = data;
@@ -1343,6 +1375,7 @@ describe("MCP pre-registered OAuth client", () => {
           return server;
         }),
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: {
         create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
           secretRows.set(data.id, data);
@@ -1806,17 +1839,21 @@ describe("MCP loopback endpoints", () => {
     }));
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         create,
         findFirst: vi
           .fn()
           .mockResolvedValue({ id: "server-1", endpoint: LOOPBACK, secretId: null }),
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       mcpOAuthSession: {
         count: vi.fn().mockResolvedValue(0),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       secret: { findFirst: vi.fn() },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
     const deps = {
@@ -1947,11 +1984,16 @@ describe("MCP server health", () => {
       await recordHealth(data);
       return { count: server ? 1 : 0 };
     });
-    const matches = (where: Row) =>
+    const matches = (where: Row): boolean =>
       Boolean(server) &&
-      Object.entries(where).every(([key, value]) => (server as Row)[key] === value);
+      Object.entries(where).every(([key, value]) =>
+        key === "OR"
+          ? (value as Row[]).some((branch) => matches(branch))
+          : (server as Row)[key] === value,
+      );
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn(async ({ where }: { where: Row }) =>
           matches(where) ? { ...server } : null,
         ),
@@ -1966,6 +2008,7 @@ describe("MCP server health", () => {
         }),
         updateMany,
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
@@ -2882,9 +2925,17 @@ describe("connections.complete", () => {
         where.id === row.id ? { ...row } : null,
       ),
       findMany: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
       updateMany: vi.fn(
-        async ({ where, data }: { where: { status?: string }; data: Partial<typeof row> }) => {
-          if (where.status && where.status !== row.status) return { count: 0 };
+        async ({
+          where,
+          data,
+        }: {
+          where: { status?: string | { in: string[] } };
+          data: Partial<typeof row>;
+        }) => {
+          const statuses = typeof where.status === "string" ? [where.status] : where.status?.in;
+          if (statuses && !statuses.includes(row.status)) return { count: 0 };
           Object.assign(row, data);
           return { count: 1 };
         },
@@ -2920,8 +2971,14 @@ describe("connections.complete", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     async function complete(connectionId = row.id, signal?: AbortSignal) {
+      return call("complete", connectionId, signal);
+    }
+    async function revoke(signal?: AbortSignal) {
+      return call("revoke", row.id, signal);
+    }
+    async function call(operation: string, connectionId: string, signal?: AbortSignal) {
       const { response } = await handler.handle(
-        new Request("http://127.0.0.1/rpc/connections/complete", {
+        new Request(`http://127.0.0.1/rpc/connections/${operation}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ json: { connectionId } }),
@@ -2942,8 +2999,29 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, connector, securityEvents, row };
+    return { complete, revoke, connector, securityEvents, row, sink };
   }
+
+  it.each([
+    ["the caller cancelled", true, "warn"],
+    ["an uncertain remote failure", false, "error"],
+  ])("keeps the row revoked after %s and logs it at %s", async (_case, cancelled, level) => {
+    const { revoke, connector, row, sink } = pollFixture("connected");
+    row.providerRef = "account-1";
+    const request = new AbortController();
+    connector.revoke.mockImplementation(async () => {
+      if (cancelled) request.abort();
+      throw new Error("Request was cancelled by the caller: Request was aborted.");
+    });
+
+    await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+    expect(row.status).toBe("revoked");
+    expect(
+      sink.events
+        .filter((event) => event.message.startsWith("connections.revoke"))
+        .map((event) => event.level),
+    ).toEqual([level]);
+  });
 
   it("records nothing but keeps the account id when the catalog connected the row first", async () => {
     const { complete, connector, securityEvents, row } = pollFixture("pending");
@@ -4688,6 +4766,20 @@ describe("model credential persistence", () => {
     // A new account stays a new account.
     await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("tells the user to restart a pasted-code sign-in that is gone", async () => {
+    const { deps, handler } = persistDeps();
+    const message = "Sign-in session not found. Start sign-in again.";
+    Object.assign(deps.oauthLogins, {
+      submit: vi.fn().mockRejectedValue(new ModelSignInError(message)),
+    });
+    const response = await call(handler, "models/submitOAuthCode", {
+      loginId: "login-1",
+      code: "pasted-code",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ json: { message } });
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
@@ -6484,7 +6576,6 @@ describe("routine live Codex model validation", () => {
 
 describe("routines.list", () => {
   it("marks routines another Space member created as not editable", async () => {
-    // Listing reads only the user and Space.
     const actor = { userId: "user-1", spaceId: "space-1" };
     const row = (id: string, userId: string) => ({
       id,
@@ -8050,20 +8141,25 @@ describe("boards.rename", () => {
 
   function renameDeps(tickets: number, ticketPrefix = "RAK") {
     const count = vi.fn(async () => tickets);
-    const update = vi.fn(async ({ data }: { data: { name?: string; ticketPrefix?: string } }) => ({
+    const applied = ({ data }: { data: { name?: string; ticketPrefix?: string } }) => ({
       ...boardRow(ticketPrefix),
       ...data,
       updatedAt: new Date("2026-06-02T00:00:00.000Z"),
-    }));
+    });
+    const update = vi.fn(applied);
+    const updateManyAndReturn = vi.fn(
+      async (args: { data: { name?: string; ticketPrefix?: string } }) => [applied(args)],
+    );
     const prisma = {
       board: {
         findUnique: vi.fn(async () => boardRow(ticketPrefix)),
         update,
+        updateManyAndReturn,
       },
       ticket: { count },
     } as unknown as PrismaClient;
     const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
-    return { count, update, handler: new RPCHandler(createRouter(deps)) };
+    return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
   async function rename(handler: RPCHandler<never>, body: unknown) {
@@ -8079,7 +8175,7 @@ describe("boards.rename", () => {
   }
 
   it("rejects a prefix change after tickets exist", async () => {
-    const { count, update, handler } = renameDeps(2);
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
     const response = await rename(handler, { ticketPrefix: "OPS" });
     expect(response?.status).toBe(400);
     await expect(response?.json()).resolves.toEqual({
@@ -8092,10 +8188,77 @@ describe("boards.rename", () => {
       where: { boardId: "board-1", spaceId: "workspace-1" },
     });
     expect(update).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it("changes the prefix while the board has no tickets", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(0);
+    const response = await rename(handler, { ticketPrefix: "OPS" });
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ ticketPrefix: "OPS" }),
+    });
+    expect(count).toHaveBeenCalledWith({
+      where: { boardId: "board-1", spaceId: "workspace-1" },
+    });
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        id: "board-1",
+        spaceId: "workspace-1",
+        nextNumber: 2,
+        tickets: { none: {} },
+      },
+      data: { ticketPrefix: "OPS" },
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("rejects the prefix change when a ticket lands between the count and the write", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(0);
+    updateManyAndReturn.mockResolvedValueOnce([]);
+    const response = await rename(handler, { name: "Launch", ticketPrefix: "OPS" });
+    expect(response?.status).toBe(400);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: "Cannot change the ticket prefix once tickets exist.",
+      }),
+    });
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        id: "board-1",
+        spaceId: "workspace-1",
+        nextNumber: 2,
+        tickets: { none: {} },
+      },
+      data: { name: "Launch", ticketPrefix: "OPS" },
+    });
+    // The conditional write matched nothing, so no unconditional retry may
+    // apply the name change either.
+    expect(update).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the normal update path when the prefix only differs in case", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
+    const response = await rename(handler, { ticketPrefix: "rak" });
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ ticketPrefix: "RAK" }),
+    });
+    expect(count).not.toHaveBeenCalled();
+    // The case-only request rewrites nothing, so the write must not replay the
+    // observed prefix over one a concurrent rename may have committed.
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "board-1" },
+      data: {},
+    });
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   it("renames the board without changing the prefix", async () => {
-    const { count, update, handler } = renameDeps(2);
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
     const response = await rename(handler, { name: "Launch" });
     expect(response?.status).toBe(200);
     await expect(response?.json()).resolves.toEqual({
@@ -8106,6 +8269,7 @@ describe("boards.rename", () => {
       where: { id: "board-1" },
       data: { name: "Launch" },
     });
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
 });
 
@@ -8179,7 +8343,11 @@ describe("export.bot", () => {
     return home;
   }
 
-  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+  async function exportManifest(
+    scope: "team" | "dedicated",
+    home: LocalAgentHomeStore,
+    appearance?: { color: string; avatarSet?: "organic" | "rakazo" },
+  ) {
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -8188,6 +8356,7 @@ describe("export.bot", () => {
           title: "",
           description: "",
           instructions: "",
+          ...appearance,
           thread: { id: "thread-1" },
           computer: { id: "computer-1", scope, homeKey: "home-1" },
         }),
@@ -8208,8 +8377,23 @@ describe("export.bot", () => {
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     const manifest = await client.export.bot({ botId: "bot-1" });
-    return manifest.files.sort((a, b) => a.path.localeCompare(b.path));
+    return manifest;
   }
+
+  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+    return (await exportManifest(scope, home)).files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  it.each(["#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
+    "exports the selected set and untouched avatar value (%s)",
+    async (color) => {
+      const manifest = await exportManifest("team", await homeWith({}), {
+        color,
+        avatarSet: "rakazo",
+      });
+      expect(manifest.bot).toMatchObject({ color, avatarSet: "rakazo" });
+    },
+  );
 
   it("exports only the bot's own folder from a Team Computer", async () => {
     const home = await homeWith({

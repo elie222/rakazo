@@ -55,6 +55,7 @@ vi.mock("../lib/rpc", () => ({
   }),
 }));
 vi.mock("./BillingSettingsPanel", () => ({ BillingSettingsPanel: () => null }));
+vi.mock("./PaymentWalletSettingsPanel", () => ({ PaymentWalletSettingsPanel: () => null }));
 vi.mock("./MemorySettingsOverlay", () => ({
   MemorySettingsOverlay: ({
     config,
@@ -298,6 +299,21 @@ it("shows Updates in the desktop app", async () => {
   const { container, cleanup } = await render({});
   try {
     expect(updatesNav(container)).not.toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers Wallet only when the deployment has a wallet provider", async () => {
+  const { container, rerender, cleanup } = await render({ section: "wallet" });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({ section: "wallet", paymentWalletProvider: { id: "link", name: "Link" } });
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).not.toBeNull();
+    expect(shown()).toBe("wallet");
   } finally {
     await cleanup();
   }

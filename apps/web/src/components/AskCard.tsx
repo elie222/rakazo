@@ -1,8 +1,13 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { ThreadMessage } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
+import type { LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  commandVariableName,
+  LoginSecretValue,
+  loginCardFields,
+} from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
@@ -15,6 +20,7 @@ import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
+import { LoginFieldValue } from "./LoginFields";
 import { OptionRow, optionLetter } from "./OptionRow";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
@@ -75,7 +81,8 @@ export function AskCard({
   block: AskBlock;
   canAnswer: boolean;
   canDismiss: boolean;
-  onAnswer: (text: string, username?: string) => Promise<void>;
+  /** A login card answers with its fields and an empty `text`. */
+  onAnswer: (text: string, fields?: LoginFieldInput[]) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
 }) {
@@ -85,7 +92,8 @@ export function AskCard({
   const [dismissed, setDismissed] = useState(false);
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
-  const [username, setUsername] = useState("");
+  const emptyLogin = () => loginCardFields(block.loginFields);
+  const [login, setLogin] = useState(emptyLogin);
   const [secretField, setSecretField] = useState<HTMLInputElement | null>(null);
   const [pastedLines, setPastedLines] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -128,7 +136,9 @@ export function AskCard({
   // the card without fields or buttons.
   const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
-  const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
+  const shownLoginLabels = block.loginFields ?? [t`Username`, t`Password`];
+  const loginReady = LoginSecretValue.safeParse({ fields: login }).success;
+  const secretLabel = secretFieldLabel(block.purpose);
   const commandInput = secretInput && block.credential?.auth.type === "command";
 
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
@@ -153,21 +163,19 @@ export function AskCard({
     return () => field.removeEventListener("beforeinput", keepLineBreaks);
   }, [commandInput, secretField]);
 
-  async function submitAnswer(value: string) {
+  async function submitAnswer(value: string, fields?: LoginFieldInput[]) {
     if (submitting) return;
-    if (secretInput ? value.length === 0 : !value.trim()) return;
-    const submitUsername = loginInput ? username.trim() : undefined;
-    if (loginInput && !submitUsername) return;
+    if (fields ? !loginReady : secretInput ? value.length === 0 : !value.trim()) return;
     const submitValue = secretInput ? value : value.trim();
     setPendingAction(secretInput ? "submit" : submitValue);
     setError(null);
     if (secretInput) {
       setAnswer("");
-      setUsername("");
+      setLogin(emptyLogin());
       setPastedLines(false);
     }
     try {
-      await onAnswer(submitValue, submitUsername);
+      await onAnswer(submitValue, fields);
       setAcceptedAnswer(secretInput ? "" : submitValue);
     } catch (err) {
       // A secret answer's failure may echo the secret, so never show its message.
@@ -186,7 +194,7 @@ export function AskCard({
     setPendingAction("dismiss");
     setError(null);
     setAnswer("");
-    setUsername("");
+    setLogin(emptyLogin());
     setPastedLines(false);
     try {
       await onDismiss();
@@ -376,34 +384,39 @@ export function AskCard({
           className="mt-3.5 flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            void submitAnswer(answer);
+            if (loginInput) void submitAnswer("", login);
+            else void submitAnswer(answer);
           }}
         >
           {loginInput ? (
+            login.map((field, index) => (
+              <LoginFieldValue
+                key={field.label}
+                label={shownLoginLabels[index] ?? field.label}
+                field={field}
+                disabled={submitting}
+                onChange={(change) =>
+                  setLogin((current) =>
+                    current.map((field, at) => (at === index ? { ...field, ...change } : field)),
+                  )
+                }
+              />
+            ))
+          ) : (
             <Input
+              ref={setSecretField}
               className="w-full"
-              aria-label={t`Username`}
+              aria-label={secretLabel}
+              type="password"
               autoComplete="off"
               spellCheck={false}
               disabled={submitting}
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder={t`Username`}
+              readOnly={pastedLines}
+              value={pastedLines ? answer.replaceAll("\n", " ") : answer}
+              onChange={(event) => setAnswer(event.target.value)}
+              placeholder={secretLabel}
             />
-          ) : null}
-          <Input
-            ref={setSecretField}
-            className="w-full"
-            aria-label={secretLabel}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={submitting}
-            readOnly={pastedLines}
-            value={pastedLines ? answer.replaceAll("\n", " ") : answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder={secretLabel}
-          />
+          )}
           {pastedLines ? (
             <Button
               type="button"
@@ -422,7 +435,7 @@ export function AskCard({
           <div className="flex gap-2">
             <Button
               type="submit"
-              disabled={answer.length === 0 || (loginInput && !username.trim()) || submitting}
+              disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
             >
               {pendingAction === "submit" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
             </Button>

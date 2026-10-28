@@ -163,11 +163,8 @@ function appendPlainText(parts: PlainTextPart[], value: string) {
 }
 
 /**
- * Split plain user-message text into literal runs and tappable links.
- * User bubbles stay plain text on web and mobile. Bold, headings, and other
- * markdown remain characters. Links use the same explicit autolinker as bot
- * messages, so a balanced parenthesis stays inside the URL and a closing
- * parenthesis that only wraps the surrounding prose does not.
+ * User bubbles stay plain text: markdown remains characters. Links use the bot messages'
+ * autolinker, so a balanced parenthesis stays inside the URL and one wrapping the prose does not.
  */
 export function plainTextLinkParts(text: string): PlainTextPart[] {
   const matches = plainTextLinkify.match(text);
