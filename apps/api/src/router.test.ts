@@ -3733,6 +3733,28 @@ describe("computer terminal and file transfer", () => {
     expect(sandbox.writeFile).not.toHaveBeenCalled();
   });
 
+  it("answers 400 when a running computer's file is too large or not text to preview", async () => {
+    const large = setup();
+    large.sandbox.readFile.mockRejectedValueOnce(new Error("computer file exceeds 2097152 bytes"));
+    await expect(large.call("readFile", { path: "big.log" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { message: "file is too large to preview" } },
+    });
+
+    const binary = setup();
+    binary.sandbox.readFile.mockResolvedValueOnce(new Uint8Array([0xff, 0xfe, 0x00]));
+    await expect(binary.call("readFile", { path: "image.bin" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { message: "file is not a text file" } },
+    });
+
+    const text = setup();
+    await expect(text.call("readFile", { path: "notes.txt" })).resolves.toEqual({
+      status: 200,
+      body: { json: { path: "notes.txt", content: "hello" } },
+    });
+  });
+
   it("downloads bytes from a running computer", async () => {
     const { sandbox, call } = setup();
     await expect(call("downloadFile", { path: "notes.txt" })).resolves.toEqual({

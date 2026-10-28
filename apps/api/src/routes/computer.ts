@@ -569,10 +569,21 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
-          const bytes = await deps.sandbox.readFile(toComputerRef(bot.computer), storedPath, ctx, {
-            maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
-          });
-          content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          const bytes = await deps.sandbox
+            .readFile(toComputerRef(bot.computer), storedPath, ctx, {
+              maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
+            })
+            .catch((error: unknown) => {
+              if (error instanceof Error && /exceeds|too large/i.test(error.message)) {
+                throw new ORPCError("BAD_REQUEST", { message: "file is too large to preview" });
+              }
+              throw error;
+            });
+          try {
+            content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          } catch {
+            throw new ORPCError("BAD_REQUEST", { message: "file is not a text file" });
+          }
         } else {
           try {
             content = await deps.home.readFile(bot.computer.homeKey, storedPath, ctx, {
