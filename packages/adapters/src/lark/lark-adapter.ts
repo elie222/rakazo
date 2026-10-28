@@ -4,6 +4,8 @@ import type { Adapter, AdapterPostableMessage, ChatInstance, WebhookOptions } fr
 import { Message, parseMarkdown } from "chat";
 import type { LarkAdapterConfig } from "./lazy-adapter.js";
 import { LarkAdapterBase } from "./lazy-adapter.js";
+import type { LarkTextPart } from "./text-parts.js";
+import { setLarkTextParts } from "./text-parts.js";
 
 interface WebhookPayload {
   encrypt?: string;
@@ -156,7 +158,7 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
     const id = event.sender.sender_id?.open_id ?? "";
     const { text, parts } = inboundText(msg.content, msg.message_type, msg.mentions ?? []);
     const formatted = parseMarkdown(text);
-    if (parts) formatted.data = { ...formatted.data, rakazoLarkParts: parts };
+    if (parts) setLarkTextParts(formatted, parts);
     const name = this.users.get(id) ?? id;
     return new Message({
       id: msg.message_id,
@@ -261,11 +263,6 @@ function equal(a: string, b: string) {
 }
 function forbidden() {
   return new Response("Forbidden", { status: 403 });
-}
-
-interface LarkTextPart {
-  text: string;
-  literal: boolean;
 }
 
 function inboundText(

@@ -18,6 +18,7 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
 import { Chat, isLinkNode, parseMarkdown, text, toPlainText, walkAst } from "chat";
+import { getLarkTextParts } from "./lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -501,21 +502,11 @@ function inboundAttachments(message: Message): MessagingInboundAttachment[] {
  * `example.com/projects/…` reaches the model without its target.
  */
 function plainTextWithLinks(message: Message, lark: boolean): string {
-  const data = message.formatted.data as { rakazoLarkParts?: unknown } | undefined;
-  const parts = lark ? data?.rakazoLarkParts : undefined;
-  if (
-    Array.isArray(parts) &&
-    parts.every(
-      (part) =>
-        part &&
-        typeof part === "object" &&
-        typeof part.text === "string" &&
-        typeof part.literal === "boolean",
-    )
-  ) {
+  const parts = lark ? getLarkTextParts(message.formatted) : undefined;
+  if (parts) {
     const rendered = parts.map((part, index) => {
-      if (part.literal) return { value: part.text as string, addedTarget: false };
-      const value = part.text as string;
+      if (part.literal) return { value: part.text, addedTarget: false };
+      const value = part.text;
       if (!value.trim()) return { value, addedTarget: false };
       const result = renderLinks(parseMarkdown(value));
       const first = result.ast.children.at(0);
