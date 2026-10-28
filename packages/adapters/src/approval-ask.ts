@@ -15,6 +15,8 @@ export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
 /** Longer fetch URLs are refused, so an approval card always shows the whole URL it sends. */
 export const MAX_FETCH_URL_LENGTH = 2_048;
+/** These send data to the site their url names, so a site the run was not given is gated. */
+export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
 
 /** A fleet card built from the resolved request: a title and the lines under it. */
 export type FleetCardSummary = { title: string; lines: string[] };
@@ -101,6 +103,24 @@ export function buildApprovalAskBlock(
       ],
     };
   }
+  if (toolName === "user_computer_shell") {
+    const cwd = typeof args.cwd === "string" && args.cwd.trim() ? `cd ${args.cwd.trim()}\n` : "";
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: "Run on your computer?",
+      detail: truncate(
+        redactSecrets(`${cwd}${String(args.command ?? "")}`, secrets),
+        MAX_APPROVAL_DETAIL_LENGTH,
+      ),
+      detailFormat: "code",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow for this chat" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+  }
   const fetchSite = webFetchSite(toolName, args);
   const summary = describeApprovalAction(toolName, args);
   const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
@@ -141,7 +161,9 @@ export function buildApprovalAskBlock(
 }
 
 function webFetchSite(toolName: string, args: Record<string, unknown>): string | undefined {
-  return toolName === "web_fetch" && typeof args.url === "string" ? urlSite(args.url) : undefined;
+  return SITE_SENDING_TOOLS.has(toolName) && typeof args.url === "string"
+    ? urlSite(args.url)
+    : undefined;
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
@@ -175,10 +197,9 @@ function formatApprovalDetail(
     );
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
-  const keys =
-    toolName === "web_fetch"
-      ? ["url"]
-      : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
+  const keys = SITE_SENDING_TOOLS.has(toolName)
+    ? ["url", "method", "body"]
+    : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
   const pushArgs = (values: Record<string, unknown>) => {
     for (const key of keys) {
       const value = values[key];

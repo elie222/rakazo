@@ -17,6 +17,7 @@ export const RUN_TRIGGERS = [
   "webhook",
   "messaging",
   "cloud_agent",
+  "purchase",
   "created",
   "tickets",
 ] as const;
@@ -55,6 +56,9 @@ export type RoutineRun = z.infer<typeof RoutineRunSchema>;
 
 export const RoutineRunCursorSchema = z.object({ id: Id, createdAt: IsoDate });
 export type RoutineRunCursor = z.infer<typeof RoutineRunCursorSchema>;
+/** Runs per history page; the first page a screen shows is shorter. */
+export const ROUTINE_HISTORY_PAGE_SIZE = 20;
+export const ROUTINE_HISTORY_FIRST_PAGE_SIZE = 5;
 export const RoutineHistorySchema = z.object({
   runs: z.array(RoutineRunSchema),
   nextCursor: RoutineRunCursorSchema.nullable(),

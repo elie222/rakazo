@@ -16,8 +16,9 @@ import {
   redactSecrets,
   TAKEOVER_COMPUTER_PENDING_STATE,
   userRunError,
+  withoutLastToolStepNotes,
 } from "@rakazo/core";
-import { recordUsage } from "@rakazo/db";
+import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { isToolPauseResult } from "./approval-effect.js";
@@ -51,8 +52,10 @@ import {
   canPublishDurableNarration,
   flushPendingTools,
   flushProgress,
+  nextProgressNonce,
   publishMidTurnNarration,
   recordExplicitNoResponse,
+  showNarrationStatus,
   tryFlushPendingTools,
 } from "./run-progress.js";
 import {
@@ -65,7 +68,11 @@ import {
 import { scheduleRoutineRetry } from "./run-routines.js";
 import { applyTool } from "./run-tools.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
-import { stripNoResponseReply, stripStrayNoResponse } from "./silent-reply.js";
+import {
+  peerReplyWithoutSentinel,
+  stripNoResponseReply,
+  stripStrayNoResponse,
+} from "./silent-reply.js";
 import { takeoverCheckpointOf } from "./takeover-resume.js";
 import { appendToolCompletionAudit, toolCompletionFromResult } from "./tool-completion-audit.js";
 import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
@@ -75,7 +82,8 @@ import {
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
-  userProgressClientNonce,
+  STEERING_RESET_MIN_GAP_MS,
+  STEERING_RESETS_MAX_PER_RUN,
 } from "./user-progress.js";
 
 type RuntimeEvent<T extends AgentRuntimeEvent["type"]> = Extract<AgentRuntimeEvent, { type: T }>;
@@ -91,57 +99,100 @@ export async function consumeRunEvents(
 ): Promise<boolean> {
   const { deps, run, runId, bot } = ctx;
   const { reply } = ctx.state;
-  for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
-    if (ctx.state.approval.pausePending) return true;
-    if (!ctx.state.lease.valid) return true;
-    if (await runLeaseLost(ctx)) return true;
-
-    // Check complete assistant turns so split sentinel chunks are recognized
-    // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
-    if (event.type === "tool" || event.type === "takeover") {
-      recordExplicitNoResponse(reply, reply.assistantTurnText);
-      reply.assistantTurnText = "";
-    }
-    if (event.type === "text") {
-      await streamText(ctx, event);
-    } else if (event.type === "turn") {
-      reply.assistantTurnBreakPending = true;
-    } else if (event.type === "progress") {
-      await streamProgress(ctx, event);
-    } else if (event.type === "ask") {
-      await pauseForAnswer(ctx, event);
-      return true;
-    } else if (event.type === "takeover") {
-      await pauseForTakeover(ctx, event);
-      return true;
-    } else if (event.type === "tool") {
-      if (await onToolCalled(ctx, event)) return true;
-    } else if (event.type === "subagent") {
-      await publishSubagent(ctx, event);
-    } else if (event.type === "usage" && !event.accounted) {
-      await recordUsage(deps.prisma, event, {
+  let thinking = false;
+  const publishThinking = async (active: boolean) => {
+    if (thinking === active) return;
+    thinking = active;
+    if (ctx.scripted || isBackgroundRunTrigger(run.trigger)) return;
+    try {
+      await deps.events.append({
         spaceId: run.spaceId,
+        threadId: run.threadId,
         botId: bot.id,
-        userId: run.userId,
         runId,
-        parentRunId: runId,
-        operationId: runId,
+        type: "thread.meta",
+        activityLease: { owner: ctx.workerId, fence: ctx.fence },
+        payload: { activity: { thinking: active } },
       });
-    } else if (event.type === "done") {
-      recordExplicitNoResponse(reply, event.text ?? "");
-      if (!reply.assembled && event.text) {
-        if (reply.publishedMidTurnUserMessage || reply.discardedMidTurnNarration) {
-          // Mid-turn narration was already published or discarded (routines).
-          // Post-tool finals are streamed into assembled; do not restore
-          // cumulative done.text (clamp/redaction make substring stripping brittle).
-        } else {
-          reply.assembled = event.text;
-          reply.currentTextSegment += event.text;
+    } catch (error) {
+      // Cancellation and a superseded attempt own their subsequent lifecycle.
+      // A stale marker must never override the current worker's state.
+      if (!(error instanceof RunHistoryWriteError)) throw error;
+    }
+  };
+  try {
+    for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
+      if (ctx.state.approval.pausePending) return true;
+      if (!ctx.state.lease.valid) return true;
+      if (await runLeaseLost(ctx)) return true;
+
+      if (event.type === "thinking") {
+        await publishThinking(event.active);
+        continue;
+      }
+      if (
+        (event.type === "text" && event.text.length > 0) ||
+        event.type === "tool" ||
+        event.type === "progress" ||
+        event.type === "ask" ||
+        event.type === "takeover" ||
+        event.type === "turn" ||
+        event.type === "done"
+      )
+        await publishThinking(false);
+
+      // Check complete assistant turns so split sentinel chunks are recognized
+      // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
+      if (event.type === "tool" || event.type === "takeover") {
+        recordExplicitNoResponse(reply, reply.assistantTurnText);
+        reply.assistantTurnText = "";
+      }
+      if (event.type === "text") {
+        await streamText(ctx, event);
+      } else if (event.type === "turn") {
+        reply.assistantTurnBreakPending = true;
+      } else if (event.type === "steered") {
+        await onSteered(ctx, event);
+      } else if (event.type === "progress") {
+        await streamProgress(ctx, event);
+      } else if (event.type === "ask") {
+        await pauseForAnswer(ctx, event);
+        return true;
+      } else if (event.type === "takeover") {
+        await pauseForTakeover(ctx, event);
+        return true;
+      } else if (event.type === "tool") {
+        if (await onToolCalled(ctx, event)) return true;
+      } else if (event.type === "subagent") {
+        await publishSubagent(ctx, event);
+      } else if (event.type === "usage" && !event.accounted) {
+        await recordUsage(deps.prisma, event, {
+          spaceId: run.spaceId,
+          botId: bot.id,
+          userId: run.userId,
+          runId,
+          parentRunId: runId,
+          operationId: runId,
+        });
+      } else if (event.type === "done") {
+        recordExplicitNoResponse(reply, event.text ?? "");
+        if (!reply.assembled && event.text) {
+          if (reply.publishedMidTurnUserMessage || reply.discardedMidTurnNarration) {
+            // Mid-turn narration was already published or discarded (routines).
+            // Post-tool finals are streamed into assembled; do not restore
+            // cumulative done.text (clamp/redaction make substring stripping brittle).
+          } else {
+            reply.assembled = event.text;
+            reply.currentTextSegment += event.text;
+          }
         }
       }
     }
+    return false;
+  } finally {
+    // Run completion clears thinking too; never let this replace the turn's own outcome.
+    await publishThinking(false).catch(() => {});
   }
-  return false;
 }
 
 /** At most once a second, check the run is still this attempt's and not cancelled or released. */
@@ -177,6 +228,8 @@ async function runLeaseLost(ctx: RunContext) {
 async function streamText(ctx: RunContext, event: RuntimeEvent<"text">) {
   const { reply } = ctx.state;
   reply.assistantTurnText += event.text;
+  if (event.text) reply.narrationStatusShowing = false;
+  reply.textSinceLastStep += event.text;
   if (reply.assistantTurnBreakPending && event.text) {
     reply.assistantTurnBreakPending = false;
     const separator = assistantTurnSeparator(reply.assembled, event.text);
@@ -202,6 +255,8 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   const { reply } = ctx.state;
   ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (run.trigger === "routine" || isBackgroundRunTrigger(run.trigger)) return;
+  // The bot's own note stays the working line until it writes again.
+  if (event.activity && reply.narrationStatusShowing) return;
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.
   if (reply.pendingProgress) {
@@ -227,6 +282,54 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
       ...(event.activity ? { activity: true } : {}),
     },
   });
+}
+
+/**
+ * The run's person wrote while the bot worked. What the bot wrote before that is posted as
+ * its own message instead of running on into the reply to them, and the interim-message
+ * budget starts again: the first note may answer them at once. Webhooks, external chats and
+ * other members stay on the normal budget, and the restart is capped so a stream of messages
+ * can't lift it.
+ */
+async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
+  const { deps, run } = ctx;
+  const { reply } = ctx.state;
+  reply.assistantTurnBreakPending = true;
+  const now = Date.now();
+  if (
+    !event.fromRunUser ||
+    reply.steeringResets >= STEERING_RESETS_MAX_PER_RUN ||
+    now - reply.lastSteeringResetAt < STEERING_RESET_MIN_GAP_MS
+  )
+    return;
+  reply.steeringResets += 1;
+  reply.lastSteeringResetAt = now;
+  await flushProgress(ctx);
+  const before = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
+  const text = redactSecrets(before.text, ctx.secrets).trim();
+  if (text && runPromotesMidTurnNarration(run.trigger)) {
+    reply.messageSegments = before.remaining;
+    reply.currentTextSegment = "";
+    reply.workingNotes.length = 0;
+    reply.assembled = "";
+    reply.hasStreamedText = false;
+    reply.pendingProgress = "";
+    reply.redactor.skip();
+    await publishMessage(
+      deps,
+      run,
+      "bot",
+      [{ kind: "text", text }],
+      undefined,
+      nextProgressNonce(ctx),
+    );
+    reply.midTurnUserTexts.push(text);
+    reply.publishedMidTurnUserMessage = true;
+  }
+  reply.progressBudgetStart = reply.midTurnProgressCount;
+  reply.turnStartedAtMs = now;
+  reply.steeringReplyPending = true;
+  reply.narrationStatusShowing = false;
 }
 
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
@@ -295,7 +398,7 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
         "bot",
         [{ kind: "text", text: narration }],
         undefined,
-        userProgressClientNonce(run.id, reply.midTurnProgressCount++),
+        nextProgressNonce(ctx),
       );
       reply.midTurnUserTexts.push(narration);
       reply.publishedMidTurnUserMessage = true;
@@ -351,11 +454,13 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   // Preserve event ordering when the throttle still holds recent narration: the
   // client must see that text before the tool call it describes.
   await flushProgress(ctx);
-  // Promote streamed narration into a durable, replyable chat message before
-  // tools continue, so long turns do not look stalled and stay replyable.
-  if (event.name !== "message_user") {
-    await publishMidTurnNarration(ctx);
-  }
+  // Queued first so the text written before this call becomes its note.
+  reply.pendingToolNames.push(event.name);
+  const heldNote = event.name === "message_user" ? undefined : await publishMidTurnNarration(ctx);
+  // A step without a note of its own replaces the earlier one in the live view, so its status
+  // lines show again.
+  if (!heldNote) reply.narrationStatusShowing = false;
+  reply.textSinceLastStep = "";
   reply.assistantTurnBreakPending = true;
   await deps.events.append({
     spaceId: run.spaceId,
@@ -365,7 +470,7 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
     runId,
     payload: { name: event.name, executionId: event.executionId },
   });
-  reply.pendingToolNames.push(event.name);
+  await showNarrationStatus(ctx, heldNote);
   tryFlushPendingTools(reply);
   const loopGuard = advanceToolCallLoopGuard(ctx.state.toolCallStreak, event.name, event.args);
   ctx.state.toolCallStreak = loopGuard.streak;
@@ -569,6 +674,25 @@ export async function completeRun(ctx: RunContext) {
   // model supplies none, unless it chose silence or already delivered that text.
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
+  // When nothing follows the last step, the notes since the last interim message are the reply.
+  if (
+    !isBackgroundRunTrigger(run.trigger) &&
+    !ctx.state.handedOff &&
+    !reply.explicitNoResponse &&
+    reply.workingNotes.length > 0 &&
+    !reply.textSinceLastStep.trim()
+  ) {
+    flushPendingTools(reply);
+    reply.messageSegments = withoutLastToolStepNotes(
+      reply.messageSegments,
+      reply.workingNotes.length,
+    );
+    const notes = reply.workingNotes.join("\n\n");
+    const separator = assistantTurnSeparator(reply.assembled, notes);
+    reply.assembled += separator + notes;
+    reply.currentTextSegment += separator + notes;
+  }
+  // Runs that hold their narration back keep only the last held-back preview.
   if (
     !isBackgroundRunTrigger(run.trigger) &&
     !ctx.state.handedOff &&
@@ -585,14 +709,15 @@ export async function completeRun(ctx: RunContext) {
   // Other runs still drop a stray sentinel at the edges of a real reply.
   const silentReply = ctx.allowSilentEmptyRun
     ? stripNoResponseReply(reply.assembled, reply.messageSegments)
-    : stripStrayNoResponse(reply.assembled, reply.messageSegments);
+    : (ctx.source.peerMessage?.intent === "request" ||
+          ctx.source.peerMessage?.intent === "question") &&
+        !reply.publishedMidTurnUserMessage
+      ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
+      : stripStrayNoResponse(reply.assembled, reply.messageSegments);
   let completionBlocks = silentReply.blocks;
   if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
     // Mid-turn progress already posted durable chat messages; skip the empty
-    // "…" fallback so we do not add a junk final bubble. Delegated bot_message
-    // runs still return via botMessageOutcomeFromMidTurn below (status when
-    // only progress was posted, result when a final reply exists). Exact
-    // NO_RESPONSE finals are treated as empty before this fallback runs.
+    // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
       allowSilentEmpty: ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage,
       emptyResponseText: ctx.emptyResponseText,

@@ -216,9 +216,14 @@ describe("browser tools", () => {
         { kind: "fill_secret", ref: "e1", secret: "site_login", field: "password" },
       ]),
     ).toEqual([{ kind: "fill_secret", ref: "e1", secret: "site_login", field: "password" }]);
+    expect(
+      parseBrowserActions([
+        { kind: "fill_secret", ref: "e1", secret: "site_login", field: " Phone number " },
+      ]),
+    ).toEqual([{ kind: "fill_secret", ref: "e1", secret: "site_login", field: "Phone number" }]);
     expect(() =>
-      parseBrowserActions([{ kind: "fill_secret", ref: "e1", secret: "site_login", field: "pin" }]),
-    ).toThrow('needs field: "username" or "password"');
+      parseBrowserActions([{ kind: "fill_secret", ref: "e1", secret: "site_login", field: " " }]),
+    ).toThrow("needs field: the label of one of the login's fields");
     expect(() =>
       parseBrowserActions([{ kind: "fill_secret", ref: "e1", field: "password" }]),
     ).toThrow(/secret/);
@@ -246,9 +251,10 @@ describe("browser tools", () => {
       return { email: ref("Email"), password: ref("Password") };
     }
     const values = { username: "fake-user@example.test", password: "fake-password-1" };
-    const resolveSecretFill = async (step: { field: "username" | "password" }) => ({
-      text: values[step.field],
+    const resolveSecretFill = async (step: { field: string }) => ({
+      text: values[step.field as keyof typeof values],
       origin: "https://login.example.test",
+      hidden: step.field === "password",
     });
 
     it("types saved values on the saved origin and redacts them from the result", async () => {
@@ -292,10 +298,95 @@ describe("browser tools", () => {
       }
     });
 
+    it("types a hidden field only into a password field and a visible one into a phone field", async () => {
+      const url = "https://login.example.test/signin";
+      const browser = new FakeBrowserProvider({
+        pages: {
+          [url]: {
+            title: "Sign in",
+            html: `<!doctype html><html><head><title>Sign in</title></head><body>
+              <input aria-label="ID number" />
+              <input aria-label="Phone number" type="tel" />
+              <input aria-label="PIN" type="password" />
+            </body></html>`,
+          },
+        },
+      });
+      await browserNavigateFromTool(browser, computer, context, { url });
+      const ref = async (name: string) => {
+        const snap = (await browserSnapshotFromTool(browser, computer, context, {})) as {
+          elements: Array<{ ref: string; name: string }>;
+        };
+        return snap.elements.find((el) => el.name.includes(name))!.ref;
+      };
+      const login = {
+        "ID number": { text: "fake-id-123", hidden: false },
+        "Phone number": { text: "+1 555 0100", hidden: true },
+      };
+      const resolveFields = async (step: { field: string }) => ({
+        ...login[step.field as keyof typeof login],
+        origin: "https://login.example.test",
+      });
+      const fill = async (target: string, field: string) =>
+        browserActFromTool(
+          browser,
+          computer,
+          context,
+          {
+            actions: [{ kind: "fill_secret", ref: await ref(target), secret: "site_login", field }],
+          },
+          { resolveSecretFill: resolveFields, redactions: () => ["fake-id-123", "+1 555 0100"] },
+        );
+
+      const hiddenInPhone = await fill("Phone number", "Phone number");
+      expect(hiddenInPhone).toMatchObject({ ok: false, completed: 0, uncertain: false });
+      expect(JSON.stringify(hiddenInPhone)).toMatch(/password field/);
+      expect(await fill("PIN", "Phone number")).toMatchObject({ ok: true, completed: 1 });
+      expect(await fill("ID number", "ID number")).toMatchObject({ ok: true, completed: 1 });
+      const snap = JSON.stringify(await browserSnapshotFromTool(browser, computer, context, {}));
+      expect(snap).not.toContain("fake-id-123");
+      expect(snap).not.toContain("+1 555 0100");
+    });
+
+    it("tells every page browser a hidden field is a password and a visible one a username", async () => {
+      const acts: unknown[] = [];
+      const recorder = {
+        act: async (_computer: unknown, input: { actions: unknown[] }) => {
+          acts.push(...input.actions);
+          return { ok: true, completed: input.actions.length };
+        },
+      } as unknown as FakeBrowserProvider;
+      for (const hidden of [true, false, undefined]) {
+        await browserActFromTool(
+          recorder,
+          computer,
+          context,
+          { actions: [{ kind: "fill_secret", ref: "e1", secret: "site_login", field: "Code" }] },
+          {
+            resolveSecretFill: async () =>
+              ({ text: "fake-code", origin: "https://login.example.test", hidden }) as never,
+          },
+        );
+      }
+      expect(acts).toEqual(
+        ["password", "username", "password"].map((field) => ({
+          kind: "fill",
+          ref: "e1",
+          text: "fake-code",
+          origin: "https://login.example.test",
+          field,
+        })),
+      );
+    });
+
     it("never reports a login-filled field's value, even when too short to redact", async () => {
       const browser = loginPage("https://login.example.test/signin");
       const { email } = await refs(browser, "https://login.example.test/signin");
-      const shortName = async () => ({ text: "ada", origin: "https://login.example.test" });
+      const shortName = async () => ({
+        text: "ada",
+        origin: "https://login.example.test",
+        hidden: false,
+      });
       const acted = await browserActFromTool(
         browser,
         computer,
@@ -322,7 +413,13 @@ describe("browser tools", () => {
         computer,
         context,
         { actions: [{ kind: "fill_secret", ref: email, secret: "site_login", field: "username" }] },
-        { resolveSecretFill: async () => ({ text: "ada", origin: "https://login.example.test" }) },
+        {
+          resolveSecretFill: async () => ({
+            text: "ada",
+            origin: "https://login.example.test",
+            hidden: false,
+          }),
+        },
       );
       const typed = await browserActFromTool(browser, computer, context, {
         actions: [{ kind: "type", ref: emailRef(filled), text: "!" }],
@@ -450,7 +547,7 @@ describe("browser tools", () => {
         computer,
         context,
         { actions: [{ kind: "fill_secret", ref: email, secret: "site_login", field: "username" }] },
-        { resolveSecretFill: async () => ({ text: values.username, origin }) },
+        { resolveSecretFill: async () => ({ text: values.username, origin, hidden: false }) },
       );
       expect(acted).toMatchObject({ ok: false, completed: 0 });
       expect(JSON.stringify(acted)).toMatch(/HTTPS/);
@@ -679,7 +776,7 @@ describe("browser tools", () => {
     [
       "a fill_secret without its field",
       [{ kind: "fill_secret", ref: "e1", secret: "site_login" }],
-      'browser_act fill_secret needs field: "username" or "password"',
+      "browser_act fill_secret needs field: the label of one of the login's fields",
     ],
     [
       "a fill_secret without its login",
@@ -689,7 +786,7 @@ describe("browser tools", () => {
     [
       "an unsupported kind",
       [{ kind: "press", ref: "e1" }],
-      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret",
+      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret, fill_card, fill_pay_token",
     ],
     ["no actions", [], "browser_act requires at least one action"],
     [
@@ -721,7 +818,7 @@ describe("browser tools", () => {
         { kind: "fill_secret", ref: "e2", secret: "site_login", field: "password" },
         { kind: "fill_secret", ref: "e3", secret: "site_login" },
       ],
-      'browser_act fill_secret needs field: "username" or "password"',
+      "browser_act fill_secret needs field: the label of one of the login's fields",
     ],
   ])(
     "settles %s before anything runs, without pointing at desktop tools",

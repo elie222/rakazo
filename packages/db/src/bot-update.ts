@@ -7,8 +7,8 @@ import { appendEventInTransaction } from "./events.js";
 type AppendEvent = typeof appendEventInTransaction;
 
 /**
- * Persist a bot row. When profile labels or instructions change, write `bot.updated`
- * in the same transaction so clients can refresh after every successful write.
+ * When profile labels or instructions change, write `bot.updated` in the same
+ * transaction so clients can refresh after every successful write.
  * Realtime notify stays best-effort after commit.
  */
 export async function commitBotUpdate(
@@ -93,11 +93,13 @@ export function botProfileLabelsChanged(input: {
   title?: unknown;
   description?: unknown;
   color?: unknown;
+  avatarSet?: unknown;
 }): boolean {
   return (
     input.name !== undefined ||
     input.title !== undefined ||
     input.description !== undefined ||
-    input.color !== undefined
+    input.color !== undefined ||
+    input.avatarSet !== undefined
   );
 }

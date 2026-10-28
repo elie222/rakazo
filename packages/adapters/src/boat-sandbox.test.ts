@@ -1698,6 +1698,35 @@ describe("BoatSandboxProvider", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
     expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(deadline.signal);
   });
+
+  it("leaves a sandbox another API key created to its creator", async () => {
+    const forbidden = (code: string) =>
+      new Response(JSON.stringify({ code, message: "Forbidden" }), { status: 403 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(forbidden("api_key_action_forbidden"))
+      .mockResolvedValueOnce(forbidden("forbidden"));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" });
+    const computer = {
+      id: "boat-test",
+      providerRef: "boat-test",
+      botId: "bot-test",
+      kind: "boat" as const,
+    };
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ message: "sandbox.destroy", outcome: "not_owned" }),
+      );
+      // Any other refusal still fails, so the computer is kept for a retry.
+      await expect(provider.destroy(computer, context)).rejects.toThrow("HTTP 403, forbidden");
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
 });
 
 describe("Boat computer snapshot", () => {

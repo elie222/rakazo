@@ -10,8 +10,10 @@ import {
   isRunTerminalEvent,
   liveActivityLine,
   normalizeResponseStreamingPreference,
+  noteLastToolStep,
   projectMessages,
   redactSecrets,
+  redactSecretsAfter,
   reduceLiveMessageBlocks,
   responseStreamingEnabled,
   runFailureError,
@@ -21,6 +23,7 @@ import {
   trackToolCallStreak,
   trackToolNameStreak,
   withLiveStreamingProgress,
+  withoutLastToolStepNotes,
 } from "./events.js";
 import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
 
@@ -140,6 +143,46 @@ describe("reduceLiveMessageBlocks", () => {
 
     expect(reduceLiveMessageBlocks(activity, { type: "tool", name: "shell" })).toEqual([
       { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+    ]);
+  });
+
+  it("keeps a tool waiting on an unfinished sentence when a reset drops the text", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking totals" },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell" });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { reset: true, text: "Checking totals", activity: true },
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "Checking totals", activity: true },
+    ]);
+  });
+
+  it("drops streamed text on a reset, keeps the steps, and shows the note as the working line", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking the totals." },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell" });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { reset: true, text: "Checking the totals.", activity: true },
+    });
+    expect(blocks).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "Checking the totals.", activity: true },
+    ]);
+    expect(liveActivityLine([{ id: "progress:run-1", blocks }])).toBe("Checking the totals.");
+    // The next text the bot writes replaces the working line.
+    expect(
+      reduceLiveMessageBlocks(blocks, { type: "progress", payload: { text: "They match." } }),
+    ).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "They match." },
     ]);
   });
 });
@@ -764,6 +807,57 @@ describe("appendToolCallSegment", () => {
   });
 });
 
+describe("step notes", () => {
+  it("puts each note on the step it came before, in order", () => {
+    let segments = appendToolCallSegment([], "read_file");
+    segments = noteLastToolStep(segments, "The meeting is with Anna.");
+    segments = appendToolCallSegment(segments, "read_file");
+    segments = appendToolCallSegment(segments, "read_file");
+    segments = noteLastToolStep(segments, "Saving it.");
+    expect(segments).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Read file", count: 2, note: "The meeting is with Anna." },
+          { label: "Read file", count: 1, note: "Saving it." },
+        ],
+      },
+    ]);
+  });
+
+  it("leaves text and a message without steps alone", () => {
+    const text = [{ kind: "text" as const, text: "hi" }];
+    expect(noteLastToolStep(text, "Note.")).toEqual(text);
+  });
+
+  it("removes only the newest notes", () => {
+    let segments = appendToolCallSegment([], "read_file");
+    segments = noteLastToolStep(segments, "One.");
+    segments = appendToolCallSegment(segments, "shell");
+    segments = noteLastToolStep(segments, "Two.");
+    segments = appendToolCallSegment(segments, "shell");
+    expect(withoutLastToolStepNotes(segments, 1)).toEqual([
+      {
+        kind: "steps",
+        steps: [
+          { label: "Read file", count: 1, note: "One." },
+          { label: "Shell", count: 2 },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("redactSecretsAfter", () => {
+  it("hides the rest of a value that started in the text before", () => {
+    expect(redactSecretsAfter("The token is hunter", "abcxyz saved.", ["hunterabcxyz"])).toBe(
+      "[redacted] saved.",
+    );
+    expect(redactSecretsAfter("hunterabcxyz", " and abc", ["hunterabcxyz"])).toBe(" and abc");
+    expect(redactSecretsAfter("", "key hunterabcxyz", ["hunterabcxyz"])).toBe("key [redacted]");
+  });
+});
+
 describe("redactSecrets", () => {
   it("hides a longer value whole when a shorter one appears inside it", () => {
     expect(redactSecrets("password=hunter123xyz", ["123", "hunter123xyz"])).toBe(
@@ -780,9 +874,43 @@ describe("redactSecrets", () => {
       "[redacted][redacted][redacted][redacted]",
     );
   });
+
+  it("hides each body line of a multi-line value when output splits or rejoins its lines", () => {
+    const key =
+      "-----BEGIN FAKE KEY-----\r\nAAAAfakeKeyLineOne01\nBBBBfakeKeyLineTwo02\nshort\n-----END FAKE KEY-----\n";
+    expect(redactSecrets(`key: ${key}`, [key])).toBe("key: [redacted]");
+    // An unquoted `echo $KEY` joins the lines with spaces.
+    expect(
+      redactSecrets(
+        "-----BEGIN FAKE KEY----- AAAAfakeKeyLineOne01 BBBBfakeKeyLineTwo02 short -----END",
+        [key],
+      ),
+    ).toBe("-----BEGIN FAKE KEY----- [redacted] [redacted] short -----END");
+    expect(redactSecrets("tail: BBBBfakeKeyLineTwo02", [key])).toBe("tail: [redacted]");
+    expect(containsSecret({ out: "AAAAfakeKeyLineOne01" }, [key])).toBe(true);
+    // Short lines and spaced lines like the header also appear in ordinary text.
+    expect(containsSecret({ out: "short -----BEGIN FAKE KEY-----" }, [key])).toBe(false);
+  });
 });
 
 describe("createStreamingRedactor", () => {
+  it("hides a value split between skipped text and the next chunk", () => {
+    const redactor = createStreamingRedactor(["hunter123xyz"]);
+    const before = redactor.push("Checking hunter1");
+    redactor.skip();
+    const after = redactor.push("23xyz now.") + redactor.finish();
+    expect(before).not.toContain("hunter1");
+    expect(after).toBe(" now.");
+    expect(`${before}${after}`).not.toMatch(/23xyz|hunter/);
+  });
+
+  it("drops skipped text without changing what follows", () => {
+    const redactor = createStreamingRedactor(["hunter123xyz"]);
+    redactor.push("A short note.");
+    redactor.skip();
+    expect(redactor.push("Next text") + redactor.finish()).toBe("Next text");
+  });
+
   it("never emits a secret split across streaming chunks", () => {
     const redactor = createStreamingRedactor(["fake-secret-123"]);
     const output = [
@@ -815,6 +943,16 @@ describe("createStreamingRedactor", () => {
     expect(outputs[0]).toBe("[redacted]");
     expect(outputs.slice(1).every((output) => output === "")).toBe(true);
     expect(redactor.push(" done") + redactor.finish()).toBe(" done");
+  });
+
+  it("hides a line of a multi-line value split across chunks", () => {
+    const redactor = createStreamingRedactor(["header\nAAAAfakeKeyLineOne01\n"]);
+    const output = [
+      redactor.push("x AAAAfake"),
+      redactor.push("KeyLineOne01 y"),
+      redactor.finish(),
+    ];
+    expect(output.join("")).toBe("x [redacted] y");
   });
 
   it("does not delay chunks when there are no known secrets", () => {

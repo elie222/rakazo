@@ -3,7 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createBillingService } from "./billing.js";
+import { createBillingService, TRIAL_DAYS } from "./billing.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe.sequential : describe.skip;
@@ -62,15 +62,19 @@ dbTests("model credit billing service", () => {
     expect(provider.creditCheckouts.size).toBe(0);
     expect(await billingAccountForOrganization(prisma, organizationId)).toBeNull();
   });
-  it("starts with a funding choice, and BYOK opens the plan checkout", async () => {
+  it("starts with a funding choice, and BYOK opens the plan checkout with a trial", async () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
       balanceUsd: 0,
+      trialAvailable: true,
+      trialDays: TRIAL_DAYS,
     });
     await expect(service.selectFunding(actor, "byok")).resolves.toMatchObject({
       url: expect.stringContaining("/byok/"),
     });
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    expect(provider.byokCheckouts.get(customer)?.trialDays).toBe(TRIAL_DAYS);
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
@@ -90,6 +94,7 @@ dbTests("model credit billing service", () => {
       balanceUsd: 10,
       monthlyAmountCents: 1000,
       state: "active",
+      trialAvailable: false,
     });
   });
   it("adds one-time topups without adding a second subscription", async () => {

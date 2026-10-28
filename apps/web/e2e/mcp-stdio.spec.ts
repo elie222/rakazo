@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, expandAdvancedSection, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openIntegrationsAdd, signup } from "./helpers";
 
 const credentialsTemplate = `{
   "installed": {
@@ -98,8 +98,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
-  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
 
   await page.getByLabel("Server name").fill("Invoices");
   await page.getByRole("tab", { name: "STDIO", exact: true }).click();
@@ -109,7 +108,6 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
 
   const names = page.getByRole("textbox", { name: "Name", exact: true });
   const values = page.getByLabel("Value", { exact: true });
-  // Names are normalized to the environment-variable form the server accepts.
   await names.nth(0).fill("123-key");
   await expect(names.nth(0)).toHaveValue("_123_KEY");
   await names.nth(0).fill("invoices-api-id");
@@ -231,8 +229,7 @@ test("shows MCP server health, error details, and tests the connection on demand
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
-  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
 
   // OAuth being connected must not read as "working": health is the primary status.
   const health = page.getByTestId("mcp-health");
@@ -240,7 +237,6 @@ test("shows MCP server health, error details, and tests the connection on demand
   await expect(health).toContainText("Not working");
   await expect(page.getByText("OAuth connected", { exact: true })).toBeVisible();
 
-  // The raw log hides behind a disclosure, rendered left-to-right and scrollable.
   const details = page.getByTestId("mcp-health-details");
   const detailsTrigger = details.getByRole("button", { name: "Error details" });
   await expect(detailsTrigger).toHaveAttribute("aria-expanded", "false");
@@ -252,7 +248,6 @@ test("shows MCP server health, error details, and tests the connection on demand
   await expect(log).toContainText("MCP error -32000: Connection closed");
   await captureScreenshot(page, testInfo, "mcp-health-error");
 
-  // Test connection calls the RPC, shows a busy state, and swaps in the fresh health.
   const testButton = page.getByRole("button", { name: "Test connection", exact: true });
   await testButton.click();
   await expect(page.getByRole("button", { name: "Testing…", exact: true })).toBeDisabled();
@@ -294,8 +289,7 @@ test("polls the server list while a stdio package is installing", async ({ page 
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
-  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
 
   const health = page.getByTestId("mcp-health");
   await expect(health).toHaveAttribute("data-status", "installing");
@@ -306,7 +300,6 @@ test("polls the server list while a stdio package is installing", async ({ page 
   expect(listCalls).toBeGreaterThan(beforePoll);
   await expect(health).toContainText(/Running\s*1 tool/);
 
-  // Polling stops once nothing is installing.
   const settled = listCalls;
   await page.waitForTimeout(3500);
   expect(listCalls).toBe(settled);

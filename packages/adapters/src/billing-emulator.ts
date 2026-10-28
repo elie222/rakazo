@@ -1,4 +1,5 @@
 import type {
+  BillingByokCheckoutRequest,
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
@@ -32,7 +33,7 @@ export class BillingEmulator implements BillingProvider {
   readonly price: BillingPrice;
   readonly modelCredits: boolean;
   readonly creditCheckouts = new Map<string, BillingCreditCheckoutRequest>();
-  readonly byokCheckouts = new Map<string, Omit<BillingCreditCheckoutRequest, "monthly">>();
+  readonly byokCheckouts = new Map<string, BillingByokCheckoutRequest>();
   readonly creditPurchases = new Map<string, BillingCreditPurchase[]>();
   readonly customers = new Map<string, { email: string; organizationId: string }>();
   readonly checkouts = new Map<string, BillingCheckoutRequest>();
@@ -94,7 +95,7 @@ export class BillingEmulator implements BillingProvider {
     return { url: `https://billing.emulator.invalid/credits/${input.customerId}` };
   }
 
-  async createByokCheckout(input: Omit<BillingCreditCheckoutRequest, "monthly">) {
+  async createByokCheckout(input: BillingByokCheckoutRequest) {
     this.requireCustomer(input.customerId);
     if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
       throw new BillingCheckoutCompletedError();
@@ -109,8 +110,13 @@ export class BillingEmulator implements BillingProvider {
 
   /** Test helper: the customer pays for the own-key plan checkout they started. */
   completeByokCheckout(customerId: string) {
-    if (!this.byokCheckouts.delete(customerId)) throw new Error("No own-key checkout");
+    const checkout = this.byokCheckouts.get(customerId);
+    if (!checkout) throw new Error("No own-key checkout");
+    this.byokCheckouts.delete(customerId);
     const n = ++this.sequence;
+    const trialEndsAt = checkout.trialDays
+      ? new Date(this.now() + checkout.trialDays * 86400000)
+      : null;
     this.subscriptions.push({
       customerId,
       created: Math.floor(this.now() / 1000) + n,
@@ -118,10 +124,10 @@ export class BillingEmulator implements BillingProvider {
       subscriptionItemId: `si_byok_${n}`,
       priceId: BYOK_PRICE_ID,
       byokPlan: true,
-      status: "active",
+      status: trialEndsAt ? "trialing" : "active",
       seats: 1,
-      trialEndsAt: null,
-      currentPeriodEndsAt: new Date(this.now() + 30 * 86400000),
+      trialEndsAt,
+      currentPeriodEndsAt: trialEndsAt ?? new Date(this.now() + 30 * 86400000),
       cancelAtPeriodEnd: false,
       endedAt: null,
     });

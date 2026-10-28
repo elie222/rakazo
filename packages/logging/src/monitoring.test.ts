@@ -16,6 +16,8 @@ describe("client monitoring contract", () => {
     ["C:\\Users\\Example User", "[user]"],
     ["C:\\Users\\Example User\n at next (app.js:2:1)", "[user]\n at next (app.js:2:1)"],
     ["C:\\Users\\Example User\r\n at next (app.js:2:1)", "[user]\r\n at next (app.js:2:1)"],
+    ["C:/Users/Example User/app.js", "[user]/app.js"],
+    ["c:/users/Example Middle User/app.js:12:3", "[user]/app.js:12:3"],
   ])("redacts the complete Windows profile in %j", (input, expected) => {
     expect(scrubMonitoringText(input)).toBe(expected);
   });
@@ -32,6 +34,7 @@ describe("client monitoring contract", () => {
       "[user]\\first.js -> [user]\\second.js",
     ],
     ["C:\\Users\\Example User -> D:\\build\\app.js", "[user]D:\\build\\app.js"],
+    ["C:/Users/Example -> d:/users/Other User/app.js", "[user][user]/app.js"],
   ])("keeps later drive prefixes available for redaction in %j", (input, expected) => {
     expect(scrubMonitoringText(input)).toBe(expected);
   });

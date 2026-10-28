@@ -43,8 +43,8 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
-      answer: (message, answer, username, dismiss) =>
-        rowActionsRef.current.answer(message, answer, username, dismiss),
+      answer: (message, answer, fields, dismiss) =>
+        rowActionsRef.current.answer(message, answer, fields, dismiss),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
@@ -182,6 +182,7 @@ export function useThreadRows({
           }
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
+          activityAvatarSet={activityBot?.avatarSet}
           activityStatus={activityStatus}
           userBubble={userBubble}
           inGroup={inGroup}

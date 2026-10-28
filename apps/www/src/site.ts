@@ -4,6 +4,8 @@ export const SITE_DESCRIPTION =
   "Rakazo is an open source Grok Bot alternative for persistent AI teammates that do real work. Your keys, your model, your machine.";
 
 export const APP_URL = "https://app.rakazo.com";
+export const CATALOG_URL =
+  "https://rakazo-public.fsn1.your-objectstorage.com/integrations/catalog.json";
 export const GITHUB_URL = "https://github.com/elie222/rakazo";
 export const IOS_APP_URL = "https://apps.apple.com/app/rakazo/id6801531099";
 export const ANDROID_APK_URL = "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk";

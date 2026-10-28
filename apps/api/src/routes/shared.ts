@@ -21,7 +21,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
       where: { id: actor.userId },
-      include: { signupSurvey: { select: { userId: true } } },
+      select: {
+        email: true,
+        name: true,
+        timezone: true,
+        signupSurvey: { select: { userId: true } },
+      },
     }),
     modelSetup(deps, actor),
   ]);
@@ -58,6 +63,9 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     billingEnabled: Boolean(deps.billing),
     // Only billing deployments ask; self-hosted installs never see the survey.
     needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
+    paymentWalletProvider: deps.paymentWallet
+      ? { id: deps.paymentWallet.describe().id, name: deps.paymentWallet.displayName }
+      : null,
   };
 }
 

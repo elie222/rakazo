@@ -19,7 +19,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const scope = { userId: "user-1", spaceId: "space-1" };
+// These rows sit in the Space's own vault, so lookups match their spaceId.
+const ownVault = { findUnique: vi.fn(async () => ({ setting: "credentials" })) };
 const destination: BotSecretDestination = {
   name: "example_api",
   origin: "https://api.example.test",
@@ -46,7 +48,10 @@ async function fixture(auth = destination.auth) {
       ? row
       : null,
   );
-  const prisma = { botSecret: { findFirst } } as unknown as PrismaClient;
+  const prisma = {
+    spaceSettingOverride: ownVault,
+    vaultCredential: { findFirst },
+  } as unknown as PrismaClient;
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
   const registerRedactions = vi.fn();
   const input = {
@@ -116,7 +121,7 @@ describe("authenticated secret requests", () => {
     },
   );
 
-  it.each(["userId", "spaceId", "botId"] as const)(
+  it.each(["userId", "spaceId"] as const)(
     "denies a different %s before decrypting or sending",
     async (key) => {
       const { input, fetch } = await fixture();
@@ -222,7 +227,10 @@ describe("authenticated secret requests", () => {
     );
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://192.168.2.10:8080/v1/items" },
@@ -262,7 +270,10 @@ describe("authenticated secret requests", () => {
     const findFirst = vi.fn(async () => row);
     const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ ok: true }));
     const input = {
-      prisma: { botSecret: { findFirst } } as unknown as PrismaClient,
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst },
+      } as unknown as PrismaClient,
       secretStore,
       scope,
       request: { name: "hive_api_token", url: "http://nas.local:8080/v1/items" },
@@ -310,8 +321,7 @@ describe("resolveRequestSecretDestination", () => {
   });
 
   it("accepts a valid credential object supplied beside connectionId", () => {
-    // The flattened tool schema allows both fields, and the executor used to
-    // reject that pair before it ever checked that the credential was valid.
+    // The flattened tool schema allows both fields.
     const resolved = resolveRequestSecretDestination({
       ...documented,
       connectionId: "conn_1",
@@ -799,13 +809,14 @@ describe("saved website logins", () => {
     origin: "https://login.example.test",
     auth: { type: "login" },
   };
+  // Stored as logins were before fields, so these tests also cover that old logins fill as before.
   async function loginFixture(
     username: string,
     auth: object = login.auth,
     origin = login.origin,
     password = "fake-password-1",
+    plaintext = JSON.stringify({ username, password }),
   ) {
-    const plaintext = encodeLoginSecret({ username, password });
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -818,7 +829,12 @@ describe("saved website logins", () => {
         : null,
     );
     const findMany = vi.fn(async (query) => matchingRows([row], query));
-    return { prisma: { botSecret: { findFirst, findMany } } as unknown as PrismaClient };
+    return {
+      prisma: {
+        spaceSettingOverride: ownVault,
+        vaultCredential: { findFirst, findMany },
+      } as unknown as PrismaClient,
+    };
   }
 
   it("hides every saved password when the bot has more than 100 credentials", async () => {
@@ -829,13 +845,14 @@ describe("saved website logins", () => {
       rows.push({ ...scope, name: `api_${index}`, auth: { type: "bearer" }, ciphertext: "unused" });
     const password = "fake-late-password-1";
     const encrypted = await secretStore.put(
-      encodeLoginSecret({ username: "fake-user@example.test", password }),
+      JSON.stringify({ username: "fake-user@example.test", password }),
       { ...scope, ...context },
       { recordId: "login-late" },
     );
     rows.push({ ...scope, ...login, ...encrypted });
     const prisma = {
-      botSecret: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
     } as unknown as PrismaClient;
     expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
   });
@@ -857,7 +874,7 @@ describe("saved website logins", () => {
     // Only the run that fills a login hides its username.
     expect(redacted).toContain(`Signed in as ${username}`);
     expect(
-      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, botId: "bot-2" }),
+      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, userId: "user-2" }),
     ).toEqual([]);
   });
 
@@ -881,7 +898,10 @@ describe("saved website logins", () => {
 
   it("skips an unreadable login and logs only its id", async () => {
     const row = { ...scope, ...login, id: "login-broken", ciphertext: "not-a-ciphertext" };
-    const prisma = { botSecret: { findMany: vi.fn(async () => [row]) } } as unknown as PrismaClient;
+    const prisma = {
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async () => [row]) },
+    } as unknown as PrismaClient;
     const warn = vi.fn();
     const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
     try {
@@ -910,11 +930,86 @@ describe("saved website logins", () => {
     const input = { prisma, secretStore, scope, name: "site_login" };
     expect(await resolveLoginFill({ ...input, field: "password" })).toEqual({
       text: "fake-password-1",
+      hidden: true,
       origin: "https://login.example.test",
       redactions: expect.arrayContaining(["fake-password-1", "fake-user@example.test"]),
     });
     expect(await resolveLoginFill({ ...input, field: "username" })).toMatchObject({
       text: "fake-user@example.test",
+      hidden: false,
+    });
+    expect(await resolveLoginFill({ ...input, field: "Password" })).toMatchObject({
+      text: "fake-password-1",
+      hidden: true,
+    });
+  });
+
+  describe("with named fields", () => {
+    const fields = [
+      { label: "ID number", value: "fake-id-1234", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+      { label: "PIN", value: "4321", hidden: true },
+      { label: "Branch", value: "nyc", hidden: false },
+    ];
+    const fieldsFixture = () =>
+      loginFixture("unused", login.auth, login.origin, "unused", encodeLoginSecret({ fields }));
+
+    it("fills a field by its label, whatever its case, with whether it is hidden", async () => {
+      const { prisma } = await fieldsFixture();
+      const input = { prisma, secretStore, scope, name: "site_login" };
+      expect(await resolveLoginFill({ ...input, field: "phone NUMBER" })).toMatchObject({
+        text: "+1 555 0100",
+        hidden: true,
+      });
+      expect(await resolveLoginFill({ ...input, field: "ID number" })).toMatchObject({
+        text: "fake-id-1234",
+        hidden: false,
+      });
+      // A bot that still says username and password gets the first visible and hidden fields.
+      expect(await resolveLoginFill({ ...input, field: "username" })).toMatchObject({
+        text: "fake-id-1234",
+      });
+      expect(await resolveLoginFill({ ...input, field: "password" })).toMatchObject({
+        text: "+1 555 0100",
+      });
+    });
+
+    it("names the login's fields, never their values, when the label isn't one of them", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Email",
+      });
+      expect(result).toEqual({
+        error:
+          'This login has no field named "Email". Its fields: ID number, Phone number, PIN, Branch.',
+      });
+    });
+
+    it("hides every hidden field and the visible ones long enough in the filling run", async () => {
+      const { prisma } = await fieldsFixture();
+      const result = await resolveLoginFill({
+        prisma,
+        secretStore,
+        scope,
+        name: "site_login",
+        field: "Branch",
+      });
+      const redactions = "redactions" in result ? result.redactions : [];
+      for (const value of ["fake-id-1234", "+1 555 0100", "%2B1%20555%200100", "4321"]) {
+        expect(redactions).toContain(value);
+      }
+      expect(redactions).not.toContain("nyc");
+    });
+
+    it("hides only hidden fields long enough in every run", async () => {
+      const { prisma } = await fieldsFixture();
+      const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+      expect(redactions).toEqual(expect.arrayContaining(["+1 555 0100", "%2B1%20555%200100"]));
+      for (const value of ["fake-id-1234", "4321", "nyc"]) expect(redactions).not.toContain(value);
     });
   });
 

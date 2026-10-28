@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
+  BillingByokCheckoutRequest,
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
@@ -242,7 +243,7 @@ export class StripeBillingProvider implements BillingProvider {
     });
   }
 
-  async createByokCheckout(input: Omit<BillingCreditCheckoutRequest, "monthly">) {
+  async createByokCheckout(input: BillingByokCheckoutRequest) {
     await this.expireOpenCheckouts(input.customerId);
     if (
       (await this.listSubscriptions(input.customerId)).some((s) =>
@@ -269,7 +270,11 @@ export class StripeBillingProvider implements BillingProvider {
           },
         ],
         metadata,
-        subscription_data: { metadata, billing_mode: { type: "classic" } },
+        subscription_data: {
+          metadata,
+          billing_mode: { type: "classic" },
+          ...(input.trialDays === undefined ? {} : { trial_period_days: input.trialDays }),
+        },
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,
       }),

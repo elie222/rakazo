@@ -71,7 +71,6 @@ it("reopens with cached runs and refreshes them in the background", async () => 
     const first = await mount();
     await vi.waitFor(() => expect(container.textContent).toContain("Scout"));
     await act(async () => first.unmount());
-    // Make the cached runs stale so the revisit refreshes them.
     await client.invalidateQueries();
     runs.list.mockClear();
 

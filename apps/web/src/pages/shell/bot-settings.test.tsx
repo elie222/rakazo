@@ -68,7 +68,6 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
-vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 
 import { BotSettings } from "./bot-panel";
 

@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type { BotAvatarSet, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
   CALL_FAREWELL_TIMEOUT_MS,
@@ -18,6 +18,11 @@ import {
 import { useSyncExternalStore } from "react";
 import { pickUp } from "./call-pickup.js";
 import { dictation } from "./dictation.js";
+import {
+  newLogoAvatarActivitySource,
+  openLogoAvatarActivityFeed,
+  webLogoAvatarActivity,
+} from "./logo-avatar-activity.js";
 import { reportClientError } from "./monitoring";
 import { rpc } from "./rpc.js";
 import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
@@ -31,6 +36,7 @@ export interface CallState {
   botId: string;
   botName: string;
   botColor: string;
+  botAvatarSet?: BotAvatarSet;
   /** When the call picked up; null while it is still ringing. */
   connectedAt: number | null;
   phase: CallPhase;
@@ -120,6 +126,7 @@ export function startCall(call: {
   botId: string;
   botName: string;
   botColor?: string;
+  botAvatarSet?: BotAvatarSet;
   transcribe?: boolean;
   /** The bot called and the user picked up: no ringing, and the bot speaks first. */
   answered?: { callId: string; opening: string };
@@ -136,6 +143,7 @@ export function startCall(call: {
     botId: call.botId,
     botName: call.botName,
     botColor: call.botColor ?? "",
+    botAvatarSet: call.botAvatarSet,
     connectedAt: null,
     phase: "ringing",
     muted: false,
@@ -272,6 +280,7 @@ export function setCallMinimized(minimized: boolean): void {
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
 function watchThread(botId: string) {
   const controller = new AbortController();
+  const avatarSource = newLogoAvatarActivitySource();
   const feedCallId = callId;
   let requestEpoch = 0;
   let acceptedEpoch = 0;
@@ -288,6 +297,7 @@ function watchThread(botId: string) {
     if (request < acceptedEpoch) return thread;
     if (thread?.threadId === next.threadId && thread.cursor > next.cursor) return thread;
     acceptedEpoch = request;
+    webLogoAvatarActivity.reconcile(next);
     return commit(next);
   };
   feed = { controller, load };
@@ -297,7 +307,11 @@ function watchThread(botId: string) {
     loadHead: () => rpc.threads.head({ botId }, { signal: controller.signal }),
     refresh: load,
     currentSnapshot: () => thread,
-    subscribe: (cursor, signal) => rpc.threads.subscribe({ botId, cursor }, { signal }),
+    subscribe: (cursor, signal) =>
+      openLogoAvatarActivityFeed(avatarSource, thread, cursor, signal, () =>
+        rpc.threads.subscribe({ botId, cursor }, { signal }),
+      ),
+    beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
     applyEvent: (event) => {
       if (isThreadSnapshotEvent(event)) commit(reduceThreadSnapshot(thread, event));
     },

@@ -82,7 +82,7 @@ export function accountRoutes(ctx: RouterContext) {
           const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
           record(undefined, { name: "model_connect_started" });
         }
-        return billing.selectFunding(context.actor, input.funding);
+        return billing.selectFunding(context.actor, input.funding, input.client);
       }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
@@ -93,11 +93,16 @@ export function accountRoutes(ctx: RouterContext) {
       status: authed.billing.status.handler(async ({ context }) =>
         requireBilling(deps).status(context.actor),
       ),
-      checkout: authed.billing.checkout.handler(async ({ context }) =>
-        requireBilling(deps).checkout(context.actor),
+      refresh: authed.billing.refresh.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.syncForActor(context.actor);
+        return billing.status(context.actor);
+      }),
+      checkout: authed.billing.checkout.handler(async ({ context, input }) =>
+        requireBilling(deps).checkout(context.actor, input?.client),
       ),
-      portal: authed.billing.portal.handler(async ({ context }) =>
-        requireBilling(deps).portal(context.actor),
+      portal: authed.billing.portal.handler(async ({ context, input }) =>
+        requireBilling(deps).portal(context.actor, input?.client),
       ),
     },
     preferences: {

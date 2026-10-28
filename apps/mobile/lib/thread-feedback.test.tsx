@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import * as core from "@rakazo/core";
 import { AiConsentBlocked, MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
@@ -9,13 +10,15 @@ import { createRoot } from "react-dom/client";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot, rpc } from "./api";
 import { applyMobileThreadEvent } from "./api";
+import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
   clearFailedSends,
   configureUnsentSends,
   confirmEchoes,
+  deliverSend,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
@@ -225,6 +228,44 @@ describe("scoped mobile outbox", () => {
     ).toEqual(["First", "Second"]);
   });
   const fileNote = "The bot can use the file but won't see the picture.";
+  it("uploads distinct files after removal and reuses their artifacts on retry", async () => {
+    const a = { name: "first.txt", mimeType: "text/plain", size: 4, contentBase64: "YWFhYQ==" };
+    const b = { name: "same.txt", mimeType: "text/plain", size: 4, contentBase64: "YmJiYg==" };
+    const c = { ...b, contentBase64: "Y2NjYw==" };
+    const ids = vi.spyOn(core, "newClientId");
+    ids.mockReturnValueOnce("a").mockReturnValueOnce("b").mockReturnValueOnce("c");
+    const remaining = filterPickedAttachments(0, [a, b]).attachments.slice(1);
+    const attachments = [
+      ...remaining,
+      ...filterPickedAttachments(remaining.length, [c]).attachments,
+    ];
+    ids.mockRestore();
+    const sendPayload = { ...payload(), attachments };
+    const attempt = feedback.sendAttempt(sendPayload);
+    let sendsAttempted = 0;
+    request.mockImplementation(async (proc, body) => {
+      if (proc === "artifacts/create") {
+        return { id: body.contentBase64 === b.contentBase64 ? "artifact-b" : "artifact-c" };
+      }
+      if (++sendsAttempted === 1) throw new Error("Send interrupted");
+      return { seq: 42 };
+    });
+
+    await expect(
+      deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).rejects.toThrow("Send interrupted");
+    await deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+
+    const uploads = request.mock.calls.filter(([proc]) => proc === "artifacts/create");
+    expect(uploads.map(([, body]) => body.contentBase64)).toEqual([
+      b.contentBase64,
+      c.contentBase64,
+    ]);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
   it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
     const attempt = feedback.sendAttempt(payload());
     request

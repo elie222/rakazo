@@ -85,6 +85,7 @@ export function CreditChoice({
     t`Scheduled routines`,
     t`Web, desktop and mobile`,
   ];
+  const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
@@ -174,10 +175,20 @@ export function CreditChoice({
               className="w-full bg-background dark:bg-transparent"
               variant="outline"
               disabled={pending || !status.canManage}
-              aria-label={status.byokPriceCents ? t`Subscribe with your own AI` : undefined}
+              aria-label={
+                status.byokPriceCents && !status.trialAvailable
+                  ? t`Subscribe with your own AI`
+                  : undefined
+              }
               onClick={() => void choose(true)}
             >
-              {status.byokPriceCents ? <Trans>Subscribe</Trans> : <Trans>Connect my own</Trans>}
+              {!status.byokPriceCents ? (
+                <Trans>Connect my own</Trans>
+              ) : status.trialAvailable ? (
+                <Trans>Start {trialDays}-day free trial</Trans>
+              ) : (
+                <Trans>Subscribe</Trans>
+              )}
             </Button>
           </CardFooter>
         </Card>

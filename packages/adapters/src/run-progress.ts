@@ -5,7 +5,8 @@ import {
   createStreamingRedactor,
   endsSentence,
   isBackgroundRunTrigger,
-  redactSecrets,
+  noteLastToolStep,
+  redactSecretsAfter,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -18,6 +19,8 @@ import {
   extractNarrationText,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
+  narrationStatusLine,
+  USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
 
@@ -40,6 +43,14 @@ export async function createReplyState(
     midTurnUserTexts: [],
     midTurnProgressCount: 0,
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
+    progressBudgetStart: 0,
+    steeringReplyPending: false,
+    steeringResets: 0,
+    lastSteeringResetAt: Number.NEGATIVE_INFINITY,
+    workingNotes: [],
+    textSinceLastStep: "",
+    narrationSoFar: "",
+    narrationStatusShowing: false,
     pendingToolNames: [],
     pendingProgress: "",
     lastProgressAt: 0,
@@ -74,10 +85,20 @@ export function recordExplicitNoResponse(reply: ReplyState, text: string) {
 
 /** Durable interim messages only on genuinely long turns, capped per run. */
 export function canPublishDurableProgress(reply: ReplyState) {
-  return midTurnProgressBudgetAllows(
-    reply.midTurnProgressCount,
-    Date.now() - reply.turnStartedAtMs,
+  return (
+    reply.steeringReplyPending ||
+    midTurnProgressBudgetAllows(
+      reply.midTurnProgressCount - reply.progressBudgetStart,
+      Date.now() - reply.turnStartedAtMs,
+    )
   );
+}
+
+/** The next interim message's nonce; it uses up the allowance for answering the person. */
+export function nextProgressNonce(ctx: RunContext) {
+  const { reply } = ctx.state;
+  reply.steeringReplyPending = false;
+  return userProgressClientNonce(ctx.run.id, reply.midTurnProgressCount++);
 }
 
 export function canPublishDurableNarration(ctx: RunContext) {
@@ -129,42 +150,74 @@ export async function flushProgress(ctx: RunContext) {
   reply.lastProgressAt = Date.now();
 }
 
+/**
+ * Text the bot wrote before a step. It is posted as an interim message when the budget allows
+ * and it fits; otherwise it is a note on that step, kept out of the reply. Returns the note so
+ * the caller can show it as the working line.
+ */
 export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard = false) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
-  const narration = clampUserProgressMessage(redactSecrets(extracted.text, ctx.secrets));
-  const canPublish =
-    canPublishDurableNarration(ctx) ||
-    (beforeConnectCard && runPromotesMidTurnNarration(run.trigger));
-  if (
-    narration &&
-    !canPublish &&
-    !ctx.allowSilentEmptyRun &&
-    runPromotesMidTurnNarration(run.trigger)
-  ) {
-    return;
-  }
   reply.messageSegments = extracted.remaining;
   reply.currentTextSegment = "";
-  if (!narration) return;
+  const text = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
+  reply.narrationSoFar += extracted.text;
+  if (!text) return undefined;
+  reply.assembled = "";
   reply.hasStreamedText = false;
   reply.pendingProgress = "";
-  if (!canPublish) {
-    reply.assembled = "";
-    reply.discardedMidTurnNarration = true;
-    reply.lastDiscardedMidTurnNarration = narration;
-    return;
+  // Text the redactor still holds back belongs to the text just taken out.
+  reply.redactor.skip();
+  const promotes = runPromotesMidTurnNarration(run.trigger);
+  if (
+    text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
+    (canPublishDurableNarration(ctx) || (beforeConnectCard && promotes))
+  ) {
+    reply.workingNotes.length = 0;
+    reply.narrationStatusShowing = false;
+    await publishMessage(
+      deps,
+      run,
+      "bot",
+      [{ kind: "text", text }],
+      undefined,
+      nextProgressNonce(ctx),
+    );
+    reply.midTurnUserTexts.push(text);
+    reply.publishedMidTurnUserMessage = true;
+    return undefined;
   }
-  reply.assembled = "";
-  await publishMessage(
-    deps,
-    run,
-    "bot",
-    [{ kind: "text", text: narration }],
-    undefined,
-    userProgressClientNonce(run.id, reply.midTurnProgressCount++),
-  );
-  reply.midTurnUserTexts.push(narration);
-  reply.publishedMidTurnUserMessage = true;
+  reply.discardedMidTurnNarration = true;
+  reply.lastDiscardedMidTurnNarration = clampUserProgressMessage(text);
+  if (promotes && !ctx.allowSilentEmptyRun) {
+    reply.workingNotes.push(text);
+    flushPendingTools(reply);
+    reply.messageSegments = noteLastToolStep(reply.messageSegments, text);
+  }
+  return text;
+}
+
+/**
+ * Replaces the text streamed so far with the note as the working line. Runs that hold their
+ * narration back (routines, peers, background work) keep their live view.
+ */
+export async function showNarrationStatus(ctx: RunContext, note: string | undefined) {
+  const { deps, run, runId, bot, thread } = ctx;
+  if (
+    !note ||
+    ctx.scripted ||
+    !runPromotesMidTurnNarration(run.trigger) ||
+    isBackgroundRunTrigger(run.trigger)
+  )
+    return;
+  ctx.state.reply.narrationStatusShowing = true;
+  await deps.events.append({
+    spaceId: run.spaceId,
+    threadId: thread.id,
+    botId: bot.id,
+    type: "thread.progress",
+    runId,
+    payload: { reset: true, text: narrationStatusLine(note), activity: true },
+  });
 }

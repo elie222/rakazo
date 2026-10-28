@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
+import { RoutineRunHistory } from "../components/routine-run-history";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { routineStatusLine } from "../lib/routine";
@@ -94,6 +95,7 @@ export default function RoutineDetail() {
               }
             />
           ) : null}
+          <RoutineRunHistory routineId={routine.id} botName={botName} />
         </>
       ) : null}
     </ScrollView>

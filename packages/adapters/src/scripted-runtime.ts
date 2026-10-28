@@ -10,6 +10,8 @@ import {
   BOT_MESSAGE_WAKE_CUE,
   inferHandoffTargetName,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
   modelFallbackFailure,
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
@@ -212,6 +214,15 @@ export function inferScript(
       {
         assistant: "running it on my computer.",
         toolCalls: [{ name: "shell", args: { command: shellCommand } }],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.includes("run hostname on my computer")) {
+    return [
+      {
+        assistant: "checking your computer's name.",
+        toolCalls: [{ name: "user_computer_shell", args: { command: "hostname" } }],
         complete: true,
       },
     ];
@@ -683,7 +694,9 @@ function shouldFail(prompt: string): boolean {
  */
 function scriptedFailure(prompt: string): string {
   if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
+  if (/\bconnection request limit\b/i.test(prompt)) return MODEL_REQUEST_LIMIT_ERROR;
   if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
+  if (/\bcut reply\b/i.test(prompt)) return MODEL_OUTPUT_CUT_ERROR;
   if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
   if (/\bout of credits\b/i.test(prompt)) {
     return '402: {"message":"You have no credits remaining. Add credits to continue."}';

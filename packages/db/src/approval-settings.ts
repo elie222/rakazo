@@ -109,7 +109,6 @@ export async function removeApprovalRule(
   }
 }
 
-/** The saved auto review choice, or null when the member never chose. */
 export async function findAutoReviewPreference(
   prisma: ConfirmationsClient,
   scope: Scope,

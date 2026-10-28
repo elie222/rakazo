@@ -1,7 +1,12 @@
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
-import { EncryptedSecretStore, LocalArtifactStore, upgradeLegacySecrets } from "@rakazo/adapters";
+import {
+  contentKeyProviderFromEnv,
+  EncryptedSecretStore,
+  LocalArtifactStore,
+  upgradeLegacySecrets,
+} from "@rakazo/adapters";
 import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { ContentMigrationMode } from "@rakazo/db";
@@ -77,6 +82,7 @@ if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 const encrypting = ["migrate", "rotate", "reencrypt"].includes(command);
 const { prisma, pool, contentKeys } = createDb(process.env.DATABASE_URL, {
   applicationName: "rakazo-content-encryption",
+  keyProvider: contentKeyProviderFromEnv(),
   ...(encrypting ? { encryptContent: true } : {}),
 });
 const artifacts = new LocalArtifactStore(process.env.DATA_DIR ?? "./data", contentKeys);

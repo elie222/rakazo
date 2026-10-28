@@ -135,7 +135,6 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   for (const column of ["modelProvider", "modelId", "thinkingLevel"])
     expect(renamePatch).not.toHaveProperty(column);
 
-  // The deleted routine stays gone after a reload.
   await page.reload();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   expect((await rpc<Routine[]>(page, "routines/list", { botId })).map((r) => r.name)).toEqual([

@@ -4,6 +4,12 @@ import type { RunErrorTranslator } from "@rakazo/core";
 /** Static descriptors keep shared run-error messages in Lingui extraction. */
 export const translateRunError: RunErrorTranslator = (message, values) => {
   switch (message) {
+    case "This connection's request limit is too small. Choose another model.":
+      return i18n._({
+        id: "This connection's request limit is too small. Choose another model.",
+        message: "This connection's request limit is too small. Choose another model.",
+        values,
+      });
     case "Image input is not configured for this model.":
       return i18n._({
         id: "Image input is not configured for this model.",
@@ -76,6 +82,12 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
       return i18n._({
         id: "The model returned an unusable response. Try again.",
         message: "The model returned an unusable response. Try again.",
+        values,
+      });
+    case "The model hit its output limit before finishing its reply.":
+      return i18n._({
+        id: "The model hit its output limit before finishing its reply.",
+        message: "The model hit its output limit before finishing its reply.",
         values,
       });
     case "This model's context window is too small. Choose another model.":

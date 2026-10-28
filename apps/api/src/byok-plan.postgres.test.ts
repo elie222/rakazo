@@ -77,6 +77,8 @@ dbTests("own-key plan", () => {
     const { url } = await service.checkout(actor);
     expect(url).toContain("/byok/");
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    // The free period was this organization's trial.
+    expect(provider.byokCheckouts.get(customer)?.trialDays).toBeUndefined();
     provider.completeByokCheckout(customer);
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({

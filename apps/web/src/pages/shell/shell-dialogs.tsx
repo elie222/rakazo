@@ -322,12 +322,19 @@ export function ShellDialogs({
       {newSpaceOpen ? (
         <NewSpaceDialog
           onCancel={() => setNewSpaceOpen(false)}
-          onConfirm={async (name) => {
-            const space = await rpc.spaces.create({ name });
+          onCreate={async (name) => (await rpc.spaces.create({ name })).id}
+          loadItems={() => rpc.availability.items()}
+          chooseItems={async (spaceId, items) => {
+            await rpc.availability.chooseForSpace({
+              spaceId,
+              items: items.map(({ kind, id }) => ({ kind, id })),
+            });
+          }}
+          onDone={(spaceId) => {
             if (!alive.current) return;
-            if (!selectSpace(space.id)) {
+            if (!selectSpace(spaceId)) {
               setNewSpaceOpen(false);
-              await refreshBots();
+              void refreshBots();
               return;
             }
             window.location.assign("/onboarding");

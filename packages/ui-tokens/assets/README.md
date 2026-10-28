@@ -35,3 +35,12 @@ because their system masks and safe areas differ.
 After exporting, run `pnpm exec tsx apps/www/scripts/render-og.mjs` to refresh the
 marketing page social cards; set `CHROME_PATH` to a headless Chrome executable when
 it is not available at the script's default location.
+
+## Animated vector avatars
+
+The animated Rakazo avatar uses SVG paths and gradients in the shared
+`logo-avatar-art.ts` definition. Its contour is sampled from this canonical
+source's alpha silhouette. The hands and lighting are simplified vector shapes;
+the original photographic skin grain is intentionally not reproduced. No raster
+body is embedded or loaded by the vector renderer. The canonical icon and its
+platform exports remain unchanged.

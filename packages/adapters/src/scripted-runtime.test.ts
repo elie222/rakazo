@@ -125,6 +125,14 @@ describe("inferScript shell", () => {
   });
 });
 
+describe("inferScript user computer", () => {
+  it("runs hostname on the user's computer", () => {
+    expect(inferScript("run hostname on my computer")[0]?.toolCalls).toEqual([
+      { name: "user_computer_shell", args: { command: "hostname" } },
+    ]);
+  });
+});
+
 describe("inferScript quote markdown fixture", () => {
   it("returns the markdown fixture including the caller marker", () => {
     expect(inferScript("quote markdown fixture md-stamp")[0]?.assistant).toContain(

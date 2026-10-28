@@ -192,7 +192,6 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(toolbar.getByRole("button", { name: "More" })).toBeVisible();
   const react = toolbar.getByRole("button", { name: "React" });
   await expect(react).toBeVisible();
-  // Default reaction matches Reply/More: muted control color, not yellow.
   await expect
     .poll(async () => {
       const mutedColor = await toolbar
@@ -203,7 +202,6 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     })
     .toBe(true);
 
-  // User bubble (right): icons sit to the left, vertically centered — not under the bubble.
   const frame = parentRow.getByTestId("message-bubble-frame");
   await expect
     .poll(async () => {
@@ -221,14 +219,12 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     })
     .toEqual({ beside: true, flush: true, centered: true, notBelow: true });
 
-  // User bubble is a muted elevated surface (not cream invert / bright pill).
   const userSurface = parentRow.getByTestId("message-user-bubble");
   await expect(userSurface).toBeVisible();
   await expect
     .poll(async () => userSurface.evaluate((el) => getComputedStyle(el).backgroundColor))
     .not.toMatch(/^rgb\(241,\s*241,\s*239\)$/); // not cream primary foreground
 
-  // Long user bubble: rail stays ~6px beside the bubble edge, not the full row width.
   const longText = `hover-long-${stamp}-${"x".repeat(220)}`;
   await sendComposerMessage(page, composer, longText);
   const longRow = transcript
@@ -257,11 +253,9 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
   await captureScreenshot(page, testInfo, "message-user-actions-hover-desktop");
-  // Default transcript shot: rail at rest (no hover pin, mouse clear).
   await expectRailAtRest(page, parentRow);
   await captureScreenshot(page, testInfo, "message-user-bubble-desktop");
 
-  // Clip shot of bubble + rail for gallery geometry.
   await revealHoverRail(parentRow);
   const railBox = await rail.boundingBox();
   const frameBox = await frame.boundingBox();
@@ -507,7 +501,6 @@ test.describe("touch message actions", () => {
     const rail = row.getByTestId("message-hover-rail");
     await expect(rail).toHaveCSS("opacity", "1");
     await expect(rail.getByRole("button", { name: "Reply", exact: true })).toBeVisible();
-    // Touch puts the action row in-flow under the bubble, not beside it.
     const botBubble = row.getByTestId("message-bot-bubble").first();
     const bubbleBox = await botBubble.boundingBox();
     const railBox = await rail.boundingBox();

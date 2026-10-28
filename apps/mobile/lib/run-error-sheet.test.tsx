@@ -125,6 +125,8 @@ describe("run error recovery", () => {
   it.each([
     '404: {"message":"Model unavailable"}',
     "This model's context window is too small. Choose another model.",
+    "This connection's request limit is too small. Choose another model.",
+    "The model hit its output limit before finishing its reply.",
   ])("offers model recovery without suggesting a key failure for %s", (details) => {
     const label = runErrorActionLabel((key) => key, normalizeRunError(details));
     expect(label).toBe("Change model");

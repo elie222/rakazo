@@ -65,6 +65,13 @@ import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
+import {
+  beginMobileAvatarFeed,
+  mobileLogoAvatarActivity,
+  newMobileAvatarSnapshotRequest,
+  rememberMobileAvatarSnapshot,
+  syncMobileAvatarSession,
+} from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import {
@@ -214,14 +221,28 @@ export async function selectSpace(id: string) {
     if (cachedSpaceId === id && spaceSelectionGeneration === claimGeneration) {
       cachedSpaceId = previousSpaceId;
       bumpSpaceSelectionGeneration();
+      const rollbackGeneration = spaceSelectionGeneration;
       if (previousSpaceId) await writeStoredValue(SPACE_KEY, previousSpaceId);
+      if (previousSpaceId)
+        await resumeSelectedSpaceNotifications(previousSpaceId, rollbackGeneration);
     }
     return false;
   }
-  await resumeLiveNotifications(currentApiBase(), await loadSessionToken(), id).catch(
-    () => undefined,
-  );
+  await resumeSelectedSpaceNotifications(id, claimGeneration);
   return true;
+}
+
+async function resumeSelectedSpaceNotifications(id: string, generation: number): Promise<void> {
+  const apiBase = currentApiBase();
+  const sessionGeneration = currentSessionGeneration();
+  const token = await loadSessionToken();
+  if (
+    generation !== spaceSelectionGeneration ||
+    sessionGeneration !== currentSessionGeneration() ||
+    apiBase !== currentApiBase()
+  )
+    return;
+  await resumeLiveNotifications(apiBase, token, id).catch(() => undefined);
 }
 
 export function selectedSpaceId(): string | null {
@@ -799,6 +820,8 @@ async function request(
   body: unknown = {},
   options: RpcOptions = {},
 ): Promise<unknown> {
+  syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
+  const avatarSnapshotOrder = proc === "threads/get" ? newMobileAvatarSnapshotRequest() : 0;
   const requestSpaceGeneration = spaceSelectionGeneration;
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
@@ -996,6 +1019,15 @@ async function request(
         selectionId: requestSpaceId ?? null,
       });
     }
+    if (
+      proc === "threads/get" &&
+      requestSessionGeneration === currentSessionGeneration() &&
+      requestApiBase === currentApiBase()
+    ) {
+      const snapshot = parsed.json as ThreadSnapshot;
+      if (typeof snapshot?.threadId === "string" && typeof snapshot.cursor === "number")
+        rememberMobileAvatarSnapshot(snapshot, avatarSnapshotOrder);
+    }
     return displayIdentityResult(proc.split("/"), parsed.json, identityLabels());
   } catch (error) {
     if (
@@ -1018,6 +1050,7 @@ export type MobileBot = Pick<
   | "preview"
   | "title"
   | "color"
+  | "avatarSet"
   | "instructionHistory"
   | "selfUpdateInstructions"
   | "notifyOnFinish"
@@ -1054,6 +1087,7 @@ export type MobileMe = Pick<
   | "isDeploymentOwner"
   | "needsSignupSurvey"
   | "billingEnabled"
+  | "paymentWalletProvider"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -1083,7 +1117,7 @@ export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 
 /** A run as live events report it, before a refresh brings the full record. */
-type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId">> & { status: string };
+type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId" | "userId">> & { status: string };
 
 /**
  * A thread as the screen holds it: live events patch it between refreshes, and a saved chat
@@ -1227,6 +1261,7 @@ type ThreadEvent = {
   type: string;
   seq?: number;
   runId?: string;
+  threadId?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -1254,6 +1289,8 @@ export async function subscribeThread(
   signal: AbortSignal,
 ) {
   const context = await captureApiRequestContext();
+  syncMobileAvatarSession(currentApiBase(), currentSessionGeneration());
+  const activityFeed = beginMobileAvatarFeed(target, cursor);
   const current = () =>
     context.apiBase === currentApiBase() &&
     context.sessionGeneration === currentSessionGeneration();
@@ -1268,11 +1305,13 @@ export async function subscribeThread(
     body: JSON.stringify({ json: { ...target, cursor } }),
     signal,
   }).catch((error: unknown) => {
+    mobileLogoAvatarActivity.resetSource(activityFeed.source);
     if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
   if (!res.ok || !res.body) {
+    mobileLogoAvatarActivity.resetSource(activityFeed.source);
     cancelResponseBody(res);
     throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
   }
@@ -1308,8 +1347,24 @@ export async function subscribeThread(
       try {
         const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
-        if (parsed.json?.type && parsed.json.type !== "heartbeat")
-          onEvent(displayIdentityEvent(parsed.json, identityLabels()));
+        if (parsed.json?.type && parsed.json.type !== "heartbeat") {
+          if (!current()) {
+            mobileLogoAvatarActivity.resetSource(activityFeed.source);
+            return;
+          }
+          const event = parsed.json;
+          const threadId = event.threadId ?? activityFeed.threadId;
+          if (threadId && typeof event.seq === "number" && event.seq > cursor)
+            mobileLogoAvatarActivity.apply(activityFeed.source, {
+              threadId,
+              seq: event.seq,
+              botId: event.botId,
+              runId: event.runId,
+              type: event.type,
+              payload: event.payload ?? {},
+            });
+          onEvent(displayIdentityEvent(event, identityLabels()));
+        }
       } catch {
         // Malformed frames and callback errors do not interrupt the subscription.
       }
@@ -1363,6 +1418,7 @@ export async function subscribeThread(
       if (start < value.byteLength) appendFrameBytes(value.subarray(start));
     }
   } finally {
+    mobileLogoAvatarActivity.resetSource(activityFeed.source);
     if (!finished) {
       try {
         void Promise.resolve(reader.cancel()).catch(() => undefined);
@@ -1444,6 +1500,10 @@ export function applyMobileThreadEvent(
     const messages = prev.messages.filter((message) => message.id !== progressId);
     const progressCleared = messages.length !== prev.messages.length;
     const runId = event.runId;
+    const userId =
+      event.type === "run.waiting_input" && typeof event.payload?.userId === "string"
+        ? event.payload.userId
+        : undefined;
     const knownInRun = Boolean(runId && prev.run?.id === runId);
     const knownInActive = Boolean(
       runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
@@ -1451,10 +1511,18 @@ export function applyMobileThreadEvent(
     // Peer bot_message runs are omitted from snapshots while busy; the first wait
     // event is how an open thread learns they need ask/takeover UI.
     const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
-    const runChanged = Boolean(knownInRun && prev.run && prev.run.status !== status);
+    const runChanged = Boolean(
+      knownInRun &&
+        prev.run &&
+        (prev.run.status !== status || (userId !== undefined && prev.run.userId !== userId)),
+    );
     const activeRunChanged = Boolean(
       knownInActive &&
-        prev.activeRuns?.some((candidate) => candidate.id === runId && candidate.status !== status),
+        prev.activeRuns?.some(
+          (candidate) =>
+            candidate.id === runId &&
+            (candidate.status !== status || (userId !== undefined && candidate.userId !== userId)),
+        ),
     );
     const computer =
       event.type === "computer.takeover.requested" && prev.computer?.busyBotName
@@ -1470,6 +1538,7 @@ export function applyMobileThreadEvent(
         id: runId,
         status,
         ...(event.botId ? { botId: event.botId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
       };
       const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
       const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
@@ -1485,10 +1554,15 @@ export function applyMobileThreadEvent(
         activeRuns,
       };
     }
-    const run = runChanged && prev.run ? { ...prev.run, status } : prev.run;
+    const run =
+      runChanged && prev.run
+        ? { ...prev.run, status, ...(userId !== undefined ? { userId } : {}) }
+        : prev.run;
     const activeRuns = activeRunChanged
       ? prev.activeRuns?.map((candidate) =>
-          candidate.id === runId ? { ...candidate, status } : candidate,
+          candidate.id === runId
+            ? { ...candidate, status, ...(userId !== undefined ? { userId } : {}) }
+            : candidate,
         )
       : prev.activeRuns;
     return { ...prev, cursor, run, activeRuns, messages, computer };
@@ -1687,9 +1761,9 @@ export async function fetchAccountSecurity(): Promise<AccountSecurity> {
   }
 }
 
-export async function requestAccountDeletionCode(): Promise<void> {
+async function postSignedInAuth(path: string, payload: Record<string, string> = {}): Promise<void> {
   const { response, body, invalidJson } = await fetchMobileJson<unknown>(
-    `${currentApiBase()}/api/auth/request-account-deletion`,
+    `${currentApiBase()}/api/auth${path}`,
     {
       method: "POST",
       headers: {
@@ -1697,7 +1771,7 @@ export async function requestAccountDeletionCode(): Promise<void> {
         origin: "rakazo://",
         ...(await authHeaders()),
       },
-      body: "{}",
+      body: JSON.stringify(payload),
     },
     null,
   );
@@ -1706,3 +1780,12 @@ export async function requestAccountDeletionCode(): Promise<void> {
       authResponseErrorText(response.status, body, invalidJson, t("Could not continue")),
     );
 }
+
+export const requestAccountDeletionCode = () => postSignedInAuth("/request-account-deletion");
+
+/** Emails a confirmation code to an account without a password. */
+export const requestIdentityCode = () => postSignedInAuth("/request-identity-code");
+
+/** Confirms this session's identity for the next few minutes. */
+export const confirmIdentity = (proof: { password: string } | { code: string }) =>
+  postSignedInAuth("/confirm-identity", proof);

@@ -121,7 +121,12 @@ vi.mock("./appearance", () => ({ mobileTokens: () => color }));
 vi.mock("./i18n", () => {
   const t = (text: string, values: Record<string, string | number> = {}) =>
     text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
-  return { t, useI18n: () => ({ t }), getActiveUiLocale: () => "en" };
+  return {
+    t,
+    useI18n: () => ({ t, locale: "en" }),
+    getActiveUiLocale: () => "en",
+    dateLocaleForUi: () => "en-US",
+  };
 });
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
@@ -149,6 +154,11 @@ vi.mock("../components/native-switch", () => ({
       // A native switch takes its own touches; the row around it doesn't see them.
       onClick: (event: Event) => event.stopPropagation(),
     }),
+}));
+vi.mock("../components/run-error-sheet", () => ({
+  useRunError: (details: string | null) => (details ? { summary: `summary: ${details}` } : null),
+  RunErrorSheet: ({ details }: { details: string | null }) =>
+    details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
@@ -233,11 +243,13 @@ function profileRpc(
     removeRoutine = async () => {
       throw new Error("unexpected routines/remove");
     },
+    history = async () => ({ runs: [], nextCursor: null }),
   }: {
     bot?: () => Promise<unknown>;
     update?: () => Promise<unknown>;
     updateRoutine?: (input: { routineId: string; active: boolean }) => Promise<unknown>;
     removeRoutine?: (input: { routineId: string }) => Promise<unknown>;
+    history?: (input: { routineId: string; before?: unknown }) => Promise<unknown>;
   } = {},
 ) {
   rpc.mockImplementation((procedure: string, input: never) => {
@@ -246,6 +258,7 @@ function profileRpc(
     if (procedure === "bots/update") return update();
     if (procedure === "routines/update") return updateRoutine(input);
     if (procedure === "routines/remove") return removeRoutine(input);
+    if (procedure === "routines/history") return history(input);
     return Promise.reject(new Error(`unexpected ${procedure}`));
   });
 }
@@ -1022,6 +1035,120 @@ describe("routine detail", () => {
     profileRpc(async () => [routine("r2", "Weekly report")]);
     await render(createElement(RoutineDetail));
     expect(container.textContent).toContain("This routine no longer exists");
+  });
+
+  it("lists the routine's runs and opens a reply at its message", async () => {
+    const run = {
+      id: "run-1",
+      botId: "bot-fixture",
+      groupId: null,
+      status: "completed",
+      error: null,
+      createdAt: "2026-01-02T12:00:00Z",
+      startedAt: "2026-01-02T12:00:00Z",
+      completedAt: "2026-01-02T12:01:22Z",
+      messageId: "reply-1",
+    };
+    profileRpc(async () => [routine("r1", "Morning digest")], {
+      history: async () => ({
+        runs: [
+          run,
+          { ...run, id: "run-2", groupId: "group-1", messageId: "reply-2" },
+          { ...run, id: "run-3", status: "failed", error: "504: timed out", messageId: null },
+        ],
+        nextCursor: null,
+      }),
+    });
+    await render(createElement(RoutineDetail));
+    expect(container.textContent).toContain("Run history");
+    expect(container.textContent).not.toContain("1m 22s");
+    expect(container.textContent).not.toContain("Done");
+    expect(container.textContent).toContain("summary: 504: timed out");
+    expect(container.textContent).not.toContain("Load older runs");
+    const rows = [...container.querySelectorAll("button")].filter((node) =>
+      node.textContent?.includes("Jan 2,"),
+    );
+    expect(rows).toHaveLength(3);
+    rows[0]!.click();
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/thread",
+      params: { botId: "bot-fixture", messageId: "reply-1", name: "Fixture" },
+    });
+    rows[1]!.click();
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/group-thread",
+      params: { groupId: "group-1", messageId: "reply-2" },
+    });
+    await act(async () => rows[2]!.click());
+    expect(container.querySelector("dialog")?.textContent).toBe("504: timed out");
+  });
+
+  it("loads older runs a page at a time", async () => {
+    const run = {
+      id: "run-1",
+      botId: "bot-fixture",
+      groupId: null,
+      status: "completed",
+      error: null,
+      createdAt: "2026-01-02T12:00:00Z",
+      startedAt: null,
+      completedAt: null,
+      messageId: null,
+    };
+    const cursor = { id: "run-1", createdAt: run.createdAt };
+    const history = vi.fn(async (input: { before?: unknown }) =>
+      input.before
+        ? { runs: [run, { ...run, id: "run-2" }], nextCursor: null }
+        : { runs: [run], nextCursor: cursor },
+    );
+    profileRpc(async () => [routine("r1", "Morning digest")], { history });
+    await render(createElement(RoutineDetail));
+    await act(async () => button("Load older runs").click());
+    expect(history).toHaveBeenLastCalledWith({ routineId: "r1", before: cursor, limit: 20 });
+    expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(2);
+    expect(container.textContent).not.toContain("Load older runs");
+  });
+
+  it("says when older runs could not load and keeps what is shown", async () => {
+    const run = {
+      id: "run-1",
+      botId: "bot-fixture",
+      groupId: null,
+      status: "completed",
+      error: null,
+      createdAt: "2026-01-02T12:00:00Z",
+      startedAt: null,
+      completedAt: null,
+      messageId: null,
+    };
+    const history = vi.fn(async (input: { before?: unknown }) => {
+      if (input.before) throw new Error("offline");
+      return { runs: [run], nextCursor: { id: "run-1", createdAt: run.createdAt } };
+    });
+    profileRpc(async () => [routine("r1", "Morning digest")], { history });
+    await render(createElement(RoutineDetail));
+    await act(async () => button("Load older runs").click());
+    expect(container.textContent).toContain("Could not load run history");
+    expect(container.textContent?.match(/Jan 2,/g)).toHaveLength(1);
+    expect(container.textContent).toContain("Load older runs");
+  });
+
+  it("says when a routine has not run, and when its history could not load", async () => {
+    await render(createElement(RoutineDetail));
+    expect(container.textContent).toContain("No runs yet");
+    act(() => root.unmount());
+    root = createRoot(container);
+    queryClient.clear();
+
+    const history = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    profileRpc(async () => [routine("r1", "Morning digest")], { history });
+    await render(createElement(RoutineDetail));
+    expect(container.textContent).toContain("Could not load run history");
+    history.mockImplementation(async () => ({ runs: [], nextCursor: null }) as never);
+    await act(async () => button("Try Again").click());
+    expect(container.textContent).toContain("No runs yet");
   });
 
   it("offers Open conversation without the Profile origin", async () => {

@@ -328,9 +328,7 @@ test("a framed screen that drops after connecting loads again by itself once", a
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.drop-test\/vnc\.html/);
-  // The drop loads the page again without a click, and no error shows meanwhile or after.
   await expect.poll(() => loads).toBe(2);
-  // It waited out the two unavailable answers before loading again.
   expect(probes).toBeGreaterThanOrEqual(4);
   expect(reloadedAt - dropAt).toBeGreaterThanOrEqual(2_500);
   await page.waitForTimeout(1_000);

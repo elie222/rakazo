@@ -7,6 +7,9 @@ import {
   commandVariableProblem,
   decodeLoginSecret,
   encodeLoginSecret,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldLabels,
+  loginCardFields,
   SecretHttpRequest,
 } from "./bot-secrets.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./domain.js";
@@ -141,19 +144,127 @@ describe("private HTTP credential origins", () => {
 });
 
 describe("login credentials", () => {
-  it("accepts a login destination and round-trips its value", () => {
+  const fields = [
+    { label: "ID number", value: "fake-id-123", hidden: false },
+    { label: "Phone number", value: "+1 555 0100", hidden: true },
+    { label: "PIN", value: " 0000 ", hidden: true },
+  ];
+
+  it("accepts a login destination and round-trips its fields in order", () => {
     expect(
       BotSecretDestination.safeParse({ ...destination, auth: { type: "login" } }).success,
     ).toBe(true);
-    const value = { username: "fake-user", password: "fake:password\nwith newline" };
-    expect(decodeLoginSecret(encodeLoginSecret(value))).toEqual(value);
+    expect(decodeLoginSecret(encodeLoginSecret({ fields }))).toEqual({ fields });
+  });
+
+  it("writes only the fields, so a release without them fails to read a new login", () => {
+    const stored = JSON.parse(encodeLoginSecret({ fields }));
+    expect(Object.keys(stored)).toEqual(["fields"]);
+    expect(stored).not.toHaveProperty("username");
+    expect(stored).not.toHaveProperty("password");
+  });
+
+  it("reads a saved username and password as a visible Username and a hidden Password", () => {
+    const legacy = JSON.stringify({
+      username: "fake-user",
+      password: "fake:password\nwith newline",
+    });
+    expect(decodeLoginSecret(legacy)).toEqual({
+      fields: [
+        { label: "Username", value: "fake-user", hidden: false },
+        { label: "Password", value: "fake:password\nwith newline", hidden: true },
+      ],
+    });
+  });
+
+  it("trims visible values and labels but keeps hidden values exactly as typed", () => {
+    const { fields: saved } = decodeLoginSecret(
+      encodeLoginSecret({
+        fields: [
+          { label: " Email ", value: " fake@example.test ", hidden: false },
+          { label: "Password", value: " fake password ", hidden: true },
+        ],
+      }),
+    );
+    expect(saved).toEqual([
+      { label: "Email", value: "fake@example.test", hidden: false },
+      { label: "Password", value: " fake password ", hidden: true },
+    ]);
+  });
+
+  it.each([
+    ["no fields", { fields: [] }],
+    ["an empty value", { fields: [{ label: "Code", value: "", hidden: true }] }],
+    ["a blank visible value", { fields: [{ label: "ID", value: "  ", hidden: false }] }],
+    ["an empty label", { fields: [{ label: " ", value: "fake", hidden: true }] }],
+    ["a long label", { fields: [{ label: "x".repeat(65), value: "fake", hidden: true }] }],
+    ["a long value", { fields: [{ label: "Password", value: "x".repeat(4097), hidden: true }] }],
+    [
+      "too many fields",
+      {
+        fields: Array.from({ length: LOGIN_FIELD_LIMIT + 1 }, (_, index) => ({
+          label: `Field ${index}`,
+          value: "fake",
+          hidden: true,
+        })),
+      },
+    ],
+    [
+      "labels that differ only in case",
+      {
+        fields: [
+          { label: "Code", value: "fake-1", hidden: true },
+          { label: "code ", value: "fake-2", hidden: true },
+        ],
+      },
+    ],
+    ["a field without hidden", { fields: [{ label: "Password", value: "fake" }] }],
+  ])("rejects a login with %s", (_, value) => {
+    expect(() => encodeLoginSecret(value as never)).toThrow();
+    expect(() => decodeLoginSecret(JSON.stringify(value))).toThrow();
+  });
+
+  it("rejects a login longer than a credential can be", () => {
+    const value = {
+      fields: Array.from({ length: 5 }, (_, index) => ({
+        label: `Field ${index}`,
+        value: "x".repeat(4096),
+        hidden: true,
+      })),
+    };
+    expect(() => encodeLoginSecret(value)).toThrow();
   });
 
   it.each([
     { username: "", password: "fake-password" },
     { username: "fake-user", password: "" },
-  ])("rejects an incomplete login %j", (value) => {
-    expect(() => encodeLoginSecret(value)).toThrow();
+    { username: "fake-user" },
+  ])("rejects an incomplete saved pair %j", (value) => {
+    expect(() => decodeLoginSecret(JSON.stringify(value))).toThrow();
+  });
+
+  it("starts the default card as logins always have and every named field hidden", () => {
+    expect(loginCardFields(undefined)).toEqual([
+      { label: "Username", value: "", hidden: false },
+      { label: "Password", value: "", hidden: true },
+    ]);
+    // The bot can't make a field visible, not even by naming the default labels.
+    expect(loginCardFields(["Username", "Password"]).map((field) => field.hidden)).toEqual([
+      true,
+      true,
+    ]);
+    expect(loginCardFields(["ID", "Phone"]).map((field) => field.hidden)).toEqual([true, true]);
+  });
+
+  it.each([[["Username", "Password"]], [["ID", "Phone", "Code"]]])(
+    "accepts requested labels %j",
+    (labels) => {
+      expect(LoginFieldLabels.safeParse(labels).success).toBe(true);
+    },
+  );
+
+  it.each([[[]], [["Code", "CODE"]], [[""]]])("rejects requested labels %j", (labels) => {
+    expect(LoginFieldLabels.safeParse(labels).success).toBe(false);
   });
 });
 

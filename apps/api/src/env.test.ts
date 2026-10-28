@@ -54,6 +54,13 @@ describe("loadEnv", () => {
       loadEnv({ ...base, RAKAZO_NAV_LINKS: '[{"id":"x","label":"X","path":"/api/me"}]' }),
     ).toThrow("RAKAZO_NAV_LINKS");
   });
+  it("keeps Crisp chat off unless a valid website ID is set", () => {
+    expect(loadEnv(base).crispWebsiteId).toBeNull();
+    expect(
+      loadEnv({ ...base, CRISP_WEBSITE_ID: "c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec" }).crispWebsiteId,
+    ).toBe("c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec");
+    expect(() => loadEnv({ ...base, CRISP_WEBSITE_ID: "nope" })).toThrow("CRISP_WEBSITE_ID");
+  });
   it("defaults the product path to Pi, Docker, and Graphile Worker", () => {
     const env = loadEnv(base);
     expect(env.agentRuntime).toBe("pi");

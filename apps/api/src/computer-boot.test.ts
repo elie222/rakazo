@@ -177,7 +177,8 @@ describe("computer stop", () => {
       },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
       computerExecutionLease: {
-        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: vi.fn(),
         findUnique: vi.fn().mockResolvedValue(null),
       },
       computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -221,6 +222,11 @@ describe("computer stop", () => {
     expect(prisma.computerRun.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ endReason: "stopped" }) }),
     );
+    expect(prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
+      where: { computerId: "computer-1", botId: "bot-1" },
+      data: { expiresAt: new Date(0) },
+    });
+    expect(prisma.computerExecutionLease.deleteMany).not.toHaveBeenCalled();
   });
 
   it("marks a damaged computer whose stop fails as errored", async () => {

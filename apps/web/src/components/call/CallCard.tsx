@@ -118,7 +118,12 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
               style={{ borderColor: defaultBotAvatarValue(call.botColor) }}
             />
           ) : null}
-          <BotAvatar color={call.botColor} identity={call.botId} size={96} />
+          <BotAvatar
+            avatarSet={call.botAvatarSet}
+            color={call.botColor}
+            identity={call.botId}
+            size={96}
+          />
         </button>
         <div className="flex flex-col items-center gap-1 text-center">
           <span className="text-2xl font-semibold text-foreground md:text-xl" dir="auto">

@@ -181,7 +181,6 @@ export function useBotRoutines(botId: string, { poll = true }: { poll?: boolean 
     error,
     /** A read answered since this screen opened, so a missing routine is really gone. */
     readSinceShown: dataUpdatedAt >= shownSince,
-    /** The latest read since this screen opened failed. */
     failedSinceShown: errorUpdatedAt >= shownSince && errorUpdatedAt > dataUpdatedAt,
   };
 }

@@ -19,9 +19,6 @@ export function isOneShotRoutineCron(cron: string): boolean {
   return cron.trim() === ONCE_ROUTINE_CRON;
 }
 
-// A routine is one-shot only when it has exactly one schedule and that
-// schedule is @once — a mix of @once plus recurring schedules doesn't make
-// sense (the one-shot slot would never get a "next run" to compute).
 export function isOneShotRoutineCrons(crons: string[]): boolean {
   return crons.length === 1 && isOneShotRoutineCron(crons[0] ?? "");
 }
@@ -480,10 +477,8 @@ export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"
   return earliest;
 }
 
-// Same as nextCronDateAcross, but throws on the first malformed recurring
-// cron instead of silently skipping it. Use this before persisting a
-// routine's crons — a partially-invalid array should be rejected outright,
-// not saved with the bad entry quietly never firing.
+// Throws on the first malformed recurring cron instead of skipping it, so a persisted
+// routine never keeps a bad entry that silently never fires.
 export function nextCronDateAcrossStrict(
   crons: string[],
   from: Date,

@@ -169,7 +169,11 @@ function serverError(status: number, what: string, body: unknown, apiKey?: strin
     body && typeof body === "object"
       ? (body as { detail?: unknown; error?: unknown; message?: unknown })
       : {};
-  const raw = [detail.detail, detail.message, detail.error].find(
+  const nestedError =
+    detail.error && typeof detail.error === "object"
+      ? (detail.error as { message?: unknown }).message
+      : undefined;
+  const raw = [detail.detail, detail.message, detail.error, nestedError].find(
     (value): value is string => typeof value === "string" && value.trim() !== "",
   );
   const redacted = apiKey ? raw?.replaceAll(apiKey, "[redacted]") : raw;

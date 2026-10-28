@@ -57,6 +57,22 @@ describe("connect-time model check", () => {
 
   it.each([
     {
+      name: "a request budget that cannot fit even the connection probe",
+      config: { provider: "groq", id: "openai/gpt-oss-120b" },
+      fetch: rejection(413, {
+        code: "rate_limit_exceeded",
+        type: "tokens",
+        message: "Request too large on tokens per minute (TPM): Limit 100, Requested 200.",
+      }),
+      error: "This connection's request limit is too small.",
+    },
+    {
+      name: "an unsupported model reported as a bad request",
+      config: { provider: "groq", id: "openai/gpt-oss-120b" },
+      fetch: rejection(400, { code: "400", message: "Unsupported model fixture-model" }),
+      error: "can't run this model",
+    },
+    {
       name: "a free tier that only works inside its own app",
       config: { provider: "opencode", id: "big-pickle" },
       fetch: rejection(403, {

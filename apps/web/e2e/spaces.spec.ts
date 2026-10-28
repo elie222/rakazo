@@ -244,12 +244,12 @@ test("a space's menu opens its settings in place, and General lists every space"
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
   await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
 
-  // Models, voice, and approvals follow the account until this space customizes them.
+  // Models, voice, approvals, and the vault follow the account until this space customizes them.
   const overrides = settings.getByTestId("space-setting-overrides");
-  for (const name of ["Models", "Voice", "Approvals"]) {
+  for (const name of ["Models", "Voice", "Approvals", "Vault"]) {
     await expect(overrides.getByRole("button", { name: `Customize ${name}` })).toBeVisible();
   }
-  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(3);
+  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(4);
   await captureScreenshot(page, testInfo, "space-settings-uses-defaults");
 
   await overrides.getByRole("button", { name: "Customize Approvals" }).click();
@@ -258,7 +258,7 @@ test("a space's menu opens its settings in place, and General lists every space"
   await expect(spaceNeverAsk).toHaveAttribute("aria-pressed", "false");
   await spaceNeverAsk.click();
   await expect(spaceNeverAsk).toHaveAttribute("aria-pressed", "true");
-  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(2);
+  await expect(overrides.getByText("Your defaults", { exact: true })).toHaveCount(3);
   await captureScreenshot(page, testInfo, "space-settings-customized-confirmations");
 
   // The account's own approvals stay as they were.
@@ -274,4 +274,18 @@ test("a space's menu opens its settings in place, and General lists every space"
   await overrides.getByRole("button", { name: "Use defaults for Approvals" }).click();
   await expect(approvals.getByTestId("approval-mode")).toHaveCount(0);
   await expect(overrides.getByRole("button", { name: "Customize Approvals" })).toBeVisible();
+
+  // A customized vault starts empty, and going back to the defaults asks before deleting it.
+  await overrides.getByRole("button", { name: "Customize Vault" }).click();
+  const vault = overrides.getByTestId("space-setting-credentials");
+  await expect(vault.getByRole("button", { name: "Add credential", exact: true })).toBeVisible();
+  await expect(vault.getByTestId("vault-credential-row")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "space-settings-customized-vault");
+  await overrides.getByRole("button", { name: "Use defaults for Vault" }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm).toContainText("Delete this Space's credentials?");
+  await captureScreenshot(page, testInfo, "space-settings-vault-reset-confirm");
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(overrides.getByRole("button", { name: "Customize Vault" })).toBeVisible();
 });

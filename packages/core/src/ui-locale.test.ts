@@ -24,10 +24,30 @@ describe("matchUiLocale", () => {
     expect(matchUiLocale("zh-TW", FEW)).toBe("en");
   });
 
+  it.each([
+    ["zh-MY", "zh-CN"],
+    [" ZH_my ", "zh-CN"],
+    ["zh-MY-u-ca-chinese", "zh-CN"],
+    ["zh-SG-u-ca-chinese", "zh-CN"],
+    ["zh-u-ca-chinese", "zh-CN"],
+    ["zh-x-hant", "zh-CN"],
+    ["zh-Hans-TW-u-ca-chinese", "zh-CN"],
+    ["zh-Hant-MY-u-ca-chinese", "zh-TW"],
+    ["zh-HK-u-ca-chinese", "zh-TW"],
+    ["zh-TW-x-hans", "zh-TW"],
+    ["en-Hant-TW", "en"],
+    ["de-HK-u-ca-chinese", "de"],
+  ])("matches %s without treating extension subtags as a script or region", (tag, locale) => {
+    expect(matchUiLocale(tag, ALL)).toBe(locale);
+  });
+
   it("falls back to English for locales the surface does not ship", () => {
     expect(matchUiLocale("pt-BR", FEW)).toBe("en");
     expect(matchUiLocale("es-MX", FEW)).toBe("en");
     expect(matchUiLocale("iw", FEW)).toBe("en");
+    expect(matchUiLocale("zh-MY", ["en", "de"])).toBe("en");
+    expect(matchUiLocale("zh-SG-u-ca-chinese", ["en", "de"])).toBe("en");
+    expect(matchUiLocale("zh-Hant-MY-u-ca-chinese", FEW)).toBe("en");
     expect(matchUiLocale("sv-SE", ALL)).toBe("en");
     expect(matchUiLocale("", ALL)).toBe("en");
     expect(matchUiLocale(null, ALL)).toBe("en");

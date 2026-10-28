@@ -1,5 +1,3 @@
-/** Per-thread composer draft persistence (survives tab reloads and discards). */
-
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 
 type ComposerDraftSubmission = { text: string };

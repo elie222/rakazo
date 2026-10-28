@@ -1,7 +1,12 @@
 import { ALTERNATIVES, alternativeMarkdown } from "./alternatives";
 import { GROK_ALTERNATIVE_MARKDOWN } from "./grok-alternative";
 import { OPENCLAW_MARKDOWN, SELF_HOST_MARKDOWN } from "./guide";
-import { HOME_MODEL_PROVIDERS, getHomeCopy } from "./i18n/home";
+import {
+  HOME_CHANNELS,
+  HOME_FEATURE_KINDS,
+  HOME_MODEL_PROVIDERS,
+  getHomeCopy,
+} from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
 import { APP_URL } from "./site";
 
@@ -21,6 +26,16 @@ ${home.hero.lead}
 ${home.roster.copy}
 
 ${home.roster.bots.map((bot) => `- **${bot.name}:** ${bot.desc}`).join("\n")}
+
+## ${home.channels.heading}
+
+${home.channels.copy}
+
+${HOME_CHANNELS.map((channel) => `- ${channel.name}${channel.selfHosted ? ` (${home.selfHost.heading})` : ""}`).join("\n")}
+
+## ${home.features.heading}
+
+${HOME_FEATURE_KINDS.map((kind) => `- **${home.features.items[kind].title}:** ${home.features.items[kind].body}`).join("\n")}
 
 ## ${home.testimonials.heading}
 
@@ -62,6 +77,8 @@ ${home.cta.copy}
 - [Self-hosted AI agent](https://rakazo.com/self-hosted-ai-agent/)
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Alternatives](https://rakazo.com/alternatives/)
+- [Docs](https://rakazo.com/docs/)
+- [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
 - [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
@@ -91,7 +108,7 @@ For help with the Rakazo mobile app or a hosted Rakazo account, email [hello@rak
 
 For self-hosted Rakazo, start with the [self-hosting guide](https://rakazo.com/self-hosted-ai-agent/). The [full reference](https://github.com/elie222/rakazo/blob/main/docs/self-host.md) is on GitHub. Open reproducible bugs and feature requests in the [public GitHub repository](https://github.com/elie222/rakazo/issues). Report vulnerabilities only to [security@rakazo.com](mailto:security@rakazo.com).
 
-Hosted users can permanently delete their account and associated personal Space data from the Account screen in the Rakazo app.
+Hosted users can permanently delete their account and associated personal Space data from the Account screen in the Rakazo app, or on the web at [app.rakazo.com](https://app.rakazo.com) under Settings → Account. Without access to the app, email [hello@rakazo.com](mailto:hello@rakazo.com) from the account's email address to ask us to delete it. Sign-in security records are kept for up to 90 days.
 `;
 
 export const PRIVACY_MARKDOWN = `# Rakazo privacy
@@ -115,13 +132,13 @@ Read the [complete privacy policy](https://rakazo.com/privacy/) for account info
 
 export const TERMS_MARKDOWN = `# Rakazo terms
 
-Last updated: October 7, 2026
+Last updated: October 27, 2026
 
 These terms are an agreement between you and Inbox Zero Inc. for the Rakazo service we host, the Rakazo apps, and rakazo.com. The Rakazo source code is governed by the Apache License 2.0, which does not grant rights to the Rakazo name or logo, and self-hosted deployments are the operator's responsibility.
 
 You are responsible for your account and for actions your bots take on your behalf, including in scheduled routines; give bots only the access they need and require approval for actions that are hard to undo. AI output can be wrong, so review it before relying on it, and do not use the Service where an error could cause serious harm. Do not use the Service to break the law, send spam or malware, access systems without authorization, abuse its computers, or violate the terms of connected providers. You keep ownership of your content and bot output, and you pay any fees charged by third-party services, including usage on your own API keys.
 
-Free trials convert to a paid plan when they end unless cancelled before then. Plans may include usage limits, and we may slow or pause usage that exceeds them. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided.
+Free trials convert to a paid plan when they end unless cancelled before then. Fair use on hosted plans is up to 100 computer-hours a month and 5 computers running at once per account; computers sleep when idle, there are no charges for computer use beyond the plan, and we may slow or pause usage beyond these limits. Self-hosted deployments have no such limits. Paid plans renew automatically until cancelled and are charged through Stripe. Cancel at any time from billing settings or by emailing [hello@rakazo.com](mailto:hello@rakazo.com); access continues until the end of the paid period. Payments are non-refundable and not prorated except where required by law. Charges made in error are refunded when reported within 30 days. If we close your account or stop offering the Service for reasons other than a violation of these terms, we refund prepaid fees for the unused period. Consumers in the EU and UK can withdraw from a new subscription within 14 days and are refunded less the value of the Service already provided.
 
 The Service is provided as is. Our liability is limited to the greater of what you paid us in the previous 12 months or US$100, except where the law does not allow a limit. Delaware law governs these terms.
 
@@ -160,6 +177,8 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Self-hosting Markdown](https://rakazo.com/self-hosted-ai-agent.md): the setup guide with language-tagged code examples.
 - [Full self-hosting reference](https://github.com/elie222/rakazo/blob/main/docs/self-host.md)
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
+- [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
+- [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
 - [Support](https://rakazo.com/support/)

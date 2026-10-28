@@ -6,10 +6,20 @@ import type {
   ProductEvent,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { anySignal, isRunTerminalEvent, runThreadSubscription } from "@rakazo/core";
+import {
+  anySignal,
+  createRefreshCoalescer,
+  isRunTerminalEvent,
+  runThreadSubscription,
+} from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  newLogoAvatarActivitySource,
+  openLogoAvatarActivityFeed,
+  webLogoAvatarActivity,
+} from "../../lib/logo-avatar-activity.js";
 import { markOnce } from "../../lib/performance";
 import type { SpaceQueries } from "../../lib/query";
 import { queryClient } from "../../lib/query";
@@ -154,6 +164,7 @@ export function useThreadSync({
       computerRef.current,
       expandedHistoryThread.current === snap.threadId,
     );
+    webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
     if (!computerOpenRef.current) commitComputer(null);
     setRoutines([]);
@@ -192,6 +203,7 @@ export function useThreadSync({
       computerRef.current,
       expandedHistoryThread.current === snap.threadId,
     );
+    webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
@@ -287,7 +299,10 @@ export function useThreadSync({
       : (queryClient.getQueryData(threadKey) ??
         (seed?.thread?.botId === active.id ? seed.thread : undefined));
     if (cachedThread && snapshotRef.current?.botId !== active.id) commitSnapshot(cachedThread);
+    const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
+    const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
+    const avatarSource = newLogoAvatarActivitySource();
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: async () => {
@@ -305,8 +320,11 @@ export function useThreadSync({
       refresh: () => refreshThread(active.id, threadSnapshotSignal(abort.signal)),
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor, signal) =>
-        rpc.threads.subscribe({ botId: active.id, cursor }, { signal }),
+        openLogoAvatarActivityFeed(avatarSource, snapshotRef.current, cursor, signal, () =>
+          rpc.threads.subscribe({ botId: active.id, cursor }, { signal }),
+        ),
       beforeEvent: (event) => {
+        webLogoAvatarActivity.apply(avatarSource, event);
         if (isRunTerminalEvent(event) && event.runId) {
           terminalRunReceipts.current.add(event.runId);
           if (terminalRunReceipts.current.size > 100) {
@@ -340,12 +358,12 @@ export function useThreadSync({
           isRunTerminalEvent(event) ||
           event.type === "thread.cleared"
         ) {
-          void refreshBots().catch(() => undefined);
+          void sidebarRefresh.invalidate().catch(() => undefined);
         }
         if (event.type === "thread.message.created") {
           const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
           if (blocks.some((block) => block.kind === "child_bot")) {
-            void refreshBots().catch(() => undefined);
+            void sidebarRefresh.invalidate().catch(() => undefined);
           }
           if (event.payload.role === "bot") markBotReadIfVisible(active.id);
         }
@@ -355,14 +373,17 @@ export function useThreadSync({
           event.type === "skill.teaching.stopped"
         ) {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void refreshThread(active.id).catch(() => undefined);
+          void snapshotRefresh.invalidate().catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
       },
     });
     return () => {
+      sidebarRefresh.dispose();
+      snapshotRefresh.dispose();
       abort.abort();
+      webLogoAvatarActivity.resetSource(avatarSource);
       const left = snapshotRef.current;
       if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
     };
@@ -379,7 +400,10 @@ export function useThreadSync({
     const threadKey = cachedThreadKey({ groupId });
     const cachedThread = pendingJump ? undefined : queryClient.getQueryData(threadKey);
     if (cachedThread && snapshotRef.current?.groupId !== groupId) commitSnapshot(cachedThread);
+    const sidebarRefresh = createRefreshCoalescer(() => refreshBots());
+    const snapshotRefresh = createRefreshCoalescer(() => refreshGroupThread(groupId));
     const abort = new AbortController();
+    const avatarSource = newLogoAvatarActivitySource();
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: () =>
@@ -389,7 +413,11 @@ export function useThreadSync({
       loadHead: () => rpc.threads.head({ groupId }, { signal: threadSnapshotSignal(abort.signal) }),
       refresh: () => refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
       currentSnapshot: () => snapshotRef.current,
-      subscribe: (cursor, signal) => rpc.threads.subscribe({ groupId, cursor }, { signal }),
+      subscribe: (cursor, signal) =>
+        openLogoAvatarActivityFeed(avatarSource, snapshotRef.current, cursor, signal, () =>
+          rpc.threads.subscribe({ groupId, cursor }, { signal }),
+        ),
+      beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
       applyEvent: (event) =>
         applyThreadEvent(
           event,
@@ -421,16 +449,19 @@ export function useThreadSync({
           event.type === "group.updated" ||
           isRunTerminalEvent(event)
         ) {
-          void refreshBots().catch(() => undefined);
+          void sidebarRefresh.invalidate().catch(() => undefined);
         }
         if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void refreshGroupThread(groupId).catch(() => undefined);
+          void snapshotRefresh.invalidate().catch(() => undefined);
         }
       },
     });
     return () => {
+      sidebarRefresh.dispose();
+      snapshotRefresh.dispose();
       abort.abort();
+      webLogoAvatarActivity.resetSource(avatarSource);
       const left = snapshotRef.current;
       if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);
     };

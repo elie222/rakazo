@@ -196,7 +196,7 @@ export function clearUnsentSends() {
   config?.disk.clear();
   changed();
 }
-// Keep main's sign-out contract for existing callers and tests.
+// Alias kept for existing sign-out callers.
 export const clearFailedSends = clearUnsentSends;
 export function confirmEchoes(threadKey: string, seqs: Iterable<number>) {
   const seen = new Set(seqs);

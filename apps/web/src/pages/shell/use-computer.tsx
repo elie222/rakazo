@@ -462,8 +462,8 @@ export function useComputerControls({
     const botId = active.id;
     let cancelled = false;
     void (async () => {
-      // Refresh from the server first. A stale SSE "booting" snapshot used to
-      // skip this effect, so an RPC takeover never showed "You have control".
+      // Refresh from the server first: a stale SSE "booting" snapshot would
+      // otherwise hide an RPC takeover.
       const snap = await refreshThread(botId).catch(() => null);
       if (cancelled || activeBotId.current !== botId) return;
       const state = snap?.computer?.state;

@@ -233,6 +233,17 @@ describe("web markdown website links", () => {
     await view.cleanup();
   });
 
+  it("keeps the destination when a bare URL is shortened at an emoji", async () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}%F0%9F%98%80tail`;
+    const view = await renderLinks(`<${href}>`, { load: async () => ({ icon: null }) });
+    expect(view.container.querySelector(".rk-chat-link-label")?.textContent).toBe(
+      `example.com/${prefix}…`,
+    );
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(href);
+    await view.cleanup();
+  });
+
   it("shows the globe until an icon arrives, and when there is none", async () => {
     let resolve: (answer: { icon: string | null }) => void = () => undefined;
     const view = await renderLinks("[Docs](https://icon-c.example.test/docs)", {
@@ -631,5 +642,31 @@ describe("web markdown mentions", () => {
     expect(html).toContain('<b data-id="bot-1">Planner</b>');
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown parser failure", () => {
+  it("shows a message the parser cannot handle as plain text", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const nested = `${">".repeat(20_000)} deep`;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{nested}</ChatMarkdown>);
+    });
+    expect(container.querySelector(".rk-chat-markdown p")?.textContent).toBe(nested);
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{"**fine**"}</ChatMarkdown>);
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("fine");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
   });
 });

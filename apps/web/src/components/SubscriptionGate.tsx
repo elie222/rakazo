@@ -8,6 +8,8 @@ import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
 import { lazyComponent } from "../lib/preload-recovery";
 import { rpc } from "../lib/rpc";
+import type { SupportChat } from "../lib/support-chat";
+import { useSupportChat } from "../lib/support-chat";
 
 const PaywallPage = lazyComponent(() =>
   import("../pages/Paywall").then((module) => module.PaywallPage),
@@ -54,6 +56,7 @@ export function SubscriptionGate({
   fallback: ReactNode;
 }) {
   const [state, setState] = useState<GateState>({ kind: "loading" });
+  const [supportChat, setSupportChat] = useState<SupportChat | null>(null);
   const { t } = useLingui();
   // `?plans` links straight to the plan choice.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -69,8 +72,18 @@ export function SubscriptionGate({
     let active = true;
     fetchAuthCapabilities()
       .then(async (capabilities): Promise<GateState> => {
-        if (!capabilities.billing || !(await loadMe()).billingEnabled) return { kind: "open" };
-        return gateFor(await rpc.billing.status());
+        if (!capabilities.billing) return { kind: "open" };
+        const me = await loadMe();
+        if (!me.billingEnabled) return { kind: "open" };
+        const status = await rpc.billing.status();
+        if (active && capabilities.crispWebsiteId) {
+          setSupportChat({
+            crispWebsiteId: capabilities.crispWebsiteId,
+            email: me.email,
+            name: me.name,
+          });
+        }
+        return gateFor(status);
       })
       .catch((): GateState => ({ kind: "open" }))
       .then((next) => {
@@ -104,6 +117,9 @@ export function SubscriptionGate({
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [billed]);
+
+  // On the required paywall only: the plans dialog blocks pointer input outside itself.
+  useSupportChat(state.kind === "paywall" ? supportChat : null);
 
   if (state.kind === "loading") return fallback;
   if (state.kind === "paywall") {

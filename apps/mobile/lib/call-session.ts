@@ -1,3 +1,4 @@
+import type { BotAvatarSet } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
@@ -48,6 +49,7 @@ export type CallState = {
   botId: string;
   botName: string;
   botColor: string;
+  botAvatarSet?: BotAvatarSet;
   phase: CallPhase;
   muted: boolean;
   transcriptOpen: boolean;
@@ -190,6 +192,7 @@ export function startCall(
     botId: string;
     botName: string;
     botColor?: string;
+    botAvatarSet?: BotAvatarSet;
     transcribe?: boolean;
     /** Spoken as the call connects, before the caller's first turn. */
     greeting?: string;
@@ -212,6 +215,7 @@ export function startCall(
     botId: call.botId,
     botName: call.botName,
     botColor: call.botColor ?? "",
+    botAvatarSet: call.botAvatarSet,
     phase: "listening",
     muted: false,
     transcriptOpen: false,

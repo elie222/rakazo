@@ -55,6 +55,7 @@ vi.mock("../lib/rpc", () => ({
   }),
 }));
 vi.mock("./BillingSettingsPanel", () => ({ BillingSettingsPanel: () => null }));
+vi.mock("./PaymentWalletSettingsPanel", () => ({ PaymentWalletSettingsPanel: () => null }));
 vi.mock("./MemorySettingsOverlay", () => ({
   MemorySettingsOverlay: ({
     config,
@@ -98,6 +99,7 @@ vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: recordScope("vo
 vi.mock("../components/ApprovalRulesSettings", () => ({
   ApprovalRulesSettings: recordScope("confirmations"),
 }));
+vi.mock("../components/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -232,16 +234,20 @@ it("opens a linked billing section once billing turns out to be on", async () =>
   }
 });
 
-it("edits the account's models, voice, and confirmations", async () => {
+it("edits the account's models, voice, confirmations, and vault", async () => {
   scopes.length = 0;
   const props = { space: acme, spaces };
-  const { rerender, cleanup } = await render({ ...props, section: "models" });
+  const { container, rerender, cleanup } = await render({ ...props, section: "models" });
   try {
-    for (const section of ["models", "voice", "confirmations"] as const) {
+    for (const section of ["models", "voice", "confirmations", "vault"] as const) {
       await rerender({ ...props, section });
     }
+    const vaultNav = container.querySelector('[data-testid="settings-nav-vault"]');
+    expect(vaultNav?.textContent).toBe("Vault");
+    expect(vaultNav?.getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector("h2")?.textContent).toBe("Vault");
     expect(new Set(scopes)).toEqual(
-      new Set(["models:account", "voice:account", "confirmations:account"]),
+      new Set(["models:account", "voice:account", "confirmations:account", "vault:account"]),
     );
   } finally {
     await cleanup();
@@ -293,6 +299,21 @@ it("shows Updates in the desktop app", async () => {
   const { container, cleanup } = await render({});
   try {
     expect(updatesNav(container)).not.toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers Wallet only when the deployment has a wallet provider", async () => {
+  const { container, rerender, cleanup } = await render({ section: "wallet" });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({ section: "wallet", paymentWalletProvider: { id: "link", name: "Link" } });
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).not.toBeNull();
+    expect(shown()).toBe("wallet");
   } finally {
     await cleanup();
   }

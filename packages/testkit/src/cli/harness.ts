@@ -6,6 +6,7 @@ import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
+import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -77,6 +78,8 @@ async function main() {
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
+      // The offline wallet, so Settings shows Wallet and sign-in completes without a provider.
+      process.env.PAYMENT_WALLET_PROVIDER = "emulator";
       process.env.RAKAZO_NAV_LINKS = JSON.stringify([
         { id: "clients", label: "Clients", path: "/ext/clients/" },
       ]);
@@ -192,6 +195,7 @@ async function main() {
         EmailEmulator,
         PipedreamConnector,
         ThirdPartyConnectorEmulator,
+        UserDeviceEmulator,
       },
       { createApp },
       { drainUnscopedDatabaseAccess },
@@ -202,6 +206,7 @@ async function main() {
     ]);
     const { serve } = await import("@hono/node-server");
     const thirdParties = new ThirdPartyConnectorEmulator();
+    const marketplace = new PluginMarketplaceFixture(thirdParties.fetch);
     const pipedream = new PipedreamConnector(
       {
         clientId: "fake-client-id",
@@ -213,6 +218,8 @@ async function main() {
       { fetch: thirdParties.fetch, resolveHostname: thirdParties.resolveHostname },
     );
     const email = new EmailEmulator();
+    // Scripted runs only: a real model would see a computer it could use in every spec.
+    const userDevices = agentRuntime === "scripted" ? new UserDeviceEmulator() : undefined;
     const handles = await createApp({
       databaseUrl,
       modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
@@ -222,10 +229,13 @@ async function main() {
       pipedream,
       email,
       remoteConnectors: {
-        fetch: thirdParties.fetch,
+        fetch: marketplace.fetch,
         resolveHostname: thirdParties.resolveHostname,
       },
+      pluginRepoFetcher: marketplace.repo,
+      pluginMarketplaceRead: marketplace.index,
       integrationsCatalogUrl: "https://catalog.example.test/",
+      userDevices,
     });
     let activeRequests = 0;
     const requestWaiters = new Set<() => void>();
@@ -233,6 +243,11 @@ async function main() {
       fetch: async (request) => {
         if (new URL(request.url).pathname === "/__e2e/emails") {
           return Response.json(email.sent, { headers: { "cache-control": "no-store" } });
+        }
+        if (new URL(request.url).pathname === "/__e2e/user-device-requests") {
+          return Response.json(userDevices?.requests ?? [], {
+            headers: { "cache-control": "no-store" },
+          });
         }
         activeRequests += 1;
         try {

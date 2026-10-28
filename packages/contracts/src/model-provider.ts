@@ -1,4 +1,3 @@
-/** A provider refused the API key while a connection was being verified. */
 export const MODEL_KEY_REJECTED_ERROR = "API key was rejected by the provider.";
 
 export const MODEL_KEY_FORMAT_ERROR = "That doesn't look like an API key. Paste only the key.";

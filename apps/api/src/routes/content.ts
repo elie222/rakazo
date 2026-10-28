@@ -2,7 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
-import { attachmentMaxBytes } from "@rakazo/contracts";
+import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
 import { IsolationError, parseComputerMode } from "@rakazo/db";
 import {
@@ -235,6 +235,8 @@ export function contentRoutes(ctx: RouterContext) {
             title: bot.title,
             description: bot.description,
             instructions: bot.instructions,
+            color: bot.color,
+            avatarSet: resolveBotAvatarSet(bot.avatarSet),
           },
           memory: memory.map((m) => ({ path: m.path, content: m.content })),
           routines: routines.map((r) => ({

@@ -14,7 +14,8 @@ vi.mock("./api", () => ({
   subscribeThread: vi.fn(),
   applyMobileThreadEvent: vi.fn(),
 }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+const session = vi.hoisted(() => ({ generation: 1 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
 vi.mock("./user-error", () => ({ errorText: String }));
 
 type LiveEvent = { type: string; seq: number; runId?: string };
@@ -22,11 +23,78 @@ const ref = <T>(current: T) => ({ current });
 
 beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 afterEach(() => {
+  session.generation = 1;
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe("thread foreground subscription", () => {
+  it("retains a trailing snapshot after a burst and skips it if history opens", async () => {
+    const snapshot = { cursor: 10 } as MobileSnapshot;
+    let deliver: (event: LiveEvent) => void = () => {};
+    let finish!: (value: MobileSnapshot) => void;
+    const pending = new Promise<MobileSnapshot>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent as unknown as typeof deliver;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    vi.mocked(applyMobileThreadEvent).mockReturnValue(snapshot);
+    const refresh = vi
+      .fn()
+      .mockResolvedValueOnce(snapshot)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValue(snapshot);
+    const expandedHistoryThread = ref<string | null>(null);
+    const refreshMentionBots = vi.fn(async () => {});
+    const root = createRoot(document.createElement("div"));
+    function Probe() {
+      useThreadLiveSubscription({
+        botId: "bot-1",
+        foreground: true,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread,
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef: ref(snapshot),
+        readVisibleTarget: ref(null),
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap: vi.fn(),
+        setError: vi.fn(),
+        refreshMentionBots,
+        markReadIfVisible: vi.fn(),
+      });
+      return null;
+    }
+    await act(async () => root.render(createElement(Probe)));
+    refresh.mockClear();
+    deliver({ type: "run.waiting_input", seq: 11 });
+    await act(async () => {});
+    for (let i = 0; i < 100; i++) deliver({ type: "run.waiting_input", seq: 12 + i });
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(1);
+    finish(snapshot);
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // The guard is checked when the queued read starts, not just when it was requested.
+    deliver({ type: "run.waiting_input", seq: 112 });
+    expandedHistoryThread.current = "thread-1";
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expandedHistoryThread.current = null;
+    deliver({ type: "run.waiting_input", seq: 113 });
+    session.generation += 1;
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refreshMentionBots).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
   it.each(["latest", "expanded", "search"])(
     "replays missed updates and clears in the %s window, but starts fresh for another chat",
     async (mode) => {
@@ -86,6 +154,7 @@ describe("thread foreground subscription", () => {
       refresh.mockClear();
       // Another device paused a run; the event has no owner to expose Dismiss.
       deliver({ type: "run.waiting_input", seq: 12, runId: "run-other-device" });
+      await act(async () => {});
       expect(applied).toEqual([11, 12]);
       expect(refresh).toHaveBeenCalledTimes(mode === "latest" ? 1 : 0);
       expect(refreshMentionBots).not.toHaveBeenCalled();

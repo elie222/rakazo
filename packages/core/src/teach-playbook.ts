@@ -55,7 +55,7 @@ function describePointer(event: TeachRecordingEvent): string {
   return `${action === "click" ? "Click" : action} ${button} button at (${event.x ?? 0}, ${event.y ?? 0}).`;
 }
 
-/** The way a scroll goes; anything else scrolls down, as before. */
+/** The way a scroll goes; anything else scrolls down. */
 export function scrollDirection(value: unknown): "up" | "down" | "left" | "right" {
   return value === "up" || value === "left" || value === "right" ? value : "down";
 }
@@ -74,7 +74,7 @@ const REDACTED_INPUT = "[redacted input]";
 function redactSensitiveText(text: string): string {
   const trimmed = text.trim();
   if (/password|secret|token|api[_-]?key/i.test(trimmed)) return REDACTED_INPUT;
-  return trimmed;
+  return text;
 }
 
 function isTypedCharacter(key: string): boolean {

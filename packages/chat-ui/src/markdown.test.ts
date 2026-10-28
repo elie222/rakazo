@@ -291,6 +291,17 @@ describe("link labels", () => {
     ).toBe("example.com/txt.exe");
   });
 
+  it("does not split a surrogate pair at the path truncation boundary", () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}\u{1F600}tail`;
+    expect(linkLabel(href, href)).toBe(`example.com/${prefix}…`);
+
+    const fits = `https://example.com/${"a".repeat(25)}\u{1F600}tail`;
+    expect(linkLabel(fits, fits)).toBe(`example.com/${"a".repeat(25)}\u{1F600}…`);
+    const short = "https://example.com/\u{1F600}";
+    expect(linkLabel(short, short)).toBe("example.com/\u{1F600}");
+  });
+
   it("never cuts the host, however long, and trims only the path", () => {
     const host = "www.paypal.com.account-verify-login-secure-update.example.com";
     expect(linkLabel(`https://${host}/x`, `https://${host}/x`)).toBe(

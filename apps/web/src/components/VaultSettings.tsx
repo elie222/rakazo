@@ -1,44 +1,61 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata } from "@rakazo/contracts";
+import type {
+  BotSecretMetadata,
+  LoginFieldInput,
+  SettingsScope,
+  VaultRevealed,
+} from "@rakazo/contracts";
 import {
   BotSecretName,
   commandVariableName,
   commandVariableProblem,
   encodeLoginSecret,
+  isIdentityConfirmationRequired,
+  LoginSecretValue,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RotateCcw, X } from "lucide-react";
-import { useId, useState } from "react";
-import { InfoTooltip } from "../../components/InfoTooltip";
-import { useSpaceQueries } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
-import { errorText } from "../../lib/user-error";
+import { Check, Copy, Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useCopyText } from "../lib/copy-text";
+import { useSpaceQueries } from "../lib/query";
+import { useSpaceRpc } from "../lib/space-rpc";
+import { errorText } from "../lib/user-error";
+import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
+import { InfoTooltip } from "./InfoTooltip";
+import { LoginFieldsEditor } from "./LoginFields";
 
 type ReadableCredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 type CredentialAuthType = ReadableCredentialAuth["type"];
 
-const fieldLabelClass = "mt-3 block text-[14px] text-muted-foreground";
+type Revealed = VaultRevealed & { name: string };
 
-/** The stored value: a website login is saved as one encoded username and password pair. */
-function credentialPlaintext(type: CredentialAuthType, username: string, value: string) {
-  return type === "login" ? encodeLoginSecret({ username, password: value }) : value;
-}
+const fieldLabelClass = "mt-3 block text-[14px] text-muted-foreground";
+/** How long a shown value stays on screen. */
+export const REVEAL_MS = 30_000;
+const REVEAL_CANCELLED = new Error("Reveal cancelled");
 
 /** A command variable has no site, so its destination carries no origin. */
 function credentialDestination(name: string, origin: string, auth: ReadableCredentialAuth) {
   return auth.type === "command" ? { name, auth } : { name, origin, auth };
 }
 
-export function BotCredentialsSection({ botId }: { botId: string }) {
+/** The credentials in the account's vault, or in the bound Space's own once it customizes them. */
+export function VaultSettings({
+  scope,
+  onBusyChange,
+}: {
+  scope: SettingsScope;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const { t } = useLingui();
   const ids = useId();
   const rpc = useSpaceRpc();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
-  const list = queries.botSecrets.list.queryOptions({ input: { botId } });
+  const list = queries.vault.list.queryOptions({ input: { scope } });
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
   const secrets = listQuery.data;
   const loadFailed = listQuery.isError;
@@ -53,8 +70,30 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
   const [replacing, setReplacing] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
   // Protected fields: held only in component state and cleared on every submit or cancel.
-  const [loginUsername, setLoginUsername] = useState("");
+  const newLogin = (): LoginFieldInput[] => [
+    { label: t`Username`, value: "", hidden: false },
+    { label: t`Password`, value: "", hidden: true },
+  ];
+  const [login, setLogin] = useState(newLogin);
   const [value, setValue] = useState("");
+  // A shown value lives only here, never in the query cache, and hides itself after a while.
+  const [revealed, setRevealed] = useState<Revealed | null>(null);
+  const [revealing, setRevealing] = useState<string | null>(null);
+  const revealAttempt = useRef(0);
+  const hideTimer = useRef<number | undefined>(undefined);
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useEffect(
+    () => () => {
+      revealAttempt.current += 1;
+      window.clearTimeout(hideTimer.current);
+    },
+    [],
+  );
 
   async function refresh() {
     try {
@@ -67,7 +106,47 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
 
   function clearProtectedFields() {
     setValue("");
-    setLoginUsername("");
+    setLogin(newLogin());
+    hideRevealed();
+  }
+
+  function hideRevealed() {
+    // Also drops a reveal still in flight, so it can't show after another action opened.
+    revealAttempt.current += 1;
+    window.clearTimeout(hideTimer.current);
+    setRevealed(null);
+    setRevealing(null);
+  }
+
+  async function reveal(secretName: string) {
+    if (busy) return;
+    clearProtectedFields();
+    setReplacing(null);
+    setConfirmingRemove(null);
+    setAdding(false);
+    setError(null);
+    const attempt = revealAttempt.current;
+    const current = () => revealAttempt.current === attempt;
+    setRevealing(secretName);
+    try {
+      const shown = await withIdentityConfirmation(async () => {
+        try {
+          return await rpc.vault.reveal({ scope, name: secretName });
+        } catch (err) {
+          // A reveal cancelled while waiting must not ask the person to confirm.
+          throw current() ? err : REVEAL_CANCELLED;
+        }
+      });
+      if (!current()) return;
+      setRevealed({ name: secretName, ...shown });
+      hideTimer.current = window.setTimeout(hideRevealed, REVEAL_MS);
+    } catch (err) {
+      // Closing the confirmation is a choice, not a failure.
+      if (current() && err !== REVEAL_CANCELLED && !isIdentityConfirmationRequired(err))
+        setError(errorText(err, t`Could not show the credential`));
+    } finally {
+      if (current()) setRevealing(null);
+    }
   }
 
   function authLabel(auth: ReadableCredentialAuth) {
@@ -97,20 +176,14 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
     origin?: string;
     auth: ReadableCredentialAuth;
   }) {
-    const username = loginUsername.trim();
-    const secretValue = value;
+    if (!valueReady(destination.auth.type)) return false;
+    const plaintext =
+      destination.auth.type === "login" ? encodeLoginSecret({ fields: login }) : value;
     clearProtectedFields();
     setError(null);
-    let plaintext: string;
-    try {
-      plaintext = credentialPlaintext(destination.auth.type, username, secretValue);
-    } catch {
-      setError(t`Enter a username and password`);
-      return false;
-    }
     setBusy(true);
     try {
-      await rpc.botSecrets.put({ botId, destination, value: plaintext });
+      await rpc.vault.put({ scope, destination, value: plaintext });
       if (!(await refresh())) {
         setError(t`Could not load credentials.`);
         return false;
@@ -147,7 +220,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
     setError(null);
     setBusy(true);
     try {
-      await rpc.botSecrets.remove({ botId, name: secretName });
+      await rpc.vault.remove({ scope, name: secretName });
       setConfirmingRemove(null);
       if (!(await refresh())) {
         await writeSaved(queryClient, list.queryKey, (prev = []) =>
@@ -162,25 +235,12 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
     }
   }
 
-  const loginFields = (type: CredentialAuthType, testIdPrefix: string) => (
-    <>
-      {type === "login" ? (
-        <label htmlFor={`${ids}-${testIdPrefix}-username`} className={fieldLabelClass}>
-          <Trans>Username</Trans>
-          <Input
-            id={`${ids}-${testIdPrefix}-username`}
-            data-testid={`${testIdPrefix}-username`}
-            // "off" is ignored for username fields; this stops browsers saving the pair.
-            autoComplete="new-password"
-            spellCheck={false}
-            value={loginUsername}
-            onChange={(event) => setLoginUsername(event.target.value)}
-            className="mt-1.5"
-          />
-        </label>
-      ) : null}
+  const secretFields = (type: CredentialAuthType, testIdPrefix: string) =>
+    type === "login" ? (
+      <LoginFieldsEditor fields={login} disabled={busy} onChange={setLogin} />
+    ) : (
       <label htmlFor={`${ids}-${testIdPrefix}-value`} className={fieldLabelClass}>
-        {type === "login" ? <Trans>Password</Trans> : <Trans>Value</Trans>}
+        <Trans>Value</Trans>
         <Input
           id={`${ids}-${testIdPrefix}-value`}
           data-testid={`${testIdPrefix}-value`}
@@ -192,11 +252,10 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
           className="mt-1.5"
         />
       </label>
-    </>
-  );
+    );
 
   const valueReady = (type: CredentialAuthType) =>
-    value.length > 0 && (type !== "login" || loginUsername.trim().length > 0);
+    type === "login" ? LoginSecretValue.safeParse({ fields: login }).success : value.length > 0;
 
   const nameValid = BotSecretName.safeParse(name.trim()).success;
   // Shown live while a command variable is named, so a reserved name is caught before saving.
@@ -216,37 +275,9 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
     valueReady(authType);
 
   return (
-    <section data-testid="bot-credentials">
-      <div className="mb-2 flex items-center justify-between pe-1">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          <Trans>Credentials</Trans>
-        </h3>
-        <Tooltip>
-          <TooltipTrigger
-            render={<Button variant="ghost" size="icon-xs" />}
-            type="button"
-            aria-label={t`Add credential`}
-            data-testid="credential-add"
-            disabled={busy || adding}
-            onClick={() => {
-              clearProtectedFields();
-              setReplacing(null);
-              setConfirmingRemove(null);
-              setAdding(true);
-            }}
-          >
-            <Plus className="size-4 text-muted-foreground" />
-          </TooltipTrigger>
-          <TooltipContent>
-            <Trans>Add credential</Trans>
-          </TooltipContent>
-        </Tooltip>
-      </div>
+    <section data-testid="vault" className="space-y-3">
       {loadFailed || secrets?.length || error || adding ? (
-        <div
-          data-testid="bot-credentials-card"
-          className="rounded-xl bg-muted/50 p-4 [&>:first-child]:mt-0"
-        >
+        <div data-testid="vault-card" className="rounded-xl bg-muted/50 p-4 [&>:first-child]:mt-0">
           {loadFailed ? (
             <p className="mt-3 text-[13px] text-destructive">
               <Trans>Could not load credentials.</Trans>
@@ -264,22 +295,58 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                     ? secret.auth
                     : null;
                 return (
-                  <li key={secret.name} data-testid="bot-credential-row">
+                  <li key={secret.name} data-testid="vault-credential-row">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 truncate text-[13.5px] font-medium text-foreground">
                         {secret.name}
                       </div>
+                      {/* Per-row actions; each one closes the others' open forms. */}
                       {replacing !== secret.name && confirmingRemove !== secret.name ? (
                         <div className="-mt-0.5 flex shrink-0 gap-1">
                           {readableAuth !== null ? (
                             <Tooltip>
                               <TooltipTrigger
-                                render={<Button variant="ghost" size="icon-xs" />}
+                                // The trigger's own disabled only turns off the tooltip.
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    disabled={busy || revealing !== null}
+                                  />
+                                }
+                                type="button"
+                                aria-label={revealed?.name === secret.name ? t`Hide` : t`Show`}
+                                className="text-muted-foreground"
+                                data-testid={`credential-show-${secret.name}`}
+                                onClick={() =>
+                                  revealed?.name === secret.name
+                                    ? hideRevealed()
+                                    : void reveal(secret.name)
+                                }
+                              >
+                                {revealed?.name === secret.name ? (
+                                  <EyeOff className="size-4" />
+                                ) : (
+                                  <Eye className="size-4" />
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {revealed?.name === secret.name ? (
+                                  <Trans>Hide</Trans>
+                                ) : (
+                                  <Trans>Show</Trans>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                          {readableAuth !== null ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={<Button variant="ghost" size="icon-xs" disabled={busy} />}
                                 type="button"
                                 aria-label={t`Replace value`}
                                 className="text-muted-foreground"
                                 data-testid={`credential-replace-${secret.name}`}
-                                disabled={busy}
                                 onClick={() => {
                                   clearProtectedFields();
                                   setConfirmingRemove(null);
@@ -296,12 +363,11 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                           ) : null}
                           <Tooltip>
                             <TooltipTrigger
-                              render={<Button variant="ghost" size="icon-xs" />}
+                              render={<Button variant="ghost" size="icon-xs" disabled={busy} />}
                               type="button"
                               aria-label={t`Remove`}
                               className="text-muted-foreground"
                               data-testid={`credential-remove-${secret.name}`}
-                              disabled={busy}
                               onClick={() => {
                                 clearProtectedFields();
                                 setReplacing(null);
@@ -340,6 +406,22 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                         <span>{t`Updated ${updated}`}</span>
                       </div>
                     )}
+                    {readableAuth !== null && revealed?.name === secret.name ? (
+                      <div data-testid="credential-revealed" className="mt-2 space-y-1">
+                        {"value" in revealed ? (
+                          <RevealedField testId="credential-revealed-value" text={revealed.value} />
+                        ) : (
+                          revealed.fields.map((field) => (
+                            <RevealedField
+                              key={field.label}
+                              testId="credential-revealed-field"
+                              label={field.label}
+                              text={field.value}
+                            />
+                          ))
+                        )}
+                      </div>
+                    ) : null}
                     {readableAuth !== null && replacing === secret.name ? (
                       <form
                         className="mt-1"
@@ -348,7 +430,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                           void submitReplace(secret);
                         }}
                       >
-                        {loginFields(readableAuth.type, "credential-replace")}
+                        {secretFields(readableAuth.type, "credential-replace")}
                         <div className="mt-3 flex gap-2">
                           <Button
                             type="submit"
@@ -374,9 +456,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                     ) : confirmingRemove === secret.name ? (
                       <div className="mt-2">
                         <p className="text-[13px] text-foreground">
-                          <Trans>
-                            Remove {secretName}? This bot will no longer be able to use it.
-                          </Trans>
+                          <Trans>Remove {secretName}? Bots will no longer be able to use it.</Trans>
                         </p>
                         <div className="mt-2 flex gap-2">
                           <Button
@@ -420,9 +500,6 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                 void submitAdd();
               }}
             >
-              <p className="mb-3 text-xs text-muted-foreground">
-                <Trans>Encrypted and never shown again</Trans>
-              </p>
               <div className={fieldLabelClass}>
                 <div className="flex items-center gap-1">
                   <label htmlFor={`${ids}-name`}>
@@ -455,7 +532,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                     data-testid="credential-command-variable"
                     className="mt-1 block text-[12px] text-muted-foreground"
                   >
-                    {t`Available to this bot's shell commands as ${commandVariable}`}
+                    {t`Available to shell commands as ${commandVariable}`}
                   </span>
                 ) : null}
               </div>
@@ -519,7 +596,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                   />
                 </label>
               ) : null}
-              {loginFields(authType, "credential")}
+              {secretFields(authType, "credential")}
               <div className="mt-3 flex gap-2">
                 <Button
                   type="submit"
@@ -545,6 +622,49 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
           ) : null}
         </div>
       ) : null}
+      {adding ? null : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="credential-add"
+          disabled={busy}
+          onClick={() => {
+            clearProtectedFields();
+            setReplacing(null);
+            setConfirmingRemove(null);
+            setAdding(true);
+          }}
+        >
+          <Plus />
+          <Trans>Add credential</Trans>
+        </Button>
+      )}
+      {identityDialog}
     </section>
+  );
+}
+
+/** One shown value with a copy button; a login shows each of its fields this way. */
+function RevealedField({ label, text, testId }: { label?: string; text: string; testId: string }) {
+  const { t } = useLingui();
+  const [copied, copy] = useCopyText();
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-background px-2.5 py-1.5">
+      {label ? <span className="shrink-0 text-[12px] text-muted-foreground">{label}</span> : null}
+      <code data-testid={testId} className="min-w-0 flex-1 break-all font-mono text-[12.5px]">
+        {text}
+      </code>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={copied ? t`Copied` : t`Copy`}
+        className="shrink-0 text-muted-foreground"
+        onClick={() => copy(text)}
+      >
+        {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+      </Button>
+    </div>
   );
 }

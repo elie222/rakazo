@@ -4,6 +4,7 @@ import type {
   Context,
   ModelsSimpleStreamOptions,
   ModelThinkingLevel,
+  ThinkingLevelMap,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
@@ -11,7 +12,12 @@ import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-s
 import type { AgentRunRequest, ConnectorTool } from "@rakazo/adapter-kit";
 import { isRetryableProviderUnavailable, isTransientModelError } from "@rakazo/adapter-kit";
 import type { ModelBackupOutcome } from "@rakazo/core";
-import { abortableDelay, MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
+import {
+  abortableDelay,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
@@ -28,6 +34,7 @@ import {
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import {
+  acceptedReasoningEfforts,
   cardOutputCeiling,
   modelForCompletion,
   modelTargetKey,
@@ -45,6 +52,9 @@ import {
 
 const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 
+/** Why a reply ended before the model finished it. */
+export type CutReplyReason = "connection" | "limit";
+
 export interface FallbackStreamState {
   request: AgentRunRequest;
   getActive(): RuntimeModelTarget;
@@ -58,11 +68,11 @@ export interface FallbackStreamState {
   /** More room for the next call, after a call ran out of it inside a tool call. */
   nextCallRecovery?: { maxTokens?: number; thinkingLevel?: ModelThinkingLevel };
   /**
-   * Replies ended early by a dropped connection; the runtime asks the model to continue them.
-   * Absent where nothing asks (subagents), so a cut there still fails.
+   * Replies ended early by a dropped connection or the output limit; the runtime asks the model
+   * to continue them. Absent where nothing asks (subagents), so a cut there is not continued.
    */
-  cutReplies?: WeakSet<AssistantMessage["content"]>;
-  /** The next call continues a cut reply, so it is not continued again if it is cut too. */
+  cutReplies?: WeakMap<AssistantMessage["content"], CutReplyReason>;
+  /** The next call continues a cut reply, so a dropped connection there is not continued again. */
   continuingCutReply?: boolean;
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
@@ -71,6 +81,8 @@ export interface FallbackStreamState {
   dropThinkingBlocks?: boolean;
   /** Output reservations reduced by a rejected request, scoped to this run and model. */
   outputCaps?: Map<string, number>;
+  /** Thinking levels narrowed to the reasoning efforts an endpoint accepts, scoped to this run and connection. */
+  thinkingLevelMaps?: Map<string, ThinkingLevelMap>;
   /**
    * Messages written before the last switch to a backup model. Their thinking is bound to the
    * model and transcript it was written for, and the backup's policy starts with a rebuild that
@@ -105,7 +117,7 @@ function eventHasVisibleOutput(event: AssistantMessageEvent): boolean {
   return assistantHasVisibleOutput(event.partial);
 }
 
-const MAX_SELF_RECOVERIES_PER_RUN = 3;
+export const MAX_SELF_RECOVERIES_PER_RUN = 3;
 const MIN_CONTINUATION_OVERLAP = 4;
 export const MAX_CONTINUATION_OVERLAP = 240;
 
@@ -113,12 +125,40 @@ export const MAX_CONTINUATION_OVERLAP = 240;
  * How much of the start of a continuation repeats the end of the cut reply: the longest such
  * run of at least a few characters, up to about a sentence. Shorter matches are coincidence.
  */
-export function continuationOverlap(cut: string, continuation: string): number {
+export function continuationOverlap(
+  cut: string,
+  continuation: string,
+  minimum = MIN_CONTINUATION_OVERLAP,
+): number {
   const longest = Math.min(cut.length, continuation.length, MAX_CONTINUATION_OVERLAP);
-  for (let size = longest; size >= MIN_CONTINUATION_OVERLAP; size -= 1) {
+  for (let size = longest; size >= minimum; size -= 1) {
     if (cut.endsWith(continuation.slice(0, size))) return size;
   }
   return 0;
+}
+
+// Models often open a continuation with an ellipsis before picking the words up again.
+const CONTINUATION_MARKER = /^(?:…|\.{3})[^\S\n]*/;
+/** Longest marker the join may drop, so it waits for enough text to decide. */
+export const MAX_CONTINUATION_MARKER = 4;
+
+/**
+ * How much of the start of a continuation to drop: its repeat of the end of the cut reply, and
+ * an ellipsis before that repeat. An ellipsis that doesn't lead into a repeat is kept.
+ */
+export function continuationRepeat(cut: string, continuation: string, requested = false): number {
+  if (requested) cut = cut.trimEnd();
+  // Short requested repeats must cover the whole final word or cut fragment.
+  const minimum = requested
+    ? Math.min(MIN_CONTINUATION_OVERLAP, /\S+$/.exec(cut)?.[0].length ?? MIN_CONTINUATION_OVERLAP)
+    : MIN_CONTINUATION_OVERLAP;
+  const marker = CONTINUATION_MARKER.exec(continuation)?.[0] ?? "";
+  const afterMarker = marker
+    ? continuationOverlap(cut, continuation.slice(marker.length), minimum)
+    : 0;
+  return afterMarker
+    ? marker.length + afterMarker
+    : continuationOverlap(cut, continuation, minimum);
 }
 const LOWEST_FIRST_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
   "minimal",
@@ -395,8 +435,13 @@ export function fallbackAwareModelStream(
         output.end(failure.error);
         return;
       }
-      const target = state.getActive();
-      const targetKey = JSON.stringify([target.config.provider, target.config.id]);
+      const active = state.getActive();
+      const targetKey = JSON.stringify([active.config.provider, active.config.id]);
+      const connectionKey = modelTargetKey(active.config);
+      const thinkingLevelMap = state.thinkingLevelMaps?.get(connectionKey);
+      const target = thinkingLevelMap
+        ? { ...active, model: { ...active.model, thinkingLevelMap } }
+        : active;
       const outputCap = state.outputCaps?.get(targetKey);
       const attemptOptions = {
         ...options,
@@ -449,6 +494,7 @@ export function fallbackAwareModelStream(
           if (event.type === "error") {
             recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;
+            let requestLimitTooSmall = false;
             const hasTerminalVisibleOutput = assistantHasVisibleOutput(event.error);
             if (
               !sawVisibleOutput &&
@@ -464,17 +510,37 @@ export function fallbackAwareModelStream(
                 target.model.contextWindow,
               );
               if (contextWindow !== undefined && Date.now() - startedAt < timeoutMs) {
-                state.onContextLimit(contextWindow);
-                getLogger().info("model.context_limit.reduced", {
-                  runId: state.request.runId,
-                  provider: target.config.provider,
-                  model: target.config.id,
-                  contextWindow,
+                const requiredContext = requestContext();
+                const minimumInput = estimateModelContextTokens({
+                  ...requiredContext,
+                  messages: requiredContext.messages.filter((message) => message.role === "system"),
                 });
-                sizingFailure = event;
-                buffered = [];
-                restart = true;
-                break;
+                const outputReserve = effectiveOutputReserve(contextWindow, sentMaxTokens);
+                requestLimitTooSmall = minimumInput >= contextWindow - outputReserve;
+                getLogger().info(
+                  requestLimitTooSmall
+                    ? "model.context_limit.refused"
+                    : "model.context_limit.reduced",
+                  {
+                    runId: state.request.runId,
+                    provider: target.config.provider,
+                    model: target.config.id,
+                    contextWindow,
+                  },
+                );
+                if (requestLimitTooSmall) {
+                  terminalEvent = {
+                    ...event,
+                    error: { ...event.error, errorMessage: MODEL_REQUEST_LIMIT_ERROR },
+                  };
+                  recordFailure(target, MODEL_REQUEST_LIMIT_ERROR);
+                } else {
+                  state.onContextLimit(contextWindow);
+                  sizingFailure = event;
+                  buffered = [];
+                  restart = true;
+                  break;
+                }
               }
               const affordable = affordableOpenRouterOutput(
                 target.config.provider,
@@ -497,6 +563,21 @@ export function fallbackAwareModelStream(
                 break;
               }
             }
+            const narrowedThinking =
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
+              event.reason === "error" &&
+              !signalAborted() &&
+              !thinkingLevelMap
+                ? acceptedReasoningEfforts(target.model, event.error.errorMessage)
+                : undefined;
+            if (narrowedThinking) {
+              state.thinkingLevelMaps ??= new Map();
+              state.thinkingLevelMaps.set(connectionKey, narrowedThinking);
+              buffered = [];
+              restart = true;
+              break;
+            }
             if (
               !sawVisibleOutput &&
               !hasTerminalVisibleOutput &&
@@ -517,11 +598,11 @@ export function fallbackAwareModelStream(
               event.reason === "error" &&
               !signalAborted() &&
               state.isProviderFailure(event.error) &&
-              isRetryableProviderUnavailable(event.error)
+              (requestLimitTooSmall || isRetryableProviderUnavailable(event.error))
             ) {
               state.primaryFailure ??= sanitizeProviderError(
                 target.config.provider,
-                event.error.errorMessage ?? "Model request failed.",
+                terminalEvent.error.errorMessage ?? "Model request failed.",
               );
               const next = await resolveNext(target);
               if (failIfAborted(target)) return;
@@ -590,7 +671,7 @@ export function fallbackAwareModelStream(
                 stopReason: "stop",
               };
               state.selfRecoveries += 1;
-              state.cutReplies.add(cut.content);
+              state.cutReplies.set(cut.content, "connection");
               state.continuingCutReply = true;
               for (const pending of buffered) output.push(pending);
               buffered = [];
@@ -624,7 +705,9 @@ export function fallbackAwareModelStream(
                   ...event.message,
                   content: event.message.content.filter((part) => part.type !== "toolCall"),
                   stopReason: "error",
-                  errorMessage: MODEL_OUTPUT_LIMIT_ERROR,
+                  errorMessage: assistantText(event.message).trim()
+                    ? MODEL_OUTPUT_CUT_ERROR
+                    : MODEL_OUTPUT_LIMIT_ERROR,
                 };
                 for (const pending of buffered) output.push(pending);
                 buffered = [];
@@ -639,6 +722,46 @@ export function fallbackAwareModelStream(
                 thinkingLevel,
                 outputCap,
               );
+            }
+            if (
+              state.cutReplies &&
+              event.message.stopReason === "length" &&
+              !event.message.errorMessage &&
+              !messageHasToolCall(event.message) &&
+              assistantText(event.message).trim() &&
+              !signalAborted()
+            ) {
+              // A reply that ran out of room mid-way is not an answer. It is continued in a call
+              // with more room, again if the continuation runs out too, while the run has
+              // recoveries left; after that the run fails and keeps the text written so far.
+              const ended: AssistantMessage = {
+                ...event.message,
+                content: event.message.content.filter((part) => part.type === "text"),
+              };
+              const message: AssistantMessage =
+                state.selfRecoveries >= MAX_SELF_RECOVERIES_PER_RUN
+                  ? { ...ended, stopReason: "error", errorMessage: MODEL_OUTPUT_CUT_ERROR }
+                  : { ...ended, stopReason: "stop" };
+              if (message.stopReason === "stop") {
+                state.selfRecoveries += 1;
+                state.cutReplies.set(message.content, "limit");
+                state.continuingCutReply = true;
+                state.nextCallRecovery = lengthRecovery(
+                  target,
+                  sentMaxTokens,
+                  thinkingLevel,
+                  outputCap,
+                );
+              }
+              for (const pending of buffered) output.push(pending);
+              buffered = [];
+              output.push(
+                message.stopReason === "stop"
+                  ? { type: "done", reason: "stop", message }
+                  : { type: "error", reason: "error", error: message },
+              );
+              output.end(message);
+              return;
             }
             const recovery =
               !lengthRecovered &&

@@ -53,6 +53,7 @@ export function ShellSidebar({
   navLinks,
   openSettings,
   openIntegrations,
+  openSkills,
 }: {
   isMobile: boolean;
   mobileOpen: boolean;
@@ -77,6 +78,7 @@ export function ShellSidebar({
   navLinks: NavLink[];
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
+  openSkills: () => void;
 }) {
   const { t } = useLingui();
   const {
@@ -252,6 +254,7 @@ export function ShellSidebar({
           navigate={navigate}
           openSettings={openSettings}
           openIntegrations={openIntegrations}
+          openSkills={openSkills}
         />
       </Sidebar>
     </>
@@ -268,6 +271,7 @@ function ShellSidebarFooter({
   navigate,
   openSettings,
   openIntegrations,
+  openSkills,
 }: {
   mini: boolean;
   logos: Array<{ name: string; logo?: string | null }>;
@@ -278,6 +282,7 @@ function ShellSidebarFooter({
   navigate: (path: string) => void;
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
+  openSkills: () => void;
 }) {
   const { t, i18n } = useLingui();
   const { status: billing, showPlans } = useBilling();
@@ -324,6 +329,10 @@ function ShellSidebarFooter({
         onIntegrations={() => {
           setMenuOpen(false);
           openIntegrations();
+        }}
+        onSkills={() => {
+          setMenuOpen(false);
+          openSkills();
         }}
         onBoard={
           ticketBoardEnabled

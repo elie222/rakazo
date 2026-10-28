@@ -22,6 +22,7 @@ import { NativeSymbol } from "./native-symbol";
 export type ThreadComposerHandle = {
   snapshot: () => ComposerSnapshot;
   reset: () => void;
+  insert: (text: string) => void;
 };
 
 type ThreadComposerProps = {
@@ -97,6 +98,7 @@ export function ThreadComposer({
       setSelectedSkill(null);
       setSelectedMentions([]);
     },
+    insert: (text) => setDraft((current) => (current ? `${current}\n${text}` : text)),
   }));
   const mentionOptions = useMemo(() => {
     if (mentionQuery === null || composerMentionTargets.length === 0) return [];

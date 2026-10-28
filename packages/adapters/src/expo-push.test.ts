@@ -1,4 +1,5 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { credentialDigest } from "./credential-digest.js";
 import type { ExpoPushTicket } from "./expo-push.js";
@@ -16,6 +17,7 @@ const loadPushToken = async (store: MemoryPushTokenStore, userId: string) =>
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
 
 const notifyContext = {
@@ -530,6 +532,7 @@ function fakeExpo(
     if (url.endsWith("/push/getReceipts")) {
       receiptRequests.push(payload.ids);
       const outcome = outcomes.shift();
+      if (outcome === "network") throw new TypeError("fetch failed");
       if (outcome && typeof outcome === "object" && "httpStatus" in outcome) {
         return jsonResponse(
           { errors: [{ message: outcome.errors ?? "unavailable" }] },
@@ -723,7 +726,7 @@ describe("expo push receipts", () => {
     await tokens.save("user-1", "ExponentPushToken[test]");
     fakeExpo([{ status: "ok", id: "ticket-1" }]);
     const { jobs, enqueued } = recordingJobs();
-    const push = new ExpoPushProvider(tokens, { jobs });
+    const push = new ExpoPushProvider(tokens, { jobs, retryDelaysMs: [0, 0] });
     const before = Date.now();
     await expect(push.deliver(pushMessage, notifyContext)).resolves.toBe("delivered");
     const [job] = enqueued;
@@ -779,12 +782,29 @@ describe("expo push receipts", () => {
     await expect(loadPushToken(tokens, "user-1")).resolves.toBe("ExponentPushToken[new]");
   });
 
-  it("fails the job so it retries when Expo cannot return receipts", async () => {
+  it("backs off and reads the receipt once Expo answers again", async () => {
     const { tokens, push, receipt } = await deliveredTicket();
-    fakeExpo([{ httpStatus: 503, errors: "unavailable" }]);
+    const expo = fakeExpo([{ httpStatus: 503 }], {
+      "ticket-1": { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } },
+    });
 
-    await expect(push.checkReceipt(receipt)).rejects.toThrow("unavailable");
+    await expect(push.checkReceipt(receipt)).resolves.toBeUndefined();
+
+    expect(expo.receiptRequests).toHaveLength(2);
+    await expect(loadPushToken(tokens, "user-1")).resolves.toBeUndefined();
+  });
+
+  it("skips the check without an error while Expo stays unreachable", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { tokens, push, receipt } = await deliveredTicket();
+    const expo = fakeExpo(["network", "network", "network"]);
+
+    await expect(push.checkReceipt(receipt)).resolves.toBeUndefined();
+
+    expect(expo.receiptRequests).toHaveLength(3);
     await expect(loadPushToken(tokens, "user-1")).resolves.toBe("ExponentPushToken[test]");
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 });
 
