@@ -96,6 +96,23 @@ describe("transient model errors", () => {
   });
 
   it.each([
+    [
+      "CommandCode 400 insufficient credits",
+      {
+        status: 400,
+        type: "invalid_request_error",
+        message: "You have insufficient credits to make this request.",
+      },
+    ],
+    ["400 out of credits", { status: 400, message: "Your account is out of credits." }],
+    ["403 quota exceeded", { status: 403, message: "Quota exceeded for this account." }],
+    ["402 credits exhausted", { status: 402, message: "Your credits have been exhausted." }],
+  ])("does not retry the same model on exhaustion: %s", (_label, error) => {
+    expect(isRetryableProviderUnavailable(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+
+  it.each([
     "You've reached your 5-hour usage limit.",
     "You’ve reached your 5-hour usage limit.",
     "You've reached your weekly (7-day) usage limit.",
@@ -260,6 +277,113 @@ describe("provider availability classification", () => {
     [
       "payment status with an ordinary invalid request",
       { status: 402, code: "invalid_request_error", message: "Invalid tool schema" },
+      false,
+    ],
+    [
+      "CommandCode 400 insufficient credits",
+      {
+        status: 400,
+        type: "invalid_request_error",
+        message:
+          "You have insufficient credits to make this request. Please purchase more credits to continue using the service.",
+      },
+      true,
+    ],
+    [
+      "400 insufficient credits as text",
+      "400 invalid_request_error: You have insufficient credits to make this request.",
+      true,
+    ],
+    ["400 out of credits", { status: 400, message: "Your account is out of credits." }, true],
+    [
+      "400 exceeded quota",
+      { status: 400, message: "You exceeded your current quota, please check your plan." },
+      true,
+    ],
+    [
+      "400 usage limit reached",
+      { status: 400, message: "You've reached your weekly usage limit." },
+      true,
+    ],
+    ["402 credits exhausted", { status: 402, message: "Your credits have been exhausted." }, true],
+    [
+      "403 insufficient balance",
+      { status: 403, message: "Insufficient balance. Please top up." },
+      true,
+    ],
+    [
+      "403 quota exceeded",
+      { status: 403, type: "permission_error", message: "Quota exceeded for this account." },
+      true,
+    ],
+    [
+      "400 mentioning credits in a validation message",
+      { status: 400, message: "Invalid parameter: credits must be a positive integer." },
+      false,
+    ],
+    [
+      "400 validation error mentioning insufficient credits",
+      { status: 400, message: "Validation failed: insufficient credits field is malformed." },
+      false,
+    ],
+    [
+      "400 unsupported parameter beside a credit balance",
+      { status: 400, message: "Unsupported parameter: temperature; credit balance unchanged" },
+      false,
+    ],
+    [
+      "400 context length beside a quota phrase",
+      { status: 400, message: "context_length_exceeded: quota exceeded for tokens" },
+      false,
+    ],
+    [
+      "400 model not found",
+      { status: 400, message: "Model not found; you have insufficient credits to list models" },
+      false,
+    ],
+    [
+      "400 invalid request without exhaustion",
+      { status: 400, type: "invalid_request_error", message: "Messages must not be empty." },
+      false,
+    ],
+    [
+      "401 wrapping insufficient credits",
+      { status: 401, message: "You have insufficient credits to make this request." },
+      false,
+    ],
+    [
+      "401 wrapping a nested 400 exhaustion",
+      { status: 401, cause: { status: 400, message: "Insufficient credits." } },
+      false,
+    ],
+    [
+      "403 permission denied beside an exhaustion phrase",
+      { status: 403, message: "Permission denied; insufficient credits to share this project" },
+      false,
+    ],
+    [
+      "403 forbidden without exhaustion",
+      { status: 403, message: "Forbidden: account suspended" },
+      false,
+    ],
+    [
+      "400 invalid api key beside an exhaustion phrase",
+      { status: 400, message: "Invalid API key; out of credits" },
+      false,
+    ],
+    [
+      "400 cancellation beside an exhaustion phrase",
+      { status: 400, message: "Request was aborted; insufficient credits" },
+      false,
+    ],
+    [
+      "400 per-minute window",
+      { status: 400, message: "You have hit your usage limit for tokens per minute." },
+      false,
+    ],
+    [
+      "exhaustion phrase without a 4xx status",
+      new Error("Something about insufficient credits"),
       false,
     ],
     ["plain status", new Error("503 provider unavailable"), true],
