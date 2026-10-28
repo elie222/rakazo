@@ -181,6 +181,10 @@ describe("normalizeRunError", () => {
         tooLong,
       ],
       ["prompt is too long: 210344 tokens > 200000 maximum", tooLong],
+      [
+        '400: {"code":400,"message":"request (19563 tokens) exceeds the available context size (2048 tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":19563,"n_ctx":2048}',
+        tooLong,
+      ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
       ["terminated", tookTooLong],

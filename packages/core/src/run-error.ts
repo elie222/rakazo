@@ -403,7 +403,7 @@ export function normalizeRunError(
     summary = translate(MODEL_CONTEXT_TOO_SMALL_ERROR);
   } else if (
     status === 413 ||
-    /context[_ -](?:length|window)|maximum context|exceeds the model context|prompt is too long|too many tokens|request too large/i.test(
+    /context[_ -](?:length|size|window)|maximum context|exceeds the model context|prompt is too long|too many tokens|request too large/i.test(
       signals,
     )
   ) {

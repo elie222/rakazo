@@ -12,7 +12,11 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
-import { MODEL_REQUEST_LIMIT_ERROR, normalizeRunError } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+  normalizeRunError,
+} from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -2648,6 +2652,107 @@ describe("Pi runtime account request ceilings", () => {
     expect(input.executeTool).not.toHaveBeenCalled();
     expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
   });
+
+  const llamaCppOverflow = (contextSize: number) =>
+    `400: ${JSON.stringify({ code: 400, message: `request (19563 tokens) exceeds the available context size (${contextSize} tokens), try increasing it`, type: "exceed_context_size_error", n_prompt_tokens: 19563, n_ctx: contextSize })}`;
+  const compatibleModel = () => {
+    const targetModel = model("openai-compatible", "fixture-local", 262_144);
+    providerState.models.set(
+      `${targetModel.provider}/${targetModel.id}`,
+      targetModel as unknown as Record<string, unknown>,
+    );
+    return {
+      provider: targetModel.provider,
+      id: targetModel.id,
+      baseUrl: "http://127.0.0.1:8080/v1",
+      apiKey: "fixture-key",
+    };
+  };
+
+  it("rebuilds an OpenAI-compatible context once at the window the server reports", async () => {
+    const input = {
+      ...request(),
+      model: compatibleModel(),
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    const windows: number[] = [];
+    providerState.stream.mockImplementation((target, context, options) => {
+      windows.push(target.contextWindow);
+      if (windows.length > 1) {
+        expect(estimateModelContextTokens(context)).toBeLessThan(
+          target.contextWindow - options.maxTokens,
+        );
+      }
+      return stream(
+        target,
+        windows.length === 1
+          ? message(target, [], "error", llamaCppOverflow(6000))
+          : message(target, [{ type: "text", text: "Ready" }], "stop"),
+      );
+    });
+    const events = await run(input);
+    expect(windows).toEqual([262_144, 5100]);
+    expect(input.model).not.toHaveProperty("contextWindow");
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  it("rebuilds only once and reports a context failure when the server rejects the rebuild", async () => {
+    const input = {
+      ...request(),
+      model: compatibleModel(),
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [], "error", llamaCppOverflow(6000))),
+    );
+    const failure = await run(input).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(normalizeRunError((failure as Error).message)).toMatchObject({ kind: "context" });
+  });
+
+  it.each([false, true])(
+    "reports a too-small OpenAI-compatible window without retrying it (backup: %s)",
+    async (withBackup) => {
+      const input = {
+        ...request(
+          withBackup ? [{ provider: backupA.provider, id: backupA.id, apiKey: "fixture-key" }] : [],
+        ),
+        model: compatibleModel(),
+        instructions: "Synthetic required instructions. ".repeat(200),
+      };
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          target.provider === "openai-compatible"
+            ? message(target, [], "error", llamaCppOverflow(2000))
+            : message(target, [{ type: "text", text: "Ready" }], "stop"),
+        ),
+      );
+      if (withBackup) {
+        await expect(run(input)).resolves.toContainEqual(
+          expect.objectContaining({ type: "done", text: "Ready" }),
+        );
+        expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+          "openai-compatible",
+          backupA.provider,
+        ]);
+      } else {
+        await expect(run(input)).rejects.toMatchObject({
+          name: "ModelAccountError",
+          message: MODEL_CONTEXT_TOO_SMALL_ERROR,
+        });
+        expect(providerState.stream).toHaveBeenCalledOnce();
+      }
+      expect(providerState.delay).not.toHaveBeenCalled();
+      expect(input.executeTool).not.toHaveBeenCalled();
+      expect(input.model).not.toHaveProperty("contextWindow");
+    },
+  );
 });
 
 describe("Pi runtime fallback error classes and mid-run switches", () => {

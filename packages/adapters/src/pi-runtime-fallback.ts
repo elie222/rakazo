@@ -14,6 +14,7 @@ import { isRetryableProviderUnavailable, isTransientModelError } from "@rakazo/a
 import type { ModelBackupOutcome } from "@rakazo/core";
 import {
   abortableDelay,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
@@ -44,6 +45,7 @@ import {
   withOutputBudget,
 } from "./pi-runtime-models.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
+import { reportedContextWindow } from "./reported-context-window.js";
 import {
   isThinkingSignatureMismatch,
   withoutThinkingBlocks,
@@ -504,11 +506,18 @@ export function fallbackAwareModelStream(
               !sizingFailure &&
               state.isProviderFailure(event.error)
             ) {
-              const contextWindow = groqRequestContextWindow(
+              const requestWindow = groqRequestContextWindow(
                 target.config.provider,
                 event.error.errorMessage,
                 target.model.contextWindow,
               );
+              const contextWindow =
+                requestWindow ??
+                reportedContextWindow(
+                  target.config.provider,
+                  event.error.errorMessage,
+                  target.model.contextWindow,
+                );
               if (contextWindow !== undefined && Date.now() - startedAt < timeoutMs) {
                 const requiredContext = requestContext();
                 const minimumInput = estimateModelContextTokens({
@@ -529,11 +538,12 @@ export function fallbackAwareModelStream(
                   },
                 );
                 if (requestLimitTooSmall) {
-                  terminalEvent = {
-                    ...event,
-                    error: { ...event.error, errorMessage: MODEL_REQUEST_LIMIT_ERROR },
-                  };
-                  recordFailure(target, MODEL_REQUEST_LIMIT_ERROR);
+                  const limitError =
+                    requestWindow === undefined
+                      ? MODEL_CONTEXT_TOO_SMALL_ERROR
+                      : MODEL_REQUEST_LIMIT_ERROR;
+                  terminalEvent = { ...event, error: { ...event.error, errorMessage: limitError } };
+                  recordFailure(target, limitError);
                 } else {
                   state.onContextLimit(contextWindow);
                   sizingFailure = event;
