@@ -189,8 +189,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      if (hasIncomingShare()) router.replace("/share");
-      else await openApp();
+      await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -200,6 +199,7 @@ export default function SignIn() {
 
   // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
   async function openApp() {
+    if (hasIncomingShare()) return router.replace("/share");
     const me = await rpc("me").catch(() => null);
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
   }
@@ -208,10 +208,7 @@ export default function SignIn() {
     setPending(true);
     setError(null);
     try {
-      if (await run()) {
-        if (hasIncomingShare()) router.replace("/share");
-        else await openApp();
-      }
+      if (await run()) await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
