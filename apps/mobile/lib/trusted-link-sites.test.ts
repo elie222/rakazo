@@ -71,3 +71,19 @@ it("keeps a trust reply that lands after a session change out of the new session
 
   expect(queryClient.getQueryData(trustedLinkSitesRead().queryKey)).toBeUndefined();
 });
+
+it("reads the whole list again when a site is trusted before the first read lands", async () => {
+  scope.rpc.mockImplementation(async (path: string) =>
+    path === "trustedLinkSites/trust"
+      ? { site: "alice.github.io" }
+      : ["alice.github.io", "example.com"],
+  );
+  await trustLinkSite("https://alice.github.io/page");
+
+  await vi.waitFor(() =>
+    expect(queryClient.getQueryData(trustedLinkSitesRead().queryKey)).toEqual([
+      "alice.github.io",
+      "example.com",
+    ]),
+  );
+});

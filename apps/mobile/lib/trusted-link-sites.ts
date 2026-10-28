@@ -25,11 +25,14 @@ export async function loadTrustedLinkSites(): Promise<void> {
 // signs in is saved under the session that asked, never in the new user's list.
 
 export async function trustLinkSite(url: string): Promise<void> {
-  const { queryKey } = trustedLinkSitesRead();
+  const read = trustedLinkSitesRead();
   const { site } = await rpc("trustedLinkSites/trust", { url });
-  await writeSaved(queryClient, queryKey, (current = []) =>
+  const loaded = queryClient.getQueryData(read.queryKey) !== undefined;
+  await writeSaved(queryClient, read.queryKey, (current = []) =>
     current.includes(site) ? current : [...current, site].sort(),
   );
+  // Saved before the first read finished: the cache holds only this site until read again.
+  if (!loaded) void fetchFresh(queryClient, read).catch(() => undefined);
 }
 
 export async function removeTrustedLinkSite(site: string): Promise<void> {

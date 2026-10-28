@@ -29,10 +29,14 @@ export function useTrustedLinkSites() {
   );
   const trust = useCallback(
     async (url: string) => {
+      const queryKey = spaceQueries(userId, null).trustedLinkSites.list.queryKey();
       const { site } = await rpc.trustedLinkSites.trust({ url });
+      const loaded = queryClient.getQueryData(queryKey) !== undefined;
       await save((current) => (current.includes(site) ? current : [...current, site].sort()));
+      // Saved before the first read finished: the cache holds only this site until read again.
+      if (!loaded) void queryClient.invalidateQueries({ queryKey, exact: true });
     },
-    [save],
+    [queryClient, save, userId],
   );
   const remove = useCallback(
     async (site: string) => {
