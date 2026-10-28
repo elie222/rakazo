@@ -668,6 +668,7 @@ msgstr "すべてのステータス"
 msgid "All time"
 msgstr "全期間"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "許可"
@@ -683,6 +684,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "今回のみ許可"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "許可ルール"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -859,6 +864,10 @@ msgstr "成果物"
 msgid "Ask"
 msgstr "確認"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "確認ルール"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -984,9 +993,14 @@ msgstr "Bearerトークン"
 msgid "Billing"
 msgstr "請求"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "ブロック"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "ブロックルール"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1156,6 +1170,10 @@ msgstr "キャンセル済み"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "キャンセル済み"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "変更案"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -1998,6 +2016,10 @@ msgstr "テスト音声を再生できませんでした"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "ルールをプレビューできませんでした"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "モデルサーバーに接続できませんでした。"
@@ -2302,6 +2324,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron式"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "現在"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3965,6 +3991,10 @@ msgstr "このページに一致するアーティファクトはありません
 msgid "No matching models"
 msgstr "一致するモデルはありません"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "一致するルールなし"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "MCPサーバーはまだありません。"
@@ -4407,6 +4437,8 @@ msgstr "POST先"
 msgid "Preferences"
 msgstr "環境設定"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4629,6 +4661,7 @@ msgstr "操作を戻す"
 msgid "Reload"
 msgstr "再読み込み"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5610,6 +5643,10 @@ msgstr "APIキーをテスト"
 msgid "Test connection"
 msgstr "接続をテスト"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "ルールを試す"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "テスト実行"
@@ -5884,6 +5921,7 @@ msgstr "ツールの引数はJSONオブジェクトである必要がありま�
 msgid "Tool arguments must be JSON"
 msgstr "ツールの引数はJSONである必要があります"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "ツール名"

@@ -668,6 +668,7 @@ msgstr "Alle statussen"
 msgid "All time"
 msgstr "Alle tijd"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "Toestaan"
@@ -683,6 +684,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Een keer toestaan"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "Toestaanregel"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -859,6 +864,10 @@ msgstr "Artefacten"
 msgid "Ask"
 msgstr "Vragen"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "Goedkeuringsregel"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -984,9 +993,14 @@ msgstr "Bearer-token"
 msgid "Billing"
 msgstr "Facturatie"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Blokkeren"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "Blokkeerregel"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1156,6 +1170,10 @@ msgstr "geannuleerd"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "Geannuleerd"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "Voorgestelde regel"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -1998,6 +2016,10 @@ msgstr "Testfragment afspelen mislukt"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "Regelvoorbeeld kon niet worden geladen"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "De modelserver is niet bereikbaar."
@@ -2302,6 +2324,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron-expressie"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "Huidig"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3965,6 +3991,10 @@ msgstr "Geen overeenkomende artefacten op deze pagina."
 msgid "No matching models"
 msgstr "Geen overeenkomende modellen"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "Geen overeenkomende regel"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "Nog geen MCP-servers."
@@ -4407,6 +4437,8 @@ msgstr "POST naar"
 msgid "Preferences"
 msgstr "Voorkeuren"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4629,6 +4661,7 @@ msgstr "Controle vrijgeven"
 msgid "Reload"
 msgstr "Herladen"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5610,6 +5643,10 @@ msgstr "API-sleutel testen"
 msgid "Test connection"
 msgstr "Verbinding testen"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "Regel testen"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "Testrun"
@@ -5884,6 +5921,7 @@ msgstr "Toolargumenten moeten een JSON-object zijn"
 msgid "Tool arguments must be JSON"
 msgstr "Toolargumenten moeten JSON zijn"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Toolnaam"

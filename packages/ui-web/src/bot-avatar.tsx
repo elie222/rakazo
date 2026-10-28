@@ -115,7 +115,7 @@ export const BotAvatar = memo(function BotAvatar({
         </div>
         {isWorking ? (
           <svg
-            className="rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute z-10 pointer-events-none"
+            className="rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute pointer-events-none"
             style={{
               inset: -4,
               width: size + 8,

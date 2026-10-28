@@ -79,6 +79,7 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
     // createTicket allocates its number by incrementing this board row inside
     // the insert transaction. Hold that transaction open on a deferred to
     // reproduce the production interleaving the conditional update must beat.
+    let creatorPid!: number;
     let signalInserted!: () => void;
     const ticketInserted = new Promise<void>((resolve) => {
       signalInserted = resolve;
@@ -90,6 +91,12 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
     const creator = runAsTenant(actor, () =>
       prisma.$transaction(
         async (tx) => {
+          // One connection runs the whole interactive transaction, so this
+          // backend is the one whose open transaction holds the board row lock.
+          const [backend] = await tx.$queryRaw<
+            Array<{ pid: number }>
+          >`SELECT pg_backend_pid() AS pid`;
+          creatorPid = backend!.pid;
           const number = await allocateTicketNumber(tx, boardId);
           await tx.ticket.create({
             data: {
@@ -109,19 +116,27 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
         { timeout: 20_000 },
       ),
     );
+    // A creator that fails before its inserted signal fails the test here,
+    // instead of hanging until the timeout waiting for a signal that never comes.
+    await Promise.race([ticketInserted, creator]);
+
+    const rename = client().boards.rename({ name: "Launch", ticketPrefix: "OPS" });
     try {
-      await ticketInserted;
-
-      const rename = client().boards.rename({ name: "Launch", ticketPrefix: "OPS" });
-
-      // Deterministically wait for the rename's update to sit on the board
-      // row lock the creator holds: an ungranted lock request in this database.
+      // Deterministically wait for the rename's conditional update to sit on
+      // the board row lock this creator holds: a Lock-waiting backend that
+      // pg_blocking_pids names this creator as blocking, running the boards
+      // update. An unrelated ungranted lock in the database must not do.
       const deadline = Date.now() + 5_000;
       for (;;) {
         const { rows } = await db.pool.query<{ blocked: number }>(
           `SELECT count(*)::int AS blocked
-               FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-              WHERE a.datname = current_database() AND NOT l.granted`,
+               FROM pg_stat_activity a
+              WHERE a.datname = current_database()
+                AND a.pid <> pg_backend_pid()
+                AND a.wait_event_type = 'Lock'
+                AND $1::int = ANY (pg_blocking_pids(a.pid))
+                AND a.query LIKE 'UPDATE%"boards" SET%'`,
+          [creatorPid],
         );
         if (rows[0]!.blocked > 0) break;
         if (Date.now() > deadline) throw new Error("rename never blocked on the board row lock");
@@ -150,6 +165,7 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
     } finally {
       releaseCreator();
       await creator.catch(() => undefined);
+      await rename.catch(() => undefined);
     }
   }, 15_000);
 });

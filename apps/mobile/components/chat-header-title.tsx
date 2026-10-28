@@ -105,7 +105,7 @@ export function ChatHeaderTitle({
         {!inGroup && params.botId ? (
           <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
         ) : null}
-        {members ? <GroupSeats members={members} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
+        {inGroup ? <GroupSeats members={members ?? []} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
         <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
       </GlassSurface>
     </Pressable>
