@@ -2482,7 +2482,11 @@ describe("user_computer_shell", () => {
     });
     f.setCalls([call("ls")]);
     await f.run();
-    expect(f.results[0]).toEqual({ error: expect.stringContaining("is blocked in this space") });
+    expect(f.results[0]).toEqual({
+      error: expect.stringContaining(
+        'is blocked in this space by the saved rule "User computer shell".',
+      ),
+    });
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 

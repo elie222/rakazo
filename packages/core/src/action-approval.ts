@@ -339,7 +339,20 @@ export type ActionApprovalResolved = {
   decision: "ask" | "allow" | "deny";
   source: ActionApprovalSource;
   matchingRules: ActionApprovalRule[];
+  /** The rules that produced this decision; broader matches remain in `matchingRules`. */
+  decisiveRules: ActionApprovalRule[];
 };
+
+/**
+ * The saved rules responsible for an ask or block. Broader rules that also matched
+ * are omitted so a refusal points at the decisive rule instead of every candidate.
+ */
+export function decisiveActionApprovalRules(
+  resolved: ActionApprovalResolved,
+): ActionApprovalRule[] {
+  if (resolved.source !== "require_approval" && resolved.source !== "deny") return [];
+  return resolved.decisiveRules.filter((rule) => rule.effect === resolved.source);
+}
 
 /**
  * Deterministic rule resolution. A block always wins, so a narrower allow cannot punch through it.
@@ -358,18 +371,31 @@ export function resolveActionApprovalDetail(input: {
     ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
   );
   if (matchingRules.length === 0) {
-    return { decision: "allow", source: "default", matchingRules };
+    return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
   }
-  if (matchingRules.some((rule) => rule.effect === "deny")) {
-    return { decision: "deny", source: "deny", matchingRules };
+  const denyingRules = matchingRules.filter((rule) => rule.effect === "deny");
+  if (denyingRules.length > 0) {
+    const highestSpecificity = Math.max(...denyingRules.map(ruleSpecificity));
+    return {
+      decision: "deny",
+      source: "deny",
+      matchingRules,
+      decisiveRules: denyingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity),
+    };
   }
 
   const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
   const winners = matchingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity);
-  if (winners.some((rule) => rule.effect === "require_approval")) {
-    return { decision: "ask", source: "require_approval", matchingRules };
+  const askingRules = winners.filter((rule) => rule.effect === "require_approval");
+  if (askingRules.length > 0) {
+    return {
+      decision: "ask",
+      source: "require_approval",
+      matchingRules,
+      decisiveRules: askingRules,
+    };
   }
-  return { decision: "allow", source: "always_allow", matchingRules };
+  return { decision: "allow", source: "always_allow", matchingRules, decisiveRules: [] };
 }
 
 export function resolveActionApproval(input: {
@@ -433,7 +459,12 @@ export function resolveActionApprovalForTools(input: {
     parts.find((part) => part.decision === "deny") ?? parts.find((part) => part.decision === "ask");
   if (strictest) return { ...strictest, matchingRules };
   const allAllowed = parts.length > 0 && parts.every((part) => part.source === "always_allow");
-  return { decision: "allow", source: allAllowed ? "always_allow" : "default", matchingRules };
+  return {
+    decision: "allow",
+    source: allAllowed ? "always_allow" : "default",
+    matchingRules,
+    decisiveRules: [],
+  };
 }
 
 /**
