@@ -11,20 +11,39 @@ import {
 } from "@rakazo/core";
 import { botEyeColor } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BotAvatarProps } from "../components/bot-avatar";
 import { BotAvatar } from "../components/bot-avatar";
+import { AvatarScreenFocus } from "./avatar-life";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
 
 const nativeProps = vi.hoisted(() => [] as Array<() => Record<string, unknown>>);
+const nativeMotion = vi.hoisted(() => ({
+  reduced: true,
+  styles: [] as Array<() => { transform: unknown[] }>,
+  timings: [] as number[],
+}));
 
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
-  Pressable: ({ children }: { children?: ReactNode }) =>
-    createElement("button", { type: "button" }, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessible,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessible?: boolean;
+  }) =>
+    createElement(
+      "button",
+      { type: "button", onClick: onPress, "data-accessible": String(accessible) },
+      children,
+    ),
   Image: ({ source }: { source: { uri: string } }) => createElement("img", { src: source.uri }),
 }));
 
@@ -45,11 +64,18 @@ vi.mock("react-native-reanimated", () => {
       return {};
     },
     useDerivedValue: (sample: () => unknown) => ({ value: sample() }),
-    useAnimatedStyle: () => ({}),
-    useReducedMotion: () => true,
-    useSharedValue: (value: number) => ({ value }),
+    useAnimatedStyle: (sample: () => { transform: unknown[] }) => {
+      nativeMotion.styles.push(sample);
+      return {};
+    },
+    useReducedMotion: () => nativeMotion.reduced,
+    useSharedValue: <T,>(value: T) => useRef({ value }).current,
     withRepeat: (value: unknown) => value,
-    withTiming: (value: unknown) => value,
+    withTiming: (value: unknown, options?: { duration: number }) => {
+      const duration = options?.duration ?? 0;
+      nativeMotion.timings.push(duration);
+      return value === 1 && duration > 0 && duration < 1000 ? 0.4 : value;
+    },
   };
 });
 
@@ -146,22 +172,98 @@ describe("BotAvatar", () => {
     container = undefined;
     vi.unstubAllGlobals();
     nativeProps.length = 0;
+    nativeMotion.reduced = true;
+    nativeMotion.styles.length = 0;
+    nativeMotion.timings.length = 0;
     mobileLogoAvatarActivity.clear();
   });
 
-  function render(color: string, avatarSet?: "organic" | "rakazo") {
+  function render(
+    color: string,
+    avatarSet?: "organic" | "rakazo",
+    props: Partial<BotAvatarProps> = {},
+    focused = true,
+  ) {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    const avatar = (
+      <BotAvatar color={color} avatarSet={avatarSet} identity="bot-1" size={42} {...props} />
+    );
     act(() =>
-      root?.render(<BotAvatar color={color} avatarSet={avatarSet} identity="bot-1" size={42} />),
+      root?.render(
+        focused ? (
+          avatar
+        ) : (
+          <AvatarScreenFocus navigation={{ isFocused: () => false, addListener: () => () => {} }}>
+            {avatar}
+          </AvatarScreenFocus>
+        ),
+      ),
     );
     return container;
   }
 
   const bodies = (view: HTMLElement) =>
     Array.from(view.querySelectorAll("path"), (path) => path.dataset.d);
+
+  it("preserves the shared native tap reactions on the Rakazo set", () => {
+    nativeMotion.reduced = false;
+    const view = render("#3EC5A8", "rakazo", { pokeable: true, motion: "running" });
+    const button = view.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button!.dataset.accessible).toBe("false");
+    act(() => button!.click());
+    expect(nativeMotion.timings.filter((ms) => ms < 1000)).toEqual([800]);
+    expect(nativeMotion.styles.at(-1)!().transform).not.toEqual([
+      { translateY: 0 },
+      { rotate: "0deg" },
+      { scaleY: 1 },
+    ]);
+    act(() => button!.click());
+    expect(nativeMotion.timings.filter((ms) => ms < 1000)).toEqual([800, 700]);
+    expect(nativeMotion.timings.filter((ms) => ms >= 1000)).toEqual([24_000]);
+  });
+
+  it("settles an active tap when reduced motion becomes enabled", () => {
+    nativeMotion.reduced = false;
+    const view = render("#3EC5A8", "rakazo", { pokeable: true, motion: "running" });
+    act(() => view.querySelector("button")!.click());
+    nativeMotion.reduced = true;
+    act(() =>
+      root?.render(
+        <BotAvatar
+          color="#3EC5A8"
+          avatarSet="rakazo"
+          identity="bot-1"
+          size={42}
+          status="running"
+          pokeable
+          motion="running"
+        />,
+      ),
+    );
+    expect(nativeMotion.styles.at(-1)!().transform).toEqual([
+      { translateY: 0 },
+      { rotate: "0deg" },
+      { scaleY: 1 },
+    ]);
+  });
+
+  it.each(["reduced", "offscreen", "static"])("keeps tap motion still when %s", (condition) => {
+    nativeMotion.reduced = condition === "reduced";
+    const view = render(
+      "#3EC5A8",
+      "rakazo",
+      { pokeable: true, motion: condition === "static" ? "static" : "running" },
+      condition !== "offscreen",
+    );
+    const button = view.querySelector("button");
+    expect(button).not.toBeNull();
+    act(() => button!.click());
+    expect(nativeMotion.timings.filter((ms) => ms > 0 && ms < 1000)).toEqual([]);
+  });
 
   it("draws a plain-colour bot with the organic body for its identity", () => {
     const view = render("#3EC5A8");

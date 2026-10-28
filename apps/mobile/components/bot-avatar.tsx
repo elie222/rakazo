@@ -139,6 +139,7 @@ function RakazoBotAvatar({
   composing = false,
   muted = false,
   motion = "static",
+  pokeable = false,
 }: BotAvatarProps) {
   const tokens = useMobileTokens();
   const { t } = useI18n();
@@ -162,6 +163,7 @@ function RakazoBotAvatar({
         size={size}
         activity={resolved}
         motion={motion}
+        pokeable={pokeable}
       />
       {working ? (
         <View
