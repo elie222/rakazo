@@ -227,6 +227,39 @@ export async function writeComputerRunRequeue(
   return retried.count === 1;
 }
 
+/**
+ * This worker is stopping and still owns the run. Queue it for another worker.
+ * The row stays recoverable: no failure is recorded, and the lease does not keep
+ * the next worker from claiming it.
+ */
+export async function requeueRunAfterShutdown(
+  deps: ExecutorDeps,
+  runId: string,
+  workerId: string,
+  fence: number,
+): Promise<boolean> {
+  const released = await deps.prisma.run.updateMany({
+    where: {
+      id: runId,
+      status: "running",
+      leaseOwner: workerId,
+      leaseFence: fence,
+    },
+    data: {
+      status: "queued",
+      error: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      wakeAt: null,
+    },
+  });
+  if (released.count !== 1) return false;
+  await deps.jobs
+    .enqueue(runContinueJob(runId))
+    .catch((error) => getLogger().error("shutdown run requeue", error));
+  return true;
+}
+
 export async function requeueComputerRun(
   deps: ExecutorDeps,
   runId: string,

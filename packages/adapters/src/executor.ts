@@ -132,6 +132,7 @@ import {
   RUN_SETUP_FAILURE_LIMIT,
   renewRunLease,
   requeueComputerRun,
+  requeueRunAfterShutdown,
   setupFailureStreak,
   writeComputerRunRequeue,
 } from "./run-lifecycle.js";
@@ -207,6 +208,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
     retryRoutineRun: retryRoutineRun.bind(undefined, deps),
 
     async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
+      // A stopping process must not claim work it cannot finish. The row stays
+      // queued or expired for a worker that is still running.
+      if (deps.shutdownSignal?.aborted) return;
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
       // Logs and security events raised by this run's tools name its account and space.
@@ -1363,8 +1367,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         // Provider kind and model id only: custom endpoints are identified by kind, never host.
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
-        // Process shutdown leaves the run to recover once its lease expires: this
-        // worker still owns the lease, so the attempt must not be finalized here.
+        // Shutdown must not finalize the attempt. The finally block queues the run
+        // when this worker still owns it.
         const interruptedByShutdown = async () => {
           if (!deps.shutdownSignal?.aborted) return false;
           if (!ctx.state.terminalCheckpointComplete) {
@@ -1581,6 +1585,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
         }
       } catch (setupError) {
+        // An abort while stopping is not a setup failure, and must not spend the
+        // retry budget that eventually fails the run.
+        if (deps.shutdownSignal?.aborted) return;
         const computerBusy = setupError instanceof ComputerBusyError;
         const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
         const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
@@ -1654,6 +1661,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               .catch(() => undefined);
           }
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+        }
+        if (deps.shutdownSignal?.aborted) {
+          // A renewal still in flight must not treat this release as a lost lease.
+          lease.completed = true;
+          await requeueRunAfterShutdown(deps, runId, workerId, fence).catch((error) =>
+            getLogger().error("shutdown run requeue", error),
+          );
         }
         await deps.prisma.attempt
           .updateMany({
