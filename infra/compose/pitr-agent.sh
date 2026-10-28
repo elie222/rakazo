@@ -291,7 +291,8 @@ prune() {
 # without pg_receivewal resuming from them.
 ensure_slot() {
   local status
-  status="$(sql "SELECT wal_status FROM pg_replication_slots WHERE slot_name = '${SLOT}'")" || return 1
+  # A slot that has not streamed yet reserves no WAL, so its wal_status is null.
+  status="$(sql "SELECT coalesce(wal_status, 'new') FROM pg_replication_slots WHERE slot_name = '${SLOT}'")" || return 1
   if [[ "${status}" == lost ]]; then
     log "The replication slot lost WAL it needed; recovery has a gap until the next base backup"
     sql "SELECT pg_drop_replication_slot('${SLOT}')" >/dev/null || return 1
@@ -334,6 +335,8 @@ run() {
   [[ -z "${newest}" ]] || echo "${newest}" >"${STATE}/last-base"
   log "Archiving system ${sysid} timeline ${timeline} to ${ROOT}"
 
+  # Before the first base backup, so that backup covers the slot instead of a second one following it.
+  ensure_slot || log "Cannot create the replication slot yet; retrying"
   receive_loop &
   local base_pid="" last_attempt=0 upload_after=0 now last
   while :; do
