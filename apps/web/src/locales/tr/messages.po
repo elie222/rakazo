@@ -2981,6 +2981,10 @@ msgstr ""
 msgid "I’m done"
 msgstr "Bitirdim"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "Bunu duyduysan ses hazır."
@@ -4081,6 +4085,10 @@ msgstr "Veya bir API anahtarı yapıştır"
 msgid "Organization API key"
 msgstr "Kuruluş API anahtarı"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Orijinal mesaj kullanılamıyor"
@@ -4302,6 +4310,10 @@ msgstr "Çekme isteği"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "Kuyrukta"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -6181,15 +6193,3 @@ msgstr "Ses sağlayıcınızın kredisi bitti."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Ses sağlayıcınız anahtarı reddetti."
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Icon set"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Original"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Rakazo"
-msgstr "Rakazo"

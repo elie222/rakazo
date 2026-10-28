@@ -2981,6 +2981,10 @@ msgstr ""
 msgid "I’m done"
 msgstr "סיימתי"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "אם שמעת את זה, הקול מוכן."
@@ -4081,6 +4085,10 @@ msgstr "או הדבקת מפתח API"
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
@@ -4302,6 +4310,10 @@ msgstr "Pull request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "בתור"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -6181,15 +6193,3 @@ msgstr "לספק הקול שלך נגמר הקרדיט."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "ספק הקול שלך דחה את המפתח."
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Icon set"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Original"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Rakazo"
-msgstr "Rakazo"

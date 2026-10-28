@@ -2981,6 +2981,10 @@ msgstr ""
 msgid "I’m done"
 msgstr "Ich bin fertig"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "Wenn du das gehört hast, ist die Stimme einsatzbereit."
@@ -4081,6 +4085,10 @@ msgstr "Oder einen API-Schlüssel einfügen"
 msgid "Organization API key"
 msgstr "Organisations-API-Schlüssel"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Originalnachricht nicht verfügbar"
@@ -4302,6 +4310,10 @@ msgstr "Pull Request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "In Warteschlange"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -6181,15 +6193,3 @@ msgstr "Dein Stimmanbieter hat kein Guthaben mehr."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Der Schlüssel deines Stimmanbieters wurde abgelehnt."
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Icon set"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Original"
-msgstr ""
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Rakazo"
-msgstr "Rakazo"

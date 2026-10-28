@@ -97,6 +97,7 @@ it("projects production feed events into the live avatar and subscribes only liv
   for (const [message, expected] of steps) {
     await act(async () => webLogoAvatarActivity.apply("chat", message));
     expect(live().dataset.activity).toBe(expected);
+    expect(live().dataset.working).toBe(String(expected !== "idle" && expected !== "error"));
   }
   expect(subscribe).toHaveBeenCalledTimes(1);
 });

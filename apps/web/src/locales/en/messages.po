@@ -2981,6 +2981,10 @@ msgstr "How will you use Rakazo?"
 msgid "I’m done"
 msgstr "I’m done"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr "Icon set"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "If you heard that, voice is ready."
@@ -4081,6 +4085,10 @@ msgstr "Or paste an API key"
 msgid "Organization API key"
 msgstr "Organization API key"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr "Original"
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Original message unavailable"
@@ -4302,6 +4310,10 @@ msgstr "Pull request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "Queued"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -6181,15 +6193,3 @@ msgstr "Your voice provider is out of credit."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Your voice provider key was rejected."
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Icon set"
-msgstr "Icon set"
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Original"
-msgstr "Original"
-
-#: src/pages/shell/avatar-studio-popover.tsx
-msgid "Rakazo"
-msgstr "Rakazo"

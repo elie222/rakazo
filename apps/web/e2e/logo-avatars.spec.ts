@@ -349,35 +349,55 @@ test("activity crossfades start and finish with zero opacity velocity", async ({
     .getByRole("region", { name: "Transitions and runtime events" })
     .locator("article")
     .first();
-  await switcher
-    .getByRole("button", { name: "Writing", exact: true })
-    .evaluate((button: HTMLButtonElement) => button.click());
-  const proof = await switcher.locator(".rakazo-logo-avatar[role=img]").evaluate((element) =>
-    element
-      .getAnimations({ subtree: true })
-      .filter((animation) =>
-        (animation as CSSAnimation).animationName.startsWith("logo-avatar-layer-"),
-      )
-      .map((animation) => {
-        animation.pause();
-        const target = (animation.effect as KeyframeEffect).target!;
-        const duration = Number(animation.effect!.getTiming().duration);
-        const at = (time: number) => {
-          animation.currentTime = time;
-          return Number(getComputedStyle(target).opacity);
+  // Observe and pause inside the same browser task as the click. A separate
+  // Playwright round trip can arrive after the real 180ms fade has finished.
+  const proof = await switcher.getByRole("button", { name: "Writing", exact: true }).evaluate(
+    (button: HTMLButtonElement) =>
+      new Promise<
+        Array<{ name: string; start: number; end: number; startSpeed: number; endSpeed: number }>
+      >((resolve, reject) => {
+        const avatar = button.closest("article")!.querySelector(".rakazo-logo-avatar[role=img]")!;
+        const timeout = setTimeout(() => {
+          observer.disconnect();
+          reject(new Error("The activity change did not start both crossfade tracks"));
+        }, 5000);
+        const capture = () => {
+          const fades = avatar
+            .getAnimations({ subtree: true })
+            .filter((animation) =>
+              (animation as CSSAnimation).animationName.startsWith("logo-avatar-layer-"),
+            );
+          if (fades.length !== 2) return;
+          observer.disconnect();
+          clearTimeout(timeout);
+          resolve(
+            fades.map((animation) => {
+              animation.pause();
+              const target = (animation.effect as KeyframeEffect).target!;
+              const duration = Number(animation.effect!.getTiming().duration);
+              const at = (time: number) => {
+                animation.currentTime = time;
+                return Number(getComputedStyle(target).opacity);
+              };
+              const h = 0.1,
+                start = at(0),
+                first = at(h),
+                last = at(duration - h),
+                end = at(duration);
+              return {
+                name: (animation as CSSAnimation).animationName,
+                start,
+                end,
+                startSpeed: (first - start) / h,
+                endSpeed: (end - last) / h,
+              };
+            }),
+          );
         };
-        const h = 0.1,
-          start = at(0),
-          first = at(h),
-          last = at(duration - h),
-          end = at(duration);
-        return {
-          name: (animation as CSSAnimation).animationName,
-          start,
-          end,
-          startSpeed: (first - start) / h,
-          endSpeed: (end - last) / h,
-        };
+        const observer = new MutationObserver(capture);
+        observer.observe(avatar, { attributes: true, childList: true, subtree: true });
+        button.click();
+        queueMicrotask(capture);
       }),
   );
   expect(proof).toHaveLength(2);
