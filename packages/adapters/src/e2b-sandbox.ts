@@ -1,4 +1,3 @@
-import { Sandbox, TimeoutError } from "@e2b/desktop";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import type { RemoteDesktopSdk } from "./remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "./remote-desktop-sandbox.js";
@@ -12,11 +11,14 @@ export {
   remoteDesktopCreateOptions as e2bCreateOptions,
 } from "./remote-desktop-sandbox.js";
 
+/** The SDK loads only when an E2B computer is used, never in the default runtime. */
+const e2b = async () => (await import("@e2b/desktop")).Sandbox;
+
 const e2bSdk: RemoteDesktopSdk = {
-  create: (template, options) => Sandbox.create(template, options),
-  connect: (id, options) => Sandbox.connect(id, options),
-  pause: (id, options) => Sandbox.pause(id, options),
-  kill: (id, options) => Sandbox.kill(id, options),
+  create: async (template, options) => (await e2b()).create(template, options),
+  connect: async (id, options) => (await e2b()).connect(id, options),
+  pause: async (id, options) => (await e2b()).pause(id, options),
+  kill: async (id, options) => (await e2b()).kill(id, options),
 };
 
 export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
@@ -28,7 +30,7 @@ export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
       sdk,
       template: E2B_COMPUTER_TEMPLATE,
       fallbackTemplate: E2B_DESKTOP_TEMPLATE,
-      isTimeoutError: (error) => error instanceof TimeoutError,
+      isTimeoutError: (error) => error instanceof Error && error.name === "TimeoutError",
     });
   }
 }

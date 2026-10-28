@@ -9,7 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { NovitaSandboxProvider } from "./novita-sandbox.js";
-import { fakeNovita } from "./novita-sandbox.test-support.js";
+import { emulatedNovita, fakeNovita } from "./novita-sandbox.test-support.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { assertSandboxWorkspaceContract } from "./sandbox-test-support.js";
@@ -220,5 +220,120 @@ describe("Novita computer backend", () => {
     machines.delete(computer.id);
     await expect(provider.listFiles(computer, "", ctx)).rejects.toSatisfy(isSandboxGoneError);
     expect(new SandboxNotFoundError("gone").name).toBe("SandboxNotFoundError");
+  });
+});
+
+describe("Novita adapter over the SDK emulator", () => {
+  async function emulated() {
+    const novita = emulatedNovita();
+    novita.emulator.hangs = (command) => command.includes("'sleep'");
+    const provider = novita.provider();
+    const computer = await provider.provision(request, ctx);
+    return { ...novita, provider, computer };
+  }
+
+  async function run(
+    provider: NovitaSandboxProvider,
+    computer: Awaited<ReturnType<NovitaSandboxProvider["provision"]>>,
+    argv: string[],
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ) {
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv, ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}) },
+      { ...ctx, signal: options.signal ?? ctx.signal },
+    ))
+      events.push(event);
+    return events;
+  }
+
+  it("creates an auto-pausing computer from the Rakazo template and rejects a revoked key", async () => {
+    const { emulator, provider, computer } = await emulated();
+    expect(emulator.computers.get(computer.id)).toMatchObject({
+      state: "running",
+      template: NOVITA_COMPUTER_TEMPLATE,
+      metadata: { botId: "bot", rakazo: "computer" },
+      lifecycle: { onTimeout: "pause", autoResume: false },
+    });
+    emulator.apiKey = "rotated-key";
+    await expect(provider.provision({ ...request, botId: "other" }, ctx)).rejects.toBeInstanceOf(
+      AuthenticationError,
+    );
+    expect(emulator.computers.size).toBe(1);
+  });
+
+  it("keeps a paused computer paused for reads after an API restart, then resumes it explicitly", async () => {
+    const { emulator, provider, computer } = await emulated();
+    await provider.writeFile(
+      computer,
+      { path: "state", content: new TextEncoder().encode("saved") },
+      ctx,
+    );
+    await provider.stop(computer, ctx);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+    expect(emulator.requests).toContain(`pause ${computer.id} sync`);
+
+    const restarted = emulatedNovita(emulator).provider();
+    await expect(restarted.readFile(computer, "state", ctx)).rejects.toThrow("paused");
+    await expect(restarted.keepAlive(computer)).rejects.toBeInstanceOf(SandboxNotFoundError);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+    expect(emulator.requests.filter((entry) => entry.startsWith("connect"))).toEqual([]);
+
+    const resumed = await restarted.provision(
+      { ...request, providerRef: computer.providerRef, providerKind: "novita" },
+      ctx,
+    );
+    expect(resumed).toMatchObject({ id: computer.id, fresh: false });
+    expect(new TextDecoder().decode(await restarted.readFile(resumed, "state", ctx))).toBe("saved");
+  });
+
+  it("kills a canceled command and reports exit 130", async () => {
+    const { emulator, provider, computer } = await emulated();
+    const controller = new AbortController();
+    const pending = run(provider, computer, ["sleep", "100"], { signal: controller.signal });
+    await vi.waitFor(() => expect(emulator.live(computer.id)).toHaveLength(1));
+    controller.abort();
+    await expect(pending).resolves.toContainEqual({ type: "exit", code: 130 });
+    expect(emulator.live(computer.id)).toEqual([]);
+  });
+
+  it("kills a command at its deadline and reports exit 124", async () => {
+    const { emulator, provider, computer } = await emulated();
+    await expect(run(provider, computer, ["sleep", "100"], { timeoutMs: 20 })).resolves.toEqual([
+      { type: "stderr", data: "command timed out after 20 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
+    expect(emulator.live(computer.id)).toEqual([]);
+  });
+
+  it("fences, then pauses, a computer whose command could not be killed", async () => {
+    const { emulator, fenced, provider, computer } = await emulated();
+    const controller = new AbortController();
+    const pending = run(provider, computer, ["sleep", "100"], { signal: controller.signal });
+    await vi.waitFor(() => expect(emulator.live(computer.id)).toHaveLength(1));
+    emulator.faults.commandKills = 3;
+    controller.abort();
+    await expect(pending).rejects.toThrow("command may remain suspended");
+    expect(fenced).toEqual([computer.providerRef]);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+  });
+
+  it("safety-pauses after a lost start event without replaying the command", async () => {
+    const { emulator, fenced, provider, computer } = await emulated();
+    emulator.faults.startEvents = 1;
+    await expect(run(provider, computer, ["echo", "once"])).rejects.toMatchObject({
+      name: "SandboxUnsafeStopError",
+    });
+    expect(fenced).toEqual([computer.providerRef]);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+  });
+
+  it("deletes a paused computer without resuming it", async () => {
+    const { emulator, provider, computer } = await emulated();
+    await provider.stop(computer, ctx);
+    await provider.destroy(computer, ctx);
+    expect(emulator.computers.has(computer.id)).toBe(false);
+    expect(emulator.requests.filter((entry) => entry.startsWith("connect"))).toEqual([]);
   });
 });

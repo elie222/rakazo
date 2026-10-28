@@ -8799,7 +8799,7 @@ describe("quarantined computer stop", () => {
         computer: { updateMany },
         computerRun: { updateMany: endRun },
         computerExecutionLease: {
-          deleteMany: vi.fn(async () => ({ count: 0 })),
+          updateMany: vi.fn(async () => ({ count: 0 })),
           findUnique: vi.fn(async () => null),
         },
         run: { findFirst: vi.fn(async () => null) },

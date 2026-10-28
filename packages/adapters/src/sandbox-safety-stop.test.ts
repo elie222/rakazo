@@ -4,7 +4,7 @@ import { DesktopSandbox, SandboxNotFoundError } from "novita-sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { provisionComputer } from "./computer-lifecycle.js";
 import { createRunSandbox } from "./host-aware-sandbox.js";
-import { runningNovitaDesktop } from "./novita-sandbox.js";
+import { nativeNovitaApi, runningNovitaDesktop } from "./novita-sandbox.js";
 import {
   isSandboxDamagedError,
   isSandboxGoneError,
@@ -145,7 +145,9 @@ describe("unsafe computer stop", () => {
         envdVersion: "0.0.0",
         state,
       });
-      await expect(runningNovitaDesktop("test-key", "guest")).rejects.toThrow("paused");
+      await expect(
+        runningNovitaDesktop(await nativeNovitaApi("test-key"), "guest"),
+      ).rejects.toThrow("paused");
       expect(native.desktop.connect).not.toHaveBeenCalled();
     },
   );
@@ -155,7 +157,7 @@ describe("unsafe computer stop", () => {
       .spyOn(DesktopSandbox, "getFullInfo")
       .mockResolvedValue({ sandboxId: "guest", envdVersion: "0.0.0", state: "running" });
     const extend = vi.spyOn(DesktopSandbox, "setTimeout").mockResolvedValue(undefined);
-    const desktop = await runningNovitaDesktop("test-key", "guest");
+    const desktop = await runningNovitaDesktop(await nativeNovitaApi("test-key"), "guest");
     expect(desktop.sandboxId).toBe("guest");
     expect(extend).toHaveBeenCalled();
     expect(getInfo).toHaveBeenCalledWith("guest", { apiKey: "test-key", requestTimeoutMs: 15_000 });
