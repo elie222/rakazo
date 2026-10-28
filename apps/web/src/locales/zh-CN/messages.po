@@ -668,6 +668,7 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "允许"
@@ -683,6 +684,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "允许一次"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "允许规则"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -863,6 +868,10 @@ msgstr "产物"
 msgid "Ask"
 msgstr "询问"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "审批规则"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -988,9 +997,14 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "阻止"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "禁止规则"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1160,6 +1174,10 @@ msgstr "已取消"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "已取消"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "候选规则"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -2003,6 +2021,10 @@ msgstr "无法播放测试片段"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "无法预览规则"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "无法连接到模型服务器。"
@@ -2307,6 +2329,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron 表达式"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "当前"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -3970,6 +3996,10 @@ msgstr ""
 msgid "No matching models"
 msgstr "没有匹配的模型"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "未匹配规则"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "还没有 MCP 服务器。"
@@ -4412,6 +4442,8 @@ msgstr "POST 到"
 msgid "Preferences"
 msgstr "偏好设置"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4634,6 +4666,7 @@ msgstr "交还控制权"
 msgid "Reload"
 msgstr "重新加载"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5620,6 +5653,10 @@ msgstr "测试 API 密钥"
 msgid "Test connection"
 msgstr "测试连接"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "测试规则"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "测试运行"
@@ -5894,6 +5931,7 @@ msgstr "工具参数必须是 JSON 对象"
 msgid "Tool arguments must be JSON"
 msgstr "工具参数必须是 JSON"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "工具名称"
