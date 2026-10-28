@@ -67,19 +67,25 @@ describe("artifactShareFileName", () => {
       "attachment.pdf",
     );
     expect(artifactShareFileName(`${"a".repeat(79)}\u200db.pdf`, "application/pdf")).toBe(
-      `${"a".repeat(78)}.pdf`,
+      `${"a".repeat(79)}.pdf`,
     );
     expect(artifactShareFileName(`${"a".repeat(78)}\u200c\u0301b.pdf`, "application/pdf")).toBe(
-      `${"a".repeat(77)}.pdf`,
+      `${"a".repeat(78)}.pdf`,
     );
   });
 
-  it("falls back for long stems when grapheme segmentation is unavailable", () => {
+  it("truncates by code point when grapheme segmentation is unavailable", () => {
     const segmenter = Intl.Segmenter;
     try {
       Object.defineProperty(Intl, "Segmenter", { configurable: true, value: undefined });
-      expect(artifactShareFileName(`${"a".repeat(79)}हि.pdf`, "application/pdf")).toBe(
-        "attachment.pdf",
+      expect(artifactShareFileName(`${"a".repeat(90)}.pdf`, "application/pdf")).toBe(
+        `${"a".repeat(80)}.pdf`,
+      );
+      expect(artifactShareFileName(`${"a".repeat(79)}\u{1D165}b.pdf`, "application/pdf")).toBe(
+        `${"a".repeat(79)}.pdf`,
+      );
+      expect(artifactShareFileName(`${"a".repeat(79)}\u200db.pdf`, "application/pdf")).toBe(
+        `${"a".repeat(79)}.pdf`,
       );
       expect(artifactShareFileName("short.pdf", "application/pdf")).toBe("short.pdf");
     } finally {

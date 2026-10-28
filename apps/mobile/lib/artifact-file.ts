@@ -1,4 +1,9 @@
-import { attachmentExtensionForMimeType } from "@rakazo/core";
+import { attachmentExtensionForMimeType, truncatePlainText } from "@rakazo/core";
+
+const STEM_MAX_LENGTH = 80;
+// Joiners are kept only between letters or marks, where scripts such as Persian need them.
+const UNSAFE_RUN =
+  /(?:(?!\u200c|\u200d)[^\p{L}\p{M}\p{N}._-]|(?<![\p{L}\p{M}])(?:\u200c|\u200d)|(?:\u200c|\u200d)(?![\p{L}\p{M}]))+/gu;
 
 export function artifactCacheFileName(artifactId: string, mimeType: string): string {
   const safeId = artifactId.replace(/[^A-Za-z0-9_-]/g, "_") || "attachment";
@@ -13,39 +18,25 @@ export function artifactShareFileName(name: string, mimeType: string): string {
     ext && trimmed.toLowerCase().endsWith(ext.toLowerCase())
       ? trimmed.slice(0, -ext.length)
       : trimmed;
-  const characters = Array.from(stemSource);
-  const stem = characters
-    .map((character, index) => {
-      if (character !== "\u200c" && character !== "\u200d") return character;
-      const adjacentLetterOrMark = /^[\p{L}\p{M}]$/u;
-      return adjacentLetterOrMark.test(characters[index - 1] ?? "") &&
-        adjacentLetterOrMark.test(characters[index + 1] ?? "")
-        ? character
-        : "\ufffd";
-    })
-    .join("")
-    .replace(/(?:(?!\u200c|\u200d)[^\p{L}\p{M}\p{N}._-])+/gu, "_")
-    .replace(/^\.+/, "")
-    .replace(/^_+|_+$/g, "");
-  let boundedStem = stem;
-  if (stem.length > 80) {
-    boundedStem = "";
-    if (typeof Intl.Segmenter === "function") {
-      const segments: string[] = [];
-      for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
-        stem,
-      )) {
-        if (boundedStem.length + segment.length > 80) break;
-        segments.push(segment);
-        boundedStem += segment;
-      }
-      // A joiner belongs with its following character even if the segmenter
-      // groups it with the preceding grapheme.
-      if (/[\u200c\u200d]\p{M}*$/u.test(boundedStem)) {
-        segments.pop();
-        boundedStem = segments.join("");
-      }
-    }
+  const stem = boundedStem(
+    stemSource
+      .replace(UNSAFE_RUN, "_")
+      .replace(/^\.+/, "")
+      .replace(/^_+|_+$/g, ""),
+  ).replace(/(?:\u200c|\u200d)\p{M}*$/u, "");
+  return `${stem && !/^(?:\p{M}|_|\u200c|\u200d)+$/u.test(stem) ? stem : "attachment"}${ext}`;
+}
+
+function boundedStem(stem: string): string {
+  if (stem.length <= STEM_MAX_LENGTH || typeof Intl.Segmenter !== "function") {
+    return truncatePlainText(stem, STEM_MAX_LENGTH);
   }
-  return `${boundedStem && !/^[\p{M}_\u200c\u200d]+$/u.test(boundedStem) ? boundedStem : "attachment"}${ext}`;
+  let end = 0;
+  for (const { index, segment } of new Intl.Segmenter(undefined, {
+    granularity: "grapheme",
+  }).segment(stem)) {
+    if (index + segment.length > STEM_MAX_LENGTH) break;
+    end = index + segment.length;
+  }
+  return stem.slice(0, end);
 }
