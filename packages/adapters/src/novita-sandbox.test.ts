@@ -191,6 +191,16 @@ describe("Novita computer backend", () => {
     expect(desktop.files.read).not.toHaveBeenCalled();
   });
 
+  it("rejects a file that grew past maxBytes after the size check", async () => {
+    const { provider, computer, desktop } = await started();
+    await provider.writeFile(computer, { path: "growing", content: new Uint8Array(4) }, ctx);
+    vi.mocked(desktop.files.read).mockResolvedValueOnce(new Uint8Array(5));
+    await expect(provider.readFile(computer, "growing", ctx, { maxBytes: 4 })).rejects.toThrow(
+      "exceeds 4 bytes",
+    );
+    expect(await provider.readFile(computer, "growing", ctx, { maxBytes: 4 })).toHaveLength(4);
+  });
+
   it("uses token-protected view and control sessions for multiple bot screens", async () => {
     const { provider, computer } = await started();
     const first = await provider.connectScreen(computer, { view: "stream" }, ctx);

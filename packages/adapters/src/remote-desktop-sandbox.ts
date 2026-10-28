@@ -396,7 +396,12 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
           throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
         }
       }
-      return desktop.files.read(target, { format: "bytes", signal: context.signal });
+      const content = await desktop.files.read(target, { format: "bytes", signal: context.signal });
+      // The file can grow between the size check and the read.
+      if (options?.maxBytes !== undefined && content.byteLength > options.maxBytes) {
+        throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
+      }
+      return content;
     });
   }
 
