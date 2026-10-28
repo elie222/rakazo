@@ -122,6 +122,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das Modell hat sein Ausgabelimit erreicht, bevor es die Antwort fertig geschrieben hat.",
   "The model returned an unusable response. Try again.":
     "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut.",
+  "This connection's request limit is too small. Choose another model.":
+    "Das Anfragelimit dieser Verbindung ist zu niedrig. Wähle ein anderes Modell.",
   "This model's context window is too small. Choose another model.":
     "Das Kontextfenster dieses Modells ist zu klein. Wähle ein anderes Modell.",
   "{provider} took too long to respond. Try again.":

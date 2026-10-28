@@ -114,6 +114,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Модель достигла лимита вывода, не закончив ответ.",
   "The model returned an unusable response. Try again.":
     "Модель вернула непригодный ответ. Попробуйте ещё раз.",
+  "This connection's request limit is too small. Choose another model.":
+    "Лимит запроса этого подключения слишком мал. Выберите другую модель.",
   "This model's context window is too small. Choose another model.":
     "Контекстное окно этой модели слишком мало. Выберите другую модель.",
   "{provider} took too long to respond. Try again.":

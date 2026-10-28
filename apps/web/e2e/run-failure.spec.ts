@@ -174,6 +174,24 @@ test("a model too small for required instructions offers a model change", async 
   await captureScreenshot(page, testInfo, "required-context-model-recovery");
 });
 
+test("a connection request limit offers a model change", async ({ page }, testInfo) => {
+  await signup(page, `request-limit-${Date.now()}@rakazo.test`, "password12", "Request Limit");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run with a connection request limit");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText(
+    "This connection's request limit is too small. Choose another model.",
+    { timeout: 30_000 },
+  );
+  await expect(error).not.toContainText("context window");
+  await expect(error.getByTestId("composer-error-action")).toHaveText("Choose a model");
+  await captureScreenshot(page, testInfo, "connection-request-limit-recovery");
+  await error.getByTestId("composer-error-action").click();
+  await expect(page.getByTestId("bot-settings")).toBeVisible();
+});
+
 test("a reply cut off at the output limit offers a model change", async ({ page }, testInfo) => {
   await signup(page, `cut-reply-run-${Date.now()}@rakazo.test`, "password12", "Cut Reply Run");
   await completeOnboarding(page);

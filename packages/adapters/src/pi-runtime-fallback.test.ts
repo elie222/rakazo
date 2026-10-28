@@ -12,7 +12,7 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
-import { normalizeRunError } from "@rakazo/core";
+import { MODEL_REQUEST_LIMIT_ERROR, normalizeRunError } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -2559,6 +2559,55 @@ describe("Pi runtime output reservation recovery", () => {
 });
 
 describe("Pi runtime account request ceilings", () => {
+  it.each([false, true])(
+    "handles a provider budget below mandatory context without retrying it (backup: %s)",
+    async (withBackup) => {
+      const targetModel = model("groq", "fixture-small-account", 32_768);
+      providerState.models.set(
+        `${targetModel.provider}/${targetModel.id}`,
+        targetModel as unknown as Record<string, unknown>,
+      );
+      const input = {
+        ...request(
+          withBackup ? [{ provider: backupA.provider, id: backupA.id, apiKey: "fixture-key" }] : [],
+        ),
+        model: { provider: targetModel.provider, id: targetModel.id, apiKey: "fixture-key" },
+        instructions: "Synthetic required instructions. ".repeat(200),
+      };
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          target.provider === "groq"
+            ? message(
+                target,
+                [],
+                "error",
+                '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large on tokens per minute (TPM): Limit 2000, Requested 3000, reduce your message size."}',
+              )
+            : message(target, [{ type: "text", text: "Ready" }], "stop"),
+        ),
+      );
+      if (withBackup) {
+        await expect(run(input)).resolves.toContainEqual(
+          expect.objectContaining({ type: "done", text: "Ready" }),
+        );
+        expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+          "groq",
+          backupA.provider,
+        ]);
+      } else {
+        await expect(run(input)).rejects.toMatchObject({
+          name: "ModelAccountError",
+          message: MODEL_REQUEST_LIMIT_ERROR,
+        });
+        expect(providerState.stream).toHaveBeenCalledOnce();
+      }
+      expect(providerState.delay).not.toHaveBeenCalled();
+      expect(input.executeTool).not.toHaveBeenCalled();
+      expect(input.model).not.toHaveProperty("contextWindow");
+    },
+  );
+
   it("rebuilds a rejected Groq context once without changing saved/requested settings", async () => {
     const targetModel = model("groq", "fixture-limited", 32_768);
     providerState.models.set(

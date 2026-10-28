@@ -12,7 +12,12 @@ import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-s
 import type { AgentRunRequest, ConnectorTool } from "@rakazo/adapter-kit";
 import { isRetryableProviderUnavailable, isTransientModelError } from "@rakazo/adapter-kit";
 import type { ModelBackupOutcome } from "@rakazo/core";
-import { abortableDelay, MODEL_OUTPUT_CUT_ERROR, MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
+import {
+  abortableDelay,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
@@ -489,6 +494,7 @@ export function fallbackAwareModelStream(
           if (event.type === "error") {
             recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;
+            let requestLimitTooSmall = false;
             const hasTerminalVisibleOutput = assistantHasVisibleOutput(event.error);
             if (
               !sawVisibleOutput &&
@@ -504,17 +510,37 @@ export function fallbackAwareModelStream(
                 target.model.contextWindow,
               );
               if (contextWindow !== undefined && Date.now() - startedAt < timeoutMs) {
-                state.onContextLimit(contextWindow);
-                getLogger().info("model.context_limit.reduced", {
-                  runId: state.request.runId,
-                  provider: target.config.provider,
-                  model: target.config.id,
-                  contextWindow,
+                const requiredContext = requestContext();
+                const minimumInput = estimateModelContextTokens({
+                  ...requiredContext,
+                  messages: requiredContext.messages.filter((message) => message.role === "system"),
                 });
-                sizingFailure = event;
-                buffered = [];
-                restart = true;
-                break;
+                const outputReserve = effectiveOutputReserve(contextWindow, sentMaxTokens);
+                requestLimitTooSmall = minimumInput >= contextWindow - outputReserve;
+                getLogger().info(
+                  requestLimitTooSmall
+                    ? "model.context_limit.refused"
+                    : "model.context_limit.reduced",
+                  {
+                    runId: state.request.runId,
+                    provider: target.config.provider,
+                    model: target.config.id,
+                    contextWindow,
+                  },
+                );
+                if (requestLimitTooSmall) {
+                  terminalEvent = {
+                    ...event,
+                    error: { ...event.error, errorMessage: MODEL_REQUEST_LIMIT_ERROR },
+                  };
+                  recordFailure(target, MODEL_REQUEST_LIMIT_ERROR);
+                } else {
+                  state.onContextLimit(contextWindow);
+                  sizingFailure = event;
+                  buffered = [];
+                  restart = true;
+                  break;
+                }
               }
               const affordable = affordableOpenRouterOutput(
                 target.config.provider,
@@ -572,11 +598,11 @@ export function fallbackAwareModelStream(
               event.reason === "error" &&
               !signalAborted() &&
               state.isProviderFailure(event.error) &&
-              isRetryableProviderUnavailable(event.error)
+              (requestLimitTooSmall || isRetryableProviderUnavailable(event.error))
             ) {
               state.primaryFailure ??= sanitizeProviderError(
                 target.config.provider,
-                event.error.errorMessage ?? "Model request failed.",
+                terminalEvent.error.errorMessage ?? "Model request failed.",
               );
               const next = await resolveNext(target);
               if (failIfAborted(target)) return;

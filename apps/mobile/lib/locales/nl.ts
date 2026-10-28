@@ -115,6 +115,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "Het model bereikte zijn uitvoerlimiet voordat het antwoord af was.",
   "The model returned an unusable response. Try again.":
     "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw.",
+  "This connection's request limit is too small. Choose another model.":
+    "De aanvraaglimiet van deze verbinding is te laag. Kies een ander model.",
   "This model's context window is too small. Choose another model.":
     "Het contextvenster van dit model is te klein. Kies een ander model.",
   "{provider} took too long to respond. Try again.":

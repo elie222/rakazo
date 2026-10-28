@@ -106,6 +106,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{provider} denied access to this model.": "{provider}拒绝了对此模型的访问。",
   "The model hit its output limit before finishing its reply.": "模型在完成回复前达到了输出上限。",
   "The model returned an unusable response. Try again.": "模型返回了无法使用的回复。请重试。",
+  "This connection's request limit is too small. Choose another model.":
+    "此连接的请求限额过低。请选择其他模型。",
   "This model's context window is too small. Choose another model.":
     "此模型的上下文窗口太小。请选择其他模型。",
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",

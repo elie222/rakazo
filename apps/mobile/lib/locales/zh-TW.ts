@@ -98,6 +98,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{provider} denied access to this model.": "{provider} 拒絕了對此模型的存取。",
   "The model hit its output limit before finishing its reply.": "模型在完成回覆前達到了輸出上限。",
   "The model returned an unusable response. Try again.": "模型回傳了無法使用的回覆，請再試一次。",
+  "This connection's request limit is too small. Choose another model.":
+    "此連線的請求額度過低。請選擇其他模型。",
   "This model's context window is too small. Choose another model.":
     "此模型的上下文視窗太小。請選擇其他模型。",
   "{provider} took too long to respond. Try again.": "{provider} 回應超時。請重試。",

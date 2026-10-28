@@ -5534,6 +5534,11 @@ msgstr "這臺電腦"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "This connection's request limit is too small. Choose another model."
+msgstr "此連線的請求額度過低。請選擇其他模型。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
 msgstr "此對話對模型來說太長了。重試無濟於事。請開始新的聊天或縮短你的訊息。"
 

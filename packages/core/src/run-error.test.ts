@@ -11,6 +11,7 @@ import {
   MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
   modelFallbackFailure,
   normalizeRunError,
@@ -336,14 +337,17 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });
 
-    it("asks for another model when instructions and tools fill its window", () => {
-      expect(normalizeRunError(MODEL_CONTEXT_TOO_SMALL_ERROR)).toEqual({
-        summary: MODEL_CONTEXT_TOO_SMALL_ERROR,
-        details: MODEL_CONTEXT_TOO_SMALL_ERROR,
-        kind: "context",
-        recovery: "model",
-      });
-    });
+    it.each([MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_REQUEST_LIMIT_ERROR])(
+      "offers another model for an unusable request budget: %s",
+      (details) => {
+        expect(normalizeRunError(details)).toEqual({
+          summary: details,
+          details,
+          kind: "context",
+          recovery: "model",
+        });
+      },
+    );
 
     it("says a reply was cut off at the output limit, with the model's fix", () => {
       expect(normalizeRunError(MODEL_OUTPUT_CUT_ERROR)).toEqual({
@@ -357,7 +361,7 @@ describe("normalizeRunError", () => {
     it("treats a request over the plan's token window as too long", () => {
       expect(
         normalizeRunError(
-          '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM): Limit 8000, Requested 9000."}',
+          '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large for model `fixture-model` on tokens per minute (TPM): Limit 2000, Requested 3000."}',
         ),
       ).toMatchObject({ kind: "context" });
     });
@@ -402,6 +406,9 @@ describe("normalizeRunError", () => {
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
+      '503: {"message":"Unsupported model fixture-model"}',
+      '400: {"message":"Unsupported model parameter: fixture_option"}',
+      '400: {"message":"Unknown model setting: fixture_option"}',
       "TypeError: Cannot read properties of undefined (reading 'content')",
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
@@ -759,6 +766,9 @@ describe("the one action that fixes a failed run", () => {
     '400: {"message":"example/model:batch cannot be used with the chat/completions endpoint.","code":400,"param":"model"}',
     "The 'example-model' model is not supported when using Codex with a ChatGPT account.",
     "Validation error: This model doesn't support the image field for user messages. Remove image and try again.",
+    '400: {"code":"400","message":"Unsupported model fixture-model"}',
+    '400: {"error":{"message":"Unknown model: fixture-model"}}',
+    '400: {"message":"Unrecognized model fixture-model"}',
   ])("offers another model when the provider cannot run it: %s", (details) => {
     expect(action(details)).toMatchObject({
       summary: "Your model provider can't run this model.",

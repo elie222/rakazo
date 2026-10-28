@@ -5533,6 +5533,11 @@ msgstr "esta computadora"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "This connection's request limit is too small. Choose another model."
+msgstr "El límite de solicitud de esta conexión es demasiado bajo. Elige otro modelo."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
 msgstr "Esta conversación es demasiado larga para el modelo. Volver a intentarlo no servirá. Inicia un chat nuevo o acorta tu mensaje."
 

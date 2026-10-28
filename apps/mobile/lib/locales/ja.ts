@@ -26,6 +26,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "モデルが返信を書き終える前に出力上限に達しました。",
   "The model returned an unusable response. Try again.":
     "モデルが利用できない応答を返しました。もう一度お試しください。",
+  "This connection's request limit is too small. Choose another model.":
+    "この接続のリクエスト上限が小さすぎます。別のモデルを選択してください。",
   "This model's context window is too small. Choose another model.":
     "このモデルのコンテキストウィンドウは小さすぎます。別のモデルを選択してください。",
   "{provider} denied access to this model.": "{provider}がこのモデルへのアクセスを拒否しました。",
