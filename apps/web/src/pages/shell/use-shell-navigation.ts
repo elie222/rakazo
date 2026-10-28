@@ -46,14 +46,14 @@ export function useShellNavigation() {
   // effect, which should only restart when the active bot changes).
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
-  /** Picking the thread for a bare or stale route keeps an overlay the URL asked for. */
+  /** Automatic route repair preserves overlays without counting as newer user navigation. */
   const redirectKeepingOverlay = useCallback(
     (pathname: string) =>
-      navigate(
+      guardedNavigate(
         { pathname, search: shellOverlaySearch(searchParamsRef.current) },
         { replace: true },
       ),
-    [navigate],
+    [guardedNavigate],
   );
   const overlay = readShellOverlay(searchParams);
   // Overlays replace the URL rather than adding history, so opening and closing never race a navigation.

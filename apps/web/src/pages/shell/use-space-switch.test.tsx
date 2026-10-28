@@ -3,8 +3,10 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SpaceSwitch from "../../lib/space-switch";
+import { useShellNavigation } from "./use-shell-navigation";
 import { useOpenSpaceChat } from "./use-space-switch";
 
 const state = vi.hoisted(() => ({
@@ -85,6 +87,36 @@ afterEach(() => {
 });
 
 describe("pending space switches", () => {
+  it("keeps a switch when an empty space automatically redirects to the same route", async () => {
+    window.history.replaceState({ idx: 0 }, "", "/app");
+    let redirect!: ReturnType<typeof useShellNavigation>["redirectKeepingOverlay"];
+    function NavigationHarness() {
+      const navigation = useShellNavigation();
+      redirect = navigation.redirectKeepingOverlay;
+      open = useOpenSpaceChat({
+        ...navigation,
+        bootstrapSpaceId: "old-space",
+        userId: "user",
+        closeMobileSidebar: () => {},
+      });
+      return null;
+    }
+    act(() =>
+      root.render(
+        <BrowserRouter>
+          <NavigationHarness />
+        </BrowserRouter>,
+      ),
+    );
+    act(() => open("new-space", "/app/new"));
+    act(() => redirect("/app"));
+    await ready();
+    expect(commits).toHaveLength(1);
+    act(() => expect(commits[0]!()).toBe(true));
+    expect(window.location.pathname).toBe("/app/new");
+    expect(state.select).toHaveBeenCalledWith("new-space");
+  });
+
   it("does not carry an overlay that was already open before switching", async () => {
     window.history.replaceState({ idx: 0 }, "", "/app/old?skills");
     act(() => open("new-space", "/app/new"));

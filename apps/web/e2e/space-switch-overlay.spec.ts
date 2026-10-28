@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 for (const closeBeforeSwitch of [false, true]) {
   test(`a Skills dialog ${closeBeforeSwitch ? "closed" : "opened"} during a space switch stays ${closeBeforeSwitch ? "closed" : "open"}`, async ({
@@ -7,11 +7,7 @@ for (const closeBeforeSwitch of [false, true]) {
   }, testInfo) => {
     await signup(page, `space-overlay-${Date.now()}@rakazo.test`, "password12", "Space Owner");
     await completeOnboarding(page);
-    const response = await page.request.post("/rpc/spaces/create", {
-      data: { json: { name: "Second space" } },
-    });
-    expect(response.ok()).toBe(true);
-    const { json: space } = (await response.json()) as { json: { id: string } };
+    const space = await rpc<{ id: string }>(page, "spaces/create", { name: "Second space" });
     const created = await page.request.post("/rpc/bots/create", {
       headers: { "x-rakazo-space-id": space.id },
       data: {
@@ -21,7 +17,8 @@ for (const closeBeforeSwitch of [false, true]) {
     expect(created.ok()).toBe(true);
     const { json: scout } = (await created.json()) as { json: { id: string } };
     await page.reload();
-    await expect(page.getByRole("button", { name: /Scout/ }).first()).toBeVisible();
+    const scoutButton = page.getByTestId("bots-sidebar").getByRole("button", { name: /^Scout/ });
+    await expect(scoutButton).toBeVisible();
 
     let release = () => {};
     let signalStarted = () => {};
@@ -39,9 +36,14 @@ for (const closeBeforeSwitch of [false, true]) {
       await route.continue();
     });
     try {
-      await page.getByRole("button", { name: /Scout/ }).first().click();
+      await scoutButton.click();
       await started;
-      await page.getByRole("button", { name: "Skills", exact: true }).click();
+      await page.getByTestId("user-menu-trigger").click();
+      await page
+        .locator('[data-slot="popover-content"]')
+        .filter({ has: page.getByTestId("account-menu-header") })
+        .getByRole("button", { name: "Skills", exact: true })
+        .click();
       const skills = page.getByRole("dialog", { name: "Skills", exact: true });
       await expect(skills).toBeVisible();
       if (closeBeforeSwitch) {
