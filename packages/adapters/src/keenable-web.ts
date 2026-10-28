@@ -86,14 +86,15 @@ export class KeenableWebProvider implements WebProvider {
   }
 
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
-    const maxChars = clampMaxChars(request.maxChars);
     const offset = clampOffset(request.offset);
-    // Keenable has no offset, so the skipped prefix still crosses the transport's size limit.
-    if (offset + maxChars > KEENABLE_MAX_READ_CHARS) {
+    // Keenable cannot skip, so the whole prefix has to stay inside the transport limit.
+    const room = KEENABLE_MAX_READ_CHARS - offset;
+    if (room <= 0) {
       throw new Error(
         `Keenable can read the first ${KEENABLE_MAX_READ_CHARS} characters of a page.`,
       );
     }
+    const maxChars = Math.min(clampMaxChars(request.maxChars), room);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -113,7 +114,7 @@ export class KeenableWebProvider implements WebProvider {
     return {
       url: pageUrl,
       title: page.title?.trim().slice(0, 1_000) || pageUrl,
-      ...pageWindow(page.content.slice(offset), maxChars, offset),
+      ...pageWindow(page.content.slice(offset), maxChars, offset, KEENABLE_MAX_READ_CHARS - 1),
     };
   }
 

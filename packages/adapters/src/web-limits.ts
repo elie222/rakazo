@@ -3,6 +3,8 @@ export const MAX_WEB_SEARCH_RESULTS = 10;
 export const DEFAULT_WEB_FETCH_MAX_CHARS = 8_000;
 export const MAX_WEB_FETCH_MAX_CHARS = 50_000;
 export const MIN_WEB_FETCH_MAX_CHARS = 100;
+/** Highest offset web_fetch accepts. A keyless page fits in this many characters. */
+export const MAX_WEB_FETCH_OFFSET = 5 * 1024 * 1024;
 
 export function clampMaxResults(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -12,17 +14,33 @@ export function clampMaxResults(value: unknown): number {
 
 export function clampOffset(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const offset = Math.floor(n);
+  if (offset > MAX_WEB_FETCH_OFFSET) {
+    throw new Error(`web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.`);
+  }
+  return offset;
 }
 
-/** One window of page text, given the text from `offset` on; a cut says where to continue. */
-export function pageWindow(rest: string, maxChars: number, offset = 0) {
-  const truncated = rest.length > maxChars;
+/**
+ * Text that already starts at `offset`. A cut names the next offset when that
+ * read is still allowed, and says the read limit was reached when it is not.
+ */
+export function pageWindow(
+  rest: string,
+  maxChars: number,
+  offset = 0,
+  maxOffset = MAX_WEB_FETCH_OFFSET,
+) {
+  if (rest.length <= maxChars) return { text: rest, truncated: false };
+  const next = offset + maxChars;
+  const note =
+    maxChars > 0 && next <= maxOffset
+      ? `continue with offset ${next}`
+      : "stopped at the read limit";
   return {
-    text: truncated
-      ? `${rest.slice(0, maxChars)}\n\n[Content truncated; continue with offset ${offset + maxChars}]`
-      : rest,
-    truncated,
+    text: `${rest.slice(0, maxChars)}\n\n[Content truncated; ${note}]`,
+    truncated: true,
   };
 }
 

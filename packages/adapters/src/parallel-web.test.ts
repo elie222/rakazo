@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ParallelWebProvider } from "./parallel-web.js";
 import { parallelMcpFixture } from "./parallel-web.test-support.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
+import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -113,6 +114,17 @@ describe("optional Parallel web provider", () => {
         offset: 1_199_998,
       }),
     ).toMatchObject({ text: "aatail", truncated: false });
+  });
+
+  it("rejects an offset past the read limit before calling Parallel", async () => {
+    const peer = parallelMcpFixture();
+    expect(
+      await webFetchFromTool(createWebProvider("parallel", peer.network), context, {
+        url: "https://example.test/page",
+        offset: MAX_WEB_FETCH_OFFSET + 1,
+      }),
+    ).toEqual({ error: `web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.` });
+    expect(peer.calls).toEqual([]);
   });
 
   it("rejects a truncated serialized envelope instead of returning JSON as page text", async () => {

@@ -83,16 +83,36 @@ describe("optional Keenable web provider", () => {
     });
   });
 
-  it("refuses a window past what Keenable can return", async () => {
+  it("refuses an offset past what Keenable can return", async () => {
     const peer = keenableMcpFixture();
     expect(
       await webFetchFromTool(new KeenableWebProvider(peer.network), context, {
         url: "https://example.test/page",
         maxChars: 8_000,
-        offset: 95_000,
+        offset: 100_000,
       }),
     ).toEqual({ error: "Keenable can read the first 100000 characters of a page." });
     expect(peer.calls).toEqual([]);
+  });
+
+  it("returns the remainder when a window crosses Keenable's read limit", async () => {
+    const content = `head${"a".repeat(100_000)}`;
+    const peer = keenableMcpFixture({
+      result: textResult({ url: "https://example.test/page", title: "Source", content }),
+    });
+    expect(
+      await webFetchFromTool(new KeenableWebProvider(peer.network), context, {
+        url: "https://example.test/page",
+        maxChars: 8_000,
+        offset: 96_000,
+      }),
+    ).toEqual({
+      title: "Source",
+      url: "https://example.test/page",
+      text: `${content.slice(96_000, 100_000)}\n\n[Content truncated; stopped at the read limit]`,
+      truncated: true,
+    });
+    expect(peer.calls[0]?.arguments).toMatchObject({ max_chars: 100_001 });
   });
 
   it("asks for the text up to the requested window when reading on", async () => {

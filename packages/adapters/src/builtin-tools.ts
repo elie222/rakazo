@@ -21,6 +21,7 @@ import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
+import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
@@ -716,7 +717,9 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         offset: {
           type: "number",
-          description: "Characters to skip, to read on after a truncated fetch (default 0).",
+          minimum: 0,
+          maximum: MAX_WEB_FETCH_OFFSET,
+          description: `Characters to skip, to read on after a truncated fetch (default 0, at most ${MAX_WEB_FETCH_OFFSET}).`,
         },
       },
       required: ["url"],
