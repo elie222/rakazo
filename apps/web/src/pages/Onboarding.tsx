@@ -1001,7 +1001,7 @@ export function OnboardingPage() {
                         placeholder={
                           isOllamaCloudBaseUrl(baseUrl)
                             ? t`Ollama API key`
-                            : isCommandCodeBaseUrl(baseUrl)
+                            : compatibleApiKeyRequired(baseUrl)
                               ? t`API key`
                               : t`Optional`
                         }

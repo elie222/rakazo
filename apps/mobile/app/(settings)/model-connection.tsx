@@ -872,7 +872,7 @@ export default function ModelConnection() {
             placeholder={
               isOllamaCloudBaseUrl(baseUrl)
                 ? t("Ollama API key")
-                : isCommandCodeBaseUrl(baseUrl)
+                : compatibleApiKeyRequired(baseUrl)
                   ? t("API key")
                   : credential?.hasKey
                     ? t("Paste a replacement key")

@@ -54,7 +54,11 @@ export function ConnectionQuota({
                 const result = await rpc.models.quota({ credentialId, fresh: true });
                 client.setQueryData(queries.models.quota.queryKey(quotaInput), result);
               } catch {
-                await quota.refetch();
+                if (observation?.observedAt)
+                  client.setQueryData(queries.models.quota.queryKey(quotaInput), {
+                    ...observation,
+                    status: "stale",
+                  });
               } finally {
                 setRefreshing(false);
               }
