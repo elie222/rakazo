@@ -534,7 +534,14 @@ function openClawRoots(
     for (const asset of parsed.assets) {
       if (!asset.archivePath) continue;
       const declared = inArchive(asset.archivePath);
-      if (!declared || !paths.some((path) => path.startsWith(`${declared}/`))) throw unreadable();
+      if (
+        !declared ||
+        !paths.some(
+          (path) =>
+            path.startsWith(`${declared}/`) || (asset.kind === "config" && path === declared),
+        )
+      )
+        throw unreadable();
     }
     const workspace = parsed.assets
       .filter((asset) => asset.kind === "workspace" && asset.archivePath)
