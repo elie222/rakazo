@@ -124,17 +124,19 @@ function formatObservation(
   return result;
 }
 
+async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
+  if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
+  if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
+    return "Teaching is in progress. Stop teaching before using the computer.";
+  }
+  return undefined;
+}
+
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  if (ctx.computer.heldForTakeover) {
-    return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-  }
-  if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-    return call.finish({
-      error: "Teaching is in progress. Stop teaching before using the computer.",
-    });
-  }
+  const blocked = await screenBlocked(ctx);
+  if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
   const redactions = () => [...ctx.secrets];
@@ -225,16 +227,10 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
 /** Tools that drive the bot's computer: screen, page browser and shell. */
 export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
-    const { deps, run, context } = ctx;
+    const { deps, context } = ctx;
     const { name } = call;
-    if (ctx.computer.heldForTakeover) {
-      return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
-    }
-    if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-      return {
-        error: "Teaching is in progress. Stop teaching before using the computer.",
-      };
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return { error: blocked };
     return computerScreenToolResult(async () =>
       formatObservation(
         ctx,
@@ -243,16 +239,10 @@ export const computerTools: ToolHandlers = {
     );
   },
   async computer_act(ctx, call) {
-    const { deps, run, context } = ctx;
+    const { deps, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
-    }
-    if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-      return {
-        error: "Teaching is in progress. Stop teaching before using the computer.",
-      };
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return { error: blocked };
     const actions = parseComputerActions(args.actions);
     const visualActionKey = computerVisualActionKey(actions);
     if (unchangedVisualActionBlocked(ctx.state.screen.unchangedVisualStreak, actions)) {
@@ -434,9 +424,8 @@ export const computerTools: ToolHandlers = {
   async open_path(ctx, call) {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return call.finish({ error: blocked });
     const requestedPath = String(args.path ?? "");
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {
@@ -472,9 +461,8 @@ export const computerTools: ToolHandlers = {
   async launch_app(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return call.finish({ error: blocked });
     const application = String(args.application ?? "");
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {
