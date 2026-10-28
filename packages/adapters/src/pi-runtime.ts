@@ -69,6 +69,7 @@ import {
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
+import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -78,14 +79,15 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
-// Sent in the user's role, so marked as automated: models took the old wording for the
-// user telling them never to stop, and kept going instead of asking.
+// Sent in the user's role, so marked as automated: otherwise models read it as the user
+// telling them never to stop, and keep going instead of asking.
 export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
 );
@@ -116,7 +118,6 @@ export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
 // continue stores that sentence as the reply, and the next "continue" runs
 // tools and misses a final answer again.
 export { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
-// The executor canonicalizes checkpoint tool names with the same mapping.
 
 export interface PiAgentRuntimeOptions {
   /** Directory where Pi JSONL sessions are written. Omit to disable recording. */
@@ -202,6 +203,15 @@ export class PiAgentRuntime implements AgentRuntime {
       ? AbortSignal.any([controller.signal, context.signal])
       : controller.signal;
     const queue = createQueue();
+    let thinking = false;
+    const setThinking = (active: boolean) => {
+      const next = active && !signal.aborted;
+      if (thinking === next) return;
+      thinking = next;
+      queue.push({ type: "thinking", active: next });
+    };
+    const stopThinking = () => setThinking(false);
+    signal.addEventListener("abort", stopThinking, { once: true });
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
@@ -372,33 +382,36 @@ export class PiAgentRuntime implements AgentRuntime {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
             }
-            return reliableModelStream(
-              target.models,
-              target.model,
-              ctx,
-              withCloudflareAuth(target.config, options),
-              target.config.maxTokens,
-              () => target.credentials?.accessToken ?? target.apiKey,
-              (preparedOptions) =>
-                observedPiStream(
-                  target.models,
-                  target.model,
-                  ctx,
-                  preparedOptions,
-                  (event) => queue.push(event),
-                  target.config.callObserver ?? this.modelCallObserver,
-                  {
-                    operationKind: request.usageOperationKind ?? "answer",
-                    userId: context?.userId,
-                    runId: request.runId,
-                  },
-                  {
-                    ...usageHooks,
-                    prepareContext,
-                    onProviderError: (message) => providerFailures.add(message.content),
-                  },
-                ),
-              target.config.cacheCapabilities?.retentionMode,
+            return withPiThinkingActivity(
+              reliableModelStream(
+                target.models,
+                target.model,
+                ctx,
+                withCloudflareAuth(target.config, options),
+                target.config.maxTokens,
+                () => target.credentials?.accessToken ?? target.apiKey,
+                (preparedOptions) =>
+                  observedPiStream(
+                    target.models,
+                    target.model,
+                    ctx,
+                    preparedOptions,
+                    (event) => queue.push(event),
+                    target.config.callObserver ?? this.modelCallObserver,
+                    {
+                      operationKind: request.usageOperationKind ?? "answer",
+                      userId: context?.userId,
+                      runId: request.runId,
+                    },
+                    {
+                      ...usageHooks,
+                      prepareContext,
+                      onProviderError: (message) => providerFailures.add(message.content),
+                    },
+                  ),
+                target.config.cacheCapabilities?.retentionMode,
+              ),
+              setThinking,
             );
           },
           onContextLimit: (contextWindow) => {
@@ -461,12 +474,24 @@ export class PiAgentRuntime implements AgentRuntime {
               hasCurrentImages = true;
             for (const item of steering) {
               const images = toPiImages(item.images);
+              const text =
+                item.origin === "user"
+                  ? midTaskMessagePrompt(
+                      item.text,
+                      toolDefs.some((tool) => tool.name === "message_user"),
+                    )
+                  : midTaskMessageFromPrompt(item.text, item.origin);
               agent.steer({
                 role: "user",
-                content: images.length ? [{ type: "text", text: item.text }, ...images] : item.text,
+                content: images.length ? [{ type: "text", text }, ...images] : text,
                 timestamp: Date.now(),
               });
             }
+            // Ordered with the turn's other events, so the run can treat it as a turn boundary.
+            queue.push({
+              type: "steered",
+              fromRunUser: steering.some((item) => item.origin === "user"),
+            });
             return undefined;
           },
           initialState: {
@@ -579,9 +604,11 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "message_end") {
+            stopThinking();
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
+            stopThinking();
             finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
@@ -861,10 +888,9 @@ export class PiAgentRuntime implements AgentRuntime {
         // with a durable assistant message instead of a failed run.
         const budgetExceeded = host.toolCallBudget.exceeded;
         const terminalMessage = agent.state.messages.at(-1);
-        // pi-agent-core records ordinary provider failures as an empty assistant
-        // message (stopReason "error" / "length") and still resolves the run.
-        // state.errorMessage covers the error stop; the message itself covers a
-        // length stop and any failure that never landed on state.
+        // pi-agent-core records provider failures as an empty assistant message and
+        // still resolves the run; state.errorMessage misses length stops and failures
+        // that never landed on state.
         const providerFailure =
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
         const error = outputCutFailed
@@ -955,6 +981,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 : new Error(message),
         );
       } finally {
+        stopThinking();
+        signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
           const keepForResume =

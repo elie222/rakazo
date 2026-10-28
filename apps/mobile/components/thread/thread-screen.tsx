@@ -29,7 +29,7 @@ import { useKeyboardLayout } from "../../lib/keyboard-layout";
 import { useThemedStyles } from "../../lib/native";
 import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
-import { useThreadAttachments } from "../../lib/thread-attachments";
+import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
 import { threadHeaderClearance, threadHeaderFloats } from "../../lib/thread-edges";
 import { useThreadFeedback } from "../../lib/thread-feedback";
@@ -360,6 +360,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   });
   const { replyTarget, setReplyTarget, replyQuote, setReplyQuote, quoteTarget, setQuoteTarget } =
     composer;
+  useIncomingShareImport({
+    attachments,
+    composerRef: composer.composerRef,
+    readOnly,
+    threadKey,
+    uploadConfig,
+  });
 
   const openBot = useCallback(
     (id: string, botName: string) =>
@@ -461,6 +468,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             id: currentBot.id,
             name: currentBot.name,
             color: currentBot.color,
+            avatarSet: currentBot.avatarSet,
             status: currentBotStatus,
           },
         ]
@@ -469,6 +477,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             id: bot.botId,
             name: bot.name,
             color: bot.color,
+            avatarSet: bot.avatarSet,
             status: bot.status,
           }))
         : [];
@@ -587,7 +596,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             botId={botId}
             onCall={onCall}
             working={working}
-            sending={composer.sending}
+            sending={composer.sending || attachments.shareImporting}
             styles={styles}
             attachActions={attachments.attachActions}
             attachFrom={attachments.attachFrom}

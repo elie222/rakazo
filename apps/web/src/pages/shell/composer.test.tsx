@@ -3,7 +3,7 @@
 import { i18n } from "@lingui/core";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
-import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
+import { MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createRef } from "react";
 import type { Root } from "react-dom/client";
@@ -197,6 +197,377 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
+  it.each(["Enter", "Tab", "pointer"])(
+    "completes an inline bot at the caret with %s",
+    async (method) => {
+      const onSend = vi.fn().mockResolvedValue(true);
+      const textarea = renderComposer(onSend);
+      const original = "i need u to message @Bo and do this";
+      type(textarea, original);
+      act(() => {
+        textarea.focus();
+        textarea.setSelectionRange(original.indexOf(" and"), original.indexOf(" and"));
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      expect(container?.querySelector('[data-testid="mention-picker"]')).not.toBeNull();
+      if (method === "pointer") {
+        act(() => container?.querySelector<HTMLButtonElement>('[role="option"]')?.click());
+      } else {
+        act(() =>
+          textarea.dispatchEvent(new KeyboardEvent("keydown", { key: method, bubbles: true })),
+        );
+      }
+      expect(textarea.value).toBe("i need u to message @Bob and do this");
+      expect(textarea.selectionStart).toBe("i need u to message @Bob ".length);
+      expect(document.activeElement).toBe(textarea);
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith(
+        "i need u to message @Bob and do this",
+        [bob],
+        expect.any(String),
+      );
+    },
+  );
+
+  it("keeps repeated inline mentions in order with one routing target", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}and then @Bo`);
+    pressEnter(textarea);
+    expect(textarea.value).toBe("ask @Bob and then @Bob ");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+    expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    expect(textarea.selectionStart).toBe(textarea.value.length);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bob and then @Bob", [bob], expect.any(String));
+  });
+
+  it("removes stale routing when a selected token is renamed or deleted", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, "ask @Bobby later");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bobby later", [], expect.any(String));
+  });
+
+  it("removes mention text using the existing chip control without normalizing whitespace", () => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "ask  @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value} later`);
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
+    );
+    expect(textarea.value).toBe("ask    later");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
+  });
+
+  it("moves the caret past the full token even when completion leaves text unchanged", () => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "ask @Bob, please");
+    act(() => {
+      textarea.focus();
+      textarea.setSelectionRange(7, 7);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    pressEnter(textarea);
+    expect(textarea.value).toBe("ask @Bob, please");
+    expect(textarea.selectionStart).toBe(8);
+    expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
+  });
+
+  it("replaces a selected bot without retaining its previous routing target", async () => {
+    const bobby: ComposerMention = { kind: "bot", id: "bot-3", name: "Bobby" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, bobby] });
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    act(() => {
+      textarea.setSelectionRange(7, 7);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[role="option"][aria-label="@Bobby"]')?.click(),
+    );
+    expect(textarea.value).toBe("ask @Bobby ");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bobby", [bobby], expect.any(String));
+  });
+
+  it.each(["bot", "group"] as const)(
+    "replaces an overlapping %s name without stale routing",
+    async (kind) => {
+      const short: ComposerMention = { kind, id: "short", name: "Bob" };
+      const long: ComposerMention = { kind: "bot", id: "long", name: "Bob Smith" };
+      const onSend = vi.fn().mockResolvedValue(true);
+      const textarea = renderComposer(onSend, { mentionTargets: [short, long] });
+      type(textarea, "ask @Bo");
+      pressEnter(textarea);
+      act(() => {
+        textarea.setSelectionRange(7, 7);
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      act(() =>
+        container
+          ?.querySelector<HTMLButtonElement>('[role="option"][aria-label="@Bob Smith"]')
+          ?.click(),
+      );
+      expect(textarea.value).toBe("ask @Bob Smith ");
+      expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith("ask @Bob Smith", [long], expect.any(String));
+    },
+  );
+
+  it("replaces the full existing multiword name and preserves a separate short mention", async () => {
+    const smith: ComposerMention = { kind: "bot", id: "smith", name: "Bob Smith" };
+    const jones: ComposerMention = { kind: "bot", id: "jones", name: "Bob Jones" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, smith, jones] });
+    type(textarea, "@Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}ask @Bo`);
+    act(() =>
+      container
+        ?.querySelector<HTMLButtonElement>('[role="option"][aria-label="@Bob Smith"]')
+        ?.click(),
+    );
+    act(() => {
+      textarea.setSelectionRange(12, 12);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    act(() =>
+      container
+        ?.querySelector<HTMLButtonElement>('[role="option"][aria-label="@Bob Jones"]')
+        ?.click(),
+    );
+    expect(textarea.value).toBe("@Bob ask @Bob Jones ");
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
+    );
+    expect(textarea.value).toBe(" ask @Bob Jones ");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bob Jones", [jones], expect.any(String));
+  });
+
+  it("keeps Escape dismissal through a delayed native selection event", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend);
+    act(() => textarea.focus());
+    type(textarea, "@Bo");
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    expect(container?.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("@Bo", [], expect.any(String));
+  });
+
+  it("retires the replaced group identity when a bot has the same name", async () => {
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [group, bob] });
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    act(() => {
+      textarea.setSelectionRange(7, 7);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+    expect(textarea.value).toBe("ask @Bob ");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bob", [bob], expect.any(String));
+  });
+
+  it.each(["bot", "group"])(
+    "deleting only a same-name %s occurrence retires that target",
+    async (deleted) => {
+      const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+      const onSend = vi.fn().mockResolvedValue(true);
+      const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+      type(textarea, "ask @Bo");
+      pressEnter(textarea);
+      type(textarea, `${textarea.value}then @Bo`);
+      act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+      type(textarea, `${textarea.value}please`);
+      type(textarea, deleted === "group" ? "ask @Bob then please" : "ask then @Bob please");
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith(
+        deleted === "group" ? "ask @Bob then please" : "ask then @Bob please",
+        [expect.objectContaining(deleted === "group" ? bob : group)],
+        expect.any(String),
+      );
+      const [text, mentions] = onSend.mock.calls[0]!;
+      expect(
+        resolveComposerSendPlan({ text, mentions, hasAttachments: false }).rerouteGroupId,
+      ).toBe(deleted === "group" ? null : group.id);
+    },
+  );
+
+  it.each(["bot", "group"])(
+    "removing a same-name %s chip removes only its occurrence",
+    async (removed) => {
+      const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+      const onSend = vi.fn().mockResolvedValue(true);
+      const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+      type(textarea, "ask @Bo");
+      pressEnter(textarea);
+      type(textarea, `${textarea.value}then @Bo`);
+      act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+      act(() =>
+        container
+          ?.querySelector<HTMLButtonElement>(`[data-mention-kind="${removed}"] button`)
+          ?.click(),
+      );
+      expect(textarea.value).toBe(removed === "group" ? "ask @Bob then  " : "ask  then @Bob ");
+      pressEnter(textarea);
+      await act(async () => {});
+      expect(onSend).toHaveBeenCalledWith(
+        removed === "group" ? "ask @Bob then" : "ask  then @Bob",
+        [expect.objectContaining(removed === "group" ? bob : group)],
+        expect.any(String),
+      );
+    },
+  );
+
+  it("keeps the correct identity after deleting the first of adjacent identical tokens", async () => {
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+    type(textarea, "@Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}@Bo`);
+    act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+    act(() => {
+      textarea.setSelectionRange(0, 5);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    type(textarea, "@Bob ");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith(
+      "@Bob",
+      [expect.objectContaining(group)],
+      expect.any(String),
+    );
+    const [text, mentions] = onSend.mock.calls[0]!;
+    expect(resolveComposerSendPlan({ text, mentions, hasAttachments: false }).shouldOpenGroup).toBe(
+      true,
+    );
+  });
+
+  it("restores occurrence identity after remounting a persisted draft", async () => {
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    let textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}then @Bo`);
+    act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+    type(textarea, `${textarea.value}please`);
+    act(() => root?.render(<Composer key="restored" {...composerProps} />));
+    textarea = container!.querySelector("textarea")!;
+    expect(textarea.value).toBe("ask @Bob then @Bob please");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(2);
+    type(textarea, "ask @Bob then please");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("ask @Bob then please", [bob], expect.any(String));
+  });
+
+  it("restores text and occurrence identity together after a refused send", async () => {
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}then @Bo`);
+    act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+    type(textarea, `${textarea.value}please`);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(textarea.value).toBe("ask @Bob then @Bob please");
+    type(textarea, "ask @Bob then please");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend.mock.calls[1]?.[1]).toEqual([bob]);
+  });
+
+  it.each([
+    [0, 0, 0, 0],
+    [3, 3, 3, 3],
+    [5, 7, 4, 4],
+    [10, 13, 6, 9],
+    [2, 12, 2, 8],
+  ])("maps a selection %s..%s through chip removal", (start, end, nextStart, nextEnd) => {
+    const textarea = renderComposer(vi.fn());
+    type(textarea, "ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}one two three`);
+    act(() => {
+      textarea.setSelectionRange(start, end);
+      document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+    });
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Remove mention Bob"]')?.click(),
+    );
+    expect(textarea.value).toBe("ask  one two three");
+    expect(textarea.selectionStart).toBe(nextStart);
+    expect(textarea.selectionEnd).toBe(nextEnd);
+  });
+
+  it("restores a legacy raw same-name draft without inventing either target identity", async () => {
+    localStorage.setItem("rakazo.composerDraft.bot:bot-1", "@Bob ");
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+    expect(textarea.value).toBe("@Bob ");
+    expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(0);
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith("@Bob", [], expect.any(String));
+  });
+
+  it("sends only the bound group occurrence through cleanup after a skill prefix and whitespace trim", async () => {
+    const group: ComposerMention = { kind: "group", id: "group-bob", name: "Bob" };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, { mentionTargets: [bob, group] });
+    type(textarea, "/sum");
+    act(() =>
+      container?.querySelector<HTMLButtonElement>('[aria-label="Skill summarize"]')?.click(),
+    );
+    type(textarea, "  ask @Bo");
+    pressEnter(textarea);
+    type(textarea, `${textarea.value}then @Bo`);
+    act(() => container?.querySelectorAll<HTMLButtonElement>('[role="option"]')[1]?.click());
+    type(textarea, `${textarea.value}please`);
+    pressEnter(textarea);
+    await act(async () => {});
+    const [text, mentions] = onSend.mock.calls[0]!;
+    expect(text).toBe("/summarize\nask @Bob then @Bob please");
+    expect(resolveComposerSendPlan({ text, mentions, hasAttachments: false })).toMatchObject({
+      trimmed: "/summarize\nask @Bob then please",
+      rerouteGroupId: group.id,
+      mentionPayload: [{ kind: "bot", id: bob.id }],
+    });
+  });
+
   it.each([false, true])(
     "keeps the keyboard mention selection when targets refresh (reorder: %s)",
     (reorder) => {
@@ -295,13 +666,13 @@ describe("Composer", () => {
       );
     type(textarea, "@Bo");
     pressEnter(textarea);
-    type(textarea, "hello");
+    type(textarea, "@Bob hello");
     pressEnter(textarea);
     expect(onSend).toHaveBeenCalledWith("@Bob hello", [bob], expect.any(String));
     expect(textarea.value).toBe("");
     expect(mentionChips()).toEqual([]);
     await act(async () => finishSend(false));
-    expect(textarea.value).toBe("hello");
+    expect(textarea.value).toBe("@Bob hello");
     expect(mentionChips()).toEqual(["Bob"]);
   });
 
@@ -653,6 +1024,150 @@ it.each([false, true])(
       expect(textarea.value).toBe("typed draft dictated words");
     } finally {
       listen.mockRestore();
+    }
+  },
+);
+
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  "ignores a late dictation failure after remount (throws=%s, different chat=%s)",
+  async (throws, differentChat) => {
+    let finish!: (accepted: boolean) => void;
+    let fail!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    try {
+      const original = renderComposer(onSend, { phoneCallsEnabled: true });
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      act(() => onFinal("late dictation"));
+      type(original, "original draft");
+      act(() => root?.unmount());
+      container?.remove();
+      const draftKey = differentChat ? "bot:other-bot" : "bot:bot-1";
+      const returned = renderComposer(vi.fn(), { draftKey });
+      type(returned, "@Bo");
+      pressEnter(returned);
+      type(returned, "@Bob newer draft");
+      const saved = localStorage.getItem(`rakazo.composerDraft.${draftKey}`);
+      const bindings = localStorage.getItem(`rakazo.composerBindings.${draftKey}`);
+      await act(async () => {
+        if (throws) fail(new Error("offline"));
+        else finish(false);
+      });
+      expect(returned.value).toBe("@Bob newer draft");
+      expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe(saved);
+      expect(localStorage.getItem(`rakazo.composerBindings.${draftKey}`)).toBe(bindings);
+      if (differentChat)
+        expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("original draft");
+      act(() => root?.unmount());
+      container?.remove();
+      const reloaded = renderComposer(vi.fn(), { draftKey });
+      expect(reloaded.value).toBe("@Bob newer draft");
+      expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
+
+it("ignores dictation after switching draft keys on the same instance", async () => {
+  let finish!: (accepted: boolean) => void;
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  try {
+    const textarea = renderComposer(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+      {
+        phoneCallsEnabled: true,
+      },
+    );
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("late dictation"));
+    rerenderComposer({ draftKey: "bot:other-bot" });
+    type(textarea, "newer draft");
+    await act(async () => finish(false));
+    expect(textarea.value).toBe("newer draft");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:other-bot")).toBe("newer draft");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each([false, true])(
+  "keeps an existing binding when dictation fails (throws=%s)",
+  async (throws) => {
+    let finish!: (accepted: boolean) => void;
+    let fail!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    let onFinal!: (text: string) => void;
+    let onSnapshot!: (snapshot: {
+      status: "idle" | "listening" | "transcribing";
+      transcript: string;
+    }) => void;
+    const subscribe = vi.spyOn(dictation, "subscribe").mockImplementation((listener) => {
+      onSnapshot = listener;
+      return () => {};
+    });
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    try {
+      const textarea = renderComposer(onSend, { phoneCallsEnabled: true });
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      expect(mic).not.toBeNull();
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      act(() => {
+        onFinal("@Bob");
+        onSnapshot({ status: "listening", transcript: "" });
+        onSnapshot({ status: "idle", transcript: "" });
+      });
+      type(textarea, "@Bo");
+      pressEnter(textarea);
+      type(textarea, "@Bob");
+      act(() => {
+        textarea.focus();
+        textarea.setSelectionRange(0, 0);
+        document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+      });
+      await act(async () => {
+        if (throws) fail(new Error("offline"));
+        else finish(false);
+      });
+      expect(textarea.value).toBe("@Bob @Bob");
+      const record = JSON.parse(localStorage.getItem("rakazo.composerBindings.bot:bot-1")!);
+      expect(record.bindings).toMatchObject([{ start: 0, end: 4, mention: bob }]);
+      type(textarea, "@Bob ");
+      expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+    } finally {
+      listen.mockRestore();
+      subscribe.mockRestore();
     }
   },
 );

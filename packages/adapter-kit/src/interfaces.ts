@@ -522,12 +522,8 @@ export interface MessagingSurface {
     context: AdapterContext,
   ): Promise<MessagingInboundMessage[]>;
   /**
-   * Start the surface eagerly instead of waiting for the first inbound
-   * webhook or outbound send to touch it. Needed for adapters that pull
-   * updates themselves (e.g. Telegram in "auto"/"polling" mode, used when
-   * no public webhook URL is reachable): without an explicit call here,
-   * nothing kicks off that pull loop until something else happens to
-   * initialize the adapter first.
+   * Start eagerly. Adapters that pull updates themselves (Telegram polling when no public
+   * webhook URL is reachable) otherwise never start until a webhook or send touches them.
    */
   initialize?(): Promise<void>;
   /**
@@ -562,11 +558,8 @@ export interface WebProvider extends WebSearchProvider, WebFetchProvider {
 }
 
 /**
- * Provider-neutral page browser on the bot computer. Builtin browser_* tools
- * route here so backends (in-process page session, CDP against the computer's
- * Chrome, future adapters) can swap without changing tool names. Not a second
- * hosted browser product. Prefer this for web pages; use computer_act when the
- * page tool cannot operate or the task needs the desktop itself.
+ * Provider-neutral page browser on the bot computer, not a hosted browser product. Prefer it
+ * for web pages; use computer_act when the page tool cannot operate or the task needs the desktop.
  */
 export interface BrowserProvider {
   describe(): AdapterDescriptor<BrowserCapabilities>;
@@ -605,8 +598,8 @@ export interface CloudAgentProvider {
 }
 
 /**
- * Provider-neutral "is this tool call safe to auto-allow?" check. First used by
- * Auto Review; swap vendors without changing approval UX (pass → run, ask → card).
+ * Provider-neutral "is this tool call safe to auto-allow?" check. Swap vendors
+ * without changing approval UX (pass → run, ask → card).
  * Core runs with none configured and falls back to the LLM adapter.
  */
 export interface AutoReviewProvider {

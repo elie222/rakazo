@@ -16,7 +16,11 @@ import type { UiLocale } from "./ui-locale";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
-vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./voice", () => ({
+  createSpeechOwner: () => Symbol("SpeechOwner"),
+  speakText: vi.fn(),
+  stopSpeaking: vi.fn(),
+}));
 vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
@@ -576,6 +580,24 @@ describe("mobile call session", () => {
     expect(fake.closeCall).toHaveBeenCalledWith("bot-1", callId);
   });
 
+  it("stops the playing reply when the caller hangs up", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+    expect(getSnapshot()?.phase).toBe("speaking");
+
+    endCall();
+    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+    expect(getSnapshot()).toBeNull();
+
+    // Hanging up again with no call active must not stop speech a second time.
+    endCall();
+    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+  });
+
   it("waits for an in-flight spoken turn before closing the call server-side", async () => {
     const fake = fakes();
     const pendingSend = deferred<string | undefined>();
@@ -800,6 +822,9 @@ describe("mobile call session", () => {
     await flush();
     fake.replyWith("message-1", "It is green.");
 
+    // The replacement startCall hangs the old call up, which stops its speech. Keep that
+    // one Stop from settling the reply, so the refusal below reaches the stale catch.
+    fake.stopSpeaking.mockImplementationOnce(() => undefined);
     const secondCallId = startCall(
       { botId: "bot-1", botName: "Ada", transcribe: false },
       fake.deps,
@@ -1131,6 +1156,38 @@ describe("mobile call session on a timer", () => {
       "actually hang on",
       expect.stringMatching(/^call:/),
     );
+  });
+
+  it("keeps the bot's farewell when the barged-out reply settles late", async () => {
+    const fake = fakes({ onDevice: true });
+    const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await tick();
+    fake.hear("status please");
+    await tick();
+    fake.replyWith("message-1", "It is green.");
+    await tick();
+    expect(fake.speeches).toHaveLength(1);
+
+    // Model hosted preparation: the stop for the barge-in does not settle the speech.
+    fake.stopSpeaking.mockImplementationOnce(() => undefined);
+    fake.interim("actually hang on");
+    await tick(INTERIM_BARGE_IN_MS);
+    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+    expect(getSnapshot()?.phase).toBe("listening");
+
+    fake.endedCall(id, "Talk soon.");
+    await tick();
+    expect(fake.spoken).toEqual(["It is green.", "Talk soon."]);
+
+    // The barged-out reply settles after the farewell started: it must not hang up.
+    fake.speeches[0]?.resolve();
+    await tick();
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+
+    fake.speeches[1]?.resolve();
+    await tick();
+    expect(getSnapshot()).toBeNull();
   });
 
   it("retries the first snapshot load instead of losing the feed", async () => {

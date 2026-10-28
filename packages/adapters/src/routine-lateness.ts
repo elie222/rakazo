@@ -3,11 +3,9 @@ import { localDateTime } from "./current-time.js";
 import { routineTimerScheduledFor } from "./routine-coalescing.js";
 
 /**
- * A recurring run that starts this long after its most recent scheduled occurrence
- * is late enough that time-of-day assumptions in its prompt ("morning brief") may
- * no longer hold. Ordinary queueing and model latency stay well under it. Lateness
- * is measured from the most recent occurrence due by the start, so frequent
- * routines that simply missed ticks are not flagged and no interval scaling is needed.
+ * A recurring run that starts this long after its most recent scheduled occurrence is late
+ * enough that time-of-day assumptions in its prompt ("morning brief") may no longer hold.
+ * Measured from the most recent occurrence, so frequent routines that missed ticks are not flagged.
  */
 export const LATE_ROUTINE_RUN_MS = 15 * 60_000;
 

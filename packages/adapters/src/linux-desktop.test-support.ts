@@ -22,3 +22,36 @@ export function desktopCommandResponder() {
     return undefined;
   };
 }
+
+/** `env [NAME=value...] [-u NAME...] [--] command`, then `echo` and `printenv`. */
+export function simpleCommand(
+  argv: string[],
+  inherited: Record<string, string>,
+): { exitCode?: number; stdout?: string } {
+  const env: Record<string, string | undefined> = { ...inherited };
+  let rest = argv;
+  while (rest[0] === "env") {
+    rest = rest.slice(1);
+    while (rest.length) {
+      const [first, second] = rest;
+      if (first === "-u" && second) {
+        delete env[second];
+        rest = rest.slice(2);
+      } else if (first === "--") {
+        rest = rest.slice(1);
+        break;
+      } else if (first?.includes("=")) {
+        const [name, ...value] = first.split("=");
+        env[name!] = value.join("=");
+        rest = rest.slice(1);
+      } else break;
+    }
+  }
+  const [program, ...args] = rest;
+  if (program === "echo") return { stdout: `${args.join(" ")}\n` };
+  if (program === "printenv") {
+    const value = env[args[0] ?? ""];
+    return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
+  }
+  return {};
+}

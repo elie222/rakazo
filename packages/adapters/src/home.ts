@@ -267,7 +267,6 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     await rm(this.revisionFile(botId), { force: true });
   }
 
-  /** Marks the local copy as just used. */
   protected async touchRevision(botId: string) {
     const now = new Date();
     await utimes(this.revisionFile(botId), now, now).catch(() => undefined);
@@ -281,7 +280,6 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     );
   }
 
-  /** Records the revision the local copy holds. */
   protected async writeRevision(botId: string, revision = newRevision()) {
     const directory = path.join(this.root, "home-revisions");
     await mkdir(directory, { recursive: true });
@@ -289,7 +287,6 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return revision;
   }
 
-  /** The revision last recorded for the local copy, if any. */
   protected async localRevision(botId: string): Promise<string | undefined> {
     return readTextFile(this.revisionFile(botId), "utf8").catch((error: unknown) => {
       if (isMissing(error)) return undefined;

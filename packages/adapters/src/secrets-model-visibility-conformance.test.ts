@@ -15,11 +15,8 @@ import * as remoteMcp from "./remote-mcp.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 /**
- * Offline conformance: bot secrets and connector OAuth material must never
- * appear in model-visible tool args/results (or review/approval payloads that
- * feed the model). Prefer existing redaction/injection boundaries.
- *
- * Intentionally does not cover email OTP / magic-link / reset URL redaction.
+ * Bot secrets and connector OAuth material must never appear in model-visible tool args/results
+ * (or review/approval payloads that feed the model). Email OTP / magic-link redaction is not covered.
  */
 
 const OAUTH_ACCESS = "oauth-access-token-conformance-value";

@@ -3,7 +3,6 @@ import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
-/** Subscription states that let an organization use the product. */
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
 
 export function hasBillingAccess(status: string | null): boolean {
@@ -31,7 +30,6 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
 }
 
-/** Billing gate for runs: the organization that owns the space must have model access. */
 export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
@@ -186,7 +184,6 @@ export async function organizationForMember(
   return { organizationId: space.organizationId, isOwner: isOwnerRole(member.role) };
 }
 
-/** Organizations the user owns that have a billing customer. */
 export async function ownedBillingAccounts(
   prisma: PrismaClient,
   userId: string,

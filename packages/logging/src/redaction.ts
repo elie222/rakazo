@@ -25,6 +25,7 @@ const REDACT_KEYS = new Set([
   "api_key",
 ]);
 const SECRET_KEY = /password|secret|token|authorization|cookie|credential|apikey/;
+const TOKEN_BUDGET_KEYS = new Set(["requestedmaxtokens", "effectivemaxtokens"]);
 
 function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) return value;
@@ -54,7 +55,7 @@ function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value instanceof Date) return value;
   const output: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
-    output[key] = shouldRedactKey(key) ? REDACTED : redactValue(nested, seen);
+    output[key] = shouldRedactKey(key, nested) ? REDACTED : redactValue(nested, seen);
   }
   return output;
 }
@@ -82,7 +83,16 @@ export function redactSensitiveText(text: string): string {
     .replace(BARE_SECRET, REDACTED);
 }
 
-function shouldRedactKey(key: string): boolean {
+function shouldRedactKey(key: string, value: unknown): boolean {
   const normalized = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  // Only known numeric counters bypass token redaction; strings and containers may be secrets.
+  if (
+    TOKEN_BUDGET_KEYS.has(normalized.replaceAll("_", "")) &&
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  ) {
+    return false;
+  }
   return REDACT_KEYS.has(normalized) || SECRET_KEY.test(normalized);
 }

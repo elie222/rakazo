@@ -356,12 +356,9 @@ export function connectionsRoutes(ctx: RouterContext) {
               context.signal,
             );
             if (state && state !== input.provider) {
-              // Composio browser OAuth stores an authorization-request id in
-              // auth.state. Prefer canceling that pending request by id so the
-              // authorization URL cannot later create an untracked remote. The
-              // request id is the connected-account nanoid (INITIATED until OAuth
-              // finishes). Fall back to resolving an ACTIVE account id only when
-              // cancel is unavailable.
+              // Composio browser OAuth stores an authorization-request id in auth.state.
+              // Cancel that request by id so the authorization URL cannot later create an
+              // untracked remote; resolve an ACTIVE account id only when cancel is unavailable.
               const cancelAuthorizationRequest = (
                 connector as {
                   cancelAuthorizationRequest?: (
@@ -1023,14 +1020,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             if (shouldRestoreLocalAfterRemoteRevokeFailure(error)) {
               await restoreLocalStatus();
             } else {
-              getLogger().error(
-                "connections.revoke remote outcome uncertain; leaving local revoked",
-                error,
-                {
-                  connectionId: input.connectionId,
-                  connectorId: outcome.remote.connectorId,
-                },
-              );
+              const where = {
+                connectionId: input.connectionId,
+                connectorId: outcome.remote.connectorId,
+              };
+              const message = "connections.revoke remote outcome uncertain; leaving local revoked";
+              // The caller hung up mid-revoke: the row is already handled, nothing to report.
+              if (context.signal?.aborted) getLogger().warn(message, where);
+              else getLogger().error(message, error, where);
             }
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });

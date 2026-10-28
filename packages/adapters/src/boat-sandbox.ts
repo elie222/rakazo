@@ -399,7 +399,6 @@ export class BoatSandboxProvider implements SandboxProvider {
       });
   }
 
-  /** The saved snapshot, or undefined when the account has none by that name. */
   private async savedSnapshot(
     name: string,
     signal: AbortSignal,
@@ -739,6 +738,12 @@ export class BoatSandboxProvider implements SandboxProvider {
     const id = this.id(computer);
     try {
       await this.client.deleteSandbox(id);
+    } catch (error) {
+      // Another API key created this sandbox, so this key can never delete it. Retrying cannot
+      // help, so the computer is removed here and the sandbox is left to its creator.
+      if (!(error instanceof BoatApiError && error.code === "api_key_action_forbidden"))
+        throw error;
+      getLogger().warn("sandbox.destroy", { provider: "boat", outcome: "not_owned" });
     } finally {
       this.forget(id);
     }

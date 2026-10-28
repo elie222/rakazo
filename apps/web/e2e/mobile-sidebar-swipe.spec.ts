@@ -70,7 +70,6 @@ test("swiping inward from the mobile edge opens the bots sidebar", async ({ page
   await expect(closeNavigation).toHaveCount(0);
   await expect(edge).toHaveCSS("touch-action", "none");
 
-  // Vertical and non-edge swipes leave the sidebar closed.
   await swipe(page, [16, 420], [35, 510]);
   await expect(closeNavigation).toHaveCount(0);
   await swipe(page, [120, 420], [205, 424]);

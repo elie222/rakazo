@@ -9,6 +9,7 @@ import {
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
+  decisiveActionApprovalRules,
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
@@ -39,6 +40,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);
     expect(toolRequiresExplicitApproval("create_space")).toBe(true);
+    // The wallet owner approves every purchase on the provider's side.
+    expect(toolRequiresApproval("request_purchase", false)).toBe(false);
+    expect(toolRequiresApproval("purchase_status", false)).toBe(false);
     expect(toolRequiresExplicitApproval("save_shared_memory")).toBe(false);
     expect(toolRequiresExplicitApproval("archive_bot")).toBe(false);
   });
@@ -148,7 +152,7 @@ describe("isOwnerStartedRun", () => {
 
 describe("unattendedTriggerToolRequiresApproval", () => {
   it("forces approval for webhook-triggered local side effects", () => {
-    for (const name of ["shell", "write_file", "browser_act", "computer_act"]) {
+    for (const name of ["shell", "write_file", "browser_act", "computer_act", "request_purchase"]) {
       expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
     }
   });
@@ -162,6 +166,7 @@ describe("unattendedTriggerToolRequiresApproval", () => {
       "request_takeover",
       "run_subagent",
       "list_fleet",
+      "purchase_status",
     ]) {
       expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
     }
@@ -342,18 +347,30 @@ describe("resolveActionApproval", () => {
 });
 
 describe("planActionGate", () => {
-  const unruled = { decision: "allow" as const, source: "default" as const, matchingRules: [] };
+  const unruled = {
+    decision: "allow" as const,
+    source: "default" as const,
+    matchingRules: [],
+    decisiveRules: [],
+  };
   const allowed = {
     decision: "allow" as const,
     source: "always_allow" as const,
     matchingRules: [],
+    decisiveRules: [],
   };
   const asked = {
     decision: "ask" as const,
     source: "require_approval" as const,
     matchingRules: [],
+    decisiveRules: [],
   };
-  const blocked = { decision: "deny" as const, source: "deny" as const, matchingRules: [] };
+  const blocked = {
+    decision: "deny" as const,
+    source: "deny" as const,
+    matchingRules: [],
+    decisiveRules: [],
+  };
   const gate = (
     mode: ApprovalMode,
     overrides: Partial<Parameters<typeof planActionGate>[0]> = {},
@@ -485,6 +502,62 @@ describe("block rules", () => {
   });
 });
 
+describe("decisiveActionApprovalRules", () => {
+  const rule = (
+    effect: ActionApprovalRule["effect"],
+    matchKind: ActionApprovalRule["matchKind"],
+    matchValue: string,
+  ): ActionApprovalRule => ({ effect, matchKind, matchValue });
+
+  it("reports only the most specific rule that asked", () => {
+    const category = rule("require_approval", "category", "email");
+    const tool = rule("require_approval", "tool", "gmail_send_email");
+    const connector = rule("always_allow", "connector", "gmail");
+    const resolved = resolveActionApprovalDetail({
+      toolName: "GMAIL_SEND_EMAIL",
+      connectorKind: "gmail",
+      rules: [category, tool, connector],
+    });
+
+    expect(resolved).toMatchObject({ decision: "ask", source: "require_approval" });
+    expect(decisiveActionApprovalRules(resolved)).toEqual([tool]);
+  });
+
+  it("reports the block rule even when a narrower allow also matched", () => {
+    const block = rule("deny", "connector", "gmail");
+    const allow = rule("always_allow", "tool", "gmail_send_email");
+    const resolved = resolveActionApprovalDetail({
+      toolName: "GMAIL_SEND_EMAIL",
+      connectorKind: "gmail",
+      rules: [block, allow],
+    });
+
+    expect(resolved).toMatchObject({ decision: "deny", source: "deny" });
+    expect(decisiveActionApprovalRules(resolved)).toEqual([block]);
+  });
+
+  it("reports nothing when no saved rule decided", () => {
+    expect(
+      decisiveActionApprovalRules(
+        resolveActionApprovalDetail({
+          toolName: "GMAIL_SEND_EMAIL",
+          connectorKind: "gmail",
+          rules: [],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      decisiveActionApprovalRules(
+        resolveActionApprovalDetail({
+          toolName: "GMAIL_SEND_EMAIL",
+          connectorKind: "gmail",
+          rules: [rule("always_allow", "tool", "gmail_send_email")],
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("Composio batches", () => {
   it("lists each action a batch runs, and flags an entry that names none", () => {
     expect(
@@ -547,6 +620,36 @@ describe("Composio batches", () => {
         ],
       }),
     ).toMatchObject({ decision: "allow", source: "default" });
+  });
+
+  it("attributes a batch ask only to the action whose rule required it", () => {
+    const gmailAsk: ActionApprovalRule = {
+      effect: "require_approval",
+      matchKind: "connector",
+      matchValue: "gmail",
+    };
+    const gmailAllow: ActionApprovalRule = {
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "GMAIL_SEND_EMAIL",
+    };
+    const purchaseAsk: ActionApprovalRule = {
+      effect: "require_approval",
+      matchKind: "category",
+      matchValue: "purchase",
+    };
+
+    const resolved = resolveActionApprovalForTools({
+      tools: [
+        { name: "GMAIL_SEND_EMAIL", readOnly: false },
+        { name: "STRIPE_CREATE_CHARGE", connectorKind: "stripe", readOnly: false },
+      ],
+      rules: [gmailAsk, gmailAllow, purchaseAsk],
+    });
+
+    expect(resolved).toMatchObject({ decision: "ask", source: "require_approval" });
+    expect(resolved.matchingRules).toEqual(expect.arrayContaining([gmailAsk, purchaseAsk]));
+    expect(decisiveActionApprovalRules(resolved)).toEqual([purchaseAsk]);
   });
 });
 

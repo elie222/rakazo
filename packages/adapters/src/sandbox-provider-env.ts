@@ -7,6 +7,7 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   const requested = configured?.trim() || "docker";
   if (requested === "none") return "none";
   if (requested === "e2b" && !optional(source.E2B_API_KEY)) return "none";
+  if (requested === "novita" && !optional(source.NOVITA_API_KEY)) return "none";
   if (requested === "daytona" && !optional(source.DAYTONA_API_KEY)) return "none";
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
@@ -26,7 +27,6 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   return requested;
 }
 
-/** Remote computer credentials for the adapter factory. */
 export function sandboxProviderOptionsFromEnv(
   source: NodeJS.ProcessEnv = process.env,
 ): Pick<
@@ -34,6 +34,8 @@ export function sandboxProviderOptionsFromEnv(
   | "hostComputerUrl"
   | "hostComputerToken"
   | "e2bApiKey"
+  | "novitaApiKey"
+  | "sandboxTemplate"
   | "daytonaApiKey"
   | "daytonaApiUrl"
   | "daytonaTarget"
@@ -63,6 +65,8 @@ export function sandboxProviderOptionsFromEnv(
     hostComputerUrl: source.SANDBOX_HOST_URL,
     hostComputerToken: source.SANDBOX_HOST_TOKEN,
     e2bApiKey: source.E2B_API_KEY,
+    novitaApiKey: optional(source.NOVITA_API_KEY),
+    sandboxTemplate: optional(source.SANDBOX_TEMPLATE),
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,

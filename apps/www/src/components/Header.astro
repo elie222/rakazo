@@ -3,7 +3,7 @@ import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import { DEFAULT_LOCALE, localeHomePath } from "../i18n/locales";
 import type { Locale } from "../i18n/locales";
-import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { APP_URL, GITHUB_URL } from "../site";
 import Logo from "./Logo.astro";
 
 type Props = {
@@ -19,7 +19,8 @@ const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
 const NAV_LINKS = [
-  { href: SELF_HOST_GUIDE_PATH, label: copy.docs },
+  { href: "/docs/", label: copy.docs },
+  { href: "/integrations/", label: copy.integrations },
   { href: "/blog/", label: copy.blog },
 ];
 

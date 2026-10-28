@@ -15,6 +15,7 @@ import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
+const DEFAULT_USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo)";
 
 export type { ResolveHostname } from "./network-address.js";
 
@@ -102,9 +103,76 @@ export async function fetchSafeWebBytes(
   url: string,
   options: SafeWebFetchOptions = {},
 ): Promise<SafeWebResponse<Uint8Array>> {
+  return withSafeEgress(options, ({ baseFetch, resolve, dispatcher, signal }) =>
+    followRedirects(url, {
+      baseFetch,
+      resolve,
+      dispatcher,
+      maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
+      userAgent: options.userAgent ?? DEFAULT_USER_AGENT,
+      headers: options.headers,
+      signal,
+      redirectsRemaining: options.maxRedirects ?? MAX_REDIRECTS,
+      truncate: options.truncate ?? false,
+      allowedPorts: options.allowedPorts,
+    }),
+  );
+}
+
+export interface SafeHttpResponse {
+  url: string;
+  status: number;
+  headers: Headers;
+  /** At most `maxBytes`; `truncated` when the body went on. */
+  body: Uint8Array;
+  truncated: boolean;
+}
+
+/**
+ * One request with any method. A redirect is returned, never followed, so a body or payment
+ * is only ever sent to the URL it was meant for.
+ */
+export async function fetchSafeHttpRequest(
+  url: string,
+  request: { method: string; headers?: Record<string, string>; body?: string },
+  options: Omit<SafeWebFetchOptions, "headers" | "maxRedirects" | "truncate"> = {},
+): Promise<SafeHttpResponse> {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  return withSafeEgress(options, async ({ baseFetch, resolve, dispatcher, signal }) => {
+    const validated = await assertSafeWebUrl(url, resolve, signal, options.allowedPorts);
+    const response = await withAbort(
+      baseFetch(validated.href, {
+        method: request.method,
+        redirect: "manual",
+        signal,
+        headers: { "user-agent": options.userAgent ?? DEFAULT_USER_AGENT, ...request.headers },
+        ...(request.body !== undefined ? { body: request.body } : {}),
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent }),
+      signal,
+    );
+    const body = await readBodyPrefix(response, maxBytes + 1, signal);
+    return {
+      url: validated.href,
+      status: response.status,
+      headers: response.headers,
+      body: body.slice(0, maxBytes),
+      truncated: body.byteLength > maxBytes,
+    };
+  });
+}
+
+async function withSafeEgress<T>(
+  options: SafeWebFetchOptions,
+  run: (egress: {
+    baseFetch: typeof globalThis.fetch;
+    resolve: ResolveHostname;
+    dispatcher: Agent;
+    signal: AbortSignal;
+  }) => Promise<T>,
+): Promise<T> {
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
   const baseFetch = fetchPairedWithDispatcher(options.fetch);
   const dispatcher = new Agent({
     connect: { lookup: createAddressCheckedLookup(resolve, assertPublicAddresses) },
@@ -121,18 +189,7 @@ export async function fetchSafeWebBytes(
   const destroy = options.destroy ?? (() => dispatcher.destroy());
 
   try {
-    return await followRedirects(url, {
-      baseFetch,
-      resolve,
-      dispatcher,
-      maxBytes,
-      userAgent: options.userAgent ?? "Rakazo/0.1 (+https://github.com/elie222/rakazo)",
-      headers: options.headers,
-      signal,
-      redirectsRemaining: options.maxRedirects ?? MAX_REDIRECTS,
-      truncate: options.truncate ?? false,
-      allowedPorts: options.allowedPorts,
-    });
+    return await run({ baseFetch, resolve, dispatcher, signal });
   } finally {
     // Race graceful close against the shared deadline. Do not wait unbounded on close().
     await withAbort(cleanup(), signal).catch(() => undefined);

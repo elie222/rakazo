@@ -99,7 +99,9 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
@@ -413,6 +415,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           agentSkills,
           initialBotCommandEnvironment,
           savedLoginPasswordRedactions,
+          purchaseRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -449,6 +452,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
+          deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
         ]);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
@@ -465,7 +469,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
         // A login filled in an earlier run may still be on its page, and anything this run reads
         // or is given may contain it, so every run hides its saved passwords before the model runs.
-        runSecrets.push(...savedLoginPasswordRedactions);
+        runSecrets.push(...savedLoginPasswordRedactions, ...purchaseRedactions);
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(
           initialBotCommandEnvironment,
         );
@@ -869,9 +873,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           .join("\n\n");
         const graphical =
           computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        // Gate on the model this run will actually call — the pair written to the run row
-        // above. Deriving it a second time here dropped the deployment fallback, so a
-        // vision-capable default was gated as "scripted" and lost its screenshot tools.
+        // Gate on the pair written to the run row above; re-deriving it would drop the
+        // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
           runModelProvider,
           runModelId,
@@ -886,6 +889,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
+          : false;
+        const paymentWallet = deps.paymentWallet;
+        const paymentWalletEnabled = paymentWallet
+          ? await paymentWalletConnected(
+              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+              run.userId,
+            )
           : false;
         const messagingContext = hasMessagingIdentity
           ? [messagingDmSurfaceNote(), messagingChannelRun ? messagingChannelPrivacyBlock() : null]
@@ -957,6 +967,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            paymentWalletEnabled,
             messagingChannelRun,
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,

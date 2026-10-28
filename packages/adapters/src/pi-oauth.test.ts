@@ -534,11 +534,7 @@ describe("resolveModelAuth account-change guard", () => {
     toAuth: async (current: OAuthCredential) => ({ apiKey: current.access }),
   });
 
-  // Wire the retire hook the way the executor does around
-  // retireModelCredential: the failed credential state becomes a
-  // matchesFailedOAuthSecret predicate over the secret row's current
-  // ciphertext, and the delete only runs while the row still matches. Without
-  // the failed state there is no fence and the delete proceeds.
+  // Wired the way the executor does around retireModelCredential.
   const fencingRetire =
     (row: () => string, deleteCredential: () => void) =>
     async (

@@ -11,10 +11,9 @@ export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
 cd "$AGENT_HOME"
 
-# This script is PID 1. Without a handler, PID 1 ignores SIGTERM and `docker stop` waits its
-# full grace period before killing the container, so every stop, sleep and computer switch
-# took ten seconds. Install the handler before any child starts so a stop during startup is
-# honoured too: forward the signal to the desktop processes and exit promptly.
+# This script is PID 1, which ignores SIGTERM without a handler, so `docker stop` would wait out
+# its grace period. Install the handler before any child starts so a stop during startup is
+# honoured too.
 XVFB_PID=""
 shutdown() {
   trap - TERM INT

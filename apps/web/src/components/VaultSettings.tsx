@@ -1,11 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
+import type {
+  BotSecretMetadata,
+  LoginFieldInput,
+  SettingsScope,
+  VaultRevealed,
+} from "@rakazo/contracts";
 import {
   BotSecretName,
   commandVariableName,
   commandVariableProblem,
   encodeLoginSecret,
   isIdentityConfirmationRequired,
+  LoginSecretValue,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
@@ -19,6 +25,7 @@ import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
 import { InfoTooltip } from "./InfoTooltip";
+import { LoginFieldsEditor } from "./LoginFields";
 
 type ReadableCredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 type CredentialAuthType = ReadableCredentialAuth["type"];
@@ -29,11 +36,6 @@ const fieldLabelClass = "mt-3 block text-[14px] text-muted-foreground";
 /** How long a shown value stays on screen. */
 export const REVEAL_MS = 30_000;
 const REVEAL_CANCELLED = new Error("Reveal cancelled");
-
-/** The stored value: a website login is saved as one encoded username and password pair. */
-function credentialPlaintext(type: CredentialAuthType, username: string, value: string) {
-  return type === "login" ? encodeLoginSecret({ username, password: value }) : value;
-}
 
 /** A command variable has no site, so its destination carries no origin. */
 function credentialDestination(name: string, origin: string, auth: ReadableCredentialAuth) {
@@ -68,7 +70,11 @@ export function VaultSettings({
   const [replacing, setReplacing] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
   // Protected fields: held only in component state and cleared on every submit or cancel.
-  const [loginUsername, setLoginUsername] = useState("");
+  const newLogin = (): LoginFieldInput[] => [
+    { label: t`Username`, value: "", hidden: false },
+    { label: t`Password`, value: "", hidden: true },
+  ];
+  const [login, setLogin] = useState(newLogin);
   const [value, setValue] = useState("");
   // A shown value lives only here, never in the query cache, and hides itself after a while.
   const [revealed, setRevealed] = useState<Revealed | null>(null);
@@ -100,7 +106,7 @@ export function VaultSettings({
 
   function clearProtectedFields() {
     setValue("");
-    setLoginUsername("");
+    setLogin(newLogin());
     hideRevealed();
   }
 
@@ -170,17 +176,11 @@ export function VaultSettings({
     origin?: string;
     auth: ReadableCredentialAuth;
   }) {
-    const username = loginUsername.trim();
-    const secretValue = value;
+    if (!valueReady(destination.auth.type)) return false;
+    const plaintext =
+      destination.auth.type === "login" ? encodeLoginSecret({ fields: login }) : value;
     clearProtectedFields();
     setError(null);
-    let plaintext: string;
-    try {
-      plaintext = credentialPlaintext(destination.auth.type, username, secretValue);
-    } catch {
-      setError(t`Enter a username and password`);
-      return false;
-    }
     setBusy(true);
     try {
       await rpc.vault.put({ scope, destination, value: plaintext });
@@ -235,25 +235,12 @@ export function VaultSettings({
     }
   }
 
-  const loginFields = (type: CredentialAuthType, testIdPrefix: string) => (
-    <>
-      {type === "login" ? (
-        <label htmlFor={`${ids}-${testIdPrefix}-username`} className={fieldLabelClass}>
-          <Trans>Username</Trans>
-          <Input
-            id={`${ids}-${testIdPrefix}-username`}
-            data-testid={`${testIdPrefix}-username`}
-            // "off" is ignored for username fields; this stops browsers saving the pair.
-            autoComplete="new-password"
-            spellCheck={false}
-            value={loginUsername}
-            onChange={(event) => setLoginUsername(event.target.value)}
-            className="mt-1.5"
-          />
-        </label>
-      ) : null}
+  const secretFields = (type: CredentialAuthType, testIdPrefix: string) =>
+    type === "login" ? (
+      <LoginFieldsEditor fields={login} disabled={busy} onChange={setLogin} />
+    ) : (
       <label htmlFor={`${ids}-${testIdPrefix}-value`} className={fieldLabelClass}>
-        {type === "login" ? <Trans>Password</Trans> : <Trans>Value</Trans>}
+        <Trans>Value</Trans>
         <Input
           id={`${ids}-${testIdPrefix}-value`}
           data-testid={`${testIdPrefix}-value`}
@@ -265,11 +252,10 @@ export function VaultSettings({
           className="mt-1.5"
         />
       </label>
-    </>
-  );
+    );
 
   const valueReady = (type: CredentialAuthType) =>
-    value.length > 0 && (type !== "login" || loginUsername.trim().length > 0);
+    type === "login" ? LoginSecretValue.safeParse({ fields: login }).success : value.length > 0;
 
   const nameValid = BotSecretName.safeParse(name.trim()).success;
   // Shown live while a command variable is named, so a reserved name is caught before saving.
@@ -425,18 +411,14 @@ export function VaultSettings({
                         {"value" in revealed ? (
                           <RevealedField testId="credential-revealed-value" text={revealed.value} />
                         ) : (
-                          <>
+                          revealed.fields.map((field) => (
                             <RevealedField
-                              testId="credential-revealed-username"
-                              label={t`Username`}
-                              text={revealed.username}
+                              key={field.label}
+                              testId="credential-revealed-field"
+                              label={field.label}
+                              text={field.value}
                             />
-                            <RevealedField
-                              testId="credential-revealed-password"
-                              label={t`Password`}
-                              text={revealed.password}
-                            />
-                          </>
+                          ))
                         )}
                       </div>
                     ) : null}
@@ -448,7 +430,7 @@ export function VaultSettings({
                           void submitReplace(secret);
                         }}
                       >
-                        {loginFields(readableAuth.type, "credential-replace")}
+                        {secretFields(readableAuth.type, "credential-replace")}
                         <div className="mt-3 flex gap-2">
                           <Button
                             type="submit"
@@ -614,7 +596,7 @@ export function VaultSettings({
                   />
                 </label>
               ) : null}
-              {loginFields(authType, "credential")}
+              {secretFields(authType, "credential")}
               <div className="mt-3 flex gap-2">
                 <Button
                   type="submit"
@@ -663,7 +645,7 @@ export function VaultSettings({
   );
 }
 
-/** One shown value with a copy button; a login shows its username and password this way. */
+/** One shown value with a copy button; a login shows each of its fields this way. */
 function RevealedField({ label, text, testId }: { label?: string; text: string; testId: string }) {
   const { t } = useLingui();
   const [copied, copy] = useCopyText();

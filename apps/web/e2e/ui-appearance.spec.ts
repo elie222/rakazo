@@ -112,12 +112,16 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
   const pillBox = await footer
     .getByRole("button", { name: "Connect apps", exact: true })
     .boundingBox();
+  const skillsBox = await footer.getByRole("button", { name: "Skills", exact: true }).boundingBox();
   expect(searchBox).toBeTruthy();
   expect(avatarBox).toBeTruthy();
   expect(pillBox).toBeTruthy();
-  if (searchBox && avatarBox && pillBox) {
+  expect(skillsBox).toBeTruthy();
+  if (searchBox && avatarBox && pillBox && skillsBox) {
     expect(avatarBox.x).toBe(searchBox.x);
-    expect(pillBox.x + pillBox.width).toBe(searchBox.x + searchBox.width);
+    // Skills is the last footer control, so it closes the row at the search field's edge.
+    expect(skillsBox.x + skillsBox.width).toBe(searchBox.x + searchBox.width);
+    expect(pillBox.x + pillBox.width).toBeLessThan(skillsBox.x);
     expect(pillBox.height).toBe(avatarBox.height);
   }
   await expect(footer.getByRole("button", { name: "Install update", exact: true })).toHaveCount(0);
@@ -128,7 +132,7 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
   await expect(page.getByRole("link", { name: "Get the mobile app", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Docs", exact: true })).toBeVisible();
   await expect(footer.locator('span[aria-hidden="true"] > span')).toHaveCount(3);
-  if (avatarBox && pillBox) {
+  if (avatarBox && skillsBox) {
     await expect
       .poll(async () => {
         const menuBox = await page.locator('[data-slot="popover-content"]').boundingBox();
@@ -140,7 +144,7 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
           }
         );
       })
-      .toEqual({ x: avatarBox.x, width: pillBox.x + pillBox.width - avatarBox.x, gap: 8 });
+      .toEqual({ x: avatarBox.x, width: skillsBox.x + skillsBox.width - avatarBox.x, gap: 8 });
   }
   await captureScreenshot(page, testInfo, "sidebar-footer-menu");
   await page.keyboard.press("Escape");
@@ -209,6 +213,7 @@ test("sidebar footer keeps the account identity readable and installs a ready de
   await expect(page.getByText("New update available", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
   await expect(footer.locator('span[aria-hidden="true"] > span')).toHaveCount(3);
+  await expect(footer.getByRole("button", { name: "Skills", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "sidebar-footer-menu-update");
   await page.keyboard.press("Escape");
   await footer.getByRole("button", { name: "Install update", exact: true }).click();
@@ -244,7 +249,6 @@ test("sidebar footer keeps the account identity readable and installs a ready de
   await updateButton.evaluate((el) => el.blur());
 
   // Width changes must drop marks before taking space from the label or padding.
-  // Measure the fixed controls and label, then target the middle of each band.
   // Marks need 26px initially and 22px per additional mark, leaving 11px margin.
   const fixedWidth = await pill.evaluate((el) => {
     const style = getComputedStyle(el);

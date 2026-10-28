@@ -18,7 +18,6 @@ const SPEECH_LOCALE_TAGS = {
 
 export type SpeechLocale = keyof typeof SPEECH_LOCALE_TAGS;
 
-/** The tag the recognizer needs for a supported UI locale. */
 export function speechLocaleTag(locale: SpeechLocale): string {
   return SPEECH_LOCALE_TAGS[locale];
 }

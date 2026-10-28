@@ -74,16 +74,35 @@ describe("integration provider settings", () => {
     ).rejects.toThrow("Could not verify these credentials");
     expect(f.rows.get("composio")).toBe(before);
   });
-  it("returns no tools or catalog for unconfigured providers", async () => {
+  it("declines routeless lookups for unconfigured providers but still requires setup for routed calls", async () => {
     const f = fixture();
     for (const provider of f.settings.providers()) {
       expect(await provider.catalog(context)).toEqual([]);
       expect(await provider.discoverTools(context)).toEqual([]);
+      const call = { tool: "mcp__demo__read", args: {}, executionId: "watch" };
+      await expect(provider.resolveCall?.(call, context)).resolves.toBeUndefined();
+      await expect(
+        provider.resolveCall?.(
+          { ...call, route: { connectorId: provider.describe().id, toolName: "read" } },
+          context,
+        ),
+      ).rejects.toThrow("Set up an integration provider");
       await expect(
         provider.begin({ provider: "slack", redirectUrl: "https://example.test" }, context),
       ).rejects.toThrow("Set up an integration provider");
     }
     expect(f.factory).not.toHaveBeenCalled();
+  });
+  it("propagates configured provider resolution errors", async () => {
+    const f = fixture();
+    const error = new Error("Tool access denied");
+    const resolveCall = vi.fn().mockRejectedValue(error);
+    f.adapter.resolveCall = resolveCall;
+    await f.settings.save({ provider: "composio", apiKey: "fake-key" }, context);
+    const provider = f.settings.providers().find((entry) => entry.describe().id === "composio")!;
+    const call = { tool: "read", args: {}, executionId: "watch" };
+    await expect(provider.resolveCall?.(call, context)).rejects.toBe(error);
+    expect(resolveCall).toHaveBeenCalledWith(call, context);
   });
   it("warms directories only for configured providers", async () => {
     const f = fixture();

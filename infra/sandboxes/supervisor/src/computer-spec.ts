@@ -74,20 +74,9 @@ export function resolveSpaceComputerLimit(
 }
 
 /**
- * Resource ceilings for a bot computer.
- *
- * A computer runs Xvfb, a window manager and a full Chromium on behalf of an
- * agent that decides for itself what to open. #343 gave these containers a
- * pids ceiling, but Memory and NanoCpus are still unset, so one runaway page is
- * a host-wide memory and CPU event that takes every other bot and the Rakazo
- * services down with it. Every service in docker-compose.prod.yml already
- * carries mem_limit; this applies the same discipline to the containers that
- * actually run untrusted page content.
- *
- * Defaults are a starting point for the Docker computer topology: generous enough
- * for real browsing, small enough that one computer cannot starve the host or
- * sibling bots. The pids default is #343's existing 2048, unchanged. Set any of
- * these to "0", "none" or "unlimited" to opt out.
+ * Resource ceilings for a bot computer, which runs untrusted page content: one
+ * runaway page must not starve the host or sibling bots. Set any of these to
+ * "0", "none" or "unlimited" to opt out.
  */
 const DEFAULT_COMPUTER_MEMORY = "2g";
 const DEFAULT_COMPUTER_CPUS = "2";
@@ -155,7 +144,6 @@ function envOrDefault(name: string, fallback: string): string {
   return raw === undefined || raw.trim() === "" ? fallback : raw;
 }
 
-/** The host resource ceilings applied to every bot computer. */
 export function computerResourceLimits() {
   const memoryBytes = parseMemoryBytes(
     "RAKAZO_COMPUTER_MEMORY",
@@ -261,7 +249,6 @@ export function computerNetworkOwnerFor(
   return createHash("sha256").update(root).digest("hex").slice(0, 32);
 }
 
-/** docker.createNetwork payload for a bot's computer network. */
 export function computerNetworkCreateOptions(
   botId: string,
   owner: string,
@@ -460,7 +447,7 @@ export function computerNetworkNameFor(botId: string) {
   return `rakazo-computer-${sanitizeIdentifier(botId).slice(0, 32)}-${hash}`;
 }
 
-/** Current and prior network names used by this PR, for delete cleanup. */
+/** Current and prior network names, for delete cleanup. */
 export function computerNetworkNamesForCleanup(botId: string) {
   const safe = sanitizeIdentifier(botId);
   const digest = createHash("sha256").update(botId).digest("hex");

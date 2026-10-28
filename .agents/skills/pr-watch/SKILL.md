@@ -77,6 +77,9 @@ do not mutate external checks without authorization.
 Judge each on merits. Review bots are confidently wrong often enough to check,
 and a wrong fix is worse than a declined comment.
 
+- The flagged code should not exist (unrun harness, speculative path, scope the
+  PR does not need) → remove it, validate, and reply that it was removed.
+  Do not build more code to satisfy a finding about code that should go.
 - Valid → fix, validate, then reply with what changed.
 - Wrong → reply with the evidence that refutes it: the line of code, the
   upstream source, the behaviour on the base branch.

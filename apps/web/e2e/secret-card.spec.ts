@@ -218,17 +218,19 @@ async function openSecretCard(page: Page, name: string, prompt: string) {
   await expect(card).toBeVisible({ timeout: 15_000 });
   // Every save is rejected, so one card takes many answers; each is recorded as sent.
   const answers: string[] = [];
+  const loginAnswers: Array<{ label: string; value: string; hidden: boolean }[]> = [];
   const dismissals: boolean[] = [];
   await page.route("**/rpc/threads/answer", async (route) => {
-    const { answer, dismiss } = route.request().postDataJSON().json;
+    const { answer, fields, dismiss } = route.request().postDataJSON().json;
     answers.push(answer);
+    if (fields) loginAnswers.push(fields);
     dismissals.push(dismiss === true);
     await route.fulfill({
       status: 400,
       json: { json: { defined: false, code: "BAD_REQUEST", status: 400, message: "rejected" } },
     });
   });
-  return { card, answers, dismissals, stamp };
+  return { card, answers, loginAnswers, dismissals, stamp };
 }
 
 test("saves a multi-line command variable exactly as pasted", async ({
@@ -397,13 +399,20 @@ test("keeps other secret cards on one line", async ({ page, context }) => {
 });
 
 test("keeps a website login password on one line", async ({ page, context }) => {
-  const { card, answers } = await openSecretCard(page, "login", "show a login card");
+  const { card, loginAnswers } = await openSecretCard(page, "login", "show a login card");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await card.getByLabel("Username").fill("someone");
+  await card.getByLabel("Username", { exact: true }).fill("someone");
   await page.evaluate(() => navigator.clipboard.writeText("pass-one\npass-two"));
   await card.getByLabel("Password", { exact: true }).click();
   await page.keyboard.press("ControlOrMeta+v");
   await expect(card.getByLabel("Password", { exact: true })).not.toHaveAttribute("readonly");
   await card.getByRole("button", { name: "Save", exact: true }).click();
-  await expect.poll(() => answers).toEqual(["pass-one pass-two"]);
+  await expect
+    .poll(() => loginAnswers)
+    .toEqual([
+      [
+        { label: "Username", value: "someone", hidden: false },
+        { label: "Password", value: "pass-one pass-two", hidden: true },
+      ],
+    ]);
 });

@@ -38,7 +38,7 @@ import { vi } from "vitest";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
 import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import { desktopCommandResponder } from "./linux-desktop.test-support.js";
+import { desktopCommandResponder, simpleCommand } from "./linux-desktop.test-support.js";
 import { workspaceArchive } from "./workspace-archive.test-support.js";
 
 /** How a sandbox in the `error` state answers `POST /recover`, per the Boat API reference. */
@@ -119,7 +119,6 @@ export class FakeBoatApi implements BoatSandboxSdk {
   private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
   private startsExhausted = false;
   private rejectAll?: { status: number; code: string; message: string };
-  /** Every create request, in order. */
   readonly creates: CreateSandboxRequest[] = [];
   /** Saved snapshots; the current computer snapshot is ready unless a test removes it. */
   readonly savedSnapshots = new Map<string, SavedSnapshot>([
@@ -619,39 +618,6 @@ export class FakeBoatApi implements BoatSandboxSdk {
     if (argv.length !== parsed.length) return finished({});
     return finished(simpleCommand(argv, box.env));
   }
-}
-
-/** `env [NAME=value...] [-u NAME...] [--] command`, then `echo` and `printenv`. */
-function simpleCommand(
-  argv: string[],
-  inherited: Record<string, string>,
-): Partial<CommandResponse> {
-  const env: Record<string, string | undefined> = { ...inherited };
-  let rest = argv;
-  while (rest[0] === "env") {
-    rest = rest.slice(1);
-    while (rest.length) {
-      const [first, second] = rest;
-      if (first === "-u" && second) {
-        delete env[second];
-        rest = rest.slice(2);
-      } else if (first === "--") {
-        rest = rest.slice(1);
-        break;
-      } else if (first?.includes("=")) {
-        const [name, ...value] = first.split("=");
-        env[name!] = value.join("=");
-        rest = rest.slice(1);
-      } else break;
-    }
-  }
-  const [program, ...args] = rest;
-  if (program === "echo") return { stdout: `${args.join(" ")}\n` };
-  if (program === "printenv") {
-    const value = env[args[0] ?? ""];
-    return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
-  }
-  return {};
 }
 
 function listing(

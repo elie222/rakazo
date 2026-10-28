@@ -38,6 +38,7 @@ import {
 } from "./computer-workspace.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
 import { removePiBotSessions } from "./pi-session.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -343,7 +344,7 @@ export async function archiveBot(
     });
     if (dedicated) {
       await tx.computer.updateMany({
-        where: { id: dedicated.id, state: { not: "running" } },
+        where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
         data: { state: "stopped" },
       });
     }
@@ -670,6 +671,8 @@ async function releaseTeamComputerScreen(
       ...(options?.cancelRunWork ? { cancelRunWork: true } : {}),
     });
   } catch (error) {
+    // No browser runs on a sandbox that is gone, so only its stored profile is left to remove.
+    if (isSandboxGoneError(error)) return { ...computer, providerRef: null };
     getLogger().error("team screen release", error);
     if (error instanceof BrowserStoppedReleaseError) return computer;
     return null;
@@ -688,7 +691,14 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos", "kubernetes"]);
+const REMOTE_TEAM_SANDBOX_KINDS = new Set([
+  "e2b",
+  "novita",
+  "daytona",
+  "boat",
+  "createos",
+  "kubernetes",
+]);
 
 /**
  * Whether only the server writes this computer's stored home. A Kubernetes computer that

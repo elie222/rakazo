@@ -75,7 +75,7 @@ When the screen shows a connection error, check whether `computer.screenUrl` suc
 
 ## E2B backend
 
-The E2B adapter uses `@e2b/desktop` for machine lifecycle, shell commands, files, and port URLs. Every bot desktop uses the shared Linux runtime, including the first bot. Its X display, screenshots, input, and view/control transports follow the same lifecycle as the other managed providers.
+The E2B adapter uses `@e2b/desktop` and the Novita adapter uses `novita-sandbox` for machine lifecycle, shell commands, files, and port URLs. Every bot desktop uses the shared Linux runtime, including the first bot. Its X display, screenshots, input, and view/control transports follow the same lifecycle as the other managed providers.
 
 ## Daytona backend
 

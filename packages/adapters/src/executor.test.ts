@@ -11,11 +11,17 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { createRunExecutor as createExecutor } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
+import {
+  filterImageReturningComputerTools,
+  IMAGE_RETURNING_COMPUTER_TOOLS,
+  modelAcceptsImageInput,
+} from "./model-vision.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
-import { modelsForRequest } from "./pi-runtime-models.js";
+import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime-models.js";
 import {
   dockerComputerToolInstruction,
   persistentComputerInstruction,
@@ -3685,6 +3691,84 @@ description: Prepare standup notes
       expect.objectContaining({ waitMs: expect.any(Number) }),
     );
   });
+
+  it.each([true, false])(
+    "keeps a live-only Codex model's image support aligned with the account catalog (%s)",
+    async (supportsImages) => {
+      const provider = "openai-codex";
+      const modelId = "gpt-6.1-terra";
+      const plaintext = JSON.stringify({
+        type: "oauth",
+        access: "access-token",
+        refresh: "refresh-token",
+        expires: Date.now() + 3_600_000,
+        accountId: "acct-live",
+      });
+      const prisma = {
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: provider,
+            modelId,
+            thinkingLevel: null,
+          })),
+        },
+        userModelPreference: {
+          findFirst: vi.fn(async () =>
+            modelPreference({
+              provider,
+              secretId: "secret-codex",
+              modelId,
+            }),
+          ),
+        },
+        userModelCredential: {
+          findMany: vi.fn(async () => []),
+          findFirst: vi.fn(async () => null),
+        },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        secret: {
+          findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
+          findUnique: vi.fn(async () => null),
+        },
+      } as unknown as PrismaClient;
+      const read = vi.fn(async () => [
+        {
+          slug: modelId,
+          reasoningEfforts: ["low"],
+          supportsImages,
+          supportsFastTier: false,
+        },
+      ]);
+      const executor = createRunExecutor({
+        prisma,
+        secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+        codexCatalog: { read },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+      const model = await executor.resolveModel({
+        userId: "user-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+      });
+
+      expect(model).toMatchObject({ provider, id: modelId, acceptsImages: supportsImages });
+      expect(modelAcceptsImageInput(provider, modelId, model?.acceptsImages)).toBe(supportsImages);
+      expect(
+        resolveRuntimeModel({
+          provider,
+          id: modelId,
+          acceptsImages: model?.acceptsImages,
+        }).model?.input.includes("image"),
+      ).toBe(supportsImages);
+      const names = filterImageReturningComputerTools(
+        builtinAgentTools,
+        Boolean(model && modelAcceptsImageInput(provider, modelId, model.acceptsImages)),
+      ).map((tool) => tool.name);
+      for (const name of IMAGE_RETURNING_COMPUTER_TOOLS) {
+        expect(names.includes(name)).toBe(supportsImages);
+      }
+    },
+  );
 
   it("still rejects Codex Spark when the live catalog omits it", async () => {
     const provider = "openai-codex";

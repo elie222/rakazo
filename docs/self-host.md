@@ -31,7 +31,7 @@ run `bash install-images.sh`. Flags may be combined in either order: `--prepare-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
+`SANDBOX_PROVIDER` to `e2b`, `novita`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
@@ -401,6 +401,8 @@ SMTP_URL=smtps://smtp-user:replace-with-password@smtp.example.com:465
 EMAIL_FROM=Rakazo <no-reply@example.com>
 ```
 
+Set `EMAIL_REPLY_TO` to send replies somewhere other than `EMAIL_FROM`.
+
 `EMAIL_PROVIDER=smtp` is optional: an existing `SMTP_URL` continues to select SMTP when no provider
 is specified. `EMAIL_PROVIDER=none` disables external sending. Explicit provider settings take
 precedence over an old `SMTP_URL`; incomplete or unknown provider configurations fail at startup.
@@ -633,7 +635,7 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, boat. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
@@ -645,6 +647,7 @@ MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
 BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
+NOVITA_API_KEY=           # when SANDBOX_PROVIDER=novita; build its template first
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
@@ -1063,7 +1066,7 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
+  Optional: set `e2b`, `novita`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -1245,6 +1248,17 @@ A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that
 as omitted homes. Database or archive errors fail the backup. Discard the output directory of
 any failed run.
 
+## Moving an account between installs
+
+To move from Rakazo Cloud to your own install (or back), use **Settings → Export data** on the
+old install and **Import data** on the new one. The export is a zip of every space you belong
+to: bots, chats, files, memory, routines, skills, bot workspace files and, in spaces you own,
+the board. Content is decrypted inside the zip, so keep it private. Importing creates new
+spaces you own. Routines arrive switched off. Credentials and connections (model keys, apps,
+MCP servers, messaging) stay behind, so connect them again on the new install. Workspace files
+over 8 MiB are left out, the export must stay under 4 GiB, and the upload must finish within
+the server's request timeout (5 minutes by default in Node).
+
 ## Public single-VM deployment
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
@@ -1292,7 +1306,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
-# e2b, daytona, or boat
+# e2b, novita, daytona, or boat
 SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
@@ -1569,6 +1583,97 @@ settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. 
 `infra/compose/deploy-main.sh` from `origin/main`, so deploy changes apply on the next deploy; only
 a change to the launcher itself needs
 `sudo install -m 0755 infra/compose/deploy-launcher.sh /usr/local/sbin/rakazo-deploy-main`.
+
+#### Point-in-time recovery
+
+The nightly backup can lose up to a day. Point-in-time recovery streams the database's write-ahead
+log (WAL) to S3-compatible object storage and takes a base backup every 24 hours, so the database
+can be restored to any moment in the last `PITR_RETAIN_DAYS` (default `7`) and a lost server costs
+about a minute of writes. It covers the database only; keep the nightly backup for application
+data. It is off by default and needs the production Compose file with Postgres 18.
+
+The optional `pitr` service streams WAL with `pg_receivewal` over the internal `data` network,
+using a replication-only login and a replication slot, and uploads from its own network, so
+Postgres keeps no internet access. Postgres closes a WAL segment at least every minute while
+anything is written (`archive_timeout`). Each segment and base backup is encrypted with
+[age](https://age-encryption.org) to public recipients before it leaves the container, as the
+nightly backup is, so the server cannot read its own backups. You can use the same recipients.
+
+The slot keeps WAL that has not reached the sidecar, so a sidecar restart leaves no gap. Disk use
+stays bounded if uploads stall: the sidecar holds at most `PITR_MAX_WAL_GB` (default `4`) of
+compressed WAL waiting to upload, then pauses streaming, and Postgres keeps at most that much again
+for the slot (`max_slot_wal_keep_size`). Beyond that Postgres drops the slot's WAL, recovery has a
+gap, and the sidecar takes a new base backup once it reconnects.
+
+Use a bucket of its own. Its credentials need to list, read, write and delete objects in it;
+deletes only remove backups older than the retention window. With `PITR_RETAIN_DAYS=0` nothing is
+deleted, so no delete permission is needed and the bucket's lifecycle rules handle expiry. Add to
+`.env`:
+
+```env
+COMPOSE_PROFILES=pitr
+PITR_DATABASE_PASSWORD=replace-with-openssl-rand-hex-24
+PITR_BUCKET=example-rakazo-pitr
+PITR_ENDPOINT=https://s3.example.com
+PITR_REGION=example-region
+PITR_ACCESS_KEY_ID=replace-me
+PITR_SECRET_ACCESS_KEY=replace-me
+PITR_AGE_RECIPIENTS=age1exampleprimaryrecipient age1examplerecoveryrecipient
+# Optional: PITR_PREFIX (a key prefix), PITR_PATH_STYLE=true (path-style bucket addressing),
+# PITR_RETAIN_DAYS, PITR_MAX_WAL_GB.
+```
+
+`COMPOSE_PROFILES` is comma-separated; with the updater it is `updater,pitr`. Leave `PITR_ENDPOINT`
+unset for AWS S3. Then turn it on from the checkout:
+
+```bash
+sudo infra/compose/pitr.sh enable
+```
+
+This creates the `rakazo_pitr` replication login, allows it in `pg_hba.conf`, sets
+`archive_timeout` and `max_slot_wal_keep_size`, and reloads Postgres without restarting it. The
+sidecar then takes its first base backup. Run `enable` again after changing `PITR_DATABASE_PASSWORD`
+or `PITR_MAX_WAL_GB`, or after moving Postgres to a new cluster. Uploads are grouped by the
+cluster's system identifier, so a new cluster never overwrites an old one's WAL.
+
+The sidecar's health check fails when an upload has waited over ten minutes, streaming is paused,
+nothing is streaming from the slot, or the last base backup is over 30 hours old. With
+`RAKAZO_MONITOR_COMPOSE_PROJECT` set, the host check alerts on it. For details:
+
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.prod.yml exec pitr rakazo-pitr health
+```
+
+Restores run on any machine with Docker and this checkout. The identity comes on stdin and stays in
+memory inside the restore container. Prove the latest point restores, into a scratch volume that is
+removed afterwards:
+
+```bash
+sudo infra/compose/pitr.sh drill < rakazo-backup.key
+```
+
+Away from the server, set `PITR_ENV_FILE` to a file holding only the `PITR_` storage settings. To
+recover production to a moment, stop everything that writes to the database and restore into its
+volume. The current cluster is moved aside inside the volume, not deleted. The time is read as UTC
+unless it names a zone:
+
+```bash
+COMPOSE="sudo docker compose --env-file .env -f infra/compose/docker-compose.prod.yml"
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE stop api worker web pitr postgres"
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && sudo infra/compose/pitr.sh restore '2026-01-31 09:41:00+00' rakazo-prod_postgres" \
+  < rakazo-backup.key
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait"
+```
+
+The restore uses the newest base backup that finished before the target, replays WAL up to it, and
+promotes the result, which starts a new timeline; the sidecar takes a fresh base backup for it. Pause
+CI deploys during recovery. Once the restored database checks out, remove the old cluster:
+`$COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf "$PGDATA".before-restore-*'`.
+
+To turn it off, remove `pitr` from `COMPOSE_PROFILES`, then run `sudo infra/compose/pitr.sh disable`.
+It removes the sidecar, the slot (so Postgres stops keeping WAL for it), the login and the
+settings. Uploaded backups stay in the bucket.
 
 #### Host audit trail
 

@@ -68,7 +68,6 @@ export interface MessagingPlatform {
   isPermanentSendError?: (error: unknown) => boolean;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
-  /** Group display name from the raw inbound payload. */
   channelName?: (raw: unknown) => string | null;
   /** User-facing transport carried by the raw message when it differs from the provider. */
   transport?: (raw: unknown) => string | null;

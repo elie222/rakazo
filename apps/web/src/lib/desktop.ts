@@ -31,13 +31,10 @@ export function oauthStateOf(verificationUri: string): string | undefined {
 }
 
 /**
- * Desktop sign-in redirects to a loopback URL the renderer never sees.
- * The main process captures the code there so the browser flow's
- * copy-and-paste step can be skipped. No-ops in a browser.
- *
- * Pass the attempt's state to ignore codes captured for any other attempt.
- * Providers whose authorize URL carries no state cannot be correlated, so
- * their codes are accepted as before.
+ * Desktop sign-in redirects to a loopback URL the renderer never sees, so the main process
+ * captures the code there and the copy-and-paste step can be skipped. No-ops in a browser.
+ * Providers whose authorize URL carries no state cannot be correlated, so their codes are
+ * always accepted.
  */
 export function onDesktopOAuthCallback(
   listener: (code: string) => void,

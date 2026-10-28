@@ -5,7 +5,6 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  expandAdvancedSection,
   expectCardWidth,
   realSandboxTimeout,
   rpc,
@@ -177,11 +176,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     /Gmail[\s\S]*Google Calendar[\s\S]*Google Drive[\s\S]*Slack[\s\S]*Notion/,
   );
   await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add custom", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem")).toHaveCount(0);
   await expect(page.getByText("Tool sources", { exact: true })).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
@@ -258,32 +254,22 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
 
-  const advanced = page.getByTestId("integrations-advanced");
-  const browseMcp = page.getByRole("button", { name: "Browse MCP servers", exact: true });
-  await expect(browseMcp).toBeHidden();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
-  await expandAdvancedSection(advanced);
-  await expect(
-    advanced.getByRole("button", { name: "Browse MCP servers", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Manage MCP servers", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add MCP server", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Executor", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
-  await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
-  await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
-  // Catalog Search is optional chrome; add buttons stay MCP → OpenAPI → GraphQL → Executor → Treg.
-  const advancedActions = advanced.getByTestId("integrations-advanced-add").locator("button");
-  await expect(advancedActions).toHaveCount(5);
-  await expect(advancedActions.nth(0)).toHaveText("Add MCP server");
-  await expect(advancedActions.nth(1)).toHaveText("Add OpenAPI");
-  await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
-  await expect(advancedActions.nth(3)).toHaveText("Add Executor");
-  await expect(advancedActions.nth(4)).toHaveText("Add Treg");
+  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor → Treg.
+  await page.getByRole("button", { name: "Add custom", exact: true }).click();
+  const addItems = page.getByRole("menuitem");
+  await expect(addItems).toHaveText([
+    "From GitHub",
+    "MCP server",
+    "OpenAPI",
+    "GraphQL",
+    "Executor",
+    "Treg",
+    "Browse MCP servers",
+    "Search by domain",
+    "Manage MCP servers",
+  ]);
   await captureScreenshot(page, testInfo, "01-graphql-advanced-order");
+  await page.getByRole("menuitem", { name: "Search by domain", exact: true }).click();
 
   const feed = page.getByTestId("integrations-catalog-feed");
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
@@ -302,56 +288,56 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();
-  await expect(page.getByPlaceholder("Display name")).toHaveValue("GitHub");
-  await expect(page.getByPlaceholder("https://example.com/mcp")).toHaveValue(
-    "https://mcp.example.test/mcp",
-  );
-  await expect(page.locator("select")).toHaveValue("bearer");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-
-  await page.getByRole("button", { name: "Add Treg", exact: true }).click();
-  await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP\s*https:\/\/treg\.to\/mcp\/\s*Credential saved/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser MCP");
-  await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP\s*https:\/\/mcp\.example\.test\/mcp\s*No auth/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser API");
+  const form = page.getByTestId("integrations-source-form");
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue("GitHub");
+  await expect(form.getByLabel("URL", { exact: true })).toHaveValue("https://mcp.example.test/mcp");
+  await expect(form.getByLabel("Authentication", { exact: true })).toHaveValue("bearer");
+  await form.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
   await page
-    .getByPlaceholder("https://example.com/openapi.json")
-    .fill("https://api.example.test/openapi.json");
-  await page.locator("select").selectOption("bearer");
-  await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/API\s*https:\/\/api\.example\.test\/v1\s*Credential saved/),
-  ).toBeVisible();
+    .getByTestId("integrations-catalog-feed")
+    .getByRole("button", { name: "Back", exact: true })
+    .click();
 
-  await page.getByRole("button", { name: "Add Executor", exact: true }).click();
-  await expect(page.getByPlaceholder("Display name")).toHaveValue("Executor");
-  await page
-    .getByPlaceholder("https://executor.example/mcp")
-    .fill("https://executor.example.test/mcp");
-  await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(
-    page.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp\s*Credential saved/),
-  ).toBeVisible();
+  const addSource = async (item: string) => {
+    await page.getByRole("button", { name: "Add custom", exact: true }).click();
+    await page.getByRole("menuitem", { name: item, exact: true }).click();
+  };
+  const toolSources = page.getByTestId("tool-sources");
+
+  await addSource("Treg");
+  await form.getByLabel("Treg token", { exact: true }).fill("fake-treg-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/treg\.to\/mcp\//)).toBeVisible();
+
+  await addSource("MCP server");
+  await form.getByLabel("Name", { exact: true }).fill("Browser MCP");
+  await form.getByLabel("URL", { exact: true }).fill("https://mcp.example.test/mcp");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/mcp\.example\.test\/mcp/)).toBeVisible();
+
+  await addSource("OpenAPI");
+  await form.getByLabel("Name", { exact: true }).fill("Browser API");
+  await form.getByLabel("URL", { exact: true }).fill("https://api.example.test/openapi.json");
+  await form.getByLabel("Authentication", { exact: true }).selectOption("bearer");
+  await form.getByLabel("Credential", { exact: true }).fill("fake-openapi-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/OpenAPI\s*https:\/\/api\.example\.test\/v1/)).toBeVisible();
+
+  await addSource("Executor");
+  await expect(form.getByLabel("Name", { exact: true })).toHaveValue("Executor");
+  await form.getByLabel("URL", { exact: true }).fill("https://executor.example.test/mcp");
+  await form.getByLabel("Executor token", { exact: true }).fill("fake-executor-browser-credential");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(toolSources.getByText(/MCP\s*https:\/\/executor\.example\.test\/mcp/)).toBeVisible();
   await captureScreenshot(page, testInfo, "11d-provider-emulators");
 
-  await page.getByRole("button", { name: "Add GraphQL", exact: true }).click();
-  await page.getByPlaceholder("Display name").fill("Browser GraphQL");
-  await page
-    .getByPlaceholder("https://example.com/graphql")
-    .fill("https://graphql.example.test/graphql");
-  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await addSource("GraphQL");
+  await form.getByLabel("Name", { exact: true }).fill("Browser GraphQL");
+  await form.getByLabel("URL", { exact: true }).fill("https://graphql.example.test/graphql");
+  await form.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
-    page.getByText(/GRAPHQL\s*https:\/\/graphql\.example\.test\/graphql\s*No auth/),
+    toolSources.getByText(/GraphQL\s*https:\/\/graphql\.example\.test\/graphql/),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "02-graphql-installed");
 

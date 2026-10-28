@@ -33,9 +33,7 @@ export function hostCredentialSource(provider: string): string {
  */
 export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-  // A row per provider that ships a deployment key. A third one adds a row here, not a
-  // branch at each call site — and an unknown provider gets no key rather than another
-  // vendor's, which a ternary on one provider would not give.
+  // An unknown provider gets no key rather than another vendor's.
   const keys: Record<string, string | undefined> = {
     openrouter: env.OPENROUTER_API_KEY,
     anthropic: env.ANTHROPIC_API_KEY,

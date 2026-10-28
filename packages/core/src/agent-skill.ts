@@ -11,7 +11,6 @@ export type SkillSource = "user" | "builtin" | "plugin";
 export type ParsedSkillMd = {
   name: string;
   description: string;
-  /** Markdown body after the frontmatter fence. */
   body: string;
   /**
    * All frontmatter keys as parsed scalars/structures. Unknown keys are preserved
@@ -62,10 +61,7 @@ export function isSkillReadOnly(source: SkillSource): boolean {
   return source === "builtin" || source === "plugin";
 }
 
-/**
- * Parse a SKILL.md document. Requires YAML frontmatter with `name` and `description`.
- * Extra frontmatter keys are kept in `frontmatter`.
- */
+/** Requires YAML frontmatter with `name` and `description`; extra keys are kept in `frontmatter`. */
 export function parseSkillMd(content: string): ParsedSkillMd | { error: string } {
   const trimmed = content.replace(/^\uFEFF/, "");
   const match = FRONTMATTER_FENCE.exec(trimmed);

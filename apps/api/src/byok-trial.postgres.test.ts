@@ -48,9 +48,14 @@ dbTests("own-key trial", () => {
   });
 
   it("grants access during the trial", async () => {
-    await service.selectFunding(actor, "byok");
+    await service.selectFunding(actor, "byok", "mobile");
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
-    expect(provider.byokCheckouts.get(customer)?.trialDays).toBe(TRIAL_DAYS);
+    // Opened from the app, checkout returns through the API to close the in-app browser.
+    expect(provider.byokCheckouts.get(customer)).toMatchObject({
+      trialDays: TRIAL_DAYS,
+      successUrl: "https://example.test/api/v1/billing/return?client=mobile",
+      cancelUrl: "https://example.test/api/v1/billing/return?client=mobile",
+    });
     provider.completeByokCheckout(customer);
     await service.sync(customer);
     await expect(service.status(actor)).resolves.toMatchObject({

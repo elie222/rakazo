@@ -22,6 +22,7 @@ import {
   createJobReconciler,
   createMessagingContextLoader,
   createModelCreditReconciler,
+  createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
   createReservedGraphileJobWorkerHost,
@@ -56,6 +57,7 @@ import {
   RunWorkerHost,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcilePurchases,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -177,10 +179,8 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  // pollInboundMessages stays false (the default) here: this process
-  // only ever sends outbound (messaging.deliver jobs). It must never poll
-  // Telegram — that would steal the single getUpdates slot away from the
-  // API process, which is the one with the inbound sink actually wired up.
+  // Never poll inbound here: Telegram allows a single getUpdates consumer,
+  // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
     (platform) => platform.provider !== "slack" || !process.env.SLACK_CLIENT_ID,
   );
@@ -234,6 +234,7 @@ async function main() {
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
+  const paymentWallet = await createPaymentWalletProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
   const pushTokens = new PrismaPushTokenStore(prisma, resolveEncryptionKey(process.env));
   const notifications = new ExpoPushProvider(pushTokens, {
@@ -294,6 +295,7 @@ async function main() {
             prisma,
             forwardSecret: userDeviceForwardSecret(resolveEncryptionKey(process.env)),
           }),
+    paymentWallet,
   });
 
   const jobHost: JobWorkerHost =
@@ -321,6 +323,7 @@ async function main() {
     deploymentModelConfigured,
     messaging,
     cloudAgent,
+    paymentWallet,
     notifications,
   });
   const reconciler = createJobReconciler({
@@ -334,6 +337,7 @@ async function main() {
       lookup: deploymentModelUsageLookup(),
     }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+    reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
       ? undefined

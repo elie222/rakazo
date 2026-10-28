@@ -23,6 +23,11 @@ import {
 import { parseSetCookieHeader } from "better-auth/cookies";
 import { emailOTP, organization } from "better-auth/plugins";
 import {
+  ACCOUNT_EXPORT_TOKEN_PREFIX,
+  consumeAccountExportToken,
+  issueAccountExportToken,
+} from "./account-export-token.js";
+import {
   accountSecurity,
   oidcProofKey,
   sessionForAuthHook,
@@ -40,6 +45,7 @@ import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-stor
 export { passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
 export type { OidcConfig } from "./oidc.js";
 export { passkeyRelyingParty } from "./passkey.js";
+export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {
   analytics?: ProductAnalytics;
@@ -63,6 +69,7 @@ export interface AuthEnv {
   afterDeleteSession?: (session: AuthSession) => Promise<void>;
   /** Runs when a password change replaces the caller's own session instead of ending it. */
   afterReplaceSession?: (previous: AuthSession, session: AuthSession) => Promise<void>;
+  afterSignIn?: (userId: string) => Promise<void>;
 }
 
 type AuthSession = { id: string; userId: string };
@@ -156,7 +163,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     verification: {
       storeIdentifier: {
         default: "plain",
-        overrides: { "reset-password:": "hashed", "delete-account-": "hashed" },
+        overrides: {
+          "reset-password:": "hashed",
+          "delete-account-": "hashed",
+          [ACCOUNT_EXPORT_TOKEN_PREFIX]: "hashed",
+        },
       },
     },
     rateLimit: authRateLimitOptions(),
@@ -502,6 +513,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }
           },
           after: async (session, ctx) => {
+            await env.afterSignIn?.(session.userId);
             env.analytics?.capture(
               session.userId,
               { name: "signed_in" },
@@ -604,9 +616,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     encryptStoredOAuthTokens: async () => encryptStoredOAuthTokens(prisma, await tokenKey()),
     ssoAvailability: () => discovery?.availability(),
     passkeyRpId: relyingParty?.rpID ?? null,
-    /** Whether this session confirmed its identity within the last few minutes. */
     hasRecentIdentityConfirmation: async (session: { sessionId: string; userId: string }) =>
       hasRecentIdentityConfirmation((await auth.$context).internalAdapter, session),
+    issueAccountExportToken: async (userId: string) =>
+      issueAccountExportToken((await auth.$context).internalAdapter, userId),
+    consumeAccountExportToken: async (token: string) =>
+      consumeAccountExportToken((await auth.$context).internalAdapter, token),
     disposeOidcDiscovery: () => discovery?.dispose(),
   });
 }

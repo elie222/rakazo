@@ -13,9 +13,8 @@ import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId, parseModelSecret } fr
 
 /**
  * The ChatGPT backend reports which Codex models a subscription account can call.
- * fx resolves `client_version` from npm `@openai/codex@latest`; we pin a recent
- * CLI release (0.159.3 includes GPT-6.1 Sol) so reads stay deterministic — bump
- * the constant to ask the backend for a newer compatibility view.
+ * `client_version` is pinned so reads stay deterministic; bump it to ask the
+ * backend for a newer compatibility view.
  */
 export const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 const CODEX_CLIENT_VERSION = "0.159.3";
@@ -32,9 +31,8 @@ const CATALOG_FAILURE_TTL_MS = 60_000;
 const CATALOG_READ_WAIT_MS = 1_500;
 /**
  * How long a last-good catalog may keep answering after its TTL while refreshes
- * keep failing. Beyond this window the account's list is distrusted entirely —
- * a model the backend removed must not stay selectable forever — and reads fall
- * back to the static catalog until a refresh finally succeeds.
+ * keep failing; beyond it reads fall back to the static catalog so a removed
+ * model does not stay selectable forever.
  */
 const CATALOG_STALE_MAX_AGE_MS = 4 * 60 * 60_000;
 
@@ -42,7 +40,8 @@ export type CodexCatalogModel = {
   slug: string;
   reasoningEfforts: string[];
   contextWindow?: number;
-  supportsImages: boolean;
+  /** Absent when the account list omits `input_modalities`. */
+  supportsImages?: boolean;
   supportsFastTier: boolean;
 };
 
@@ -53,12 +52,9 @@ export type CodexCatalogResult =
   | { status: "error"; reason: CodexCatalogFailureReason; httpStatus?: number };
 
 /**
- * Account-scoped handle for one catalog read. `accessToken` returns the bearer
- * the credential already holds, or null once it expires — the catalog path
- * never refreshes or writes credentials; the runtime's locked refresh owns all
- * token writes. When the caller supplies `onExpiredToken` (see
- * `CodexLiveReadOptions`) an expired bearer fires it so a detached refresh can
- * warm the next read; this read still gets null.
+ * `accessToken` returns the held bearer, or null once it expires: the catalog
+ * path never refreshes or writes credentials; the runtime's locked refresh owns
+ * all token writes.
  */
 export type CodexCatalogAccount = {
   accountId: string;
@@ -174,7 +170,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
     if (typeof entry.slug !== "string" || !isValidSlug(entry.slug)) return undefined;
     const reasoningEfforts = parseReasoningEfforts(entry.supported_reasoning_levels);
     const contextWindow = parseContextWindow(entry.context_window);
-    const supportsImages = stringListContains(entry.input_modalities, "image");
+    const supportsImages = parseSupportsImages(entry.input_modalities);
     const supportsFastTier = stringListContains(entry.additional_speed_tiers, "fast");
     if (
       reasoningEfforts === INVALID ||
@@ -188,7 +184,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
       slug: entry.slug,
       reasoningEfforts,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
-      supportsImages,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
       supportsFastTier,
     });
   }
@@ -219,6 +215,12 @@ function parseContextWindow(value: unknown): number | undefined | typeof INVALID
     return INVALID;
   }
   return value;
+}
+
+/** Omitted or null modalities are unknown. A present list is an explicit yes or no. */
+function parseSupportsImages(value: unknown): boolean | undefined | typeof INVALID {
+  if (value === undefined || value === null) return undefined;
+  return stringListContains(value, "image");
 }
 
 function stringListContains(value: unknown, expected: string): boolean | typeof INVALID {
@@ -287,12 +289,7 @@ export class CodexCatalogCache implements CodexLiveCatalog {
 
 export type CodexCatalogSpaceAuth = CatalogSpaceAuth;
 
-/**
- * Account handle over a stored ChatGPT OAuth credential; null without an
- * account id. An expired bearer yields null — and fires `onExpiredToken` when
- * given so the caller can kick a detached refresh through the runtime's locked
- * credential path; this read still gets no catalog.
- */
+/** Null without an account id. */
 function codexAccountHandle(
   credential: OAuthCredential,
   onExpiredToken?: () => void,
@@ -310,10 +307,25 @@ function codexAccountHandle(
 }
 
 /**
- * Whether the live catalog for the account this credential signs into lists
- * `modelId` — the selection/run-time half of the models.list overlay, consulted
- * only when the static auth gate already rejected a catalog model.
+ * The account's own row for this slug, when the catalog can be read.
+ * Missing, unreadable, and failed catalogs return undefined so callers keep
+ * the static answer instead of inventing one.
  */
+export async function codexLiveModel(
+  catalog: CodexLiveCatalog | undefined,
+  userId: string,
+  secret: StoredModelSecret,
+  modelId: string,
+  opts?: CodexLiveReadOptions,
+): Promise<CodexCatalogModel | undefined> {
+  if (!catalog || secret.kind !== "oauth") return undefined;
+  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
+  if (!account) return undefined;
+  const models = await catalog.read(userId, account, opts).catch(() => undefined);
+  return models?.find((model) => model.slug === modelId);
+}
+
+/** Consulted only when the static auth gate already rejected a catalog model. */
 export async function codexLiveListsModel(
   catalog: CodexLiveCatalog | undefined,
   userId: string,
@@ -321,21 +333,13 @@ export async function codexLiveListsModel(
   modelId: string,
   opts?: CodexLiveReadOptions,
 ): Promise<boolean> {
-  if (!catalog || secret.kind !== "oauth") return false;
-  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
-  if (!account) return false;
-  const models = await catalog.read(userId, account, opts).catch(() => undefined);
-  return Boolean(models?.some((model) => model.slug === modelId));
+  return Boolean(await codexLiveModel(catalog, userId, secret, modelId, opts));
 }
 
 /**
- * The live per-account catalog for every ChatGPT OAuth credential governing a
- * codex slot in this space, keyed by credential secret id. Credentials that are
- * unreadable, non-OAuth, or lack an account id — and reads that fail — map to no
- * entry, so their models keep the static availability (which hides Codex Spark).
- * No token refresh or credential write happens here: an expired bearer only
- * fires `opts.onExpiredToken` so the caller can kick the runtime's locked
- * refresh path, and this read still gets no catalog.
+ * Keyed by credential secret id. Unreadable, non-OAuth, or account-less
+ * credentials, and failed reads, map to no entry so their models keep the
+ * static availability (which hides Codex Spark).
  */
 export async function codexLiveCatalogsForSpace(
   prisma: PrismaClient,
@@ -375,7 +379,6 @@ export async function codexLiveCatalogsForSpace(
   return live;
 }
 
-/** Distinct secret ids of credentials governing an OAuth-kind codex slot. */
 function oauthCodexSecretIds(auth: CodexCatalogSpaceAuth): string[] {
   const ids = new Set<string>();
   if (auth.byProvider[CHATGPT_OAUTH_PROVIDER] === "oauth") {
@@ -392,15 +395,10 @@ function oauthCodexSecretIds(auth: CodexCatalogSpaceAuth): string[] {
 }
 
 /**
- * Overlay the live catalogs on the static-filtered list. A codex entry governed
- * by a ChatGPT OAuth credential is available exactly when that credential's own
- * catalog lists it — which can restore statically excluded models like Codex
- * Spark. Entries governed by an API key, by an unreadable (per-model
- * "disconnected") credential, or by a credential whose catalog could not be
- * read keep their static behavior. Live-only slugs use execution's sibling
- * fallback. The pi catalog supplies every field the endpoint lacks;
- * a catalog sharing no known static slug is
- * ignored as untrusted.
+ * A codex entry governed by a ChatGPT OAuth credential is available exactly when
+ * that credential's own catalog lists it, which can restore statically excluded
+ * models like Codex Spark. Other entries keep their static behavior. A catalog
+ * sharing no known static slug is ignored as untrusted.
  */
 export function applyCodexLiveCatalog(
   base: readonly PiCatalogEntry[],
@@ -456,9 +454,12 @@ export function applyCodexLiveCatalog(
 
 function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCatalogEntry {
   const thinkingLevels = liveThinkingLevels(model);
+  // An explicit account answer decides image input. An omitted list keeps the entry's own.
+  const withImages =
+    model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
   return thinkingLevels
-    ? { ...entry, reasoning: true, thinkingLevels }
-    : { ...entry, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withImages, reasoning: true, thinkingLevels }
+    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

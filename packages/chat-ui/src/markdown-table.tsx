@@ -29,10 +29,8 @@ import {
 export const MarkdownTableSourceContext = createContext("");
 
 /**
- * Renders a GFM markdown table as an interactive data card. Extracted plain
- * text drives sorting and export while sanitized React children preserve
- * inline markup in headers and cells. Invalid tables fall back to the default
- * <table>.
+ * Extracted plain text drives sorting and export while sanitized React children preserve
+ * inline markup. Invalid tables fall back to the default <table>.
  */
 export const MarkdownTable = memo(function MarkdownTable({
   node,

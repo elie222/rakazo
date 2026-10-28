@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { executionBlocksUserTakeover, toComputerStatus } from "./computer-status.js";
 
 describe("toComputerStatus", () => {
+  it("shows a quarantined computer as an error without making its screen available", () => {
+    expect(
+      toComputerStatus("bot", {
+        kind: "novita",
+        state: "quarantined",
+        scope: "team",
+        controlHolder: "none",
+        homeRevision: "saved",
+      }),
+    ).toMatchObject({ state: "error", screenAvailable: false });
+  });
   it("only marks control that is bound to a waiting run as a requested takeover", () => {
     const computer = {
       kind: "fake",

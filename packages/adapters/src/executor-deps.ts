@@ -11,6 +11,7 @@ import type {
   MediaGenerationProvider,
   MemoryStore,
   NotificationProvider,
+  PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
   WebProvider,
@@ -70,6 +71,8 @@ export interface ExecutorDeps {
   mcpStdio?: McpStdioPolicy;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
+  /** The deployment's payment wallet. Null/omit means purchase tools stay uninjected. */
+  paymentWallet?: PaymentWalletProvider | null;
   /** Optional Auto Review verifier. When omitted, the factory selects from env (llm | jev | scripted). */
   autoReview?: AutoReviewProvider;
   /**

@@ -44,10 +44,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         shell: bash
         run: |
-          result="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[.jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
+          result="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" | \
+            jq -r '[.[].jobs[] | select(.name == "Web E2E / Web E2E") | .conclusion] | unique | if length == 1 then .[0] else error("expected exactly one Playwright job") end')"
           case "$result" in
             success|failure) ;;
             timed_out) ;;

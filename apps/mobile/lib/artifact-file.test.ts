@@ -109,10 +109,10 @@ describe("artifactShareFileName", () => {
       "attachment.pdf",
     );
     expect(artifactShareFileName(`${"a".repeat(79)}\u200db.pdf`, "application/pdf")).toBe(
-      `${"a".repeat(78)}.pdf`,
+      `${"a".repeat(79)}.pdf`,
     );
     expect(artifactShareFileName(`${"a".repeat(78)}\u200c\u0301b.pdf`, "application/pdf")).toBe(
-      `${"a".repeat(77)}.pdf`,
+      `${"a".repeat(78)}.pdf`,
     );
   });
 
@@ -124,9 +124,24 @@ describe("artifactShareFileName", () => {
         "attachment.pdf",
       );
       expect(artifactShareFileName("short.pdf", "application/pdf")).toBe("short.pdf");
+      expect(artifactShareFileName(`${"a".repeat(90)}.pdf`, "application/pdf")).toBe(
+        `${"a".repeat(80)}.pdf`,
+      );
+      expect(artifactShareFileName(`${"a".repeat(79)}\u{1D165}b.pdf`, "application/pdf")).toBe(
+        "attachment.pdf",
+      );
+      expect(artifactShareFileName(`${"中".repeat(81)}.pdf`, "application/pdf")).toBe(
+        "attachment.pdf",
+      );
       expect(artifactShareFileName("a👩‍💻b.pdf", "application/pdf")).toBe("a_b.pdf");
     } finally {
       Object.defineProperty(Intl, "Segmenter", { configurable: true, value: segmenter });
+    }
+  });
+
+  it("matches repeated emoji and retries selectors independently", () => {
+    for (let i = 0; i < 2; i++) {
+      expect(artifactShareFileName("😀😀a😀️😀.pdf", "application/pdf")).toBe("😀😀a😀️😀.pdf");
     }
   });
 

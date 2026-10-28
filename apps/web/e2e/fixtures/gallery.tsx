@@ -294,6 +294,7 @@ const secrets: Scenario = {
           origin: "https://portal.example.test",
           auth: { type: "login" },
         },
+        loginFields: ["ID number", "Phone number", "PIN"],
         status: "pending",
       },
     ]),

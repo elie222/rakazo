@@ -102,7 +102,13 @@ export default function BotProfile() {
       />
       <View style={styles.identity}>
         {bot ? (
-          <BotAvatar color={bot.color} identity={bot.id} size={96} status={bot.status} />
+          <BotAvatar
+            color={bot.color}
+            avatarSet={bot.avatarSet}
+            identity={bot.id}
+            size={96}
+            status={bot.status}
+          />
         ) : (
           <View style={styles.avatarSpace} />
         )}

@@ -13,7 +13,6 @@ test("pasting into the composer attaches images and inserts text", async ({
   const composer = page.getByRole("combobox", { name: /Message/ });
   await expect(composer).toBeVisible();
 
-  // Plain text still pastes as text.
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.evaluate(() => navigator.clipboard.writeText("pasted words"));
   await composer.click();
@@ -21,7 +20,6 @@ test("pasting into the composer attaches images and inserts text", async ({
   await expect(composer).toHaveValue("pasted words");
   await composer.fill("");
 
-  // An image becomes an attachment.
   await page.evaluate(async () => {
     const target = document.querySelector("textarea[name='chat-message']");
     if (!target) throw new Error("composer textarea not found");
@@ -51,7 +49,6 @@ test("pasting into the composer attaches images and inserts text", async ({
   await expect(page.getByRole("button", { name: "Remove paste.png" })).toBeVisible();
   await captureScreenshot(page, testInfo, "composer-paste-attachment");
 
-  // An image with text keeps the attachment and inserts the text.
   await page.evaluate(() => {
     const target = document.querySelector("textarea[name='chat-message']");
     if (!(target instanceof HTMLTextAreaElement)) throw new Error("composer textarea not found");

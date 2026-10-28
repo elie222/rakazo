@@ -54,7 +54,6 @@ test("a retrying computer can be closed and keeps booting without a stale error 
   await preview.getByTestId("computer-preview-open").click();
   await expect.poll(() => held.length).toBe(1);
 
-  // The boot shows inside the computer window, which keeps its Close button.
   const close = page.getByRole("button", { name: "Close computer" });
   await expect(close).toBeVisible();
   await expect(page.getByText("Booting live desktop…")).toBeVisible();
@@ -173,7 +172,6 @@ test("starting another bot's computer is not blocked by a boot still under way",
   if (!(await preview.isVisible())) {
     await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   }
-  // The other bot's computer is stopped, not booting.
   await expect(preview).toContainText("Computer is stopped");
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();

@@ -27,7 +27,6 @@ const TIMES = [
 
 const TIMED: CronFreq[] = ["Every day", "Weekdays", "Every week", "Every month"];
 
-/** Translate a cron frequency into the active UI locale. */
 function cronFreqLabel(freq: CronFreq): string {
   switch (freq) {
     case "Every hour":
@@ -49,14 +48,12 @@ function cronFreqLabel(freq: CronFreq): string {
   }
 }
 
-/** Return the neutral lead used by the interval controls. */
 function russianIntervalControlLead(): string {
   // The amount select stays visible for 1, so use a construction that keeps
   // the number in the sentence grammatical: “Раз в 1 час”, “Раз в 2 часа”.
   return "Раз в";
 }
 
-/** Render schedule selectors and the localized summary for a routine. */
 export function RoutineSchedule({
   value,
   onChange,

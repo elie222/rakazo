@@ -65,15 +65,17 @@ export function toComputerStatus(
 ): ComputerStatus {
   const state = computer?.maintenanceId
     ? "booting"
-    : computer?.state === "suspending"
-      ? "running"
-      : computer?.state === "stopped" ||
-          computer?.state === "booting" ||
-          computer?.state === "running" ||
-          computer?.state === "suspended" ||
-          computer?.state === "error"
-        ? computer.state
-        : "stopped";
+    : computer?.state === "quarantined"
+      ? "error"
+      : computer?.state === "suspending"
+        ? "running"
+        : computer?.state === "stopped" ||
+            computer?.state === "booting" ||
+            computer?.state === "running" ||
+            computer?.state === "suspended" ||
+            computer?.state === "error"
+          ? computer.state
+          : "stopped";
   const screen = computerScreenSize(computer?.kind);
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   return {

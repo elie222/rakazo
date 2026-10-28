@@ -114,7 +114,6 @@ test("a new user who ignores import still starts with Chief", async ({ page }, t
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
     timeout: 20_000,
   });
-  // Connecting a model is the one thing this step asks for.
   await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toHaveCount(0);
   // Connecting a model elsewhere, then opening onboarding again, makes Chief exactly as
   // before. (A linked /onboarding/model stays on the model step on purpose.)
@@ -210,7 +209,6 @@ test("with a model already provided, an import that finds a first bot already ma
   await expect(notice.getByRole("alert")).toHaveText(
     "Your first bot already existed, so the agent was not imported.",
   );
-  // The survey's own Continue is the one way on.
   await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
   await expect(notice.getByRole("button")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-import-not-imported-survey");

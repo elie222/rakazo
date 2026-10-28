@@ -11,12 +11,13 @@ const emojiPresentation = (() => {
   }
 })();
 
-function isEmojiSequence(segment: string): boolean {
+function isEmojiSequence(segment: string, matcher: RegExp): boolean {
   if (!emojiPresentation || /^[\u{1f3fb}-\u{1f3ff}]$/u.test(segment)) return false;
   // Digits have an emoji presentation sequence even without an enclosing keycap.
   if (/^[0-9]\ufe0f$/u.test(segment)) return true;
   const match = (text: string) => {
-    const result = emojiRegex().exec(text);
+    matcher.lastIndex = 0;
+    const result = matcher.exec(text);
     return result?.index === 0 && result[0] === text;
   };
   if (match(segment)) {
@@ -48,10 +49,11 @@ export function artifactShareFileName(name: string, mimeType: string): string {
   const characters = Array.from(stemSource);
   const emojiUnits = new Uint8Array(stemSource.length);
   if (typeof Intl.Segmenter === "function" && emojiPresentation) {
+    const matcher = emojiRegex();
     for (const { segment, index } of new Intl.Segmenter(undefined, {
       granularity: "grapheme",
     }).segment(stemSource)) {
-      if (isEmojiSequence(segment)) emojiUnits.fill(1, index, index + segment.length);
+      if (isEmojiSequence(segment, matcher)) emojiUnits.fill(1, index, index + segment.length);
     }
   }
   let offset = 0;
@@ -92,21 +94,16 @@ export function artifactShareFileName(name: string, mimeType: string): string {
   if (stem.length > 80) {
     boundedStem = "";
     if (typeof Intl.Segmenter === "function") {
-      const segments: string[] = [];
       for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
         stem,
       )) {
         if (boundedStem.length + segment.length > 80) break;
-        segments.push(segment);
         boundedStem += segment;
       }
-      // A joiner belongs with its following character even if the segmenter
-      // groups it with the preceding grapheme.
-      if (/[\u200c\u200d]\p{M}*$/u.test(boundedStem)) {
-        segments.pop();
-        boundedStem = segments.join("");
-      }
+    } else if (/^[A-Za-z0-9._-]*$/u.test(stem)) {
+      boundedStem = stem.slice(0, 80);
     }
   }
+  boundedStem = boundedStem.replace(/(?:\u200c|\u200d)\p{M}*$/u, "");
   return `${boundedStem && !/^[\p{M}_\u200c\u200d]+$/u.test(boundedStem) ? boundedStem : "attachment"}${ext}`;
 }

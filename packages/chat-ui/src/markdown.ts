@@ -1,6 +1,7 @@
 /// <reference path="./linkify-it.d.ts" />
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
@@ -163,11 +164,8 @@ function appendPlainText(parts: PlainTextPart[], value: string) {
 }
 
 /**
- * Split plain user-message text into literal runs and tappable links.
- * User bubbles stay plain text on web and mobile. Bold, headings, and other
- * markdown remain characters. Links use the same explicit autolinker as bot
- * messages, so a balanced parenthesis stays inside the URL and a closing
- * parenthesis that only wraps the surrounding prose does not.
+ * User bubbles stay plain text: markdown remains characters. Links use the bot messages'
+ * autolinker, so a balanced parenthesis stays inside the URL and one wrapping the prose does not.
  */
 export function plainTextLinkParts(text: string): PlainTextPart[] {
   const matches = plainTextLinkify.match(text);
@@ -239,6 +237,25 @@ export function markdownLinkRequiresConfirmation(url: string, appOrigin?: string
   } catch {
     return true;
   }
+}
+
+/**
+ * The site "Always open" trusts for a link: its registrable domain, so every subdomain is
+ * included, while each tenant of a shared host stays its own site. The server stores the same.
+ */
+export function markdownLinkSite(url: string): string | undefined {
+  return urlSite(url);
+}
+
+/** Whether a link shows the external-link prompt: it leaves the app to a site not trusted. */
+export function markdownLinkNeedsPrompt(
+  url: string,
+  appOrigin?: string | null,
+  trustedSites: readonly string[] = [],
+): boolean {
+  if (!markdownLinkRequiresConfirmation(url, appOrigin)) return false;
+  const site = markdownLinkSite(url);
+  return !site || !trustedSites.includes(site);
 }
 
 export type MarkdownLinkDisplayParts = {

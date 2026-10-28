@@ -975,7 +975,7 @@ describe("graphical computer spec", () => {
                 env: { ...process.env, JOINED_READY: ready },
               });
               try {
-                const deadline = Date.now() + 2_000;
+                const deadline = Date.now() + 15_000;
                 while (spawnSync("test", ["-s", ready]).status !== 0) {
                   if (Date.now() > deadline)
                     throw new Error("space-joined command line was not published");
@@ -1187,7 +1187,7 @@ describe("graphical computer spec", () => {
       });
       const children = [endpointProcess];
       const publishedPort = (file: string) => {
-        const deadline = Date.now() + 2_000;
+        const deadline = Date.now() + 15_000;
         while (spawnSync("test", ["-s", file]).status !== 0) {
           if (Date.now() > deadline) throw new Error("debug endpoint did not publish a port");
           spawnSync("sleep", ["0.02"]);

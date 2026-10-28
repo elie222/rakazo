@@ -12,6 +12,8 @@ const COMMAND_SENTINEL = "fake-command-variable-values-never-leak";
 const COMMAND_REPLACEMENT = "fake-command-variable-value-two";
 const COMMAND_CREDENTIAL_NAME = "netbird-setup-key";
 const COMMAND_VARIABLE_NAME = "$NETBIRD_SETUP_KEY";
+const LOGIN_ID = "fake-login-id-never-leaks";
+const LOGIN_PHONE = "fake-login-phone-never-leaks";
 const account = { scope: "account" };
 
 test("vault and command credentials add, replace and remove without leaking values", async ({
@@ -170,9 +172,39 @@ test("vault and command credentials add, replace and remove without leaking valu
   await expect(credentials.getByTestId("credential-add")).toBeVisible();
   expect(await rpc<unknown[]>(page, "vault/list", account)).toHaveLength(0);
   await captureScreenshot(page, testInfo, "command-credentials-removed");
+
+  // Website login: named fields, each hidden or visible as the person chooses.
+  await credentials.getByTestId("credential-add").click();
+  const loginForm = credentials.getByTestId("credential-add-form");
+  await loginForm.getByTestId("credential-name").fill("example_login");
+  await loginForm.getByTestId("credential-origin").fill("https://login.example.test");
+  await loginForm.getByTestId("credential-auth-type").selectOption("login");
+  const fields = loginForm.getByTestId("login-field");
+  await expect(fields).toHaveCount(2);
+  const label = (index: number) => fields.nth(index).locator('input[aria-label="Label"]');
+  await label(0).fill("ID number");
+  await fields.nth(0).locator('input[aria-label="ID number"]').fill(LOGIN_ID);
+  await label(1).fill("Phone number");
+  const phone = fields.nth(1).locator('input[aria-label="Phone number"]');
+  await expect(phone).toHaveAttribute("type", "password");
+  await phone.fill(LOGIN_PHONE);
+  await loginForm.getByRole("button", { name: "Add field", exact: true }).click();
+  await expect(fields).toHaveCount(3);
+  await label(2).fill("PIN");
+  await fields.nth(2).locator('input[aria-label="PIN"]').fill("fake-pin");
+  await captureScreenshot(page, testInfo, "vault-login-fields");
+  await loginForm.getByTestId("credential-add-save").click();
+
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Website login");
+  const loginListed = await rpc<Array<Record<string, unknown>>>(page, "vault/list", account);
+  expect(loginListed[0]).toMatchObject({ name: "example_login", auth: { type: "login" } });
+  for (const secret of [LOGIN_ID, LOGIN_PHONE]) {
+    expect(JSON.stringify(loginListed)).not.toContain(secret);
+    await expectNoLeakedInputValue(page, secret);
+  }
 });
 
-/** Fail if any live input value still carries a protected value. */
 async function expectNoLeakedInputValue(page: Page, value: string) {
   const leaked = await page.evaluate((needle) => {
     const inputs = Array.from(document.querySelectorAll("input, textarea"));

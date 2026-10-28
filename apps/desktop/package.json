@@ -33,7 +33,8 @@
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "yaml": "2.9.1"
   },
   "build": {
     "appId": "dev.rakazo.desktop",

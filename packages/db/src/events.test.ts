@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { CrossSpaceCommunicationBlockedError } from "./cross-space-communication.js";
+import type { AnswerRunInput } from "./events.js";
 import {
   AnswerTooLongError,
   answerRunInput,
@@ -2955,7 +2956,7 @@ describe("answerRunInput", () => {
       origin: "https://login.example.test",
       auth: { type: "login" },
     };
-    function loginFixture(credential: object = login) {
+    function loginFixture(credential: object = login, loginFields?: string[]) {
       const store = vi.fn().mockResolvedValue(undefined);
       const tx = {
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -2969,6 +2970,7 @@ describe("answerRunInput", () => {
                 input: "secret",
                 purpose: "password",
                 credential,
+                ...(loginFields ? { loginFields } : {}),
                 status: "pending",
               },
             ],
@@ -2993,7 +2995,7 @@ describe("answerRunInput", () => {
       const prisma = {
         $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       } as unknown as PrismaClient;
-      const answer = (username?: string, password = "fake-password-1") =>
+      const answerWith = (input: Partial<AnswerRunInput>) =>
         answerRunInput(
           prisma,
           {
@@ -3002,24 +3004,73 @@ describe("answerRunInput", () => {
             runId: "run-1",
             messageId: "message-1",
             answeredByUserId: "user-1",
-            answer: password,
-            ...(username !== undefined ? { username } : {}),
+            answer: "",
+            ...input,
           },
           new TestFanout(),
           { store },
         );
-      return { store, tx, answer };
+      // How an app that predates login fields answers.
+      const answer = (username?: string, password = "fake-password-1") =>
+        answerWith({ answer: password, ...(username !== undefined ? { username } : {}) });
+      return { store, tx, answer, answerWith };
     }
 
-    it("stores the username and password together and records neither", async () => {
+    const bankFields = [
+      { label: "ID number", value: "fake-id-123", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+    ];
+
+    it("stores the requested fields as the person marked them and records none", async () => {
+      const { store, tx, answerWith } = loginFixture(login, ["ID number", "Phone number"]);
+      await expect(answerWith({ fields: bankFields })).resolves.toBe(true);
+      expect(store).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credential: login,
+          plaintext: encodeLoginSecret({ fields: bankFields }),
+        }),
+      );
+      const recorded = JSON.stringify([tx.event.create.mock.calls, tx.message.update.mock.calls]);
+      expect(recorded).not.toContain("fake-id-123");
+      expect(recorded).not.toContain("+1 555 0100");
+    });
+
+    it.each([
+      ["a missing field", [bankFields[0]!]],
+      ["an extra field", [...bankFields, { label: "PIN", value: "1234", hidden: true }]],
+      ["a renamed field", [bankFields[0]!, { ...bankFields[1]!, label: "Mobile" }]],
+      ["fields out of order", [bankFields[1]!, bankFields[0]!]],
+      ["an empty field", [bankFields[0]!, { ...bankFields[1]!, value: "" }]],
+    ])("rejects an answer with %s", async (_name, fields) => {
+      const { store, tx, answerWith } = loginFixture(login, ["ID number", "Phone number"]);
+      await expect(answerWith({ fields })).resolves.toBe(false);
+      expect(store).not.toHaveBeenCalled();
+      expect(tx.run.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("rejects a username and password on a card that asked for other fields", async () => {
+      const { store, answer } = loginFixture(login, ["ID number", "Phone number"]);
+      await expect(answer("fake-id-123", "+1 555 0100")).resolves.toBe(false);
+      expect(store).not.toHaveBeenCalled();
+    });
+
+    it("rejects fields with a value in answer too", async () => {
+      const { store, answerWith } = loginFixture(login, ["ID number", "Phone number"]);
+      await expect(answerWith({ fields: bankFields, answer: "+1 555 0100" })).resolves.toBe(false);
+      expect(store).not.toHaveBeenCalled();
+    });
+
+    it("stores an older app's username and password as a visible and a hidden field", async () => {
       const { store, tx, answer } = loginFixture();
       await expect(answer("  fake-user@example.test ")).resolves.toBe(true);
       expect(store).toHaveBeenCalledWith(
         expect.objectContaining({
           credential: login,
           plaintext: encodeLoginSecret({
-            username: "fake-user@example.test",
-            password: "fake-password-1",
+            fields: [
+              { label: "Username", value: "fake-user@example.test", hidden: false },
+              { label: "Password", value: "fake-password-1", hidden: true },
+            ],
           }),
         }),
       );
@@ -3043,9 +3094,10 @@ describe("answerRunInput", () => {
       expect(tx.run.updateMany).not.toHaveBeenCalled();
     });
 
-    it("rejects a username on a card that is not a login", async () => {
-      const { store, answer } = loginFixture({ ...login, auth: { type: "bearer" } });
+    it("rejects a username or fields on a card that is not a login", async () => {
+      const { store, answer, answerWith } = loginFixture({ ...login, auth: { type: "bearer" } });
       await expect(answer("fake-user")).resolves.toBe(false);
+      await expect(answerWith({ answer: "fake-token", fields: bankFields })).resolves.toBe(false);
       expect(store).not.toHaveBeenCalled();
     });
   });
@@ -3714,11 +3766,72 @@ describe("sendUserMessage", () => {
 });
 
 describe("claimSteering", () => {
+  const group = (fromAddress: string) => ({
+    kind: "channel_message",
+    provider: "telegram",
+    channelId: "channel-1",
+    fromAddress,
+    fromLabel: "Someone",
+    text: "Hello",
+  });
+  it.each([
+    ["a webhook", "webhook", "user-1", [{ kind: "text", text: "Hello" }], "webhook"],
+    ["the run's person in their connected chat", "messaging", "user-1", [], "user"],
+    ["someone else's connected chat", "messaging", "user-2", [], "messaging"],
+    ["the run's person in a group", "messaging", "user-1", [group("+15550001")], "user"],
+    ["someone else in a group", "messaging", "user-1", [group("+15550002")], "messaging"],
+  ] as const)(
+    "marks a message from %s by its sender",
+    async (_, originTrigger, userId, blocks, origin) => {
+      const tx = {
+        $queryRaw: vi.fn(),
+        run: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ id: "run-1", spaceId: "space-1", userId: "user-1" }),
+          findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: null }),
+        },
+        thread: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue({ nextMessageSeq: 7 }),
+          update: vi.fn().mockResolvedValue({ nextEventSeq: 1 }),
+        },
+        event: { create: vi.fn() },
+        messagingIdentity: {
+          findMany: vi.fn().mockResolvedValue([{ provider: "telegram", address: "+15550001" }]),
+        },
+        steeringMessage: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "steer-1",
+              messageId: "message-1",
+              userId,
+              originTrigger,
+              message: { seq: 5, blocks },
+            },
+          ]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const [claimed] = await claimSteering(prisma, {
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseOwner: "worker-1",
+        leaseFence: 2,
+        seenIds: [],
+      });
+      expect(claimed?.origin).toBe(origin);
+    },
+  );
+
   it("claims pending messages for the fenced run in message order", async () => {
     const tx = {
       $queryRaw: vi.fn(),
       run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "run-1", spaceId: "space-1" }),
+        findFirst: vi.fn().mockResolvedValue({ id: "run-1", spaceId: "space-1", userId: "user-1" }),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: null }),
       },
       thread: {
@@ -3731,6 +3844,8 @@ describe("claimSteering", () => {
           {
             id: "steer-1",
             messageId: "message-1",
+            userId: "user-1",
+            originTrigger: null,
             message: {
               seq: 5,
               blocks: [
@@ -3747,6 +3862,8 @@ describe("claimSteering", () => {
           {
             id: "steer-2",
             messageId: "message-2",
+            userId: "user-2",
+            originTrigger: null,
             message: { seq: 6, blocks: [{ kind: "text", text: "Second" }] },
           },
         ]),
@@ -3780,12 +3897,14 @@ describe("claimSteering", () => {
             mimeType: "image/png",
           },
         ],
+        origin: "user",
       },
       {
         id: "steer-2",
         messageId: "message-2",
         text: "Second",
         blocks: [{ kind: "text", text: "Second" }],
+        origin: "member",
       },
     ]);
     expect(tx.run.findFirst).toHaveBeenCalledWith(
@@ -4226,6 +4345,36 @@ describe("appendEvent", () => {
     expect(tx.thread.update).toHaveBeenCalledTimes(2);
     expect(tx.event.create).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a run event for a deleted thread as closed run history", async () => {
+    const missing = Object.assign(new Error("No record was found for an update."), {
+      code: "P2025",
+    });
+    const tx = {
+      thread: { update: vi.fn().mockRejectedValue(missing) },
+      run: { findUnique: vi.fn() },
+      event: { create: vi.fn() },
+    };
+    const transaction = vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx));
+    const input = {
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      type: "computer.command" as const,
+      payload: { text: "late output" },
+    };
+
+    await expect(
+      appendEvent({ $transaction: transaction } as unknown as PrismaClient, {
+        ...input,
+        runId: "run-1",
+      }),
+    ).rejects.toThrow(RunHistoryWriteError);
+    await expect(
+      appendEvent({ $transaction: transaction } as unknown as PrismaClient, input),
+    ).rejects.toBe(missing);
+    expect(tx.event.create).not.toHaveBeenCalled();
   });
 
   it("does not retry a run that can no longer write history", async () => {

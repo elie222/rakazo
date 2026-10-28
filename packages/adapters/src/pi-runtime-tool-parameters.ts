@@ -8,7 +8,6 @@ import {
 } from "./openai-tool-parameters.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
-/** Build AgentTool.parameters for a connector tool, including OpenAI wire fidelity. */
 export function parametersFor(tool: ConnectorTool) {
   const builtin = builtinParameters(tool);
   const schema = builtin
@@ -375,9 +374,8 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     const union = enumUnion(definition.enum, options);
     if (union) return union as never;
   }
-  // A `const` names the only accepted value. Without this it degraded to a bare
-  // string, so a discriminator like {type: {const: "bearer"}} told the model
-  // nothing about which value to send -- and it guessed, twice.
+  // Falling through to a bare string would tell the model nothing about which
+  // discriminator value to send.
   if ("const" in definition) {
     // Keep `const` (discriminators such as request_secret's auth.type depend on it) and
     // add the equivalent one-value `enum`, which survives converters that drop `const`.
@@ -392,9 +390,8 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     const literal = enumUnion([definition.const], options);
     if (literal) return literal as never;
   }
-  // A discriminated union arrives as oneOf/anyOf with no sibling `type`. Without
-  // this branch it fell through to the string default, so a model was told to
-  // send an object-valued field as a bare string -- which is exactly what it did.
+  // A discriminated union arrives as oneOf/anyOf with no sibling `type`; the string
+  // default would tell the model to send an object-valued field as a bare string.
   const variants = Array.isArray(definition.oneOf)
     ? definition.oneOf
     : Array.isArray(definition.anyOf)

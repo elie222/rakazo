@@ -40,7 +40,6 @@ export class ParallelWebProvider implements WebProvider {
 
   constructor(private readonly options: ParallelWebOptions = {}) {}
 
-  /** Advertise the same optional web capabilities as other WebProvider adapters. */
   describe() {
     return {
       id: "parallel",
@@ -50,7 +49,6 @@ export class ParallelWebProvider implements WebProvider {
     };
   }
 
-  /** Return bounded search evidence through the existing builtin tool contract. */
   async search(request: WebSearchRequest, context: AdapterContext): Promise<WebSearchHit[]> {
     const query = request.query.trim();
     if (!query) throw new Error("query is required");
@@ -75,7 +73,6 @@ export class ParallelWebProvider implements WebProvider {
       }));
   }
 
-  /** Extract readable page text before the shared serialized-envelope limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
     const signal = this.signal(
@@ -109,7 +106,6 @@ export class ParallelWebProvider implements WebProvider {
     };
   }
 
-  /** Combine caller cancellation with the provider deadline. */
   private signal(parent: AbortSignal, timeoutMs = 30_000) {
     parent.throwIfAborted();
     return combineSignals(parent, AbortSignal.timeout(timeoutMs));
