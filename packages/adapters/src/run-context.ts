@@ -82,6 +82,23 @@ export interface ReplyState {
   midTurnUserTexts: string[];
   midTurnProgressCount: number;
   turnStartedAtMs: number;
+  /** A message from the person mid-task starts a fresh budget from here (see "steered"). */
+  progressBudgetStart: number;
+  /** The first interim message after one may answer the person at once. */
+  steeringReplyPending: boolean;
+  steeringResets: number;
+  lastSteeringResetAt: number;
+  /**
+   * Notes on steps since the last interim message, in order; they come back as the reply when
+   * nothing follows the last step.
+   */
+  workingNotes: string[];
+  /** Text taken out before steps so far, joined as written, so a secret split across two is hidden. */
+  narrationSoFar: string;
+  /** What the bot wrote since its last step: empty means nothing follows the last step. */
+  textSinceLastStep: string;
+  /** The working line shows a note; tool status lines wait until the bot writes again. */
+  narrationStatusShowing: boolean;
   /**
    * Tool calls that land mid-sentence wait here until the narration catches up to a
    * sentence boundary, so the step chips never render in the middle of a clause.

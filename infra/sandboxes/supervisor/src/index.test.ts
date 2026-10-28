@@ -42,12 +42,15 @@ import {
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
+  pageBrowserNotReady,
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
   resetManagedScreensCommand,
+  SCREEN_REUSE_MS,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  screenRecentlyEnsured,
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
@@ -774,6 +777,37 @@ describe("sandbox supervisor input containment", () => {
     const assigned = new Map<string, ScreenAssignment>();
     for (let index = 0; index < 1000; index++)
       expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
+  });
+
+  it("trusts a screen's setup for a short time unless it is released or human-held", () => {
+    const now = 1_000_000;
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now }, now + SCREEN_REUSE_MS - 1)).toBe(
+      true,
+    );
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now }, now + SCREEN_REUSE_MS)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0 }, now)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now, controlled: true }, now)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now, controlToken: "token" }, now)).toBe(
+      false,
+    );
+    const assigned = new Map<string, ScreenAssignment>([["bot", { index: 0, ensuredAt: now }]]);
+    releaseAssignedScreen(assigned, "bot");
+    completeWarmReleasedScreen(assigned, "bot", 0, now);
+    expect(screenRecentlyEnsured(assigned.get("bot"), now)).toBe(false);
+  });
+
+  it("recognizes only a page helper that reached no browser before acting", () => {
+    const output = (value: object) => ({ code: 0, stdout: JSON.stringify(value) });
+    expect(pageBrowserNotReady(output({ ok: false, error: "CDP not ready on port 9222: x" }))).toBe(
+      true,
+    );
+    expect(
+      pageBrowserNotReady(output({ ok: false, error: "CDP not ready", uncertain: true })),
+    ).toBe(false);
+    expect(pageBrowserNotReady(output({ ok: false, error: "Element not found" }))).toBe(false);
+    expect(pageBrowserNotReady(output({ ok: true }))).toBe(false);
+    expect(pageBrowserNotReady({ code: 1, stdout: "" })).toBe(false);
+    expect(pageBrowserNotReady({ code: 0, stdout: "not json" })).toBe(false);
   });
 
   it("frees a released screen slot so a ninth Team bot can reuse it", () => {

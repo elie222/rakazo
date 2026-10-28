@@ -1,12 +1,19 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
+import type {
+  BotSecretDestination,
+  LoginFieldInput,
+  MessageBlock,
+  ProductEvent,
+} from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
-  LoginSecretValue,
+  hasThinkingActivityMarker,
+  loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -71,6 +78,19 @@ export interface AppendEventInput {
   runId?: string;
   /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
   allowCancelledRun?: boolean;
+  /** Internal attempt fence for transient activity; never serialized to clients. */
+  activityLease?: { owner: string; fence: number };
+}
+
+/** Exact transient lifecycle payloads only: unrelated thread metadata must survive. */
+export function transientRunEventsWhere(): Prisma.EventWhereInput {
+  return {
+    OR: [
+      { type: "thread.progress" },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: true } } } },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: false } } } },
+    ],
+  };
 }
 
 export interface ThreadEvents {
@@ -131,6 +151,11 @@ export interface ClaimedSteeringMessage {
   messageId: string;
   text: string;
   blocks: MessageBlock[];
+  /**
+   * Who sent it: the run's own person (in the app or a connected chat), another member of the
+   * chat, someone else in a connected chat, or a webhook.
+   */
+  origin: "user" | "member" | "messaging" | "webhook";
 }
 
 export interface FinalizeRunResult {
@@ -245,7 +270,9 @@ export interface AnswerRunInput {
   answer: string;
   /** Identifies a spoken answer as part of a live voice call. */
   clientNonce?: string;
-  /** Only for a login card; `answer` carries its password. */
+  /** A login card's answer, one per requested field. */
+  fields?: LoginFieldInput[];
+  /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
   username?: string;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
@@ -608,6 +635,7 @@ export async function claimSteering(
       select: {
         id: true,
         spaceId: true,
+        userId: true,
         trigger: true,
         sourceMessage: { select: { blocks: true } },
       },
@@ -665,11 +693,48 @@ export async function claimSteering(
       type: "run.steering.claimed",
       payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
     });
+    // In a group chat the row's user is the bot's owner, not the sender, so the sender is
+    // matched by the address it wrote from.
+    const groupSenders = steering.flatMap((item) =>
+      (item.message.blocks as MessageBlock[]).filter((block) => block.kind === "channel_message"),
+    );
+    const ownAddresses = new Set(
+      groupSenders.length === 0
+        ? []
+        : (
+            await tx.messagingIdentity.findMany({
+              where: {
+                userId: run.userId,
+                OR: groupSenders.map((block) => ({
+                  provider: block.provider,
+                  address: block.fromAddress,
+                })),
+              },
+              select: { provider: true, address: true },
+            })
+          ).map((identity) => `${identity.provider}:${identity.address}`),
+    );
+    const sentByRunPerson = (item: (typeof steering)[number]) => {
+      const group = (item.message.blocks as MessageBlock[]).find(
+        (block) => block.kind === "channel_message",
+      );
+      return group
+        ? ownAddresses.has(`${group.provider}:${group.fromAddress}`)
+        : item.userId === run.userId;
+    };
     return steering.map((item) => ({
       id: item.id,
       messageId: item.messageId,
       text: blocksToAgentHistoryText(item.message.blocks as MessageBlock[]),
       blocks: item.message.blocks as MessageBlock[],
+      origin:
+        item.originTrigger === "webhook"
+          ? ("webhook" as const)
+          : sentByRunPerson(item)
+            ? ("user" as const)
+            : item.originTrigger === "messaging"
+              ? ("messaging" as const)
+              : ("member" as const),
     }));
   });
 }
@@ -763,12 +828,9 @@ async function commitAnswerRunInput(
   if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
-  // A username belongs only to a login card, which cannot be saved without one.
-  if (loginAsk !== Boolean(input.username?.trim())) return null;
-  const login = loginAsk
-    ? LoginSecretValue.safeParse({ username: input.username!.trim(), password: input.answer })
-    : undefined;
-  if (login && !login.success) return null;
+  const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
+  // Login fields belong only to a login card, which cannot be saved without them.
+  if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
   if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
     throw new AnswerTooLongError();
   let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
@@ -925,7 +987,7 @@ async function commitAnswerRunInput(
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login?.success ? encodeLoginSecret(login.data) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : input.answer,
       tx,
     });
     await tx.externalEffect.updateMany({
@@ -1235,7 +1297,9 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: run?.userId ? { userId: run.userId } : {},
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     const continuationRunId = await createPendingSteeringRun(tx, input);
     return {
       threadId: waitingEvent.threadId,
@@ -1350,7 +1414,9 @@ export async function pauseRunForTakeover(
         retainedControl: retainControl,
       },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
   });
 
@@ -1725,7 +1791,9 @@ async function finalizeRunOnce(
       runId: input.runId,
       payload: input.outcome === "completed" ? {} : { error: input.error },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     if (writableRun) {
       await deleteRunSecretsInTransaction(tx, [
         { id: input.runId, userId: writableRun.userId, spaceId: input.spaceId },
@@ -1902,6 +1970,11 @@ export async function appendEventInTransaction(
   tx: Prisma.TransactionClient,
   input: AppendEventInput,
 ) {
+  const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
+  if (activity) {
+    ThreadActivityPayloadSchema.parse(input.payload);
+    if (!input.runId || !input.activityLease) throw new RunHistoryWriteError();
+  }
   const thread = await tx.thread
     .update({
       where: { id: input.threadId },
@@ -1914,6 +1987,18 @@ export async function appendEventInTransaction(
       if (input.runId && isRecordNotFound(error)) throw new RunHistoryWriteError();
       throw error;
     });
+  if (activity) {
+    const active = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true, leaseFence: true },
+    });
+    if (
+      active?.status !== "running" ||
+      active.leaseOwner !== input.activityLease?.owner ||
+      active.leaseFence !== input.activityLease?.fence
+    )
+      throw new RunHistoryWriteError();
+  }
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
   let firstResponseAt: Date | null | undefined;

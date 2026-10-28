@@ -22,7 +22,7 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   const selectedBotId = activeBotId(page);
   const previewBot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Compact Sample",
-    title: "Field notes",
+    title: "Field notes from every venue we scouted downtown",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -42,6 +42,21 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await expect(previewRow).toContainText(preview);
   await expect(previewRow).toContainText("Field notes");
   await expect(previewRow.locator("[data-roster-bot-name]")).toHaveText("Compact Sample");
+  // The label sits beside the name on its line, and only the label gives way to a long value.
+  const rosterName = previewRow.locator("[data-roster-bot-name]");
+  const rosterTitle = previewRow.locator("[data-roster-bot-title]");
+  const nameBox = await rosterName.boundingBox();
+  const titleBox = await rosterTitle.boundingBox();
+  expect(titleBox?.height).toBeLessThanOrEqual(nameBox?.height ?? 0);
+  expect(Math.abs((titleBox?.y ?? 0) - (nameBox?.y ?? 0))).toBeLessThanOrEqual(1);
+  expect(await rosterName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  expect(await rosterTitle.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+    true,
+  );
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "sidebar-density-comfortable-title");
   // Previews stay on one line and end in an ellipsis instead of wrapping.
   await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("white-space", "nowrap");
   await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("text-overflow", "ellipsis");
@@ -118,7 +133,10 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
     await expect(previewRow.locator('[data-roster-status="running"]')).toHaveText("Working…", {
       timeout: 30_000,
     });
-    await expect(previewRow.locator('[data-working="true"]')).toBeVisible();
+    await expect(previewRow.locator(".rakazo-logo-avatar")).not.toHaveAttribute(
+      "data-activity",
+      "idle",
+    );
     await expect(previewRow.locator('[data-roster-status="running"]')).toHaveClass(
       /text-status-working/,
     );

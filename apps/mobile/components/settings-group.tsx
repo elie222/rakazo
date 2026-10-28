@@ -127,6 +127,7 @@ export function SettingsRow({
       <View
         accessible={props.accessible}
         accessibilityActions={props.accessibilityActions}
+        accessibilityHint={props.accessibilityHint}
         accessibilityLabel={props.accessibilityLabel}
         accessibilityRole={props.accessibilityRole}
         accessibilityState={props.accessibilityState}

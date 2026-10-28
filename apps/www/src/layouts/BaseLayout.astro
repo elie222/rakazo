@@ -28,6 +28,8 @@ type Props = {
   ogType?: string;
   /** False on the not-found page: noindex, and no canonical URL. */
   index?: boolean;
+  /** For prerendered pages the edge middleware does not know about. */
+  markdownAlternate?: string;
 };
 
 const {
@@ -53,7 +55,8 @@ const socialImage = new URL(ogImage, SITE_URL).toString();
 const structuredDataJson = structuredData
   ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
   : null;
-const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
+const markdownAlternate =
+  Astro.props.markdownAlternate ?? getMarkdownAlternate(Astro.url.pathname);
 const htmlLang = LOCALE_HTML_LANG[locale];
 const ogLocale = LOCALE_OG[locale];
 const homeUrls = Object.fromEntries(

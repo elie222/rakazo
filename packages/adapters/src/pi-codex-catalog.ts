@@ -40,7 +40,8 @@ export type CodexCatalogModel = {
   slug: string;
   reasoningEfforts: string[];
   contextWindow?: number;
-  supportsImages: boolean;
+  /** Absent when the account list omits `input_modalities`. */
+  supportsImages?: boolean;
   supportsFastTier: boolean;
 };
 
@@ -169,7 +170,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
     if (typeof entry.slug !== "string" || !isValidSlug(entry.slug)) return undefined;
     const reasoningEfforts = parseReasoningEfforts(entry.supported_reasoning_levels);
     const contextWindow = parseContextWindow(entry.context_window);
-    const supportsImages = stringListContains(entry.input_modalities, "image");
+    const supportsImages = parseSupportsImages(entry.input_modalities);
     const supportsFastTier = stringListContains(entry.additional_speed_tiers, "fast");
     if (
       reasoningEfforts === INVALID ||
@@ -183,7 +184,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
       slug: entry.slug,
       reasoningEfforts,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
-      supportsImages,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
       supportsFastTier,
     });
   }
@@ -214,6 +215,12 @@ function parseContextWindow(value: unknown): number | undefined | typeof INVALID
     return INVALID;
   }
   return value;
+}
+
+/** Omitted or null modalities are unknown. A present list is an explicit yes or no. */
+function parseSupportsImages(value: unknown): boolean | undefined | typeof INVALID {
+  if (value === undefined || value === null) return undefined;
+  return stringListContains(value, "image");
 }
 
 function stringListContains(value: unknown, expected: string): boolean | typeof INVALID {
@@ -299,6 +306,25 @@ function codexAccountHandle(
   };
 }
 
+/**
+ * The account's own row for this slug, when the catalog can be read.
+ * Missing, unreadable, and failed catalogs return undefined so callers keep
+ * the static answer instead of inventing one.
+ */
+export async function codexLiveModel(
+  catalog: CodexLiveCatalog | undefined,
+  userId: string,
+  secret: StoredModelSecret,
+  modelId: string,
+  opts?: CodexLiveReadOptions,
+): Promise<CodexCatalogModel | undefined> {
+  if (!catalog || secret.kind !== "oauth") return undefined;
+  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
+  if (!account) return undefined;
+  const models = await catalog.read(userId, account, opts).catch(() => undefined);
+  return models?.find((model) => model.slug === modelId);
+}
+
 /** Consulted only when the static auth gate already rejected a catalog model. */
 export async function codexLiveListsModel(
   catalog: CodexLiveCatalog | undefined,
@@ -307,11 +333,7 @@ export async function codexLiveListsModel(
   modelId: string,
   opts?: CodexLiveReadOptions,
 ): Promise<boolean> {
-  if (!catalog || secret.kind !== "oauth") return false;
-  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
-  if (!account) return false;
-  const models = await catalog.read(userId, account, opts).catch(() => undefined);
-  return Boolean(models?.some((model) => model.slug === modelId));
+  return Boolean(await codexLiveModel(catalog, userId, secret, modelId, opts));
 }
 
 /**
@@ -432,9 +454,12 @@ export function applyCodexLiveCatalog(
 
 function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCatalogEntry {
   const thinkingLevels = liveThinkingLevels(model);
+  // An explicit account answer decides image input. An omitted list keeps the entry's own.
+  const withImages =
+    model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
   return thinkingLevels
-    ? { ...entry, reasoning: true, thinkingLevels }
-    : { ...entry, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withImages, reasoning: true, thinkingLevels }
+    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

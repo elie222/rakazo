@@ -1,0 +1,123 @@
+---
+import IntegrationLogo from "../../components/IntegrationLogo.astro";
+import SiteFrame from "../../components/SiteFrame.astro";
+import type { Integration } from "../../integrations";
+import {
+  CATEGORY_LABELS,
+  INTEGRATIONS,
+  INTEGRATIONS_PATH,
+  categoryOf,
+  integrationBreadcrumbs,
+  integrationPath,
+  integrationUrlSlug,
+  relatedIntegrations,
+} from "../../integrations";
+import { APP_URL } from "../../site";
+
+interface Props {
+  integration: Integration;
+}
+
+export function getStaticPaths() {
+  return INTEGRATIONS.map((integration) => ({
+    params: { slug: integrationUrlSlug(integration.slug) },
+    props: { integration },
+  }));
+}
+
+const VISIBLE_ACTIONS = 10;
+
+const { integration } = Astro.props;
+const { name, actions } = integration;
+const category = categoryOf(integration);
+const related = relatedIntegrations(integration);
+const AUTH_LABEL = { oauth: `Sign in with ${name}`, key: "API key", none: "No account needed" };
+const groups = [
+  { title: "Looks up", actions: actions.filter((action) => action.readOnly) },
+  { title: "Takes action", actions: actions.filter((action) => !action.readOnly) },
+].filter((group) => group.actions.length > 0);
+---
+
+<SiteFrame
+  title={`${name} AI agent: connect ${name} to Rakazo`}
+  description={`Let your Rakazo bots work in ${name}. ${actions.length} actions, connected in one step.`}
+  structuredData={integrationBreadcrumbs(integration)}
+  markdownAlternate={`${integrationPath(integration.slug).slice(0, -1)}.md`}
+  wide
+>
+  <nav class="ix-crumb" aria-label="Breadcrumb">
+    <a href={INTEGRATIONS_PATH}>Integrations</a>
+    <span aria-hidden="true">/</span>
+    <span>{CATEGORY_LABELS[category]}</span>
+  </nav>
+
+  <header class="ix-detail">
+    <IntegrationLogo integration={integration} size="xl" />
+    <div class="ix-detail__copy">
+      <h1>{name}</h1>
+      {integration.description && <p>{integration.description}</p>}
+      <p class="ix-facts">
+        <span>{actions.length} actions</span>
+        <span>{AUTH_LABEL[integration.auth]}</span>
+      </p>
+    </div>
+    <a class="button button--primary ix-detail__cta" href={APP_URL}>Connect {name}</a>
+  </header>
+
+  <section class="ix-section">
+    <h2>What your bot can do in {name}</h2>
+    <div class="ix-actions">
+      {
+        groups.map((group) => (
+          <div class="ix-actions__group">
+            <h3>{group.title}</h3>
+            <ul>
+              {group.actions.slice(0, VISIBLE_ACTIONS).map((action) => (
+                <li>
+                  <span class="ix-action__name">{action.name}</span>
+                  {action.description && (
+                    <span class="ix-action__description">{action.description}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {group.actions.length > VISIBLE_ACTIONS && (
+              <details class="ix-actions__more">
+                <summary>Show {group.actions.length - VISIBLE_ACTIONS} more</summary>
+                <ul>
+                  {group.actions.slice(VISIBLE_ACTIONS).map((action) => (
+                    <li>
+                      <span class="ix-action__name">{action.name}</span>
+                      {action.description && (
+                        <span class="ix-action__description">{action.description}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  {
+    related.length > 0 && (
+      <section class="ix-section">
+        <h2>More {CATEGORY_LABELS[category].toLowerCase()} apps</h2>
+        <ul class="ix-featured ix-featured--compact">
+          {related.map((app) => (
+            <li>
+              <a class="ix-feature" href={integrationPath(app.slug)}>
+                <IntegrationLogo integration={app} size="lg" />
+                <span class="ix-feature__name">{app.name}</span>
+                <span class="ix-feature__meta">{app.actions.length} actions</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+</SiteFrame>

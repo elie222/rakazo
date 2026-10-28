@@ -67,7 +67,7 @@ Command variables are managed with the same Credentials section as other reusabl
 
 ## Saved website logins
 
-When you want a bot to sign in to a website by itself, ask it to save the login. It calls `request_secret` with `"auth": {"type": "login"}` and the origin of the sign-in page:
+When you want a bot to sign in to a website by itself, ask it to save the login. It calls `request_secret` with `"auth": {"type": "login"}`, the origin of the sign-in page, and the labels of the values the site signs in with:
 
 ```json
 {
@@ -77,23 +77,28 @@ When you want a bot to sign in to a website by itself, ask it to save the login.
     "name": "example_login",
     "origin": "https://login.example.test",
     "auth": { "type": "login" }
-  }
+  },
+  "fields": ["ID number", "Phone number"]
 }
 ```
 
-The card asks for a username and a password. Both are stored encrypted in the same way as other reusable credentials. The fill tool never returns the password; the username can appear on the page and in screenshots. To sign in, the bot fills fields found with `browser_snapshot`:
+Without `fields`, the card asks for a Username, which starts visible, and a Password, which starts hidden, as logins always have. A login has 1 to 8 fields, each with its own label. The card asks for one value per field, and fields the bot names all start hidden; you can switch any field between hidden and visible. Only you choose: the bot names the fields but cannot make one visible, and the server only accepts an answer with exactly the fields the card asked for. All values are stored encrypted in the same way as other reusable credentials. To sign in, the bot fills fields found with `browser_snapshot`, naming each by its label:
 
 ```json
 {
   "actions": [
-    { "kind": "fill_secret", "ref": "e3", "secret": "example_login", "field": "username" },
-    { "kind": "fill_secret", "ref": "e4", "secret": "example_login", "field": "password" },
+    { "kind": "fill_secret", "ref": "e3", "secret": "example_login", "field": "ID number" },
+    { "kind": "fill_secret", "ref": "e4", "secret": "example_login", "field": "Phone number" },
     { "kind": "click", "ref": "e5" }
   ]
 }
 ```
 
-The backend decrypts the value and the page browser types it only if the page is still on the saved origin at that moment, so a login cannot be typed into another site or a page that redirected. The origin must be HTTPS: `RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP` does not apply to website logins. The password goes only into a password field, and the username only into a text, email or tel input. A site's "show password" control still works normally; revealing a password can make it visible in screenshots. Values travel to the computer over stdin, not command-line arguments. Snapshots never report the value of a field that holds a saved login. In every run, not only the one that filled it, tool results such as page results, command output and file reads are scrubbed of each saved login's password in plain, URL-encoded, form-encoded and base64 form; passwords shorter than 6 characters are only scrubbed in the run that fills them. In the run that fills a login, page results are also scrubbed of its username when it is 6 or more characters, which covers a site that echoes it in page text; shorter usernames are not scrubbed because redaction replaces every occurrence. Later runs leave the username visible, since it is often the user's own email address. Only this bot's own runs scrub its passwords: on a Team Computer, other bots' runs don't, so use a Private Computer for a bot that signs in to sites. A login cannot be used with `secret_request`. Fills need no approval: saving the login is the approval, and it is bound to one site. Use `forget_secret` to remove it.
+`"username"` and `"password"` also name a login's first visible and first hidden field, so a bot can fill a login saved in settings without knowing its labels.
+
+The backend decrypts the value and the page browser types it only if the page is still on the saved origin at that moment, so a login cannot be typed into another site or a page that redirected. The origin must be HTTPS: `RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP` does not apply to website logins. A hidden field goes only into a password field, and a visible field only into a text, email or tel input. A visible field can appear on the page and in screenshots. A site's "show password" control still works normally; revealing a hidden value can make it visible in screenshots. Values travel to the computer over stdin, not command-line arguments. Snapshots never report the value of a field that holds a saved login. In every run, not only the one that filled it, tool results such as page results, command output and file reads are scrubbed of each saved login's hidden fields in plain, URL-encoded, form-encoded and base64 form; hidden values shorter than 6 characters are only scrubbed in the run that fills them. In the run that fills a login, page results are also scrubbed of its visible fields of 6 or more characters, which covers a site that echoes them in page text; shorter visible values are not scrubbed because redaction replaces every occurrence. Later runs leave visible fields readable, since one is often the user's own email address. Only this bot's own runs scrub its hidden fields: on a Team Computer, other bots' runs don't, so use a Private Computer for a bot that signs in to sites. A login cannot be used with `secret_request`. Fills need no approval: saving the login is the approval, and it is bound to one site. Use `forget_secret` to remove it.
+
+Logins saved before fields existed read as a visible Username and a hidden Password, and fill exactly as before.
 
 ## Managing saved credentials
 

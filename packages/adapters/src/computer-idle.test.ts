@@ -31,6 +31,7 @@ import {
   touchRunningComputer,
 } from "./computer-idle.js";
 import { e2bCreateOptions } from "./e2b-sandbox.js";
+import { HomeSaveConflictError } from "./home-object-store.js";
 
 describe("sandbox idle", () => {
   beforeEach(() => {
@@ -503,6 +504,26 @@ describe("sandbox idle", () => {
       }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("checks again later without an error when another save moved the home first", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.home.commit.mockRejectedValueOnce(new HomeSaveConflictError());
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "saved_elsewhere",
+      }),
+    );
   });
 
   it("schedules the next idle check when stopping fails", async () => {

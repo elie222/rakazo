@@ -77,6 +77,8 @@ ${home.cta.copy}
 - [Self-hosted AI agent](https://rakazo.com/self-hosted-ai-agent/)
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Alternatives](https://rakazo.com/alternatives/)
+- [Docs](https://rakazo.com/docs/)
+- [Integrations](https://rakazo.com/integrations/)
 - [Blog](https://rakazo.com/blog/)
 - [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
@@ -175,6 +177,8 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [Self-hosting Markdown](https://rakazo.com/self-hosted-ai-agent.md): the setup guide with language-tagged code examples.
 - [Full self-hosting reference](https://github.com/elie222/rakazo/blob/main/docs/self-host.md)
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
+- [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
+- [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
 - [Support](https://rakazo.com/support/)

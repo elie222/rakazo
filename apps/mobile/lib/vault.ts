@@ -1,9 +1,10 @@
-import type { BotSecretMetadata } from "@rakazo/contracts";
+import type { BotSecretMetadata, LoginFieldInput } from "@rakazo/contracts";
 import {
   BotSecretName,
   commandVariableName,
   commandVariableProblem,
   encodeLoginSecret,
+  LoginSecretValue,
 } from "@rakazo/contracts";
 import { secretDestinationLabel } from "./secret-destination";
 
@@ -11,7 +12,7 @@ export type CredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 export type CredentialType = CredentialAuth["type"];
 export type CredentialDestination = { name: string; origin?: string; auth: CredentialAuth };
 
-/** What the add form collects besides the protected username and value. */
+/** What the add form collects besides the protected values. */
 export type CredentialDraft = {
   name: string;
   origin: string;
@@ -21,7 +22,7 @@ export type CredentialDraft = {
 };
 
 /** The protected fields: held only in the form's state and cleared on every submit or close. */
-export type CredentialSecret = { username: string; value: string };
+export type CredentialSecret = { value: string; fields: readonly LoginFieldInput[] };
 
 export const EMPTY_DRAFT: CredentialDraft = {
   name: "",
@@ -85,7 +86,9 @@ export function draftDestination(draft: CredentialDraft): CredentialDestination 
 }
 
 export function secretReady(type: CredentialType, secret: CredentialSecret): boolean {
-  return secret.value.length > 0 && (type !== "login" || secret.username.trim().length > 0);
+  return type === "login"
+    ? LoginSecretValue.safeParse({ fields: secret.fields }).success
+    : secret.value.length > 0;
 }
 
 export function draftReady(draft: CredentialDraft, secret: CredentialSecret): boolean {
@@ -99,10 +102,12 @@ export function draftReady(draft: CredentialDraft, secret: CredentialSecret): bo
   );
 }
 
-/** The stored value: a website login is saved as one encoded username and password pair. */
+/** The stored value: a website login is saved as its encoded fields. */
 export function credentialValue(type: CredentialType, secret: CredentialSecret): string {
   return type === "login"
-    ? encodeLoginSecret({ username: secret.username.trim(), password: secret.value })
+    ? encodeLoginSecret({
+        fields: secret.fields.map(({ label, value, hidden }) => ({ label, value, hidden })),
+      })
     : secret.value;
 }
 

@@ -13,6 +13,14 @@ const api = vi.hoisted(() => ({
   mcp: { servers: mocks, assignments: { all: access.all, replace: access.replace } },
   bots: { list: access.bots },
 }));
+// One space, so no "Available in" choice appears.
+vi.mock("../components/integrations/space-availability", () => ({
+  AvailabilityControl: () => null,
+  AvailabilityLabel: () => null,
+  reachesOtherSpaces: () => false,
+  useOwnSpaces: () => [],
+}));
+
 vi.mock("../lib/rpc", () => ({
   rpc: api,
   rpcForSpace: () => api,

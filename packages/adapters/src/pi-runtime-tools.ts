@@ -12,7 +12,11 @@ import type {
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { isToolPauseResult } from "./approval-effect.js";
-import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
+import {
+  connectionIdArgument,
+  credentialArgument,
+  loginFieldLabelsArgument,
+} from "./bot-secrets.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -148,7 +152,10 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
-  if (toolName === "skill_read") return `Reading skill: ${detail(record.name)}`;
+  if (toolName === "skill_read")
+    return record.file
+      ? `Reading ${detail(record.file)} from ${detail(record.name)}`
+      : `Reading skill: ${detail(record.name)}`;
   if (toolName === "skill_create") return `Creating skill: ${detail(record.name ?? "skill")}`;
   if (toolName === "skill_update")
     return `Updating skill: ${detail(record.name ?? record.skillId)}`;
@@ -232,6 +239,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
+    ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };
 }
 

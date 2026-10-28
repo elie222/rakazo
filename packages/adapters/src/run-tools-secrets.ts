@@ -19,6 +19,7 @@ import {
   generateBotSecret,
   listBotSecrets,
   normalizeSecretDestination,
+  requestedLoginFields,
   requestWithBotSecret,
   resolveRequestSecretDestination,
   sameSecretDestination,
@@ -86,6 +87,9 @@ export const secretTools: ToolHandlers = {
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
     const connectionId = resolvedSecret.connectionId;
+    const loginFields =
+      destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
+    if (loginFields?.error) return call.finish({ error: loginFields.error });
     if (destination) {
       const existing = await findBotSecret(deps.prisma, run, destination.name);
       if (existing && !sameSecretDestination(existing, destination)) {
@@ -276,6 +280,7 @@ export const secretTools: ToolHandlers = {
           text: String(args.label ?? "Code"),
           input: "secret",
           ...(destination ? { credential: destination } : {}),
+          ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
           purpose: normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
           status: "pending",
         },

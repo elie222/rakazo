@@ -223,6 +223,7 @@ function SpaceShell() {
       botId: bot.id,
       botName: bot.name,
       botColor: bot.color,
+      botAvatarSet: bot.avatarSet,
       transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
     });
   };
@@ -434,6 +435,7 @@ function SpaceShell() {
     return {
       botId: run.botId,
       color: bot?.color ?? FALLBACK_BOT_COLOR,
+      avatarSet: bot?.avatarSet,
       name: bot?.name,
       status: run.status,
     };
@@ -779,6 +781,7 @@ function SpaceShell() {
         navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
+        openSkills={() => setOverlay({ kind: "skills" })}
       />
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}

@@ -49,6 +49,13 @@ export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrl
   signal?: AbortSignal;
 }
 
+export class ConnectorRedirectError extends Error {
+  constructor() {
+    super("Connector redirects are not allowed");
+    this.name = "ConnectorRedirectError";
+  }
+}
+
 export interface SafeRemoteFetch {
   (input: string | URL | Request, init?: RequestInit): Promise<Response>;
   close(): Promise<void>;
@@ -235,7 +242,7 @@ export function createSafeRemoteFetch(
       });
     }
     if (response.status >= 300 && response.status < 400) {
-      throw new Error("Connector redirects are not allowed");
+      throw new ConnectorRedirectError();
     }
     return response;
   };

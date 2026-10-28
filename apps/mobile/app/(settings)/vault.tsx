@@ -12,6 +12,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { VaultCredentialSheet } from "../../components/vault-credential-sheet";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
+import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
@@ -131,11 +132,28 @@ export default function Vault() {
       ]);
       return;
     }
-    Alert.alert(name, `${revealed.username}\n${revealed.password}`, [
-      { text: t("Copy username"), onPress: () => copy(revealed.username) },
-      { text: t("Copy password"), onPress: () => copy(revealed.password) },
-      { text: t("Done"), style: "cancel" },
-    ]);
+    Alert.alert(
+      name,
+      revealed.fields.map((field) => `${field.label}\n${field.value}`).join("\n\n"),
+      [
+        {
+          text: t("Copy"),
+          // A login can have more fields than an Android alert has buttons, so each gets a sheet row.
+          onPress: () =>
+            presentMessageActionSheet({
+              title: name,
+              actions: revealed.fields.map((field) => ({
+                text: t("Copy {label}", { label: field.label }),
+                onPress: () => copy(field.value),
+              })),
+              cancel: t("Cancel"),
+              more: t("More"),
+              colorScheme,
+            }),
+        },
+        { text: t("Done"), style: "cancel" },
+      ],
+    );
   }
 
   function runAction(credential: BotSecretMetadata, action: CredentialAction) {

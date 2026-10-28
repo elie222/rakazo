@@ -439,6 +439,11 @@ export interface AgentSteeringMessage {
   id: string;
   messageId: string;
   text: string;
+  /**
+   * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
+   * else, or no origin, is passed on as a neutral note.
+   */
+  origin?: "user" | "member" | "messaging" | "webhook";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
@@ -614,8 +619,16 @@ export interface ModelCallObserver {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
+  /** Explicit provider reasoning lifecycle only; never contains reasoning text. */
+  | { type: "thinking"; active: boolean }
   /** A new assistant message starts; its text does not continue the previous text. */
   | { type: "turn" }
+  /** Messages sent while the bot worked were handed to the model before this turn. */
+  | {
+      type: "steered";
+      /** At least one came from the run's own person, in the app or a connected chat. */
+      fromRunUser: boolean;
+    }
   | {
       type: "progress";
       text: string;
@@ -1036,8 +1049,9 @@ export type BrowserActStep =
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
       /**
-       * What `text` is: part of a saved login (a password is typed only into a password field) or
-       * an approved purchase's card detail. A card fill always carries `origin`.
+       * What `text` is: a saved login's hidden field ("password", typed only into a password
+       * field) or visible field ("username"), or an approved purchase's card detail. A card fill
+       * always carries `origin`.
        */
       field?: "username" | "password" | "card";
     }

@@ -93,11 +93,13 @@ export function botProfileLabelsChanged(input: {
   title?: unknown;
   description?: unknown;
   color?: unknown;
+  avatarSet?: unknown;
 }): boolean {
   return (
     input.name !== undefined ||
     input.title !== undefined ||
     input.description !== undefined ||
-    input.color !== undefined
+    input.color !== undefined ||
+    input.avatarSet !== undefined
   );
 }

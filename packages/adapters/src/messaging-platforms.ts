@@ -4,12 +4,17 @@ import {
   escapeMarkdownV2,
   TelegramFormatConverter,
 } from "@chat-adapter/telegram";
-import { createWhatsAppAdapter, splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import {
+  createWhatsAppAdapter,
+  splitMessage,
+  WhatsAppAdapter,
+  WhatsAppApiError,
+} from "@chat-adapter/whatsapp";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
-import { convertEmojiPlaceholders, markdownToPlainText } from "chat";
+import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -334,7 +339,7 @@ const MESSAGE_PART_LIMIT = 4096;
 
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
-  if (provider === "whatsapp") return splitKeepingPairs(body);
+  if (provider === "whatsapp") return splitWhatsAppPart(body);
   if (provider !== "telegram" && !provider.startsWith("telegram-")) return [body];
 
   return splitTelegramPart(body);
@@ -376,16 +381,43 @@ function splitTelegramPart(body: string, literal = false): string[] {
   const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
 
-  // Refine only chunks that grow beyond the limit during rendering.
+  return halve(body).flatMap((half) => splitTelegramPart(half, literal));
+}
+
+/** Exposes the adapter's Markdown rendering, which the package does not export. */
+class WhatsAppRenderer extends WhatsAppAdapter {
+  render(markdown: string): string {
+    return convertEmojiPlaceholders(this.formatConverter.renderPostable({ markdown }), "whatsapp");
+  }
+}
+
+let whatsappRenderer: WhatsAppRenderer | undefined;
+
+function splitWhatsAppPart(body: string): string[] {
+  whatsappRenderer ??= new WhatsAppRenderer({
+    accessToken: "",
+    appSecret: "",
+    logger: new ConsoleLogger("silent"),
+    phoneNumberId: "",
+    userName: "",
+    verifyToken: "",
+  });
+  // The adapter re-splits anything that renders past the limit, outside the
+  // queue's per-part retries and without keeping UTF-16 pairs together.
+  if (whatsappRenderer.render(body).length <= MESSAGE_PART_LIMIT) return [body];
+
+  const parts = splitKeepingPairs(body);
+  return (parts.length > 1 ? parts : halve(body)).flatMap(splitWhatsAppPart);
+}
+
+/** Refines chunks that only grow beyond the limit during rendering. */
+function halve(body: string): string[] {
   const midpoint = Math.floor(body.length / 2);
   const prefix = body.slice(0, midpoint);
   let boundary = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf(" "));
   if (boundary < midpoint / 2) boundary = midpoint;
   if (/[\uD800-\uDBFF]/.test(body[boundary - 1]!)) boundary--;
-  return [
-    ...splitTelegramPart(body.slice(0, boundary), literal),
-    ...splitTelegramPart(body.slice(boundary), literal),
-  ];
+  return [body.slice(0, boundary), body.slice(boundary)];
 }
 
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */

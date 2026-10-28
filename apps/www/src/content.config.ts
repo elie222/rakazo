@@ -1,6 +1,9 @@
 import { defineCollection } from "astro:content";
 import { glob } from "astro/loaders";
 import { z } from "astro/zod";
+import { readFile } from "node:fs/promises";
+import { DOCS_SLUGS } from "./docs";
+import { rewriteDocsLinks } from "./docs-links";
 
 const blog = defineCollection({
   loader: glob({ pattern: "**/*.md", base: "./src/content/blog" }),
@@ -37,4 +40,19 @@ const blog = defineCollection({
   }),
 });
 
-export const collections = { blog };
+const docs = defineCollection({
+  loader: {
+    name: "repo-docs",
+    async load({ store, renderMarkdown, watcher }) {
+      store.clear();
+      for (const slug of DOCS_SLUGS) {
+        const url = new URL(`../../../docs/${slug}.md`, import.meta.url);
+        const body = rewriteDocsLinks(await readFile(url, "utf8"), slug);
+        store.set({ id: slug, data: {}, body, rendered: await renderMarkdown(body) });
+        watcher?.add(url.pathname);
+      }
+    },
+  },
+});
+
+export const collections = { blog, docs };

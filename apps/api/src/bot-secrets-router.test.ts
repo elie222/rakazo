@@ -1,5 +1,6 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
+import { encodeLoginSecret } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
@@ -355,7 +356,7 @@ describe("botSecrets router", () => {
         value,
       });
       expect(result.status).toBe(400);
-      expect(result.text).toContain("A website login needs a username and password");
+      expect(result.text).toContain("A website login needs a label and a value for every field");
       expect(result.text).not.toContain(FAKE_VALUE);
       expect(secrets.put).not.toHaveBeenCalled();
     }
@@ -553,7 +554,7 @@ describe("vault router", () => {
     expect((await call("vault/reveal", { name: "missing" })).status).toBe(404);
   });
 
-  it("reveals a website login's username and password", async () => {
+  it("saves an older app's username and password as fields and reveals them", async () => {
     const { auth, call } = botSecretDeps();
     auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
     await call("vault/put", {
@@ -561,9 +562,25 @@ describe("vault router", () => {
       value: JSON.stringify({ username: "person@example.test", password: FAKE_VALUE }),
     });
     expect((await call("vault/reveal", { name: "site" })).body.json).toEqual({
-      username: "person@example.test",
-      password: FAKE_VALUE,
+      fields: [
+        { label: "Username", value: "person@example.test", hidden: false },
+        { label: "Password", value: FAKE_VALUE, hidden: true },
+      ],
     });
+  });
+
+  it("reveals a website login's fields in order", async () => {
+    const { auth, call } = botSecretDeps();
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    const fields = [
+      { label: "Account number", value: "12345678", hidden: false },
+      { label: "Date of birth", value: FAKE_VALUE, hidden: true },
+    ];
+    await call("vault/put", {
+      destination: { name: "site", origin: "https://login.example.test", auth: { type: "login" } },
+      value: encodeLoginSecret({ fields }),
+    });
+    expect((await call("vault/reveal", { name: "site" })).body.json).toEqual({ fields });
   });
 
   it("refuses a save the Space stops customizing while it is being prepared", async () => {

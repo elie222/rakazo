@@ -80,6 +80,20 @@ describe("hono request logging", () => {
     expect(sink.events.map((event) => event.level)).toEqual(["info", "warn", "error"]);
   });
 
+  it("warns for a 5xx the disconnected client never received", async () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    const client = new AbortController();
+    const app = new Hono();
+    app.use("*", requestLogging(logger));
+    app.get("/gone", (c) => {
+      client.abort();
+      return c.json({ error: "down" }, 500);
+    });
+    await app.request(new Request("http://localhost/gone", { signal: client.signal }));
+    expect(sink.events[0]).toMatchObject({ level: "warn", "http.status": 500 });
+  });
+
   it("isolates concurrent requests", async () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });

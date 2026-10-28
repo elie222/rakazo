@@ -19,6 +19,7 @@ import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
+import { HomeSaveConflictError } from "./home-object-store.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -679,7 +680,9 @@ function deferSleep(error: unknown, computer: { id: string; kind: string }): boo
             ? error.limit === "bytes"
               ? "too_large"
               : "too_many_files"
-            : undefined;
+            : error instanceof HomeSaveConflictError
+              ? "saved_elsewhere"
+              : undefined;
   if (!reason) return false;
   getLogger().warn("computer.sleep_deferred", {
     "computer.id": computer.id,

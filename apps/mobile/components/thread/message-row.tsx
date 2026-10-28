@@ -1,5 +1,5 @@
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type { MessageReaction } from "@rakazo/contracts";
+import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
 import { canMarkMessageUnread, isPeerReceiptBlocks, liveMessageComposing } from "@rakazo/core";
@@ -47,7 +47,7 @@ export type MessageRowActions = {
   answer: (
     message: MobileMessage,
     answer: string,
-    username?: string,
+    fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
@@ -89,6 +89,7 @@ type MessageRowProps = {
   peerReplies?: "collapsed" | "expanded";
   activityBotId?: string;
   activityColor?: string;
+  activityAvatarSet?: BotAvatarSet;
   activityStatus?: MobileBot["status"];
   userBubble?: UserBubble;
   inGroup: boolean;
@@ -124,6 +125,7 @@ export const MessageRow = memo(function MessageRow({
   peerReplies,
   activityBotId,
   activityColor,
+  activityAvatarSet,
   activityStatus,
   userBubble,
   inGroup,
@@ -388,6 +390,7 @@ export const MessageRow = memo(function MessageRow({
           <View style={{ paddingTop: 22 }}>
             <BotAvatar
               color={activityColor ?? tokens.mutedForeground}
+              avatarSet={activityAvatarSet}
               identity={activityBotId}
               size={inGroup ? 20 : 28}
               status={activityStatus}

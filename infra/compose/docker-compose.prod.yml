@@ -478,6 +478,9 @@ services:
     mem_limit: 512m
     environment:
       NODE_ENV: production
+      # vite preview bundles its config with Rolldown, which starts one thread per host CPU.
+      # Keep that fixed so pids_limit holds on many-core hosts (#2430).
+      RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}

@@ -22,6 +22,32 @@ msgstr "（未読）"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {#個のボットが独自のモデルを使用しています:} other {#個のボットが独自のモデルを使用しています:}}"
 
+#. placeholder {0}: servers.length
+#: src/pages/PluginsOverlay.tsx
+msgid "{0, plural, one {# connector} other {# connectors}}"
+msgstr ""
+
+#. placeholder {0}: skill.files.length
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{0, plural, one {# file} other {# files}}"
+msgstr ""
+
+#. placeholder {0}: skills.length - shownSkills.length
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{0, plural, one {# more} other {# more}}"
+msgstr ""
+
+#. placeholder {0}: skillCount(install)
+#: src/components/integrations/skills-dialog.tsx
+msgid "{0, plural, one {# skill} other {# skills}}"
+msgstr ""
+
+#. placeholder {0}: availability.spaceIds.length
+#. placeholder {0}: chosen.length
+#: src/components/integrations/space-availability.tsx
+msgid "{0, plural, one {# space} other {# spaces}}"
+msgstr ""
+
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -135,6 +161,10 @@ msgstr "{botName}のコンピューター"
 #: src/components/VaultSettings.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable}は予約済みのため、コマンド変数として使用できません。別の名前を選んでください。"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "{connectedCount, plural, one {# connected} other {# connected}}"
+msgstr ""
 
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -330,6 +360,10 @@ msgstr "{seats, plural, one {#席} other {#席}}"
 msgid "{size} B"
 msgstr "{size} B"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "{skillCount, plural, one {# skill} other {# skills}}"
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Backup models failed or were unavailable for this request."
@@ -374,6 +408,10 @@ msgstr "@{0}"
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "${0} / 月"
+
+#: src/components/integrations/space-availability.tsx
+msgid "1 space"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -447,6 +485,7 @@ msgstr "有効"
 msgid "Activity"
 msgstr "アクティビティ"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -513,20 +552,16 @@ msgid "Add credits"
 msgstr "クレジットを追加"
 
 #: src/pages/PluginsOverlay.tsx
-msgid "Add Executor"
-msgstr "Executorを追加"
+msgid "Add custom"
+msgstr ""
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Add fallback"
 msgstr "フォールバックを追加"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Add GraphQL"
-msgstr "GraphQLを追加"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Add GraphQL endpoint"
-msgstr "GraphQLエンドポイントを追加"
+#: src/components/LoginFields.tsx
+msgid "Add field"
+msgstr "フィールドを追加"
 
 #: src/components/ModelHeadersEditor.tsx
 msgid "Add header"
@@ -537,17 +572,12 @@ msgid "Add item"
 msgstr "項目を追加"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/PluginsOverlay.tsx
 msgid "Add MCP server"
 msgstr "MCPサーバーを追加"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Add open work"
 msgstr "未完了の作業を追加"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Add OpenAPI"
-msgstr "OpenAPIを追加"
 
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
@@ -558,10 +588,6 @@ msgstr "パスキーを追加"
 msgid "Add provider"
 msgstr "プロバイダーを追加"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Add remote MCP server"
-msgstr "リモートMCPサーバーを追加"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Add server"
 msgstr "サーバーを追加"
@@ -569,6 +595,10 @@ msgstr "サーバーを追加"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add server URL"
 msgstr "サーバーURLを追加"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Add skills"
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Add to an existing bot"
@@ -578,10 +608,6 @@ msgstr "既存のボットに追加"
 msgid "Add to routine"
 msgstr "ルーティンに追加"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Add Treg"
-msgstr "Tregを追加"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Add trigger"
 msgstr "トリガーを追加"
@@ -590,10 +616,12 @@ msgstr "トリガーを追加"
 msgid "Add workspace"
 msgstr "ワークスペースを追加"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"
 msgstr "追加済み"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -604,7 +632,6 @@ msgstr "追加中…"
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -623,6 +650,10 @@ msgstr "エージェントのコンピューター"
 msgid "Agents:"
 msgstr "エージェント:"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "All"
+msgstr ""
+
 #. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
 msgid "All ${0} goes to model usage."
@@ -632,6 +663,10 @@ msgstr "${0} はすべてモデルの利用に充てられます。"
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
 msgstr "すべてのボット"
+
+#: src/components/integrations/space-availability.tsx
+msgid "All spaces"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "All statuses"
@@ -811,6 +846,11 @@ msgstr "承認"
 msgid "Approve this server to let your agent use its tools."
 msgstr "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。"
 
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Apps"
+msgstr ""
+
 #: src/pages/BotContextMenu.tsx
 msgid "Archive"
 msgstr "アーカイブ"
@@ -857,6 +897,10 @@ msgstr "ファイルを添付"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "添付ファイル"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Authentication"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Authentication failed."
@@ -907,6 +951,10 @@ msgstr "ルーティンの保存後に利用可能"
 msgid "Available credits"
 msgstr "利用可能なクレジット"
 
+#: src/components/integrations/space-availability.tsx
+msgid "Available in"
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Available to shell commands as {commandVariable}"
 msgstr "シェルコマンドで{commandVariable}として利用可能"
@@ -915,6 +963,8 @@ msgstr "シェルコマンドで{commandVariable}として利用可能"
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/components/integrations/skills-dialog.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/NavLinkPage.tsx
@@ -1032,6 +1082,10 @@ msgstr "専用のコンピューターとブラウザを持つボット"
 msgid "Brain label"
 msgstr "Brainラベル"
 
+#: src/components/integrations/skills-dialog.tsx
+msgid "Browse"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "MCPサーバーを探す"
@@ -1078,6 +1132,7 @@ msgstr "画像を読み取れません"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -1091,7 +1146,6 @@ msgstr "画像を読み取れません"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1344,6 +1398,10 @@ msgstr "パネルを閉じる"
 msgid "Close preview"
 msgstr "プレビューを閉じる"
 
+#: src/components/integrations/skills-dialog.tsx
+msgid "Close skills"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "Close table"
 msgstr "テーブルを閉じる"
@@ -1419,6 +1477,10 @@ msgstr "CommandCode"
 msgid "Comment"
 msgstr "コメント"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Communication"
+msgstr ""
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Compact"
 msgstr "コンパクト"
@@ -1490,11 +1552,16 @@ msgstr ""
 msgid "Confirm password"
 msgstr "パスワードの確認"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Confirm removal"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "このブラウザセッションからURLにアクセスできることを確認してから、もう一度テストしてください。"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1531,10 +1598,6 @@ msgstr "APIキーを接続"
 msgid "Connect apps"
 msgstr "アプリを接続"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Connect Executor"
-msgstr "Executorを接続"
-
 #: src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "MCPサーバー「{name}」を接続"
@@ -1555,10 +1618,6 @@ msgstr "OAuthを接続"
 msgid "Connect this model's provider first."
 msgstr "先にこのモデルのプロバイダーを接続してください。"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Connect Treg"
-msgstr "Tregを接続"
-
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
@@ -1566,8 +1625,10 @@ msgstr "モデルで自分のAPIキーを接続するか、請求でRakazoクレ
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1578,6 +1639,7 @@ msgstr "接続済み"
 msgid "Connected {0}."
 msgstr "{0}を接続しました。"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1600,6 +1662,10 @@ msgstr "接続テストに失敗しました。"
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0}への接続はまだ保留中です。閉じてから後で再確認できます。"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Connector"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
@@ -1616,6 +1682,7 @@ msgstr "コンテキスト上限"
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/dialogs.tsx
 msgid "Continue"
 msgstr "続行"
 
@@ -1684,6 +1751,10 @@ msgstr "追加できませんでした"
 msgid "Could not add MCP server"
 msgstr "MCPサーバーを追加できませんでした"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not add skills"
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "Could not approve this server"
 msgstr "このサーバーを承認できませんでした"
@@ -1699,6 +1770,10 @@ msgstr ""
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
 msgstr "パスワードを変更できませんでした"
+
+#: src/components/integrations/space-availability.tsx
+msgid "Could not change where this is available"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1844,9 +1919,17 @@ msgstr "{0}をダウンロードできませんでした。もう一度お試し
 msgid "Could not download {name}. Try again."
 msgstr "{name}をダウンロードできませんでした。もう一度お試しください。"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not enable tools"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "コネクタをインストールできませんでした"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not install plugin"
+msgstr ""
 
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
@@ -1901,6 +1984,7 @@ msgstr "実行履歴を読み込めませんでした"
 msgid "Could not load sign-in options"
 msgstr "ログイン方法を読み込めませんでした"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "スキルを読み込めませんでした"
@@ -1940,6 +2024,10 @@ msgstr "請求ページを開けませんでした"
 msgid "Could not play a test clip"
 msgstr "テスト音声を再生できませんでした"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not preview plugin"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "モデルサーバーに接続できませんでした。"
@@ -1968,9 +2056,17 @@ msgstr "削除できませんでした"
 msgid "Could not remove connector"
 msgstr "コネクタを削除できませんでした"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not remove plugin"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "ルールを削除できませんでした"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not remove skills"
+msgstr ""
 
 #: src/components/VaultSettings.tsx
 msgid "Could not remove the credential"
@@ -2009,6 +2105,7 @@ msgstr "ルーティンを実行できませんでした"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/dialogs.tsx
 #: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "保存できませんでした"
@@ -2074,6 +2171,10 @@ msgstr "送信できませんでした"
 #: src/components/VaultSettings.tsx
 msgid "Could not show the credential"
 msgstr "認証情報を表示できませんでした"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Could not sign in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -2261,6 +2362,10 @@ msgstr "ボットのアバターをカスタマイズ"
 msgid "Dark"
 msgstr "ダーク"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Data"
+msgstr ""
+
 #: src/lib/billing.ts
 #: src/lib/cron.ts
 msgid "day"
@@ -2391,6 +2496,10 @@ msgstr "拒否"
 msgid "Description"
 msgstr "説明"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Design"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Desktop app"
 msgstr "デスクトップアプリ"
@@ -2403,6 +2512,10 @@ msgstr "デスクトップの更新"
 #: src/pages/shell/composer-error.tsx
 msgid "Details"
 msgstr "詳細"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Developer"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2466,10 +2579,6 @@ msgstr "閉じました"
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
 msgstr "閉じました。MCP設定からいつでも再接続できます。"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Display name"
-msgstr "表示名"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Docker"
@@ -2599,10 +2708,6 @@ msgstr "対応する場合… 無視する場合…"
 #: src/lib/user-error.ts
 msgid "Enter a password"
 msgstr "パスワードを入力してください"
-
-#: src/components/VaultSettings.tsx
-msgid "Enter a username and password"
-msgstr "ユーザー名とパスワードを入力してください"
 
 #: src/lib/user-error.ts
 msgid "Enter a valid email"
@@ -2806,6 +2911,10 @@ msgstr "日付で絞り込む"
 msgid "Filters"
 msgstr "フィルター"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Finance"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
@@ -2862,6 +2971,11 @@ msgstr "開始日"
 #: src/pages/ActivityList.tsx
 msgid "From {0}"
 msgstr "{0}から"
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "From GitHub"
+msgstr ""
 
 #: src/pages/WindowChrome.tsx
 msgid "Fullscreen"
@@ -2947,6 +3061,10 @@ msgstr "サンプルを再生"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "こんにちは。返信を読み上げるときは、このような声になります。"
 
+#: src/components/LoginFields.tsx
+msgid "Hidden"
+msgstr "非表示"
+
 #: src/components/VaultSettings.tsx
 msgid "Hide"
 msgstr "非表示"
@@ -3011,6 +3129,10 @@ msgstr "Rakazoをどのように使いますか？"
 msgid "I’m done"
 msgstr "完了しました"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "If you heard that, voice is ready."
 msgstr "これが聞こえたら、音声の準備は完了です。"
@@ -3043,10 +3165,6 @@ msgstr "インポート"
 msgid "Import an agent"
 msgstr "エージェントをインポート"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Import OpenAPI JSON"
-msgstr "OpenAPI JSONをインポート"
-
 #: src/pages/shell/composer.tsx
 msgid "Import this agent as a bot?"
 msgstr "このエージェントをボットとしてインポートしますか？"
@@ -3058,6 +3176,10 @@ msgstr "進行中"
 #: src/lib/ticket-status.ts
 msgid "In review"
 msgstr "レビュー中"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "In this bot"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -3216,6 +3338,10 @@ msgstr "保持"
 msgid "key"
 msgstr "キー"
 
+#: src/components/LoginFields.tsx
+msgid "Label"
+msgstr "ラベル"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "言語"
@@ -3325,6 +3451,10 @@ msgstr "メモリ設定を読み込み中…"
 msgid "Loading model catalog…"
 msgstr "モデルカタログを読み込み中…"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Loading plugins…"
+msgstr ""
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Loading preview…"
 msgstr "プレビューを読み込み中…"
@@ -3333,6 +3463,8 @@ msgstr "プレビューを読み込み中…"
 msgid "Loading voice providers…"
 msgstr "音声プロバイダーを読み込み中…"
 
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
@@ -3429,6 +3561,10 @@ msgstr "未読にする"
 msgid "Markdown table"
 msgstr "Markdown テーブル"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Marketing"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3458,8 +3594,11 @@ msgstr "最大出力トークン数"
 msgid "MCP endpoint"
 msgstr "MCPエンドポイント"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+msgid "MCP server"
+msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCPサーバー"
@@ -3671,9 +3810,14 @@ msgstr "月間クレジット"
 msgid "Monthly credits expire at renewal. Top-ups do not expire."
 msgstr "月間クレジットは更新時に失効します。追加購入分は失効しません。"
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "その他"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "More apps"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
@@ -3714,6 +3858,7 @@ msgstr "ミュート中"
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3873,10 +4018,6 @@ msgstr "このページに一致するアーティファクトはありません
 msgid "No matching models"
 msgstr "一致するモデルはありません"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No MCP or API tool sources installed yet."
-msgstr "インストール済みのMCPまたはAPIツールソースはまだありません。"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "MCPサーバーはまだありません。"
@@ -3942,6 +4083,11 @@ msgstr "通常"
 #: src/pages/shell/agent-import.tsx
 msgid "Not a valid skill"
 msgstr "有効なスキルではありません"
+
+#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Not added: {0}"
+msgstr ""
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
@@ -4138,6 +4284,10 @@ msgstr "順序"
 msgid "Organization API key"
 msgstr "組織のAPIキー"
 
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "元のメッセージを表示できません"
@@ -4294,6 +4444,15 @@ msgstr "再生中…"
 msgid "Plugin"
 msgstr "プラグイン"
 
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Plugin GitHub URL"
+msgstr ""
+
+#: src/components/integrations/skills-dialog.tsx
+msgid "Plugins"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "チャットに「変更なし」と投稿"
@@ -4305,6 +4464,11 @@ msgstr "POST先"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Preferences"
 msgstr "環境設定"
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Preview"
+msgstr ""
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -4339,6 +4503,10 @@ msgstr "非公開"
 msgid "Private workspace with its own bots and groups."
 msgstr "専用のボットとグループを持つ非公開のワークスペースです。"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Productivity"
+msgstr ""
+
 #: src/pages/shell/import-status.ts
 msgid "Program: {name}"
 msgstr "プログラム: {name}"
@@ -4372,6 +4540,10 @@ msgstr ""
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
 msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
@@ -4415,6 +4587,11 @@ msgstr "参照のみ"
 msgid "Recent"
 msgstr "最近"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Recommended"
+msgstr ""
+
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
 msgstr "再接続"
@@ -4484,6 +4661,10 @@ msgstr "動作していないコンピューターを再作成します。"
 msgid "Recreating the computer"
 msgstr "コンピューターを再作成中"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Recruiting & HR"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Redirect URI"
 msgstr "リダイレクトURI"
@@ -4524,6 +4705,8 @@ msgid "Remaining quota"
 msgstr "残りの利用枠"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -4552,6 +4735,13 @@ msgstr "{secretName}を削除しますか？ボットはこれを使用できな
 msgid "Remove change trigger"
 msgstr "変更トリガーを削除"
 
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Remove from every space?"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Gitイベントを削除"
@@ -4578,6 +4768,10 @@ msgstr "スケジュールを削除"
 msgid "Remove skill {0}"
 msgstr "スキル{0}を削除"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Remove skills"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove webhook"
 msgstr "Webhookを削除"
@@ -4590,6 +4784,7 @@ msgstr "削除済み"
 msgid "Removed, but list refresh failed"
 msgstr "削除しましたが、一覧を更新できませんでした"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Removing…"
 msgstr "削除中…"
@@ -4726,6 +4921,8 @@ msgid "Restoring your workspace"
 msgstr "ワークスペースを復元中"
 
 #: src/components/AccountAccess.tsx
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -4821,6 +5018,10 @@ msgstr "実行"
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "このボットがこのプロバイダーから検証済みのメッセージを受信したときに実行されます。"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Sales & CRM"
+msgstr ""
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -4954,6 +5155,10 @@ msgstr "モデルを検索"
 msgid "Search runs"
 msgstr "実行を検索"
 
+#: src/components/integrations/skills-dialog.tsx
+msgid "Search skills"
+msgstr ""
+
 #. placeholder {0}: filters.query.trim()
 #: src/pages/ActivityList.tsx
 msgid "Search: {0}"
@@ -4967,6 +5172,10 @@ msgstr "検索中…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Security"
 msgstr "セキュリティ"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Security & Ops"
+msgstr ""
 
 #: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
@@ -5140,10 +5349,12 @@ msgstr "文字起こしを表示"
 msgid "Sidebar density"
 msgstr "サイドバーの密度"
 
+#: src/components/integrations/plugin-marketplace.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "ログイン"
@@ -5183,6 +5394,10 @@ msgstr "サブスクリプションでログインするか、代わりにAPIキ
 msgid "Sign up"
 msgstr "新規登録"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Sign-in cancelled. Try again."
+msgstr ""
+
 #: src/components/VaultSettings.tsx
 msgid "Site"
 msgstr "サイト"
@@ -5196,7 +5411,9 @@ msgstr "スキル{0}"
 msgid "Skill {position}"
 msgstr "スキル {position}"
 
-#: src/pages/KnowledgeSection.tsx
+#: src/components/integrations/plugin-marketplace.tsx
+#: src/components/integrations/skills-dialog.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "スキル"
@@ -5229,6 +5446,11 @@ msgstr "Slackが有効になっていません"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "上にスライドしてロック"
+
+#: src/components/integrations/skills-dialog.tsx
+#: src/pages/PluginsOverlay.tsx
+msgid "Some plugins could not be loaded."
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Some settings are not imported"
@@ -5603,6 +5825,11 @@ msgstr "このコンピューター"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "This connection's request limit is too small. Choose another model."
+msgstr "この接続のリクエスト上限が小さすぎます。別のモデルを選択してください。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
 msgstr "この会話はモデルにとって長すぎます。再試行しても解決しません。新しいチャットを開始するか、メッセージを短くしてください。"
 
@@ -5751,10 +5978,6 @@ msgstr "ツールの引数はJSONである必要があります"
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "ツール名"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "Tool sources"
-msgstr "ツールソース"
 
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5965,6 +6188,10 @@ msgstr "デフォルトを使用"
 msgid "Use defaults for {label}"
 msgstr "{label}でデフォルトを使用"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "Use in this bot"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr "自分のサブスクリプションまたはAPIキーを使用"
@@ -6014,6 +6241,7 @@ msgstr "APIキーを使用中"
 msgid "Using your API key. Free plan ends {freeUntil}."
 msgstr "自分の API キーを使用中。無料プランは{freeUntil}に終了します。"
 
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Value"
@@ -6035,6 +6263,14 @@ msgstr "確認中…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "バージョン"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "View all"
+msgstr ""
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "View source"
+msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
@@ -6108,6 +6344,10 @@ msgstr "Rakazoへようこそ"
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "メモリはどうしますか？"
+
+#: src/pages/shell/dialogs.tsx
+msgid "What can this space use?"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "What do you most want Rakazo to help with?"
@@ -6268,6 +6508,10 @@ msgstr "お使いのOpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "お使いのOpenRouter"
+
+#: src/components/integrations/skills-dialog.tsx
+msgid "Your skills"
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"

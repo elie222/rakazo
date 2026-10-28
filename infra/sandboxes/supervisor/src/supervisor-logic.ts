@@ -293,6 +293,8 @@ export function releaseAssignedScreen(
   }
   if (slot.releasing) return slot.index;
   slot.releasing = true;
+  // Release stops the screen's viewer, so the next request sets the screen up again.
+  delete slot.ensuredAt;
   return slot.index;
 }
 
@@ -362,6 +364,42 @@ export interface ScreenAssignment {
   idleAt?: number;
   controlled?: boolean;
   controlToken?: string;
+  /** When the setup script last finished for this screen on the current boot. */
+  ensuredAt?: number;
+}
+
+/** The page helper reached no browser, before dispatching anything. */
+export function pageBrowserNotReady(result: { code: number; stdout: string }) {
+  if (result.code !== 0) return false;
+  try {
+    const output = JSON.parse(result.stdout) as {
+      ok?: unknown;
+      error?: unknown;
+      uncertain?: unknown;
+    };
+    return (
+      output.ok === false &&
+      output.uncertain !== true &&
+      typeof output.error === "string" &&
+      output.error.startsWith("CDP not ready")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** How long a page-browser request trusts the last setup instead of rerunning it. */
+export const SCREEN_REUSE_MS = 30_000;
+
+/** A screen set up moments ago on this boot still runs; a human-held one may need its viewer back. */
+export function screenRecentlyEnsured(slot: ScreenAssignment | undefined, now: number) {
+  return (
+    slot?.ensuredAt !== undefined &&
+    !slot.releasing &&
+    !slot.controlled &&
+    !slot.controlToken &&
+    now - slot.ensuredAt < SCREEN_REUSE_MS
+  );
 }
 
 /** Forget screen assignments and their boot marker together on every cleanup path. */

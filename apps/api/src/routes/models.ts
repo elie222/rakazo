@@ -4,6 +4,7 @@ import {
   dispatcherFetch,
   listPiCatalog,
   ModelQuotaReader,
+  ModelSignInError,
   modelCredentialDto,
   oauthCredentialEmail,
   prepareStoredModelAuth,
@@ -329,7 +330,13 @@ export function modelsRoutes(ctx: RouterContext) {
           });
       }),
       submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
-        return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
+        return deps.oauthLogins
+          .submit(input.loginId, context.actor, input.code)
+          .catch((error: unknown) => {
+            if (error instanceof ModelSignInError)
+              throw new ORPCError("BAD_REQUEST", { message: error.message, cause: error });
+            throw error;
+          });
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, {

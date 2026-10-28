@@ -37,12 +37,15 @@ import {
 import {
   BotSecretMetadata,
   BotSecretPutInput,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldInput,
   StoredBotSecretName,
   VaultPutInput,
   VaultRevealed,
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -54,6 +57,7 @@ import {
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
+  AvailabilityKindSchema,
   AvatarStyleSchema,
   BillingClientSchema,
   BillingStatusSchema,
@@ -100,6 +104,9 @@ import {
   ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PluginMarketplaceCatalogSchema,
+  PluginPartSchema,
+  PluginPreviewSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
@@ -112,6 +119,7 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
+  SpaceAvailabilitySchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -580,7 +588,9 @@ export const appContract = {
             answer: z.string(),
             /** Carries the call id for an answer spoken during a call. */
             clientNonce: z.string().min(1).max(200).optional(),
-            /** Only for a login card; `answer` carries its password. */
+            /** A login card's answer, one per requested field; `answer` is then empty. */
+            fields: z.array(LoginFieldInput).min(1).max(LOGIN_FIELD_LIMIT).optional(),
+            /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
             username: z.string().min(1).max(512).optional(),
             /** Turns down a pending secret request; `answer` is then empty. */
             dismiss: z.literal(true).optional(),
@@ -588,8 +598,10 @@ export const appContract = {
           .refine(
             (input) =>
               input.dismiss
-                ? input.answer === "" && !input.username && !input.clientNonce
-                : input.answer.length > 0,
+                ? input.answer === "" && !input.username && !input.fields && !input.clientNonce
+                : input.fields
+                  ? input.answer === "" && !input.username
+                  : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
       )
@@ -851,6 +863,27 @@ export const appContract = {
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
+  availability: {
+    set: oc
+      .input(z.object({ kind: AvailabilityKindSchema, id: Id }).and(SpaceAvailabilitySchema))
+      .output(SpaceAvailabilitySchema),
+    /** The user's own skills, MCP servers, plugins and tool sources across their spaces. */
+    items: oc.output(z.array(AccountItemSchema)),
+    /** Make exactly the listed items available in a space, keeping each one's other spaces. */
+    chooseForSpace: oc
+      .input(
+        z.object({
+          spaceId: Id,
+          items: z.array(z.object({ kind: AvailabilityKindSchema, id: Id })).max(500),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  marketplace: {
+    catalog: oc
+      .input(z.object({ query: z.string().trim().max(200).default("") }))
+      .output(PluginMarketplaceCatalogSchema),
+  },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
     catalogSearch: oc
@@ -874,9 +907,25 @@ export const appContract = {
           source: z.string().min(1).max(2048),
           config: z.record(z.string(), z.unknown()).default({}),
           credential: z.string().max(16_384).optional(),
+          /** Required for plugins: confirms the exact previewed package content. */
+          pluginDigest: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .optional(),
+          /** Plugins only: which parts to add; all supported parts when omitted. */
+          pluginParts: z.array(PluginPartSchema).min(1).max(2).optional(),
         }),
       )
       .output(CapabilityInstallSchema),
+    /** Add or remove parts of an installed plugin at its pinned version; no parts removes it. */
+    pluginParts: oc
+      .input(z.object({ id: Id, parts: z.array(PluginPartSchema).max(2) }))
+      .output(z.object({ install: CapabilityInstallSchema.nullable() })),
+    /** Fetch and parse a plugin repo without installing: shows the skills,
+     * MCP endpoints, variables, and skipped parts before confirmation. */
+    pluginPreview: oc
+      .input(z.object({ source: z.string().min(1).max(2048) }))
+      .output(PluginPreviewSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   mcp: {

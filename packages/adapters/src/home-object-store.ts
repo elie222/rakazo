@@ -64,6 +64,13 @@ export interface AgentHomeRecords {
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
 }
 
+export class HomeSaveConflictError extends Error {
+  constructor() {
+    super("Agent home was saved elsewhere at the same time");
+    this.name = "HomeSaveConflictError";
+  }
+}
+
 /**
  * Homes whose source of truth is object storage, with `DATA_DIR/homes` as a local cache.
  *
@@ -311,7 +318,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     // that object is left for the sweep, which keeps whatever revision the home points at.
     if (!(await this.records.advance(botId, stored.storageId, base, revision))) {
       await discard();
-      throw new Error("Agent home was saved elsewhere at the same time");
+      throw new HomeSaveConflictError();
     }
     // Only the cached copy is now at this revision; a staged source leaves the cache behind.
     if (!options.source) await super.writeRevision(botId, revision);

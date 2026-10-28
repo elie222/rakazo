@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type {
   Bot,
   ComputerStatus,
+  LoginFieldInput,
   Me,
   MessageReaction,
   ThreadMessage,
@@ -201,7 +202,7 @@ export function useComposerActions({
   }, [activeId, clearReply, groupId, inGroup]);
 
   const answerMessage = useCallback(
-    async (message: ThreadMessage, text: string, username?: string, dismiss?: boolean) => {
+    async (message: ThreadMessage, text: string, fields?: LoginFieldInput[], dismiss?: boolean) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
@@ -211,7 +212,7 @@ export function useComposerActions({
         runId: message.runId ?? "",
         messageId: message.id,
         answer: text,
-        ...(username ? { username } : {}),
+        ...(fields ? { fields } : {}),
         ...(dismiss ? { dismiss: true as const } : {}),
       });
       // The answer is saved; live events can reconcile a failed refresh.

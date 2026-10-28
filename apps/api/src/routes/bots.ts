@@ -25,7 +25,7 @@ import type {
   SettingsScope,
   VaultPutInput,
 } from "@rakazo/contracts";
-import { BotSecretAuth } from "@rakazo/contracts";
+import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -33,6 +33,7 @@ import {
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
+  expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
   recordComputerRunEnd,
@@ -96,7 +97,7 @@ function mapBotSecretStoreError(error: unknown): unknown {
   // Login decoding failures: a JSON parse message can quote the submitted value, so never forward it.
   if (error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
     return new ORPCError("BAD_REQUEST", {
-      message: "A website login needs a username and password",
+      message: "A website login needs a label and a value for every field",
     });
   }
   return error;
@@ -302,6 +303,7 @@ export function botsRoutes(ctx: RouterContext) {
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
+            avatarSet: resolveBotAvatarSet(source.avatarSet),
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -377,6 +379,7 @@ export function botsRoutes(ctx: RouterContext) {
             selfUpdateInstructions: input.selfUpdateInstructions,
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
+            avatarSet: input.avatarSet,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,
@@ -466,8 +469,9 @@ export function botsRoutes(ctx: RouterContext) {
             if (bot.computer.state === "running") {
               await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             }
-            await deps.prisma.computerExecutionLease.deleteMany({
-              where: { computerId: bot.computer.id, botId: bot.id },
+            await expireComputerExecutionLeases(deps.prisma, {
+              computerId: bot.computer.id,
+              botId: bot.id,
             });
             await deps.prisma.computer.update({
               where: { id: bot.computer.id },

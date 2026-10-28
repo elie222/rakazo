@@ -352,6 +352,9 @@ model Space {
   board                       Board?
   tickets                     Ticket[]
   ticketComments              TicketComment[]
+  agentSkillSpaces            AgentSkillSpace[]
+  mcpServerSpaces             McpServerSpace[]
+  capabilityInstallSpaces     CapabilityInstallSpace[]
 
   @@unique([id, organizationId])
   @@index([organizationId, createdAt])
@@ -541,6 +544,7 @@ model Bot {
   instructionHistory Json @default("[]")
   pendingInstructionsRunId String?
   color             String
+  avatarSet         String            @default("rakazo")
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)
@@ -1089,12 +1093,21 @@ model AgentSkill {
   name        String
   description String
   content     String
+  /// Text reference files beside SKILL.md, keyed by relative path (plugin skills).
+  files       Json?
   /// user | builtin | plugin — only user skills are writable via API/tools.
   source      String   @default("user")
+  /// Plugin install that created this skill (source = "plugin").
+  installId   String?
+  install     CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces   Boolean  @default(false)
+  availableIn AgentSkillSpace[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([spaceId, userId])
+  @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
   @@map("agent_skills")
 }
@@ -1130,7 +1143,13 @@ model CapabilityInstall {
   digest    String?
   secretId  String?
   config    Json     @default("{}")
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  agentSkills AgentSkill[]
+  mcpServers  McpServer[]
+  availableIn CapabilityInstallSpace[]
 
   @@index([spaceId, userId])
   @@map("capability_installs")
@@ -1445,6 +1464,9 @@ model McpServer {
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
+  /// Plugin install that created this server, if any.
+  installId     String?
+  install       CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
   /// Last launch/discovery outcome: unknown | installing | ok | error.
@@ -1456,9 +1478,13 @@ model McpServer {
   updatedAt     DateTime          @updatedAt
   assignments   BotMcpServer[]
   oauthSessions McpOAuthSession[]
+  /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
+  allSpaces     Boolean           @default(false)
+  availableIn   McpServerSpace[]
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])
+  @@index([installId])
   @@map("mcp_servers")
 }
 
@@ -2031,4 +2057,43 @@ model MessagingInstallSession {
   expiresAt DateTime
   @@index([expiresAt])
   @@map("messaging_install_sessions")
+}
+
+/// A further space an account-owned skill is available in, beyond the one it was added in.
+model AgentSkillSpace {
+  skillId String
+  skill   AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  spaceId String
+  space   Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId  String
+
+  @@id([skillId, spaceId])
+  @@index([spaceId, userId])
+  @@map("agent_skill_spaces")
+}
+
+/// A further space an account-owned MCP server is available in, beyond the one it was added in.
+model McpServerSpace {
+  serverId String
+  server   McpServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  spaceId  String
+  space    Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@id([serverId, spaceId])
+  @@index([spaceId, userId])
+  @@map("mcp_server_spaces")
+}
+
+/// A further space an account-owned plugin or tool source is available in, beyond the one it was added in.
+model CapabilityInstallSpace {
+  installId String
+  install   CapabilityInstall @relation(fields: [installId], references: [id], onDelete: Cascade)
+  spaceId   String
+  space     Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@id([installId, spaceId])
+  @@index([spaceId, userId])
+  @@map("capability_install_spaces")
 }

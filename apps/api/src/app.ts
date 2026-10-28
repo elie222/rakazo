@@ -23,6 +23,8 @@ import {
 import type {
   ComposioProvider,
   ConnectorRegistry,
+  PluginRepoFetcher,
+  PluginTextReader,
   RemoteConnectorDependencies,
   UserDeviceGateway,
 } from "@rakazo/adapters";
@@ -227,6 +229,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   notifications?: NotificationProvider;
   billing?: BillingProvider;
   remoteConnectors?: RemoteConnectorDependencies;
+  pluginRepoFetcher?: PluginRepoFetcher;
+  pluginMarketplaceRead?: PluginTextReader;
   modelConnectionFetch?: typeof fetch;
   modelQuotaFetch?: typeof fetch;
   logger?: Logger;
@@ -251,6 +255,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     remoteConnectors,
     modelConnectionFetch,
     modelQuotaFetch,
+    pluginRepoFetcher,
+    pluginMarketplaceRead,
     logger: loggerOverride,
     runtime: runtimeOverride,
     contextStrategy,
@@ -684,6 +690,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             }),
           },
     analytics,
+    pluginRepoFetcher,
+    pluginMarketplaceRead,
     cloudAgent,
     paymentWallet,
     codexCatalog,
