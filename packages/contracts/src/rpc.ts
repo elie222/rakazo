@@ -1164,6 +1164,11 @@ export const appContract = {
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
+    /**
+     * A one-time token for `GET /api/account/export?token=`, which streams the account zip. Needs
+     * a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED).
+     */
+    accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
     registerPush: oc
