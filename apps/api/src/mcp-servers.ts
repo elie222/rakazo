@@ -31,6 +31,7 @@ export function mcpServerDto(
     files: unknown;
     headers: unknown;
     secretId: string | null;
+    installId?: string | null;
     enabled: boolean;
     revision: number;
     healthStatus: string;
@@ -62,6 +63,7 @@ export function mcpServerDto(
     envKeys,
     fileKeys: keysOf(row.files),
     headerKeys,
+    installId: row.installId ?? null,
     hasSecret: row.secretId !== null,
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,

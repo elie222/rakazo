@@ -2,13 +2,18 @@ import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import {
+  createPluginMarketplace,
+  isTransientFetchError,
   persistPreparedSecret,
+  pluginPreviewDto,
   prepareApiInstall,
   prepareGraphqlInstall,
+  previewPluginInstall,
   recordMcpServerHealth,
   sanitizeComposioError,
   verifyMcpInstall,
 } from "@rakazo/adapters";
+import type { Actor } from "@rakazo/contracts";
 import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
 import { containsSecret } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
@@ -37,6 +42,7 @@ import {
   promptFocus,
   startOnboarding,
 } from "../onboarding.js";
+import { installPlugin, lockPluginInstalls, setPluginParts } from "../plugin-installs.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, isUniqueViolation } from "./shared.js";
 
@@ -54,7 +60,60 @@ export function mcpRoutes(ctx: RouterContext) {
     announceMcpServer,
     authed,
   } = ctx;
+  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
+  /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
+  const removeInstall = async (actor: Actor, id: string) => {
+    const notify: Array<{ threadId: string; seq: number }> = [];
+    await deps.prisma.$transaction(async (tx) => {
+      // Parts changes hold this lock while adding children; reading them without it could
+      // miss a connector committed meanwhile and leave its secret behind.
+      await lockPluginInstalls(tx, actor);
+      const existing = await tx.capabilityInstall.findFirst({
+        where: {
+          id,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        },
+      });
+      if (!existing) return;
+      if (existing.kind === "plugin") {
+        const servers = await tx.mcpServer.findMany({
+          where: {
+            installId: existing.id,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+          },
+          select: { id: true, secretId: true },
+        });
+        for (const server of servers) {
+          notify.push(...(await removeMcpServerInTransaction(tx, actor, server)));
+        }
+        await tx.agentSkill.deleteMany({ where: { installId: existing.id } });
+      }
+      await tx.capabilityInstall.delete({ where: { id: existing.id } });
+      if (existing.secretId) {
+        const shared = await tx.capabilityInstall.count({
+          where: { secretId: existing.secretId },
+        });
+        if (shared === 0) {
+          await tx.secret.deleteMany({
+            where: {
+              id: existing.secretId,
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+            },
+          });
+        }
+      }
+    });
+    for (const event of notify) await deps.events.notify(event.threadId, event.seq);
+  };
   return {
+    marketplace: {
+      catalog: authed.marketplace.catalog.handler(({ input }) =>
+        pluginMarketplace.catalog(input.query),
+      ),
+    },
     capabilities: {
       list: authed.capabilities.list.handler(async ({ context }) => {
         const rows = await deps.prisma.capabilityInstall.findMany({
@@ -92,6 +151,19 @@ export function mcpRoutes(ctx: RouterContext) {
         }
       }),
       install: authed.capabilities.install.handler(async ({ context, input }) => {
+        if (input.kind === "plugin") {
+          return installPlugin(
+            {
+              prisma: deps.prisma,
+              secrets: deps.secrets,
+              fetcher: deps.pluginRepoFetcher,
+              assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
+            },
+            context.actor,
+            input,
+            context.signal,
+          );
+        }
         let source = input.source.trim();
         let config = input.config;
         const credential = input.credential?.trim() || undefined;
@@ -213,33 +285,55 @@ export function mcpRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         };
       }),
-      remove: authed.capabilities.remove.handler(async ({ context, input }) => {
-        await deps.prisma.$transaction(async (tx) => {
-          const existing = await tx.capabilityInstall.findFirst({
-            where: {
-              id: input.id,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-            },
+      pluginPreview: authed.capabilities.pluginPreview.handler(async ({ context, input }) => {
+        try {
+          const preview = await previewPluginInstall({
+            source: input.source,
+            signal: context.signal,
+            fetcher: deps.pluginRepoFetcher,
           });
-          if (!existing) return;
-          await tx.capabilityInstall.delete({ where: { id: existing.id } });
-          if (existing.secretId) {
-            const shared = await tx.capabilityInstall.count({
-              where: { secretId: existing.secretId },
-            });
-            if (shared === 0) {
-              await tx.secret.deleteMany({
-                where: {
-                  id: existing.secretId,
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                },
-              });
-            }
+          for (const server of preview.mcpServers) {
+            await assertMcpRemoteEndpoint(server.endpoint, deps);
           }
-        });
+          // Browse lists only plugins that install completely; one that turns out partial leaves it.
+          if (preview.skipped.some((part) => part.kind !== "unsupported_field"))
+            pluginMarketplace.markUnreadable(input.source);
+          else pluginMarketplace.clearUnreadable(input.source);
+          return {
+            ...pluginPreviewDto(preview),
+            pinnedSource: `${preview.source.gitUrl}@${preview.resolvedSha}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
+            installedSource: `${preview.source.gitUrl}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
+          };
+        } catch (error) {
+          // Only content we can't support leaves browse; a slow or failing GitHub is retried.
+          if (!isTransientFetchError(error)) pluginMarketplace.markUnreadable(input.source);
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Could not preview a supported plugin from this repository",
+          });
+        }
+      }),
+      remove: authed.capabilities.remove.handler(async ({ context, input }) => {
+        await removeInstall(context.actor, input.id);
         return { ok: true as const };
+      }),
+      pluginParts: authed.capabilities.pluginParts.handler(async ({ context, input }) => {
+        const notify: Array<{ threadId: string; seq: number }> = [];
+        const install = await setPluginParts(
+          {
+            prisma: deps.prisma,
+            secrets: deps.secrets,
+            fetcher: deps.pluginRepoFetcher,
+            assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
+            removeServer: async (tx, server) =>
+              notify.push(...(await removeMcpServerInTransaction(tx, context.actor, server))),
+          },
+          context.actor,
+          input,
+          context.signal,
+        );
+        for (const event of notify) await deps.events.notify(event.threadId, event.seq);
+        if (!install) await removeInstall(context.actor, input.id);
+        return { install };
       }),
     },
     mcp: {
@@ -766,6 +860,20 @@ export function mcpRoutes(ctx: RouterContext) {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
           });
+          // A health check from before the disconnect would otherwise still read as connected.
+          const server = await deps.prisma.mcpServer.findFirst({
+            where: {
+              id: input.serverId,
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            },
+            select: { id: true },
+          });
+          if (server)
+            await recordMcpServerHealth(deps.prisma, server.id, {
+              status: "unknown",
+              message: MCP_OAUTH_PENDING_MESSAGE,
+            });
           return { ok: true as const };
         }),
       },

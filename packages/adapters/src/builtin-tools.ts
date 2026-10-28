@@ -1203,11 +1203,15 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "skill_read",
     description:
-      "Load a Claude Agent Skill (SKILL.md recipe) by exact name. Call this when a catalog skill matches the user's request, then follow it immediately.",
+      "Load a Claude Agent Skill (SKILL.md recipe) by exact name. Call this when a catalog skill matches the user's request, then follow it immediately. When the result lists files, read one by calling again with its path in file.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Exact skill name from the catalog." },
+        file: {
+          type: "string",
+          description: "Optional path of one of the skill's files, e.g. references/billing.md.",
+        },
       },
       required: ["name"],
     },

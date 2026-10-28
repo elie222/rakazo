@@ -17,6 +17,7 @@ import {
   Link2,
   LogOut,
   Plug,
+  ScrollText,
   Settings,
   Smartphone,
   SquareKanban,
@@ -36,6 +37,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onIntegrations: () => void;
+  onSkills: () => void;
   onBoard?: () => void;
   links?: NavLink[];
   onLink?: (link: NavLink) => void;
@@ -62,6 +64,7 @@ export function SidebarFooter({
   open,
   onOpenChange,
   onIntegrations,
+  onSkills,
   onBoard,
   links = [],
   onLink,
@@ -148,6 +151,14 @@ export function SidebarFooter({
                 <Trans>Connect apps</Trans>
               </Button>
             ) : null}
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onSkills}
+            >
+              <ScrollText className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Skills</Trans>
+            </Button>
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
@@ -242,6 +253,20 @@ export function SidebarFooter({
           </span>
           <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
         </Button>
+      ) : null}
+      {/* A waiting update takes this slot; Skills stays in the account menu meanwhile. */}
+      {!mini && !update.available ? (
+        <IconTooltip label={t`Skills`}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t`Skills`}
+            onClick={onSkills}
+            className="size-9 shrink-0 bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          >
+            <ScrollText aria-hidden="true" strokeWidth={1.75} />
+          </Button>
+        </IconTooltip>
       ) : null}
       {update.available ? (
         <IconTooltip label={t`Install update`}>

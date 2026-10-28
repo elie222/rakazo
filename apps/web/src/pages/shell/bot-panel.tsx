@@ -829,11 +829,6 @@ export function BotSettings({
                 </div>
               </section>
             </SettingsGroup>
-            <ErrorBoundary fallback={<SectionLoadFailed />}>
-              <Suspense fallback={null}>
-                <KnowledgeSection botId={bot.id} skillsOnly />
-              </Suspense>
-            </ErrorBoundary>
             <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
               <button
                 type="button"

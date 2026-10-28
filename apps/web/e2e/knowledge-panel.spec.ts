@@ -176,8 +176,14 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  await settings.getByRole("button", { name: "Advanced", exact: true }).click();
-  const knowledge = settings.getByTestId("bot-knowledge");
+  // Skills belong to the person in this space, so they open from the sidebar, not bot settings.
+  await expect(settings.getByTestId("bot-knowledge-skills")).toHaveCount(0);
+  const openSkills = () => page.getByRole("button", { name: "Skills", exact: true }).click();
+  const skillsDialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  const closeSkills = () =>
+    skillsDialog.getByRole("button", { name: "Close skills", exact: true }).click();
+  await openSkills();
+  const knowledge = skillsDialog.getByTestId("your-skills");
   const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
   await expect(builtinSkill).toBeVisible();
   await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
@@ -205,12 +211,14 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     contentType: "image/png",
     path: listedShot,
   });
+  await closeSkills();
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await composer.fill("/");
   await expect(
     page.getByRole("button", { name: "Skill greet-politely", exact: true }),
   ).toBeVisible();
   await composer.fill("");
+  await openSkills();
 
   // A provider-owned skill uses the same viewer without mutation controls.
   await page.route(
@@ -268,6 +276,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
   await knowledge.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(skillRow).toBeHidden();
+  await closeSkills();
   await composer.fill("/");
   await expect(page.getByRole("button", { name: "Skill greet-politely", exact: true })).toHaveCount(
     0,

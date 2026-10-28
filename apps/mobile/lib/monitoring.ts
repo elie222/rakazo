@@ -8,7 +8,7 @@ import {
   sanitizeMonitoringEvent,
 } from "@rakazo/logging/monitoring";
 import type * as NativeSentry from "@sentry/react-native";
-import type { StartupErrorStorage } from "./startup-error";
+import type { NativeApplication, StartupErrorStorage } from "./startup-error";
 import {
   clearStartupError,
   markExpoErrorReported,
@@ -31,7 +31,8 @@ let earlyHandlerInstalled = false;
 let handlingEarlyFatal = false;
 let pendingStartupError: Error | undefined;
 let startupStorage: StartupErrorStorage | undefined;
-let startupFromPreviousLaunch = false;
+let nativeApplication: NativeApplication | undefined;
+let previousLaunch: { release?: string; dist?: string } | undefined;
 
 /** Bound the time given to configuration and the native SDK before preserving RN's fatal path. */
 async function flushStartupError(): Promise<void> {
@@ -216,8 +217,17 @@ export function configureMobileMonitoring(
             tags: {
               operation: "mobile.startup",
               surface: "mobile",
-              ...(startupFromPreviousLaunch ? { "startup.previous_launch": "true" } : {}),
+              ...(previousLaunch ? { "startup.previous_launch": "true" } : {}),
             },
+            // The SDK's Release integration reads these before beforeSend drops extras.
+            ...(previousLaunch?.release
+              ? {
+                  extra: {
+                    __sentry_release: previousLaunch.release,
+                    __sentry_dist: previousLaunch.dist,
+                  },
+                }
+              : {}),
           },
         });
       }
@@ -289,13 +299,18 @@ export function configureMobileMonitoring(
 }
 
 /** Install before Expo Router imports so early JS failures retain their original handler. */
-export function installMobileEarlyErrorReporting(storage: StartupErrorStorage): void {
+export function installMobileEarlyErrorReporting(
+  storage: StartupErrorStorage,
+  application: NativeApplication,
+): void {
   if (earlyHandlerInstalled) return;
   earlyHandlerInstalled = true;
   startupStorage = storage;
+  nativeApplication = application;
   startExpoErrorWindow(storage);
-  pendingStartupError = readStartupError(storage);
-  startupFromPreviousLaunch = pendingStartupError !== undefined;
+  const saved = readStartupError(storage);
+  pendingStartupError = saved?.error;
+  previousLaunch = saved;
   const target = globalThis as typeof globalThis & {
     ErrorUtils?: {
       getGlobalHandler(): (error: Error, fatal?: boolean) => void;
@@ -311,8 +326,8 @@ export function installMobileEarlyErrorReporting(storage: StartupErrorStorage): 
           handlingEarlyFatal = true;
           if (!pendingStartupError) {
             pendingStartupError = error;
-            startupFromPreviousLaunch = false;
-            saveStartupError(error, startupStorage);
+            previousLaunch = undefined;
+            saveStartupError(error, startupStorage, nativeApplication);
           }
           void flushStartupError().finally(() => previous(error, fatal));
           return;

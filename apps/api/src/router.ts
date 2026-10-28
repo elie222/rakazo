@@ -20,6 +20,8 @@ import type {
   MemoryProviderResolver,
   MessagingInstallations,
   PiOAuthLogins,
+  PluginRepoFetcher,
+  PluginTextReader,
   ProviderCatalogCache,
   PushTokenStore,
   RemoteConnectorDependencies,
@@ -92,6 +94,8 @@ export interface RouterDeps {
   mcp?: Pick<McpConnector, "probe">;
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
+  pluginRepoFetcher?: PluginRepoFetcher;
+  pluginMarketplaceRead?: PluginTextReader;
   artifacts: ArtifactStore;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;

@@ -87,6 +87,8 @@ export async function listAgentSkillRecords(
 ): Promise<Array<SkillRecord & { id: string }>> {
   const rows = await prisma.agentSkill.findMany({
     where: { spaceId: owner.spaceId, userId: owner.userId },
+    // Reference files are read one at a time through skill_read, never with the catalog.
+    omit: { files: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
   return mergeBuiltinSkills(builtinRecords(), rows.map(toRecord));
@@ -105,19 +107,45 @@ async function findOwnedSkill(
   return null;
 }
 
+/** The text files stored beside a skill's SKILL.md, keyed by relative path. */
+export function skillFiles(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
 export async function skillReadFromTool(
   prisma: PrismaClient,
   owner: SkillOwner,
-  input: { name?: string; skillId?: string },
+  input: { name?: string; skillId?: string; file?: string },
 ): Promise<Record<string, unknown>> {
   const skill = await findOwnedSkill(prisma, owner, input);
   if (!skill) return { error: "Skill not found." };
+  const row = skill.id.startsWith("builtin:")
+    ? null
+    : await prisma.agentSkill.findFirst({
+        where: { id: skill.id, spaceId: owner.spaceId, userId: owner.userId },
+        select: { files: true },
+      });
+  const files = skillFiles(row?.files);
+  const paths = Object.keys(files).sort();
+  const wanted = input.file?.trim().replace(/^\.\//, "");
+  if (wanted) {
+    // Only exact stored paths resolve, so no path can reach outside the skill.
+    const text = files[wanted];
+    if (text === undefined) return { error: `No file "${wanted}" in this skill.`, files: paths };
+    return { name: skill.name, file: wanted, content: text };
+  }
   return {
     name: skill.name,
     description: skill.description,
     source: skill.source,
     readOnly: skill.readOnly,
     content: skill.content,
+    ...(paths.length ? { files: paths } : {}),
   };
 }
 

@@ -23,6 +23,13 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
           })
           .map((row) => ({ ...row })),
       ),
+      findFirst: vi.fn(async ({ where }: { where: Record<string, string> }) => {
+        const row = store.find(
+          (item) =>
+            item.id === where.id && item.spaceId === where.spaceId && item.userId === where.userId,
+        );
+        return row ? { files: row.files ?? null } : null;
+      }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
           id: `skill-${store.length + 1}`,
@@ -122,6 +129,38 @@ describe("skill tools", () => {
     expect(await skillReadFromTool(prisma as never, owner, { name: "Daily standup" })).toEqual({
       error: "Skill not found.",
     });
+  });
+
+  it("lists a skill's reference files and reads one by exact path only", async () => {
+    const prisma = makePrisma([
+      {
+        id: "plugin-1",
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        name: "billing",
+        description: "Billing guidance",
+        content: buildSkillMd({
+          name: "billing",
+          description: "Billing guidance",
+          body: "See references/rates.md.",
+        }),
+        source: "plugin",
+        files: { "references/rates.md": "Rates table", "notes.txt": "Notes" },
+      },
+    ]);
+    expect(await skillReadFromTool(prisma as never, owner, { name: "billing" })).toMatchObject({
+      name: "billing",
+      files: ["notes.txt", "references/rates.md"],
+    });
+    expect(
+      await skillReadFromTool(prisma as never, owner, {
+        name: "billing",
+        file: "./references/rates.md",
+      }),
+    ).toEqual({ name: "billing", file: "references/rates.md", content: "Rates table" });
+    expect(
+      await skillReadFromTool(prisma as never, owner, { name: "billing", file: "../secrets.md" }),
+    ).toMatchObject({ error: expect.stringContaining("No file") });
   });
 
   it("preserves extra frontmatter keys on update", async () => {

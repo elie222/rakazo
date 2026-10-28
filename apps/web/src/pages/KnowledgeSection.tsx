@@ -23,29 +23,10 @@ function rowClass(open: boolean): string {
 }
 
 /**
- * Bot memory and the current user's skills in this space.
- * User-scoped memory shared across bots lives in the Memory settings overlay.
+ * Bot memory. Skills belong to the person in a space, not to one bot, so they live in
+ * the Skills dialog; memory shared across bots lives in the Memory settings overlay.
  */
-export function KnowledgeSection({
-  botId,
-  skillsOnly = false,
-}: {
-  botId: string;
-  /** Unused: skills are read from and saved to the shared cached list. */
-  onSkillsChange?: (skills: AgentSkillCatalogEntry[]) => void;
-  skillsOnly?: boolean;
-}) {
-  if (skillsOnly)
-    return (
-      <section data-testid="bot-knowledge">
-        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-          <Trans>Skills</Trans>
-        </h3>
-        <div className="rounded-xl bg-muted/50 p-4">
-          <AgentSkills />
-        </div>
-      </section>
-    );
+export function KnowledgeSection({ botId }: { botId: string }) {
   return (
     <MemoryDocumentList
       key={botId}
@@ -331,7 +312,8 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-function AgentSkills() {
+/** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
+export function AgentSkills() {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -339,7 +321,7 @@ function AgentSkills() {
   // The same list the composer offers as skill mentions, so a change here shows there at once.
   const list = queries.agentSkills.list.queryOptions();
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
-  const skills = listQuery.data ?? NO_SKILLS;
+  const skills = (listQuery.data ?? NO_SKILLS).filter((skill) => skill.source !== "plugin");
   const loading = listQuery.isPending;
   const [open, setOpen] = useState<AgentSkill | null>(null);
   const [creating, setCreating] = useState(false);
