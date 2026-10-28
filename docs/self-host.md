@@ -1646,7 +1646,7 @@ sudo docker compose --env-file .env -f infra/compose/docker-compose.prod.yml exe
 
 Restores run on any machine with Docker and this checkout. The identity comes on stdin and stays in
 memory inside the restore container. Prove the latest point restores, into a scratch volume that is
-removed afterwards:
+removed afterwards. Run it after enabling, after changing the PITR scripts, and periodically:
 
 ```bash
 sudo infra/compose/pitr.sh drill < rakazo-backup.key

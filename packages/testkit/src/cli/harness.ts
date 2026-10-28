@@ -4,9 +4,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
+import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -53,7 +53,7 @@ async function main() {
   const mode = integration ? "integration" : "e2e";
   const reportDir = path.resolve("test-report", mode);
   await mkdir(reportDir, { recursive: true });
-  const container = await new PostgreSqlContainer("postgres:18-alpine").start();
+  const container = await startPostgres();
   try {
     // Migrations run as the container superuser and the e2e API connects as the
     // runtime login, so row-level security is enforced as in a deployment.

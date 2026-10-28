@@ -7,10 +7,10 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { serve } from "@hono/node-server";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { computerTestSandbox } from "../computer-test-config.js";
 import { FLOWS } from "../flows/index.js";
 import type { FlowResult } from "../flows/runner.js";
+import { startPostgres } from "./postgres.js";
 
 const { values } = parseArgs({
   options: {
@@ -58,7 +58,7 @@ async function main() {
 
   // This CLI owns a disposable database; it never touches an inherited one.
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-flows-"));
-  const database = await new PostgreSqlContainer("postgres:18-alpine").start();
+  const database = await startPostgres();
   let stop: (() => Promise<void>) | undefined;
   let closeSupervisor: (() => Promise<void>) | undefined;
   try {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { startPostgres } from "./postgres.js";
 
 async function main() {
   loadRootEnv();
@@ -23,7 +23,7 @@ async function main() {
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
   let postgres: StartedPostgreSqlContainer | undefined;
   try {
-    if (runOpenRouter) postgres = await new PostgreSqlContainer("postgres:18-alpine").start();
+    if (runOpenRouter) postgres = await startPostgres();
     const env = {
       ...process.env,
       DATABASE_URL: postgres?.getConnectionUri() ?? "",

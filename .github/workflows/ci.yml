@@ -130,6 +130,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Windows pnpm launcher test
+        if: runner.os == 'Windows'
+        run: node --test scripts/pnpm.test.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
         env:
