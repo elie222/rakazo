@@ -351,7 +351,7 @@ msgstr "剩餘 {remaining}"
 
 #: src/components/usage/connection-quota.tsx
 msgid "{remaining}% remaining"
-msgstr ""
+msgstr "剩餘 {remaining}%"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -704,7 +704,7 @@ msgstr "允許寫入"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Allowance"
-msgstr ""
+msgstr "額度"
 
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
@@ -2027,7 +2027,7 @@ msgstr "無法載入此檔案。"
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Could not load usage"
-msgstr ""
+msgstr "無法載入用量"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3390,7 +3390,7 @@ msgstr "上次檢查 {0}：無變化"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Last known usage"
-msgstr ""
+msgstr "上次已知用量"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -3464,7 +3464,7 @@ msgstr "自動載入網路圖片"
 #: src/components/usage/connection-quota.tsx
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Loading"
-msgstr ""
+msgstr "載入中"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4030,7 +4030,7 @@ msgstr "沒有符合的機器人"
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "No connected providers"
-msgstr ""
+msgstr "沒有已連接的供應商"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4573,11 +4573,11 @@ msgstr "排隊中"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota"
-msgstr ""
+msgstr "配額"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
-msgstr ""
+msgstr "配額無法使用"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4921,7 +4921,7 @@ msgstr "重設你的密碼"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Resets"
-msgstr ""
+msgstr "重設時間"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5295,7 +5295,7 @@ msgstr "伺服器 URL"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Session"
-msgstr ""
+msgstr "工作階段"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6158,7 +6158,7 @@ msgstr "更新進度"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Updated"
-msgstr ""
+msgstr "已更新"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
@@ -6323,7 +6323,7 @@ msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
-msgstr ""
+msgstr "查看用量"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6384,7 +6384,7 @@ msgstr "週末"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
-msgstr ""
+msgstr "每週"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

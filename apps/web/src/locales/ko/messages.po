@@ -350,7 +350,7 @@ msgstr "남은 시간 {remaining}"
 
 #: src/components/usage/connection-quota.tsx
 msgid "{remaining}% remaining"
-msgstr ""
+msgstr "{remaining}% 남음"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -703,7 +703,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Allowance"
-msgstr ""
+msgstr "한도"
 
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
@@ -2026,7 +2026,7 @@ msgstr "파일을 불러오지 못했습니다."
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Could not load usage"
-msgstr ""
+msgstr "사용량을 불러오지 못했습니다"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3389,7 +3389,7 @@ msgstr "마지막 확인 {0}: 변경 없음"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Last known usage"
-msgstr ""
+msgstr "마지막으로 확인된 사용량"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -3463,7 +3463,7 @@ msgstr "웹 이미지 자동으로 불러오기"
 #: src/components/usage/connection-quota.tsx
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Loading"
-msgstr ""
+msgstr "불러오는 중"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4029,7 +4029,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "No connected providers"
-msgstr ""
+msgstr "연결된 제공업체 없음"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4572,11 +4572,11 @@ msgstr "대기 중"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota"
-msgstr ""
+msgstr "할당량"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
-msgstr ""
+msgstr "할당량을 확인할 수 없음"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4920,7 +4920,7 @@ msgstr "비밀번호를 재설정하세요"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Resets"
-msgstr ""
+msgstr "초기화"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5294,7 +5294,7 @@ msgstr "서버 URL"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Session"
-msgstr ""
+msgstr "세션"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6157,7 +6157,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Updated"
-msgstr ""
+msgstr "업데이트됨"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
@@ -6322,7 +6322,7 @@ msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
-msgstr ""
+msgstr "사용량 보기"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6383,7 +6383,7 @@ msgstr "주말"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
-msgstr ""
+msgstr "주간"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

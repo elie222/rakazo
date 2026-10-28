@@ -350,7 +350,7 @@ msgstr "{remaining} शेष"
 
 #: src/components/usage/connection-quota.tsx
 msgid "{remaining}% remaining"
-msgstr ""
+msgstr "{remaining}% शेष"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -703,7 +703,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Allowance"
-msgstr ""
+msgstr "सीमा"
 
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
@@ -2026,7 +2026,7 @@ msgstr "यह फ़ाइल लोड नहीं हो सकी।"
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Could not load usage"
-msgstr ""
+msgstr "उपयोग लोड नहीं हो सका"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3389,7 +3389,7 @@ msgstr "पिछली जाँच {0}: कोई बदलाव नहीं
 
 #: src/components/usage/connection-quota.tsx
 msgid "Last known usage"
-msgstr ""
+msgstr "अंतिम ज्ञात उपयोग"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -3463,7 +3463,7 @@ msgstr "वेब छवियाँ अपने-आप लोड करें"
 #: src/components/usage/connection-quota.tsx
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Loading"
-msgstr ""
+msgstr "लोड हो रहा है"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4029,7 +4029,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "No connected providers"
-msgstr ""
+msgstr "कोई कनेक्टेड प्रदाता नहीं"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4572,11 +4572,11 @@ msgstr "कतार में"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota"
-msgstr ""
+msgstr "कोटा"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
-msgstr ""
+msgstr "कोटा उपलब्ध नहीं"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4920,7 +4920,7 @@ msgstr "अपना पासवर्ड रीसेट करें"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Resets"
-msgstr ""
+msgstr "रीसेट"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5294,7 +5294,7 @@ msgstr "सर्वर URL"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Session"
-msgstr ""
+msgstr "सत्र"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6157,7 +6157,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Updated"
-msgstr ""
+msgstr "अपडेट किया गया"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
@@ -6322,7 +6322,7 @@ msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
-msgstr ""
+msgstr "उपयोग देखें"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6383,7 +6383,7 @@ msgstr "सप्ताहांत"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
-msgstr ""
+msgstr "साप्ताहिक"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

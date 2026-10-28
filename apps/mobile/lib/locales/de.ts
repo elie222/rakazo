@@ -73,7 +73,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Remove header": "Header entfernen",
   "Header name": "Header-Name",
   "Header value": "Header-Wert",
-  Resets: "Zurückgesetzt",
+  Resets: "Zurücksetzung",
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
   Status: "Status",

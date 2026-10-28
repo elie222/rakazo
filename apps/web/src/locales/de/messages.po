@@ -350,7 +350,7 @@ msgstr "Noch {remaining}"
 
 #: src/components/usage/connection-quota.tsx
 msgid "{remaining}% remaining"
-msgstr ""
+msgstr "{remaining} % verbleibend"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -703,7 +703,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Allowance"
-msgstr ""
+msgstr "Kontingent"
 
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
@@ -2026,7 +2026,7 @@ msgstr "Datei konnte nicht geladen werden."
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Could not load usage"
-msgstr ""
+msgstr "Nutzung konnte nicht geladen werden"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3389,7 +3389,7 @@ msgstr "Letzte Prüfung {0}: keine Änderungen"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Last known usage"
-msgstr ""
+msgstr "Zuletzt bekannte Nutzung"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -3463,7 +3463,7 @@ msgstr "Webbilder automatisch laden"
 #: src/components/usage/connection-quota.tsx
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Loading"
-msgstr ""
+msgstr "Laden"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4029,7 +4029,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "No connected providers"
-msgstr ""
+msgstr "Keine verbundenen Anbieter"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4572,11 +4572,11 @@ msgstr "In Warteschlange"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota"
-msgstr ""
+msgstr "Kontingent"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
-msgstr ""
+msgstr "Kontingent nicht verfügbar"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4920,7 +4920,7 @@ msgstr "Setze dein Passwort zurück"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Resets"
-msgstr ""
+msgstr "Zurücksetzung"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5294,7 +5294,7 @@ msgstr "Server-URL"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Session"
-msgstr ""
+msgstr "Sitzung"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6157,7 +6157,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Updated"
-msgstr ""
+msgstr "Aktualisiert"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
@@ -6322,7 +6322,7 @@ msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
-msgstr ""
+msgstr "Nutzung anzeigen"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6383,7 +6383,7 @@ msgstr "Wochenenden"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
-msgstr ""
+msgstr "Wöchentlich"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

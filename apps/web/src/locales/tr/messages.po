@@ -350,7 +350,7 @@ msgstr "{remaining} kaldı"
 
 #: src/components/usage/connection-quota.tsx
 msgid "{remaining}% remaining"
-msgstr ""
+msgstr "%{remaining} kaldı"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -703,7 +703,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Allowance"
-msgstr ""
+msgstr "Kota"
 
 #: src/components/AskCard.tsx
 msgid "Allowed for this chat"
@@ -2026,7 +2026,7 @@ msgstr "Bu dosya yüklenemedi."
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Could not load usage"
-msgstr ""
+msgstr "Kullanım yüklenemedi"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3389,7 +3389,7 @@ msgstr "Son kontrol {0}: değişiklik yok"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Last known usage"
-msgstr ""
+msgstr "Bilinen son kullanım"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -3463,7 +3463,7 @@ msgstr "Web görsellerini otomatik yükle"
 #: src/components/usage/connection-quota.tsx
 #: src/components/usage/provider-quota-stack.tsx
 msgid "Loading"
-msgstr ""
+msgstr "Yükleniyor"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -4029,7 +4029,7 @@ msgstr ""
 
 #: src/components/usage/provider-quota-stack.tsx
 msgid "No connected providers"
-msgstr ""
+msgstr "Bağlı sağlayıcı yok"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4572,11 +4572,11 @@ msgstr "Kuyrukta"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota"
-msgstr ""
+msgstr "Kota"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Quota unavailable"
-msgstr ""
+msgstr "Kota kullanılamıyor"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4920,7 +4920,7 @@ msgstr "Parolanızı sıfırlayın"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Resets"
-msgstr ""
+msgstr "Sıfırlanma"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5294,7 +5294,7 @@ msgstr "Sunucu URL'si"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Session"
-msgstr ""
+msgstr "Oturum"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
@@ -6157,7 +6157,7 @@ msgstr ""
 
 #: src/components/usage/connection-quota.tsx
 msgid "Updated"
-msgstr ""
+msgstr "Güncellendi"
 
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
@@ -6322,7 +6322,7 @@ msgstr ""
 
 #: src/components/usage/usage-popover.tsx
 msgid "View usage"
-msgstr ""
+msgstr "Kullanımı görüntüle"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6383,7 +6383,7 @@ msgstr "Hafta sonları"
 
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
-msgstr ""
+msgstr "Haftalık"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
