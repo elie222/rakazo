@@ -1,15 +1,13 @@
-import type { BotAvatarSet } from "@rakazo/contracts";
 import { memo } from "react";
-import type { ViewStyle } from "react-native";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { native, useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
+import { NativeSymbol } from "./native-symbol";
 
 export interface GroupAvatarMember {
   botId?: string;
   name?: string;
   color: string;
-  avatarSet?: BotAvatarSet;
   status?: string;
 }
 
@@ -25,6 +23,8 @@ export const GroupAvatar = memo(function GroupAvatar({
   if (!firstMember) {
     return (
       <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
         style={[
           styles.fallback,
           {
@@ -34,7 +34,12 @@ export const GroupAvatar = memo(function GroupAvatar({
           },
         ]}
       >
-        <Text style={[styles.fallbackText, { fontSize: Math.round(size * 0.35) }]}>👥</Text>
+        <NativeSymbol
+          ios="person.2.fill"
+          android="people"
+          size={Math.round(size * 0.45)}
+          color={native.secondaryLabel}
+        />
       </View>
     );
   }
@@ -43,7 +48,6 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <BotAvatar
         color={firstMember.color}
-        avatarSet={firstMember.avatarSet}
         identity={firstMember.botId ?? firstMember.name}
         size={size}
         status={firstMember.status}
@@ -78,7 +82,6 @@ export const GroupAvatar = memo(function GroupAvatar({
         >
           <BotAvatar
             color={member.color}
-            avatarSet={member.avatarSet}
             identity={member.botId ?? member.name}
             size={miniSize}
             status={member.status}
@@ -115,9 +118,6 @@ function createGroupAvatarStyles() {
       backgroundColor: native.fillPressed,
       alignItems: "center",
       justifyContent: "center",
-    },
-    fallbackText: {
-      color: native.secondaryLabel,
     },
   });
 }
