@@ -1,8 +1,3 @@
 {
-  "disabledLabels": ["review:coderabbit"],
-  "customContext": {
-    "files": [
-      { "path": "AGENTS.md", "description": "Repository rules for every change and review." }
-    ]
-  }
+  "disabledLabels": ["review:coderabbit"]
 }
