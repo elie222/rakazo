@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",
   "could not read": "не удалось прочитать",

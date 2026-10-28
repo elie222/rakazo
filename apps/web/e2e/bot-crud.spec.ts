@@ -72,7 +72,10 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     await input.fill(value);
     await input.press("Enter");
   }
-  const descriptionInput = page.getByRole("textbox", { name: "Description", exact: true });
+  const descriptionInput = page.getByRole("textbox", {
+    name: "How other bots see it",
+    exact: true,
+  });
   await editName("Researcher");
   await expandAdvancedSection(page.getByTestId("bot-settings-advanced"));
   await descriptionInput.fill("Finds reliable sources and turns them into concise briefs.");

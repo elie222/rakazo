@@ -549,7 +549,7 @@ describe("runReplyGuidance", () => {
       description: "Reads and sorts mail.",
       instructions: "Reads and sorts mail.",
     };
-    expect(runIdentityInstruction(bot, "user")).toBe("Reads and sorts mail.");
+    expect(runIdentityInstruction(bot, "user")).toBe("Ada\nReads and sorts mail.");
     expect(runIdentityInstruction({ ...bot, instructions: "" }, "user")).toBe(
       "Ada\nReads and sorts mail.",
     );

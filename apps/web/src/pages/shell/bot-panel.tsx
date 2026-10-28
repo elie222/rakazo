@@ -744,10 +744,10 @@ export function BotSettings({
                 />
               </div>
             </SettingsGroup>
-            <SettingsGroup label={t`Description`} plain>
+            <SettingsGroup label={t`How other bots see it`} plain>
               <Textarea
                 id={`${ids}-description`}
-                aria-label={t`Description`}
+                aria-label={t`How other bots see it`}
                 value={description}
                 maxLength={BOT_DESCRIPTION_MAX_LENGTH}
                 onChange={(e) => setDescription(e.target.value)}

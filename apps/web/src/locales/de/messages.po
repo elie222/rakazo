@@ -2491,7 +2491,6 @@ msgstr "Ablehnen"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Beschreibung"
 
@@ -3116,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Wie oft"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "So sehen andere Bots ihn"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",
   "could not read": "无法读取",

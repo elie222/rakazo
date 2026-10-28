@@ -393,15 +393,6 @@ export const CreateBotInput = z.object({
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
-export function normalizeCreateBotProfile(input: Pick<CreateBotInput, "name" | "description">) {
-  const description = input.description.trim();
-  return {
-    name: input.name.trim().slice(0, BOT_NAME_MAX_LENGTH),
-    description: description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-    instructions: description.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
-  };
-}
-
 export const UpdateBotInput = z
   .object({
     botId: Id,

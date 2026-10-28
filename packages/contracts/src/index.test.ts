@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_INSTRUCTIONS_MAX_LENGTH,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   CreateBotInput,
@@ -12,7 +10,6 @@ import {
   MessageBlock,
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
-  normalizeCreateBotProfile,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -265,17 +262,6 @@ describe("contracts", () => {
     for (const avatarFamily of [-1, 10, 2.5, "3"]) {
       expect(CreateBotInput.safeParse({ name: "Chief", avatarFamily }).success).toBe(false);
     }
-  });
-
-  it("normalizes bot creation fields without losing the longer instruction copy", () => {
-    const profile = normalizeCreateBotProfile({
-      name: `  ${"N".repeat(100)}  `,
-      description: `  ${"D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 10)}  `,
-    });
-
-    expect(profile.name).toHaveLength(80);
-    expect(profile.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
-    expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
   });
 
   it("rejects unknown built-in tool names and keeps a known denylist", () => {

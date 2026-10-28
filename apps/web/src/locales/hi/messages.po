@@ -2491,7 +2491,6 @@ msgstr "अस्वीकार करें"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "विवरण"
 
@@ -3116,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "कितनी बार"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "दूसरे बॉट इसे कैसे देखते हैं"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

@@ -2492,7 +2492,6 @@ msgstr "拒絕"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "描述"
 
@@ -3117,6 +3116,10 @@ msgstr "你是如何知道我們的？"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "頻率"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "其他機器人如何瞭解它"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

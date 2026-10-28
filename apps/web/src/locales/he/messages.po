@@ -2491,7 +2491,6 @@ msgstr "דחייה"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "תיאור"
 
@@ -3116,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "תדירות"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "איך בוטים אחרים רואים אותו"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

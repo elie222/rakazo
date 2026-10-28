@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
   "could not read": "kon niet worden gelezen",

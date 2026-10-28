@@ -2491,7 +2491,6 @@ msgstr "拒否"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "説明"
 
@@ -3116,6 +3115,10 @@ msgstr "Rakazoを何で知りましたか？"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "頻度"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "他のボットからの見え方"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

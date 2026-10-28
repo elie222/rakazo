@@ -2491,7 +2491,6 @@ msgstr "Deny"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -3116,6 +3115,10 @@ msgstr "How did you hear about us?"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "How often"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "How other bots see it"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

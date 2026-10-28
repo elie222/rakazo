@@ -430,9 +430,7 @@ export function runIdentityInstruction(
   if (trigger !== "created") {
     const identity = description ? `${bot.name}\n${description}` : bot.name;
     // Older bots saved one text as both fields; do not repeat it.
-    if (!instructions || instructions === description) {
-      return instructions ? rawInstructions : identity;
-    }
+    if (!instructions || instructions === description) return identity;
     return [
       identity,
       "Teammates see only the profile above. These instructions are private to you:",
