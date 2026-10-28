@@ -1549,11 +1549,14 @@ def run(argv: list[str]) -> int:
     if raw_args.strip():
         args = json.loads(raw_args)
     port = cdp_port()
+    # Set once the browser answers: before that, no action can have reached the page.
+    connected = False
     try:
         wait_for_cdp(port)
         ws_url = discover_ws_url(port)
         client = CdpClient(ws_url)
         client.connect()
+        connected = True
         try:
             session_id = attach_page(client)
             if command == "navigate":
@@ -1579,7 +1582,7 @@ def run(argv: list[str]) -> int:
             client.close()
     except Exception as exc:  # noqa: BLE001
         print(json.dumps({"ok": False, "error": str(exc), "fallback": "computer_act",
-                              "uncertain": command == "act"}))
+                              "uncertain": command == "act" and connected}))
         return 0
 
 

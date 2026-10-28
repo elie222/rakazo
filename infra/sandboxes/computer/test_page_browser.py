@@ -130,6 +130,15 @@ class PageBrowserTest(unittest.TestCase):
             process.stdin.close()
             self.assertEqual(process.wait(timeout=3), 130)
 
+    def test_act_without_a_browser_is_not_uncertain(self):
+        out = []
+        with patch.object(helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 9222: refused")), \
+                patch("builtins.print", side_effect=out.append):
+            code = helper.run(["rakazo-page-browser", "act", json.dumps({"actions": [{"kind": "click", "ref": "e1"}]})])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out[0]), {"ok": False, "error": "CDP not ready on port 9222: refused",
+                                              "fallback": "computer_act", "uncertain": False})
+
     def test_closed_extended_frame_does_not_spin(self):
         for partial in (b"\x81\x7e", b"\x81\x7f", b"\x81\x80"):
             with self.subTest(partial=partial):
