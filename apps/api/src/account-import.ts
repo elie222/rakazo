@@ -49,6 +49,8 @@ export const ACCOUNT_IMPORT_LIMITS = {
   /** Everything the zip inflates to, so a bomb stops early. */
   unpackedBytes: 16 * 1024 ** 3,
   manifestBytes: 1024 * 1024,
+  /** Room for about a million executable paths, more than a space's workspace files could hold. */
+  executablesBytes: 64 * 1024 * 1024,
   recordLineBytes: 64 * 1024 * 1024,
   homeFileBytes: ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
 };
@@ -107,8 +109,9 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
 function entryLimit(entry: ArchiveEntry, limits: ArchiveLimits): number {
   switch (entry.kind) {
     case "manifest":
-    case "executables":
       return limits.manifestBytes;
+    case "executables":
+      return limits.executablesBytes;
     case "records":
       return limits.unpackedBytes;
     case "artifact":
