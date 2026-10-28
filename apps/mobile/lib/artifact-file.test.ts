@@ -56,15 +56,33 @@ describe("artifactShareFileName", () => {
     );
   });
 
-  it.each(["👩‍💻", "👍🏽", "🇮🇷", "1️⃣", "#️⃣", "1⃣", "©️", "❤️", "😀️"])(
-    "keeps a complete emoji sequence in %s.pdf",
-    (emoji) =>
-      expect(artifactShareFileName(`${emoji}.pdf`, "application/pdf")).toBe(`${emoji}.pdf`),
+  it.each([
+    "👩‍💻",
+    "👍🏽",
+    "🇮🇷",
+    "1️⃣",
+    "#️⃣",
+    "1⃣",
+    "©️",
+    "❤️",
+    "😀️",
+    "🏳️‍🌈",
+    "❤️‍🔥",
+    "👨‍👩‍👧‍👦",
+    "🏴‍☠️",
+    "👩‍🐱",
+  ])("keeps a complete emoji sequence in %s.pdf", (emoji) =>
+    expect(artifactShareFileName(`${emoji}.pdf`, "application/pdf")).toBe(`${emoji}.pdf`),
   );
 
   it("retains only complete emoji sequences and cleans paths and controls", () => {
     const flag = "🏴\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}";
+    const scotland = "🏴\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}";
+    const wales = "🏴\u{e0067}\u{e0062}\u{e0077}\u{e006c}\u{e0073}\u{e007f}";
     expect(artifactShareFileName(`${flag}.pdf`, "application/pdf")).toBe(`${flag}.pdf`);
+    expect(artifactShareFileName(`${scotland}.pdf`, "application/pdf")).toBe(`${scotland}.pdf`);
+    expect(artifactShareFileName(`${wales}.pdf`, "application/pdf")).toBe(`${wales}.pdf`);
+    expect(artifactShareFileName("🇮.pdf", "application/pdf")).toBe("attachment.pdf");
     expect(artifactShareFileName("../a/👩‍💻\u202e👍🏽.pdf", "application/pdf")).toBe(
       "a_👩‍💻_👍🏽.pdf",
     );
@@ -82,7 +100,13 @@ describe("artifactShareFileName", () => {
     expect(artifactShareFileName("\u0301\u200d\u0301.pdf", "application/pdf")).toBe(
       "attachment.pdf",
     );
-    for (const name of ["👩\u200dA", "👩\u200d\u200d💻", "🏴\u{e0067}", "😀🏽"]) {
+    for (const name of [
+      "👩\u200dA",
+      "👩\u200d\u200d💻",
+      "🏴\u{e0067}",
+      "😀🏽",
+      "🏴\u{e0067}\u{e0061}\u{e0061}\u{e0061}\u{e0061}\u{e007f}",
+    ]) {
       expect(artifactShareFileName(`${name}.pdf`, "application/pdf")).not.toMatch(
         /[\u200d\u{e0067}]/u,
       );
@@ -139,7 +163,7 @@ describe("artifactShareFileName", () => {
     }
   });
 
-  it("matches repeated emoji and retries selectors independently", () => {
+  it("keeps repeated emoji in one filename", () => {
     for (let i = 0; i < 2; i++) {
       expect(artifactShareFileName("😀😀a😀️😀.pdf", "application/pdf")).toBe("😀😀a😀️😀.pdf");
     }

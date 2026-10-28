@@ -1,36 +1,33 @@
 import { attachmentExtensionForMimeType } from "@rakazo/core";
-import emojiRegex from "emoji-regex";
 
-// Older native engines may not recognize this Unicode property.
-const emojiPresentation = (() => {
+// Constructors, not literals: an unknown property escape must fail here, not while parsing.
+const emojiSequences = (() => {
   try {
-    // biome-ignore lint/complexity/useRegexLiterals: A literal would fail to parse on engines without this property.
-    return new RegExp("\\p{Emoji_Presentation}", "u");
+    const element =
+      "(?:\\p{Emoji_Modifier_Base}\\uFE0F?\\p{Emoji_Modifier}\\uFE0F?|\\p{Extended_Pictographic}\\uFE0F?)";
+    // England, Scotland, and Wales. Other tag payloads are invisible and are not kept.
+    const subdivision =
+      "\\u{1F3F4}\\u{E0067}\\u{E0062}(?:\\u{E0065}\\u{E006E}\\u{E0067}|\\u{E0073}\\u{E0063}\\u{E0074}|\\u{E0077}\\u{E006C}\\u{E0073})\\u{E007F}";
+    const source = `^(?:[#*0-9]\\uFE0F?\\u20E3|[0-9]\\uFE0F|\\p{Regional_Indicator}{2}|${subdivision}|${element}(?:\\u200D${element})*)$`;
+    return {
+      // biome-ignore lint/complexity/useRegexLiterals: A literal would fail to parse on engines without these properties.
+      presentation: new RegExp("\\p{Emoji_Presentation}", "u"),
+      sequence: new RegExp(source, "u"),
+    };
   } catch {
     return null;
   }
 })();
 
-function isEmojiSequence(segment: string, matcher: RegExp): boolean {
-  if (!emojiPresentation || /^[\u{1f3fb}-\u{1f3ff}]$/u.test(segment)) return false;
-  // Digits have an emoji presentation sequence even without an enclosing keycap.
-  if (/^[0-9]\ufe0f$/u.test(segment)) return true;
-  const match = (text: string) => {
-    matcher.lastIndex = 0;
-    const result = matcher.exec(text);
-    return result?.index === 0 && result[0] === text;
-  };
-  if (match(segment)) {
-    return (
-      emojiPresentation.test(segment) || segment.includes("\ufe0f") || segment.includes("\u20e3")
-    );
-  }
-  // Some filenames append an explicit emoji selector to a default-emoji character.
-  if (segment.endsWith("\ufe0f")) {
-    const base = segment.slice(0, -1);
-    return !base.endsWith("\ufe0f") && emojiPresentation.test(base) && match(base);
-  }
-  return false;
+function isEmojiSequence(segment: string): boolean {
+  if (!emojiSequences || /^[\u{1f3fb}-\u{1f3ff}]$/u.test(segment)) return false;
+  if (!emojiSequences.sequence.test(segment)) return false;
+  // © and other text-default symbols stay text until a selector or keycap joins them.
+  return (
+    emojiSequences.presentation.test(segment) ||
+    segment.includes("\uFE0F") ||
+    segment.includes("\u20E3")
+  );
 }
 
 export function artifactCacheFileName(artifactId: string, mimeType: string): string {
@@ -48,12 +45,11 @@ export function artifactShareFileName(name: string, mimeType: string): string {
       : trimmed;
   const characters = Array.from(stemSource);
   const emojiUnits = new Uint8Array(stemSource.length);
-  if (typeof Intl.Segmenter === "function" && emojiPresentation) {
-    const matcher = emojiRegex();
+  if (typeof Intl.Segmenter === "function" && emojiSequences) {
     for (const { segment, index } of new Intl.Segmenter(undefined, {
       granularity: "grapheme",
     }).segment(stemSource)) {
-      if (isEmojiSequence(segment, matcher)) emojiUnits.fill(1, index, index + segment.length);
+      if (isEmojiSequence(segment)) emojiUnits.fill(1, index, index + segment.length);
     }
   }
   let offset = 0;
