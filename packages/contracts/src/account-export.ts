@@ -9,6 +9,8 @@ import { Id, IsoDate } from "./ids.js";
  *   records earlier in the same file, except `bot.parentBotId`, which may point forward.
  * - `spaces/<spaceId>/artifacts/<artifactId>`: each artifact's bytes, after the records.
  * - `spaces/<spaceId>/homes/<botId>/<path>`: each bot's workspace files, after the records.
+ * - `spaces/<spaceId>/executables.json`: after the workspace files, which of them are executable
+ *   (a streamed zip cannot carry file modes back out). Left out when none are.
  *
  * Content is decrypted. Ids are the source install's; an import gives every row a new id and
  * rewrites references, including ids inside message blocks. Credentials, integrations, runs,
@@ -25,7 +27,11 @@ export const accountExportPaths = {
   artifact: (spaceId: string, artifactId: string) => `spaces/${spaceId}/artifacts/${artifactId}`,
   homeFile: (spaceId: string, botId: string, path: string) =>
     `spaces/${spaceId}/homes/${botId}/${path}`,
+  executables: (spaceId: string) => `spaces/${spaceId}/executables.json`,
 };
+
+export const AccountExportExecutablesSchema = z.array(z.object({ botId: Id, path: z.string() }));
+export type AccountExportExecutables = z.infer<typeof AccountExportExecutablesSchema>;
 
 export const AccountExportManifestSchema = z.object({
   format: z.literal(ACCOUNT_EXPORT_FORMAT),

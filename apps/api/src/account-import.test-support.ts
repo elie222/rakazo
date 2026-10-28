@@ -27,6 +27,7 @@ export function exportFiles(
     records: AccountExportRecord[];
     artifacts?: Array<[id: string, content: string | Uint8Array]>;
     homes?: Array<[botId: string, path: string, content: string | Uint8Array]>;
+    executables?: Array<{ botId: string; path: string }>;
   }>,
 ): ArchiveFile[] {
   return [
@@ -45,6 +46,14 @@ export function exportFiles(
           content,
         ],
       ),
+      ...(space.executables
+        ? [
+            [
+              accountExportPaths.executables(space.id),
+              JSON.stringify(space.executables),
+            ] as ArchiveFile,
+          ]
+        : []),
     ]),
   ];
 }

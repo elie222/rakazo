@@ -10,9 +10,12 @@ export interface AccountExportSpace {
   id: string;
   /** In time order, parents before children, as the archive format requires. */
   records(): AsyncGenerator<AccountExportRecord>;
-  /** Every artifact version in `records()`, with where its bytes are stored. */
+  /**
+   * Every artifact in `records()`, with where its bytes are stored. Read after `records()`, from
+   * what it wrote, so a file saved meanwhile cannot appear without its record.
+   */
   artifacts(): AsyncGenerator<{ id: string; storageKey: string }>;
-  /** The user's bots that have a computer, whose workspace files go in the archive. */
+  /** Bots in `records()` that have a computer, whose workspace files go in the archive. */
   homes(): Promise<Array<{ botId: string; homeKey: string; computerScope: string }>>;
 }
 
@@ -66,17 +69,23 @@ export async function readAccountExport(
     user,
     spaces: memberships.map(({ role, space }) => {
       const tenant = { spaceId: space.id, userId };
+      const written: Written = { artifacts: [], botIds: [] };
       return {
         id: space.id,
         name: space.name,
         createdAt: space.createdAt.toISOString(),
         records: () =>
-          runGeneratorAsTenant(tenant, spaceRecords(prisma, tenant, { owner: role === "owner" })),
-        artifacts: () => runGeneratorAsTenant(tenant, artifactFiles(prisma, tenant)),
+          runGeneratorAsTenant(
+            tenant,
+            spaceRecords(prisma, tenant, { owner: role === "owner", written }),
+          ),
+        artifacts: async function* () {
+          yield* written.artifacts;
+        },
         homes: () =>
           runAsTenant(tenant, async () => {
             const bots = await prisma.bot.findMany({
-              where: { ...tenant, computerId: { not: null } },
+              where: { ...tenant, id: { in: written.botIds }, computerId: { not: null } },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
               select: { id: true, computer: { select: { homeKey: true, scope: true } } },
             });
@@ -97,6 +106,8 @@ export async function readAccountExport(
   };
 }
 
+type Written = { artifacts: Array<{ id: string; storageKey: string }>; botIds: string[] };
+
 type Json = Extract<AccountExportRecord, { type: "message" }>["blocks"];
 // Prisma's and zod's JSON types describe the same values but don't line up in TypeScript.
 const json = (value: Prisma.JsonValue) => value as Json;
@@ -106,7 +117,7 @@ const isoOrNull = (date: Date | null) => date?.toISOString() ?? null;
 async function* spaceRecords(
   prisma: PrismaClient,
   tenant: Tenant,
-  { owner }: { owner: boolean },
+  { owner, written }: { owner: boolean; written: Written },
 ): AsyncGenerator<AccountExportRecord> {
   const { spaceId, userId } = tenant;
   const sections = await prisma.botSection.findMany({
@@ -127,6 +138,7 @@ async function* spaceRecords(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const botIds = new Set(bots.map((bot) => bot.id));
+  written.botIds.push(...botIds);
   const ownBot = (id: string | null) => (id && botIds.has(id) ? id : null);
   for (const bot of bots)
     yield {
@@ -246,21 +258,25 @@ async function* spaceRecords(
     hash: string;
     rootArtifactId: string | null;
     version: number;
+    storageKey: string;
     createdAt: Date;
-  }): AccountExportRecord => ({
-    type: "artifact",
-    id: row.id,
-    botId: ownBot(row.botId),
-    groupId: ownGroup(row.groupId),
-    name: row.name,
-    description: row.description,
-    mimeType: row.mimeType,
-    size: row.size,
-    hash: row.hash,
-    rootArtifactId: row.rootArtifactId,
-    version: row.version,
-    createdAt: iso(row.createdAt),
-  });
+  }): AccountExportRecord => {
+    written.artifacts.push({ id: row.id, storageKey: row.storageKey });
+    return {
+      type: "artifact",
+      id: row.id,
+      botId: ownBot(row.botId),
+      groupId: ownGroup(row.groupId),
+      name: row.name,
+      description: row.description,
+      mimeType: row.mimeType,
+      size: row.size,
+      hash: row.hash,
+      rootArtifactId: row.rootArtifactId,
+      version: row.version,
+      createdAt: iso(row.createdAt),
+    };
+  };
   for (let cursor = ""; ; ) {
     const roots = await prisma.artifact.findMany({
       where: { ...tenant, id: { gt: cursor }, rootArtifactId: null },
@@ -444,22 +460,5 @@ async function* spaceRecords(
     }
     if (tickets.length < PAGE) break;
     number = tickets.at(-1)!.number;
-  }
-}
-
-async function* artifactFiles(
-  prisma: PrismaClient,
-  tenant: Tenant,
-): AsyncGenerator<{ id: string; storageKey: string }> {
-  for (let cursor = ""; ; ) {
-    const rows = await prisma.artifact.findMany({
-      where: { ...tenant, id: { gt: cursor } },
-      orderBy: { id: "asc" },
-      take: PAGE,
-      select: { id: true, storageKey: true },
-    });
-    yield* rows;
-    if (rows.length < PAGE) break;
-    cursor = rows.at(-1)!.id;
   }
 }

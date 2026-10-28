@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { WriteStream } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -18,6 +18,7 @@ import {
   ACCOUNT_EXPORT_MANIFEST_PATH,
   ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
   ACCOUNT_EXPORT_VERSION,
+  AccountExportExecutablesSchema,
   AccountExportManifestSchema,
   AccountExportRecordSchema,
   attachmentSizeLabel,
@@ -79,7 +80,8 @@ export type ArchiveEntry =
   | { kind: "manifest" }
   | { kind: "records"; spaceId: string }
   | { kind: "artifact"; spaceId: string; artifactId: string }
-  | { kind: "home"; spaceId: string; botId: string; path: string };
+  | { kind: "home"; spaceId: string; botId: string; path: string }
+  | { kind: "executables"; spaceId: string };
 
 /** Only the documented layout is accepted; anything else, including `..` or absolute paths, fails. */
 export function parseEntryName(name: string, index: number): ArchiveEntry {
@@ -94,6 +96,7 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
   const [root, spaceId, section, id, ...rest] = segments;
   if (root !== "spaces" || !spaceId) throw invalidEntry();
   if (section === "records.jsonl" && id === undefined) return { kind: "records", spaceId };
+  if (section === "executables.json" && id === undefined) return { kind: "executables", spaceId };
   if (section === "artifacts" && id && rest.length === 0)
     return { kind: "artifact", spaceId, artifactId: id };
   if (section === "homes" && id && rest.length > 0)
@@ -104,6 +107,7 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
 function entryLimit(entry: ArchiveEntry, limits: ArchiveLimits): number {
   switch (entry.kind) {
     case "manifest":
+    case "executables":
       return limits.manifestBytes;
     case "records":
       return limits.unpackedBytes;
@@ -242,6 +246,7 @@ class SpaceImport {
   boardId: string | null = null;
   maxTicketNumber = 0;
   recordsDone = false;
+  executablesDone = false;
   messages: WriteStream | null = null;
 
   constructor(
@@ -319,6 +324,11 @@ class AccountImporter implements ArchiveSink {
     }
     const space = this.current;
     if (!space || space.sourceId !== entry.spaceId || !space.recordsDone) throw outOfOrder();
+    if (entry.kind === "executables") {
+      if (space.executablesDone) throw invalidEntry();
+      space.executablesDone = true;
+      return;
+    }
     if (entry.kind === "artifact") {
       if (!space.artifacts.has(entry.artifactId) || space.receivedArtifacts.has(entry.artifactId))
         throw invalidEntry();
@@ -364,6 +374,8 @@ class AccountImporter implements ArchiveSink {
         return this.storeArtifact(entry.artifactId, bytes);
       case "home":
         return this.stageHomeFile(entry.botId, entry.path, bytes);
+      case "executables":
+        return this.markExecutables(bytes);
     }
   }
 
@@ -852,6 +864,32 @@ class AccountImporter implements ArchiveSink {
     const target = path.join(staging, bot.directory, relativePath);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, bytes);
+  }
+
+  /** Only files already in this archive can be marked, after they were staged. */
+  private async markExecutables(bytes: Uint8Array) {
+    const space = this.current!;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      throw unreadable();
+    }
+    const executables = AccountExportExecutablesSchema.safeParse(parsed);
+    if (!executables.success) throw unreadable();
+    for (const { botId, path: filePath } of executables.data) {
+      const bot = space.bots.get(botId);
+      let relativePath: string;
+      try {
+        relativePath = normalizeWorkspacePath(filePath);
+      } catch {
+        throw invalidEntry();
+      }
+      const staging = bot && space.homes.get(bot.homeKey);
+      if (!bot || !staging || !space.receivedHomeFiles.has(`${botId}/${relativePath}`))
+        throw invalidEntry();
+      await chmod(path.join(staging, bot.directory, relativePath), 0o755);
+    }
   }
 
   private async finishSpace() {

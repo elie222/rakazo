@@ -1,7 +1,11 @@
 import type { AdapterContext, AgentHomeStore, ArtifactStore } from "@rakazo/adapter-kit";
 import { resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { AccountExportManifest, AccountExportRecord } from "@rakazo/contracts";
+import type {
+  AccountExportExecutables,
+  AccountExportManifest,
+  AccountExportRecord,
+} from "@rakazo/contracts";
 import {
   ACCOUNT_EXPORT_FORMAT,
   ACCOUNT_EXPORT_MANIFEST_PATH,
@@ -154,6 +158,7 @@ export async function* accountArchiveFiles(
       }
       yield { path: accountExportPaths.artifact(space.id, artifact.id), data: [bytes] };
     }
+    const executables: AccountExportExecutables = [];
     for (const home of await space.homes()) {
       const directory = resolveBotWorkspacePath(
         parseComputerMode(home.computerScope),
@@ -173,12 +178,18 @@ export async function* accountArchiveFiles(
           });
           continue;
         }
+        if (file.executable) executables.push({ botId: home.botId, path: file.path });
         yield {
           path: accountExportPaths.homeFile(space.id, home.botId, file.path),
           data: [file.content],
         };
       }
     }
+    if (executables.length)
+      yield {
+        path: accountExportPaths.executables(space.id),
+        data: [encoder.encode(JSON.stringify(executables))],
+      };
   }
 }
 

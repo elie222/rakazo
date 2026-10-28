@@ -326,6 +326,7 @@ describePostgres("account import (PostgreSQL)", () => {
             ["src-bot-child", "notes/today.md", "hello"],
             ["src-bot-child", "bin/blob", new Uint8Array([0, 255, 1])],
           ],
+          executables: [{ botId: "src-bot-child", path: "bin/blob" }],
         },
       ]),
     );
@@ -476,10 +477,13 @@ describePostgres("account import (PostgreSQL)", () => {
     for await (const file of home.exportHome(child.computer!.homeKey, context, {
       directory: `bots/${child.id}`,
     }))
-      files.set(file.path, Buffer.from(file.content).toString("hex"));
+      files.set(
+        file.path,
+        `${Buffer.from(file.content).toString("hex")}${file.executable ? " +x" : ""}`,
+      );
     expect(Object.fromEntries(files)).toEqual({
       "notes/today.md": Buffer.from("hello").toString("hex"),
-      "bin/blob": "00ff01",
+      "bin/blob": "00ff01 +x",
     });
 
     const group = await system.chatGroup.findFirstOrThrow({

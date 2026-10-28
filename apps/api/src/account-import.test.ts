@@ -123,6 +123,10 @@ describe("account import archive", () => {
       botId: "b1",
       path: "notes/today.md",
     });
+    expect(parseEntryName("spaces/s1/executables.json", 4)).toEqual({
+      kind: "executables",
+      spaceId: "s1",
+    });
   });
 
   it("rejects path traversal in an archive before writing anything", async () => {

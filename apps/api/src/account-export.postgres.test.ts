@@ -16,6 +16,7 @@ import {
   createThreadMessage,
   LocalKeyProvider,
   masterKeysFromEnv,
+  readAccountExport,
   runAsSystem,
 } from "@rakazo/db";
 import { unzipSync } from "fflate";
@@ -296,6 +297,35 @@ describePostgres("account export (PostgreSQL)", () => {
     const shared = records(sharedSpace);
     expect(shared).toEqual([expect.objectContaining({ type: "bot", id: `mine-shared-${suffix}` })]);
     expect(decode(accountExportPaths.records(sharedSpace))).not.toContain(other);
+  });
+
+  it("lists only files whose records it wrote, even if one is saved meanwhile", async () => {
+    const source = await readAccountExport(prisma, exporter);
+    const owned = source.spaces.find((space) => space.id === ownedSpace)!;
+    const written: string[] = [];
+    for await (const record of owned.records())
+      if (record.type === "artifact") written.push(record.id);
+    const late = await runAsSystem("test fixture", () =>
+      prisma.artifact.create({
+        data: {
+          spaceId: ownedSpace,
+          userId: exporter,
+          name: "late.txt",
+          mimeType: "text/plain",
+          size: 1,
+          hash: "late",
+          storageKey: `late-${suffix}`,
+        },
+      }),
+    );
+    try {
+      const listed: string[] = [];
+      for await (const artifact of owned.artifacts()) listed.push(artifact.id);
+      expect(listed).toEqual(written);
+      expect(listed).not.toContain(late.id);
+    } finally {
+      await runAsSystem("test fixture", () => prisma.artifact.delete({ where: { id: late.id } }));
+    }
   });
 
   it("imports into another account with the same content", async () => {

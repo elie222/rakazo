@@ -197,6 +197,24 @@ describe("account export archive", () => {
     );
   });
 
+  it("lists executable workspace files after them", async () => {
+    const fakes = stores();
+    fakes.home.exportHome = async function* () {
+      yield { path: "run.sh", content: new TextEncoder().encode("echo hi"), executable: true };
+      yield { path: "notes.md", content: new TextEncoder().encode("plain") };
+    };
+    const entries = await unzipStream(zipStream(accountArchiveFiles(source(), fakes)));
+    const names = entries.map((entry) => entry.name);
+    const listed = names.indexOf(accountExportPaths.executables("space-a"));
+    expect(listed).toBeGreaterThan(
+      names.indexOf(accountExportPaths.homeFile("space-a", "bot-1", "notes.md")),
+    );
+    expect(JSON.parse(decoder.decode(entries[listed]!.data))).toEqual([
+      { botId: "bot-1", path: "run.sh" },
+    ]);
+    expect(names).not.toContain(accountExportPaths.executables("space-b"));
+  });
+
   it("fails instead of writing an archive past the zip size limit", async () => {
     const reader = zipStream(accountArchiveFiles(source(), stores()), 200).getReader();
     await expect(
