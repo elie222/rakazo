@@ -16,6 +16,7 @@ export * from "./bot-avatar-colors.js";
 export * from "./bot-avatar-shapes.js";
 export * from "./bot-mentions.js";
 export * from "./bot-messages.js";
+export * from "./bot-role-seed.js";
 export * from "./bot-sections.js";
 export * from "./bot-sender-name.js";
 export * from "./call-nonce.js";
