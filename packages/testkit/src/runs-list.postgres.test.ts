@@ -6,6 +6,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 
@@ -32,7 +33,7 @@ describeRunsList("runs.list activity tracker", () => {
       agentRuntime: "scripted",
     });
     app = handles.app;
-    prisma = handles.prisma;
+    prisma = asSystem(handles.prisma);
     stop = handles.stop;
   });
 

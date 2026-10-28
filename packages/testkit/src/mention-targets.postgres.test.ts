@@ -5,6 +5,7 @@ import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
@@ -34,7 +35,7 @@ describeWithDatabase("structured @ mention targets", () => {
       signupsEnabled: "true",
     });
     app = handles.app;
-    prisma = handles.prisma;
+    prisma = asSystem(handles.prisma);
   });
 
   afterAll(async () => {

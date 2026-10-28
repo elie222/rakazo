@@ -9,6 +9,7 @@ import {
 } from "@rakazo/adapters";
 import { formatMessagingLinkCode, issueMessagingLinkCode } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { asSystem } from "./system-db.js";
 
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
@@ -58,7 +59,7 @@ describeMessaging("messaging surface journeys", () => {
     });
     app = handles.app;
     stop = handles.stop;
-    prisma = handles.prisma;
+    prisma = asSystem(handles.prisma);
   });
 
   afterAll(async () => {
