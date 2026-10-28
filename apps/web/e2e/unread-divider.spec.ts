@@ -186,7 +186,6 @@ test("marking a message unread brings the chat back with New above the reply fro
   await rpc(page, "threads/send", { botId: chiefId, text: second });
   await settled();
 
-  // Read everything, then mark the first reply unread from its menu.
   await page.goto(`/app/${chiefId}`);
   const firstReply = page
     .locator("[data-message-id]")

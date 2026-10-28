@@ -157,13 +157,17 @@ export function foldPeerReplies<T extends PresentableMessage>(
     )
       return fold(parentMarkerId, message);
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
-    // User-input cards stay inline; previews without receipts keep only asks, as before.
+    // User-input cards stay inline; previews without receipts keep only asks.
     if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
     // A relay is the bot's own reply to the user, so previews show it too.
     if (
       (!includeText && !relayRunIds.has(message.runId)) ||
       !message.blocks.some(
-        (block) => block.kind === "text" || block.kind === "file" || block.kind === "image",
+        (block) =>
+          block.kind === "text" ||
+          block.kind === "file" ||
+          block.kind === "image" ||
+          block.kind === "chart",
       )
     )
       return false;

@@ -68,7 +68,6 @@ export type FleetRun = {
   spaceId: string;
   userId: string;
   botId: string;
-  /** The group whose thread the run is in, if any. */
   groupId: string | null;
   /** The thread the run is in; fleet events for the caller land here. */
   threadId: string;

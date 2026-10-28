@@ -57,7 +57,12 @@ async function runAfterFill(
     origin: "https://login.example.test",
     auth: { type: "login" },
     ...(await secretStore.put(
-      encodeLoginSecret({ username: USERNAME, password: PASSWORD }),
+      encodeLoginSecret({
+        fields: [
+          { label: "Username", value: USERNAME, hidden: false },
+          { label: "Password", value: PASSWORD, hidden: true },
+        ],
+      }),
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
       { recordId: "login-1" },
     )),
@@ -148,7 +153,7 @@ async function runAfterFill(
         defaultModelId: "openai/gpt-4o",
       })),
     },
-    botSecret: { findMany: vi.fn(async () => botSecrets) },
+    vaultCredential: { findMany: vi.fn(async () => botSecrets) },
     externalEffect: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),

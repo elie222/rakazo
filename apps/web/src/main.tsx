@@ -1,5 +1,5 @@
 import "./monitoring-bootstrap";
-import { Toaster, TooltipProvider } from "@rakazo/ui-web";
+import { BotAvatarActivityProvider, Toaster, TooltipProvider } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,6 +9,7 @@ import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { clientUpdates } from "./lib/client-update";
+import { webLogoAvatarActivity } from "./lib/logo-avatar-activity";
 import { reportCaughtReactError } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { installPreloadRecovery } from "./lib/preload-recovery";
@@ -16,12 +17,14 @@ import { queryClient } from "./lib/query";
 import { applyUiAppearance, watchSystemAppearance } from "./lib/ui-appearance";
 import { resolveUiLocale } from "./lib/ui-locale";
 import { registerServiceWorker } from "./pwa/register";
+import { lockStandaloneZoom } from "./pwa/standalone";
 import "./styles.css";
 
 markOnce("rk:renderer:module-evaluated");
 installPreloadRecovery();
 clientUpdates().install();
 registerServiceWorker();
+lockStandaloneZoom();
 applyUiDirection(resolveUiLocale());
 applyUiAppearance();
 
@@ -65,7 +68,9 @@ createRoot(document.getElementById("root")!, { onCaughtError: reportCaughtReactE
         <QueryClientProvider client={queryClient}>
           <DesktopUpdatesProvider>
             <TooltipProvider>
-              <App />
+              <BotAvatarActivityProvider source={webLogoAvatarActivity}>
+                <App />
+              </BotAvatarActivityProvider>
             </TooltipProvider>
             <Toaster />
           </DesktopUpdatesProvider>

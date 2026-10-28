@@ -31,8 +31,8 @@ type SpeechOptions = {
   speaker?: PlaybackSpeaker;
 };
 
-// --- Playback status: lets a persistent mini-player show what's speaking and
-// control it, without every screen re-deriving state from the speak calls below.
+// Playback status lets a persistent mini-player show and control what's speaking, without every
+// screen re-deriving state from the speak calls below.
 
 export type VoicePlaybackStatus = "idle" | "playing" | "paused";
 export type VoicePlaybackState = {
@@ -104,10 +104,8 @@ export function setVoiceBackgroundPlayback(enabled: boolean): void {
   playsInBackground = enabled;
 }
 
-// --- Sequential playback across several messages: speaking a message plays
-// it, then keeps going through the rest of the queue until Stop is pressed or
-// the last one finishes. Built on top of speakText, one call at a time, so a
-// single Stop (above) always reaches whatever is actually playing right now.
+// Queued playback runs speakText one call at a time, so a single Stop always reaches whatever is
+// actually playing right now.
 
 export type SpeechQueueItem = SpeechOptions & { text: string };
 
@@ -429,8 +427,8 @@ async function renderUtterance(
   }
 }
 
-// --- Hosted (MP3) playback: one HostedSession per speakText call, shared across
-// its utterances, so Pause/Resume/Stop keep working across the gap between them.
+// Hosted (MP3) playback shares one HostedSession across a speakText call's utterances, so
+// Pause/Resume/Stop keep working across the gap between them.
 
 let hostedSpeechSession = 0;
 

@@ -16,8 +16,10 @@ import {
   findBotSecret,
   findCommandVariableConflict,
   forgetBotSecret,
+  generateBotSecret,
   listBotSecrets,
   normalizeSecretDestination,
+  requestedLoginFields,
   requestWithBotSecret,
   resolveRequestSecretDestination,
   sameSecretDestination,
@@ -48,6 +50,17 @@ export const secretTools: ToolHandlers = {
     if (!parsed.success) return call.finish({ error: "A valid credential name is required." });
     return call.finish(await forgetBotSecret(deps.prisma, run, parsed.data));
   },
+  async generate_secret(ctx, call) {
+    const { deps, run } = ctx;
+    const { result, redactions } = await generateBotSecret({
+      prisma: deps.prisma,
+      secretStore: deps.secretStore,
+      scope: run,
+      args: call.args,
+    });
+    if (redactions) addRunSecrets(ctx, redactions);
+    return call.finish(result);
+  },
   async secret_request(ctx, call) {
     const { deps, run, context } = ctx;
     const { args } = call;
@@ -74,6 +87,9 @@ export const secretTools: ToolHandlers = {
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
     const connectionId = resolvedSecret.connectionId;
+    const loginFields =
+      destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
+    if (loginFields?.error) return call.finish({ error: loginFields.error });
     if (destination) {
       const existing = await findBotSecret(deps.prisma, run, destination.name);
       if (existing && !sameSecretDestination(existing, destination)) {
@@ -264,6 +280,7 @@ export const secretTools: ToolHandlers = {
           text: String(args.label ?? "Code"),
           input: "secret",
           ...(destination ? { credential: destination } : {}),
+          ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
           purpose: normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
           status: "pending",
         },

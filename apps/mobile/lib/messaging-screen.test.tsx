@@ -9,11 +9,15 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MessagingSettings from "../app/(settings)/messaging";
 import { rpc } from "./api";
 
+const appState = vi.hoisted(() => ({ change: undefined as ((state: string) => void) | undefined }));
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: {},
   useThemedStyles: (factory: () => unknown) => factory(),
+}));
+vi.mock("./user-error", () => ({
+  errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("./i18n", () => ({
   useI18n: () => ({
@@ -89,7 +93,12 @@ vi.mock("react-native", () => {
     ScrollView: View,
     Text: View,
     StyleSheet: { create: (styles: unknown) => styles },
-    AppState: { addEventListener: () => ({ remove: () => undefined }) },
+    AppState: {
+      addEventListener: (_: string, listener: (state: string) => void) => {
+        appState.change = listener;
+        return { remove: () => undefined };
+      },
+    },
     Linking: { openURL: vi.fn() },
   };
 });
@@ -367,4 +376,49 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
       .click(),
   );
   expect(rpc).toHaveBeenCalledWith("messaging/link/start", { botId: "bot-2" });
+});
+
+it("offers a retry when the first load fails, then lists what it found", async () => {
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<MessagingSettings />));
+  expect(container.textContent).not.toContain("Family");
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+
+  await act(async () => {
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "Retry")!.click();
+  });
+  expect(container.textContent).toContain("Family");
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("clears an old load error once a later load succeeds", async () => {
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<MessagingSettings />));
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+
+  await act(async () => appState.change?.("active"));
+  expect(container.textContent).toContain("Family");
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("keeps a failed action's error when a refresh that was pending then succeeds", async () => {
+  await act(async () => root.render(<MessagingSettings />));
+  const answer = async (path: string) => (responses[path] ?? { ok: true }) as never;
+  let finishRefresh!: () => void;
+  vi.mocked(rpc).mockImplementation(async (path: string) => {
+    if (path === "messaging/channels/respond") throw new Error("offline");
+    if (path === "bots/list") {
+      await new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      });
+    }
+    return answer(path);
+  });
+  await act(async () => appState.change?.("active"));
+
+  await press("Family", "Approve");
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+
+  await act(async () => finishRefresh());
+  expect(container.textContent).toContain("Something went wrong. Try again.");
 });

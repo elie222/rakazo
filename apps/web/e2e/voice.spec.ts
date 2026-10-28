@@ -193,3 +193,54 @@ test("voice settings take a self-hosted speech server by URL", async ({ page }, 
   const credentials = await rpc<unknown[]>(page, "voice/credentials");
   expect(credentials).toEqual([]);
 });
+
+test("voice settings take a typed voice for a self-hosted server", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `voice-typed-${stamp}@rakazo.test`, "password12", `Voice Typed ${stamp}`);
+  await completeOnboarding(page);
+  // Model a connected self-hosted server; the E2E deployment has none listening.
+  await page.route("**/rpc/voice/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-local",
+            provider: "openai-compatible",
+            hasKey: false,
+            isDefault: true,
+            voiceId: "af_heart",
+            speechModel: "",
+            transcribe: true,
+            endpoint: "http://127.0.0.1:8880/v1",
+            ttsModel: "kokoro",
+            sttModel: "",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/voice/status", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json = { ...body.json, configured: true, ready: true, provider: "openai-compatible" };
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/voice/voices", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          { id: "af_heart", label: "Heart" },
+          { id: "af_bella", label: "Bella" },
+        ],
+      },
+    }),
+  );
+
+  await openUserSettings(page, "voice");
+  const settings = page.getByTestId("voice-settings");
+  const voice = settings.getByLabel("Voice", { exact: true });
+  await expect(voice).toHaveValue("af_heart");
+  await voice.fill("am_custom_blend");
+  await expect(voice).toHaveValue("am_custom_blend");
+  await captureScreenshot(page, testInfo, "voice-settings-self-hosted-typed-voice");
+});

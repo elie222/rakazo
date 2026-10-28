@@ -60,6 +60,30 @@ function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>
       },
     ],
     [
+      "vaultCredential",
+      {
+        id: `rls-vault-space-${tag}-${t.spaceId}`,
+        userId: t.userId,
+        spaceId: t.spaceId,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
+      "vaultCredential",
+      {
+        id: `rls-vault-account-${tag}-${t.userId}`,
+        userId: t.userId,
+        spaceId: null,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
       "agentSecret",
       {
         spaceId: t.spaceId,
@@ -220,14 +244,16 @@ describePostgres("row-level security (PostgreSQL)", () => {
     Promise.all(
       [
         "botSecret",
+        "vaultCredential",
         "agentSecret",
         "taughtSkill",
         "agentSkill",
         "userVoiceCredential",
         "trustedLinkSite",
       ].map(async (table) => {
-        const scope =
-          table === "userVoiceCredential" || table === "trustedLinkSite" ? "userId" : "spaceId";
+        const scope = ["userVoiceCredential", "vaultCredential", "trustedLinkSite"].includes(table)
+          ? "userId"
+          : "spaceId";
         const ids = tenants.map((t) => t[scope]);
         const rows = (await Reflect.get(db, table).findMany({
           where: { [scope]: { in: ids } },
@@ -639,6 +665,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
   it("applies the same rules to secrets, skills, voice credentials and trusted link sites", async () => {
     const none = {
       botSecret: [],
+      vaultCredential: [],
       agentSecret: [],
       taughtSkill: [],
       agentSkill: [],
@@ -648,6 +675,8 @@ describePostgres("row-level security (PostgreSQL)", () => {
     expect(await owners()).toEqual(none);
     expect(await runAsTenant(a, owners)).toEqual({
       botSecret: [a.spaceId],
+      // The member's account vault and their Space's own vault.
+      vaultCredential: [a.userId, a.userId],
       agentSecret: [a.spaceId],
       taughtSkill: [a.spaceId],
       agentSkill: [a.spaceId],

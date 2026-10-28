@@ -108,13 +108,10 @@ describe("lingui catalogs", () => {
         "Model",
         "Add a label",
         "Add open work",
-        "Can edit and organise bots it creates",
         "Disable a tool",
         "Edit label",
         "Edit name",
         "Enable {0}",
-        "Encrypted and never shown again",
-        "How other bots see it",
         "Model connections",
         "Permissions",
         "Skills",
@@ -139,9 +136,11 @@ describe("lingui catalogs", () => {
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Command variable",
-      "Available to this bot's shell commands as {commandVariable}",
+      "Available to shell commands as {commandVariable}",
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
-      "Encrypted and never shown again",
+      "Show",
+      "Hide",
+      "Could not show the credential",
     ];
     for (const locale of [
       "en",

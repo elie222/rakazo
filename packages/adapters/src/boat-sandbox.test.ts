@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type * as TimersPromises from "node:timers/promises";
 import type { FileUrlResponse, SandboxStateEnum } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
@@ -18,7 +19,12 @@ import {
   boatComputerSnapshotName,
 } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
-import { BOAT_ARTIFACT_MAX_BYTES, boatError, FakeBoatApi } from "./boat-sandbox.test-support.js";
+import {
+  BOAT_ARTIFACT_MAX_BYTES,
+  boatError,
+  FakeBoatApi,
+  serveFakeBoatDownload,
+} from "./boat-sandbox.test-support.js";
 import { PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -41,6 +47,10 @@ const context = {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
+  // Workspace exports download their archive from the sandbox; nothing leaves the test.
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (url) => serveFakeBoatDownload(String(url)) ?? new Response(null, { status: 404 }),
+  );
 });
 
 afterEach(() => {
@@ -56,7 +66,13 @@ async function boat() {
   return { api, provider, computer };
 }
 
-/** Files an export read through the artifact route, without the workspace listing itself. */
+/** The script of every command the adapter sent, without the timeout wrapper. */
+function scripts(command: { mock: { calls: [unknown, ...unknown[]][] } }): string[] {
+  return command.mock.calls
+    .map(([request]) => (request as { commandRequest: { command: string } }).commandRequest.command)
+    .map((wrapped) => String(parse(wrapped).at(-1)));
+}
+
 /** Every exported file with its bytes, reading streamed ones in order. */
 async function readExport(files: AsyncIterable<PortableFile | StreamedPortableFile>) {
   const read: Array<PortableFile & { streamed?: boolean }> = [];
@@ -77,10 +93,16 @@ async function readExport(files: AsyncIterable<PortableFile | StreamedPortableFi
   return read;
 }
 
-function workspaceReads(artifactRaw: { mock: { calls: [{ path: string }, ...unknown[]][] } }) {
-  return artifactRaw.mock.calls
-    .map(([request]) => request.path)
-    .filter((path) => path.startsWith("/home/user/rakazo-home/"));
+function exportAll(provider: BoatSandboxProvider, computer: ComputerRef, signal?: AbortSignal) {
+  return readExport(
+    provider.exportWorkspace(computer, { ...context, ...(signal ? { signal } : {}) }),
+  );
+}
+
+function archivesLeft(api: FakeBoatApi, computer: ComputerRef): string[] {
+  return [...api.files(computer.id).keys()].filter((path) =>
+    path.startsWith("/tmp/rakazo-workspace-archive-"),
+  );
 }
 
 async function drain(events: AsyncIterable<unknown>): Promise<void> {
@@ -1135,32 +1157,91 @@ describe("BoatSandboxProvider", () => {
     ).rejects.toBe(reason);
   });
 
-  it("exports files listed over 5 MiB through a private download URL, not the artifact route", async () => {
+  it("exports the whole workspace through one archive download, whatever its file count", async () => {
     const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+    const createDownloadUrl = vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl");
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
     const { api, provider, computer } = await boat();
-    const content = Buffer.alloc(6 * 1024 * 1024, 0xab);
-    api.files(computer.id).set("/home/user/rakazo-home/.browser-profiles/chrome/Default/History", {
-      content,
+    const files = api.files(computer.id);
+    const expected: [string, Buffer, boolean][] = [];
+    const put = (path: string, content: Buffer, executable = false) => {
+      files.set(`/home/user/rakazo-home/${path}`, { content, executable });
+      expected.push([path, content, executable]);
+    };
+    for (let index = 0; index < 500; index++) {
+      put(`project/node_modules/pkg-${index}/index.js`, Buffer.from(`module ${index}`));
+    }
+    const large = Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1, 0xcd);
+    large[0] = 0;
+    put("data/archive.bin", large, true);
+    put("data/binary.bin", Buffer.from([0, 255, 1, 128, 0, 10, 13]));
+    put("data/empty", Buffer.alloc(0));
+    put("notes/tab\there/new\nline.txt", Buffer.from("odd"));
+    put("unicode/café 日本語 🙂.txt", Buffer.from("unicode"));
+    put(".browser-profiles/chrome/Default/History", Buffer.from("history"));
+    files.set("/home/user/rakazo-home/.browser-profiles/chrome/Default/Cache/data_0", {
+      content: Buffer.from("cache"),
       executable: false,
     });
-    api.files(computer.id).set("/home/user/rakazo-home/notes.txt", {
-      content: Buffer.from("small"),
+    files.set("/home/user/outside.txt", {
+      content: Buffer.from("not exported"),
       executable: false,
     });
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url) => api.serveDownload(String(url)));
+    command.mockClear();
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
 
-    const exported = [];
-    exported.push(...(await readExport(provider.exportWorkspace(computer, context))));
+    const exported = await exportAll(provider, computer);
 
-    expect(exported.map((file) => file.path)).toEqual([
-      ".browser-profiles/chrome/Default/History",
-      "notes.txt",
+    // Digests, so a mismatch in the large file does not print 50 MiB.
+    const digest = (content: Uint8Array) => createHash("sha256").update(content).digest("hex");
+    expect(
+      exported
+        .map((file) => [file.path, digest(file.content), file.executable ?? false])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    ).toEqual(
+      expected
+        .map(([path, content, executable]) => [path, digest(content), executable])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    );
+    // Only the file too large to hold in memory comes as a stream.
+    expect(exported.filter((file) => file.streamed).map((file) => file.path)).toEqual([
+      "data/archive.bin",
     ]);
-    expect(Buffer.from(exported[0]!.content).equals(content)).toBe(true);
+    expect(artifactRaw).not.toHaveBeenCalled();
+    expect(createDownloadUrl).toHaveBeenCalledOnce();
+    expect(createDownloadUrl.mock.calls[0]?.[0].fileUrlRequest.path).toMatch(
+      /^\/tmp\/rakazo-workspace-archive-[0-9a-f-]+\.tar\.gz$/,
+    );
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(workspaceReads(artifactRaw)).toEqual(["/home/user/rakazo-home/notes.txt"]);
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+    // Stopping the browsers, archiving, and removing the archive.
+    expect(command).toHaveBeenCalledTimes(3);
+    expect(command.mock.calls.at(-1)?.[0].commandRequest.command).toMatch(
+      /^rm -f -- '\/tmp\/rakazo-workspace-archive-/,
+    );
+    expect(archivesLeft(api, computer)).toEqual([]);
+  });
+
+  it("archives the workspace in one walk, without browser caches or links", async () => {
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+
+    await exportAll(provider, computer);
+
+    const script = scripts(command).find((text) => text.startsWith("archive="));
+    expect(script).toContain("-printf '%p\\0'");
+    expect(script).toContain("-type f");
+    expect(script).toContain("-name 'Code Cache'");
+    expect(script).toContain("-prune");
+    expect(script).toContain("--hard-dereference");
+    expect(script).toContain("--format=pax");
+    expect(script).toContain("--null --no-recursion");
+    // Only an entry that vanished mid-walk is tolerated; other find errors fail the archive.
+    expect(script).toContain("grep -qv -e 'No such file or directory$'");
+    expect(script).toContain("-e 'file changed as we read it$'");
   });
 
   it("downloads a file the artifact route could not send before Boat's proxy timed out", async () => {
@@ -1177,16 +1258,13 @@ describe("BoatSandboxProvider", () => {
       }
       return read.call(this, request);
     });
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url) => api.serveDownload(String(url)));
+    const fetchMock = vi.mocked(globalThis.fetch);
 
-    const exported = [];
-    exported.push(...(await readExport(provider.exportWorkspace(computer, context))));
+    const content = await provider.readFile(computer, "report.pdf", context);
 
-    expect(Buffer.from(exported[0]!.content).toString()).toBe("slow but small");
+    expect(Buffer.from(content).toString()).toBe("slow but small");
     // The sandbox already had the request; resending it would only time out again.
-    expect(workspaceReads(artifactRaw)).toEqual(["/home/user/rakazo-home/report.pdf"]);
+    expect(artifactRaw).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -1206,33 +1284,6 @@ describe("BoatSandboxProvider", () => {
     expect(error).toBeInstanceOf(SandboxUnresponsiveError);
     expect(isSandboxGoneError(error)).toBe(false);
     expect(run).toHaveBeenCalledOnce();
-  });
-
-  it("lists the workspace in one walk to a file, without browser caches", async () => {
-    const command = vi.spyOn(FakeBoatApi.prototype, "command");
-    const { api, provider, computer } = await boat();
-    const files = api.files(computer.id);
-    const odd = "notes/tab\there/new\nline.txt";
-    files.set(`/home/user/rakazo-home/${odd}`, { content: Buffer.from("odd"), executable: false });
-    files.set("/home/user/rakazo-home/bin/tool", { content: Buffer.from("x"), executable: true });
-
-    const exported = [];
-    exported.push(...(await readExport(provider.exportWorkspace(computer, context))));
-
-    expect(exported.map((file) => [file.path, file.executable])).toEqual([
-      ["bin/tool", true],
-      [odd, undefined],
-    ]);
-    const listing = command.mock.calls
-      .map(([request]) => ("commandRequest" in request ? request.commandRequest.command : ""))
-      .map((wrapped) => String(parse(wrapped).at(-1)))
-      .find((script) => script.includes("exec 3> "));
-    expect(listing).toContain("-printf");
-    expect(listing).not.toContain("while");
-    expect(listing).toContain("-name 'Code Cache'");
-    expect(listing).toContain("-prune");
-    // Only an entry that vanished mid-walk is tolerated; other find errors fail the listing.
-    expect(listing).toContain("grep -qv -e 'No such file or directory$'");
   });
 
   it.each([
@@ -1265,93 +1316,75 @@ describe("BoatSandboxProvider", () => {
     expect((error as Error).message).toBe(message);
   });
 
-  it("reports a workspace listing that timed out without its partial output", async () => {
-    const output = `${Buffer.from("/home/user/rakazo-home/private.txt").toString("base64")}\tfile\t1\t0\n`;
+  it.each([
+    ["timed out", { exitCode: 124, timedOut: true }, "timed out"],
+    ["met an unreadable file", { exitCode: 3, timedOut: false }, "an entry could not be read"],
+  ])("reports a workspace archive that %s without its output", async (_, ending, status) => {
+    const output = "/home/user/rakazo-home/private.txt\n";
     const run = FakeBoatApi.prototype.command;
     vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
       this: FakeBoatApi,
       request,
     ) {
-      if (!request.commandRequest.command.includes("exec 3> ")) return run.call(this, request);
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
       return {
         ok: true,
         type: "command.finished",
         success: false,
-        exitCode: 124,
         stdout: output.repeat(1_000),
-        stderr: "",
-        timedOut: true,
+        stderr: output,
+        ...ending,
       };
     });
+    const createDownloadUrl = vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl");
     const { provider, computer } = await boat();
 
-    const error = await (async () => {
-      for await (const _file of provider.exportWorkspace(computer, context)) {
-        // Nothing is listed.
-      }
-    })().catch((failure: Error) => failure);
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
 
-    expect((error as Error).message).toBe("could not enumerate Boat workspace (timed out)");
+    expect((error as Error).message).toBe(`could not archive Boat workspace (${status})`);
+    expect(createDownloadUrl).not.toHaveBeenCalled();
   });
 
-  it("exports files over the artifact limit through a private download URL", async () => {
+  it("fails an export whose archive download was cut short and removes the archive", async () => {
     const { api, provider, computer } = await boat();
-    const large = Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1, 0xcd);
-    large[0] = 0;
-    const files = api.files(computer.id);
-    files.set("/home/user/rakazo-home/data/archive.bin", { content: large, executable: true });
-    files.set("/home/user/rakazo-home/notes.txt", {
+    api.files(computer.id).set("/home/user/rakazo-home/notes.txt", {
+      content: Buffer.alloc(100_000, 7),
+      executable: false,
+    });
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      const whole = Buffer.from(await serveFakeBoatDownload(String(url))!.arrayBuffer());
+      return new Response(whole.subarray(0, Math.floor(whole.length / 2)));
+    });
+
+    await expect(exportAll(provider, computer)).rejects.toThrow();
+    expect(archivesLeft(api, computer)).toEqual([]);
+  });
+
+  it("stops the archive download with the caller's signal", async () => {
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/notes.txt", {
       content: Buffer.from("kept"),
       executable: false,
     });
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url) => api.serveDownload(String(url)));
-
-    const exported = [];
-    exported.push(...(await readExport(provider.exportWorkspace(computer, context))));
-
-    expect(exported.map((file) => [file.path, file.executable])).toEqual([
-      ["data/archive.bin", true],
-      ["notes.txt", undefined],
-    ]);
-    expect(Buffer.from(exported[0]!.content).equals(large)).toBe(true);
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [, init] = fetchMock.mock.calls[0]!;
-    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
-    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
-  });
-
-  it("keeps large files out of the same export batch", async () => {
-    const { api, provider, computer } = await boat();
-    const files = api.files(computer.id);
-    for (const name of ["a", "b", "c"]) {
-      files.set(`/home/user/rakazo-home/${name}.bin`, {
-        content: Buffer.alloc(40 * 1024 * 1024),
-        executable: false,
+    const controller = new AbortController();
+    const reason = new DOMException("checkpoint cancelled", "AbortError");
+    vi.mocked(globalThis.fetch).mockImplementation(async (_url, init) => {
+      const signal = init?.signal as AbortSignal;
+      const body = new ReadableStream({
+        start(stream) {
+          signal.addEventListener("abort", () => stream.error(signal.reason));
+          controller.abort(reason);
+        },
       });
-    }
-    let active = 0;
-    let peak = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-      peak = Math.max(peak, ++active);
-      await Promise.resolve();
-      active--;
-      return api.serveDownload(String(url));
+      return new Response(body);
     });
 
-    const exported = await readExport(provider.exportWorkspace(computer, context));
-
-    expect(exported.map((file) => [file.path, file.streamed])).toEqual([
-      ["a.bin", true],
-      ["b.bin", true],
-      ["c.bin", true],
-    ]);
-    expect(peak).toBe(1);
+    await expect(exportAll(provider, computer, controller.signal)).rejects.toBe(reason);
+    expect(archivesLeft(api, computer)).toEqual([]);
   });
 
-  it("refuses a workspace over the save limits from its listing, before reading any file", async () => {
-    const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+  it("refuses a workspace over the save limits from its listing, before archiving it", async () => {
+    const createDownloadUrl = vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl");
     const { api, provider, computer } = await boat();
     const files = api.files(computer.id);
     for (const name of ["a", "b", "c"]) {
@@ -1368,8 +1401,9 @@ describe("BoatSandboxProvider", () => {
     await expect(
       readExport(provider.exportWorkspace(computer, context, { maxBytes: 100, maxFiles: 2 })),
     ).rejects.toEqual(new WorkspaceTooLargeError("files"));
-    expect(workspaceReads(artifactRaw)).toEqual([]);
+    expect(createDownloadUrl).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(archivesLeft(api, computer)).toEqual([]);
   });
 
   it("refuses a capped read of a file over the artifact limit without downloading it", async () => {
@@ -1663,6 +1697,35 @@ describe("BoatSandboxProvider", () => {
     await expect(pending).rejects.toThrow("Boat boat-test was not deleted within 60 seconds");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
     expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(deadline.signal);
+  });
+
+  it("leaves a sandbox another API key created to its creator", async () => {
+    const forbidden = (code: string) =>
+      new Response(JSON.stringify({ code, message: "Forbidden" }), { status: 403 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(forbidden("api_key_action_forbidden"))
+      .mockResolvedValueOnce(forbidden("forbidden"));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" });
+    const computer = {
+      id: "boat-test",
+      providerRef: "boat-test",
+      botId: "bot-test",
+      kind: "boat" as const,
+    };
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ message: "sandbox.destroy", outcome: "not_owned" }),
+      );
+      // Any other refusal still fails, so the computer is kept for a retry.
+      await expect(provider.destroy(computer, context)).rejects.toThrow("HTTP 403, forbidden");
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
   });
 });
 

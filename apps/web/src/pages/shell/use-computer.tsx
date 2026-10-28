@@ -17,6 +17,7 @@ import {
 import { Button, Spinner } from "@rakazo/ui-web";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ComputerMaintenanceActions } from "../../components/ComputerMaintenanceActions";
 import { computersAreUnavailable } from "../../components/ComputersUnavailableHint";
 import {
   bootComputerOnce,
@@ -36,6 +37,8 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import {
   computerPanelNeedsScreen,
   computerTakeoverBlocked,
+  screenMissing,
+  screenReadLoaded,
   userHoldsComputerControl,
 } from "../../lib/thread-events";
 import { errorText } from "../../lib/user-error";
@@ -70,6 +73,7 @@ export function useComputerState({
   const booting = bootingBotId !== null && bootingBotId === computer?.botId;
   const bootsInFlight = useRef(new Map<string, symbol>());
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
   const computerOpenRef = useRef(false);
@@ -216,6 +220,8 @@ export function useComputerState({
   }
 
   function commitComputer(next: ComputerStatus | null) {
+    // A finished screen read stays valid until the computer stops running; control events keep it.
+    if (next?.state !== "running") setScreenUrlLoadedBotId(null);
     computerRef.current = next;
     setComputer(next);
   }
@@ -223,6 +229,7 @@ export function useComputerState({
   /** Opening a bot paints its last-known computer at once; fresh reads reconcile behind it. */
   function showCachedComputer(botId: string) {
     screenRequest.current += 1;
+    setScreenUrlLoadedBotId(null);
     setComputerError(null);
     setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(botId);
@@ -237,6 +244,7 @@ export function useComputerState({
   async function refreshComputerScreen(id: string) {
     if (!computerVisible.current) return null;
     const request = ++screenRequest.current;
+    const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
       load: () => rpc.computer.screenUrl({ botId: id }),
       isCurrent: () =>
@@ -244,6 +252,12 @@ export function useComputerState({
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
+        setScreenUrlLoadedBotId(
+          computerRef.current?.botId === id &&
+            screenReadLoaded(issuedState, computerRef.current.state)
+            ? id
+            : null,
+        );
         setScreenUrl(screen.url);
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
         if (screen.error || computerErrorFromScreenRef.current) {
@@ -269,6 +283,8 @@ export function useComputerState({
     bootsInFlight,
     screenUrl,
     setScreenUrl,
+    screenUrlLoadedBotId,
+    setScreenUrlLoadedBotId,
     computerOpen,
     setComputerOpen,
     computerBotId,
@@ -330,6 +346,8 @@ export function useComputerControls({
     bootsInFlight,
     screenUrl,
     setScreenUrl,
+    screenUrlLoadedBotId,
+    setScreenUrlLoadedBotId,
     computerOpen,
     setComputerOpen,
     computerBotId,
@@ -384,6 +402,7 @@ export function useComputerControls({
     showProgress: boolean;
     force?: boolean;
   }) {
+    setScreenUrlLoadedBotId(null);
     const epoch = ++computerBootEpoch.current;
     const stillThisBoot = () => computerBootEpoch.current === epoch;
     const stillThisBot = () =>
@@ -443,8 +462,8 @@ export function useComputerControls({
     const botId = active.id;
     let cancelled = false;
     void (async () => {
-      // Refresh from the server first. A stale SSE "booting" snapshot used to
-      // skip this effect, so an RPC takeover never showed "You have control".
+      // Refresh from the server first: a stale SSE "booting" snapshot would
+      // otherwise hide an RPC takeover.
       const snap = await refreshThread(botId).catch(() => null);
       if (cancelled || activeBotId.current !== botId) return;
       const state = snap?.computer?.state;
@@ -532,6 +551,7 @@ export function useComputerControls({
     const targetComputer = computer?.botId === id ? computer : (cached?.computer ?? null);
     const targetScreen = computer?.botId === id ? screenUrl : (cached?.screenUrl ?? null);
     if (computer?.botId !== id) {
+      setScreenUrlLoadedBotId(null);
       commitComputer(targetComputer);
       setScreenUrl(targetScreen);
     }
@@ -586,16 +606,32 @@ export function useComputerControls({
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
+  const screenFailure =
+    Boolean(screenLoadError) ||
+    Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
+    screenMissing({
+      state: computer?.state,
+      kind: computer?.kind,
+      booting,
+      screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),
+      embeddedUrl: embeddedScreenUrl,
+    });
   const computerFailure =
     computerError && !hideScreenLoadError
       ? computerError
-      : screenLoadError
-        ? screenLoadError
-        : !booting && computer?.state === "error"
-          ? t`Computer failed to boot`
-          : null;
+      : (screenLoadError ??
+        (screenFailure
+          ? t`Could not connect to the computer screen`
+          : !booting && computer?.state === "error"
+            ? t`Computer failed to boot`
+            : null));
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+      {screenFailure ? (
+        <p>
+          <Trans>Screen not connected</Trans>
+        </p>
+      ) : null}
       <p className="text-destructive">{computerFailure}</p>
       <Button
         variant="outline"
@@ -603,6 +639,7 @@ export function useComputerControls({
         onClick={() => {
           if (!computerBot) return;
           setScreenLoadError(null);
+          setScreenUrlLoadedBotId(null);
           if (computer?.state === "running") {
             // An explicit retry clears any error; background screen reads clear only their own.
             setComputerError(null);
@@ -619,6 +656,16 @@ export function useComputerControls({
       >
         <Trans>Retry screen</Trans>
       </Button>
+      {screenFailure && computer?.state === "running" && computerBot ? (
+        <ComputerMaintenanceActions
+          visibleRecover
+          botId={computerBot.id}
+          computer={computer}
+          onChanged={async () => {
+            await refreshComputerFor(computerBot.id);
+          }}
+        />
+      ) : null}
     </div>
   ) : null;
   // Booting shows inline with the screen's own Close; leaving it lets the boot finish.

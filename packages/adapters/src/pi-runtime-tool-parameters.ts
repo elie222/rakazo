@@ -8,7 +8,6 @@ import {
 } from "./openai-tool-parameters.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
-/** Build AgentTool.parameters for a connector tool, including OpenAI wire fidelity. */
 export function parametersFor(tool: ConnectorTool) {
   const builtin = builtinParameters(tool);
   const schema = builtin
@@ -78,7 +77,7 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "remember") {
     return Type.Object({ content: Type.String(), path: Type.String() });
   }
-  if (tool.name === "shell") {
+  if (tool.name === "shell" || tool.name === "user_computer_shell") {
     return Type.Object({
       command: Type.String(),
       cwd: Type.Optional(Type.String()),
@@ -177,20 +176,39 @@ export function jsonSchemaParameters(
   schema: Record<string, unknown>,
   options: FieldOptions = {},
 ): ReturnType<typeof Type.Object> {
-  // Keep intersections intact until parametersFor flattens root combinators.
-  // Rebuilding only properties here drops allOf-only fields and their constraints.
-  if (Array.isArray(schema.allOf)) {
-    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
+  // Keep intersections and union siblings intact until parametersFor flattens them.
+  if (
+    Array.isArray(schema.allOf) ||
+    [schema.oneOf, schema.anyOf].some(
+      (variants) =>
+        Array.isArray(variants) &&
+        variants.some(
+          (variant) =>
+            typeof variant === "boolean" ||
+            (variant != null && typeof variant === "object" && "patternProperties" in variant),
+        ),
+    ) ||
+    ((Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf)) &&
+      Object.keys(schema).some(
+        (key) =>
+          key !== "oneOf" &&
+          key !== "anyOf" &&
+          key !== "title" &&
+          key !== "description" &&
+          !(key === "type" && schema.type === "object"),
+      )) ||
+    (Array.isArray(schema.oneOf) && Array.isArray(schema.anyOf))
+  ) {
+    return Type.Unsafe({
+      ...(enrichStringConsts({ ...schema, ...options }) as Record<string, unknown>),
+    }) as unknown as ReturnType<typeof Type.Object>;
   }
-  // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
-  // must stay a union. Falling through to properties would drop the exclusivity
-  // and re-expose both destinations as optional siblings.
   const alternatives = Array.isArray(schema.oneOf)
     ? schema.oneOf
     : Array.isArray(schema.anyOf)
       ? schema.anyOf
       : undefined;
-  if (alternatives && alternatives.length > 0 && schema.properties == null) {
+  if (alternatives && alternatives.length > 0) {
     return Type.Union(
       alternatives.map((variant) => jsonSchemaParameters(variant as Record<string, unknown>)),
       options,
@@ -214,6 +232,61 @@ export function jsonSchemaParameters(
 }
 
 type FieldOptions = { description?: string };
+
+/** Add gateway-compatible string discriminators without rebuilding or mutating the schema. */
+function enrichStringConsts(value: unknown): unknown {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return value;
+  const schema = value as Record<string, unknown>;
+  const result = { ...schema };
+  if (typeof schema.const === "string") {
+    if (!("type" in schema)) result.type = "string";
+    if (!("enum" in schema) || (Array.isArray(schema.enum) && schema.enum.includes(schema.const))) {
+      result.enum = [schema.const];
+    }
+  }
+
+  for (const key of [
+    "properties",
+    "patternProperties",
+    "$defs",
+    "definitions",
+    "dependentSchemas",
+    "dependencies",
+  ]) {
+    const map = schema[key];
+    if (map != null && typeof map === "object" && !Array.isArray(map)) {
+      result[key] = Object.fromEntries(
+        Object.entries(map).map(([name, child]) => [name, enrichStringConsts(child)]),
+      );
+    }
+  }
+  for (const key of ["allOf", "anyOf", "oneOf", "prefixItems"]) {
+    const variants = schema[key];
+    if (Array.isArray(variants)) result[key] = variants.map(enrichStringConsts);
+  }
+  for (const key of [
+    "items",
+    "additionalItems",
+    "additionalProperties",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+    "contains",
+    "propertyNames",
+    "not",
+    "if",
+    "then",
+    "else",
+    "contentSchema",
+  ]) {
+    const child = schema[key];
+    if (child !== undefined) {
+      result[key] = Array.isArray(child)
+        ? child.map(enrichStringConsts)
+        : enrichStringConsts(child);
+    }
+  }
+  return result;
+}
 
 /** Carry the parameter description when rebuilding its TypeBox node. */
 function fieldOptions(definition: Record<string, unknown>): FieldOptions {
@@ -301,9 +374,8 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     const union = enumUnion(definition.enum, options);
     if (union) return union as never;
   }
-  // A `const` names the only accepted value. Without this it degraded to a bare
-  // string, so a discriminator like {type: {const: "bearer"}} told the model
-  // nothing about which value to send -- and it guessed, twice.
+  // Falling through to a bare string would tell the model nothing about which
+  // discriminator value to send.
   if ("const" in definition) {
     // Keep `const` (discriminators such as request_secret's auth.type depend on it) and
     // add the equivalent one-value `enum`, which survives converters that drop `const`.
@@ -318,9 +390,8 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     const literal = enumUnion([definition.const], options);
     if (literal) return literal as never;
   }
-  // A discriminated union arrives as oneOf/anyOf with no sibling `type`. Without
-  // this branch it fell through to the string default, so a model was told to
-  // send an object-valued field as a bare string -- which is exactly what it did.
+  // A discriminated union arrives as oneOf/anyOf with no sibling `type`; the string
+  // default would tell the model to send an object-valued field as a bare string.
   const variants = Array.isArray(definition.oneOf)
     ? definition.oneOf
     : Array.isArray(definition.anyOf)

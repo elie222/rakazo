@@ -225,7 +225,6 @@ function markdownStyles(palette: ColorTokens) {
       color: palette.foreground,
       fontFamily: MONO_FONT,
     },
-    // Quotes read as secondary text behind a faint bar.
     blockquote: {
       backgroundColor: "transparent",
       color: palette.mutedForeground,
@@ -236,7 +235,6 @@ function markdownStyles(palette: ColorTokens) {
     bullet_list_icon: {
       color: palette.faintForeground,
     },
-    // Tables are rules only: secondary-text cells under a primary-text header.
     table: {
       borderColor: palette.input,
       borderWidth: StyleSheet.hairlineWidth,

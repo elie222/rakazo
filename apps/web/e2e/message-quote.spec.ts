@@ -79,7 +79,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
     .first();
   await expect(sourceRow).toBeVisible({ timeout: 20_000 });
 
-  // Selection inside one message offers the Quote action; Escape dismisses it.
   await selectAndRelease(page, sourceRow, "**forty two percent**");
   await expect(quoteButton).toBeVisible();
   await captureScreenshot(page, testInfo, "message-quote-selection");
@@ -116,7 +115,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   // "Replying to" that no longer describes anything after the chip is gone.
   await expect(page.getByTestId("composer-announcement")).toHaveText("");
 
-  // The sent message shows the excerpt and keeps jump-to-source.
   const replyRow = transcript
     .locator("[data-message-id]")
     .filter({ has: page.getByTestId("message-user-bubble") })
@@ -135,7 +133,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await parentPreview.click();
   await expect(sourceRow).toBeInViewport();
 
-  // The excerpt is persisted — it still renders after a full reload.
   await page.reload();
   const reloadedRow = transcript
     .locator("[data-message-id]")
@@ -159,7 +156,6 @@ test("rendered markdown selections survive server quote derivation", async ({ pa
   await composer.fill(`quote markdown fixture ${sourceMarker}`);
   await composer.press("Enter");
 
-  // Bot bubble: scripted fixture → ChatMarkdown + server markdown derivation.
   const sourceRow = transcript
     .locator("[data-message-id]")
     .filter({ has: page.getByTestId("message-bot-bubble") })
@@ -258,7 +254,6 @@ test("selecting text inside a table cell quotes the rendered cell", async ({ pag
   await expect(replyChip).toHaveText(new RegExp(`^.+: ${cellText}$`));
   await expect(composer).toBeFocused();
 
-  // The sent reply persists the server-derived excerpt from the same cell.
   const replyText = `quote-cell-${stamp} confirmed?`;
   await composer.fill(replyText);
   await composer.press("Enter");

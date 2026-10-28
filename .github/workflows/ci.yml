@@ -13,6 +13,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Testcontainers pulls Docker Hub images through Google's public mirror: anonymous Docker Hub pulls
+# from shared runner IPs fail intermittently with "authentication required" or rate limits.
+env:
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
+
 jobs:
   lint:
     name: Lint

@@ -50,7 +50,6 @@ const DAYTONA_POLL_MS = 1_000;
 /** How long a cached handle is trusted before Daytona is asked whether the sandbox still runs. */
 const DAYTONA_HANDLE_PROBE_MS = 60_000;
 
-/** The slice of a Daytona sandbox this adapter uses. */
 export type DaytonaSandbox = Pick<
   Sandbox,
   | "id"

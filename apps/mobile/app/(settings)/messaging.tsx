@@ -10,6 +10,7 @@ import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
@@ -19,8 +20,6 @@ import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { errorText } from "../../lib/user-error";
-
-// MenuView choice keys; provider ids never contain a colon.
 
 export default function MessagingSettings() {
   const { t } = useI18n();
@@ -44,6 +43,7 @@ export default function MessagingSettings() {
     knownIdentityBots: Record<string, string>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(async () => {
     const [nextBots, nextStatus, nextInstallations, nextChannels, nextConnections, navigation] =
@@ -61,16 +61,17 @@ export default function MessagingSettings() {
     setChannels(nextChannels);
     setConnections(nextConnections);
     setRooms(navigation.current.externalConversations);
+    setLoadError(null);
   }, []);
   useFocusEffect(
     useCallback(() => {
-      void refresh().catch((err) => setError(errorText(err)));
+      void refresh().catch((err) => setLoadError(errorText(err)));
     }, [refresh]),
   );
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh().catch((err) => setError(errorText(err)));
+      if (state === "active") void refresh().catch((err) => setLoadError(errorText(err)));
     });
     return () => subscription.remove();
   }, [refresh]);
@@ -98,6 +99,7 @@ export default function MessagingSettings() {
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
+    setLoadError(null);
     setLink(null);
     try {
       await action();
@@ -203,9 +205,23 @@ export default function MessagingSettings() {
     </View>
   );
 
+  const failure = error ?? loadError;
+  const shownError = error ?? (status ? loadError : null);
+
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {failure && !status ? (
+        <LoadFailure
+          message={failure}
+          onRetry={() => {
+            setError(null);
+            setLoadError(null);
+            void refresh().catch((err) => setLoadError(errorText(err)));
+          }}
+        />
+      ) : shownError ? (
+        <Text style={styles.error}>{shownError}</Text>
+      ) : null}
       <SettingsGroup label={t("Requests")}>
         {invitedChannels.map((channel) => (
           <SettingsRow

@@ -423,7 +423,7 @@ export type LlmAutoReviewOptions = {
   timeoutMs?: number;
 };
 
-/** Existing JSON-text LLM checker, behind the same Auto Review interface as Jev. */
+/** JSON-text LLM checker, behind the same Auto Review interface as Jev. */
 export class LlmAutoReviewProvider implements AutoReviewProvider {
   constructor(private readonly options: LlmAutoReviewOptions) {}
 

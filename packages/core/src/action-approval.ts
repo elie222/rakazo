@@ -17,6 +17,7 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "remember",
   "request_takeover",
   "request_secret",
+  "generate_secret",
   "run_subagent",
   "spawn_bot",
   "schedule_create",
@@ -25,6 +26,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_cancel",
   "list_fleet",
   "organize_bot",
+  // The wallet owner approves every purchase in the wallet itself; a card here would ask twice.
+  "request_purchase",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -38,6 +41,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
+  "user_computer_shell",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
@@ -57,6 +61,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_files",
   "list_fleet",
   "list_secrets",
+  "purchase_status",
   "read_file",
   "recall_memory",
   "request_takeover",
@@ -180,6 +185,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "connect_app",
   "attach_file",
   "end_call",
+  "generate_secret",
   "list_fleet",
   "list_secrets",
   "message_user",

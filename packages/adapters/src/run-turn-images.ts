@@ -108,13 +108,8 @@ function declaredArtifactBytes(size: unknown): number | undefined {
 }
 
 /**
- * Load the images from one turn that fit the remaining budget, newest first.
- *
- * Stored artifact sizes are checked before the read, so a picture that cannot
- * fit is not downloaded. A missing size is measured on the bytes just fetched,
- * and that picture is dropped before the next one is read. A picture whose
- * bytes cannot be read is reported as unavailable. Images are returned in
- * attachment order.
+ * Load the images from one turn that fit the remaining budget, newest first. Stored sizes are
+ * checked before the read so a picture that cannot fit is not downloaded.
  */
 async function loadTurnImagesWithinBudget(
   deps: ExecutorDeps,
@@ -286,18 +281,10 @@ function markUnavailableHistoryImages(
 /**
  * Hydrate the images of the most recent user turns in the run history.
  *
- * Only the current turn carried its pictures; earlier turns reached the model
- * as an `[image: name]` marker, so a question asked one turn after the upload
- * had nothing to look at. Bounds keep a long thread from growing the prompt
- * without limit: at most `maxTurns` user turns, a total byte ceiling, and
- * never more images than the model connection accepts. Within a turn, pictures
- * that fit are kept newest first instead of dropping the whole turn. A picture
- * that cannot be read keeps an `[image: name (unavailable)]` marker on that
- * attachment, not on a quoted copy of the same name. Once a
- * newer picture is left out, older turns are not backfilled. Bytes are read
- * through the same artifact path and space/user scope as the current turn, and
- * a compacted summary is never hydrated because its messages are no longer part
- * of `history`. Callers skip this for models that cannot accept images.
+ * Earlier turns reached the model only as an `[image: name]` marker, so a question asked one
+ * turn after the upload had nothing to look at. Bounded by `maxTurns`, a total byte ceiling, and
+ * the model connection's image limit; once a newer picture is left out, older turns are not
+ * backfilled. Bytes are read through the same artifact path and space/user scope as the current turn.
  */
 export async function withRecentTurnImages(
   deps: ExecutorDeps,
@@ -384,6 +371,7 @@ export async function claimRunSteering(
   seenIds: string[],
   context: Parameters<typeof loadCurrentTurnImages>[2],
   pendingTurnFiles: MessageBlock[][],
+  currentTurn: { messageId?: string; hasImages: boolean },
 ): Promise<AgentSteeringMessage[]> {
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
   return Promise.all(
@@ -399,6 +387,7 @@ export async function claimRunSteering(
       return {
         id: item.id,
         messageId: item.messageId,
+        origin: item.origin,
         historyText: item.text,
         text: [
           await loadReplyContext(deps.prisma, lease.threadId, item.messageId),
@@ -408,7 +397,17 @@ export async function claimRunSteering(
         ]
           .filter(Boolean)
           .join("\n\n"),
-        images,
+        // A legacy run without sourceMessageId may resolve this same
+        // message as its current turn. Its images are already supplied.
+        images:
+          item.messageId === currentTurn.messageId && currentTurn.hasImages ? undefined : images,
+        imageFileFallback: Boolean(
+          images?.length &&
+            files.length &&
+            !item.blocks.some(
+              (block) => block.kind === "image" && block.imageHandling === "confirm",
+            ),
+        ),
       };
     }),
   );

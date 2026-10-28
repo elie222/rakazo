@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { LoginFieldInput } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -49,7 +50,7 @@ const secretCard: AskBlock = {
 async function render(
   block: AskBlock,
   onDismiss: () => Promise<void> = async () => undefined,
-  onAnswer: (text: string, username?: string) => Promise<void> = async () => undefined,
+  onAnswer: (text: string, fields?: LoginFieldInput[]) => Promise<void> = async () => undefined,
 ) {
   await act(async () =>
     root.render(
@@ -196,6 +197,79 @@ it("keeps an accepted secret Save answered without a block update", async () => 
   expect(container.querySelector(".text-destructive")).toBeNull();
 });
 
+const loginCard: AskBlock = {
+  kind: "ask",
+  text: "Sign in to Example",
+  input: "secret",
+  credential: {
+    name: "example_login",
+    origin: "https://login.example.test",
+    auth: { type: "login" },
+  },
+  loginFields: ["ID number", "Phone number"],
+  status: "pending",
+};
+
+function loginInput(label: string) {
+  return container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+}
+
+function hiddenSwitch(label: string) {
+  return [...container.querySelectorAll('[data-testid="login-field-value"]')]
+    .find((row) => row.querySelector(`input[aria-label="${label}"]`))!
+    .querySelector<HTMLElement>('[role="switch"]')!;
+}
+
+it("asks for each requested login field, every one hidden until the person shows it", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginCard, undefined, onAnswer);
+
+  for (const label of ["ID number", "Phone number"]) {
+    expect(loginInput(label).type).toBe("password");
+    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe("true");
+    const description = hiddenSwitch(label).getAttribute("aria-describedby")!;
+    expect(document.getElementById(description)?.textContent).toBe(label);
+  }
+  await type("ID number", " fake-id-123 ");
+  expect(button("Save")!.disabled).toBe(true);
+  await type("Phone number", "+1 555 0100");
+  await act(async () => hiddenSwitch("ID number").click());
+  expect(loginInput("ID number").type).toBe("text");
+  expect(hiddenSwitch("ID number").getAttribute("aria-checked")).toBe("false");
+
+  await act(async () => button("Save")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("", [
+    { label: "ID number", value: " fake-id-123 ", hidden: false },
+    { label: "Phone number", value: "+1 555 0100", hidden: true },
+  ]);
+  expect(container.textContent).toContain("Saved");
+  expect(container.textContent).not.toContain("fake-id-123");
+  expect(container.querySelector("input")).toBeNull();
+});
+
+it("asks for a visible username and a hidden password when the bot names no fields", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  const { loginFields: _, ...defaultLogin } = loginCard;
+  await render(defaultLogin, undefined, onAnswer);
+
+  expect(
+    [...container.querySelectorAll("input[aria-label]")].map((input) => input.ariaLabel),
+  ).toEqual(["Username", "Password"]);
+  expect(loginInput("Username").type).toBe("text");
+  expect(hiddenSwitch("Username").getAttribute("aria-checked")).toBe("false");
+  expect(loginInput("Password").type).toBe("password");
+  expect(hiddenSwitch("Password").getAttribute("aria-checked")).toBe("true");
+  await type("Username", "fake-user");
+  await type("Password", "fake-password");
+  await act(async () => button("Save")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("", [
+    { label: "Username", value: "fake-user", hidden: false },
+    { label: "Password", value: "fake-password", hidden: true },
+  ]);
+});
+
 it("keeps an accepted question choice answered until the block updates", async () => {
   const block: AskBlock = {
     kind: "ask",
@@ -209,30 +283,55 @@ it("keeps an accepted question choice answered until the block updates", async (
   const onAnswer = vi.fn(async () => undefined);
   await render(block, undefined, onAnswer);
 
-  await act(async () => button("Paris")!.click());
+  await act(async () => button("AParis")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("paris", undefined);
-  expect(container.textContent).toContain("Answered: Paris");
-  expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).not.toContain("Answered");
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("BLondon")!.disabled).toBe(true);
   expect(container.querySelector(".text-destructive")).toBeNull();
 
   await render({ ...block, status: "answered", answer: "london" });
-  expect(container.textContent).toContain("Answered: London");
-  expect(container.textContent).not.toContain("Answered: Paris");
+  expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
+  expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
 });
 
-it("gives question options a borderless fill", async () => {
+it("dims a closed question's options without a status line", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={{
+          kind: "ask",
+          text: "Which city?",
+          status: "pending",
+          actions: [{ id: "paris", label: "Paris" }],
+        }}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={async () => undefined}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(button("AParis")!.disabled).toBe(true);
+  expect(container.textContent).not.toContain("No longer active");
+});
+
+it("letters question options and fills them only on hover", async () => {
   await render({
     kind: "ask",
     text: "Which city?",
     status: "pending",
-    actions: [{ id: "paris", label: "Paris" }],
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
   });
-  const option = button("Paris")!;
+  const option = button("BLondon")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-secondary")).toBe(true);
-  expect(option.classList.contains("border-border")).toBe(false);
+  expect(option.classList.contains("bg-secondary")).toBe(false);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("B");
 });
 
 it("sizes approval buttons like the other card buttons", async () => {
@@ -252,7 +351,30 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
-it("gives onboarding choices borderless rows and distinct interaction states", async () => {
+it("says a user's-computer approval allows the rest of the chat", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Run on your computer?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow for this chat" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  await render({ ...block, detail: "hostname", detailFormat: "code" });
+  const detail = container.querySelector('[data-testid="ask-detail"]');
+  expect(detail?.textContent).toBe("hostname");
+  // The card is muted, so the command sits on the page background to read as a snippet.
+  expect(detail?.classList.contains("bg-background")).toBe(true);
+  expect(detail?.classList.contains("bg-muted")).toBe(false);
+  expect(button("Allow for this chat")).toBeTruthy();
+  expect(button("Allow once")).toBeUndefined();
+  await render({ ...block, status: "answered", answer: "allow" });
+  expect(container.textContent).toContain("Allowed for this chat");
+});
+
+it("gives onboarding choices the same lettered rows as questions", async () => {
   await act(async () =>
     root.render(
       <ChoiceCard
@@ -266,17 +388,10 @@ it("gives onboarding choices borderless rows and distinct interaction states", a
       />,
     ),
   );
-  const option = [...container.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes("Paris"),
-  )!;
+  const option = button("AParis")!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-background")).toBe(true);
-  expect(option.classList.contains("border")).toBe(false);
-  expect(option.classList.contains("border-input")).toBe(false);
-  expect(option.classList.contains("enabled:hover:bg-foreground/5")).toBe(true);
-  expect(option.classList.contains("enabled:active:bg-foreground/15")).toBe(true);
-  expect(option.classList.contains("focus-visible:ring-2")).toBe(true);
-  expect(option.querySelector("span")?.classList.contains("bg-card")).toBe(true);
+  expect(option.classList.contains("hover:bg-accent")).toBe(true);
+  expect(option.querySelector("[aria-hidden]")?.textContent).toBe("A");
 });
 
 it.each([
@@ -370,4 +485,40 @@ it("offers import on the unanswered first-run focus card only", async () => {
     );
     expect(link()).toBeUndefined();
   }
+});
+
+it("quotes an edited reply and marks a sent draft", async () => {
+  const block: AskBlock = { kind: "ask", text: "Send it?", status: "answered", answer: "Tuesday" };
+  await render(block);
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Tuesday");
+  expect(container.textContent).not.toContain("Answered");
+
+  await render({ ...block, answer: "approved" });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(container.textContent).toContain("Sent");
+});
+
+it("quotes a typed answer under the options it did not match", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "Paris",
+    actions: [
+      { id: "berlin", label: "Berlin" },
+      { id: "seoul", label: "Seoul" },
+    ],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Paris");
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "seoul",
+    actions: [{ id: "seoul", label: "Seoul" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
 });

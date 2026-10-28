@@ -70,11 +70,14 @@ const NOT_PASSED: Record<string, string> = {
 };
 
 /**
- * Shared-package reads the worker must not receive. Only the API signs sessions and talks to
- * the identity provider, so the worker resolves no auth secret. Only the API's start command
- * migrates, so the worker never holds the owner database login.
+ * Shared-package reads a process must not receive. Only the API signs sessions and talks to
+ * the identity provider, so the worker resolves no auth secret. Only the migrate container
+ * gets the owner database login, so neither process holds one that bypasses row-level security.
  */
-const WORKER_DENIED = new Set(["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"]);
+const DENIED = {
+  api: ["DATABASE_MIGRATION_URL"],
+  worker: ["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"],
+} as const;
 
 /** Reads a source scan cannot see: names held in constants or read by third-party SDKs. */
 const INDIRECT = {
@@ -166,7 +169,7 @@ function expectedKeys(service: "api" | "worker"): string[] {
     ...INDIRECT[service],
   ]);
   for (const key of Object.keys(NOT_PASSED)) keys.delete(key);
-  if (service === "worker") for (const key of WORKER_DENIED) keys.delete(key);
+  for (const key of DENIED[service]) keys.delete(key);
   return [...keys].sort();
 }
 
@@ -211,7 +214,7 @@ describe("api and worker environment allowlists", () => {
   it("only excludes settings the code still reads", () => {
     const read = scanEnvReads([...SOURCES.api, ...SOURCES.worker]);
     expect(Object.keys(NOT_PASSED).filter((key) => !read.has(key))).toEqual([]);
-    expect([...WORKER_DENIED].filter((key) => !read.has(key))).toEqual([]);
+    expect([...DENIED.api, ...DENIED.worker].filter((key) => !read.has(key))).toEqual([]);
   });
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
@@ -226,7 +229,7 @@ describe("api and worker environment allowlists", () => {
   );
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
-    "%s keeps auth and database superuser secrets out of the worker",
+    "%s keeps auth and database owner secrets out of the worker and API",
     (_name, files) => {
       const worker = stackEnvironment(files, "worker");
       for (const key of [
@@ -242,6 +245,12 @@ describe("api and worker environment allowlists", () => {
       expect(stackEnvironment(files, "api")).not.toHaveProperty("RAKAZO_UPDATER_TOKEN");
       // The database password reaches both processes only inside DATABASE_URL.
       expect(stackEnvironment(files, "api")).not.toHaveProperty("POSTGRES_PASSWORD");
+      // The owner login goes only to the migrate container, which gets nothing else.
+      expect(stackEnvironment(files, "api")).not.toHaveProperty("DATABASE_MIGRATION_URL");
+      expect(Object.keys(stackEnvironment(files, "migrate")).sort()).toEqual([
+        "DATABASE_MIGRATION_URL",
+        "DATABASE_URL",
+      ]);
     },
   );
 

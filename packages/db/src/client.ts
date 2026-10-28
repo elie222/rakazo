@@ -28,6 +28,7 @@ export interface DbClientOptions {
 }
 
 const DEFAULT_POOL_MAX = 4;
+const CHECKOUT_TIMEOUT_MS = 10_000;
 const CONNECT_RETRY_ATTEMPTS = 8;
 const SLOW_CHECKOUT_MS = 1_000;
 const SATURATION_REPORT_INTERVAL_MS = 10_000;
@@ -38,7 +39,7 @@ export function createPool(connectionString: string, options: DbClientOptions = 
     max: options.poolMax ?? DEFAULT_POOL_MAX,
     // Fail a checkout instead of queueing forever when Postgres is already at
     // max_connections (53300) or the pool is saturated.
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: CHECKOUT_TIMEOUT_MS,
     // 0 disables idle eviction. Dropping idle clients and reopening them on the
     // next job burst is how a tight Postgres hits 53300; keep what we already have.
     idleTimeoutMillis: 0,
@@ -69,11 +70,17 @@ export function createDb(
 ): { prisma: PrismaClient; pool: Pool; contentKeys: ContentKeyRing } {
   // Read first, so an invalid CONTENT_ENCRYPTION stops startup before any pool opens.
   const encryptWrites = options.encryptContent ?? resolveContentEncryption();
+  // Without the configured key manager, new space keys would quietly be wrapped by
+  // master keys held on this host.
+  if (!options.keyProvider && (process.env.MASTER_KEY_PROVIDER?.trim() || "local") !== "local")
+    throw new Error(
+      "MASTER_KEY_PROVIDER needs createDb(url, { keyProvider }) from @rakazo/adapters",
+    );
   const pool = createPool(connectionString, options);
   const keyPool = new Pool({
     connectionString,
     max: 2,
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: CHECKOUT_TIMEOUT_MS,
     idleTimeoutMillis: 30_000,
     application_name: options.applicationName && `${options.applicationName}-keys`,
     keepAlive: true,
@@ -92,10 +99,16 @@ export function createDb(
     { encryptWrites },
   );
   const adapter = new PrismaPg(pool);
+  // A transaction waits for a connection as long as any other query does. Prisma's 2s
+  // default failed runs whenever a busy pool took a few seconds to free a connection.
+  const client = new PrismaClient({
+    adapter,
+    transactionOptions: { maxWait: CHECKOUT_TIMEOUT_MS },
+  });
   // Row-level security wraps everything else, so its findUnique rewrite still runs
   // through content encryption. Text is cleaned for Postgres before any of them see it.
   const prisma = withTextSanitization(
-    withRowLevelSecurity(withContentEncryption(new PrismaClient({ adapter }), contentKeys)),
+    withRowLevelSecurity(withContentEncryption(client, contentKeys)),
   );
   return { prisma, pool, contentKeys };
 }

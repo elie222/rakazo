@@ -19,6 +19,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
+import { isSandboxDamagedError } from "./sandbox-errors.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
@@ -69,7 +70,8 @@ export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set(
   "WidevineCdm",
   "ZxcvbnData",
 ]);
-const skippedBrowserProfileFiles = new Set([
+/** Browser profile files that are transient locks and metrics; exports skip them. */
+export const SKIPPED_BROWSER_PROFILE_FILES: ReadonlySet<string> = new Set([
   "BrowserMetrics",
   "BrowserMetrics-spare.pma",
   "DevToolsActivePort",
@@ -87,7 +89,7 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   const name = segments.at(-1) ?? "";
   return (
     segments.some((segment) => SKIPPED_BROWSER_PROFILE_DIRECTORIES.has(segment)) ||
-    skippedBrowserProfileFiles.has(name)
+    SKIPPED_BROWSER_PROFILE_FILES.has(name)
   );
 }
 
@@ -488,6 +490,26 @@ export async function checkpointAndRecordComputerWorkspace(
     data: { homeRevision: revision, homeRevisionAt: checkpointedAt },
   });
   return revision;
+}
+
+/**
+ * Saves the computer's workspace, then stops it. Nothing on a damaged computer can be read, so it
+ * stops without the save and keeps the provider's last good copy; any other save failure throws.
+ */
+export async function checkpointAndStopComputer(
+  deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
+  computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
+  computer: ComputerRef,
+  context: AdapterContext,
+): Promise<void> {
+  try {
+    await checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
+  } catch (error) {
+    if (!isSandboxDamagedError(error)) throw error;
+    await deps.sandbox.stop(computer, context, { discardUnsaved: true });
+    return;
+  }
+  await deps.sandbox.stop(computer, context);
 }
 
 /** Writes one exported file; a streamed one goes to disk chunk by chunk. */

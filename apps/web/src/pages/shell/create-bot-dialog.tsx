@@ -1,12 +1,15 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import { BOT_NAME_MAX_LENGTH, DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
+  newClientId,
+  ORGANIC_AVATAR_HEART_FAMILY,
   ORGANIC_AVATAR_LOOKS,
   organicAvatarFamily,
   organicAvatarSampleIdentity,
+  seededLogoAvatarColor,
 } from "@rakazo/core";
 import {
-  BOT_AVATAR_COLORS,
   BotAvatar,
   Button,
   Dialog,
@@ -31,6 +34,9 @@ function pick<T>(options: readonly T[]): T {
 export interface CreateBotDialogInput {
   name: string;
   color: string;
+  /** Reserve the logo preview's persistent seed through creation and retries. */
+  id?: string;
+  avatarSet: BotAvatarSet;
   /** The organic family the preview drew; omitted when a studio shape is picked. */
   avatarFamily?: number;
 }
@@ -48,10 +54,18 @@ export function CreateBotDialog({
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
+  const [previewId] = useState(() => {
+    let id: string;
+    do {
+      id = `c${newClientId().replaceAll("-", "").slice(0, 24)}`;
+    } while (organicAvatarFamily(id) === ORGANIC_AVATAR_HEART_FAMILY);
+    return id;
+  });
   const [look, setLook] = useState(() => ({
-    value: pick(BOT_AVATAR_COLORS),
+    value: seededLogoAvatarColor(previewId),
     identity: pick(ORGANIC_IDENTITIES),
   }));
+  const [avatarSet, setAvatarSet] = useState<BotAvatarSet>(DEFAULT_NEW_BOT_AVATAR_SET);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = name.trim();
@@ -60,11 +74,13 @@ export function CreateBotDialog({
     if (!trimmed || submitting) return;
     setError(null);
     setSubmitting(true);
-    const organic = parseBotAvatar(look.value).shapeIndex === undefined;
+    const organic = avatarSet === "organic" && parseBotAvatar(look.value).shapeIndex === undefined;
     try {
       await onCreate({
         name: trimmed,
         color: look.value,
+        ...(avatarSet === "rakazo" ? { id: previewId } : {}),
+        avatarSet,
         ...(organic ? { avatarFamily: organicAvatarFamily(look.identity) } : {}),
       });
     } catch (err) {
@@ -100,7 +116,12 @@ export function CreateBotDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="flex justify-center py-2">
-            <BotAvatar color={look.value} identity={look.identity} size={96} />
+            <BotAvatar
+              color={look.value}
+              identity={avatarSet === "rakazo" ? previewId : look.identity}
+              size={96}
+              avatarSet={avatarSet}
+            />
           </div>
           <Input
             ref={nameRef}
@@ -118,11 +139,16 @@ export function CreateBotDialog({
           ) : null}
           <BotLookPicker
             value={look.value}
-            identity={look.identity}
+            identity={avatarSet === "rakazo" ? previewId : look.identity}
             organicIdentities={ORGANIC_IDENTITIES}
-            onChange={(value, identity) =>
-              setLook((current) => ({ value, identity: identity ?? current.identity }))
-            }
+            avatarSet={avatarSet}
+            onAvatarSetChange={(set, value) => {
+              setAvatarSet(set);
+              setLook((current) => ({ ...current, value }));
+            }}
+            onChange={(value, identity) => {
+              setLook((current) => ({ value, identity: identity ?? current.identity }));
+            }}
           />
           <DialogFooter>
             {onImport ? (

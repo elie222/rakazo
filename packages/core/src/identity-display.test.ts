@@ -38,6 +38,18 @@ describe("localized identity projections", () => {
     ]);
     expect(source[0]?.name).toBe("__TestTok1__");
   });
+  it("localizes routine names in batched mention reads like per-bot reads", () => {
+    const routines = [{ id: "routine-1", name: "__TestTok1__" }];
+    expect(
+      displayIdentityResult(
+        ["routines", "listForMentions"],
+        [{ botId: "bot-1", routines }],
+        labels,
+      ),
+    ).toEqual([
+      { botId: "bot-1", routines: displayIdentityResult(["routines", "list"], routines, labels) },
+    ]);
+  });
   it("covers bootstrap, threads and activity without touching message text or IDs", () => {
     const message = {
       blocks: [

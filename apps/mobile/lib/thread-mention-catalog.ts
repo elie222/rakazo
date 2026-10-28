@@ -1,6 +1,6 @@
 import type { Connection, ConnectionCatalogItem, Routine } from "@rakazo/contracts";
 import type { MentionPickerConnector } from "@rakazo/core";
-import { mentionConnectorsFrom } from "@rakazo/core";
+import { createRoutineMentionBatcher, mentionConnectorsFrom } from "@rakazo/core";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { currentSessionGeneration, subscribeSessionGeneration } from "./session";
@@ -13,7 +13,6 @@ type MentionCatalog = {
 type MentionCatalogState = MentionCatalog & { scope: string; activation: symbol | null };
 
 const EMPTY_CATALOG: MentionCatalog = { routines: [], connectors: [] };
-const ROUTINE_REQUEST_CONCURRENCY = 4;
 
 export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot[]) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
@@ -97,24 +96,26 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
         return;
       }
       const options = { signal: abort.signal, requestContext };
+      const requestOptions = (signal?: AbortSignal) => {
+        if (!isCurrent()) throw new Error("Request aborted.");
+        return { ...options, signal };
+      };
       const lists: MentionCatalog["routines"][] = new Array(bots.length);
-      let nextBot = 0;
-      async function loadRoutines() {
-        while (isCurrent() && nextBot < bots.length) {
-          const index = nextBot++;
-          const bot = bots[index]!;
+      const loadRoutineMentions = createRoutineMentionBatcher(
+        (botIds, signal) => rpc("routines/listForMentions", { botIds }, requestOptions(signal)),
+        (botId, signal) => rpc("routines/list", { botId }, requestOptions(signal)),
+      );
+      const routines = Promise.all(
+        bots.map(async (bot, index) => {
           try {
-            const rows = await rpc("routines/list", { botId: bot.id }, options);
+            const rows = await loadRoutineMentions(bot.id, abort.signal);
             if (!isCurrent()) return;
             lists[index] = rows.map((routine) => ({ ...routine, botName: bot.name }));
           } catch {
             failed = true;
             lists[index] = [];
           }
-        }
-      }
-      const routines = Promise.all(
-        Array.from({ length: Math.min(ROUTINE_REQUEST_CONCURRENCY, bots.length) }, loadRoutines),
+        }),
       ).then(() => update({ routines: lists.flat() }));
       const connectors = Promise.all([
         rpc("connections/list", {}, options).catch(() => {

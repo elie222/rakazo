@@ -52,6 +52,7 @@ import {
   getComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
+import { desktopBridge } from "../lib/desktop";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
@@ -222,6 +223,7 @@ function SpaceShell() {
       botId: bot.id,
       botName: bot.name,
       botColor: bot.color,
+      botAvatarSet: bot.avatarSet,
       transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
     });
   };
@@ -433,6 +435,7 @@ function SpaceShell() {
     return {
       botId: run.botId,
       color: bot?.color ?? FALLBACK_BOT_COLOR,
+      avatarSet: bot?.avatarSet,
       name: bot?.name,
       status: run.status,
     };
@@ -775,8 +778,10 @@ function SpaceShell() {
         footerLogos={footerLogos}
         user={session.data?.user}
         ticketBoardEnabled={Boolean(bootstrapMe?.ticketBoardEnabled)}
+        navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
+        openSkills={() => setOverlay({ kind: "skills" })}
       />
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
@@ -920,6 +925,8 @@ function SpaceShell() {
               pendingAttachments={composer.activePendingAttachments}
               attachmentNotice={composer.attachmentNotice}
               sendError={sendError}
+              imageConfirmation={composer.imageConfirmation}
+              onDraftEdited={composer.clearImageConfirmation}
               onOpenModels={() => {
                 // A group's failed run belongs to one member; change that bot's model.
                 const failedBotId =

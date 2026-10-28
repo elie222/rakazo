@@ -32,6 +32,7 @@ import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
+import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
@@ -456,6 +457,7 @@ export function GeneralSettingsPanels({
       </Disclosure>
 
       <TrustedLinkSitesSettings />
+      <ComputerDeviceSettings />
 
       {showPassword || passkeysSupported ? (
         <SettingsGroup title={<Trans>Security</Trans>}>

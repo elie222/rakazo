@@ -1,3 +1,4 @@
+import type { LoginFieldInput } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -24,7 +25,7 @@ export function AskBlock({
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
   canDismiss: boolean;
-  onAnswer: (answer: string, username?: string) => Promise<void>;
+  onAnswer: (answer: string, fields?: readonly LoginFieldInput[]) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
   actionProps: MessageActionProps;
@@ -211,8 +212,9 @@ export function AskBlock({
           onClose={() => {
             if (session === sheetSession.current) setSheetOpen(false);
           }}
-          onSave={async (password, username) => {
-            await onAnswer(password, username);
+          loginFields={ask.loginFields}
+          onSave={async (fields) => {
+            await onAnswer("", fields);
             setSaved(true);
             if (session === sheetSession.current) setSheetOpen(false);
           }}

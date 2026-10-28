@@ -30,7 +30,7 @@ import { getLogger } from "@rakazo/logging";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
 import { toComputerRef } from "./computer-support.js";
 import {
-  checkpointAndRecordComputerWorkspace,
+  checkpointAndStopComputer,
   isTeamBotFolderName,
   removeComputerWorkspaceDirectories,
   teamBrowserProfileName,
@@ -38,6 +38,7 @@ import {
 } from "./computer-workspace.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
 import { removePiBotSessions } from "./pi-session.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -362,8 +363,7 @@ export async function archiveBot(
     : null;
   if (currentDedicated?.providerRef && currentDedicated.state === "running") {
     const ref = toComputerRef(currentDedicated);
-    await checkpointAndRecordComputerWorkspace(deps, currentDedicated, ref, context);
-    await deps.sandbox.stop(ref, context);
+    await checkpointAndStopComputer(deps, currentDedicated, ref, context);
     await deps.prisma.computer.updateMany({
       where: {
         id: currentDedicated.id,
@@ -671,6 +671,8 @@ async function releaseTeamComputerScreen(
       ...(options?.cancelRunWork ? { cancelRunWork: true } : {}),
     });
   } catch (error) {
+    // No browser runs on a sandbox that is gone, so only its stored profile is left to remove.
+    if (isSandboxGoneError(error)) return { ...computer, providerRef: null };
     getLogger().error("team screen release", error);
     if (error instanceof BrowserStoppedReleaseError) return computer;
     return null;

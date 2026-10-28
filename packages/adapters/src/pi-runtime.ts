@@ -19,7 +19,12 @@ import type {
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
-import { MISSING_TOOL_FINAL_RESPONSE_ERROR, modelFallbackFailure } from "@rakazo/core";
+import {
+  MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  MODEL_IMAGE_INPUT_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  modelFallbackFailure,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
@@ -35,9 +40,11 @@ import {
 } from "./pi-runtime-errors.js";
 import type { FallbackStreamState } from "./pi-runtime-fallback.js";
 import {
-  continuationOverlap,
+  continuationRepeat,
   fallbackAwareModelStream,
+  MAX_CONTINUATION_MARKER,
   MAX_CONTINUATION_OVERLAP,
+  MAX_SELF_RECOVERIES_PER_RUN,
 } from "./pi-runtime-fallback.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import {
@@ -62,6 +69,7 @@ import {
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
+import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -71,14 +79,15 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
-// Sent in the user's role, so marked as automated: models took the old wording for the
-// user telling them never to stop, and kept going instead of asking.
+// Sent in the user's role, so marked as automated: otherwise models read it as the user
+// telling them never to stop, and keep going instead of asking.
 export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
 );
@@ -86,6 +95,21 @@ export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
 export const CUT_REPLY_CONTINUATION_PROMPT = automated(
   "Your previous reply was cut off by a connection error. Continue exactly where it stopped, mid-word if needed, without repeating anything.",
 );
+/**
+ * Sent after a reply ran out of output room. Models don't reliably tell a finished last word
+ * from a cut one, or keep the space before the next word, so the continuation starts by
+ * repeating the reply's last words, quoted here, and the join drops that repeat.
+ */
+export function cutReplyAtLimitPrompt(cut: string): string {
+  const end = cut.trimEnd().slice(-200);
+  const words = /(?:\S+\s+){0,5}\S+$/.exec(end)?.[0] ?? end;
+  // Escaped so a quote mark in the reply can't end the quote early; line breaks stay as they
+  // are, for the model to repeat them.
+  const quoted = words.slice(-80).replace(/["\\]/g, "\\$&");
+  return automated(
+    `Your previous reply hit the output limit. It ended with: "${quoted}" Continue it: start by repeating those last words exactly, then carry on without repeating anything else.`,
+  );
+}
 export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing, even if you were told to stay silent. Otherwise, if you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply; if not, use any remaining tools needed, then give the user the final answer.",
 );
@@ -94,7 +118,6 @@ export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
 // continue stores that sentence as the reply, and the next "continue" runs
 // tools and misses a final answer again.
 export { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
-// The executor canonicalizes checkpoint tool names with the same mapping.
 
 export interface PiAgentRuntimeOptions {
   /** Directory where Pi JSONL sessions are written. Omit to disable recording. */
@@ -180,6 +203,15 @@ export class PiAgentRuntime implements AgentRuntime {
       ? AbortSignal.any([controller.signal, context.signal])
       : controller.signal;
     const queue = createQueue();
+    let thinking = false;
+    const setThinking = (active: boolean) => {
+      const next = active && !signal.aborted;
+      if (thinking === next) return;
+      thinking = next;
+      queue.push({ type: "thinking", active: next });
+    };
+    const stopThinking = () => setThinking(false);
+    signal.addEventListener("abort", stopThinking, { once: true });
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
@@ -232,6 +264,11 @@ export class PiAgentRuntime implements AgentRuntime {
         const tools = toAgentTools(toolDefs, host);
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
+        let hasCurrentImages = Boolean(
+          request.currentRunRequiresImageInput ||
+            (request.currentTurnImages?.length && !request.currentTurnImageFileFallback) ||
+            initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
+        );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(request.turnCheckpoint, {
@@ -340,36 +377,43 @@ export class PiAgentRuntime implements AgentRuntime {
           nextIndex: 0,
           backupOutcomes: new Map(),
           selfRecoveries: 0,
-          cutReplies: new WeakSet(),
-          stream: (target, ctx, options) =>
-            reliableModelStream(
-              target.models,
-              target.model,
-              ctx,
-              withCloudflareAuth(target.config, options),
-              target.config.maxTokens,
-              () => target.credentials?.accessToken ?? target.apiKey,
-              (preparedOptions) =>
-                observedPiStream(
-                  target.models,
-                  target.model,
-                  ctx,
-                  preparedOptions,
-                  (event) => queue.push(event),
-                  target.config.callObserver ?? this.modelCallObserver,
-                  {
-                    operationKind: request.usageOperationKind ?? "answer",
-                    userId: context?.userId,
-                    runId: request.runId,
-                  },
-                  {
-                    ...usageHooks,
-                    prepareContext,
-                    onProviderError: (message) => providerFailures.add(message.content),
-                  },
-                ),
-              target.config.cacheCapabilities?.retentionMode,
-            ),
+          cutReplies: new WeakMap(),
+          stream: (target, ctx, options) => {
+            if (hasCurrentImages && !target.model.input.includes("image")) {
+              throw new Error(MODEL_IMAGE_INPUT_ERROR);
+            }
+            return withPiThinkingActivity(
+              reliableModelStream(
+                target.models,
+                target.model,
+                ctx,
+                withCloudflareAuth(target.config, options),
+                target.config.maxTokens,
+                () => target.credentials?.accessToken ?? target.apiKey,
+                (preparedOptions) =>
+                  observedPiStream(
+                    target.models,
+                    target.model,
+                    ctx,
+                    preparedOptions,
+                    (event) => queue.push(event),
+                    target.config.callObserver ?? this.modelCallObserver,
+                    {
+                      operationKind: request.usageOperationKind ?? "answer",
+                      userId: context?.userId,
+                      runId: request.runId,
+                    },
+                    {
+                      ...usageHooks,
+                      prepareContext,
+                      onProviderError: (message) => providerFailures.add(message.content),
+                    },
+                  ),
+                target.config.cacheCapabilities?.retentionMode,
+              ),
+              setThinking,
+            );
+          },
           onContextLimit: (contextWindow) => {
             const target = resizeRuntimeTarget(activeStreamTarget, contextWindow);
             activeStreamTarget = target;
@@ -426,14 +470,28 @@ export class PiAgentRuntime implements AgentRuntime {
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
+            if (steering.some((item) => item.images?.length && !item.imageFileFallback))
+              hasCurrentImages = true;
             for (const item of steering) {
               const images = toPiImages(item.images);
+              const text =
+                item.origin === "user"
+                  ? midTaskMessagePrompt(
+                      item.text,
+                      toolDefs.some((tool) => tool.name === "message_user"),
+                    )
+                  : midTaskMessageFromPrompt(item.text, item.origin);
               agent.steer({
                 role: "user",
-                content: images.length ? [{ type: "text", text: item.text }, ...images] : item.text,
+                content: images.length ? [{ type: "text", text }, ...images] : text,
                 timestamp: Date.now(),
               });
             }
+            // Ordered with the turn's other events, so the run can treat it as a turn boundary.
+            queue.push({
+              type: "steered",
+              fromRunUser: steering.some((item) => item.origin === "user"),
+            });
             return undefined;
           },
           initialState: {
@@ -513,12 +571,18 @@ export class PiAgentRuntime implements AgentRuntime {
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
-        let joinCutReply: { tail: string; held: string } | undefined;
+        let joinCutReply: { tail: string; held: string; requested: boolean } | undefined;
+        let limitContinuation: { tail: string; start: number } | undefined;
+        let outputCutFailed = false;
+        // What the last join dropped from the start of a continuation, which the completed
+        // message still holds.
+        let joinDropped = "";
         const releaseJoin = () => {
           if (!joinCutReply) return;
-          const { tail, held } = joinCutReply;
+          const { tail, held, requested } = joinCutReply;
           joinCutReply = undefined;
-          const text = held.slice(continuationOverlap(tail, held));
+          joinDropped = held.slice(0, continuationRepeat(tail, held, requested));
+          const text = held.slice(joinDropped.length);
           if (!text) return;
           streamed += text;
           queue.push({ type: "text", text });
@@ -540,9 +604,11 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "message_end") {
+            stopThinking();
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
+            stopThinking();
             finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
@@ -557,6 +623,7 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             currentMessageStreamed = "";
+            if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
             if (streamed && !joinCutReply) queue.push({ type: "turn" });
@@ -575,7 +642,9 @@ export class PiAgentRuntime implements AgentRuntime {
               currentMessageStreamed += delta;
               if (joinCutReply) {
                 joinCutReply.held += delta;
-                const decidable = Math.min(joinCutReply.tail.length, MAX_CONTINUATION_OVERLAP);
+                const decidable =
+                  Math.min(joinCutReply.tail.length, MAX_CONTINUATION_OVERLAP) +
+                  MAX_CONTINUATION_MARKER;
                 if (joinCutReply.held.length > decidable) releaseJoin();
               } else {
                 streamed += delta;
@@ -653,11 +722,32 @@ export class PiAgentRuntime implements AgentRuntime {
               streamed = text;
               queue.push({ type: "text", text });
             }
-            if (fallbackState.cutReplies?.has(event.message.content)) {
-              joinCutReply = { tail: text, held: "" };
+            let cutBy = fallbackState.cutReplies?.get(event.message.content);
+            let tail = text;
+            // A normal stop only finishes the cut reply if the join added new text.
+            if (
+              limitContinuation &&
+              !messageHasToolCall(event.message) &&
+              event.message.stopReason === "stop" &&
+              !streamed.slice(limitContinuation.start).trim() &&
+              !cutBy
+            ) {
+              if (fallbackState.selfRecoveries >= MAX_SELF_RECOVERIES_PER_RUN) {
+                outputCutFailed = true;
+              } else {
+                fallbackState.selfRecoveries += 1;
+                cutBy = "limit";
+                tail = limitContinuation.tail;
+              }
+            }
+            limitContinuation = undefined;
+            if (cutBy) {
+              limitContinuation = cutBy === "limit" ? { tail, start: streamed.length } : undefined;
+              joinCutReply = { tail, held: "", requested: cutBy === "limit" };
               agent.followUp({
                 role: "user",
-                content: CUT_REPLY_CONTINUATION_PROMPT,
+                content:
+                  cutBy === "limit" ? cutReplyAtLimitPrompt(tail) : CUT_REPLY_CONTINUATION_PROMPT,
                 timestamp: Date.now(),
               });
             }
@@ -798,13 +888,14 @@ export class PiAgentRuntime implements AgentRuntime {
         // with a durable assistant message instead of a failed run.
         const budgetExceeded = host.toolCallBudget.exceeded;
         const terminalMessage = agent.state.messages.at(-1);
-        // pi-agent-core records ordinary provider failures as an empty assistant
-        // message (stopReason "error" / "length") and still resolves the run.
-        // state.errorMessage covers the error stop; the message itself covers a
-        // length stop and any failure that never landed on state.
+        // pi-agent-core records provider failures as an empty assistant message and
+        // still resolves the run; state.errorMessage misses length stops and failures
+        // that never landed on state.
         const providerFailure =
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
-        const error = agent.state.errorMessage || providerFailure;
+        const error = outputCutFailed
+          ? MODEL_OUTPUT_CUT_ERROR
+          : agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
           let message = sanitizeProviderError(activeStreamTarget.model.provider, error);
           if (
@@ -827,7 +918,11 @@ export class PiAgentRuntime implements AgentRuntime {
           throw modelFailure(error, message);
         }
         if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
-          const terminalText = assistantText(terminalMessage);
+          const completedText = assistantText(terminalMessage);
+          const terminalText =
+            joinDropped && completedText.startsWith(joinDropped)
+              ? completedText.slice(joinDropped.length)
+              : completedText;
           const sincePendingFinal = streamed.slice(streamedBeforePendingFinal);
           if (terminalText.trim() && !sincePendingFinal.includes(terminalText)) {
             const missing =
@@ -886,6 +981,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 : new Error(message),
         );
       } finally {
+        stopThinking();
+        signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
           const keepForResume =

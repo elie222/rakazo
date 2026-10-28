@@ -126,7 +126,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|an error occurred while processing your request|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -147,9 +147,10 @@ export function isTransientModelError(error: unknown): boolean {
     );
   return (
     isRetryableProviderUnavailable(error) &&
-    !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|billing|credit balance|insufficient (?:funds|balance|credits)|payment|out of budget/.test(
+    !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|credit balance|insufficient (?:funds|balance|credits)|out of budget/.test(
       text,
     ) &&
-    !(text.includes("usage limit") && !shortWindow)
+    // OpenAI's per-minute limits link to billing as a way to raise them.
+    (shortWindow || !/billing|payment|usage limit/.test(text))
   );
 }

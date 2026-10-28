@@ -2,7 +2,6 @@ import { t } from "@lingui/core/macro";
 import type { CronLabels, CronUnit } from "@rakazo/core";
 import { ENGLISH_CRON_LABELS, russianInterval } from "@rakazo/core";
 
-/** Translate a cron interval unit in its plural form. */
 export function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
@@ -16,7 +15,6 @@ export function cronUnitLabel(unit: CronUnit): string {
   }
 }
 
-/** Translate a cron interval unit in its singular form. */
 export function cronUnitLabelSingular(unit: CronUnit): string {
   switch (unit) {
     case "minutes":

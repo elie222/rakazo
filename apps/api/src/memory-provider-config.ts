@@ -49,7 +49,6 @@ export async function persistMemoryProviderConfig(
   await requireSpaceOwner(deps.prisma, actor);
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
-    // Fast-path known private endpoints before probing.
     if (
       memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
       deps.env?.mcpAllowPrivateEndpoint !== true

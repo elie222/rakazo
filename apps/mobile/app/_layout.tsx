@@ -103,9 +103,9 @@ registerSessionDiskCache(() => void clearAppBadge());
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
-// Screens that take the whole window even when it is wide enough for the chat list beside them.
 const DIVIDER_GRAB_WIDTH = 24;
-const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"]);
+// Screens that take the whole window even when it is wide enough for the chat list beside them.
+const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer", "/share"]);
 
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
@@ -253,6 +253,8 @@ function ChatContentProviders({
   );
 }
 
+export const unstable_settings = { anchor: "index" };
+
 function LayoutContent() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
@@ -389,7 +391,16 @@ function LayoutContent() {
                         sheetExpandsWhenScrolledToEdge: false,
                       }}
                     />
+                    <Stack.Screen name="share" options={{ headerShown: false }} />
                     <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                    <Stack.Screen
+                      name="paywall"
+                      options={{
+                        headerShown: false,
+                        presentation: "fullScreenModal",
+                        gestureEnabled: false,
+                      }}
+                    />
                     <Stack.Screen
                       name="(settings)"
                       options={{
@@ -457,6 +468,7 @@ function LayoutContent() {
                         ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
                       })}
                     />
+                    <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

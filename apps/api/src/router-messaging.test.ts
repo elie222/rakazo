@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
-/** Prisma filters the handlers use when scoping memberships to the caller. */
 type MembershipWhere = { id?: string; identityId?: { in: string[] } };
 
 const identity = {

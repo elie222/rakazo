@@ -16,7 +16,6 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ja: "日本語",
 };
 
-/** Convert an internal locale identifier to the document language tag. */
 export function htmlLangForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : locale;
 }

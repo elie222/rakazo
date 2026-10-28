@@ -1,5 +1,6 @@
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
+import { truncatePlainText } from "./markdown-plain.js";
 import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
@@ -32,7 +33,7 @@ export function clampBotMessage(text: string): string {
   const trimmed = text.trim();
   return trimmed.length <= BOT_MESSAGE_MAX_LENGTH
     ? trimmed
-    : `${trimmed.slice(0, BOT_MESSAGE_MAX_LENGTH - 1).trimEnd()}…`;
+    : `${truncatePlainText(trimmed, BOT_MESSAGE_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
 /** The hop a delivery gets when the sender was itself woken at `sourceHop`. */
@@ -86,8 +87,11 @@ export function formatBotRosterLines(bots: readonly BotAddress[]): string[] {
     let description: string | undefined;
     if (rawDescription && descriptionBudget > 0) {
       // Charge the budget after escaping — &/< /> / newlines expand.
-      let escaped = escapeDirectoryField(rawDescription.slice(0, BOT_DESCRIPTION_MAX_LENGTH));
-      if (escaped.length > descriptionBudget) escaped = escaped.slice(0, descriptionBudget);
+      let escaped = escapeDirectoryField(
+        truncatePlainText(rawDescription, BOT_DESCRIPTION_MAX_LENGTH),
+      );
+      if (escaped.length > descriptionBudget)
+        escaped = truncatePlainText(escaped, descriptionBudget);
       if (escaped.length > 0) {
         descriptionBudget -= escaped.length;
         description = escaped;

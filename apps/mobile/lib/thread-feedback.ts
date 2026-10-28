@@ -1,6 +1,10 @@
 import type { AgentSkillCatalogEntry, RpcPath } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
-import { isModelRequiredSendError, isServerUnreachable } from "@rakazo/core";
+import {
+  isImageInputConfirmation,
+  isModelRequiredSendError,
+  isServerUnreachable,
+} from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RpcOptions, rpc } from "./api";
 import { t } from "./i18n";
@@ -48,6 +52,8 @@ export type SendAttempt = {
   /** The signed-in session the attempt began in; a failure after sign-out is dropped. */
   session: number;
   error?: string;
+  imageConfirmation?: boolean;
+  imageHandling?: "file";
 };
 
 const UPLOAD_TIMEOUT_MS = 60_000;
@@ -92,6 +98,7 @@ export async function deliverSend(
   const sent = await request("threads/send", {
     ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
     clientNonce: attempt.clientNonce,
+    imageHandling: attempt.imageHandling ?? "confirm",
     text: plan.trimmed || undefined,
     mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
     artifactIds: artifactIds.length ? artifactIds : undefined,
@@ -189,7 +196,7 @@ export function clearUnsentSends() {
   config?.disk.clear();
   changed();
 }
-// Keep main's sign-out contract for existing callers and tests.
+// Alias kept for existing sign-out callers.
 export const clearFailedSends = clearUnsentSends;
 export function confirmEchoes(threadKey: string, seqs: Iterable<number>) {
   const seen = new Set(seqs);
@@ -257,6 +264,7 @@ export function sendWaitingMessages(force = false): Promise<void> {
                 ![408, 409, 425, 426, 429].includes(status)
               ? "refused"
               : "failed";
+          attempt.imageConfirmation = isImageInputConfirmation(error);
           attempt.error = config.errorText(error);
           changed();
           if (offline) break;

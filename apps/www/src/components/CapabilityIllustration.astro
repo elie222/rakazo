@@ -1,0 +1,170 @@
+---
+import type { HomeCopy, HomeFeatureKind } from "../i18n/home";
+import githubLogo from "./brand-logos/github.svg?raw";
+import gmailLogo from "./brand-logos/gmail.svg?raw";
+import googleCalendarLogo from "./brand-logos/googlecalendar.svg?raw";
+import linearLogo from "./brand-logos/linear.svg?raw";
+import notionLogo from "./brand-logos/notion.svg?raw";
+import slackLogo from "./brand-logos/slack.svg?raw";
+
+interface Props {
+  kind: HomeFeatureKind;
+  labels: HomeCopy["features"]["mock"];
+}
+
+const { kind, labels } = Astro.props;
+const APP_LOGOS = [gmailLogo, githubLogo, notionLogo, slackLogo, linearLogo, googleCalendarLogo];
+---
+
+<div class:list={["capability-art", `capability-art--${kind}`]} aria-hidden="true">
+  {kind === "call" ? (
+    <div class="art-call">
+      <span class="art-call__ring"><img src="/brand/job-bots/inbox-manager.webp" alt="" width="52" height="52" loading="lazy" /></span>
+      <div class="art-call__who">
+        <b>Inbox Manager</b>
+        <span>{labels.calling}</span>
+      </div>
+      <div class="art-call__actions">
+        <span class="art-call__decline"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg></span>
+        <span class="art-call__accept"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg></span>
+      </div>
+    </div>
+  ) : kind === "apps" ? (
+    <div class="art-apps">
+      {APP_LOGOS.map((logo) => <span class="art-apps__tile"><Fragment set:html={logo} /></span>)}
+      <span class="art-apps__tile art-apps__mcp">MCP</span>
+    </div>
+  ) : kind === "memory" ? (
+    <div class="art-window">
+      <span class="art-label">{labels.memory}</span>
+      {labels.memoryNotes.map((note) => (
+        <div class="art-row"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>{note}</div>
+      ))}
+    </div>
+  ) : kind === "triggers" ? (
+    <div class="art-window art-triggers">
+      <div class="art-row"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M7 3v4m10-4v4M3 11h18" /></svg>{labels.triggers[0]}</div>
+      <div class="art-row"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="12" r="2.5" /><path d="M6 8.5v7M8.5 6H12a3.5 3.5 0 0 1 3.5 3.5" /></svg>{labels.triggers[1]}</div>
+      <div class="art-row"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>{labels.triggers[2]}</div>
+    </div>
+  ) : kind === "team" ? (
+    <div class="art-team">
+      <img src="/brand/job-bots/sales-outbound.webp" alt="" width="52" height="52" loading="lazy" />
+      <span class="art-team__line"><i /></span>
+      <img src="/brand/job-bots/talent-scout.webp" alt="" width="52" height="52" loading="lazy" />
+    </div>
+  ) : (
+    <div class="art-window art-teach">
+      <span class="art-teach__rec"><i />{labels.recording}</span>
+      <div class="art-teach__steps"><span /><span /><span /></div>
+      <div class="art-row"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>{labels.skillSaved}</div>
+    </div>
+  )}
+</div>
+
+<style>
+  .capability-art {
+    height: 168px;
+    margin: -26px -26px 24px;
+    border-bottom: 1px solid var(--line);
+    background: radial-gradient(120% 100% at 50% 100%, var(--accent-soft), var(--surface-soft) 85%);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow: hidden;
+    user-select: none;
+    pointer-events: none;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .capability-art--call { --accent: var(--green); --accent-soft: var(--green-soft); }
+  .capability-art--apps { --accent: var(--blue); --accent-soft: var(--blue-soft-2); }
+  .capability-art--memory { --accent: var(--violet); --accent-soft: var(--violet-soft); }
+  .capability-art--triggers { --accent: var(--amber); --accent-soft: var(--amber-soft); }
+  .capability-art--team { --accent: var(--rose); --accent-soft: var(--rose-soft); }
+  .capability-art--teach { --accent: var(--coral); --accent-soft: var(--coral-soft); }
+  svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .art-window {
+    width: 100%;
+    max-width: 240px;
+    padding: 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+  }
+  .art-label { display: block; margin-bottom: 8px; color: var(--muted-2); font-size: 11px; }
+  .art-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
+  .art-row + .art-row { border-top: 1px solid var(--line); }
+  .art-row svg { color: var(--accent); }
+
+  .art-call {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 12px 14px;
+    width: 100%;
+    max-width: 240px;
+    padding: 14px;
+    border-radius: 18px;
+    background: var(--panel);
+    color: var(--panel-copy);
+    box-shadow: var(--shadow-demo);
+  }
+  .art-call__ring { position: relative; display: block; width: 44px; height: 44px; }
+  .art-call__ring img { width: 44px; height: 44px; border-radius: 50%; }
+  .art-call__ring::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border: 2px solid var(--success);
+    border-radius: 50%;
+    opacity: 0.55;
+  }
+  .art-call__who { display: grid; gap: 2px; }
+  .art-call__who b { font-size: 13px; font-weight: 600; color: var(--surface); }
+  .art-call__who span { color: var(--panel-muted); }
+  .art-call__actions { grid-column: 1 / -1; display: flex; gap: 10px; }
+  .art-call__actions span { flex: 1; display: flex; justify-content: center; padding: 7px; border-radius: 999px; color: var(--surface); }
+  .art-call__actions svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+  .art-call__decline { background: var(--coral); }
+  .art-call__decline svg { transform: rotate(135deg); }
+  .art-call__accept { background: var(--success); }
+
+  .art-apps { display: grid; grid-template-columns: repeat(4, 44px); gap: 10px; }
+  .art-apps__tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--line-2);
+    border-radius: 11px;
+    background: var(--surface);
+    box-shadow: var(--shadow-soft);
+  }
+  .art-apps__tile :global(svg) { width: 22px; height: 22px; }
+  .art-apps__mcp { color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+
+  .art-team { display: flex; align-items: center; }
+  .art-team img { width: 52px; height: 52px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-soft); }
+  .art-team__line { position: relative; width: 72px; height: 2px; margin: 0 8px; background: var(--line-2); }
+  .art-team__line i {
+    position: absolute;
+    top: -3px;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .art-teach__rec { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-2); font-size: 11px; }
+  .art-teach__rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 3px var(--coral-soft); }
+  .art-teach__steps { display: flex; gap: 6px; margin: 10px 0 4px; }
+  .art-teach__steps span { flex: 1; height: 28px; border-radius: 6px; background: var(--surface-soft); border: 1px solid var(--line); }
+</style>

@@ -9,22 +9,42 @@ export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
 export const APPROVED_ACTION_NOT_RUN_ERROR =
   "The model did not run the approved action. Try again.";
 
-/** The model ran out of output tokens before writing anything the run could use. */
 export const MODEL_OUTPUT_LIMIT_ERROR = "The model hit its output limit before writing a response.";
+
+/** The model ran out of output tokens partway through its reply, even after continuing it. */
+export const MODEL_OUTPUT_CUT_ERROR = "The model hit its output limit before finishing its reply.";
 
 /** The bot's instructions and tools alone do not fit the selected model's context window. */
 export const MODEL_CONTEXT_TOO_SMALL_ERROR =
   "This model's context window is too small. Choose another model.";
 
-/** A run that starts with no model the user can reach. */
+/** The provider account's request budget cannot fit the agent's mandatory context. */
+export const MODEL_REQUEST_LIMIT_ERROR =
+  "This connection's request limit is too small. Choose another model.";
+
 export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before running bots.";
 
 /** A deployment model run while the organization has not chosen Rakazo credits. */
 export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
   "Connect your own API key in Models or choose Rakazo credits in Billing.";
 
+/** A run in a billing organization without a paid plan, credits, or free period. */
+export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
+
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
+
+/** Only the structured server response enables explicit file confirmation. */
+export function isImageInputConfirmation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { status?: unknown; data?: { reason?: unknown } };
+  return value.status === 409 && value.data?.reason === "model_image_input_unsupported";
+}
+
+export const MODEL_IMAGE_INPUT_UNKNOWN = "Image input is not configured for this model.";
+
+export const MODEL_IMAGE_INPUT_ERROR =
+  "This model cannot read images. Choose a model that supports images.";
 
 /** Recognize the send rejection across RPC errors and persisted outbox messages. */
 export function isModelRequiredSendError(error: unknown): boolean {
@@ -84,6 +104,7 @@ const MODEL_CONNECTION_RUN_ERRORS = new Set([
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
   ...MODEL_CONNECTION_RUN_ERRORS,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
@@ -173,7 +194,7 @@ const MALFORMED_KEY_HEADER =
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
-  /\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support)\b|\bnot supported (?:with|by|for) (?:this|the) model\b/i;
+  /^(?:unsupported|unknown|unrecognized)[ _-]model\b(?![ :]+(?:parameters?|fields?|options?|settings?)\b)|\bmodel\b(?:(?!\.\s)[\s\S]){0,80}?\b(?:not found|does not exist|unavailable|not available|not supported|isn['\u2019]t supported|(?:is|has been) deprecated|does(?: not|n['\u2019]t) support)\b|\bnot supported (?:with|by|for) (?:this|the) model\b/i;
 
 /**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
@@ -196,6 +217,14 @@ export function normalizeRunError(
   period?: "none" | "daily" | "weekly" | "monthly";
 } {
   const trimmed = details.trim();
+  if ([MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN].includes(trimmed)) {
+    return {
+      summary: translate(trimmed),
+      details,
+      recovery: "model",
+      kind: "model",
+    };
+  }
   // "429: {...}", "429 {...}", or the model runtime's "<provider> API error (429): {...}".
   const prefix = trimmed.match(
     /^(?:[^\n():]{1,60} API error \((\d{3})\):\s*|(\d{3})(?:\s*:\s*|\s+))/,
@@ -230,9 +259,17 @@ export function normalizeRunError(
         ? { summary: translate(trimmed), details, recovery: "connection" }
         : { summary: details, details };
   }
-  if (trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR) {
+  if (trimmed === MODEL_OUTPUT_CUT_ERROR) {
     return {
-      summary: translate(MODEL_CONTEXT_TOO_SMALL_ERROR),
+      summary: translate(MODEL_OUTPUT_CUT_ERROR),
+      details,
+      recovery: "model",
+      kind: "output",
+    };
+  }
+  if (trimmed === MODEL_CONTEXT_TOO_SMALL_ERROR || trimmed === MODEL_REQUEST_LIMIT_ERROR) {
+    return {
+      summary: translate(trimmed),
       details,
       recovery: "model",
       kind: "context",
@@ -288,11 +325,13 @@ export function normalizeRunError(
       signals,
     );
   if (
+    status !== 413 &&
     (status === 429 ||
       /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
         signals,
       )) &&
-    !financialQuota
+    // OpenAI's per-minute limits link to billing as a way to raise them.
+    (!financialQuota || /\b(?:rpm|tpm)\b/i.test(signals))
   ) {
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
@@ -388,7 +427,7 @@ export function normalizeRunError(
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
-  } else if (status === 403) {
+  } else if (status === 403 || payload.code === "model_terms_required") {
     // The key works, but the provider refuses this model to the account or plan, or serves it
     // only inside its own apps.
     recovery = "model";

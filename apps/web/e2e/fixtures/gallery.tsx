@@ -294,6 +294,7 @@ const secrets: Scenario = {
           origin: "https://portal.example.test",
           auth: { type: "login" },
         },
+        loginFields: ["ID number", "Phone number", "PIN"],
         status: "pending",
       },
     ]),
@@ -516,6 +517,19 @@ const calls: Scenario = {
   id: "calls",
   label: "Calls",
   messages: [
+    bot(
+      [
+        {
+          kind: "voice_call",
+          callId: "call-paginated",
+          title: "Deploy check",
+          farewell: "Bye",
+          durationSeconds: 125,
+        },
+      ],
+      { callId: "call-paginated", runId: "run-paginated" },
+    ),
+    say("Here is the deployment checklist.", { runId: "run-paginated" }),
     bot(
       [
         {

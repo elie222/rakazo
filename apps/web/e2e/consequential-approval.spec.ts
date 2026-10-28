@@ -68,7 +68,6 @@ test("Ask mode asks before a change, and approvals settings shape what asks", as
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
 
-  // The allowed tool is listed in Approvals, where it can be blocked.
   const settings = await openUserSettings(page);
   await expect(settings).toHaveAttribute("role", "dialog");
   await expect(settings).toBeFocused();

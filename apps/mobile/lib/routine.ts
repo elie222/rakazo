@@ -42,13 +42,11 @@ export function routineRowDetail(routine: Routine, deviceTimeZone: string | unde
     .join(", ");
 }
 
-/** Soonest next run first, routines without one last; ties keep the oldest first. */
-export function sortRoutinesByNextRun(routines: Routine[]): Routine[] {
-  const nextRun = (routine: Routine) =>
-    routine.nextRunAt ? Date.parse(routine.nextRunAt) : Number.POSITIVE_INFINITY;
-  return [...routines].sort(
-    (a, b) => nextRun(a) - nextRun(b) || Date.parse(a.createdAt) - Date.parse(b.createdAt),
-  );
+/** A list row's name for screen readers, with whether its switch is on. */
+export function routineRowLabel(routine: Routine): string {
+  return routine.active
+    ? t("{name}, On", { name: routine.name })
+    : t("{name}, Off", { name: routine.name });
 }
 
 /** The device's IANA time zone, or undefined when the runtime can't tell. */

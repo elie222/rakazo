@@ -1,8 +1,8 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { DemoBot, DemoMessage, DemoRoutine, DemoRoutineRun, DemoScreen } from "../demo";
-import { demoText, getDemoBots } from "../i18n/demo";
-import type { Locale } from "../i18n/locales";
+import type { DemoMessages } from "../i18n/demo-text";
+import { fillDemoText } from "../i18n/demo-text";
 import { LandingBotAvatar } from "./LandingBotAvatar";
 import type { DemoTrigger } from "./product-demo-when";
 import { defaultTrigger, describeTrigger, displayRoutineWhen, parseWhen, resolveRoutineWhen } from "./product-demo-when";
@@ -483,9 +483,9 @@ function OnboardThread({
   );
 }
 
-export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
-  const text: DemoTranslator = (source, values) => demoText(locale, source, values);
-  const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(getDemoBots(locale)));
+export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; strings: DemoMessages }) {
+  const text: DemoTranslator = (source, values) => fillDemoText(strings, source, values);
+  const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(initialBots));
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);

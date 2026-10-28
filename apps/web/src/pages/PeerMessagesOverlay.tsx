@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
+import type { BotAvatarSet } from "@rakazo/contracts";
 import { loadPeerHistory, peerConversations } from "@rakazo/core";
 import {
   BotAvatar,
@@ -23,17 +24,21 @@ export function PeerMessagesOverlay({
   botId,
   botName,
   botColor,
+  botAvatarSet,
   peerBotId,
   peerBotName: initialPeerBotName,
   peerBotColor,
+  peerBotAvatarSet,
   onClose,
 }: {
   botId: string;
   botName: string;
   botColor: string;
+  botAvatarSet?: BotAvatarSet;
   peerBotId: string;
   peerBotName: string;
   peerBotColor: string;
+  peerBotAvatarSet?: BotAvatarSet;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -76,8 +81,13 @@ export function PeerMessagesOverlay({
         <div className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex items-center -space-x-2">
-              <BotAvatar color={botColor} identity={botId} size={28} />
-              <BotAvatar color={peerBotColor} identity={peerBotId} size={28} />
+              <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={28} />
+              <BotAvatar
+                avatarSet={peerBotAvatarSet}
+                color={peerBotColor}
+                identity={peerBotId}
+                size={28}
+              />
             </div>
             <DialogTitle className="flex min-w-0 gap-2 text-[15.5px] font-medium" dir="auto">
               <span className="truncate text-foreground">{botName}</span>

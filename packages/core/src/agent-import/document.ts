@@ -32,7 +32,7 @@ Rules:
 const SECTIONS = ["name", "instructions", "memory", "skills"] as const;
 type Section = (typeof SECTIONS)[number];
 const SECTION_HEADING = /^#\s+(name|instructions|memory|skills)\s*$/i;
-const SUBSECTION_HEADING = /^##\s+(.+?)\s*#*\s*$/;
+const SUBSECTION_HEADING = /^##\s+(.+?)(?:\s+#+)?\s*$/;
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 
 type Block = { heading: string; lines: string[] };

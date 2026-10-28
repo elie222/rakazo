@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -120,6 +121,7 @@ export default function VoiceSettings() {
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const deviceVoiceRevision = useRef(0);
   const deviceVoiceSaveInFlight = useRef(false);
 
@@ -139,6 +141,7 @@ export default function VoiceSettings() {
         fetchFresh(queryClient, reads.status, reuse),
       ]);
       if (revision !== loadRevision.current) return;
+      setLoadError(null);
       const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
@@ -168,14 +171,19 @@ export default function VoiceSettings() {
     set(value);
   };
 
+  const open = useCallback(() => {
+    void load(undefined, true)
+      .catch((err: unknown) => {
+        // A newer read replaced this one and reports for both.
+        if (!isCancelledError(err))
+          setLoadError(errorText(err, t("Could not load voice settings")));
+      })
+      .finally(() => setLoading(false));
+  }, [load, t]);
+
   useFocusEffect(
     useCallback(() => {
-      void load(undefined, true)
-        .catch((err: unknown) => {
-          // A newer read replaced this one and reports for both.
-          if (!isCancelledError(err)) setError(errorText(err, t("Could not load voice settings")));
-        })
-        .finally(() => setLoading(false));
+      open();
       if (!deviceSettings) return;
       const revision = ++deviceVoiceRevision.current;
       void loadDeviceVoiceEnabled()
@@ -203,7 +211,7 @@ export default function VoiceSettings() {
           }
         },
       );
-    }, [deviceSettings, load, t]),
+    }, [deviceSettings, open, t]),
   );
 
   /** One sound-switch save at a time; a failed save rolls back only that switch. */
@@ -262,6 +270,7 @@ export default function VoiceSettings() {
     if (pending !== null || !deviceVoiceReady) return;
     setPending("device-voice");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await saveDeviceVoice(!deviceVoice);
     } finally {
@@ -276,6 +285,7 @@ export default function VoiceSettings() {
     loadRevision.current++;
     setPending("voice");
     setError(null);
+    if (status) setLoadError(null);
     try {
       if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
       setProvider(nextProvider);
@@ -325,6 +335,7 @@ export default function VoiceSettings() {
     if (!selected || !canConnect) return;
     setPending("connect");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/connect", {
         provider: selected.id,
@@ -354,6 +365,7 @@ export default function VoiceSettings() {
     if (!providerId) return;
     setPending("disconnect");
     setError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/disconnect", { provider: providerId });
       setApiKey("");
@@ -373,6 +385,7 @@ export default function VoiceSettings() {
     speechModelSave.current = next;
     setPending("speech");
     setError(null);
+    if (status) setLoadError(null);
     try {
       const saved = await rpc("voice/setSpeechModel", {
         provider: selected.id,
@@ -413,6 +426,7 @@ export default function VoiceSettings() {
   async function testVoice() {
     setPending("test");
     setError(null);
+    if (status) setLoadError(null);
     try {
       const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."), {
         scope,
@@ -427,6 +441,9 @@ export default function VoiceSettings() {
     }
   }
 
+  const failure = error ?? loadError;
+  const shownError = error ?? (status ? loadError : null);
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -435,7 +452,18 @@ export default function VoiceSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {failure && !status ? (
+          <LoadFailure
+            message={failure}
+            onRetry={() => {
+              setLoadError(null);
+              setLoading(true);
+              open();
+            }}
+          />
+        ) : shownError ? (
+          <Text style={styles.error}>{shownError}</Text>
+        ) : null}
         {deviceSettings ? (
           <View style={styles.group}>
             <Pressable

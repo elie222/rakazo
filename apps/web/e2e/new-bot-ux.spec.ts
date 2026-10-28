@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { organicAvatarFamily } from "@rakazo/core";
+import { organicAvatarFamily, seededLogoAvatarColor } from "@rakazo/core";
 import { captureScreenshot, completeOnboarding, createBotFromPicker, rpc, signup } from "./helpers";
 
 test("create opens dialog, then empty chat; picker lists bots; sidebar collapses", async ({
@@ -44,6 +44,11 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await expect(create).toBeDisabled();
 
   await name.fill("New Bot");
+  await expect(createDialog.getByRole("tab", { name: "Rakazo", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await createDialog.getByRole("tab", { name: "Original", exact: true }).click();
   const wedge = createDialog.getByRole("button", { name: "wedge", exact: true });
   await wedge.click();
   await createDialog.getByRole("button", { name: "Color #10B981", exact: true }).click();
@@ -116,10 +121,10 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await page.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
 
-  // An organic body picked in the dialog is the body the new bot gets.
   await page.getByTestId("create-menu-trigger").click();
   await picker.getByTestId("create-new-bot").click();
   await expect(createDialog).toBeVisible();
+  await createDialog.getByRole("tab", { name: "Original", exact: true }).click();
   await createDialog.getByRole("button", { name: "Shape 3", exact: true }).click();
   const family = Number(
     await createDialog.locator(".rakazo-organic-avatar").first().getAttribute("data-shape-family"),
@@ -129,6 +134,37 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await expect(createDialog).toBeHidden();
   await expect(page.getByPlaceholder("Message Organic Bot")).toBeVisible();
   expect(organicAvatarFamily(page.url().split("/").pop()!)).toBe(family);
+});
+
+test("the default logo preview keeps its seeded identity and colour after creation and reload", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `preview-colour-${Date.now()}@rakazo.test`, "password12", "Preview Colour");
+  await completeOnboarding(page);
+  await page.getByTestId("create-menu-trigger").click();
+  await page.getByTestId("bot-create-picker").getByTestId("create-new-bot").click();
+  const dialog = page.getByTestId("create-bot-dialog");
+  const preview = dialog.locator(".rakazo-logo-avatar").first();
+  const colour = (await preview.getAttribute("data-color"))!.toUpperCase();
+  await dialog.getByPlaceholder("Name your Bot").fill("Seed preview");
+  await expect(preview).toHaveAttribute("data-color", colour);
+  await captureScreenshot(page, testInfo, "create-bot-seeded-preview");
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByPlaceholder("Message Seed preview")).toBeVisible();
+  const id = page.url().split("/").pop()!;
+  expect(colour).toBe(seededLogoAvatarColor(id).toUpperCase());
+  await page.reload();
+  await expect(page.getByPlaceholder("Message Seed preview")).toBeVisible();
+  const bots = await rpc<Array<{ id: string; color: string; avatarSet: string }>>(
+    page,
+    "bots/list",
+    {},
+  );
+  expect(bots.find((bot) => bot.id === id)).toMatchObject({ color: colour, avatarSet: "rakazo" });
+  await expect(
+    page.locator(`[data-roster-bot-id="${id}"]`).locator(".rakazo-logo-avatar").first(),
+  ).toHaveAttribute("data-color", colour);
 });
 
 test("a stale roster refresh started before creation keeps the new bot selected", async ({
@@ -200,7 +236,6 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   const stamp = Date.now();
   await signup(page, `focus-delay-${stamp}@rakazo.test`, "password12", "Focus Delay");
   await completeOnboarding(page);
-  // First bot from onboarding shows the focus card immediately.
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
 
   await page.clock.install();

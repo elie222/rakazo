@@ -1,6 +1,7 @@
 import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
+  PurchaseCardField,
   SandboxKind,
 } from "@rakazo/contracts";
 
@@ -162,7 +163,14 @@ export type ComputerInput =
 
 export type ComputerAction =
   | ComputerInput
-  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  /** With x and y, the wheel turns there, so it scrolls what is under that point. */
+  | {
+      kind: "scroll";
+      direction: "up" | "down" | "left" | "right";
+      amount?: number;
+      x?: number;
+      y?: number;
+    }
   | { kind: "wait"; ms: number }
   | { kind: "open"; path: string }
   | { kind: "launch"; application: string; uri?: string }
@@ -431,9 +439,16 @@ export interface AgentSteeringMessage {
   id: string;
   messageId: string;
   text: string;
+  /**
+   * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
+   * else, or no origin, is passed on as a neutral note.
+   */
+  origin?: "user" | "member" | "messaging" | "webhook";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  imageFileFallback?: boolean;
 }
 
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
@@ -506,6 +521,10 @@ export interface AgentRunRequest {
     images?: AgentInputImage[];
   }>;
   currentTurnImages?: AgentInputImage[];
+  /** A confirmed image belongs to this run, including a resumed waiting-input reply. */
+  currentRunRequiresImageInput?: boolean;
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
@@ -600,8 +619,16 @@ export interface ModelCallObserver {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
+  /** Explicit provider reasoning lifecycle only; never contains reasoning text. */
+  | { type: "thinking"; active: boolean }
   /** A new assistant message starts; its text does not continue the previous text. */
   | { type: "turn" }
+  /** Messages sent while the bot worked were handed to the model before this turn. */
+  | {
+      type: "steered";
+      /** At least one came from the run's own person, in the app or a connected chat. */
+      fromRunUser: boolean;
+    }
   | {
       type: "progress";
       text: string;
@@ -706,6 +733,7 @@ export interface BackgroundJobPayloads {
   "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "purchase.poll": { purchaseId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
@@ -784,6 +812,7 @@ export interface TransactionalEmail {
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
 }
 
 export type MessagingReceipt = "typing" | "reaction";
@@ -865,7 +894,6 @@ export interface MessagingInboundMessage {
   kind?: TeamChatMessageKind;
   /** Provider thread id for in-channel replies (Slack thread_ts); null for channel root. */
   replyThreadId?: string | null;
-  /** True when the sender is another bot/app. */
   senderIsBot?: boolean;
   /** Display names for room participants when the platform reports them. */
   participantNames?: string[];
@@ -1008,7 +1036,6 @@ export interface BrowserSnapshotResult {
 
 export type BrowserActKind = "click" | "fill" | "type" | "upload";
 
-/** Most files one upload step may attach. */
 export const MAX_BROWSER_UPLOAD_FILES = 10;
 
 export type BrowserActStep =
@@ -1021,8 +1048,27 @@ export type BrowserActStep =
       text: string;
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
-      /** Which part of a saved login `text` is; a password is typed only into a password field. */
-      field?: "username" | "password";
+      /**
+       * What `text` is: a saved login's hidden field ("password", typed only into a password
+       * field) or visible field ("username"), or an approved purchase's card detail. A card fill
+       * always carries `origin`.
+       */
+      field?: "username" | "password" | "card";
+    }
+  | {
+      kind: "fill";
+      ref?: undefined;
+      text: string;
+      origin: string;
+      field: "card";
+      cardField: PurchaseCardField;
+    }
+  | {
+      kind: "pay_token";
+      ref?: undefined;
+      text: string;
+      origin: string;
+      merchantAccountId: string;
     };
 
 export interface BrowserActRequest {
@@ -1054,7 +1100,6 @@ export type PageBrowserCommand =
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
 
-/** Vendor-neutral status for a remote cloud coding agent. */
 export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";
 
 export interface CloudAgentCapabilities {
@@ -1162,7 +1207,6 @@ export interface BillingPrice {
   intervalCount: number;
 }
 
-/** Full subscription state for one billing customer, re-fetched from the provider on every sync. */
 export interface BillingCreditPurchase {
   /** Stable provider payment identity, including any subsequent refund adjustment. */
   id: string;
@@ -1179,6 +1223,12 @@ export interface BillingCreditCheckoutRequest {
   cancelUrl: string;
 }
 
+export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
+  /** Omitted when the customer has already used its trial. */
+  trialDays?: number;
+}
+
+/** Full subscription state for one billing customer, re-fetched from the provider on every sync. */
 export interface BillingSubscriptionSnapshot {
   creditAmountCents?: number;
   subscriptionId: string;
@@ -1190,6 +1240,8 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** The flat own-key plan, which grants access without credits. */
+  byokPlan?: boolean;
 }
 
 export interface BillingCheckoutRequest {

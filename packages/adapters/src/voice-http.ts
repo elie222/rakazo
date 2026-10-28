@@ -152,10 +152,14 @@ function openAiErrorCode(body: unknown): string | undefined {
   return typeof type === "string" ? type : undefined;
 }
 
+/** OpenAI also answers 429 for billing with other codes; only the message tells them apart. */
+const BILLING_MESSAGE =
+  /\bcredits?\b|billing|exceeded your current quota|paid subscription|account is not active/i;
+
 /**
  * A failure the user fixes in their provider account. 402 is spent credit (Fish Audio,
- * Cartesia), OpenAI sends 429 `insufficient_quota`, and ElevenLabs sends 401
- * `quota_exceeded`. Other 401s and 403s are a rejected key.
+ * Cartesia), OpenAI sends 429 `insufficient_quota` or a billing message, and ElevenLabs
+ * sends 401 `quota_exceeded`. Other 401s and 403s are a rejected key.
  */
 export function voiceAccountIssue(
   status: number,
@@ -163,7 +167,9 @@ export function voiceAccountIssue(
 ): VoiceAccountErrorCode | undefined {
   if (status === 402) return "VOICE_OUT_OF_CREDIT";
   if (status === 429) {
-    return openAiErrorCode(body) === "insufficient_quota" ? "VOICE_OUT_OF_CREDIT" : undefined;
+    return openAiErrorCode(body) === "insufficient_quota" || BILLING_MESSAGE.test(detail(body))
+      ? "VOICE_OUT_OF_CREDIT"
+      : undefined;
   }
   if (status !== 401 && status !== 403) return undefined;
   const reason = reasonCode(body);

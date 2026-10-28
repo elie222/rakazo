@@ -27,7 +27,7 @@ import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/a
 import { runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
+import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
 import {
   claimApprovedEffect,
   claimIntendedEffect,
@@ -44,6 +44,7 @@ import {
 import { reviewWithBackups } from "./auto-review-backups.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { findConnectedModelCredential } from "./model-selection.js";
+import { paidRequestEffect } from "./paid-request.js";
 import { autoReviewCheckerProvider } from "./run-auto-review.js";
 import type { RunContext, RunTrust } from "./run-context.js";
 import {
@@ -60,6 +61,7 @@ import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
+import { USER_COMPUTER_SHELL_TOOL, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
 
@@ -149,16 +151,18 @@ export async function gateToolCall(
     );
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(name, connectorProviders);
-  const fetchUrl = name === "web_fetch" ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
+  // paid_request with only a purchase id sends the request its approval already named.
+  const sendsToSite =
+    SITE_SENDING_TOOLS.has(name) && (name === "web_fetch" || args.url !== undefined);
+  const fetchUrl = sendsToSite ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
   const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
-  if (name === "web_fetch" && !fetchSite)
-    return { result: { error: "url must be an http(s) URL" } };
+  if (sendsToSite && !fetchSite) return { result: { error: "url must be an http(s) URL" } };
   if (fetchUrl && fetchUrl.length > MAX_FETCH_URL_LENGTH)
     return { result: { error: `url must be at most ${MAX_FETCH_URL_LENGTH} characters` } };
   // The card, the stored effect and the request all use the URL the gate checked.
   if (fetchUrl) {
     args = { ...args, url: fetchUrl };
-    effectRequest = args;
+    effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
     name,
@@ -263,19 +267,22 @@ export async function gateToolCall(
             ),
           )
         : false));
-  const plan = planActionGate({
-    resolved: approvalResolved,
-    mode,
-    mandatory: requiresMandatoryApproval,
-    steerable:
-      requiresMandatoryApproval && mode === "never"
-        ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
-        : undefined,
-    consequential: requiresApprovalByDefault,
-    reviewOnly: connectorReadGated,
-    checkerConfigured,
-    newDestination: siteGate === "new",
-  });
+  const plan =
+    name === USER_COMPUTER_SHELL_TOOL
+      ? await userComputerGate(ctx, approvalResolved.decision === "deny")
+      : planActionGate({
+          resolved: approvalResolved,
+          mode,
+          mandatory: requiresMandatoryApproval,
+          steerable:
+            requiresMandatoryApproval && mode === "never"
+              ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
+              : undefined,
+          consequential: requiresApprovalByDefault,
+          reviewOnly: connectorReadGated,
+          checkerConfigured,
+          newDestination: siteGate === "new",
+        });
   if (plan === "deny") {
     return {
       result: {

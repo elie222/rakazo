@@ -14,7 +14,7 @@ import type {
 import type { MessageBlock } from "@rakazo/contracts";
 import { WORKING_RUN_STATUSES } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import type { Judgment } from "../evals/judge.js";
+import type { EvalJudge, JudgeInput, Judgment } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -74,7 +74,8 @@ export type FlowResult = {
 
 type Settled =
   | { kind: "idle" }
-  | { kind: "ask"; runId: string; messageId: string; ask: PendingAsk }
+  | { kind: "ask"; runId: string; messageId: string; toolApproval: boolean; ask: PendingAsk }
+  | { kind: "mcp"; threadId: string; serverId: string; needsOAuth: boolean; ask: PendingAsk }
   | { kind: "takeover" };
 
 class FlowStop extends Error {
@@ -152,6 +153,7 @@ export async function runFlow<World>(
   /** Reads new bot messages into the transcript and returns the pending card, if any. */
   const readThread = async (wake?: number) => {
     const snapshot = await rpc<{
+      threadId: string;
       messages: Array<{
         id: string;
         role: string;
@@ -160,26 +162,17 @@ export async function runFlow<World>(
         blocks: MessageBlock[];
       }>;
     }>("threads/get", { botId });
-    let pending: Extract<Settled, { kind: "ask" }> | undefined;
+    let pending: Extract<Settled, { kind: "ask" | "mcp" }> | undefined;
     for (const message of snapshot.messages) {
       if (message.role !== "bot") continue;
       for (const block of message.blocks) {
-        if (block.kind !== "ask" || block.status === "answered" || block.dismissed) continue;
-        if (!message.runId) continue;
-        pending = {
-          kind: "ask",
-          runId: message.runId,
-          messageId: message.id,
-          ask: {
-            text: block.text,
-            ...(block.detail ? { detail: block.detail } : {}),
-            ...(block.actions?.length
-              ? { actions: block.actions.map(({ id, label }) => ({ id, label })) }
-              : {}),
-            ...(block.input ? { input: block.input } : {}),
-            ...(block.purpose ? { purpose: String(block.purpose) } : {}),
-          },
-        };
+        const mcp = mcpPendingCard(snapshot.threadId, block);
+        if (mcp) {
+          pending = mcp;
+          continue;
+        }
+        const ask = askPendingCard(message, block);
+        if (ask) pending = ask;
       }
       if (seenMessages.has(message.id)) continue;
       const text = message.blocks
@@ -187,20 +180,12 @@ export async function runFlow<World>(
           block.kind === "text"
             ? [block.text ?? ""]
             : block.kind === "ask"
-              ? [
-                  [
-                    `[card] ${block.text}`,
-                    block.detail,
-                    block.actions?.length
-                      ? `(buttons: ${block.actions.map((action) => action.label).join(", ")})`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join("\n"),
-                ]
-              : block.kind === "computer"
-                ? [`[screen] ${block.text}`]
-                : [],
+              ? [cardText({ text: block.text, detail: block.detail, actions: block.actions })]
+              : block.kind === "mcp_approval"
+                ? [cardText(mcpApprovalAsk(block))]
+                : block.kind === "computer"
+                  ? [`[screen] ${block.text}`]
+                  : [],
         )
         .join("\n")
         .trim();
@@ -218,12 +203,15 @@ export async function runFlow<World>(
   };
 
   /** Checked before every paid step, the bot's or the harness's. */
-  const withinLimits = async () => {
-    if (Date.now() > deadline) throw new FlowStop("deadline");
+  const withinSpend = async () => {
     if ((await botCost()) + harnessCostUsd > options.spendCapUsd) {
       await rpc("threads/stop", { botId }).catch(() => undefined);
       throw new FlowStop("spend-cap");
     }
+  };
+  const withinLimits = async () => {
+    if (Date.now() > deadline) throw new FlowStop("deadline");
+    await withinSpend();
   };
 
   /** Waits until the bot stops working: idle, waiting on a card, or asking for the screen. */
@@ -388,9 +376,10 @@ export async function runFlow<World>(
           state = await settle(wake);
           continue;
         }
+        const card = state.kind === "idle" ? undefined : state.ask;
         const move: UserMove = await user(
           transcript,
-          state.kind === "ask" ? { kind: "card", ask: state.ask } : { kind: "chat" },
+          card ? { kind: "card", ask: card } : { kind: "chat" },
           abort.signal,
         );
         options.log(`user: ${describeMove(move)}`);
@@ -410,6 +399,14 @@ export async function runFlow<World>(
                     : "",
             ...(move.kind === "secret" && move.username ? { username: move.username } : {}),
           });
+        } else if (state.kind === "mcp" && move.kind === "choose") {
+          const request = mcpCardRequest(state, move.actionId, botId);
+          // Stopping still grades the run.
+          if (!request) {
+            options.log("cannot complete an MCP OAuth popup");
+            throw new FlowStop("error");
+          }
+          await rpc(request.procedure, request.body);
         } else if (move.kind === "say") {
           await rpc("threads/send", { botId, text: move.text });
         } else {
@@ -423,8 +420,9 @@ export async function runFlow<World>(
             move.kind === "say"
               ? move.text
               : move.kind === "choose"
-                ? `[pressed ${state.kind === "ask" ? (state.ask.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId) : move.actionId}]`
+                ? `[pressed ${card?.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId}]`
                 : "[filled secret]",
+          ...(answeredToolApproval(state, move) ? { toolApproval: true } : {}),
           ...(wake ? { wake } : {}),
         });
         state = await settle(wake);
@@ -540,15 +538,12 @@ export async function runFlow<World>(
     const deterministicPass = result.criteria.every((criterion) => criterion.pass);
     if (flow.judge) {
       const judge = createEvalJudge(handles.runtime, options.judgeModel, onUsage);
-      // A judge failure is an unqualified result, never a pass.
-      // The judge runs after the flow's deadline checks, so it gets its own bound.
-      result.judgment = await judge(
+      // Grading runs past the deadline, so it gets its own bound, but not past the spend cap.
+      result.judgment = await judgeFlow(
+        spendCappedJudge(judge, withinSpend),
         flow.judge(evidence),
-        AbortSignal.timeout(JUDGE_TIMEOUT_MS),
-      ).catch((error: unknown) => ({
-        pass: false,
-        reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
-      }));
+        flow.judgeCalibration ?? [],
+      );
     }
     result.status = deterministicPass && (result.judgment?.pass ?? true) ? "passed" : "failed";
   } catch (error) {
@@ -584,6 +579,125 @@ export function wakeIsDue(nextRunAt: Date | null, now: number, horizonMs?: numbe
 const MAX_SCREEN_STEPS = 30;
 const FRAME_INTERVAL_MS = 2_500;
 const JUDGE_TIMEOUT_MS = 180_000;
+
+/** Checks the spend cap before each judge call and again after it: an over-cap verdict doesn't count. */
+export function spendCappedJudge(judge: EvalJudge, withinSpend: () => Promise<void>): EvalJudge {
+  return async (input, signal) => {
+    await withinSpend();
+    const verdict = await judge(input, signal);
+    await withinSpend();
+    return verdict;
+  };
+}
+
+/**
+ * The flow's judgment. The judge must first agree with every reviewed label; a disagreement or
+ * any judge failure is an unqualified result, never a pass.
+ */
+export async function judgeFlow(
+  judge: EvalJudge,
+  input: JudgeInput,
+  labels: NonNullable<Flow["judgeCalibration"]>,
+): Promise<Judgment> {
+  try {
+    for (const [index, label] of labels.entries()) {
+      const verdict = await judge(label.input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
+      if (verdict.pass !== label.pass)
+        throw new Error(`judge disagreed with calibration label ${index + 1}: ${verdict.reason}`);
+    }
+    return await judge(input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
+  } catch (error) {
+    return {
+      pass: false,
+      reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** The open question card in this block, as the person can answer it. */
+export function askPendingCard(
+  message: { id: string; runId?: string | null },
+  block: MessageBlock,
+) {
+  if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return undefined;
+  if (!message.runId) return undefined;
+  return {
+    kind: "ask" as const,
+    runId: message.runId,
+    messageId: message.id,
+    toolApproval: Boolean(block.approvalEffectId),
+    ask: {
+      text: block.text,
+      ...(block.detail ? { detail: block.detail } : {}),
+      ...(block.actions?.length
+        ? { actions: block.actions.map(({ id, label }) => ({ id, label })) }
+        : {}),
+      ...(block.input ? { input: block.input } : {}),
+      ...(block.purpose ? { purpose: String(block.purpose) } : {}),
+    } satisfies PendingAsk,
+  };
+}
+
+/** Whether the person's move was a button press on a card approving one of the bot's tool calls. */
+export function answeredToolApproval(
+  state: { kind: string; toolApproval?: boolean },
+  move: UserMove,
+): boolean {
+  return state.kind === "ask" && state.toolApproval === true && move.kind === "choose";
+}
+
+/** The pending MCP approval card in this block, as the person can answer it. */
+export function mcpPendingCard(threadId: string, block: MessageBlock) {
+  if (block.kind !== "mcp_approval" || block.status !== "pending") return undefined;
+  return {
+    kind: "mcp" as const,
+    threadId,
+    serverId: block.serverId,
+    needsOAuth: block.needsOAuth,
+    ask: mcpApprovalAsk(block),
+  };
+}
+
+/**
+ * The call the web card makes for a button. None for Authorize on an OAuth card, which first
+ * needs a browser popup.
+ */
+export function mcpCardRequest(
+  card: { serverId: string; threadId: string; needsOAuth: boolean },
+  actionId: string,
+  botId: string,
+) {
+  if (actionId === "approve" && card.needsOAuth) return undefined;
+  return {
+    procedure: `mcp/assignments/${actionId}`,
+    body: { botId, serverId: card.serverId, threadId: card.threadId },
+  };
+}
+
+/** An MCP approval card as the web shows it: the server, its address and two buttons. */
+export function mcpApprovalAsk(block: Extract<MessageBlock, { kind: "mcp_approval" }>): PendingAsk {
+  return {
+    text: `Connect MCP server “${block.name}”`,
+    detail: block.endpoint ?? `stdio (${block.transport})`,
+    actions: [
+      { id: "approve", label: block.needsOAuth ? "Authorize" : "Approve" },
+      { id: "dismiss", label: "Not now" },
+    ],
+  };
+}
+
+/** A card as the person reads it in the transcript. */
+export function cardText(ask: PendingAsk) {
+  return [
+    `[card] ${ask.text}`,
+    ask.detail,
+    ask.actions?.length
+      ? `(buttons: ${ask.actions.map((action) => action.label).join(", ")})`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function describeMove(move: UserMove) {
   if (move.kind === "say") return move.text.replace(/\n/g, " ");

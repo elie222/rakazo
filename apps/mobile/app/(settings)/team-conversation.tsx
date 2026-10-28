@@ -18,6 +18,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { glassHeaderOptions } from "../../components/glass-title";
+import { LoadFailure } from "../../components/load-failure";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
@@ -46,6 +47,8 @@ export default function TeamConversationSettings() {
   const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -60,17 +63,28 @@ export default function TeamConversationSettings() {
         setMode(listenMode(conversation.teamChatAmbientEnabled));
         setRules(conversation.teamChatRules);
         setPolicies(conversation.automatedSenderPolicies);
+        setLoadError(null);
       })
       .catch((err) => {
-        if (active) setError(errorText(err));
+        if (active) setLoadError(errorText(err));
       });
     return () => {
       active = false;
     };
-  }, [conversationId]);
+  }, [attempt, conversationId]);
 
   if (!loaded) {
-    return error ? <Text style={styles.error}>{error}</Text> : null;
+    return loadError ? (
+      <View style={styles.content}>
+        <LoadFailure
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            setAttempt((count) => count + 1);
+          }}
+        />
+      </View>
+    ) : null;
   }
   const { conversation, bot } = loaded;
   const senders = roomAutomatedSenders(policies, conversation.automatedSenders);

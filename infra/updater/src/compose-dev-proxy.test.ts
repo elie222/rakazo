@@ -5,6 +5,7 @@ import { parse } from "yaml";
 
 interface ComposeService {
   command?: unknown;
+  depends_on?: unknown;
   environment?: Record<string, unknown>;
   ports?: unknown[];
 }
@@ -57,14 +58,16 @@ describe("source-checkout compose postgres hardening", () => {
         "postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}",
       );
     }
-    // Only the API migrates, and its start command drops the owner URL before serving.
-    expect(compose.services.api?.environment?.DATABASE_MIGRATION_URL).toBe(
+    // Only the migrate container gets the owner login; the API starts once it has finished.
+    expect(compose.services.migrate?.environment?.DATABASE_MIGRATION_URL).toBe(
       "postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}",
     );
-    expect(compose.services.worker?.environment).not.toHaveProperty("DATABASE_MIGRATION_URL");
-    expect(JSON.stringify(compose.services.api?.command)).toContain(
-      "pnpm db:deploy && exec env -u DATABASE_MIGRATION_URL node",
-    );
+    expect(compose.services.migrate?.command).toEqual(["pnpm", "db:deploy"]);
+    for (const name of ["api", "worker"] as const)
+      expect(compose.services[name]?.environment).not.toHaveProperty("DATABASE_MIGRATION_URL");
+    expect(compose.services.api?.depends_on).toMatchObject({
+      migrate: { condition: "service_completed_successfully" },
+    });
   });
 
   it("publishes loopback postgres only via the optional host overlay", () => {

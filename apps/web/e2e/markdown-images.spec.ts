@@ -46,7 +46,6 @@ test("remote markdown images in bot replies load only after the reader asks", as
   expect(requests.map((request) => request.url)).toEqual([remoteImage]);
   expect(requests[0]?.referer).toBeUndefined();
 
-  // With the setting on, remote images load at once.
   requests.length = 0;
   await page.evaluate(() => localStorage.setItem("rakazo.loadRemoteImages", "on"));
   await page.reload();

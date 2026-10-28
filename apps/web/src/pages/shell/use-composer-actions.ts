@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type {
   Bot,
   ComputerStatus,
+  LoginFieldInput,
   Me,
   MessageReaction,
   ThreadMessage,
@@ -12,6 +13,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   attachmentsForThread,
   inferAttachmentMimeType,
+  isImageInputConfirmation,
   newClientId,
   resolveComposerSendPlan,
 } from "@rakazo/core";
@@ -95,7 +97,22 @@ export function useComposerActions({
     return () => setComposerUnsavedWork(false);
   }, [sending, pendingAttachments.length]);
   const sendingRef = useRef(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendFailure, setSendFailure] = useState<{
+    message: string;
+    imageConfirmation: boolean;
+  } | null>(null);
+  // Counts real composer edits so a late rejection cannot confirm a newer draft.
+  const draftEdits = useRef(0);
+  const clearImageConfirmation = useCallback(() => {
+    draftEdits.current += 1;
+    setSendFailure((current) => (current?.imageConfirmation ? null : current));
+  }, []);
+  const imageConfirmation = sendFailure?.imageConfirmation === true;
+  const sendError = sendFailure?.message ?? null;
+  const setSendError = useCallback((message: string | null) => {
+    setSendFailure(message === null ? null : { message, imageConfirmation: false });
+  }, []);
+  const uploadedSendArtifacts = useRef(new Map<string, WeakMap<File, string>>());
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dismissedRunErrorIds, setDismissedRunErrorIds] =
@@ -185,7 +202,7 @@ export function useComposerActions({
   }, [activeId, clearReply, groupId, inGroup]);
 
   const answerMessage = useCallback(
-    async (message: ThreadMessage, text: string, username?: string, dismiss?: boolean) => {
+    async (message: ThreadMessage, text: string, fields?: LoginFieldInput[], dismiss?: boolean) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
@@ -195,7 +212,7 @@ export function useComposerActions({
         runId: message.runId ?? "",
         messageId: message.id,
         answer: text,
-        ...(username ? { username } : {}),
+        ...(fields ? { fields } : {}),
         ...(dismiss ? { dismiss: true as const } : {}),
       });
       // The answer is saved; live events can reconcile a failed refresh.
@@ -279,15 +296,24 @@ export function useComposerActions({
     },
     [pendingAttachments, bootstrapMe, t],
   );
+  useEffect(() => {
+    if (!pendingAttachments.length) uploadedSendArtifacts.current.clear();
+  }, [pendingAttachments]);
   const removeAttachment = useCallback((attachment: PendingAttachment) => {
     revokePendingAttachmentPreviews([attachment]);
     setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
   }, []);
   const sendMessage = useCallback(
-    async (text: string, mentions: ComposerMention[], clientNonce: string) => {
+    async (
+      text: string,
+      mentions: ComposerMention[],
+      clientNonce: string,
+      imageHandling?: "file",
+    ) => {
       const initialBotTarget = activeBotId.current;
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
+      const editsAtSend = draftEdits.current;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
@@ -355,7 +381,15 @@ export function useComposerActions({
           return true;
         }
         const artifactIds: string[] = [];
+        const uploaded =
+          uploadedSendArtifacts.current.get(clientNonce) ?? new WeakMap<File, string>();
+        uploadedSendArtifacts.current.set(clientNonce, uploaded);
         for (const pending of attachments) {
+          const existing = uploaded.get(pending.file);
+          if (existing) {
+            artifactIds.push(existing);
+            continue;
+          }
           const mimeType = inferAttachmentMimeType(pending.file.name, pending.file.type);
           if (!mimeType) {
             throw new Error(t`Unsupported file type: ${pending.file.name}`);
@@ -367,12 +401,14 @@ export function useComposerActions({
               ? { groupId: groupTarget, name: pending.file.name, mimeType, contentBase64 }
               : { botId: botTarget!, name: pending.file.name, mimeType, contentBase64 },
           );
+          uploaded.set(pending.file, artifact.id);
           artifactIds.push(artifact.id);
         }
         if (groupTarget) {
           await rpc.threads.send({
             groupId: groupTarget,
             clientNonce,
+            imageHandling: imageHandling ?? "confirm",
             text: trimmed || undefined,
             mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
@@ -384,6 +420,7 @@ export function useComposerActions({
           const sent = await rpc.threads.send({
             botId: botTarget,
             clientNonce,
+            imageHandling: imageHandling ?? "confirm",
             text: trimmed || undefined,
             mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
             artifactIds: artifactIds.length ? artifactIds : undefined,
@@ -405,6 +442,7 @@ export function useComposerActions({
             );
           }
         }
+        uploadedSendArtifacts.current.delete(clientNonce);
         dropDelayedSetup();
         clearReply();
         revokePendingAttachmentPreviews(attachments);
@@ -423,14 +461,26 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
-        if (reroutedToGroup && groupTarget) {
-          setSendError(errorText(error, t`Failed to send message`));
+        const isConfirmation = isImageInputConfirmation(error);
+        // Offer the file resend only for the unchanged draft this send carried.
+        const confirmation = isConfirmation && draftEdits.current === editsAtSend;
+        const failure = {
+          message: errorText(error, t`Failed to send message`),
+          imageConfirmation: confirmation,
+        };
+        if (
+          reroutedToGroup &&
+          groupTarget &&
+          activeBotId.current === initialBotTarget &&
+          activeGroupId.current === initialGroupTarget
+        ) {
+          setSendFailure(failure);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
-          setSendError(errorText(error, t`Failed to send message`));
+          setSendFailure(failure);
         } else if (botTarget && activeBotId.current === botTarget) {
-          setSendError(errorText(error, t`Failed to send message`));
+          setSendFailure(failure);
         }
-        return accepted;
+        return isConfirmation ? false : accepted;
       } finally {
         sendingRef.current = false;
         setSending(false);
@@ -531,6 +581,8 @@ export function useComposerActions({
     reactToMessage,
     sendError,
     setSendError,
+    imageConfirmation,
+    clearImageConfirmation,
     dismissedRunErrorIds,
     displayedRunError,
     displayedRunErrorId,

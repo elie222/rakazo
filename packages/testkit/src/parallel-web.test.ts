@@ -82,7 +82,7 @@ function executorFixture(
     },
     taughtSkill: { findMany: async () => [] },
     agentSecret: { findMany: async () => [] },
-    botSecret: { findMany: async () => [] },
+    vaultCredential: { findMany: async () => [] },
     agentSkill: { findMany: async () => [] },
     scratchpadItem: { findMany: async () => [] },
     userActionApprovalRule: { findMany: async () => [] },

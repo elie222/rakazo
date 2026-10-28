@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { NavLink } from "@rakazo/contracts";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
@@ -13,8 +14,10 @@ import {
   Download,
   FolderOpen,
   Gauge,
+  Link2,
   LogOut,
   Plug,
+  ScrollText,
   Settings,
   Smartphone,
   SquareKanban,
@@ -34,7 +37,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onIntegrations: () => void;
+  onSkills: () => void;
   onBoard?: () => void;
+  links?: NavLink[];
+  onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
   onUsage: () => void;
@@ -58,7 +64,10 @@ export function SidebarFooter({
   open,
   onOpenChange,
   onIntegrations,
+  onSkills,
   onBoard,
+  links = [],
+  onLink,
   onArtifacts,
   onSettings,
   onUsage,
@@ -145,6 +154,14 @@ export function SidebarFooter({
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onSkills}
+            >
+              <ScrollText className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Skills</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
               onClick={onUsage}
             >
               <Gauge className="text-muted-foreground" strokeWidth={1.75} />
@@ -178,6 +195,17 @@ export function SidebarFooter({
                 <Trans>Board</Trans>
               </Button>
             ) : null}
+            {links.map((link) => (
+              <Button
+                key={link.id}
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={() => onLink?.(link)}
+              >
+                <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                {link.label}
+              </Button>
+            ))}
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
@@ -225,6 +253,20 @@ export function SidebarFooter({
           </span>
           <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
         </Button>
+      ) : null}
+      {/* A waiting update takes this slot; Skills stays in the account menu meanwhile. */}
+      {!mini && !update.available ? (
+        <IconTooltip label={t`Skills`}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t`Skills`}
+            onClick={onSkills}
+            className="size-9 shrink-0 bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          >
+            <ScrollText aria-hidden="true" strokeWidth={1.75} />
+          </Button>
+        </IconTooltip>
       ) : null}
       {update.available ? (
         <IconTooltip label={t`Install update`}>

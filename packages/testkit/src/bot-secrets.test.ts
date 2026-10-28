@@ -219,15 +219,16 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(await db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).toMatchObject({
           status: "waiting_input",
         });
-        expect(await db.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
+        expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
         await answer(seeded.run.id, key);
-        const stored = await db.botSecret.findFirstOrThrow({
-          where: { botId: seeded.bot.id },
+        const stored = await db.vaultCredential.findFirstOrThrow({
+          where: { userId: seeded.me.userId },
         });
+        // Saved in the account vault, which the Space uses until it has its own.
         expect(stored).toMatchObject({
           ...destination,
           userId: seeded.me.userId,
-          spaceId: seeded.me.spaceId,
+          spaceId: null,
         });
         expect(stored.ciphertext).toMatch(/^v2:/);
         expect(stored.ciphertext).not.toContain(key);
@@ -304,12 +305,14 @@ describeIntegration("reusable credential lifecycle", () => {
         expect(await db.run.findUniqueOrThrow({ where: { id: rotateRun } })).toMatchObject({
           status: "waiting_input",
         });
-        expect(await db.botSecret.findUniqueOrThrow({ where: { id: stored.id } })).toMatchObject({
+        expect(
+          await db.vaultCredential.findUniqueOrThrow({ where: { id: stored.id } }),
+        ).toMatchObject({
           ciphertext: stored.ciphertext,
         });
         await answer(rotateRun, `${key}-rotated`);
         expect(
-          await db.botSecret.findUniqueOrThrow({ where: { id: stored.id } }),
+          await db.vaultCredential.findUniqueOrThrow({ where: { id: stored.id } }),
         ).not.toMatchObject({ ciphertext: stored.ciphertext });
         await nextRun([request]);
         expect(new Headers(fetch.mock.calls.at(-1)?.[1]?.headers).get("Authorization")).toBe(
@@ -317,7 +320,7 @@ describeIntegration("reusable credential lifecycle", () => {
         );
         const count = fetch.mock.calls.length;
         await nextRun([{ name: "forget_secret", args: { name: destination.name } }, request]);
-        expect(await db.botSecret.count({ where: { botId: seeded.bot.id } })).toBe(0);
+        expect(await db.vaultCredential.count({ where: { userId: seeded.me.userId } })).toBe(0);
         expect(fetch).toHaveBeenCalledTimes(count);
         const [messages, events, effects, tasks] = await Promise.all([
           db.message.findMany({ where: { threadId: seeded.thread.id } }),

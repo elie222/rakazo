@@ -14,6 +14,7 @@ import {
   isOwnerStartedRun,
   isTerminal,
   MISSING_MODEL_RUN_ERROR,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
   messagingChannelId,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -34,10 +35,11 @@ import {
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
+  spaceHasModelAccess,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
-import { decryptAgentEnvironment, formatAgentEnvironmentInstruction } from "./agent-environment.js";
+import { formatAgentEnvironmentInstruction } from "./agent-environment.js";
 import { createApprovedEffectReplayQueue } from "./approval-effect.js";
 import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { loadBotMessageContext } from "./bot-messages.js";
@@ -97,7 +99,9 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
@@ -153,6 +157,8 @@ import {
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
+import type { UserComputerState } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
 import { completeRun, consumeRunEvents, failRun } from "./run-turn.js";
 import {
@@ -407,9 +413,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           configuredMemory,
           savedSkills,
           agentSkills,
-          agentSecretRows,
           initialBotCommandEnvironment,
           savedLoginPasswordRedactions,
+          purchaseRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -444,15 +450,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             spaceId: run.spaceId,
             userId: run.userId,
           }),
-          deps.prisma.agentSecret.findMany({
-            where: { spaceId: run.spaceId },
-            select: {
-              name: true,
-              secret: { select: { id: true, ciphertext: true } },
-            },
-          }),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
+          deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
         ]);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
@@ -465,17 +465,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               )?.seq ??
               thread.nextMessageSeq)
             : thread.nextMessageSeq;
-        const agentEnvironment = await decryptAgentEnvironment(agentSecretRows, deps.secretStore);
-        runSecrets.push(...Object.values(agentEnvironment));
         // Encoded forms too: read_file redacts with these values before any shell command runs.
         runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
         // A login filled in an earlier run may still be on its page, and anything this run reads
         // or is given may contain it, so every run hides its saved passwords before the model runs.
-        runSecrets.push(...savedLoginPasswordRedactions);
-        const agentEnvironmentInstruction = formatAgentEnvironmentInstruction({
-          ...agentEnvironment,
-          ...initialBotCommandEnvironment,
-        });
+        runSecrets.push(...savedLoginPasswordRedactions, ...purchaseRedactions);
+        const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(
+          initialBotCommandEnvironment,
+        );
         // modelPinned distinguishes the captured choice from an attempt's recorded model.
         const modelChoice = runModelChoice(run, bot);
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
@@ -587,6 +584,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
           run.sourceMessageId,
         );
         const turnBlocks = currentTurnMessage?.blocks;
+        // A run owns its source message and steering bound to it, including waiting-input
+        // replies. message.runId alone is display linkage: a send during background work
+        // points at that run but waits for its continuation. Read independently of history.
+        const currentRunImageMessages = await deps.prisma.message.findMany({
+          where: {
+            threadId: thread.id,
+            OR: [
+              ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              { steeringMessages: { some: { runId, botId: run.botId } } },
+            ],
+            role: "user",
+            blocks: { array_contains: [{ kind: "image" }] },
+          },
+          select: { id: true, blocks: true },
+          orderBy: { seq: "asc" },
+        });
+        // The content extension decrypts imageHandling after filtering on plain kind.
+        const confirmedRunImages = currentRunImageMessages.flatMap((message) =>
+          (message.blocks as MessageBlock[]).filter(
+            (block) => block.kind === "image" && block.imageHandling === "confirm",
+          ),
+        );
+        const currentRunRequiresImageInput = confirmedRunImages.length > 0;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -712,6 +732,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         if (!runModelProvider || !runModelId) {
           await failRunBeforeModel(MISSING_MODEL_RUN_ERROR, true);
+          return;
+        }
+        if (
+          (await modelCreditBillingEnabled(deps)) &&
+          !(await spaceHasModelAccess(deps.prisma, run.spaceId))
+        ) {
+          await failRunBeforeModel(MODEL_ACCESS_REQUIRED_RUN_ERROR, true);
           return;
         }
         // An incompatible saved model is a configuration error. Record it on the run.
@@ -846,9 +873,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           .join("\n\n");
         const graphical =
           computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
-        // Gate on the model this run will actually call — the pair written to the run row
-        // above. Deriving it a second time here dropped the deployment fallback, so a
-        // vision-capable default was gated as "scripted" and lost its screenshot tools.
+        // Gate on the pair written to the run row above; re-deriving it would drop the
+        // deployment fallback and gate a vision-capable default as text-only.
         const modelSeesImages = modelAcceptsImageInput(
           runModelProvider,
           runModelId,
@@ -863,6 +889,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
+          : false;
+        const paymentWallet = deps.paymentWallet;
+        const paymentWalletEnabled = paymentWallet
+          ? await paymentWalletConnected(
+              { prisma: deps.prisma, secretStore: deps.secretStore, paymentWallet },
+              run.userId,
+            )
           : false;
         const messagingContext = hasMessagingIdentity
           ? [messagingDmSurfaceNote(), messagingChannelRun ? messagingChannelPrivacyBlock() : null]
@@ -901,6 +934,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
+        const userComputerOwnerId = userComputerOwner({
+          trigger: run.trigger,
+          sourceRole: sourceMessage?.role,
+          messagingChannelRun,
+          runUserId: run.userId,
+          botUserId: bot.userId,
+        });
+        let userComputer: UserComputerState;
+        if (
+          userComputerOwnerId &&
+          deps.userDevices &&
+          !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
+        ) {
+          if (await deps.userDevices.connected(userComputerOwnerId).catch(() => null))
+            userComputer = "connected";
+          // A chat that used the computer earlier may continue from another device after it closed.
+          else if (await deps.userDevices.hasDevice(userComputerOwnerId).catch(() => false))
+            userComputer = "offline";
+        }
         const builtins = [
           ...selectBuiltinToolsForRun({
             ticketBoardEnabled: deps.ticketBoardEnabled,
@@ -915,11 +967,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+            paymentWalletEnabled,
             messagingChannelRun,
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
+            userComputer: userComputer === "connected",
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&
@@ -1065,7 +1119,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           abortController: runAbortController,
           fleetRun,
           secrets: runSecrets,
-          agentEnvironment,
           source: {
             ownerStartedRun,
             messagingChannelRun,
@@ -1075,6 +1128,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             callEndRun,
             callClientNonce: callClientNonceForRun,
             peerMessage,
+            userComputerOwner: userComputerOwnerId,
           },
           computer: {
             stored: storedComputer,
@@ -1360,11 +1414,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 replyGuidance: runReplyGuidance(run.trigger),
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
+                userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
               history: runtimeHistory,
               currentTurnImages,
+              currentRunRequiresImageInput,
+              currentTurnImageFileFallback: Boolean(
+                currentTurnImages?.length &&
+                  currentTurnFiles.length &&
+                  !turnBlocks?.some(
+                    (block) => block.kind === "image" && block.imageHandling === "confirm",
+                  ),
+              ),
               tools,
               model: {
                 provider: runModelProvider,
@@ -1490,6 +1553,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   seenIds,
                   context,
                   pendingTurnFiles,
+                  {
+                    messageId: currentTurnMessage?.id,
+                    hasImages: Boolean(currentTurnImages?.length),
+                  },
                 ),
             },
             context,

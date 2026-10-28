@@ -13,6 +13,7 @@
         "DATABASE_URL",
         "ENCRYPTION_KEY",
         "GIT_SHA",
+        "PUBLIC_CRISP_WEBSITE_ID",
         "PUBLIC_POSTHOG_HOST",
         "PUBLIC_POSTHOG_KEY"
       ],
@@ -27,7 +28,7 @@
     },
     "dev": {
       "cache": false,
-      "env": ["PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY"],
+      "env": ["PUBLIC_CRISP_WEBSITE_ID", "PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY"],
       "persistent": true,
       "passThroughEnv": ["RAKAZO_HOST", "RAKAZO_DEV_HOST", "RAKAZO_ALLOWED_HOSTS"]
     }

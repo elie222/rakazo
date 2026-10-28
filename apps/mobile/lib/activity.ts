@@ -17,7 +17,7 @@ export function formatActivityRelativeTime(iso: string, now = new Date()): strin
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 45) return t("just now");
+  if (seconds < 60) return t("just now");
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return t("{count}m ago", { count: minutes });
   const hours = Math.floor(minutes / 60);

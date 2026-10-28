@@ -184,7 +184,6 @@ function loadWebhookSecret(
   return entry.plaintext;
 }
 
-/** Load the bot webhook secret target, or null when the bot/secret is missing or invalid. */
 export async function loadWebhookTarget(
   deps: Pick<WebhookDeps, "prisma" | "secrets">,
   cache: WebhookSecretCache,
@@ -251,7 +250,6 @@ export function messagingWakeIdempotencyKey(provider: string, handle: string): s
   return `${provider}:${handle}`;
 }
 
-/** Client nonce for idempotent inbound deliveries (webhook / github / messaging). */
 export function inboundDeliveryClientNonce(
   source: "webhook" | "github" | "messaging",
   botId: string,

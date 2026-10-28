@@ -145,7 +145,6 @@ describe("home archive", () => {
     const dest = path.join(await tempDir(), "home");
     await mkdir(dest);
     await expect(unpackHome(once(bytes), dest)).rejects.toThrow();
-    // Nothing escaped the destination's parent.
     expect(await readdir(path.dirname(dest))).toEqual(["home"]);
   });
 

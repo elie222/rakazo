@@ -41,7 +41,6 @@ export const COMPACTION_BATCH_SIZE = 50;
 export const HISTORY_WINDOW_SIZE = 50;
 export const LEGACY_HISTORY_WINDOW_SIZE = 200;
 export const MAX_COMPACTED_SUMMARY_CHARS = 20_000;
-/** How many semantic memories can be injected into one run. */
 export const MAX_RECALLED_MEMORIES = 5;
 
 export type CompactedHistoryMessage = {

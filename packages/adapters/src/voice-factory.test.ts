@@ -40,7 +40,7 @@ afterEach(() => {
 describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
-    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
     expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
@@ -67,14 +67,14 @@ describe("createVoiceProvider", () => {
   });
 
   it("shows self-hosted speech only when the operator allows custom endpoints", () => {
-    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
     expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(false);
     expect(
       listVoiceCatalog({ allowPrivateEndpoint: true }).some(
         (entry) => entry.id === "openai-compatible",
       ),
     ).toBe(true);
-    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
     expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(true);
   });
 

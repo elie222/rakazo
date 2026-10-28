@@ -53,8 +53,13 @@ export function extraDisplayActionCommand(
   }
   if (action.kind === "scroll") {
     const repeat = clampRounded(action.amount ?? 3, 1, 20);
-    const button = action.direction === "up" ? "4" : "5";
-    return `DISPLAY=${layout.display} xdotool click --repeat ${repeat} ${button}`;
+    const button = { up: "4", down: "5", left: "6", right: "7" }[action.direction];
+    // Given a point, the pointer moves there first, so the wheel scrolls what is under it.
+    const at =
+      action.x !== undefined && action.y !== undefined
+        ? `mousemove ${Math.round(action.x)} ${Math.round(action.y)} `
+        : "";
+    return `DISPLAY=${layout.display} xdotool ${at}click --repeat ${repeat} ${button}`;
   }
   if (action.kind === "key") {
     const keys = [...(action.modifiers ?? []), action.key].join("+");

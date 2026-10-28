@@ -3,9 +3,11 @@ import { access, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkpointAndStopComputer,
   checkpointComputerWorkspace,
   deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
@@ -299,6 +301,58 @@ describe("Team run checkpoints", () => {
       where: { id: "team", providerRef: "remote", state: "suspending" },
       data: { state: "running" },
     });
+  });
+});
+
+describe("checkpointAndStopComputer", () => {
+  const record = { id: "computer-1", homeKey: "home-1", scope: "dedicated", spaceId: "space-1" };
+  const ref: ComputerRef = { id: "boat-1", providerRef: "boat-1", kind: "boat", botId: "home-1" };
+
+  function sandboxFailingWith(error: Error) {
+    return {
+      // biome-ignore lint/correctness/useYield: the export fails before its first file
+      exportWorkspace: async function* () {
+        throw error;
+      },
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("saves a healthy computer, then stops it as before", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const sandbox = { exportWorkspace: async function* () {}, stop };
+    const commit = vi.fn().mockResolvedValue("revision-1");
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const deps = { sandbox, home: { commit }, prisma: { computer: { updateMany } } };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(commit).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1" },
+      data: { homeRevision: "revision-1", homeRevisionAt: expect.any(Date) },
+    });
+    expect(stop.mock.calls).toEqual([[ref, context]]);
+    expect(stop.mock.calls[0]).toHaveLength(2);
+  });
+
+  it("stops a damaged computer without its save", async () => {
+    const sandbox = sandboxFailingWith(new SandboxDamagedError());
+    const deps = { sandbox, home: {}, prisma: {} };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(sandbox.stop).toHaveBeenCalledWith(ref, context, { discardUnsaved: true });
+  });
+
+  it("leaves a computer whose save fails for another reason running", async () => {
+    const sandbox = sandboxFailingWith(new Error("export failed"));
+    const deps = { sandbox, home: {}, prisma: {} };
+
+    await expect(checkpointAndStopComputer(deps as never, record, ref, context)).rejects.toThrow(
+      "export failed",
+    );
+    expect(sandbox.stop).not.toHaveBeenCalled();
   });
 });
 

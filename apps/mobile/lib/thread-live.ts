@@ -1,4 +1,10 @@
-import { abortableDelay, isRetryableError, isRunTerminalEvent, retryDelayMs } from "@rakazo/core";
+import {
+  abortableDelay,
+  createRefreshCoalescer,
+  isRetryableError,
+  isRunTerminalEvent,
+  retryDelayMs,
+} from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 import type { MobileSnapshot } from "./api";
@@ -71,6 +77,16 @@ export function useThreadLiveSubscription({
     const abort = new AbortController();
     const subscriptionGeneration = ++liveSubscriptionGeneration.current;
     const sessionGeneration = currentSessionGeneration();
+    // Guards are checked when the queued read starts, not when it was requested.
+    const snapshotRefresh = createRefreshCoalescer(async () => {
+      if (
+        sessionGeneration === currentSessionGeneration() &&
+        !jumpScrollTarget.current &&
+        !expandedHistoryThread.current
+      ) {
+        await refresh();
+      }
+    });
     liveSubscribed.current = false;
     showSavedThread(abort.signal);
     void (async () => {
@@ -127,9 +143,7 @@ export function useThreadLiveSubscription({
               }
               if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
                 // Reconcile run ownership for ask cards first seen through live events.
-                if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-                  void refresh().catch(() => undefined);
-                }
+                void snapshotRefresh.invalidate().catch(() => undefined);
               }
             },
             abort.signal,
@@ -162,6 +176,7 @@ export function useThreadLiveSubscription({
       }
     })();
     return () => {
+      snapshotRefresh.dispose();
       abort.abort();
     };
   }, [botId, groupId, foreground, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);

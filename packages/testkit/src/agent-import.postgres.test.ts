@@ -725,7 +725,6 @@ describeIntegration("agent import", () => {
     });
     expect(await rpc(app, cookie, "bots/importInfo", { botId: firstBot.id })).toBeNull();
 
-    // The user edits one imported skill and one imported space memory document.
     const garden = await db.agentSkill.findFirstOrThrow({ where: { ...owner, name: "garden" } });
     await rpc(app, cookie, "agentSkills/update", {
       skillId: garden.id,
@@ -2070,7 +2069,6 @@ describeIntegration("agent import", () => {
       where: { id: shared.id },
       select: { organizationId: true },
     });
-    // The second member, added as the authorization tests add one.
     const member = await signup(app, `import-shared-member-${stamp}@rakazo.test`, "Member");
     const memberActor = await rpc<{ userId: string }>(app, member, "me");
     await db.member.deleteMany({ where: { userId: memberActor.userId } });
