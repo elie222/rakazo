@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "gallery": "pnpm --filter @rakazo/web dev --open /e2e/fixtures/gallery.html",
     "build": "turbo build",
     "check": "turbo check",
     "lint": "biome check .",
@@ -63,6 +64,7 @@
       "react-dom": "19.2.3",
       "proxy-addr@<2.0.8": "2.0.8",
       "dompurify@<3.4.17": "3.4.17",
+      "ws@>=8 <8.21.1": "8.22.0",
       "e2b>undici8": "npm:undici@8.10.2"
     },
     "patchedDependencies": {

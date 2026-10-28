@@ -21,7 +21,7 @@ function fixture() {
   } | null = null;
   let installation: Record<string, unknown> | null = null;
   const prisma = {
-    bot: { findFirst: vi.fn(async () => ({ id: "bot-a" })) },
+    bot: { findFirst: vi.fn(async () => ({ id: "bot-a", spaceId: "space-a" })) },
     spaceMember: { findFirst: vi.fn(async () => ({ id: "member-a" })) },
     messagingInstallSession: {
       create: vi.fn(async ({ data }) => {
@@ -48,7 +48,7 @@ function fixture() {
         return { count: 1 };
       }),
       findFirst: vi.fn(async ({ where }) =>
-        installation?.spaceId === where.spaceId && installation?.userId === where.userId
+        installation?.id === where.id && installation?.userId === where.userId
           ? installation
           : null,
       ),
@@ -156,7 +156,24 @@ it("requires an owned, active bot before creating an install URL", async () => {
   await expect(f.manager.start(actor, "bot-b")).rejects.toThrow("Bot not found");
   expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
-it("disconnects only an installation owned by the current space and user", async () => {
+it("connects the first bot in the user's default space when no bot is chosen", async () => {
+  const f = fixture();
+  f.prisma.spaceMember.findFirst.mockResolvedValueOnce({
+    userId: "user-a",
+    spaceId: "space-home",
+    member: { user: { email: "fake@example.test" } },
+  } as never);
+  f.prisma.bot.findFirst.mockResolvedValueOnce({ id: "bot-home", spaceId: "space-home" } as never);
+  await f.manager.start({ ...actor, spaceId: "space-work" });
+  expect(f.prisma.bot.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { spaceId: "space-home", userId: "user-a", archivedAt: null },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+  );
+  expect(f.getSession()).toMatchObject({ botId: "bot-home", spaceId: "space-home" });
+});
+it("disconnects only the user's own installation, from any of their spaces", async () => {
   const f = fixture();
   f.setInstallation({
     id: "installation-a",
@@ -165,9 +182,9 @@ it("disconnects only an installation owned by the current space and user", async
     userId: "user-a",
     ciphertext: "sealed-token",
   });
-  await f.manager.remove({ ...actor, spaceId: "space-b" }, "installation-a");
+  await f.manager.remove({ ...actor, userId: "user-b" }, "installation-a");
   expect(f.prisma.messagingInstallation.deleteMany).not.toHaveBeenCalled();
-  await f.manager.remove(actor, "installation-a");
+  await f.manager.remove({ ...actor, spaceId: "space-b" }, "installation-a");
   expect(f.prisma.messagingIdentity.deleteMany).toHaveBeenCalledWith({
     where: {
       spaceId: "space-a",

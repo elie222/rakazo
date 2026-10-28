@@ -1,6 +1,6 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
 import { runJobKey } from "@rakazo/adapter-kit";
-import type { Actor, Group } from "@rakazo/contracts";
+import type { Actor, Group, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSectionName,
@@ -10,6 +10,7 @@ import {
   FLEET_WRITE_TOOL_NAMES,
   GROUP_MEMBER_MAX,
   GROUP_MEMBER_MIN,
+  isAttachmentImageMimeType,
   ThinkingLevelSchema,
   TimeZoneSchema,
   UpdateGroupInput,
@@ -32,8 +33,9 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
-import { resolveUpdateBotAvatar } from "./bot-avatar.js";
+import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "./child-bots.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
@@ -66,7 +68,6 @@ export type FleetRun = {
   spaceId: string;
   userId: string;
   botId: string;
-  /** The group whose thread the run is in, if any. */
   groupId: string | null;
   /** The thread the run is in; fleet events for the caller land here. */
   threadId: string;
@@ -1276,4 +1277,96 @@ function formatTime(date: Date, timezone: string): string {
     timeStyle: "short",
   }).format(date);
   return `${local} ${timezone}`;
+}
+
+/** update_bot on the calling bot's own profile. */
+export async function updateOwnBotFromTool(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; userId: string; sourceMessageId: string | null },
+  threadId: string,
+  bot: { id: string; name: string },
+  args: Record<string, unknown>,
+  context: AdapterContext,
+) {
+  const parsed = parseUpdateBotPatch(args, bot.name);
+  if ("error" in parsed) return parsed;
+  const patch = parsed.patch;
+  const wantsImage = args.artifact_id !== undefined || args.use_attached_image === true;
+  let sourceImageArtifactIds: string[] = [];
+  if (wantsImage && run.sourceMessageId) {
+    const source = await deps.prisma.message.findUnique({
+      where: { id: run.sourceMessageId },
+      select: { blocks: true, threadId: true },
+    });
+    if (source?.threadId === threadId) {
+      sourceImageArtifactIds = attachedImageArtifactIds(source.blocks as MessageBlock[]);
+    }
+  }
+  const avatar = await resolveUpdateBotAvatar({
+    color: args.color,
+    artifactId: args.artifact_id,
+    useAttachedImage: args.use_attached_image,
+    sourceImageArtifactIds,
+    loadArtifact: async (id) => {
+      if (!deps.artifacts) return null;
+      const row = await deps.prisma.artifact.findFirst({
+        where: { id, spaceId: run.spaceId, userId: run.userId },
+        select: { mimeType: true, storageKey: true },
+      });
+      if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;
+      try {
+        return await deps.artifacts.get(row.storageKey, context);
+      } catch {
+        return null;
+      }
+    },
+  });
+  if ("error" in avatar && avatar.error !== "missing") {
+    return { error: avatar.error };
+  }
+  if ("color" in avatar) patch.color = avatar.color;
+  if (Object.keys(patch).length === 0) {
+    return {
+      error:
+        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
+    };
+  }
+  const updated = await deps.prisma.bot.update({
+    where: { id: bot.id },
+    data: patch,
+    select: {
+      id: true,
+      name: true,
+      title: true,
+      description: true,
+      color: true,
+      notifyOnFinish: true,
+    },
+  });
+  try {
+    await deps.events.append({
+      spaceId: run.spaceId,
+      threadId: threadId,
+      botId: bot.id,
+      runId: run.id,
+      type: "bot.updated",
+      payload: {
+        botId: updated.id,
+        name: updated.name,
+        title: updated.title,
+        description: updated.description,
+      },
+    });
+  } catch (error) {
+    getLogger().error("bot.updated notification", error);
+  }
+  return {
+    ok: true,
+    botId: updated.id,
+    name: updated.name,
+    title: updated.title,
+    description: updated.description,
+    avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
+    notifyOnFinish: updated.notifyOnFinish,
+  };
 }

@@ -3,6 +3,7 @@ import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@r
 import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PiOAuthBegin } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
@@ -13,7 +14,6 @@ import {
   OAUTH_ACCOUNT_CHANGED_ERROR,
   oauthCredentialAccountId,
   oauthCredentialEmail,
-  type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
   RetiredModelCredentialError,
@@ -534,11 +534,7 @@ describe("resolveModelAuth account-change guard", () => {
     toAuth: async (current: OAuthCredential) => ({ apiKey: current.access }),
   });
 
-  // Wire the retire hook the way the executor does around
-  // retireModelCredential: the failed credential state becomes a
-  // matchesFailedOAuthSecret predicate over the secret row's current
-  // ciphertext, and the delete only runs while the row still matches. Without
-  // the failed state there is no fence and the delete proceeds.
+  // Wired the way the executor does around retireModelCredential.
   const fencingRetire =
     (row: () => string, deleteCredential: () => void) =>
     async (
@@ -2237,6 +2233,19 @@ describe("PiOAuthLogins hand-off between API processes", () => {
     ).rejects.toThrow(/not found/);
     expect(rows.has(started.loginId)).toBe(true);
     expect(other.seen).toEqual([]);
+  });
+
+  it("queries the hand-off by owner columns when the caller passes its whole actor", async () => {
+    const { store } = handoffStore();
+    const started = await apiProcess(store).logins.begin({ ...member, provider: "anthropic" });
+    const actor = { ...member, email: "member@example.test", isDeploymentOwner: false };
+    await expect(
+      apiProcess(store).logins.submit(started.loginId, actor, "the-code"),
+    ).resolves.toEqual({ ok: true });
+    expect(store?.prisma.modelOAuthSession.findFirst).toHaveBeenCalledWith({
+      where: { id: started.loginId, ...member, createdAt: { gte: expect.any(Date) } },
+      select: { ciphertext: true },
+    });
   });
 
   it("does not resume an expired sign-in", async () => {

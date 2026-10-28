@@ -8,6 +8,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import {
@@ -146,8 +147,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
   private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const installs = await this.prisma.capabilityInstall.findMany({
       where: {
-        spaceId: context.spaceId,
-        userId: context.userId,
+        ...availableInSpace(context),
         kind: { in: ["mcp", "api", "graphql"] },
       },
       orderBy: { createdAt: "asc" },
@@ -258,8 +258,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
     const install = await this.prisma.capabilityInstall.findFirst({
       where: {
         id: installId,
-        spaceId: context.spaceId,
-        userId: context.userId,
+        ...availableInSpace(context),
         kind: { in: ["mcp", "api", "graphql"] },
       },
     });
@@ -342,11 +341,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
   ): Promise<string | undefined> {
     if (!install.secretId) return undefined;
     const row = await this.prisma.secret.findFirst({
-      where: {
-        id: install.secretId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-      },
+      where: { id: install.secretId, ...itemSecretIn(context) },
     });
     return row ? await this.secrets.load(row.ciphertext, row.id) : undefined;
   }
@@ -888,7 +883,13 @@ async function executeApiOperation(
     consumed.add(key);
     if (value != null) headers[key] = String(value);
   }
-  if (operation.method === "GET" || operation.method === "DELETE") {
+  const declaredJsonBody =
+    !consumed.has("body") &&
+    !operation.queryParameters.includes("body") &&
+    Object.hasOwn(asRecord(operation.inputSchema.properties) ?? {}, "body");
+  const declaredDeleteBody =
+    operation.method === "DELETE" && args.body !== undefined && declaredJsonBody;
+  if (operation.method === "GET" || (operation.method === "DELETE" && !declaredDeleteBody)) {
     for (const [key, value] of Object.entries(args)) {
       if (consumed.has(key) || value == null) continue;
       if (Array.isArray(value)) {
@@ -909,7 +910,10 @@ async function executeApiOperation(
       }
     }
     const payload =
-      args.body ?? Object.fromEntries(Object.entries(args).filter(([key]) => !consumed.has(key)));
+      declaredJsonBody && args.body === null
+        ? null
+        : (args.body ??
+          Object.fromEntries(Object.entries(args).filter(([key]) => !consumed.has(key))));
     body = JSON.stringify(payload);
     headers["content-type"] = "application/json";
   }

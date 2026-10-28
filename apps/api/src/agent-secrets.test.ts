@@ -1,5 +1,7 @@
 import { ORPCError } from "@orpc/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EncryptedSecretStore } from "@rakazo/adapters";
+import type { PrismaClient } from "@rakazo/db";
+import { describe, expect, it, vi } from "vitest";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
 
 const actor = {
@@ -9,92 +11,132 @@ const actor = {
   isDeploymentOwner: true,
 };
 
-describe("agent secrets", () => {
-  const put = vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" }));
-  const prisma = {
-    spaceMember: {
-      findUnique: vi.fn(async () => ({ role: "owner" })),
-    },
-    agentSecret: {
-      findMany: vi.fn(async () => [
-        {
-          id: "as-1",
-          name: "ACME_TOKEN",
-          createdAt: new Date("2026-01-01T00:00:00.000Z"),
-          updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+type Row = Record<string, unknown>;
+const matches = (row: Row, where: Row = {}) =>
+  Object.entries(where).every(([key, value]) => row[key] === value);
+
+// An in-memory vault, so the routes run against the real vault storage and validation.
+function fixture(role = "owner") {
+  const rows: Row[] = [];
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  const pick = (row: Row, select?: Record<string, boolean>) =>
+    select ? Object.fromEntries(Object.keys(select).map((key) => [key, row[key]])) : { ...row };
+  const prisma: Record<string, unknown> = {
+    spaceMember: { findUnique: vi.fn(async () => ({ role })) },
+    spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    vaultCredential: {
+      findMany: vi.fn(async ({ where, select }: { where: Row; select?: Record<string, boolean> }) =>
+        rows.filter((row) => matches(row, where)).map((row) => pick(row, select)),
+      ),
+      findFirst: vi.fn(
+        async ({ where, select }: { where: Row; select?: Record<string, boolean> }) => {
+          const row = rows.find((entry) => matches(entry, where));
+          return row ? pick(row, select) : null;
         },
-      ]),
-      findUnique: vi.fn(async () => null),
-      findFirst: vi.fn(async () => ({ id: "as-1", secretId: "secret-1" })),
-      upsert: vi.fn(async () => ({
-        id: "as-1",
-        name: "ACME_TOKEN",
-        createdAt: new Date("2026-01-01T00:00:00.000Z"),
-        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
-      })),
-      delete: vi.fn(async () => undefined),
+      ),
+      count: vi.fn(
+        async ({ where }: { where: Row }) => rows.filter((row) => matches(row, where)).length,
+      ),
+      create: vi.fn(async ({ data }: { data: Row }) => {
+        rows.push({ ...data, createdAt: now, updatedAt: now });
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Row }) => {
+        Object.assign(rows.find((row) => row.id === where.id) ?? {}, data);
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: Row }) => {
+        const before = rows.length;
+        rows.splice(0, rows.length, ...rows.filter((row) => !matches(row, where)));
+        return { count: before - rows.length };
+      }),
     },
-    secret: {
-      create: vi.fn(async () => undefined),
-      deleteMany: vi.fn(async () => ({ count: 1 })),
-    },
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+    secret: { count: vi.fn(async () => 0) },
+    botSecret: { count: vi.fn(async () => 0) },
+    integrationProviderConfig: { count: vi.fn(async () => 0) },
+    $queryRaw: vi.fn(async () => [{ locked: 1 }]),
   };
+  prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma);
+  const deps = {
+    prisma: prisma as unknown as PrismaClient,
+    secrets: new EncryptedSecretStore("test-only-encryption-key"),
+  };
+  return { deps, rows };
+}
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    prisma.spaceMember.findUnique.mockResolvedValue({ role: "owner" });
-  });
-
-  it("lists secrets for space owners", async () => {
+describe("agent secrets on the vault", () => {
+  it("saves a variable as a vault command variable that keeps its environment name", async () => {
+    const { deps, rows } = fixture();
     await expect(
-      listAgentSecrets({ prisma: prisma as never, secrets: { put } }, actor),
-    ).resolves.toEqual([
-      {
-        id: "as-1",
-        name: "ACME_TOKEN",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-02T00:00:00.000Z",
-      },
+      putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake-acme" }),
+    ).resolves.toEqual(expect.objectContaining({ id: "acme_token", name: "ACME_TOKEN" }));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        userId: "user-1",
+        spaceId: null,
+        name: "acme_token",
+        auth: { type: "command" },
+      }),
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("fake-acme");
+    expect(await listAgentSecrets(deps, actor)).toEqual([
+      expect.objectContaining({ id: "acme_token", name: "ACME_TOKEN" }),
     ]);
   });
 
+  it("lists only command variables and removes by id", async () => {
+    const { deps, rows } = fixture();
+    await putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake-acme" });
+    rows.push({
+      id: "login",
+      userId: "user-1",
+      spaceId: null,
+      name: "site",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect((await listAgentSecrets(deps, actor)).map((row) => row.name)).toEqual(["ACME_TOKEN"]);
+    await expect(deleteAgentSecret(deps, actor, "site")).rejects.toBeInstanceOf(ORPCError);
+    await expect(deleteAgentSecret(deps, actor, "acme_token")).resolves.toEqual({ ok: true });
+    expect(rows.map((row) => row.name)).toEqual(["site"]);
+  });
+
   it("rejects non-owners", async () => {
-    prisma.spaceMember.findUnique.mockResolvedValue({ role: "member" });
+    const { deps } = fixture("member");
+    await expect(listAgentSecrets(deps, actor)).rejects.toBeInstanceOf(ORPCError);
     await expect(
-      listAgentSecrets({ prisma: prisma as never, secrets: { put } }, actor),
+      putAgentSecret(deps, actor, { name: "ACME_TOKEN", value: "fake" }),
     ).rejects.toBeInstanceOf(ORPCError);
   });
 
-  it("writes a fresh key after a serialization conflict", async () => {
-    prisma.secret.create.mockRejectedValueOnce({ code: "P2034" });
-    put.mockResolvedValueOnce({ id: "losing", ciphertext: "deleted-ref" });
-    put.mockResolvedValueOnce({ id: "winning", ciphertext: "live-ref" });
-    await putAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, {
-      name: "ACME_TOKEN",
-      value: "fake",
+  it("updates a variable through the vault name that exports it", async () => {
+    const { deps, rows } = fixture();
+    rows.push({
+      id: "netbird",
+      userId: "user-1",
+      spaceId: null,
+      name: "netbird-setup-key",
+      origin: "",
+      auth: { type: "command" },
+      ciphertext: "unused",
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
-    expect(put).toHaveBeenCalledTimes(2);
-    expect(prisma.secret.create).toHaveBeenLastCalledWith({
-      data: expect.objectContaining({
-        id: "winning",
-        ciphertext: "live-ref",
-      }),
-    });
+    await expect(
+      putAgentSecret(deps, actor, { name: "NETBIRD_SETUP_KEY", value: "fake-rotated" }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: "netbird-setup-key", name: "NETBIRD_SETUP_KEY" }),
+    );
+    expect(rows.map((row) => row.name)).toEqual(["netbird-setup-key"]);
+    expect(rows[0]!.ciphertext).not.toBe("unused");
   });
 
-  it("puts and removes secrets", async () => {
-    await putAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, {
-      name: "ACME_TOKEN",
-      value: "super-secret",
-    });
-    expect(put).toHaveBeenCalled();
-    expect(prisma.secret.create).toHaveBeenCalled();
-    expect(prisma.agentSecret.upsert).toHaveBeenCalled();
-
+  it("refuses a variable that starts with an underscore", async () => {
+    const { deps, rows } = fixture();
     await expect(
-      deleteAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, "as-1"),
-    ).resolves.toEqual({ ok: true });
-    expect(prisma.agentSecret.delete).toHaveBeenCalledWith({ where: { id: "as-1" } });
+      putAgentSecret(deps, actor, { name: "_API_TOKEN", value: "fake" }),
+    ).rejects.toThrow("Variable names must start with a letter");
+    expect(rows).toEqual([]);
   });
 });

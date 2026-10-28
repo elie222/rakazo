@@ -795,7 +795,6 @@ describe("production backup deployment and archive behavior", () => {
       const result = f.run("infra/compose/backup-prod.sh", [], failure);
       expect(result.status).not.toBe(0);
       expect(result.stdout).not.toContain("Verified Rakazo backup");
-      // The partial snapshot is removed.
       expect(snapshotNames(f.snapshots)).toEqual([]);
     },
   );

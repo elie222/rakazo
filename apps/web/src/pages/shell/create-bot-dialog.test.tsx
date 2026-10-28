@@ -76,9 +76,35 @@ describe("CreateBotDialog", () => {
     expect(button("Create").disabled).toBe(false);
   });
 
+  it("defaults new bots to the Rakazo set without an organic family override", async () => {
+    const onCreate = vi.fn(async (_input: CreateBotDialogInput) => undefined);
+    await render(onCreate);
+    expect(document.querySelector(".rakazo-logo-avatar")).not.toBeNull();
+    expect(button("Rakazo").getAttribute("aria-selected")).toBe("true");
+    await typeName("Scout");
+    await click(button("Create"));
+    expect(onCreate.mock.lastCall?.[0]).toMatchObject({ name: "Scout", avatarSet: "rakazo" });
+    expect(onCreate.mock.lastCall?.[0]).not.toHaveProperty("avatarFamily");
+    expect(onCreate.mock.lastCall?.[0]?.color).toMatch(/^#[0-9A-F]{6}$/i);
+  });
+
+  it("preserves an explicitly chosen Rakazo colour through a failed create and retry", async () => {
+    const onCreate = vi
+      .fn(async (_input: CreateBotDialogInput) => undefined)
+      .mockRejectedValueOnce(new Error("Try again"));
+    await render(onCreate);
+    await click(button("Color #10B981"));
+    await typeName("Scout");
+    await click(button("Create"));
+    expect(onCreate.mock.lastCall?.[0]).toMatchObject({ avatarSet: "rakazo", color: "#10B981" });
+    await click(button("Create"));
+    expect(onCreate.mock.lastCall?.[0]).toMatchObject({ avatarSet: "rakazo", color: "#10B981" });
+  });
+
   it("sends the organic family the preview draws", async () => {
     const onCreate = vi.fn(async (_input: CreateBotDialogInput) => undefined);
     await render(onCreate);
+    await click(button("Original"));
     await click(button("Shape 2"));
     await click(button("Color #10B981"));
     const preview = document.querySelector(".rakazo-organic-avatar");
@@ -89,6 +115,7 @@ describe("CreateBotDialog", () => {
       name: "Scout",
       color: "#10B981",
       avatarFamily: family,
+      avatarSet: "organic",
     });
     expect(family).toBe(ORGANIC_AVATAR_LOOKS[1]);
   });
@@ -96,11 +123,16 @@ describe("CreateBotDialog", () => {
   it("sends a studio shape without an organic family", async () => {
     const onCreate = vi.fn(async (_input: CreateBotDialogInput) => undefined);
     await render(onCreate);
+    await click(button("Original"));
     await click(button("Color #F97316"));
     await click(button("wedge"));
     await typeName("Scout");
     await click(button("Create"));
-    expect(onCreate).toHaveBeenCalledWith({ name: "Scout", color: "#F97316::shape_1" });
+    expect(onCreate).toHaveBeenCalledWith({
+      name: "Scout",
+      color: "#F97316::shape_1",
+      avatarSet: "organic",
+    });
   });
 
   it("shows the error and stays open when creating fails", async () => {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./domain.js";
-import { RunTriggerSchema } from "./runs.js";
+import { RUN_ERROR_KINDS, RunTriggerSchema } from "./runs.js";
 
 // No free-form properties: this is also the final allowlist at the external boundary.
 export const AnalyticsScreen = z.enum([
@@ -25,6 +25,17 @@ export const AnalyticsScreenInput = z
   })
   .strict();
 export const AnalyticsTrigger = RunTriggerSchema;
+/** A coarse failure class; "other" covers everything without a known kind. Never the error text. */
+export const AnalyticsErrorKind = z.enum([...RUN_ERROR_KINDS, "other"]);
+export const AnalyticsModelConnectMethod = z.enum(["api_key", "oauth", "credits", "compatible"]);
+const modelConnect = {
+  method: AnalyticsModelConnectMethod,
+  // A model catalog provider id, checked against the fixed catalog by the caller.
+  provider: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
+    .optional(),
+};
 export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
@@ -32,7 +43,22 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("message_sent"), trigger: AnalyticsTrigger }).strict(),
   z.object({ name: z.literal("run_started"), trigger: AnalyticsTrigger }).strict(),
   z.object({ name: z.literal("run_completed"), trigger: AnalyticsTrigger }).strict(),
-  z.object({ name: z.literal("run_failed"), trigger: AnalyticsTrigger }).strict(),
+  z
+    .object({
+      name: z.literal("run_failed"),
+      trigger: AnalyticsTrigger,
+      errorKind: AnalyticsErrorKind,
+    })
+    .strict(),
+  z.object({ name: z.literal("model_connect_started"), ...modelConnect }).strict(),
+  z.object({ name: z.literal("model_connected"), ...modelConnect }).strict(),
+  z
+    .object({
+      name: z.literal("model_connect_failed"),
+      ...modelConnect,
+      errorKind: AnalyticsErrorKind,
+    })
+    .strict(),
   // Only the fixed choices; free-text answers stay in the database.
   z
     .object({
@@ -46,3 +72,5 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
 export type AnalyticsEvent = z.infer<typeof AnalyticsEvent>;
 
 export type AnalyticsScreen = z.infer<typeof AnalyticsScreen>;
+export type AnalyticsErrorKind = z.infer<typeof AnalyticsErrorKind>;
+export type AnalyticsModelConnectMethod = z.infer<typeof AnalyticsModelConnectMethod>;

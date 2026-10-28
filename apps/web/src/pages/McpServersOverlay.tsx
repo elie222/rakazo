@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Badge,
   Button,
@@ -31,9 +32,14 @@ import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AvailabilityControl,
+  reachesOtherSpaces,
+  useOwnSpaces,
+} from "../components/integrations/space-availability";
 import { McpServerHealthLine } from "../components/McpServerHealthLine";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -126,6 +132,7 @@ export function McpServersOverlay({
   const assignmentsOptions = queries.mcp.assignments.all.queryOptions();
   const assignmentsQuery = useQuery(assignmentsOptions);
   const servers = serversQuery.data ?? [];
+  const spaceCount = useOwnSpaces().length;
   const bots = useMemo(
     () => (botsQuery.data ?? []).filter((bot) => !bot.archivedAt),
     [botsQuery.data],
@@ -880,6 +887,16 @@ export function McpServersOverlay({
                             );
                           })}
                         </div>
+                        {server.installId ? null : (
+                          <div className="mt-3">
+                            <AvailabilityControl
+                              kind="mcpServer"
+                              id={server.id}
+                              availability={server.availability}
+                              onChanged={() => serversQuery.refetch()}
+                            />
+                          </div>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {server.transport !== "stdio" || server.oauthClientId ? (
                             <>
@@ -938,7 +955,11 @@ export function McpServersOverlay({
                             onClick={() => void deleteServer(server)}
                           >
                             {confirmingDelete === server.id ? (
-                              <Trans>Confirm delete</Trans>
+                              reachesOtherSpaces(server.availability, spaceCount) ? (
+                                <Trans>Remove from every space?</Trans>
+                              ) : (
+                                <Trans>Confirm delete</Trans>
+                              )
                             ) : (
                               <Trans>Delete</Trans>
                             )}

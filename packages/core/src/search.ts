@@ -1,14 +1,17 @@
 import type { SearchHit } from "@rakazo/contracts";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'\]]+/gi;
+const URL_PATTERN = /https?:\/\/[^\s<>"'\]][^\s<>"']*/gi;
 
 const URL_START = /https?:\/\/[^\s<>"'\]]/gi;
 
 function linkEnd(text: string, start: number, limit: number): number {
-  let depth = 0;
+  let parentheses = 0;
+  let brackets = 0;
   for (let i = start; i < limit; i++) {
-    if (text[i] === "(") depth += 1;
-    else if (text[i] === ")" && --depth < 0) return i;
+    if (text[i] === "(") parentheses += 1;
+    else if (text[i] === ")" && --parentheses < 0) return i;
+    else if (text[i] === "[") brackets += 1;
+    else if (text[i] === "]" && --brackets < 0) return i;
   }
   return limit;
 }
@@ -62,7 +65,20 @@ export function snippetAroundMatch(text: string, query: string, maxLen = 120): s
   const lower = text.toLowerCase();
   const index = lower.indexOf(q);
   if (index < 0) return text.slice(0, maxLen);
-  const start = Math.max(0, index - 40);
+  let originalIndex = index;
+  if (lower.length !== text.length) {
+    // Lowercasing can expand a character (İ → i + combining dot).
+    // Map the match back to the original UTF-16 offset before slicing.
+    let lowerOffset = 0;
+    originalIndex = 0;
+    for (const character of text) {
+      const lowerLength = character.toLowerCase().length;
+      if (lowerOffset + lowerLength > index) break;
+      lowerOffset += lowerLength;
+      originalIndex += character.length;
+    }
+  }
+  const start = Math.max(0, originalIndex - 40);
   const end = Math.min(text.length, start + maxLen);
   const prefix = start > 0 ? "…" : "";
   const suffix = end < text.length ? "…" : "";

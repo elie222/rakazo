@@ -276,17 +276,14 @@ async function assertSpaceDeletable(
   return memberships;
 }
 
-/** Claim a Space before tearing down its content.
- *
- * Bot and group creation take the same advisory lock and reject a claimed
- * Space, so once claimed the Space only loses content. A stale claim may be
- * retried after five minutes if a process exits; the retry resumes teardown
- * where the previous worker stopped. Takeover is safe because bot and provider
- * destroy are idempotent (missing remotes succeed), every worker verifies its
- * claim token before and after each destroy, provider-handle clearing is
- * conditioned on the claim token, and no worker releases its claim after
- * destructive teardown starts — so content can never be unblocked while an
- * old destroy may still be in flight. */
+/**
+ * Claim a Space before tearing down its content. Bot and group creation take the same
+ * advisory lock and reject a claimed Space, so once claimed it only loses content. A stale
+ * claim may be taken over after five minutes; that is safe because destroys are idempotent,
+ * every worker verifies its claim token before and after each destroy, provider-handle
+ * clearing is conditioned on the claim token, and no worker releases its claim once
+ * destructive teardown starts.
+ */
 export async function claimSpaceDeletionForMember(
   prisma: PrismaClient,
   input: SpaceMemberTargetInput,
@@ -355,7 +352,6 @@ export async function listClaimedSpaceComputers(
   );
 }
 
-/** Renew an active claim while teardown is in flight. */
 export async function renewSpaceDeletionClaim(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
@@ -386,17 +382,13 @@ export async function releaseSpaceDeletionClaim(
   });
 }
 
-/** Delete a claimed, non-default Space and everything left in it.
- *
- * Callers must first destroy every bot (`destroyBot` owns sandboxes, files,
- * sessions and artifacts per bot) and every leftover sandbox, clearing its
- * providerRef, so a failed external destroy never loses the only persisted
- * handle. Rows that remain (groups, threads, memories, routines, connections,
- * preferences, memberships, ...) go with the Space by cascade. Returns the
- * stored artifacts and computer homes the caller removes after commit, and
- * the space the client should switch to when the active space was deleted
- * (the current space when deleting another; otherwise the default, else the
- * oldest remaining). */
+/**
+ * Delete a claimed, non-default Space and everything left in it. Callers must first
+ * destroy every bot and leftover sandbox, clearing its providerRef, so a failed external
+ * destroy never loses the only persisted handle; remaining rows go by cascade. Returns the
+ * stored artifacts and computer homes to remove after commit, and the space the client
+ * should switch to when the active space was deleted.
+ */
 export async function deleteClaimedSpaceForMember(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
@@ -558,7 +550,6 @@ export async function deleteSpaceLeavingWithAccount(
   );
 }
 
-/** Rename a space the caller owns in the active organization. */
 export async function renameSpaceForMember(
   prisma: PrismaClient,
   input: SpaceMemberTargetInput & { name: string },

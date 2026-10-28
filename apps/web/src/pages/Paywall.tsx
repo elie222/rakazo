@@ -10,9 +10,16 @@ import { clearSpaceSelection, rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AuthFrame, submitClass } from "./Auth";
 
-export function PaywallPage({ status }: { status: BillingStatus }) {
+export function PaywallPage({
+  status,
+  dismissible = false,
+}: {
+  status: BillingStatus;
+  /** Opened from the app rather than required, so it closes instead of logging out. */
+  dismissible?: boolean;
+}) {
   return status.funding !== undefined ? (
-    <CreditChoice status={status} />
+    <CreditChoice status={status} dismissible={dismissible} />
   ) : (
     <LegacyPaywallPage status={status} />
   );

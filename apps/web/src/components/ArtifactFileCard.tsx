@@ -1,8 +1,9 @@
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { t as translate } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { fileSizeParts } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { Code2, Download, FileText, Play, X } from "lucide-react";
 import type { RefObject } from "react";
@@ -72,7 +73,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           <div className="font-medium">{props.name}</div>
           <div className="mt-1 flex gap-2 text-muted-foreground">
             <span>{props.mimeType}</span>
-            <span>{formatBytes(props.size)}</span>
+            <span>{formatSize(props.size)}</span>
           </div>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}
@@ -101,7 +102,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
               <span className="mt-0.5 block text-[13px] text-muted-foreground">
-                {formatBytes(props.size)}
+                {formatSize(props.size)}
               </span>
             </span>
           </button>
@@ -365,14 +366,20 @@ function DownloadError({ message }: { message: string }) {
   );
 }
 
-function formatBytes(size: number) {
-  const locale = i18n.locale || "en";
-  if (size < 1024) return t`${size} B`;
-  const format = (value: number) =>
-    new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    }).format(value);
-  if (size < 1024 * 1024) return t`${format(size / 1024)} KB`;
-  return t`${format(size / (1024 * 1024))} MB`;
+function formatSize(bytes: number): string {
+  const parts = fileSizeParts(bytes, i18n.locale || "en");
+  if (!parts) return "";
+  const size = parts.amount;
+  switch (parts.unit) {
+    case "B":
+      return translate`${size} B`;
+    case "KB":
+      return translate`${parts.amount} KB`;
+    case "MB":
+      return translate`${parts.amount} MB`;
+    case "GB":
+      return translate`${parts.amount} GB`;
+    case "TB":
+      return translate`${parts.amount} TB`;
+  }
 }

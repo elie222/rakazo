@@ -31,23 +31,24 @@ export function voiceChatHoldsMessage(
 }
 
 /**
- * Runs tasks one at a time, in the order they were queued, whether or not earlier ones fail.
- * markRead calls go through one so their answers arrive in the order they were sent, which
- * lets the first answer of a visit stand for the request that opened it. A task that hangs
- * holds the queue for at most `maxWaitMs`, so one stuck request can't stop later reads.
+ * Starts tasks in queue order after the prior task settles or reaches `maxWaitMs` from its
+ * start. Failed tasks do not block the queue. A timeout only releases the queue; it does not
+ * cancel the task or its effects.
  */
 export function createSerialQueue(maxWaitMs = 10_000): <T>(task: () => Promise<T>) => Promise<T> {
-  // The last queued task, settled either way; null while the queue is idle.
+  // The last queued task's settlement or timeout; null while the queue is idle.
   let tail: Promise<void> | null = null;
   return (task) => {
-    const run = (tail ? waitAtMost(tail, maxWaitMs) : Promise.resolve()).then(task);
+    const previous = tail ?? Promise.resolve();
+    const run = previous.then(task);
     const settled = run.then(
       () => undefined,
       () => undefined,
     );
-    tail = settled;
-    void settled.then(() => {
-      if (tail === settled) tail = null;
+    const released = previous.then(() => waitAtMost(settled, maxWaitMs));
+    tail = released;
+    void released.then(() => {
+      if (tail === released) tail = null;
     });
     return run;
   };

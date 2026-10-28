@@ -177,6 +177,19 @@ describe("ToolSteps", () => {
     expect(fits).not.toContain("earlier");
     for (let i = 0; i < 9; i++) expect(all).toContain(`step-${i}<`);
   });
+
+  it("shows what the bot wrote before a step above it", () => {
+    const html = renderToStaticMarkup(
+      <ToolSteps
+        steps={[
+          { label: "Read calendar", count: 1 },
+          { label: "Save event", count: 1, note: "The meeting is with **Anna**." },
+        ]}
+      />,
+    );
+    expect(visibleText(html)).toBe("✓ Read calendar The meeting is with Anna . ✓ Save event");
+    expect(html).toContain("<strong>Anna</strong>");
+  });
 });
 
 describe("StandaloneToolActivity", () => {

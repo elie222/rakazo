@@ -53,7 +53,6 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }, tes
     const rowsBefore = await rows.count();
     await expect.poll(() => rows.count(), { timeout: 20_000 }).toBeGreaterThan(rowsBefore);
 
-    // The flood has pushed the target out of the live window.
     await expect(targetRow).not.toBeInViewport({ timeout: 20_000 });
     const sentAtPush = sent;
 

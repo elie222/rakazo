@@ -234,10 +234,11 @@ describe("thread composer isolation", () => {
     expect(mentionApi.capture).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     await act(async () => input.change("Hello @"));
-    expect(mentionApi.rpc.mock.calls.map(([proc]) => proc)).toEqual([
-      "routines/list",
-      "connections/list",
+    // Routine reads are batched a microtask later, so only the set of reads is stable.
+    expect(mentionApi.rpc.mock.calls.map(([proc]) => proc).sort()).toEqual([
       "connections/catalog",
+      "connections/list",
+      "routines/list",
     ]);
     expect(container.querySelector('[data-testid="mention-picker"]')!.textContent).toContain(
       "Morning",

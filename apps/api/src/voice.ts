@@ -22,7 +22,8 @@ import type {
   VoiceStatus,
 } from "@rakazo/contracts";
 import { SettingsScopeSchema } from "@rakazo/contracts";
-import { toUtterances } from "@rakazo/core";
+import { speakable, toUtterances } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
@@ -32,7 +33,6 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
-  type PrismaClient,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,
@@ -43,12 +43,15 @@ import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: SecretStore;
   /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
   env?: { mcpAllowPrivateEndpoint?: boolean };
+  /** Set only when `VOICE_SUMMARY_MIN_CHARS` turns spoken summaries on. */
+  speechSummary?: { summarize: SpeechSummarizer; minChars: number };
 }
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
@@ -469,7 +472,13 @@ export async function updateVoiceSpeechModel(
 export async function prepareVoice(
   deps: VoiceDeps,
   actor: Actor,
-  input: { text: string; voiceId?: string; botId?: string; scope?: SettingsScope },
+  input: {
+    text: string;
+    voiceId?: string;
+    botId?: string;
+    scope?: SettingsScope;
+    signal?: AbortSignal;
+  },
 ) {
   try {
     await resolveVoiceTarget(deps, actor, input);
@@ -479,7 +488,21 @@ export async function prepareVoice(
     }
     throw error;
   }
-  return { ready: true, utterances: toUtterances(input.text) };
+  return { ready: true, utterances: await spokenUtterances(deps, actor, input) };
+}
+
+async function spokenUtterances(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { text: string; botId?: string; signal?: AbortSignal },
+): Promise<string[]> {
+  const full = toUtterances(input.text);
+  const summary = deps.speechSummary;
+  if (!input.botId || !summary) return full;
+  if (speakable(input.text).length <= summary.minChars) return full;
+  const spoken = await summary.summarize(actor, input.botId, input.text, input.signal);
+  const utterances = spoken ? toUtterances(spoken) : [];
+  return utterances.length > 0 ? utterances : full;
 }
 
 export async function synthesizeVoice(

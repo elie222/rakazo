@@ -17,10 +17,15 @@ const settingsScreens = new Set([
   "messaging",
   "language",
   "models",
+  "plugin",
   "signup-survey",
+  "skill",
+  "skills",
   "space",
   "team-conversation",
+  "vault",
   "voice",
+  "wallet",
 ]);
 
 /** Registers the open settings sheet's close action; the returned function unregisters it. */
@@ -47,7 +52,6 @@ export function settingsSheetCloser(sheet: SheetNavigation): () => void {
   };
 }
 
-/** Closes the settings sheet if one is open. */
 export function closeSettingsSheet() {
   closeSheet?.();
 }

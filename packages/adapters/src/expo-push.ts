@@ -178,47 +178,35 @@ export class ExpoPushProvider implements NotificationProvider {
       ...(message.badge === undefined ? {} : { badge: message.badge }),
       data: expoPushData(message, context.spaceId, randomUUID()),
     };
-    for (let attempt = 0; ; attempt += 1) {
-      const { status, body } = await postToExpo(
-        EXPO_PUSH_URL,
-        payload,
-        this.accessToken,
-        context.signal,
-      );
-      const [ticket] = expoPushTickets(body);
-      const retryDelay = this.retryDelaysMs[attempt];
-      if (
-        retryDelay !== undefined &&
-        (status === 429 || status >= 500 || ticket?.details?.error === "MessageRateExceeded")
-      ) {
-        await delay(retryDelay, undefined, { signal: context.signal });
-        continue;
-      }
-      if (status < 300 && body === undefined) {
-        throw new Error("Expo push returned an invalid response.");
-      }
-      if (ticket?.details?.error === "DeviceNotRegistered") {
-        await this.tokens.remove(context.userId, credentialDigest(token));
-        return "undeliverable";
-      }
-      const failure =
-        expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
-      if (failure) {
-        getLogger().error(failure);
-        throw new Error(failure);
-      }
-      if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
-      return "delivered";
+    const { status, body } = await this.postWithBackoff(EXPO_PUSH_URL, payload, context.signal);
+    const [ticket] = expoPushTickets(body);
+    if (status < 300 && body === undefined) {
+      throw new Error("Expo push returned an invalid response.");
     }
+    if (ticket?.details?.error === "DeviceNotRegistered") {
+      await this.tokens.remove(context.userId, credentialDigest(token));
+      return "undeliverable";
+    }
+    const failure =
+      expoUnauthorizedError(body, status, this.accessToken) ?? expoPushErrorMessage(body, status);
+    if (failure) {
+      getLogger().error(failure);
+      throw new Error(failure);
+    }
+    if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
+    return "delivered";
   }
 
   /** Drops the token when the receipt says the device is no longer registered. */
   async checkReceipt(receipt: BackgroundJobPayloads["push.receipt"]): Promise<void> {
-    const { status, body } = await postToExpo(
-      EXPO_RECEIPTS_URL,
-      { ids: [receipt.ticketId] },
-      this.accessToken,
-    );
+    const { status, body } = await this.postWithBackoff(EXPO_RECEIPTS_URL, {
+      ids: [receipt.ticketId],
+    });
+    // The next send's ticket also reports an unregistered device, so a skipped check loses nothing.
+    if (expoAskedToBackOff(status, body)) {
+      getLogger().warn("expo push receipt unavailable", { status });
+      return;
+    }
     const failure = expoRequestError(body, status, this.accessToken);
     if (failure) throw new Error(failure);
     const result = expoPushReceipts(body)[receipt.ticketId];
@@ -235,6 +223,15 @@ export class ExpoPushProvider implements NotificationProvider {
     getLogger().error(
       `expo push receipt error: ${result.details?.error ?? result.message ?? "unknown"}`,
     );
+  }
+
+  private async postWithBackoff(url: string, payload: unknown, signal?: AbortSignal) {
+    for (let attempt = 0; ; attempt += 1) {
+      const reply = await postToExpo(url, payload, this.accessToken, signal);
+      const retryDelay = this.retryDelaysMs[attempt];
+      if (retryDelay === undefined || !expoAskedToBackOff(reply.status, reply.body)) return reply;
+      await delay(retryDelay, undefined, { signal });
+    }
   }
 
   private async scheduleReceiptCheck(userId: string, token: string, ticketId: string) {
@@ -280,6 +277,14 @@ export class ExpoPushProvider implements NotificationProvider {
 
 export type ExpoPushDelivery = "delivered" | "undeliverable";
 
+function expoAskedToBackOff(status: number, body: unknown): boolean {
+  return (
+    status === 429 ||
+    status >= 500 ||
+    expoPushTickets(body)[0]?.details?.error === "MessageRateExceeded"
+  );
+}
+
 /**
  * One POST to Expo. A network failure, while sending or reading the reply,
  * reads as a 503 so the caller retries it like one.
@@ -304,7 +309,7 @@ async function postToExpo(
     });
     return { status: response.status, body: await readExpoPushBody(response, attempt) };
   } catch (error) {
-    getLogger().error("expo push request failed", error);
+    getLogger().warn("expo push request failed", { error });
     if (signal?.aborted || errorMessage(error) === RESPONSE_TOO_LARGE) throw error;
     return { status: 503, body: { errors: [{ message: errorMessage(error) }] } };
   }

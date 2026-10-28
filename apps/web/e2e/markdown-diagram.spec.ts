@@ -29,7 +29,6 @@ async function streamUpdate(page: Page, markdown: string, streaming: boolean) {
   );
 }
 
-/** The SVG inside the diagram's data URL. */
 async function diagramMarkup(page: Page) {
   const src = await page.getByTestId("chat-diagram").locator("img").getAttribute("src");
   return decodeURIComponent(src?.slice(src.indexOf(",") + 1) ?? "");
@@ -55,7 +54,6 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;/);
   await expect(message.locator("pre")).toHaveCount(0);
   await expect(message.getByText("graph LR")).toHaveCount(0);
-  // The rest of the message keeps its order around the diagram.
   const text = await message.innerText();
   expect(text.indexOf("Here is the contribution flow:")).toBeLessThan(
     text.indexOf("Each step runs in CI."),
@@ -64,14 +62,12 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
   for (const label of ["Clone repo", "Branch", "Tests", "Pull request"]) {
     expect(drawnText).toContain(label);
   }
-  // Fits the message instead of widening it.
   const frame = await message.boundingBox();
   const drawn = await image.boundingBox();
   expect(drawn!.width).toBeLessThanOrEqual(frame!.width);
 
   await captureScreenshot(page, testInfo, "markdown-diagram-dark");
 
-  // The copy button copies the diagram source.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy diagram source" }).click();
   await expect
@@ -79,14 +75,12 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
     .toBe(flowSource);
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 
-  // Diagram text is drawn in the theme's foreground token.
   expect(await diagramMarkup(page)).toContain("fill:#F5F5F5");
   await page.goto(`${fixture}?theme=light`);
   await expectDrawn(page);
   expect(await diagramMarkup(page)).toContain("fill:#1C1C1C");
   await captureScreenshot(page, testInfo, "markdown-diagram-light");
 
-  // Switching theme with the message open redraws it.
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
   });
@@ -104,7 +98,6 @@ test("a wide diagram scrolls on a phone instead of shrinking its text away", asy
   expect(shown).toBeGreaterThanOrEqual(Math.floor(natural * 0.8) - 1);
   const card = page.getByTestId("chat-diagram");
   expect(await card.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-  // The page itself does not scroll sideways; only the diagram card does.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await captureScreenshot(page, testInfo, "markdown-diagram-wide-phone");
 });

@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { observeExtraDisplayCommand, parseExtraDisplayObservation } from "./extra-displays.js";
+import {
+  extraDisplayActionCommand,
+  observeExtraDisplayCommand,
+  parseExtraDisplayObservation,
+} from "./extra-displays.js";
 
 const run = promisify(execFile);
 const cleanups: string[] = [];
@@ -53,5 +57,42 @@ describe("observing an extra display", () => {
       expect(observed.cursor).toEqual({ x: 12, y: 34 });
     }
     expect(owned()).toEqual([]);
+  });
+});
+
+describe("extra display scroll", () => {
+  const layout = { display: ":3" } as Parameters<typeof extraDisplayActionCommand>[0];
+
+  it("moves the pointer to the scroll's point before turning the wheel", () => {
+    expect(
+      extraDisplayActionCommand(layout, {
+        kind: "scroll",
+        direction: "down",
+        amount: 4,
+        x: 600.4,
+        y: 420,
+      }),
+    ).toBe("DISPLAY=:3 xdotool mousemove 600 420 click --repeat 4 5");
+  });
+
+  it("scrolls sideways with the left and right wheel buttons", () => {
+    expect(
+      extraDisplayActionCommand(layout, {
+        kind: "scroll",
+        direction: "left",
+        amount: 2,
+        x: 40,
+        y: 300,
+      }),
+    ).toBe("DISPLAY=:3 xdotool mousemove 40 300 click --repeat 2 6");
+    expect(
+      extraDisplayActionCommand(layout, { kind: "scroll", direction: "right", amount: 2 }),
+    ).toBe("DISPLAY=:3 xdotool click --repeat 2 7");
+  });
+
+  it("turns the wheel where the pointer is without a point", () => {
+    expect(extraDisplayActionCommand(layout, { kind: "scroll", direction: "up", amount: 2 })).toBe(
+      "DISPLAY=:3 xdotool click --repeat 2 4",
+    );
   });
 });

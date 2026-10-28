@@ -1,111 +1,178 @@
-import { readFileSync } from "node:fs";
-import ts from "typescript";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
 
-// Exercise the screen's subscription effects without loading native UI dependencies.
-const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-const start = source.indexOf("  useEffect(() => {\n    liveCursor.current = null;");
-const effects = ts.transpileModule(
-  source.slice(start, source.indexOf("  useEffect(() => () => pendingSave", start)),
-  { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
-).outputText;
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MobileSnapshot } from "./api";
+import { applyMobileThreadEvent, rpc, subscribeThread } from "./api";
+import type { ThreadJumpAnchor } from "./thread-jump";
+import { useThreadLiveSubscription } from "./thread-live";
+import type { PinnedThreadWindow } from "./thread-window";
 
+vi.mock("./api", () => ({
+  rpc: vi.fn(),
+  subscribeThread: vi.fn(),
+  applyMobileThreadEvent: vi.fn(),
+}));
+const session = vi.hoisted(() => ({ generation: 1 }));
+vi.mock("./session", () => ({ currentSessionGeneration: () => session.generation }));
+vi.mock("./user-error", () => ({ errorText: String }));
+
+type LiveEvent = { type: string; seq: number; runId?: string };
 const ref = <T>(current: T) => ({ current });
 
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+afterEach(() => {
+  session.generation = 1;
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
+
 describe("thread foreground subscription", () => {
+  it("retains a trailing snapshot after a burst and skips it if history opens", async () => {
+    const snapshot = { cursor: 10 } as MobileSnapshot;
+    let deliver: (event: LiveEvent) => void = () => {};
+    let finish!: (value: MobileSnapshot) => void;
+    const pending = new Promise<MobileSnapshot>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(subscribeThread).mockImplementation(async (_target, _cursor, onEvent, signal) => {
+      deliver = onEvent as unknown as typeof deliver;
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+    });
+    vi.mocked(applyMobileThreadEvent).mockReturnValue(snapshot);
+    const refresh = vi
+      .fn()
+      .mockResolvedValueOnce(snapshot)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValue(snapshot);
+    const expandedHistoryThread = ref<string | null>(null);
+    const refreshMentionBots = vi.fn(async () => {});
+    const root = createRoot(document.createElement("div"));
+    function Probe() {
+      useThreadLiveSubscription({
+        botId: "bot-1",
+        foreground: true,
+        readOnly: false,
+        sessionEpoch: 1,
+        historyEpoch: ref(0),
+        expandedHistoryThread,
+        pinnedAroundRef: ref(null),
+        jumpScrollTarget: ref(null),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef: ref(snapshot),
+        readVisibleTarget: ref(null),
+        showSavedThread: vi.fn(),
+        refresh,
+        commitSnap: vi.fn(),
+        setError: vi.fn(),
+        refreshMentionBots,
+        markReadIfVisible: vi.fn(),
+      });
+      return null;
+    }
+    await act(async () => root.render(createElement(Probe)));
+    refresh.mockClear();
+    deliver({ type: "run.waiting_input", seq: 11 });
+    await act(async () => {});
+    for (let i = 0; i < 100; i++) deliver({ type: "run.waiting_input", seq: 12 + i });
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(1);
+    finish(snapshot);
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // The guard is checked when the queued read starts, not just when it was requested.
+    deliver({ type: "run.waiting_input", seq: 112 });
+    expandedHistoryThread.current = "thread-1";
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expandedHistoryThread.current = null;
+    deliver({ type: "run.waiting_input", seq: 113 });
+    session.generation += 1;
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refreshMentionBots).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
   it.each(["latest", "expanded", "search"])(
     "replays missed updates and clears in the %s window, but starts fresh for another chat",
     async (mode) => {
       const applied: number[] = [];
       const cursors: number[] = [];
-      let deliver: (event: { type: string; seq: number; runId?: string }) => void = () => {};
-      const hooks: { deps: unknown[]; cleanup?: () => void }[] = [];
-      let hookIndex = 0;
-      const snapshot = { cursor: 10 };
-      const scope = {
-        useEffect: (effect: () => (() => void) | undefined, deps: unknown[]) => {
-          const index = hookIndex++;
-          const previous = hooks[index];
-          if (previous && deps.every((value, i) => Object.is(value, previous.deps[i]))) return;
-          previous?.cleanup?.();
-          hooks[index] = { deps, cleanup: effect() };
-        },
-        botId: "bot-1",
-        groupId: undefined,
-        foreground: true,
-        readOnly: false,
-        sessionEpoch: 1,
-        messageId: mode === "search" ? "message-1" : undefined,
-        liveCursor: ref<number | null>(null),
+      let deliver: (event: LiveEvent) => void = () => {};
+      const snapshot = { cursor: 10 } as MobileSnapshot;
+      vi.mocked(rpc).mockImplementation(async () => snapshot as never);
+      vi.mocked(subscribeThread).mockImplementation(async (_target, cursor, onEvent, signal) => {
+        cursors.push(cursor);
+        deliver = onEvent as unknown as typeof deliver;
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+      });
+      vi.mocked(applyMobileThreadEvent).mockImplementation((_snapshot, event) => {
+        applied.push(event.seq ?? -1);
+        return snapshot;
+      });
+      const refresh = vi.fn(async () => snapshot);
+      const refreshMentionBots = vi.fn(async () => undefined);
+      const markReadIfVisible = vi.fn();
+      const refs = {
         historyEpoch: ref(0),
-        liveSubscriptionGeneration: ref(0),
-        liveSubscribed: ref(false),
-        currentSessionGeneration: () => 1,
-        showSavedThread: vi.fn(),
-        rpc: vi.fn(async () => snapshot),
-        refresh: vi.fn(async () => snapshot),
-        setError: vi.fn(),
-        errorText: String,
-        subscribeThread: vi.fn(
-          async (
-            _target: unknown,
-            cursor: number,
-            onEvent: typeof deliver,
-            signal: AbortSignal,
-          ) => {
-            cursors.push(cursor);
-            deliver = onEvent;
-            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
-          },
-        ),
         expandedHistoryThread: ref<string | null>(mode === "latest" ? null : "thread-1"),
-        pinnedAroundRef: ref(mode === "search" ? {} : null),
+        pinnedAroundRef: ref<PinnedThreadWindow | null>(
+          mode === "search"
+            ? { messageId: "message-1", threadId: "thread-1", newerCursor: 5 }
+            : null,
+        ),
         jumpScrollTarget: ref<string | null>(mode === "search" ? "message-1" : null),
-        jumpAnchor: ref({ release: vi.fn() }),
-        snapRef: ref(snapshot),
-        commitSnap: vi.fn(),
-        applyMobileThreadEvent: (_snapshot: unknown, event: { seq: number }) => {
-          applied.push(event.seq);
-          return snapshot;
-        },
-        isRunTerminalEvent: () => false,
-        refreshMentionBots: vi.fn(),
-        readVisibleTarget: ref(null),
-        markReadIfVisible: vi.fn(),
-        abortableDelay: vi.fn(),
+        jumpAnchor: ref({ release: vi.fn() } as unknown as ThreadJumpAnchor),
+        snapRef: ref<MobileSnapshot | null>(snapshot),
+        readVisibleTarget: ref<string | null>(null),
       };
-      const render = async () => {
-        hookIndex = 0;
-        new Function(...Object.keys(scope), effects)(...Object.values(scope));
-        await Promise.resolve();
-        await Promise.resolve();
-      };
-      await render();
+      function Probe({ botId, foreground }: { botId: string; foreground: boolean }) {
+        useThreadLiveSubscription({
+          botId,
+          foreground,
+          readOnly: false,
+          sessionEpoch: 1,
+          messageId: mode === "search" ? "message-1" : undefined,
+          ...refs,
+          showSavedThread: vi.fn(),
+          refresh,
+          commitSnap: vi.fn(),
+          setError: vi.fn(),
+          refreshMentionBots,
+          markReadIfVisible,
+        });
+        return null;
+      }
+      const root = createRoot(document.createElement("div"));
+      const render = (botId: string, foreground: boolean) =>
+        act(async () => root.render(createElement(Probe, { botId, foreground })));
+
+      await render("bot-1", true);
       deliver({ type: "thread.message.updated", seq: 11 });
-      scope.refresh.mockClear();
+      refresh.mockClear();
       // Another device paused a run; the event has no owner to expose Dismiss.
       deliver({ type: "run.waiting_input", seq: 12, runId: "run-other-device" });
+      await act(async () => {});
       expect(applied).toEqual([11, 12]);
-      expect(scope.refresh).toHaveBeenCalledTimes(mode === "latest" ? 1 : 0);
-      expect(scope.refreshMentionBots).not.toHaveBeenCalled();
-      scope.foreground = false;
-      await render();
+      expect(refresh).toHaveBeenCalledTimes(mode === "latest" ? 1 : 0);
+      expect(refreshMentionBots).not.toHaveBeenCalled();
+      await render("bot-1", false);
       // A late callback from the aborted stream must not advance the saved cursor.
       deliver({ type: "thread.message.updated", seq: 13 });
       snapshot.cursor = 20;
-      scope.foreground = true;
-      await render();
+      await render("bot-1", true);
       expect(cursors).toEqual([10, 12]);
       deliver({ type: "thread.message.updated", seq: 13 });
       deliver({ type: "thread.cleared", seq: 14 });
       expect(applied).toEqual([11, 12, 13, 14]);
-      expect(scope.expandedHistoryThread.current).toBeNull();
-      expect(scope.pinnedAroundRef.current).toBeNull();
-      expect(scope.jumpScrollTarget.current).toBeNull();
-      scope.botId = "bot-2";
-      await render();
+      expect(refs.expandedHistoryThread.current).toBeNull();
+      expect(refs.pinnedAroundRef.current).toBeNull();
+      expect(refs.jumpScrollTarget.current).toBeNull();
+      await render("bot-2", true);
       expect(cursors).toEqual([10, 12, 20]);
-      for (const hook of hooks) hook.cleanup?.();
+      act(() => root.unmount());
     },
   );
 });

@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
-  type AdapterContext,
+  createAdapterContext,
   runContinueJob,
   skillTeachingExpireJob,
   skillTeachingExpireJobKey,
 } from "@rakazo/adapter-kit";
+import type { ComputerExecutionLease, TaughtSkillRow, TeachComputerInput } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   appendRecordingEvent,
   ComputerBusyError,
-  type ComputerExecutionLease,
   captureTeachingSnapshot,
   completeTeachingSession,
   emptyRecording,
@@ -28,44 +28,19 @@ import {
   releaseTeachingComputerControlForBot,
   scheduleComputerControlExpiry,
   screenLeaseIdForRun,
-  type TeachComputerInput,
   teachingControlLeaseExpiresAt,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
+import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
   formatSkillRunPrompt,
-  type SkillPlaybook,
-  type TeachRecordingEvent,
   teachRecordingTtlMs,
 } from "@rakazo/core";
-import {
-  clearEndedRunState,
-  type createRepos,
-  expireComputerExecutionLeases,
-  IsolationError,
-  type PrismaClient,
-  type ThreadEvents,
-} from "@rakazo/db";
+import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { clearEndedRunState, expireComputerExecutionLeases, IsolationError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-
-type TaughtSkillRow = {
-  id: string;
-  spaceId: string;
-  botId: string;
-  userId: string;
-  name: string;
-  goal: string;
-  status: string;
-  playbook: unknown;
-  recording: unknown;
-  startedAt: Date | null;
-  expiresAt: Date | null;
-  stoppedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
 
 export interface TaughtSkillsDeps {
   prisma: PrismaClient;
@@ -74,17 +49,6 @@ export interface TaughtSkillsDeps {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   dataDir: string;
-}
-
-function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
-  return {
-    operationId,
-    traceId: operationId,
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId,
-    signal: new AbortController().signal,
-  };
 }
 
 function ownedSkillWhere(actor: Actor, skillId: string) {
@@ -148,7 +112,7 @@ async function ensureGraphicalComputer(
   }
   if (!bot.computer) throw new IsolationError();
   if (bot.computer.state !== "running" || !bot.computer.providerRef) {
-    const ctx = computerContext(actor, bot.id, "skills.start");
+    const ctx = createAdapterContext(actor, bot.id, "skills.start");
     const manualRunId = `teach:${randomUUID()}`;
     let lease: ComputerExecutionLease | null;
     try {

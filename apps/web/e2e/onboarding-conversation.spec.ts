@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
 function slackCard(page: Page) {
@@ -47,7 +48,6 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   const restingBackground = await authorizeButton.evaluate(
     (button) => getComputedStyle(button).backgroundColor,
   );
-  // The primary button still shows a visible hover state.
   await authorizeButton.hover();
   await expect
     .poll(() => authorizeButton.evaluate((button) => getComputedStyle(button).backgroundColor))

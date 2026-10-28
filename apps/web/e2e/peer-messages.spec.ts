@@ -53,7 +53,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await expect(chip.getByText(/Messaged|Message from/)).toBeVisible();
   await expect(chip).toHaveAccessibleName(/Messaged Researcher|Message from Researcher/);
-  await expect(chip.locator(".rakazo-organic-avatar")).toBeVisible();
+  await expect(chip.locator(".rakazo-logo-avatar")).toBeVisible();
   await expect(chip).not.toContainText("{peer}");
   // User bubble still contains the phrase; peer body must not appear outside the chip.
   await expect(chip).not.toContainText("peer-exchange-alpha");
@@ -230,7 +230,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
     .getAttribute("data-message-id");
   const replyRow = transcript.locator(`[data-message-id="${replyId}"]`);
 
-  // A reaction stays with its folded reply.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "React" }).click();
   await page.getByRole("button", { name: "👍", exact: true }).click();
@@ -247,7 +246,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await expect(reactions).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 
-  // A reply quote opens its folded parent.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "Reply", exact: true }).click();
   await composer.fill("peer-fold-quote");

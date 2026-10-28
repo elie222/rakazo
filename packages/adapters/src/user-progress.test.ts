@@ -2,7 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
-import { longWorkProgressGuidance } from "./executor.js";
+import { longWorkProgressGuidance } from "./run-replies.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
@@ -14,7 +14,10 @@ import {
   MID_TURN_PROGRESS_MAX_PER_RUN,
   MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
   messageUserMaxLength,
+  midTaskMessagePrompt,
   midTurnProgressBudgetAllows,
+  NARRATION_STATUS_MAX_LENGTH,
+  narrationStatusLine,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -189,5 +192,28 @@ describe("assistantTurnSeparator", () => {
     expect(assistantTurnSeparator("Done.", "")).toBe("");
     expect(assistantTurnSeparator("Done.\n", "Next.")).toBe("");
     expect(assistantTurnSeparator("Done.", " Next.")).toBe("");
+  });
+});
+
+describe("narrationStatusLine", () => {
+  it("makes one short line of a note", () => {
+    expect(narrationStatusLine("  Checking\nthe   totals.  ")).toBe("Checking the totals.");
+    const line = narrationStatusLine("x".repeat(NARRATION_STATUS_MAX_LENGTH + 5));
+    expect(line).toBe(`${"x".repeat(NARRATION_STATUS_MAX_LENGTH)}…`);
+  });
+});
+
+describe("midTaskMessagePrompt", () => {
+  it("asks for a short answer through message_user, then the rest of the task", () => {
+    expect(midTaskMessagePrompt("Still working?", true)).toBe(
+      "The person sent this while you were working:\n\nStill working?\n\nIf it asks something or changes the plan, answer briefly with message_user, then continue the task.",
+    );
+  });
+
+  it("asks for no plain-text answer, which would end the task, when message_user is off", () => {
+    const prompt = midTaskMessagePrompt("Still working?", false);
+    expect(prompt).toContain("\n\nStill working?\n\n");
+    expect(prompt).toContain("continue the task");
+    expect(prompt).not.toMatch(/reply|answer/);
   });
 });

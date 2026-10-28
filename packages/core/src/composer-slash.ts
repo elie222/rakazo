@@ -21,6 +21,10 @@ export function serializeComposerPrompt(
 
 export function truncateSlashDescription(value: string, max = 72): string {
   const text = value.replace(/\s+/g, " ").trim();
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1).trimEnd()}…`;
+  const codePoints = Array.from(text);
+  if (codePoints.length <= max) return text;
+  return `${codePoints
+    .slice(0, max - 1)
+    .join("")
+    .trimEnd()}…`;
 }

@@ -300,6 +300,7 @@ export function SidebarRoster({
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
+                      avatarSet={item.chat.avatarSet}
                       color={item.chat.color}
                       identity={item.chat.id}
                       size={mini ? 40 : compact ? 28 : 38}
@@ -443,12 +444,20 @@ export function SidebarRoster({
                             <span
                               dir="auto"
                               data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                              className={`min-w-0 truncate text-body2 text-foreground ${
+                              className={`max-w-full shrink-0 truncate text-body2 text-foreground ${
                                 item.chat.unread ? "font-semibold" : "font-medium"
                               }`}
                             >
                               {item.chat.name}
                             </span>
+                            {!compact && item.kind === "bot" && item.chat.title ? (
+                              <span
+                                data-roster-bot-title
+                                className="min-w-0 truncate rounded-md border border-border bg-muted px-1.5 text-caption font-normal text-muted-foreground"
+                              >
+                                {item.chat.title}
+                              </span>
+                            ) : null}
                             {item.chat.unread ? (
                               <span className="sr-only">
                                 <Trans> (unread)</Trans>
@@ -473,13 +482,6 @@ export function SidebarRoster({
                             ) : null}
                           </div>
                         </div>
-                        {!compact && item.kind === "bot" && item.chat.title ? (
-                          <div className="mt-1 flex">
-                            <span className="max-w-full truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                              {item.chat.title}
-                            </span>
-                          </div>
-                        ) : null}
                         {compact ? (
                           compactStatusLabel ? (
                             <div
@@ -507,7 +509,7 @@ export function SidebarRoster({
                           <div
                             dir="auto"
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
-                            className={`mt-1 line-clamp-2 text-label break-words whitespace-normal ${
+                            className={`mt-1 truncate text-label ${
                               workStatusLabel
                                 ? "font-semibold text-status-working"
                                 : item.chat.unread

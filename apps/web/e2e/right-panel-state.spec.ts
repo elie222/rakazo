@@ -1,7 +1,14 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  createNamedBot,
+  rpc,
+  signup,
+} from "./helpers";
 
 async function waitForStoredPanel(page: Page, panel: string | null) {
   await expect
@@ -60,6 +67,25 @@ test("reload restores the open, closed and settings rail states", async ({ page 
   await waitForStoredPanel(page, "settings");
   await page.reload();
   await expect(panel).toHaveAttribute("data-panel", "settings");
+});
+
+test("switching chats opens each chat's own panel, closed by default", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `rail-switch-${Date.now()}@rakazo.test`, "password12", "Panel Switch");
+  await completeOnboarding(page);
+  await createNamedBot(page, "Other chat");
+  const panel = page.getByTestId("side-panel");
+  const sidebar = page.locator("aside").first();
+  await expect(panel).toHaveAttribute("data-panel", "closed");
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await expect(panel).toHaveAttribute("data-panel", "computer");
+  await sidebar.getByRole("button", { name: /^Chief/ }).click();
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+  await expect(panel).toHaveAttribute("data-panel", "closed");
+  await captureScreenshot(page, testInfo, "rail-closed-in-other-chat");
+  await sidebar.getByRole("button", { name: /^Other chat/ }).click();
+  await expect(panel).toHaveAttribute("data-panel", "computer");
 });
 
 test("reload restores the selected routine and scopes preferences to the chat", async ({

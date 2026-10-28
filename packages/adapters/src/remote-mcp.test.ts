@@ -380,11 +380,8 @@ describe("remote MCP URL policy", () => {
   });
 
   it("drives the guarded dispatcher with a fetch from the same undici", async () => {
-    // A fetch from a different undici than the Agent fails at dispatch with
-    // "invalid onRequestStart method" before the lookup runs. Failing inside
-    // the lookup proves the request reached the guarded Agent. Node's fetch
-    // is a different major, so omit, builtin, and a captured builtin must
-    // all use the package fetch that matches the Agent.
+    // A fetch from a different undici than the Agent fails at dispatch before the lookup runs,
+    // so failing inside the lookup proves the request reached the guarded Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
 
     const capturedNodeFetch = globalThis.fetch;
@@ -611,16 +608,17 @@ describe("createPrivateNetworkFetch", () => {
     expect(String(baseFetch.mock.calls[0]?.[0])).toBe("http://192.168.2.10:8080/v1/items");
   });
 
-  it("rejects an opted-in host that resolves to a mapped link-local address", async () => {
-    const baseFetch = mockFetch();
-    const fetch = createPrivateNetworkFetch(baseFetch, async () => [
-      { address: "::ffff:169.254.170.2", family: 6 as const },
-    ]);
-    await expect(fetch("http://nas.local:8080/v1/items", { method: "GET" })).rejects.toThrow(
-      "non-private address",
-    );
-    expect(baseFetch).not.toHaveBeenCalled();
-  });
+  it.each(["::ffff:169.254.170.2", "::ffff:a9fe:a9fe", "::ffff:a9fe:101"])(
+    "rejects an opted-in host that resolves to the mapped link-local address %s",
+    async (address) => {
+      const baseFetch = mockFetch();
+      const fetch = createPrivateNetworkFetch(baseFetch, async () => [{ address, family: 6 }]);
+      await expect(fetch("http://nas.local:8080/v1/items", { method: "GET" })).rejects.toThrow(
+        "non-private address",
+      );
+      expect(baseFetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects an opted-in host that resolves to a public address", async () => {
     const baseFetch = mockFetch();

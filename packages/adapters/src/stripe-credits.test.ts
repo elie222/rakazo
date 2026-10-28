@@ -65,6 +65,34 @@ describe("Stripe prepaid model credits", () => {
       "2000",
     );
   });
+  it("looks up a monthly price once, not on every checkout", async () => {
+    const { provider, requests } = fixture();
+    const checkout = () =>
+      provider.createByokCheckout({
+        customerId: "cus_fixture",
+        amountCents: 1000,
+        successUrl: "https://example.test/return",
+        cancelUrl: "https://example.test/app",
+      });
+    const priceRequests = () => requests.filter((r) => r.path === "/v1/prices").length;
+    await checkout();
+    expect(priceRequests()).toBe(2);
+    await checkout();
+    expect(priceRequests()).toBe(2);
+    expect(requests.at(-1)!.params.get("line_items[0][price]")).toBe("price_credits");
+    expect(requests.at(-1)!.params.has("subscription_data[trial_period_days]")).toBe(false);
+  });
+  it("starts the own-key plan with a trial when one is requested", async () => {
+    const { provider, requests } = fixture();
+    await provider.createByokCheckout({
+      customerId: "cus_fixture",
+      amountCents: 1000,
+      trialDays: 7,
+      successUrl: "https://example.test/return",
+      cancelUrl: "https://example.test/app",
+    });
+    expect(requests.at(-1)!.params.get("subscription_data[trial_period_days]")).toBe("7");
+  });
   it("rejects invalid purchase amounts without contacting Stripe", async () => {
     const { provider, requests } = fixture();
     await expect(

@@ -3,9 +3,9 @@ import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { toolRequiresApproval } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { selectBuiltinToolsForRun } from "./executor.js";
 import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
 const run = { id: "run", threadId: "thread", botId: "bot", spaceId: "space", userId: "owner" };
 const context: AdapterContext = {

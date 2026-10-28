@@ -17,13 +17,14 @@ import {
   IntegrationProviderSettings,
   LocalAgentHomeStore,
   listPiCatalog,
+  ModelSignInError,
   modelCredentialDto,
   parseModelSecret,
   screenLeaseIdForRun,
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { MODEL_KEY_FORMAT_ERROR, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { AnswerTooLongError, runProviderTransaction } from "@rakazo/db";
@@ -928,10 +929,23 @@ describe("secret request dismissal", () => {
       answeredByUserId: "user-1",
       answer: "",
       clientNonce: undefined,
+      fields: undefined,
       username: undefined,
       dismiss: true,
     });
     expect(h.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("passes a login card's fields on with an empty answer", async () => {
+    const h = setup(true);
+    const fields = [
+      { label: "ID number", value: "fake-id-123", hidden: false },
+      { label: "Phone number", value: "+1 555 0100", hidden: true },
+    ];
+    const { response } = await h.send({ answer: "", fields });
+
+    expect(response.status).toBe(200);
+    expect(h.answerRunInput).toHaveBeenCalledWith(expect.objectContaining({ answer: "", fields }));
   });
 
   it("reports a dismissal the card no longer accepts as a conflict", async () => {
@@ -945,6 +959,19 @@ describe("secret request dismissal", () => {
   it.each([
     ["a dismissal with a value", { answer: "example-password", dismiss: true }],
     ["a dismissal with a username", { answer: "", username: "ada", dismiss: true }],
+    [
+      "a dismissal with fields",
+      { answer: "", fields: [{ label: "Code", value: "x", hidden: true }], dismiss: true },
+    ],
+    [
+      "fields with a value in answer",
+      { answer: "example-password", fields: [{ label: "Code", value: "x", hidden: true }] },
+    ],
+    [
+      "fields with a username",
+      { answer: "", username: "ada", fields: [{ label: "Code", value: "x", hidden: true }] },
+    ],
+    ["fields without hidden", { answer: "", fields: [{ label: "Code", value: "x" }] }],
     ["a dismissal during a call", { answer: "", clientNonce: "call:call-1:x", dismiss: true }],
     ["an empty answer", { answer: "" }],
   ])("rejects %s before it reaches the run", async (_name, json) => {
@@ -1115,9 +1142,11 @@ describe("MCP server deletion", () => {
     const deleteSecrets = vi.fn().mockResolvedValue({ count: 0 });
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn().mockResolvedValue({ id: "server-1", secretId: "old-secret" }),
         delete: deleteServer,
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { deleteMany: deleteSecrets },
       message: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
@@ -1157,8 +1186,8 @@ describe("MCP server deletion", () => {
     expect(deleteSecrets).toHaveBeenCalledWith({
       where: {
         id: "old-secret",
-        spaceId: "workspace-1",
         userId: "user-1",
+        OR: [{ spaceId: "workspace-1" }, { spaceId: null }],
       },
     });
   });
@@ -1197,6 +1226,7 @@ describe("MCP prepared credential updates", () => {
     ]);
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: async () => ({ ...server }),
         update: async ({
           data,
@@ -1207,6 +1237,7 @@ describe("MCP prepared credential updates", () => {
           return { ...server };
         },
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: {
         findFirst: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
         create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
@@ -1221,6 +1252,7 @@ describe("MCP prepared credential updates", () => {
           [...rows.values()].filter((row) => row.ciphertext === where.ciphertext).length,
       },
       botSecret: { count: async () => 0 },
+      vaultCredential: { count: async () => 0 },
       integrationProviderConfig: { count: async () => 0 },
       $executeRaw: async () => 1,
       $queryRaw: async () => [],
@@ -1325,6 +1357,7 @@ describe("MCP pre-registered OAuth client", () => {
     }
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn(async () => (server ? { ...server } : null)),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           const { revision: _revision, ...rest } = data;
@@ -1342,6 +1375,7 @@ describe("MCP pre-registered OAuth client", () => {
           return server;
         }),
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: {
         create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
           secretRows.set(data.id, data);
@@ -1392,6 +1426,7 @@ describe("MCP pre-registered OAuth client", () => {
       material: () => JSON.parse(values.get("cipher-1")!),
       server: () => server,
       secrets,
+      prisma,
     };
   }
 
@@ -1415,6 +1450,25 @@ describe("MCP pre-registered OAuth client", () => {
     expect(server()?.secretId).toBe("secret-1");
     expect(material()).toMatchObject({
       oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+
+  it("reports a second server with the same name as a conflict", async () => {
+    const { client, prisma } = harness();
+    vi.mocked(prisma.mcpServer.create).mockRejectedValueOnce(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+
+    await expect(
+      client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "gmail",
+        name: "Gmail",
+        endpoint: "http://localhost:3100/mcp",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "An MCP server with that name already exists.",
     });
   });
 
@@ -1785,17 +1839,21 @@ describe("MCP loopback endpoints", () => {
     }));
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         create,
         findFirst: vi
           .fn()
           .mockResolvedValue({ id: "server-1", endpoint: LOOPBACK, secretId: null }),
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       mcpOAuthSession: {
         count: vi.fn().mockResolvedValue(0),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       secret: { findFirst: vi.fn() },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
     const deps = {
@@ -1926,11 +1984,16 @@ describe("MCP server health", () => {
       await recordHealth(data);
       return { count: server ? 1 : 0 };
     });
-    const matches = (where: Row) =>
+    const matches = (where: Row): boolean =>
       Boolean(server) &&
-      Object.entries(where).every(([key, value]) => (server as Row)[key] === value);
+      Object.entries(where).every(([key, value]) =>
+        key === "OR"
+          ? (value as Row[]).some((branch) => matches(branch))
+          : (server as Row)[key] === value,
+      );
     const prisma = {
       mcpServer: {
+        findMany: vi.fn(async () => []),
         findFirst: vi.fn(async ({ where }: { where: Row }) =>
           matches(where) ? { ...server } : null,
         ),
@@ -1945,6 +2008,7 @@ describe("MCP server health", () => {
         }),
         updateMany,
       },
+      mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
@@ -2861,9 +2925,17 @@ describe("connections.complete", () => {
         where.id === row.id ? { ...row } : null,
       ),
       findMany: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
       updateMany: vi.fn(
-        async ({ where, data }: { where: { status?: string }; data: Partial<typeof row> }) => {
-          if (where.status && where.status !== row.status) return { count: 0 };
+        async ({
+          where,
+          data,
+        }: {
+          where: { status?: string | { in: string[] } };
+          data: Partial<typeof row>;
+        }) => {
+          const statuses = typeof where.status === "string" ? [where.status] : where.status?.in;
+          if (statuses && !statuses.includes(row.status)) return { count: 0 };
           Object.assign(row, data);
           return { count: 1 };
         },
@@ -2899,8 +2971,14 @@ describe("connections.complete", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     async function complete(connectionId = row.id, signal?: AbortSignal) {
+      return call("complete", connectionId, signal);
+    }
+    async function revoke(signal?: AbortSignal) {
+      return call("revoke", row.id, signal);
+    }
+    async function call(operation: string, connectionId: string, signal?: AbortSignal) {
       const { response } = await handler.handle(
-        new Request("http://127.0.0.1/rpc/connections/complete", {
+        new Request(`http://127.0.0.1/rpc/connections/${operation}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ json: { connectionId } }),
@@ -2921,8 +2999,29 @@ describe("connections.complete", () => {
       return { status: response.status, body: await response.json() };
     }
     const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
-    return { complete, connector, securityEvents, row };
+    return { complete, revoke, connector, securityEvents, row, sink };
   }
+
+  it.each([
+    ["the caller cancelled", true, "warn"],
+    ["an uncertain remote failure", false, "error"],
+  ])("keeps the row revoked after %s and logs it at %s", async (_case, cancelled, level) => {
+    const { revoke, connector, row, sink } = pollFixture("connected");
+    row.providerRef = "account-1";
+    const request = new AbortController();
+    connector.revoke.mockImplementation(async () => {
+      if (cancelled) request.abort();
+      throw new Error("Request was cancelled by the caller: Request was aborted.");
+    });
+
+    await expect(revoke(request.signal)).resolves.toMatchObject({ status: 400 });
+    expect(row.status).toBe("revoked");
+    expect(
+      sink.events
+        .filter((event) => event.message.startsWith("connections.revoke"))
+        .map((event) => event.level),
+    ).toEqual([level]);
+  });
 
   it("records nothing but keeps the account id when the catalog connected the row first", async () => {
     const { complete, connector, securityEvents, row } = pollFixture("pending");
@@ -3273,7 +3372,11 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(new ComputerScreenUnavailableError()),
+      Promise.reject(
+        new ComputerScreenUnavailableError(
+          "cannot allocate another screen: private provider detail",
+        ),
+      ),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -4495,6 +4598,52 @@ describe("model credential persistence", () => {
     );
   });
 
+  it("checks the chosen model with the new key before saving it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => {
+      throw new Error("Your model provider denied access to this model.");
+    });
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "groq",
+      apiKey: "fixture-groq-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { code: "BAD_REQUEST", message: "Your model provider denied access to this model." },
+    });
+    // No model chosen: the provider's recommended default is the one checked.
+    expect(check).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "groq",
+        id: "openai/gpt-oss-120b",
+        apiKey: "fixture-groq-key",
+      }),
+      expect.any(Object),
+    );
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("refuses a pasted key that is not a header-safe token before checking it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => undefined);
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "deepseek",
+      apiKey: "sk-fixture-你好-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: MODEL_KEY_FORMAT_ERROR },
+    });
+    expect(check).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
   it("adds another connection when the save names none, numbering its name", async () => {
     const { deps, handler } = persistDeps();
     const existing = {
@@ -4617,6 +4766,20 @@ describe("model credential persistence", () => {
     // A new account stays a new account.
     await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
     expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("tells the user to restart a pasted-code sign-in that is gone", async () => {
+    const { deps, handler } = persistDeps();
+    const message = "Sign-in session not found. Start sign-in again.";
+    Object.assign(deps.oauthLogins, {
+      submit: vi.fn().mockRejectedValue(new ModelSignInError(message)),
+    });
+    const response = await call(handler, "models/submitOAuthCode", {
+      loginId: "login-1",
+      code: "pasted-code",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ json: { message } });
   });
 
   it("names a second subscription account by the email it signed in with", async () => {
@@ -6411,6 +6574,54 @@ describe("routine live Codex model validation", () => {
   );
 });
 
+describe("routines.list", () => {
+  it("marks routines another Space member created as not editable", async () => {
+    const actor = { userId: "user-1", spaceId: "space-1" };
+    const row = (id: string, userId: string) => ({
+      id,
+      botId: "bot-1",
+      spaceId: "space-1",
+      userId,
+      name: id,
+      prompt: "Check changes",
+      crons: ["0 9 * * *"],
+      timezone: "UTC",
+      active: true,
+      notify: false,
+      webhookEnabled: false,
+      githubEnabled: false,
+      messageProvider: null,
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      watch: null,
+      watchState: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          bot: { findFirst: vi.fn(async () => ({ id: "bot-1", thread: null, computer: null })) },
+          routine: {
+            findMany: vi.fn(async () => [row("mine", "user-1"), row("theirs", "user-2")]),
+          },
+        },
+        env: { sandboxProvider: "fake" },
+      } as unknown as RouterDeps),
+      { context: { actor } as never },
+    );
+
+    const routines = await client.routines.list({ botId: "bot-1" });
+    expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
+      { id: "mine", editable: true },
+      { id: "theirs", editable: false },
+    ]);
+    expect(routines[0]).not.toHaveProperty("userId");
+  });
+});
+
 describe("routines.update", () => {
   const actor = {
     spaceId: "space-1",
@@ -8059,7 +8270,11 @@ describe("export.bot", () => {
     return home;
   }
 
-  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+  async function exportManifest(
+    scope: "team" | "dedicated",
+    home: LocalAgentHomeStore,
+    appearance?: { color: string; avatarSet?: "organic" | "rakazo" },
+  ) {
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -8068,6 +8283,7 @@ describe("export.bot", () => {
           title: "",
           description: "",
           instructions: "",
+          ...appearance,
           thread: { id: "thread-1" },
           computer: { id: "computer-1", scope, homeKey: "home-1" },
         }),
@@ -8088,8 +8304,23 @@ describe("export.bot", () => {
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     const manifest = await client.export.bot({ botId: "bot-1" });
-    return manifest.files.sort((a, b) => a.path.localeCompare(b.path));
+    return manifest;
   }
+
+  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+    return (await exportManifest(scope, home)).files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  it.each(["#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
+    "exports the selected set and untouched avatar value (%s)",
+    async (color) => {
+      const manifest = await exportManifest("team", await homeWith({}), {
+        color,
+        avatarSet: "rakazo",
+      });
+      expect(manifest.bot).toMatchObject({ color, avatarSet: "rakazo" });
+    },
+  );
 
   it("exports only the bot's own folder from a Team Computer", async () => {
     const home = await homeWith({

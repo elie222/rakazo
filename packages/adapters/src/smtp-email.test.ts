@@ -29,6 +29,22 @@ describe("SmtpEmailProvider", () => {
     });
   });
 
+  it("sends the configured reply-to address", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "message-1" }));
+    const provider = new SmtpEmailProvider(
+      {
+        url: "smtps://smtp.example.test:465",
+        from: "hello@example.test",
+        replyTo: "founder@example.test",
+      },
+      { transport: { sendMail } as never },
+    );
+    await provider.send({ to: "ada@example.test", subject: "Welcome", text: "Hi" });
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ replyTo: "founder@example.test" }),
+    );
+  });
+
   it("retries only failures that cannot have sent the message, then drains", async () => {
     const temporary = Object.assign(new Error("Try again later"), {
       code: "EENVELOPE",

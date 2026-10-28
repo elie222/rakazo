@@ -4,10 +4,10 @@ import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
-  type MessagingPlatform,
   providerOfThreadId,
 } from "./chat-sdk-surface.js";
 import { enrichSlackTeamRoom } from "./messaging-platforms.js";
@@ -574,8 +574,7 @@ describe("ChatSdkMessagingSurface webhook waitUntil drain", () => {
       "mock",
       webhookRequest({ threadId: "mock:Duser:1", id: "m-slow", text: "hello" }),
     );
-    // If the surface returned before draining waitUntil, sinkDone would still be false
-    // when the promise settles... we assert after await that sink completed first.
+    // The response must wait for the waitUntil sink to finish.
     const response = await responsePromise;
     sawSinkPendingAtResponse = !sinkDone;
     expect(sawSinkPendingAtResponse).toBe(false);

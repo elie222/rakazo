@@ -8,6 +8,7 @@ import {
   LOCALE_HTML_LANG,
   LOCALE_OG,
   isLocale,
+  RTL_LOCALES,
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
@@ -61,7 +62,7 @@ const homeUrls = Object.fromEntries(
 ---
 
 <!doctype html>
-<html lang={htmlLang}>
+<html lang={htmlLang} dir={RTL_LOCALES.has(locale) ? "rtl" : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

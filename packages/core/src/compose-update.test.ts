@@ -1,3 +1,4 @@
+import { parse } from "dotenv";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -543,6 +544,82 @@ describe("managed env assignments", () => {
     );
     expect(result.match(/RAKAZO_IMAGE_TAG=sha-/g)).toHaveLength(2);
     expect(result).not.toContain("stale");
+  });
+
+  it.each([
+    " RAKAZO_IMAGE_TAG=v1.2.0",
+    "\tRAKAZO_IMAGE_TAG=v1.2.0",
+    "RAKAZO_IMAGE_TAG = v1.2.0",
+    "RAKAZO_IMAGE_TAG\t=\tv1.2.0",
+    "\u00a0RAKAZO_IMAGE_TAG\u00a0=\u00a0v1.2.0",
+    " export RAKAZO_IMAGE_TAG = 'v1.2.0' # pinned",
+    'RAKAZO_IMAGE_TAG: "v1.2.0"',
+  ])("rewrites a later Compose assignment: %s", (duplicate) => {
+    const contents = `RAKAZO_IMAGE_TAG=v1.1.0\n${duplicate}\n`;
+    expect(parse(contents).RAKAZO_IMAGE_TAG).toBe("v1.2.0");
+    const result = upsertEnvAssignments(contents, {
+      RAKAZO_IMAGE_TAG: "v2.0.0",
+    });
+
+    expect(result).toBe("RAKAZO_IMAGE_TAG=v2.0.0\nRAKAZO_IMAGE_TAG=v2.0.0\n");
+    expect(parse(result).RAKAZO_IMAGE_TAG).toBe("v2.0.0");
+  });
+
+  it("rewrites mixed current and rollback duplicates while preserving unrelated CRLF content", () => {
+    const unrelated = [
+      "# RAKAZO_IMAGE_TAG = commented",
+      "  # RAKAZO_IMAGE_TAG=also-commented",
+      "RAKAZO_IMAGE_TAG_EXTRA=untouched",
+      "OTHER = 'keep # this' # comment",
+      "",
+    ];
+    const contents = [
+      "RAKAZO_IMAGE_TAG=v1.0.0",
+      "RAKAZO_IMAGE_TAG_PREVIOUS=v0.9.0",
+      ...unrelated,
+      " \tRAKAZO_IMAGE_TAG \t= v1.2.0 # pinned",
+      "\tRAKAZO_IMAGE_TAG_PREVIOUS = 'v1.1.0' # rollback",
+    ].join("\r\n");
+    const assignments = { RAKAZO_IMAGE_TAG: "v2.0.0", RAKAZO_IMAGE_TAG_PREVIOUS: "v1.2.0" };
+    const result = upsertEnvAssignments(contents, assignments);
+
+    expect(result).toBe(
+      [
+        "RAKAZO_IMAGE_TAG=v2.0.0",
+        "RAKAZO_IMAGE_TAG_PREVIOUS=v1.2.0",
+        ...unrelated,
+        "RAKAZO_IMAGE_TAG=v2.0.0",
+        "RAKAZO_IMAGE_TAG_PREVIOUS=v1.2.0",
+        "",
+      ].join("\r\n"),
+    );
+    expect(parse(result)).toMatchObject(assignments);
+  });
+
+  it.each(
+    ["'", '"', "`"].flatMap((quote) => ["", "\uFEFF", "\u00a0"].map((prefix) => [quote, prefix])),
+  )(
+    "preserves assignment-like text inside an unrelated %s quoted value with prefix %j",
+    (quote, prefix) => {
+      const unrelated = `${prefix}notes.value: ${quote}first\\\nRAKAZO_IMAGE_TAG=v0.9.0\n RAKAZO_IMAGE_TAG = v1.0.0\nlast${quote} # keep`;
+      const result = upsertEnvAssignments(`${unrelated}\nRAKAZO_IMAGE_TAG=v1.2.0\n`, {
+        RAKAZO_IMAGE_TAG: "v2.0.0",
+      });
+
+      expect(result).toBe(`${unrelated}\nRAKAZO_IMAGE_TAG=v2.0.0\n`);
+      expect(parse(result)["notes.value"]).toBe(parse(unrelated)["notes.value"]);
+    },
+  );
+
+  it("preserves a leading BOM when rewriting managed duplicates", () => {
+    const result = upsertEnvAssignments(
+      "\uFEFFRAKAZO_IMAGE_TAG=v1.1.0\nRAKAZO_IMAGE_TAG = v1.2.0\n",
+      {
+        RAKAZO_IMAGE_TAG: "v2.0.0",
+      },
+    );
+    expect(result).toBe("\uFEFFRAKAZO_IMAGE_TAG=v2.0.0\nRAKAZO_IMAGE_TAG=v2.0.0\n");
+    expect(parse(result).RAKAZO_IMAGE_TAG).toBe("v2.0.0");
   });
 
   it("refuses values that would inject a second assignment or a compose expression", () => {

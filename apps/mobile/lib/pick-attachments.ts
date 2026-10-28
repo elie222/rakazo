@@ -253,10 +253,7 @@ export async function readDroppedFiles(
         ? `data:${mimeType};base64,${contentBase64}`
         : undefined;
       attachments.push(
-        pickedAttachment(
-          { name: file.name, mimeType, size, contentBase64, previewUri },
-          existingCount + attachments.length,
-        ),
+        pickedAttachment({ name: file.name, mimeType, size, contentBase64, previewUri }),
       );
     }
   } finally {

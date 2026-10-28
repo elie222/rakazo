@@ -698,3 +698,67 @@ it("picks a Space's own voice from the account's connections without managing th
     vi.unstubAllGlobals();
   }
 });
+
+it("saves a typed self-hosted voice on blur without dropping other unsaved edits", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const saved = {
+    ...fish,
+    provider: "openai-compatible",
+    voiceId: "af_heart",
+    endpoint: "http://127.0.0.1:8000/v1",
+    ttsModel: "",
+    sttModel: "",
+  };
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    ]);
+  voice.credentials.mockReset().mockResolvedValue([saved]);
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  voice.voices.mockReset().mockResolvedValue([{ id: "af_heart", label: "Heart" }]);
+  voice.setVoice.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const type = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const blur = async (input: HTMLInputElement) => {
+    await act(async () => {
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+  };
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() => expect(labelledInput(container, "Voice").value).toBe("af_heart"));
+
+    await blur(labelledInput(container, "Voice"));
+    await type(labelledInput(container, "Voice"), "  ");
+    await blur(labelledInput(container, "Voice"));
+    expect(voice.setVoice).not.toHaveBeenCalled();
+
+    await type(labelledInput(container, "Server URL"), "http://127.0.0.1:9000/v1");
+    await type(labelledInput(container, "Voice"), " am_custom ");
+    await blur(labelledInput(container, "Voice"));
+    expect(voice.setVoice).toHaveBeenCalledWith({
+      scope: "account",
+      voiceId: "am_custom",
+      provider: "openai-compatible",
+    });
+    await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
+    expect(labelledInput(container, "Server URL").value).toBe("http://127.0.0.1:9000/v1");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

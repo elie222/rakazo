@@ -1,7 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
-  formatToolActivityDuration,
   isToolOnlyNarration,
   messageHasVisibleBlocks,
   renderableMessageBlocks,
@@ -14,31 +13,6 @@ const stepsNoDuration: MessageBlock = { kind: "steps", steps: [{ label: "Shell",
 const textBlock: MessageBlock = { kind: "text", text: "Here you go." };
 const liveActivity: MessageBlock = { kind: "progress", text: "Using shell", activity: true };
 const narration: MessageBlock = { kind: "progress", text: "Let me check that." };
-
-describe("formatToolActivityDuration", () => {
-  it.each([
-    [0, "0ms"],
-    [850, "850ms"],
-    [999, "999ms"],
-    [1000, "1s"],
-    [4200, "4.2s"],
-    [12000, "12s"],
-    [19179, "19s"],
-    [60000, "1m 00s"],
-    [65000, "1m 05s"],
-    [103000, "1m 43s"],
-  ])("formats %ims as %s", (ms, expected) => {
-    expect(formatToolActivityDuration(ms)).toBe(expected);
-  });
-
-  it("omits unusable durations", () => {
-    expect(formatToolActivityDuration(undefined)).toBeNull();
-    expect(formatToolActivityDuration(null)).toBeNull();
-    expect(formatToolActivityDuration(Number.NaN)).toBeNull();
-    expect(formatToolActivityDuration(Number.POSITIVE_INFINITY)).toBeNull();
-    expect(formatToolActivityDuration(-1)).toBeNull();
-  });
-});
 
 describe("tool step count", () => {
   it("sums each row's count", () => {

@@ -26,6 +26,7 @@ import {
 } from "@rakazo/db";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
+import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import { withSerializableRetry } from "../serializable-retry.js";
 import {
@@ -75,9 +76,14 @@ export function accountRoutes(ctx: RouterContext) {
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     billing: {
-      selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) =>
-        requireBilling(deps).selectFunding(context.actor, input.funding),
-      ),
+      selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        if (input.funding === "credits") {
+          const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
+          record(undefined, { name: "model_connect_started" });
+        }
+        return billing.selectFunding(context.actor, input.funding, input.client);
+      }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
       ),
@@ -87,11 +93,16 @@ export function accountRoutes(ctx: RouterContext) {
       status: authed.billing.status.handler(async ({ context }) =>
         requireBilling(deps).status(context.actor),
       ),
-      checkout: authed.billing.checkout.handler(async ({ context }) =>
-        requireBilling(deps).checkout(context.actor),
+      refresh: authed.billing.refresh.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.syncForActor(context.actor);
+        return billing.status(context.actor);
+      }),
+      checkout: authed.billing.checkout.handler(async ({ context, input }) =>
+        requireBilling(deps).checkout(context.actor, input?.client),
       ),
-      portal: authed.billing.portal.handler(async ({ context }) =>
-        requireBilling(deps).portal(context.actor),
+      portal: authed.billing.portal.handler(async ({ context, input }) =>
+        requireBilling(deps).portal(context.actor, input?.client),
       ),
     },
     preferences: {
@@ -278,7 +289,7 @@ export function accountRoutes(ctx: RouterContext) {
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
-        prepareVoice(deps, context.actor, input),
+        prepareVoice(deps, context.actor, { ...input, signal: context.signal }),
       ),
     },
   };

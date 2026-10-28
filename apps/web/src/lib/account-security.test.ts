@@ -1,5 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { fetchAccountSecurity, requestAccountDeletionCode } from "./account-security";
+import {
+  confirmIdentity,
+  fetchAccountSecurity,
+  requestAccountDeletionCode,
+} from "./account-security";
+
+it("posts an identity proof and surfaces the server's error", async () => {
+  const fetch = vi.fn(async () =>
+    Response.json({ code: "INVALID_PASSWORD", message: "Invalid password" }, { status: 400 }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await expect(confirmIdentity({ password: "secret-value" })).rejects.toThrow("Invalid password");
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/auth/confirm-identity",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ password: "secret-value" }) }),
+  );
+});
 
 afterEach(() => vi.unstubAllGlobals());
 it("falls back to password account controls on an older server's 404", async () => {

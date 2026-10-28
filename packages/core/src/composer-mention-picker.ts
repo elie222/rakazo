@@ -1,5 +1,3 @@
-/** Keyboard actions for the composer `@` mention picker. */
-
 export type MentionPickerKeyAction =
   | { type: "complete"; index: number }
   | { type: "move"; index: number }

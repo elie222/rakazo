@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+export const SETTINGS_CONTENT_WIDTH = "max-w-2xl";
+
 /** A titled list of settings rows sharing one bordered surface. */
 export function SettingsGroup({
   title,

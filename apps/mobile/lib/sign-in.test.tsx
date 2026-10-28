@@ -264,7 +264,7 @@ it.each(["in", "up"])("signs in with an emailed code by default in %s mode", asy
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
   vi.mocked(sendSignInCode).mockResolvedValue();
   vi.mocked(signInWithCode).mockResolvedValue();
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: false });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
   expect(button("Use password")).toBeUndefined();
   if (mode === "up") await type(input("Name")!, "Ada");
@@ -306,7 +306,7 @@ it("returns from the code step with the email kept", async () => {
 it("signs in with a typed password and emails a code when it is blank", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
   vi.mocked(signIn).mockResolvedValue({ verificationRequired: false });
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: false });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
   expect(button("Forgot password?")).toBeDefined();
   const primary = () => host.querySelector('button[data-prominence="primary"]')?.textContent;
@@ -324,7 +324,7 @@ it("verifies the code even if a password was typed while it was sent", async () 
   let sent!: () => void;
   vi.mocked(sendSignInCode).mockReturnValue(new Promise<void>((resolve) => (sent = resolve)));
   vi.mocked(signInWithCode).mockResolvedValue();
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: false });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: false } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
@@ -361,7 +361,7 @@ it("sends the code on the first Continue but never submits an unfinished code", 
 
 it("opens the app after code sign-in without server setup", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  vi.mocked(rpc).mockResolvedValue({ needsSetup: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSetup: true } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
@@ -373,7 +373,7 @@ it("opens the app after code sign-in without server setup", async () => {
 
 it("asks the signup survey before opening the app", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
-  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true } as never);
   await render();
   await type(input("Email")!, "ada@example.test");
   await press("Continue");
@@ -414,7 +414,7 @@ it("asks the signup survey after an external sign-in creates the account", async
   });
   vi.mocked(passkeysAvailable).mockResolvedValue(true);
   vi.mocked(signInWithPasskey).mockResolvedValue(true);
-  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true });
+  vi.mocked(rpc).mockResolvedValue({ needsSignupSurvey: true } as never);
   await render();
   await act(async () => buttonNamed("Sign in with passkey")!.click());
   expect(router.replace).toHaveBeenCalledWith("/signup-survey");

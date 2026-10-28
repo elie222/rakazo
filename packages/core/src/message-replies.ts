@@ -1,5 +1,7 @@
 import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import { ReplyPreviewSchema } from "@rakazo/contracts";
+import { displayName } from "./display-name.js";
+import { plainTextFromMarkdown } from "./markdown-plain.js";
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -56,4 +58,42 @@ export function replyLabel(
     text,
     attachment?.kind === "image" ? labels.photo : attachment?.name || labels.attachment,
   );
+}
+
+/**
+ * Who wrote a message relayed from an outside channel. Those arrive as user messages, so a reply
+ * to one names its sender rather than "You".
+ */
+export function channelMessageSender(blocks: MessageBlock[]): string | undefined {
+  const block = blocks.find((candidate) => candidate.kind === "channel_message");
+  return block?.kind === "channel_message"
+    ? displayName(block.fromLabel, "") || undefined
+    : undefined;
+}
+
+/**
+ * A message's text for a reply line before the server's preview arrives. Channel
+ * messages show their text alone, matching the server-owned preview.
+ */
+export function previewMessageText(
+  message: { role: string; blocks: MessageBlock[] },
+  labels: { photo: string; attachment: string; message: string },
+): string {
+  const text = message.blocks
+    .map((block) => {
+      if (block.kind === "channel_message") return block.text;
+      if (block.kind === "text") {
+        // Bot text is Markdown; user text is already plain.
+        return message.role === "bot" ? plainTextFromMarkdown(block.text) : block.text;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (text) return text;
+  const attachment = replyAttachment(message.blocks);
+  if (attachment)
+    return attachment.kind === "image" ? labels.photo : attachment.name || labels.attachment;
+  return labels.message;
 }

@@ -106,6 +106,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   const stamp = Date.now();
   await signup(page, `routine-${stamp}@rakazo.test`, "password12", "Routine");
   await completeOnboarding(page);
+  const botId = activeBotId(page);
 
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test run" })).toHaveCount(0);
@@ -146,21 +147,16 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.getByRole("button", { name: /Daily verification/ }).click();
   const history = page.getByTestId("routine-run-history");
   await expect(history.getByTestId("routine-run-row")).toHaveCount(1);
-  await expect(history.getByText("Done", { exact: true })).toBeVisible();
+  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
+    (item) => item.name === "Daily verification",
+  );
+  const ran = await rpc<{ runs: Array<{ status: string }> }>(page, "routines/history", {
+    routineId: created?.id,
+  });
+  expect(ran.runs.map((run) => run.status)).toEqual(["completed"]);
   await expect(history.getByText("No runs yet")).toHaveCount(0);
-  await expect(history.getByRole("link", { name: "View chat" })).toBeVisible();
-  await expect(history.getByRole("button", { name: "Run history" })).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
-  await history.getByRole("button", { name: "Run history" }).click();
-  await expect(history.getByRole("button", { name: "Run history" })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await expect(history.getByTestId("routine-run-row")).toHaveCount(1);
   await captureScreenshot(page, testInfo, "36-routine-run-history");
-  await history.getByRole("link", { name: "View chat" }).click();
+  await history.getByTestId("routine-run-row").getByRole("link").click();
   await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible();
   await captureScreenshot(page, testInfo, "35-routine-run-persisted");
 });
@@ -205,8 +201,35 @@ test("an unchanged routine completes without adding a chat reply", async ({ page
   await expect(transcript.getByText("Checking for changes.", { exact: false })).toHaveCount(0);
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await page.getByRole("button", { name: /Quiet release check/ }).click();
-  await expect(
-    page.getByTestId("routine-run-history").getByText("Done", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("routine-run-history").getByTestId("routine-run-row")).toHaveCount(
+    1,
+  );
   await captureScreenshot(page, testInfo, "routine-unchanged-silent");
+
+  // A sixth run puts the first one past the latest five.
+  for (let count = 2; count <= 6; count += 1) {
+    const { runId: next } = await rpc<{ runId: string }>(page, "routines/testRun", {
+      routineId: routine.id,
+    });
+    await expect
+      .poll(async () => {
+        const history = await rpc<{ runs: Array<{ id: string; status: string }> }>(
+          page,
+          "routines/history",
+          { routineId: routine.id },
+        );
+        return history.runs.find((run) => run.id === next)?.status;
+      })
+      .toBe("completed");
+  }
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: /Quiet release check/ }).click();
+  const history = page.getByTestId("routine-run-history");
+  await expect(history.getByTestId("routine-run-row")).toHaveCount(5);
+  await expect(history.getByRole("button", { name: "Load older runs" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-run-history-older-runs");
+  await history.getByRole("button", { name: "Load older runs" }).click();
+  await expect(history.getByTestId("routine-run-row")).toHaveCount(6);
+  await expect(history.getByRole("button", { name: "Load older runs" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "routine-run-history-expanded");
 });

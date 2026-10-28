@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
+import {
+  jsonSchemaParameters,
+  parametersFor,
+  prepareFleetArguments,
+} from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
   it.each([

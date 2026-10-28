@@ -11,6 +11,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { fetchFresh } from "@rakazo/core/query";
 import {
   Button,
   Dialog,
@@ -27,9 +28,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { importChunk } from "../lib/preload-recovery";
-import { fetchFresh, useSpaceQueries } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
+import { speaker } from "../lib/tts";
 import { errorText } from "../lib/user-error";
 
 export function VoiceSettingsOverlay({
@@ -260,7 +261,7 @@ export function VoiceSettingsOverlay({
     setError(null);
     try {
       await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
-      await refresh(selected?.id);
+      await refresh(selected?.id, { keepForm: true });
     } catch (err) {
       setError(errorText(err, t`Could not save that voice`));
     } finally {
@@ -302,7 +303,6 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("test");
     try {
-      const { speaker } = await importChunk(() => import("../lib/tts.js"));
       await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
         spaceId,
         scope,
@@ -486,20 +486,53 @@ export function VoiceSettingsOverlay({
                 <FieldLabel htmlFor={voiceSelectId}>
                   <Trans>Voice</Trans>
                 </FieldLabel>
-                <NativeSelect
-                  id={voiceSelectId}
-                  className="w-full"
-                  value={voiceId}
-                  disabled={busy}
-                  onChange={(event) => void chooseVoice(event.target.value)}
-                >
-                  {voiceOptions.map((voice) => (
-                    <NativeSelectOption key={voice.id} value={voice.id}>
-                      {voice.label}
-                      {voice.description ? ` (${voice.description})` : ""}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                {selfHosted ? (
+                  <>
+                    <Input
+                      id={voiceSelectId}
+                      list={`${voiceSelectId}-list`}
+                      className="w-full"
+                      value={voiceId}
+                      disabled={busy}
+                      onChange={(event) => {
+                        edited.current.add("voiceId");
+                        setVoiceId(event.target.value);
+                      }}
+                      onBlur={() => {
+                        const next = voiceId.trim();
+                        if (next && next !== credential?.voiceId) void chooseVoice(next);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }}
+                    />
+                    <datalist id={`${voiceSelectId}-list`}>
+                      {voiceOptions.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {voice.label}
+                          {voice.description ? ` (${voice.description})` : ""}
+                        </option>
+                      ))}
+                    </datalist>
+                  </>
+                ) : (
+                  <NativeSelect
+                    id={voiceSelectId}
+                    className="w-full"
+                    value={voiceId}
+                    disabled={busy}
+                    onChange={(event) => void chooseVoice(event.target.value)}
+                  >
+                    {voiceOptions.map((voice) => (
+                      <NativeSelectOption key={voice.id} value={voice.id}>
+                        {voice.label}
+                        {voice.description ? ` (${voice.description})` : ""}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                )}
               </Field>
               {selected.id === "fish-audio" ? (
                 <Field className="mt-6">
@@ -544,11 +577,7 @@ export function VoiceSettingsOverlay({
   );
 
   if (embedded) {
-    return (
-      <div data-testid="voice-settings" className="max-w-xl">
-        {content}
-      </div>
-    );
+    return <div data-testid="voice-settings">{content}</div>;
   }
 
   return (

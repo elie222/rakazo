@@ -5,6 +5,8 @@ import {
   isServerUnreachable,
   isUnreachableStatus,
   MAX_PASSWORD_LENGTH,
+  MODEL_IMAGE_INPUT_ERROR,
+  MODEL_IMAGE_INPUT_UNKNOWN,
   userErrorMessage,
 } from "@rakazo/core";
 import { t } from "./i18n";
@@ -14,6 +16,16 @@ export function errorText(
   error: unknown,
   fallback = t("Something went wrong. Try again."),
 ): string {
+  const message =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error
+        ? error.message
+        : undefined;
+  if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_ERROR)
+    return t("This model cannot read images. Choose a model that supports images.");
+  if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_UNKNOWN)
+    return t("Image input is not configured for this model.");
   return (
     voiceAccountErrorText(error) ??
     userErrorMessage(error, { fallback, offline: t("Could not reach the server") })
@@ -33,7 +45,6 @@ export function credentialIssueText(field: CredentialField): string {
   return field === "email" ? t("Enter a valid email") : t("Enter a password");
 }
 
-/** Text for a failed auth response body. */
 export function authErrorText(body: unknown, fallback: string): string {
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
   if (code === "SSO_UNAVAILABLE") return t("SSO is temporarily unavailable. Try again.");

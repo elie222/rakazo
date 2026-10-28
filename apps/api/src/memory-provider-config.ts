@@ -8,7 +8,8 @@ import {
   toStringRecord,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { findSpaceMemoryConfig, Prisma, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { findSpaceMemoryConfig, Prisma } from "@rakazo/db";
 import { withSerializableRetry } from "./serializable-retry.js";
 
 export interface MemoryProviderConfigDeps {
@@ -48,7 +49,6 @@ export async function persistMemoryProviderConfig(
   await requireSpaceOwner(deps.prisma, actor);
   let prepared: Awaited<ReturnType<typeof prepareMemoryProviderConnection>>;
   try {
-    // Fast-path known private endpoints before probing.
     if (
       memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
       deps.env?.mcpAllowPrivateEndpoint !== true

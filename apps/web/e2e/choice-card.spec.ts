@@ -13,18 +13,15 @@ test("onboarding choices show borderless rows in both themes", async ({ page }, 
       (value) => document.documentElement.setAttribute("data-theme", value),
       theme,
     );
-    await expect(option).toHaveCSS("border-top-width", "0px");
-    const rowColor = await option.evaluate((element) => getComputedStyle(element).backgroundColor);
-    const cardColor = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-    expect(rowColor).not.toBe(cardColor);
+    await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
   }
   await option.focus();
   await expect(option).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(card.getByRole("button")).toHaveCount(1);
   await expect(option).toBeDisabled();
-  await expect(option).toContainText("✓");
+  await expect(option).toHaveAttribute("aria-pressed", "true");
   await captureScreenshot(page, testInfo, "onboarding-choice-rows-answered");
 });
 
@@ -69,7 +66,6 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await expect(toronto).toBeVisible();
   await expect(lisbon).toBeVisible();
 
-  // Options render as a vertical full-width list, not wrapping chips.
   const berlinBox = await berlin.boundingBox();
   const seoulBox = await seoul.boundingBox();
   const torontoBox = await toronto.boundingBox();
@@ -80,10 +76,10 @@ test("renders tappable choice buttons and submits the offered action id", async 
   expect(torontoBox!.y).toBeGreaterThan(seoulBox!.y + seoulBox!.height - 2);
   expect(Math.abs(berlinBox!.x - seoulBox!.x)).toBeLessThan(2);
   expect(Math.abs(berlinBox!.width - seoulBox!.width)).toBeLessThan(2);
-  const optionList = berlin.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
-  const listBox = await optionList.boundingBox();
+  // Rows bleed past the list so the hover fill frames the letter and label.
+  const listBox = await berlin.locator("xpath=..").boundingBox();
   expect(listBox).toBeTruthy();
-  expect(Math.abs(berlinBox!.width - listBox!.width)).toBeLessThan(2);
+  expect(berlinBox!.width).toBeGreaterThanOrEqual(listBox!.width);
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -100,10 +96,8 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await page.setViewportSize({ width: 1280, height: 720 });
   await seoul.click();
 
-  await expect(page.getByText("Answered: Seoul", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByRole("button", { name: "Seoul", exact: true })).toHaveCount(0);
+  await expect(seoul).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect(seoul).toBeDisabled();
 
   await expect
     .poll(
@@ -166,8 +160,11 @@ test("a typed reply answers the latest question and resumes its run", async ({
   await composer.fill("Paris");
   await page.keyboard.press("Enter");
 
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(seoul).toHaveCount(0);
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(seoul).toBeDisabled();
+  await expect(seoul).not.toHaveAttribute("aria-pressed");
   await expect
     .poll(async () => {
       const snapshot = await rpc<{

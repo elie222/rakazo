@@ -34,6 +34,33 @@ describe("bot message text", () => {
   });
 });
 
+describe("Unicode boundaries", () => {
+  it("keeps surrogate pairs intact within the bot message limit", () => {
+    const emoji = "\u{1f600}";
+    expect(clampBotMessage("a".repeat(7998) + emoji)).toBe("a".repeat(7998) + emoji);
+    expect(clampBotMessage("a".repeat(7998) + emoji + "x")).toBe("a".repeat(7998) + "\u2026");
+    expect(clampBotMessage("a".repeat(7997) + emoji + "xx")).toBe(
+      "a".repeat(7997) + emoji + "\u2026",
+    );
+    expect(clampBotMessage("a".repeat(7998) + "  xx")).toBe("a".repeat(7998) + "\u2026");
+  });
+
+  it("keeps descriptions well formed at individual and shared roster limits", () => {
+    const emoji = "\u{1f600}";
+    const lines = formatBotRosterLines([
+      { id: "a", name: "A", description: "a".repeat(4000) },
+      { id: "b", name: "B", description: "b".repeat(3999) },
+      { id: "c", name: "C", description: emoji },
+      { id: "d", name: "D", description: "z" },
+    ]);
+    expect(lines[2]).toBe("- C (id: c)");
+    expect(lines[3]).toBe("- D (id: d): z");
+    expect(
+      formatBotRosterLines([{ id: "a", name: "A", description: "a".repeat(3999) + emoji }])[0],
+    ).toBe("- A (id: a): " + "a".repeat(3999));
+  });
+});
+
 describe("bot message silence", () => {
   it("surfaces an FYI when it replies to a delegated request", () => {
     expect(botMessageAllowsSilence("fyi", true)).toBe(false);

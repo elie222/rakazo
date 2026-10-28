@@ -4,6 +4,7 @@ import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
+  newClientId,
   replyAttachment,
   resolveMentionPickerKey,
   SLASH_ACTIONS,
@@ -23,7 +24,6 @@ import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
-import { newClientId } from "../../lib/client-id";
 import {
   beginComposerDraftSubmission,
   readComposerDraft,
@@ -53,7 +53,10 @@ export const Composer = memo(function Composer({
   pendingAttachments,
   attachmentNotice,
   sendError,
+  imageConfirmation,
+  onDraftEdited,
   onOpenModels,
+  onOpenConnections,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -84,7 +87,10 @@ export const Composer = memo(function Composer({
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
   sendError: string | null;
+  imageConfirmation?: boolean;
+  onDraftEdited?: () => void;
   onOpenModels: () => void;
+  onOpenConnections: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -93,7 +99,12 @@ export const Composer = memo(function Composer({
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAttachmentPick: (files: FileList | readonly File[] | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
-  onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
+  onSend: (
+    text: string,
+    mentions: ComposerMention[],
+    clientNonce: string,
+    imageHandling?: "file",
+  ) => Promise<boolean>;
   onStop: () => Promise<void>;
   phoneCallsEnabled?: boolean;
   /** Hold-to-talk falls back to the voice provider's transcription; undefined while unknown. */
@@ -161,8 +172,9 @@ export const Composer = memo(function Composer({
       editRevision.current += 1;
       retryNonce.current = null;
       previousReply.current = { id: replyId, quote };
+      onDraftEdited?.();
     }
-  }, [replyId, quote]);
+  }, [replyId, quote, onDraftEdited]);
   const {
     textareaRef,
     attachButtonRef,
@@ -216,6 +228,7 @@ export const Composer = memo(function Composer({
     pendingAttachments.length > 0;
 
   function markEdited() {
+    onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
   }
@@ -340,7 +353,7 @@ export const Composer = memo(function Composer({
     mentionQuery === null &&
     (slashSkillOptions.length > 0 || slashActionOptions.length > 0);
 
-  async function send() {
+  async function send(imageHandling?: "file") {
     if (!canSend || sending || disabled) return;
     const revision = editRevision.current;
     const clientNonce = retryNonce.current ?? newClientId();
@@ -355,7 +368,10 @@ export const Composer = memo(function Composer({
     const mentions = selectedMentions;
     setSelectedMentions([]);
     try {
-      const accepted = (await onSend(text, mentions, clientNonce)) !== false;
+      const accepted =
+        (await (imageHandling
+          ? onSend(text, mentions, clientNonce, imageHandling)
+          : onSend(text, mentions, clientNonce))) !== false;
       settleComposerDraftSubmission(draftKey, submission, accepted);
       if (accepted) return;
     } catch {
@@ -515,10 +531,13 @@ export const Composer = memo(function Composer({
       </div>
       <ComposerError
         sendError={sendError}
+        imageConfirmation={imageConfirmation}
+        onSendAsFile={imageConfirmation && !sending ? () => void send("file") : undefined}
         runError={runError}
         runErrorId={runErrorId}
         onRunErrorPresented={onRunErrorPresented}
         onOpenModels={onOpenModels}
+        onOpenConnections={onOpenConnections}
         onDismissError={onDismissError}
         textareaRef={textareaRef}
       />
@@ -848,7 +867,7 @@ export const Composer = memo(function Composer({
                 size="icon"
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
-                onClick={send}
+                onClick={() => void send()}
                 className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
@@ -873,7 +892,7 @@ export const Composer = memo(function Composer({
                 size="icon"
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
-                onClick={send}
+                onClick={() => void send()}
                 className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />

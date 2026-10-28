@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { useRef, useState } from "react";
 import { authClient } from "./auth";
+import { syncWebLogoAvatarIdentity } from "./logo-avatar-activity";
 
 export async function signOut(): Promise<boolean> {
   try {
@@ -10,6 +11,7 @@ export async function signOut(): Promise<boolean> {
     // Ask the server directly: a later shared refresh can supersede the forced one below.
     const check = await authClient.getSession({ query: { disableCookieCache: true } });
     if (check.error || check.data) return false;
+    syncWebLogoAvatarIdentity(null);
 
     // Refresh the shared session state so navigation does not redirect using stale data.
     await authClient.$store.atoms.session
