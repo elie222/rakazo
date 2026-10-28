@@ -8141,20 +8141,25 @@ describe("boards.rename", () => {
 
   function renameDeps(tickets: number, ticketPrefix = "RAK") {
     const count = vi.fn(async () => tickets);
-    const update = vi.fn(async ({ data }: { data: { name?: string; ticketPrefix?: string } }) => ({
+    const applied = ({ data }: { data: { name?: string; ticketPrefix?: string } }) => ({
       ...boardRow(ticketPrefix),
       ...data,
       updatedAt: new Date("2026-06-02T00:00:00.000Z"),
-    }));
+    });
+    const update = vi.fn(applied);
+    const updateManyAndReturn = vi.fn(
+      async (args: { data: { name?: string; ticketPrefix?: string } }) => [applied(args)],
+    );
     const prisma = {
       board: {
         findUnique: vi.fn(async () => boardRow(ticketPrefix)),
         update,
+        updateManyAndReturn,
       },
       ticket: { count },
     } as unknown as PrismaClient;
     const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
-    return { count, update, handler: new RPCHandler(createRouter(deps)) };
+    return { count, update, updateManyAndReturn, handler: new RPCHandler(createRouter(deps)) };
   }
 
   async function rename(handler: RPCHandler<never>, body: unknown) {
@@ -8170,7 +8175,7 @@ describe("boards.rename", () => {
   }
 
   it("rejects a prefix change after tickets exist", async () => {
-    const { count, update, handler } = renameDeps(2);
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
     const response = await rename(handler, { ticketPrefix: "OPS" });
     expect(response?.status).toBe(400);
     await expect(response?.json()).resolves.toEqual({
@@ -8183,10 +8188,77 @@ describe("boards.rename", () => {
       where: { boardId: "board-1", spaceId: "workspace-1" },
     });
     expect(update).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it("changes the prefix while the board has no tickets", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(0);
+    const response = await rename(handler, { ticketPrefix: "OPS" });
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ ticketPrefix: "OPS" }),
+    });
+    expect(count).toHaveBeenCalledWith({
+      where: { boardId: "board-1", spaceId: "workspace-1" },
+    });
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        id: "board-1",
+        spaceId: "workspace-1",
+        nextNumber: 2,
+        tickets: { none: {} },
+      },
+      data: { ticketPrefix: "OPS" },
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("rejects the prefix change when a ticket lands between the count and the write", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(0);
+    updateManyAndReturn.mockResolvedValueOnce([]);
+    const response = await rename(handler, { name: "Launch", ticketPrefix: "OPS" });
+    expect(response?.status).toBe(400);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "BAD_REQUEST",
+        message: "Cannot change the ticket prefix once tickets exist.",
+      }),
+    });
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        id: "board-1",
+        spaceId: "workspace-1",
+        nextNumber: 2,
+        tickets: { none: {} },
+      },
+      data: { name: "Launch", ticketPrefix: "OPS" },
+    });
+    // The conditional write matched nothing, so no unconditional retry may
+    // apply the name change either.
+    expect(update).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the normal update path when the prefix only differs in case", async () => {
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
+    const response = await rename(handler, { ticketPrefix: "rak" });
+    expect(response?.status).toBe(200);
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ ticketPrefix: "RAK" }),
+    });
+    expect(count).not.toHaveBeenCalled();
+    // The case-only request rewrites nothing, so the write must not replay the
+    // observed prefix over one a concurrent rename may have committed.
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "board-1" },
+      data: {},
+    });
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   it("renames the board without changing the prefix", async () => {
-    const { count, update, handler } = renameDeps(2);
+    const { count, update, updateManyAndReturn, handler } = renameDeps(2);
     const response = await rename(handler, { name: "Launch" });
     expect(response?.status).toBe(200);
     await expect(response?.json()).resolves.toEqual({
@@ -8197,6 +8269,7 @@ describe("boards.rename", () => {
       where: { id: "board-1" },
       data: { name: "Launch" },
     });
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
 });
 
