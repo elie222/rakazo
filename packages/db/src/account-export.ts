@@ -145,7 +145,6 @@ async function* spaceRecords(
       type: "bot",
       id: bot.id,
       name: bot.name,
-      title: bot.title,
       description: bot.description,
       instructions: bot.instructions,
       selfUpdateInstructions: bot.selfUpdateInstructions,

@@ -11,7 +11,6 @@ test("legacy opaque names never appear in navigation, account, chats or Activity
   await completeOnboarding(page);
   const bot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Helper",
-    title: "",
     description: "",
     computerMode: "team",
   });

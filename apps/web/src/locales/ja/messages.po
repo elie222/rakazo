@@ -498,10 +498,6 @@ msgstr "実行するコマンドを追加"
 msgid "Add a file or folder to watch"
 msgstr "監視するファイルまたはフォルダーを追加"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "ラベルを追加"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "これを使用するには、設定でモデルを追加してください。"
@@ -2495,7 +2491,6 @@ msgstr "拒否"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "説明"
 
@@ -2667,10 +2662,6 @@ msgstr "編集"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "先に編集"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "ラベルを編集"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -3124,6 +3115,10 @@ msgstr "Rakazoを何で知りましたか？"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "頻度"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "他のボットからの見え方"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5900,7 +5895,6 @@ msgid "Timing may differ"
 msgstr "実行タイミングが異なる場合があります"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "タイトル"
 

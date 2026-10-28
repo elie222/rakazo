@@ -1,4 +1,5 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",
   "could not read": "kon niet worden gelezen",
@@ -44,9 +45,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Permissions: "Machtigingen",
   "Open work": "Open taken",
   "When it finishes or needs input": "Als de bot klaar is of invoer nodig heeft",
-  "Edit label": "Label bewerken",
   "Edit name": "Naam bewerken",
-  "Add a label": "Label toevoegen",
   "Pick a chat": "Kies een chat",
   "Add an AI model to keep chatting": "Voeg een AI-model toe om verder te chatten",
   "Not Now": "Niet nu",

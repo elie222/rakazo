@@ -54,10 +54,10 @@ const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
 
 describe("bot tool permissions", () => {
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
-    expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] }, "Bot")).toEqual({
+    expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] })).toEqual({
       patch: { name: "Scout" },
     });
-    expect(parseUpdateBotPatch({ disabledBuiltinTools: [] }, "Scout")).toHaveProperty("error");
+    expect(parseUpdateBotPatch({ disabledBuiltinTools: [] })).toHaveProperty("error");
   });
 
   it("filters history and app connection tools without widening the capability-gated selection", () => {
@@ -1199,49 +1199,49 @@ async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
 
 describe("parseUpdateBotPatch", () => {
   it("treats a blank bot_id as omitted, as providers send it", () => {
-    expect(parseUpdateBotPatch({ name: "Scout", bot_id: "" }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ name: "Scout", bot_id: "" })).toEqual({
       patch: { name: "Scout" },
     });
   });
 
   it("accepts notifyOnFinish on its own", () => {
-    expect(parseUpdateBotPatch({ notifyOnFinish: false }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ notifyOnFinish: false })).toEqual({
       patch: { notifyOnFinish: false },
     });
-    expect(parseUpdateBotPatch({ notifyOnFinish: true }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ notifyOnFinish: true })).toEqual({
       patch: { notifyOnFinish: true },
     });
   });
 
   it("accepts notify_on_finish as an alias", () => {
-    expect(parseUpdateBotPatch({ notify_on_finish: false }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ notify_on_finish: false })).toEqual({
       patch: { notifyOnFinish: false },
     });
   });
 
   it("keeps name patches and notifyOnFinish together", () => {
-    expect(parseUpdateBotPatch({ name: "Scout", notifyOnFinish: false }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ name: "Scout", notifyOnFinish: false })).toEqual({
       patch: { name: "Scout", notifyOnFinish: false },
     });
   });
 
   it("rejects a non-boolean notifyOnFinish", () => {
-    expect(parseUpdateBotPatch({ notifyOnFinish: "false" }, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({ notifyOnFinish: "false" })).toEqual({
       error: "notifyOnFinish must be true or false.",
     });
   });
 
   it("requires at least one supported field", () => {
-    expect(parseUpdateBotPatch({}, "Chief")).toEqual({
+    expect(parseUpdateBotPatch({})).toEqual({
       error:
-        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
+        "Provide at least one of name, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
     });
   });
 
   it("leaves avatar-only args for the executor to resolve", () => {
-    expect(parseUpdateBotPatch({ color: "#8B5CF6" }, "Chief")).toEqual({ patch: {} });
-    expect(parseUpdateBotPatch({ artifact_id: "art-1" }, "Chief")).toEqual({ patch: {} });
-    expect(parseUpdateBotPatch({ use_attached_image: true }, "Chief")).toEqual({ patch: {} });
+    expect(parseUpdateBotPatch({ color: "#8B5CF6" })).toEqual({ patch: {} });
+    expect(parseUpdateBotPatch({ artifact_id: "art-1" })).toEqual({ patch: {} });
+    expect(parseUpdateBotPatch({ use_attached_image: true })).toEqual({ patch: {} });
   });
 });
 
@@ -1295,7 +1295,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "update_bot updates this bot's own name (chat header / list label), description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =

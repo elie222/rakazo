@@ -10,7 +10,13 @@ export COMPOSE_PROJECT_NAME="${project}"
 bucket=rakazo-pitr-test
 fail() {
   echo "FAIL: $*" >&2
+  sql "SELECT now(), pg_walfile_name(pg_current_wal_lsn()), timeline_id FROM pg_control_checkpoint()" >&2 || true
+  sql "SELECT slot_name, active, restart_lsn, wal_status FROM pg_replication_slots" >&2 || true
+  sql "SELECT state, sent_lsn, write_lsn, flush_lsn FROM pg_stat_replication" >&2 || true
+  "${compose[@]}" --profile pitr exec -T pitr sh -c 'ls -lR /var/lib/rakazo-pitr; ps -eo pid,args' >&2 || true
+  [[ -z "${archive:-}" ]] || docker exec "${s3}" ls -l "${archive}/wal" >&2 || true
   "${compose[@]}" --profile pitr logs --no-color --tail 40 pitr >&2 || true
+  "${compose[@]}" logs --no-color --tail 20 postgres >&2 || true
   exit 1
 }
 
@@ -147,6 +153,10 @@ wait_for "the new timeline's segment upload" docker exec "${s3}" test -s "${arch
 docker volume rm -f "${project}_latest" >/dev/null
 restore restore latest "${project}_latest" >/dev/null
 [[ "$(rows_in "${project}_latest")" == "210|1010" ]] || fail "writes after the restore were not archived"
+# Creating the slot must not start a second base backup beside the first.
+for timeline in 1 2; do
+  [[ "$(has_base "${timeline}" | wc -l)" -eq 1 ]] || fail "timeline ${timeline} has more than one base backup"
+done
 
 # Disabling releases everything Postgres held for the sidecar.
 sed -i.bak '/^COMPOSE_PROFILES=/d' "${scratch}/.env"

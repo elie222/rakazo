@@ -42,7 +42,6 @@ const botRecord = (id: string): AccountExportRecord => ({
   type: "bot",
   id,
   name: "Chief",
-  title: "",
   description: "",
   instructions: "Be brief",
   selfUpdateInstructions: false,

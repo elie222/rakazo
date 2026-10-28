@@ -77,7 +77,6 @@ function fixture({
   prompt = "Read the item",
   bot = {
     name: "Assistant",
-    title: "Assistant",
     description: "Test assistant",
   },
   shutdownSignal,
@@ -131,7 +130,7 @@ function fixture({
   trigger?: string;
   secrets?: string[];
   prompt?: string;
-  bot?: { name: string; title: string; description: string };
+  bot?: { name: string; description: string };
   shutdownSignal?: AbortSignal;
 } = {}) {
   let taskPrompt = prompt;
@@ -257,7 +256,6 @@ function fixture({
         id: run.botId,
         userId: botUserId,
         name: bot.name,
-        title: bot.title,
         description: bot.description,
         disabledBuiltinTools,
         fleetManagement,
@@ -1048,7 +1046,6 @@ describe("connector read-only metadata and approval enforcement", () => {
         prompt: "Send mail with super-secret-token",
         bot: {
           name: "Mail",
-          title: "Helper",
           description: "Uses super-secret-token",
         },
       });
@@ -1056,7 +1053,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(reviewMock).toHaveBeenCalledWith(
         expect.objectContaining({
           userTask: "Send mail with [redacted]",
-          botDescription: "Mail: Helper\nUses [redacted]",
+          botDescription: "Mail\nUses [redacted]",
         }),
         expect.objectContaining({ runId: "run-1" }),
       );
@@ -1976,7 +1973,7 @@ describe("Auto Review of new sites", () => {
       connectorKind: expect.any(String),
       args: { url: "https://attacker.test/?q=x" },
       userTask: "Read https://docs.example.com/guide",
-      botDescription: "Assistant: Assistant\nTest assistant",
+      botDescription: "Assistant\nTest assistant",
       matchingRules: [],
       newSite: true,
     });

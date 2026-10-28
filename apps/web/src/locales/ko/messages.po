@@ -498,10 +498,6 @@ msgstr "실행할 명령 추가"
 msgid "Add a file or folder to watch"
 msgstr "감시할 파일 또는 폴더 추가"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "라벨 추가"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "이 기능을 사용하려면 설정에서 모델을 추가하세요."
@@ -2495,7 +2491,6 @@ msgstr "거부"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "설명"
 
@@ -2667,10 +2662,6 @@ msgstr "편집"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "수정 후 보내기"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "라벨 편집"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -3124,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "실행 주기"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "다른 봇이 이 봇을 보는 방식"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5900,7 +5895,6 @@ msgid "Timing may differ"
 msgstr "실행 시간이 달라질 수 있습니다"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "역할"
 

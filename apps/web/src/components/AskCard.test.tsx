@@ -206,7 +206,7 @@ const loginCard: AskBlock = {
     origin: "https://login.example.test",
     auth: { type: "login" },
   },
-  loginFields: ["ID number", "Phone number"],
+  loginFields: ["ID number", "Phone number", "PIN"],
   status: "pending",
 };
 
@@ -220,32 +220,48 @@ function hiddenSwitch(label: string) {
     .querySelector<HTMLElement>('[role="switch"]')!;
 }
 
-it("asks for each requested login field, every one hidden until the person shows it", async () => {
+it("starts an ID and a phone visible and a PIN hidden, and the person can flip each", async () => {
   const onAnswer = vi.fn(async () => undefined);
   await render(loginCard, undefined, onAnswer);
 
-  for (const label of ["ID number", "Phone number"]) {
-    expect(loginInput(label).type).toBe("password");
-    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe("true");
+  for (const [label, hidden] of [
+    ["ID number", false],
+    ["Phone number", false],
+    ["PIN", true],
+  ] as const) {
+    expect(loginInput(label).type).toBe(hidden ? "password" : "text");
+    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe(String(hidden));
     const description = hiddenSwitch(label).getAttribute("aria-describedby")!;
     expect(document.getElementById(description)?.textContent).toBe(label);
   }
   await type("ID number", " fake-id-123 ");
-  expect(button("Save")!.disabled).toBe(true);
   await type("Phone number", "+1 555 0100");
-  await act(async () => hiddenSwitch("ID number").click());
-  expect(loginInput("ID number").type).toBe("text");
-  expect(hiddenSwitch("ID number").getAttribute("aria-checked")).toBe("false");
+  expect(button("Save")!.disabled).toBe(true);
+  await type("PIN", "0000");
+  await act(async () => hiddenSwitch("Phone number").click());
+  expect(loginInput("Phone number").type).toBe("password");
+  await act(async () => hiddenSwitch("PIN").click());
+  expect(loginInput("PIN").type).toBe("text");
 
   await act(async () => button("Save")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("", [
     { label: "ID number", value: " fake-id-123 ", hidden: false },
     { label: "Phone number", value: "+1 555 0100", hidden: true },
+    { label: "PIN", value: "0000", hidden: false },
   ]);
   expect(container.textContent).toContain("Saved");
   expect(container.textContent).not.toContain("fake-id-123");
   expect(container.querySelector("input")).toBeNull();
+});
+
+it("starts every field hidden when no label names an identifier", async () => {
+  await render({ ...loginCard, loginFields: ["Memorable word", "Card number"] });
+
+  for (const label of ["Memorable word", "Card number"]) {
+    expect(loginInput(label).type).toBe("password");
+    expect(hiddenSwitch(label).getAttribute("aria-checked")).toBe("true");
+  }
 });
 
 it("asks for a visible username and a hidden password when the bot names no fields", async () => {

@@ -107,7 +107,6 @@ async function createOrReuseFirstBot(): Promise<{ id: string }> {
   try {
     const created = await rpc.bots.create({
       name: FIRST_BOT_NAME,
-      title: "",
       description: "",
       instructions: "",
       notifyOnFinish: true,

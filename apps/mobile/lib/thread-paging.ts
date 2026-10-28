@@ -145,6 +145,7 @@ export function useThreadPaging({
       commitSnap(prependMobileMessagePage(snapRef.current, page));
     } catch (err) {
       loadingOlderContent.current = false;
+      if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) return;
       setError(errorText(err, t("Could not load earlier messages")));
     } finally {
       setLoadingOlder(false);

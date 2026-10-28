@@ -1064,7 +1064,6 @@ test("a Claude subscription folds the key form and bots move to the space defaul
   for (const name of ["Archie", "Inbox"]) {
     const bot = await rpc<{ id: string }>(page, "bots/create", {
       name,
-      title: "",
       description: "",
       notifyOnFinish: true,
     });

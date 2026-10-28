@@ -738,7 +738,6 @@ class AccountImporter implements ArchiveSink {
     if (space.ids.has(record.id)) throw unreadable();
     const bot = await this.repos.createBot(space.actor, {
       name: record.name,
-      title: record.title,
       description: record.description,
       instructions: record.instructions,
       notifyOnFinish: record.notifyOnFinish,

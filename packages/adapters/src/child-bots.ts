@@ -65,7 +65,6 @@ export async function spawnBot(
     runId: string;
     spawnKey: string;
     name: string;
-    title?: string;
     description?: string;
     instructions?: string;
     prompt?: string;
@@ -82,11 +81,10 @@ export async function spawnBot(
     isDeploymentOwner: false,
   };
   let duplicate = false;
-  let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
+  let created: Pick<Bot, "id" | "name" | "threadId">;
   try {
     created = await createRepos(deps.prisma).createBot(actor, {
       name,
-      title: (input.title ?? "").trim(),
       description: (input.description ?? "").trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
       instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
       notifyOnFinish: true,
@@ -116,7 +114,6 @@ export async function spawnBot(
     created = {
       id: existing.id,
       name: existing.name,
-      title: existing.title,
       threadId: existing.thread.id,
     };
   }
@@ -142,7 +139,6 @@ export async function spawnBot(
     ...(duplicate ? { duplicate: true as const } : {}),
     botId: created.id,
     name: created.name,
-    title: created.title,
     threadId: created.threadId,
   };
 }

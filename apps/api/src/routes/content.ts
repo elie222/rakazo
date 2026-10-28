@@ -233,7 +233,6 @@ export function contentRoutes(ctx: RouterContext) {
           exportedAt: new Date().toISOString(),
           bot: {
             name: bot.name,
-            title: bot.title,
             description: bot.description,
             instructions: bot.instructions,
             color: bot.color,

@@ -636,10 +636,7 @@ async function reviewToolCall(
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
-    const botDescription = redactSecrets(
-      `${bot.name}: ${bot.title}\n${bot.description}`,
-      ctx.secrets,
-    );
+    const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
     // A new site is judged on the full URL and the owner's own words only: the task
     // prompt of a webhook or bot-started run carries text someone else wrote.
     const reviewRequest: AutoReviewRequest =

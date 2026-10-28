@@ -243,17 +243,112 @@ describe("login credentials", () => {
     expect(() => decodeLoginSecret(JSON.stringify(value))).toThrow();
   });
 
-  it("starts the default card as logins always have and every named field hidden", () => {
+  it("starts the default card as logins always have", () => {
     expect(loginCardFields(undefined)).toEqual([
       { label: "Username", value: "", hidden: false },
       { label: "Password", value: "", hidden: true },
     ]);
-    // The bot can't make a field visible, not even by naming the default labels.
-    expect(loginCardFields(["Username", "Password"]).map((field) => field.hidden)).toEqual([
-      true,
-      true,
+    // Naming the default labels gives the same card, so the bot gains nothing by it.
+    expect(loginCardFields(["Username", "Password"])).toEqual(loginCardFields(undefined));
+  });
+
+  it("starts an ID and a phone visible for a sign-in with no password field", () => {
+    expect(loginCardFields(["ID number", "Phone number", "SMS code"])).toEqual([
+      { label: "ID number", value: "", hidden: false },
+      { label: "Phone number", value: "", hidden: false },
+      { label: "SMS code", value: "", hidden: true },
     ]);
-    expect(loginCardFields(["ID", "Phone"]).map((field) => field.hidden)).toEqual([true, true]);
+  });
+
+  it.each([
+    "ID",
+    "ID number",
+    "  id-number ",
+    "Email",
+    "E-mail address",
+    "e/mail",
+    "Email or phone",
+    "Mobile phone",
+    "Account number",
+    "Customer ID",
+    "National ID",
+    "Tax ID",
+    "Employee ID",
+    "Login name",
+    "Last 4 digits of ID",
+    "Account #",
+    "ID \u2116",
+    "Account \u2116",
+    "Acc\u200Bount",
+    "PHONE",
+    "Télephone",
+    "ＩＤ ｎｕｍｂｅｒ",
+    "תעודת זהות",
+    "ת.ז.",
+    "הטלפון הנייד",
+    "מספר טלפון",
+    "מספר חשבון",
+    "\u200Fמייל\u200F",
+    "שם משתמש",
+  ])("starts %j visible", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(false);
+  });
+
+  it.each([
+    "Password",
+    "PIN",
+    "Account PIN",
+    "Phone password",
+    "Email code",
+    "Verification code",
+    "One-time code (OTP)",
+    "ID answer",
+    "API key",
+    "Token",
+    "CVV",
+    // Plurals, abbreviations and other spellings of a secret.
+    "Account passwords",
+    "Account PINs",
+    "Account codes",
+    "Account pwd",
+    "Account passwd",
+    "Account pw",
+    "Account pincode",
+    "Account credentials",
+    "Account 2FA",
+    "Account TOTP",
+    "Account CVV2",
+    // Look-alike and invisible letters.
+    "Account P\u0430ssword",
+    "Account \uFF30\uFF29\uFF2E",
+    "Account PIN\u3164",
+    "Account\u3164",
+    "Account\u{1F511}",
+    "Account \u{1F512}",
+    "Phone \u2731\u2731\u2731",
+    "ID \u{1F511} number",
+    "Account +",
+    // Labels we don't recognise stay hidden.
+    "Memorable word",
+    "Mother's maiden name",
+    "Card number",
+    "Date of birth",
+    "Name",
+    "Number",
+    "Hid",
+    "Provider",
+    "סיסמה",
+    "קוד SMS",
+    "הקוד",
+    "טלפון סודי",
+    "קוד אימות",
+    "סיסמת חשבון",
+    "ססמת חשבון",
+    "חשבון פין",
+    "טלפון וסיסמה",
+    "חשבון וקוד",
+  ])("starts %j hidden", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(true);
   });
 
   it.each([[["Username", "Password"]], [["ID", "Phone", "Code"]]])(

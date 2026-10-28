@@ -52,6 +52,7 @@ import {
   undoAgentImport,
 } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
+import { changedBotSettings } from "../bot-setting-analytics.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
@@ -167,7 +168,7 @@ export function botIntroPrompt(input: {
   const canAsk = !input.disabledBuiltinTools.includes("ask_user");
   const canUpdate = !input.disabledBuiltinTools.includes("update_bot");
   const options =
-    "two to four short options that fit your name, anything your title, description or instructions already say, and what you know about them, never a stock list";
+    "two to four short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list";
   return [
     [
       "You were just created.",
@@ -183,7 +184,7 @@ export function botIntroPrompt(input: {
       : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
     "If your profile already makes that clear, say in one line what you will do instead of asking.",
     canUpdate
-      ? "Once you know what you are for, use update_bot to set your title to a short role and your description to one line. Leave them unset if the answer is too vague, and keep your name and look."
+      ? 'Once you know what you are for, use update_bot to set your description to one line on what you do, and a short name if yours is still a placeholder like "New Bot". Leave them unset if the answer is too vague, and otherwise keep your name and look.'
       : undefined,
     "Then get started, asking one follow-up only if you cannot start without it.",
   ]
@@ -298,7 +299,6 @@ export function botsRoutes(ctx: RouterContext) {
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
-            title: source.title,
             description: source.description,
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
@@ -373,7 +373,6 @@ export function botsRoutes(ctx: RouterContext) {
           expectedInstructions: input.expectedInstructions,
           data: {
             name: input.name,
-            title: input.title,
             description: input.description,
             instructions: input.instructions,
             selfUpdateInstructions: input.selfUpdateInstructions,
@@ -407,6 +406,9 @@ export function botsRoutes(ctx: RouterContext) {
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
+        for (const setting of changedBotSettings(existing, input)) {
+          deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
+        }
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
@@ -489,7 +491,12 @@ export function botsRoutes(ctx: RouterContext) {
             });
             await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
           }
-          return await repos.setBotComputer(context.actor, bot.id, input.mode);
+          const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
+          deps.analytics?.capture(context.actor.userId, {
+            name: "bot_setting_changed",
+            setting: "computer",
+          });
+          return updated;
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         } finally {

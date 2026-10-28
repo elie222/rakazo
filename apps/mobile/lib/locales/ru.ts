@@ -1,4 +1,5 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",
   "could not read": "не удалось прочитать",
@@ -44,9 +45,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Permissions: "Разрешения",
   "Open work": "Открытые задачи",
   "When it finishes or needs input": "Когда работа завершена или нужен ответ",
-  "Edit label": "Изменить метку",
   "Edit name": "Изменить имя",
-  "Add a label": "Добавить метку",
   "Pick a chat": "Выберите чат",
   "Add an AI model to keep chatting": "Добавьте ИИ-модель, чтобы продолжить общение",
   "Not Now": "Не сейчас",

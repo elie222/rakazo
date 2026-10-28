@@ -1048,7 +1048,6 @@ export type MobileBot = Pick<
   | "id"
   | "name"
   | "preview"
-  | "title"
   | "color"
   | "avatarSet"
   | "instructionHistory"

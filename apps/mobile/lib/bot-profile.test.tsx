@@ -224,7 +224,6 @@ function button(label: string) {
 const fixtureBot = {
   id: "bot-fixture",
   name: "Fixture",
-  title: "Helper",
   color: "c",
   threadId: "thread-fixture",
   notifyOnFinish: true,
@@ -271,7 +270,7 @@ describe("bot profile", () => {
     profileRpc(async () => []);
     await render(createElement(BotProfile));
 
-    expect(container.textContent).toContain("Helper");
+    expect(container.textContent).toContain("Fixture");
     button("Chat settings").click();
     routinesRow().click();
     button("Artifacts").click();
@@ -508,7 +507,7 @@ describe("bot profile notifications", () => {
       await act(async () => notificationsSwitch()!.click());
       if (when === "during") await refocus();
       await act(async () => save());
-      await act(async () => reads[1]!({ ...fixtureBot, title: "Reloaded" }));
+      await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
       expect(container.textContent).toContain("Reloaded");
       expect(notificationsSwitch()!.checked).toBe(false);
 
@@ -535,7 +534,7 @@ describe("bot profile notifications", () => {
 
     await act(async () => notificationsSwitch()!.click());
     await refocus();
-    await act(async () => reads[1]!({ ...fixtureBot, title: "Reloaded" }));
+    await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
     expect(container.textContent).toContain("Reloaded");
     expect(notificationsSwitch()!.checked).toBe(false);
     expect(notificationsSwitch()!.disabled).toBe(false);

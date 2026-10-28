@@ -1,4 +1,4 @@
-import { fontWeight, typeScale } from "@rakazo/ui-tokens";
+import { typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { native } from "../lib/native";
@@ -146,10 +146,6 @@ export function createHomeStyles() {
       alignItems: "center",
       gap: 6,
     },
-    // At the largest text sizes a tag that doesn't fit beside the name moves under it.
-    titleRowWrapped: {
-      flexWrap: "wrap",
-    },
     rowMeta: {
       flexDirection: "row",
       alignItems: "center",
@@ -160,21 +156,6 @@ export function createHomeStyles() {
       maxWidth: "100%",
       color: native.label,
       ...typeScale.cardTitle,
-      writingDirection: "auto",
-    },
-    tag: {
-      flexShrink: 1,
-      minWidth: 0,
-      overflow: "hidden",
-      borderRadius: 999,
-      backgroundColor: native.quietFill,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-    },
-    tagLabel: {
-      color: native.secondaryLabel,
-      fontSize: typeScale.caption.fontSize,
-      fontWeight: fontWeight.medium,
       writingDirection: "auto",
     },
     time: {

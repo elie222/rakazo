@@ -98,8 +98,8 @@ import { errorText, loadFailureKind } from "../lib/user-error";
 
 /** A row counts as on screen as soon as any of it shows. */
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
-// A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
-const TAGLESS_LIST_WIDTH = 360;
+// A list narrower than this, beside an open chat, uses tighter rows.
+const COMPACT_LIST_WIDTH = 360;
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -484,7 +484,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // An unfolded or tablet window keeps the inbox in a centred column.
   const windowWidth = useWindowDimensions().width;
   const { inboxWidth } = useSplitView();
-  const compactRows = embedded && inboxWidth < TAGLESS_LIST_WIDTH;
+  const compactRows = embedded && inboxWidth < COMPACT_LIST_WIDTH;
   const columnInsets = readableGutters(embedded ? inboxWidth : windowWidth, {
     left: insets.left,
     right: embedded ? 0 : insets.right,

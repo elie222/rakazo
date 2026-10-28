@@ -10,7 +10,7 @@ test("a group a bot creates after approval appears in the sidebar without a relo
   const chiefId = activeBotId(page);
   await rpc(page, "bots/update", { botId: chiefId, fleetManagement: true });
   for (const name of ["Alpha", "Beta"]) {
-    await rpc(page, "bots/create", { name, title: "", description: "", notifyOnFinish: true });
+    await rpc(page, "bots/create", { name, description: "", notifyOnFinish: true });
   }
 
   const sidebar = page.locator("aside").first();

@@ -1,4 +1,5 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",
   "could not read": "読み取れませんでした",
@@ -52,9 +53,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Permissions: "権限",
   "Open work": "未完了の作業",
   "When it finishes or needs input": "完了時または入力が必要なとき",
-  "Edit label": "ラベルを編集",
   "Edit name": "名前を編集",
-  "Add a label": "ラベルを追加",
   "Pick a chat": "チャットを選択",
   "Add an AI model to keep chatting": "チャットを続けるにはAIモデルを追加してください",
   "Not Now": "後で",

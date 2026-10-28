@@ -79,7 +79,6 @@ describe("spawned bot creation", () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       thread: { id: "thread-1" },
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -109,7 +108,7 @@ describe("spawned bot creation", () => {
         runId: "run-retry",
         spawnKey: "tool-call-1",
         name: " Scout ",
-        title: "Ignored on a retry",
+        description: "Ignored on a retry",
         prompt: "Do not enqueue this twice",
       },
     );
@@ -128,7 +127,6 @@ describe("spawned bot creation", () => {
       duplicate: true,
       botId: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       threadId: "thread-1",
     });
     expect(enqueue).toHaveBeenCalledOnce();
@@ -138,7 +136,6 @@ describe("spawned bot creation", () => {
     const createBot = vi.fn().mockResolvedValue({
       id: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
@@ -180,7 +177,6 @@ describe("spawned bot creation", () => {
       ok: true,
       botId: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     createReposSpy.mockRestore();

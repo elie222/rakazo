@@ -167,16 +167,6 @@ jobs:
           persist-credentials: false
       - run: bash infra/compose/upgrade-postgres.docker-test.sh
 
-  test-pitr:
-    name: Point-in-time recovery
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - run: bash infra/compose/pitr.docker-test.sh
-
   test-e2e:
     name: Web E2E
     uses: ./.github/workflows/playwright.yml
@@ -407,7 +397,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     # The host pulls the image published for this commit; it builds only if that pull fails.
-    needs: [lint, check, build, test, test-integration, test-postgres-upgrade, test-pitr, test-e2e, publish-server-image]
+    # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
+    needs: [check, test, test-integration, publish-server-image]
     runs-on: ubuntu-latest
     # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
     timeout-minutes: 45

@@ -1020,6 +1020,10 @@ export interface BrowserSnapshotNode {
   name: string;
   value?: string;
   tag?: string;
+  /** A native select's options: what the page shows, the value it keeps, and which one is chosen. */
+  options?: Array<{ label: string; value: string; selected?: boolean; disabled?: boolean }>;
+  /** How many options a long select has, when only the first ones and the chosen one are listed. */
+  optionsTotal?: number;
 }
 
 export interface BrowserSnapshotResult {

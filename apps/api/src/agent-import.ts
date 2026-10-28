@@ -66,7 +66,6 @@ export type AgentImportServices<PreparedKey = unknown> = {
     actor: Actor,
     input: {
       name: string;
-      title: string;
       description: string;
       instructions: string;
       notifyOnFinish: boolean;
@@ -749,7 +748,6 @@ export async function createImportedBot<PreparedKey>(
     } else {
       bot = await services.createBot(actor, {
         name: input.name!,
-        title: "",
         description: input.description,
         instructions,
         notifyOnFinish: true,

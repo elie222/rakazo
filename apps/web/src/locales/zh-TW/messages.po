@@ -499,10 +499,6 @@ msgstr "新增要執行的命令"
 msgid "Add a file or folder to watch"
 msgstr "新增要監視的檔案或資料夾"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "新增標籤"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "請在設定中新增模型後再使用。"
@@ -2496,7 +2492,6 @@ msgstr "拒絕"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "描述"
 
@@ -2668,10 +2663,6 @@ msgstr "編輯"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "先編輯"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "編輯標籤"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -3125,6 +3116,10 @@ msgstr "你是如何知道我們的？"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "頻率"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "其他機器人如何瞭解它"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5901,7 +5896,6 @@ msgid "Timing may differ"
 msgstr "執行時間可能不同"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "標題"
 

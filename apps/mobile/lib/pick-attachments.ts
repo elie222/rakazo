@@ -198,16 +198,25 @@ export async function pickDocuments(
     copyToCacheDirectory: true,
   });
   if (result.canceled) return { attachments: [], skipped: [] };
-  const assets = result.assets ?? [];
-  const candidates = await Promise.all(
-    assets.map(async (asset) => {
-      const name = asset.name ?? "file";
-      const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-      const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
-      return { name, mimeType, size, contentBase64 };
-    }),
-  );
-  return filterPickedAttachments(existingCount, candidates, maxBytes);
+  const attachments: PickedAttachment[] = [];
+  const skipped: PickSkip[] = [];
+  for (const asset of result.assets ?? []) {
+    const name = asset.name ?? "file";
+    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
+      skipped.push({ name, reason: attachmentCountSkipReason() });
+      continue;
+    }
+    const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
+    const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
+    const filtered = filterPickedAttachments(
+      existingCount + attachments.length,
+      [{ name, mimeType, size, contentBase64 }],
+      maxBytes,
+    );
+    attachments.push(...filtered.attachments);
+    skipped.push(...filtered.skipped);
+  }
+  return { attachments, skipped };
 }
 
 export async function readDroppedFiles(

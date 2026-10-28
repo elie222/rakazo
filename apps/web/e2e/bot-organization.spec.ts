@@ -143,7 +143,6 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   const chiefId = activeBotId(page);
   const alpha = await rpc<{ id: string }>(page, "bots/create", {
     name: "Alpha",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -151,7 +150,6 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   });
   const beta = await rpc<{ id: string }>(page, "bots/create", {
     name: "Beta",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -329,7 +327,6 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   const chiefId = activeBotId(page);
   const partner = await rpc<{ id: string }>(page, "bots/create", {
     name: "Partner",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,

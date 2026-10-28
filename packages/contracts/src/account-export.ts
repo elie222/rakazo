@@ -56,7 +56,6 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     type: z.literal("bot"),
     id: Id,
     name: z.string(),
-    title: z.string(),
     description: z.string(),
     instructions: z.string(),
     selfUpdateInstructions: z.boolean(),

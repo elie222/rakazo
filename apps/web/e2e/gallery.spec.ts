@@ -16,6 +16,27 @@ test("gallery keeps a paginated call closed and its follow-up visible", async ({
   await captureScreenshot(page, testInfo, "paginated-call-marker");
 });
 
+test("gallery starts a no-password sign-in with the ID and phone visible and the PIN hidden", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=secrets&theme=light");
+  const card = page.getByTestId("secret-ask-card").filter({ hasText: "vendor portal" });
+  await expect(card).toBeVisible();
+  const field = (label: string) => card.getByLabel(label, { exact: true });
+  const hidden = (label: string) =>
+    card
+      .getByTestId("login-field-value")
+      .filter({ has: page.getByLabel(label, { exact: true }) })
+      .getByRole("switch");
+  await expect(field("ID number")).toHaveAttribute("type", "text");
+  await expect(field("Phone number")).toHaveAttribute("type", "text");
+  await expect(field("PIN")).toHaveAttribute("type", "password");
+  await expect(hidden("ID number")).not.toBeChecked();
+  await expect(hidden("Phone number")).not.toBeChecked();
+  await expect(hidden("PIN")).toBeChecked();
+  await captureScreenshot(page, testInfo, "login-fields-start-visible");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

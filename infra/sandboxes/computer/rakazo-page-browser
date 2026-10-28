@@ -131,6 +131,23 @@ class Refused(RuntimeError):
     """The page helper declined an action before changing anything it does not report."""
 
 
+class Settled(Refused):
+    """A step the page cannot take as asked (stale ref, hidden or covered element, no such option).
+
+    Settled like a refusal, and the result carries the page as it is, so the bot can choose again.
+    """
+
+
+FRAME_CLICK = "That spot is inside a frame, which the page tools cannot click in."
+CHANGED_UNDER_POINTER = "The page changed under the pointer. Use the page below and click again."
+STILL_MOVING = "The page was still moving when the click was about to land. Click again."
+FILE_CHOOSER = ("That click opened a file chooser, which the page tools cannot use. "
+                "Find the page's file upload element in the snapshot and use upload with the file paths.")
+
+# How Chromium begins every Network event it sends.
+NETWORK_EVENT = b'{"method":"Network.'
+
+
 class CdpClient:
     def __init__(self, ws_url: str) -> None:
         self._ws_url = ws_url
@@ -146,6 +163,14 @@ class CdpClient:
         # Navigations to another document started or committed in each frame, per CDP session.
         self._navigations: dict[tuple[Any, str], int] = {}
         self._frame_sessions: dict[str, Any] = {}
+        # Requests each CDP session's page has made since Network was enabled: [started, finished].
+        self._requests: dict[tuple[Any, str], list[float | None]] = {}
+        # Network events can be huge (a page's web socket messages, very long URLs) and are only
+        # watched, so once they are on, such an event over the limit is dropped instead of ending the call.
+        self.drop_oversized = False
+        self._skipping = 0
+        # File choosers the page asked to open, which are held back while they are intercepted.
+        self.file_choosers = 0
 
     def connect(self) -> None:
         assert self._ws_url.startswith("ws://"), self._ws_url
@@ -228,9 +253,33 @@ class CdpClient:
             raise RuntimeError("CDP websocket closed")
         self._buf.extend(chunk)
 
+    def listen(self, seconds: float) -> None:
+        """Handle the events that arrive within `seconds`, as they arrive, so their times are true."""
+        assert self._sock is not None
+        deadline = time.monotonic() + seconds
+        while (left := deadline - time.monotonic()) > 0:
+            self._sock.settimeout(left)
+            try:
+                frame = self._read_frame()
+            except socket.timeout:
+                return
+            message = json.loads(frame.decode("utf-8"))
+            if isinstance(message, dict) and message.get("method"):
+                self._handle_event(message)
+
+    def _skip_frame(self) -> None:
+        """Discard what is left of a frame being dropped. A read that times out resumes here next time."""
+        while self._skipping:
+            if not self._buf:
+                self._read_more()
+            taken = min(self._skipping, len(self._buf))
+            del self._buf[:taken]
+            self._skipping -= taken
+
     def _read_frame(self) -> bytes:
         assert self._sock is not None
         while True:
+            self._skip_frame()
             while len(self._buf) < 2:
                 chunk = self._sock.recv(65536)
                 if not chunk:
@@ -252,7 +301,16 @@ class CdpClient:
                 length = struct.unpack("!Q", self._buf[2:10])[0]
                 offset = 10
             if length > 2 * 1024 * 1024:
-                raise RuntimeError("CDP frame too large")
+                # Only a Network event may go unread, and only once they are being watched: the answer
+                # to a call is never dropped.
+                if not self.drop_oversized or masked:
+                    raise RuntimeError("CDP frame too large")
+                while len(self._buf) < offset + len(NETWORK_EVENT):
+                    self._read_more()
+                if bytes(self._buf[offset : offset + len(NETWORK_EVENT)]) != NETWORK_EVENT:
+                    raise RuntimeError("CDP frame too large")
+                self._skipping = offset + length
+                continue
             if not (b1 & 0x80):
                 raise RuntimeError("Fragmented CDP message unsupported")
             mask = b""
@@ -312,6 +370,17 @@ class CdpClient:
             if params.get("navigationType") in ("sameDocument", "historySameDocument"):
                 return
             self._navigations[(session_id, frame_id)] = self._navigations.get((session_id, frame_id), 0) + 1
+        elif method == "Page.fileChooserOpened":
+            self.file_choosers += 1
+        elif method == "Network.requestWillBeSent":
+            request_id = params.get("requestId")
+            # An event stream stays open for as long as the page likes; it is not a request to wait for.
+            if isinstance(request_id, str) and params.get("type") != "EventSource":
+                self._requests.setdefault((session_id, request_id), [time.monotonic(), None])
+        elif method in ("Network.loadingFinished", "Network.loadingFailed"):
+            request = self._requests.get((session_id, params.get("requestId")))
+            if request is not None:
+                request[1] = time.monotonic()
         elif method == "Target.attachedToTarget":
             child = params.get("sessionId")
             if isinstance(child, str) and (params.get("targetInfo") or {}).get("type") == "iframe":
@@ -331,8 +400,31 @@ class CdpClient:
     def frame_sessions(self, parent_session_id: str) -> list[str]:
         return [child for child, parent in self._frame_sessions.items() if parent == parent_session_id]
 
+    def action_requests(self, session_id: str, since: float, quiet: float, follow: float) -> tuple[int, float]:
+        """How many requests an action set in motion are still open, and when the last one finished.
+
+        A request is the action's if it began within `quiet` of the action's last step, or within
+        `follow` of another of its requests finishing: an answer that sets off a further request
+        counts, a page polling in the background does not.
+        """
+        requests = sorted((r for key, r in self._requests.items() if key[0] == session_id),
+                          key=lambda request: request[0])
+        reach, last, ours, grown = since + quiet, since, set(), True
+        while grown:
+            grown = False
+            for index, (started, finished) in enumerate(requests):
+                if index not in ours and started <= reach:
+                    ours.add(index)
+                    grown = True
+                    if finished is not None:
+                        last, reach = max(last, finished), max(reach, finished + follow)
+        return sum(requests[index][1] is None for index in ours), last
+
     def lifecycle(self, session_id: str, frame_id: str) -> set[str]:
         return self._lifecycle.get((session_id, frame_id), (None, set()))[1]
+
+    def navigation_count(self, session_id: str) -> int:
+        return sum(count for (session, _), count in self._navigations.items() if session == session_id)
 
     def navigations(self, session_id: str, frame_id: str) -> int:
         return self._navigations.get((session_id, frame_id), 0)
@@ -441,6 +533,9 @@ EVAL_HELPERS = r"""
   const refMap = new Map();
   // A refused fill changed nothing the bot cannot see; act() reports it as settled, not uncertain.
   const refused = (message) => new Error(`Refused: ${message}`);
+  // A step the page cannot take as asked (stale ref, hidden or covered element, no such option):
+  // settled like a refusal, and act() sends the current page along so the bot can pick again.
+  const settled = (message) => new Error(`Settled: ${message}`);
   // Fields holding a saved login: snapshots never report their values, whatever their type.
   const loginFilled = new WeakSet();
   // Set through the CSSOM, which a page's Content-Security-Policy does not block, unlike an
@@ -460,9 +555,12 @@ EVAL_HELPERS = r"""
       && !el.disabled && !el.readOnly && el.getAttribute("aria-hidden") !== "true" && visible(el)
       && (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes(token));
   }
-  // New snapshots/documents never recycle references. Retain exact nodes, not selectors.
+  // Refs count up for as long as the page lives, so a ref from an earlier snapshot never names
+  // another element; a new document starts from a random point, so refs from the page before it
+  // name nothing either. Retain exact nodes, not selectors.
+  let refCounter = Math.floor(Math.random() * 1e8);
   function newRef() {
-    return `e${Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("")}`;
+    return `e${++refCounter}`;
   }
   // Code fields often keep their real input transparent under drawn boxes; it is still the target.
   function isCodeInput(el) {
@@ -622,21 +720,109 @@ EVAL_HELPERS = r"""
       ""
     );
   }
+  // Roles a click or a fill can mean something for, which the bot needs a ref to reach.
+  const CONTROL_ROLES = ["button", "link", "textbox", "checkbox", "radio", "menuitem", "menuitemcheckbox",
+    "menuitemradio", "tab", "option", "switch", "combobox", "treeitem"];
   function isInteractive(el) {
     if (!(el instanceof Element)) return false;
     const tag = el.tagName.toLowerCase();
     if (["a", "button", "input", "textarea", "select", "summary"].includes(tag)) return true;
     if (el.isContentEditable) return true;
-    const role = el.getAttribute("role");
-    if (
-      role &&
-      ["button", "link", "textbox", "checkbox", "radio", "menuitem", "tab", "option", "switch"].includes(
-        role
-      )
-    ) {
-      return true;
+    if (CONTROL_ROLES.includes(el.getAttribute("role"))) return true;
+    // tabindex="-1" only lets script focus a wrapper: it is not something to click.
+    if (el.hasAttribute("onclick") || Number(el.getAttribute("tabindex") ?? NaN) >= 0) return true;
+    // Custom dropdown options and cards are usually plain elements whose style says they are
+    // clickable. Only the outermost one counts: its children inherit the pointer.
+    return window.getComputedStyle(el).cursor === "pointer"
+      && (!el.parentElement || window.getComputedStyle(el.parentElement).cursor !== "pointer");
+  }
+  const MAX_CONTROLS = 80;
+  const MAX_OPTIONS = 100;
+  const MAX_OPTION_TEXT = 80;
+  // The snapshot goes to the model whole, in one piece of at most 12,000 characters, or the tool
+  // result shortener cuts out its middle. So the control list and the page text share a budget,
+  // measured as the page text and control lines will be sent (with their line breaks escaped).
+  const TREE_BUDGET = 10000;
+  const CONTROLS_BUDGET = 5500;
+  const MIN_TEXT = 1500;
+  const MAX_NAME = 100;
+  const MAX_VALUE = 100;
+  const OPTIONS_CHARS = 2000;
+  const sent = (text) => JSON.stringify(text).length - 2;
+  // Parts of a page that come around every page, such as menus and cookie banners, and the parts the
+  // bot has to deal with first: an open dialog or the list a dropdown just opened.
+  const SURROUNDINGS = "header, nav, footer, aside, [role=banner], [role=navigation], [role=contentinfo], [role=complementary]";
+  const OPEN_POPUP = "dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true], [role=listbox], [role=menu]";
+  const NOTICE = /cookie|consent|gdpr|onetrust/i;
+  // Which of the capped controls to list first: 0 an open dialog or popup, 1 in view in the page itself,
+  // 2 in view in its surroundings, 3 and 4 the same below or beside the view.
+  function importance(el) {
+    if (el.closest(OPEN_POPUP)) return 0;
+    const rect = el.getBoundingClientRect();
+    const inView = rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+    let around = Boolean(el.closest(SURROUNDINGS)) && !el.closest("main, [role=main]");
+    for (let node = el; !around && node && node !== document.body; node = node.parentElement) {
+      around = NOTICE.test(`${node.id} ${typeof node.className === "string" ? node.className : ""}`);
     }
-    return typeof el.onclick === "function" || el.hasAttribute("tabindex");
+    return (inView ? 1 : 3) + (around ? 1 : 0);
+  }
+  const clean = (text) => String(text).replace(/\s+/g, " ").trim();
+  // An option is out of reach when it, or the group it is in, is disabled.
+  const unavailable = (option) => option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled);
+  // A long option label or value keeps its start and its end, which is where long options usually differ.
+  const cutOption = (text) => text.length > MAX_OPTION_TEXT ? `${text.slice(0, 50)}…${text.slice(-(MAX_OPTION_TEXT - 51))}` : text;
+  // A select's options as the page shows them: the label, the value when it differs, and which is chosen.
+  // A long list is cut to its first MAX_OPTIONS and the chosen one.
+  function optionsOf(select) {
+    const all = Array.from(select.options);
+    const shown = all.slice(0, MAX_OPTIONS);
+    const chosen = all.find((option) => option.selected);
+    if (chosen && !shown.includes(chosen)) shown.push(chosen);
+    return shown.map((option) => ({
+      label: cutOption(clean(option.label || option.text)),
+      value: cutOption(option.value),
+      ...(option.selected ? { selected: true } : {}),
+      ...(unavailable(option) ? { disabled: true } : {}),
+    }));
+  }
+  // The options a model reads: label, value when it differs, which is chosen; as many as fit in `chars`.
+  function describeOptions(options, total = options.length, chars = Infinity) {
+    const describe = (option) => JSON.stringify(option.label)
+      + (option.value !== option.label ? `=${JSON.stringify(option.value)}` : "")
+      + (option.selected ? " (selected)" : "") + (option.disabled ? " (disabled)" : "");
+    const parts = [];
+    let used = 0;
+    for (const option of options) {
+      const part = describe(option);
+      if (parts.length && used + part.length > chars) break;
+      parts.push(part);
+      used += part.length + 2;
+    }
+    // The chosen option is always shown.
+    const chosen = options.find((option) => option.selected);
+    if (chosen && !parts.includes(describe(chosen))) parts.push(describe(chosen));
+    return parts.join(", ") + (total > parts.length ? `, and ${total - parts.length} more` : "");
+  }
+  // Fills a select with the option whose value or visible label is the one asked for: the same text,
+  // else the same words ignoring case, spacing and direction marks, else the one option whose label or
+  // value is the one asked for as the snapshot cut it.
+  function chooseOption(select, wanted) {
+    const normal = (text) => clean(String(text).replace(/[\u200e\u200f\u202a-\u202e\u00a0]/g, " ")).toLowerCase();
+    const label = (option) => clean(option.label || option.text);
+    const options = Array.from(select.options);
+    const shownCut = (text) => text.length > MAX_OPTION_TEXT && cutOption(text) === wanted;
+    const cut = options.filter((option) => shownCut(label(option)) || shownCut(option.value));
+    const match = options.find((option) => option.value === wanted)
+      || options.find((option) => label(option) === wanted)
+      || options.find((option) => normal(label(option)) === normal(wanted) || normal(option.value) === normal(wanted))
+      || (cut.length === 1 ? cut[0] : undefined);
+    if (!match) {
+      throw settled(`This dropdown has no option "${wanted.slice(0, 80)}". Its options: ${describeOptions(optionsOf(select), select.options.length, OPTIONS_CHARS)}.`);
+    }
+    if (unavailable(match)) throw settled(`The option "${label(match)}" is disabled. Its options: ${describeOptions(optionsOf(select), select.options.length, OPTIONS_CHARS)}.`);
+    // The old choice goes: a multiple select would keep it otherwise.
+    for (const option of options) option.selected = false;
+    match.selected = true;
   }
   // File inputs in open shadow roots (web-component uploaders) are invisible to querySelectorAll.
   function allFileInputs() {
@@ -650,54 +836,142 @@ EVAL_HELPERS = r"""
     walk(document);
     return found;
   }
-  function formatTree(elements) {
-    if (!elements.length) return "(no interactive elements)";
-    return elements
-      .map((el) => {
-        const value =
-          el.value !== undefined && el.value !== "" ? ` value=${JSON.stringify(el.value)}` : "";
-        return `- ${el.role} "${el.name}" [${el.ref}]${value}`;
-      })
-      .join("\n");
+  function formatLine(el) {
+    const value = el.value !== undefined && el.value !== ""
+      ? ` value=${JSON.stringify(el.value.slice(0, MAX_VALUE))}` : "";
+    const options = el.options ? ` options: ${describeOptions(el.options, el.optionsTotal, OPTIONS_CHARS)}` : "";
+    return `- ${el.role} ${JSON.stringify(el.name.slice(0, MAX_NAME))} [${el.ref}]${value}${options}`;
   }
+  const FRAME_CLICK = "That spot is inside a frame, which the page tools cannot click in.";
+  // What a click at (x, y) reaches, looking into shadow trees.
+  function elementAtPoint(x, y) {
+    let hit = document.elementFromPoint(x, y);
+    while (hit?.shadowRoot && typeof hit.shadowRoot.elementFromPoint === "function") {
+      const inner = hit.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    return hit;
+  }
+  // Whether node is el or below it, also through the shadow trees between them.
+  function inside(el, node) {
+    for (let at = node; at; at = at.parentNode || at.host) {
+      if (at === el) return true;
+    }
+    return false;
+  }
+  // What in a label does its own thing when clicked, instead of acting on the label's control.
+  const OWN_ACTION = "a[href], button, select, textarea, summary, input, [role=link], [role=button], [role=menuitem], [role=tab], [role=checkbox], [role=switch], [onclick], [contenteditable], label";
+  function actsOnControl(el, label, hit) {
+    for (let at = hit; at && at !== label; at = at.parentNode || at.host) {
+      // Another label inside this one acts on its own control, unless that control is el.
+      if (at !== el && at.matches?.(OWN_ACTION) && !Array.from(el.labels || []).includes(at)) return false;
+    }
+    return true;
+  }
+  // Why a click at (x, y) would not act on el, or null when it would. It acts on el when it lands on
+  // el, something inside it, or inside one of its labels where nothing of its own is: a link in a
+  // label opens its page instead. A click that would land in another document (a frame) is turned
+  // down too: its page is out of the helper's sight. `moved`: the page changed since the spot was chosen.
+  function landingProblem(el, x, y, moved = false) {
+    const hit = elementAtPoint(x, y);
+    if (hit && ["iframe", "frame", "object", "embed"].includes(hit.tagName.toLowerCase())) return FRAME_CLICK;
+    if (hit && (inside(el, hit)
+      || Array.from(el.labels || []).some((label) => inside(label, hit) && actsOnControl(el, label, hit)))) return null;
+    const cover = !hit || hit === document.body || hit === document.documentElement ? "the page behind it"
+      : `${roleOf(hit)} "${String(nameOf(hit)).slice(0, 60)}"`;
+    return moved
+      ? `The page moved under the pointer: ${cover} is now where the click would land. Click again using the page below.`
+      : `Element is covered by ${cover}, so a click would land there. Close or dismiss that first, then click again.`;
+  }
+  function checkLanding(el, x, y, moved = false) {
+    const problem = landingProblem(el, x, y, moved);
+    if (problem) throw settled(problem);
+  }
+  // When the page last changed, so an action's result waits for what it set in motion to be drawn.
+  let lastChange = performance.now();
+  new MutationObserver(() => { lastChange = performance.now(); })
+    .observe(document, { childList: true, subtree: true, characterData: true });
   window.__rakazoPageBrowser = {
     snapshot() {
       refMap.clear();
       const elements = [];
       const listed = new Set();
-      const describe = (el) => {
+      const entryFor = (el) => ({
+        role: roleOf(el),
+        name: String(nameOf(el)).slice(0, 200),
+        value: el.type === "password" || loginFilled.has(el) ? undefined
+          : isFileInput(el) ? Array.from(el.files || [], (file) => file.name).join(", ")
+          : ["checkbox", "radio"].includes(el.type) ? (el.checked ? "checked" : "unchecked")
+          : "value" in el ? String(el.value ?? "").slice(0, 2000) : undefined,
+        tag: el.tagName.toLowerCase(),
+        ...(el instanceof HTMLSelectElement ? { options: optionsOf(el),
+          ...(el.options.length > MAX_OPTIONS ? { optionsTotal: el.options.length } : {}) } : {}),
+      });
+      const describe = (el, entry = entryFor(el)) => {
         const ref = newRef();
         refMap.set(ref, el);
         listed.add(el);
-        elements.push({
-          ref,
-          role: roleOf(el),
-          name: String(nameOf(el)).slice(0, 200),
-          value: el.type === "password" || loginFilled.has(el) ? undefined
-            : isFileInput(el) ? Array.from(el.files || [], (file) => file.name).join(", ")
-            : ["checkbox", "radio"].includes(el.type) ? (el.checked ? "checked" : "unchecked")
-            : "value" in el ? String(el.value ?? "").slice(0, 2000) : undefined,
-          tag: el.tagName.toLowerCase(),
-        });
+        elements.push({ ref, ...entry });
       };
-      // Upload targets do not count toward the 80-control cap, so hidden inputs cannot crowd out buttons.
-      let controls = 0;
+      // Upload targets do not count toward the cap, so hidden inputs cannot crowd out buttons.
+      const found = [];
+      let uploads = 0;
       for (const el of document.querySelectorAll("body *")) {
         if (!isInteractive(el) || !(visible(el) || isFileInput(el) || isCodeInput(el))) continue;
-        describe(el);
-        if (!isFileInput(el) && ++controls >= 80) break;
+        if (isFileInput(el)) uploads++;
+        found.push({ el, at: found.length, rank: isFileInput(el) ? -1 : importance(el) });
       }
+      const total = found.length - uploads;
+      // Past the caps, what the bot most likely needs comes first, then page order; listed in page order.
+      let used = 0;
+      let shown = 0;
+      const kept = [];
+      for (const item of found.slice().sort((a, b) => a.rank - b.rank || a.at - b.at)) {
+        item.entry = entryFor(item.el);
+        if (item.rank >= 0) {
+          const length = formatLine({ ...item.entry, ref: "e000000000" }).length + 1;
+          if (shown >= MAX_CONTROLS || (shown && used + length > CONTROLS_BUDGET)) continue;
+          used += length;
+          shown++;
+        }
+        kept.push(item);
+      }
+      for (const { el, entry } of kept.sort((a, b) => a.at - b.at)) describe(el, entry);
       // Upload targets are listed even past the element cap or inside shadow DOM.
       for (const el of allFileInputs()) {
         if (!listed.has(el)) describe(el);
       }
+      const controls = elements.length ? elements.map(formatLine).join("\n") : "(no interactive elements)";
+      const text = document.body?.innerText || "";
+      // The notices come first so that nothing cuts them off.
+      let notices = total > shown ? `[controls: showing ${shown} of ${total}]\n` : "";
+      let cut = text.length;
+      const room = Math.max(MIN_TEXT, TREE_BUDGET - sent(controls) - 200);
+      while (cut > 0 && sent(text.slice(0, cut)) > room) cut = Math.floor(cut * 0.9);
+      if (cut < text.length) notices += `[page text: showing first ${cut} of ${text.length} characters]\n`;
       return {
         url: location.href,
         title: (document.title || "").slice(0, 200),
         elements,
-        tree: (document.body?.innerText || "").slice(0, 12000) + "\n" + formatTree(elements),
+        tree: notices + text.slice(0, cut) + "\n" + controls,
         frames: Boolean(document.querySelector("iframe,frame")),
       };
+    },
+    // Resolves once the page has drawn a frame or two, or soon anyway: the browser's own hit-test
+    // only knows a new scroll position after that.
+    nextFrames() {
+      return new Promise((resolve) => {
+        const timer = setTimeout(resolve, 250, true);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          clearTimeout(timer);
+          resolve(true);
+        }));
+      });
+    },
+    // Milliseconds since the page last changed.
+    quietFor() {
+      return performance.now() - lastChange;
     },
     payTokenAccount() {
       const blocks = [...document.querySelectorAll(".AiAgentPaymentSteering")]
@@ -751,18 +1025,59 @@ EVAL_HELPERS = r"""
     },
     resolve(ref) {
       const el = refMap.get(String(ref));
-      if (!el || !el.isConnected || !(visible(el) || isFileInput(el) || isCodeInput(el))) return null;
+      if (!el || !el.isConnected) {
+        throw settled("Stale element ref: the page has changed since that snapshot. Use a ref from the page below.");
+      }
+      if (!(visible(el) || isFileInput(el) || isCodeInput(el))) {
+        throw settled("Element is hidden. Open the menu or section that holds it first, then use its new ref.");
+      }
       if (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") {
-        throw new Error("Element is disabled");
+        throw settled("Element is disabled.");
       }
       return el;
     },
-    click(ref) {
+    // Brings the element into view and says where on the page a real click on it lands, or why none can.
+    aim(ref) {
       const el = this.resolve(ref);
-      if (!el) throw new Error(`Unknown element ref: ${ref}`);
-      el.focus();
-      el.click();
-      return { url: location.href, title: (document.title || "").slice(0, 200) };
+      if (isFileInput(el)) throw settled("This is a file upload. Use upload with the file paths instead of clicking it.");
+      // A native dropdown takes its option from fill; a click would open a list the page cannot see.
+      if (el instanceof HTMLSelectElement) {
+        el.focus();
+        return { x: null, y: null };
+      }
+      // A checkbox or radio drawn by its label is often a one-pixel input kept out of sight: the label
+      // is what a person clicks, and the click reaches the input through it.
+      const own = el.getBoundingClientRect();
+      const label = own.width < 4 || own.height < 4
+        ? Array.from(el.labels || []).find((candidate) => visible(candidate)) : undefined;
+      const target = label || el;
+      target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      const box = Array.from(target.getClientRects()).find((rect) => rect.width > 0 && rect.height > 0)
+        || target.getBoundingClientRect();
+      const left = Math.max(box.left, 0);
+      const right = Math.min(box.right, window.innerWidth);
+      const top = Math.max(box.top, 0);
+      const bottom = Math.min(box.bottom, window.innerHeight);
+      if (right <= left || bottom <= top) throw settled("Element is outside the visible part of the page.");
+      // The middle of the element, or for a label the first of a few spots that is not a link or button in it.
+      const spots = (label ? [[0.5, 0.5], [0.15, 0.5], [0.85, 0.5], [0.3, 0.5], [0.7, 0.5], [0.5, 0.2], [0.5, 0.8],
+        [0.1, 0.2], [0.9, 0.8]] : [[0.5, 0.5]])
+        .map(([across, down]) => [Math.round(left + (right - left) * across), Math.round(top + (bottom - top) * down)]);
+      let first;
+      for (const [x, y] of spots) {
+        const problem = landingProblem(el, x, y);
+        if (problem === FRAME_CLICK) throw settled(problem);
+        if (!problem) return { x, y };
+        first ??= problem;
+      }
+      throw settled(first);
+    },
+    // After the pointer has moved onto the spot: the page may have reacted by putting something else there.
+    // The page's scroll offset comes back too: the browser's own hit-test (check_frame) takes
+    // the spot on the page, not in the window.
+    stillAimed(ref, x, y) {
+      checkLanding(this.resolve(ref), x, y, true);
+      return { x: window.pageXOffset, y: window.pageYOffset };
     },
     fill(ref, value, origin, field) {
       // A purchase's card detail, bound to the merchant's origin like a saved login to its site.
@@ -784,7 +1099,6 @@ EVAL_HELPERS = r"""
         }
       }
       const el = this.resolve(ref);
-      if (!el) throw new Error(`Unknown element ref: ${ref}`);
       if (el.readOnly) throw refused("Element is read-only");
       el.focus();
       // After focus, whose handlers may change the field. A password goes only into a password
@@ -801,12 +1115,15 @@ EVAL_HELPERS = r"""
       if (origin && !card && !password && !(el instanceof HTMLInputElement && ["text", "email", "tel"].includes(el.type))) {
         throw refused("A saved username can only be typed into a text, email, or telephone field.");
       }
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+      if (el instanceof HTMLSelectElement) {
+        chooseOption(el, String(value));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
         if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.includes(el.type)) {
           throw new Error("Input type requires desktop tools");
         }
-        const prototype = el instanceof HTMLInputElement ? HTMLInputElement.prototype
-          : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
+        const prototype = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
         Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, String(value));
         if (el.value !== String(value)) {
           // A partly accepted login (an email field trimming a username) is not left on the page,
@@ -835,7 +1152,6 @@ EVAL_HELPERS = r"""
     },
     fileInput(ref, count) {
       const el = this.resolve(ref);
-      if (!el) throw new Error(`Unknown element ref: ${ref}`);
       if (!isFileInput(el)) throw new Error("upload needs a file upload element from browser_snapshot");
       if (count > 1 && !el.multiple) throw new Error("This file upload accepts one file");
       return el;
@@ -846,7 +1162,6 @@ EVAL_HELPERS = r"""
     // code can also be entered box by box.
     focusForKeys(ref, whole = true) {
       const el = this.resolve(ref);
-      if (!el) throw new Error(`Unknown element ref: ${ref}`);
       if (el.readOnly) throw new Error("Element is read-only");
       if (el instanceof HTMLSelectElement) return { select: true };
       if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.includes(el.type)) {
@@ -915,6 +1230,8 @@ def eval_json(client: CdpClient, session_id: str, expression: str, context_id: i
         # Chromium's text is just "Uncaught"; the reason is the thrown error's first line.
         description = str((details.get("exception") or {}).get("description") or "").split("\n")[0]
         text = description.removeprefix("Error: ") or details.get("text") or "evaluate failed"
+        if text.startswith("Settled: "):
+            raise Settled(text.removeprefix("Settled: "))
         if text.startswith("Refused: "):
             raise Refused(text.removeprefix("Refused: "))
         raise RuntimeError(str(text))
@@ -1035,13 +1352,13 @@ def upload(client: CdpClient, session_id: str, ref: str, files: list[str]) -> No
 SETTLE_SECONDS = 3.0
 
 
-def wait_for_settle(client: CdpClient, session_id: str) -> bool:
+def wait_for_settle(client: CdpClient, session_id: str, seconds: float | None = None) -> bool:
     """Wait until the page has loaded and made no requests for 500 ms (Chromium's networkIdle).
 
     Many sites draw a signed-out shell first and replace it once their own requests return,
     so a page captured earlier can show "Sign in" to an account that is signed in.
     """
-    deadline = time.monotonic() + SETTLE_SECONDS
+    deadline = time.monotonic() + (SETTLE_SECONDS if seconds is None else seconds)
 
     def remaining() -> float:
         budget = deadline - time.monotonic()
@@ -1064,6 +1381,44 @@ def wait_for_settle(client: CdpClient, session_id: str) -> bool:
     except TimeoutError:
         # A browser too slow to answer within the wait is not settled either.
         return False
+
+
+# An action's result waits until its own requests are done and the page has stopped changing for this
+# long, then is taken within the settle budget.
+ACTION_QUIET_SECONDS = 0.12
+# The most an action's result waits for its requests and the snapshot after them together. An action
+# that leaves the page for another document waits as long as a snapshot does (SETTLE_SECONDS).
+ACTION_WAIT_SECONDS = 2.0
+# A request begun this soon after one of the action's finished is set off by its answer.
+ACTION_FOLLOW_SECONDS = 0.03
+# Page changes later than this after the action's last step or request do not hold the result back, so
+# a page that always animates is not waited for.
+ACTION_CHANGE_SECONDS = 0.3
+
+
+def wait_for_action(client: CdpClient, session_id: str, ended: float, seconds: float) -> bool:
+    """Wait for what the action set in motion: its own requests, and the page drawing their answers.
+
+    Many actions fetch data and render it afterwards, so a snapshot taken at once shows "loading".
+    False when a request of the action is still open `seconds` after its last step.
+    """
+    deadline = ended + seconds
+    while True:
+        now = time.monotonic()
+        try:
+            changed = now - float(eval_json(client, session_id, "window.__rakazoPageBrowser.quietFor()")) / 1000
+        except Exception:  # noqa: BLE001
+            # A page that moved to another document has no helper yet; its own load is awaited next.
+            changed = ended
+        pending, finished = client.action_requests(session_id, ended, ACTION_QUIET_SECONDS, ACTION_FOLLOW_SECONDS)
+        last = max(ended, finished)
+        if changed <= last + ACTION_CHANGE_SECONDS:
+            last = max(last, changed)
+        if not pending and now - last >= ACTION_QUIET_SECONDS:
+            return True
+        if now >= deadline:
+            return not pending
+        client.listen(0.03)
 
 
 def key_event(char: str) -> dict[str, Any] | None:
@@ -1232,8 +1587,8 @@ def pay_token_frames(client: CdpClient, frames: list[tuple[str, str, int]]) -> l
             if origin == PAY_TOKEN_FRAME_ORIGIN]
 
 
-def snapshot(client: CdpClient, session_id: str) -> dict[str, Any]:
-    settled = wait_for_settle(client, session_id)
+def snapshot(client: CdpClient, session_id: str, settle: float | None = None) -> dict[str, Any]:
+    settled = wait_for_settle(client, session_id, settle)
     ensure_helpers(client, session_id)
     data = eval_json(client, session_id, "window.__rakazoPageBrowser.snapshot()")
     if not isinstance(data, dict):
@@ -1388,6 +1743,60 @@ def clear_card(client: CdpClient, session_id: str, run: Any) -> bool:
         return False
 
 
+def draw_frames(client: CdpClient, session_id: str) -> None:
+    """Let the page draw, so the browser's own hit-test knows where a scroll left things."""
+    try:
+        eval_json(client, session_id, "window.__rakazoPageBrowser.nextFrames()")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def check_frame(client: CdpClient, session_id: str, x: float, y: float) -> None:
+    """Refuse a press that would land in another document, which the page script cannot see into
+    (a frame in a closed shadow tree, for one). The browser itself says which frame owns the spot,
+    given as a spot on the page (the window's spot plus the scroll), not in the window.
+
+    Any answer but "the main frame" stops the press, including a failed call. A cross-origin frame runs
+    in its own process, so the browser's hit-test stops at its frame element, which the main frame owns:
+    that element stops the press too. Right after a scroll the browser may not know the spot yet
+    ("No node found"): it gets one more frame to catch up.
+    """
+    for attempt in range(2):
+        try:
+            hit = client.call("DOM.getNodeForLocation", {"x": x, "y": y, "includeUserAgentShadowDOM": True},
+                              session_id=session_id)
+            main = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]["id"]
+            node = client.call("DOM.describeNode", {"backendNodeId": hit["backendNodeId"]},
+                               session_id=session_id)["node"]
+            break
+        except (RuntimeError, KeyError) as error:
+            if attempt == 0 and "No node found" in str(error):
+                draw_frames(client, session_id)
+                continue
+            if "No node found" in str(error):
+                raise Settled(STILL_MOVING) from None
+            raise Settled(CHANGED_UNDER_POINTER) from None
+    if hit.get("frameId") != main or str(node.get("nodeName", "")).upper() in ("IFRAME", "FRAME", "OBJECT", "EMBED"):
+        raise Settled(FRAME_CLICK)
+
+
+def click_at(client: CdpClient, session_id: str, ref: str, x: float, y: float) -> None:
+    """A real mouse click, as a person's: pointer enters, button goes down, button comes up.
+
+    A page can answer the pointer by changing what is under it, so the spot is checked again between.
+    """
+    base = {"x": x, "y": y, "pointerType": "mouse"}
+    draw_frames(client, session_id)
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mouseMoved"}, session_id=session_id)
+    scrolled = eval_json(client, session_id, f"window.__rakazoPageBrowser.stillAimed({json.dumps(ref)}, {x}, {y})")
+    scrolled = scrolled if isinstance(scrolled, dict) else {}
+    check_frame(client, session_id, x + scrolled.get("x", 0), y + scrolled.get("y", 0))
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mousePressed", "button": "left", "buttons": 1,
+                                             "clickCount": 1}, session_id=session_id)
+    client.call("Input.dispatchMouseEvent", {**base, "type": "mouseReleased", "button": "left",
+                                             "clickCount": 1}, session_id=session_id)
+
+
 def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
     if not actions or len(actions) > 24:
         raise RuntimeError("Expected 1 to 24 actions")
@@ -1418,6 +1827,20 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
         if step.get("field") == "card" and not step.get("origin"):
             raise RuntimeError("A card fill needs its origin")
     ensure_helpers(client, session_id)
+    # Requests are told apart from the page's own background ones by when they begin, so listen from now.
+    # Bodies are not wanted, and 0 would mean no limit: one byte keeps each event small.
+    try:
+        client.call("Network.enable", {"maxPostDataSize": 1}, session_id=session_id)
+        client.drop_oversized = True
+    except Exception:  # noqa: BLE001
+        pass
+    # A click that makes the page open a file chooser would show a native dialog on the screen. Hold
+    # it back instead: files go in with upload.
+    try:
+        client.call("Page.setInterceptFileChooserDialog", {"enabled": True}, session_id=session_id)
+    except Exception:  # noqa: BLE001
+        pass
+    navigations = client.navigation_count(session_id)
     completed = 0
     uncertain = False
     # Refs belong to the document that was typed into; a page that moved on keeps none of them.
@@ -1445,9 +1868,8 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                 completed += 1
                 uncertain = False
                 continue
-            # Preflight catches stale refs before a mutation is dispatched.
-            if not eval_json(client, session_id, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))"):
-                raise RuntimeError("Stale element ref. Take a fresh snapshot.")
+            # Preflight catches stale, hidden and disabled elements before a mutation is dispatched.
+            eval_json(client, session_id, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))")
             if kind == "upload":
                 uncertain = True
                 upload(client, session_id, ref, step["files"])
@@ -1483,19 +1905,38 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                                 "error": "The page did not keep every character typed. "
                                          "Check the field in this snapshot before trying again."}
                     continue
-            arguments = json.dumps(ref)
-            if kind != "click":
-                arguments += ", " + json.dumps(step["text"])
+            if kind == "click":
+                uncertain = True
+                aim = eval_json(client, session_id, f"window.__rakazoPageBrowser.aim({json.dumps(ref)})")
+                if isinstance(aim, dict) and aim.get("x") is not None:
+                    click_at(client, session_id, ref, aim["x"], aim["y"])
+                completed += 1
+                uncertain = False
+                continue
+            arguments = json.dumps(ref) + ", " + json.dumps(step["text"])
             if step.get("origin"):
                 arguments += ", " + json.dumps(step["origin"]) + ", " + json.dumps(step.get("field"))
             uncertain = True
-            data = eval_json(client, session_id, f"window.__rakazoPageBrowser.{kind}({arguments})")
+            data = eval_json(client, session_id, f"window.__rakazoPageBrowser.fill({arguments})")
             if not isinstance(data, dict):
                 raise RuntimeError("Action response unavailable")
             completed += 1
             uncertain = False
-        snap = snapshot(client, session_id)
-        return {**snap, "completed": completed}
+        ended = time.monotonic()
+        budget = SETTLE_SECONDS if client.navigation_count(session_id) != navigations else ACTION_WAIT_SECONDS
+        busy = not wait_for_action(client, session_id, ended, budget)
+        if client.file_choosers:
+            raise Settled(FILE_CHOOSER)
+        # The snapshot takes what is left of the budget, and none when a request is known to be open.
+        snap = snapshot(client, session_id, 0.0 if busy else max(0.0, ended + budget - time.monotonic()))
+        return {**snap, "completed": completed, **({"loading": True} if busy else {})}
+    except Settled as exc:
+        # Nothing changed for this step. The page as it is now goes with the reason.
+        try:
+            snap = snapshot(client, session_id)
+        except Exception:  # noqa: BLE001
+            snap = {}
+        return {"uncertain": False, **snap, "ok": False, "completed": completed, "error": str(exc)}
     except Refused as exc:
         # Settled, and fixable in the page browser: no desktop fallback.
         return {"ok": False, "completed": completed, "uncertain": False, "error": str(exc)}

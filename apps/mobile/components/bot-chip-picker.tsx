@@ -25,9 +25,7 @@ export function BotChipPicker({
     (bot) =>
       !bot.archivedAt &&
       !selected.includes(bot.id) &&
-      (!needle ||
-        bot.name.toLowerCase().includes(needle) ||
-        bot.title.toLowerCase().includes(needle)),
+      (!needle || bot.name.toLowerCase().includes(needle)),
   );
   return (
     <View>

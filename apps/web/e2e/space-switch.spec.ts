@@ -16,7 +16,6 @@ test("opening a bot in another space switches in place, without a page reload", 
     data: {
       json: {
         name: "Scout",
-        title: "",
         description: "",
         notifyOnFinish: true,
         computerMode: "team",
@@ -65,7 +64,6 @@ test("going back during a slow switch keeps the user where they went", async ({ 
     data: {
       json: {
         name: "Helper",
-        title: "",
         description: "",
         notifyOnFinish: true,
         computerMode: "team",
@@ -82,7 +80,6 @@ test("going back during a slow switch keeps the user where they went", async ({ 
     data: {
       json: {
         name: "Scout",
-        title: "",
         description: "",
         notifyOnFinish: true,
         computerMode: "team",

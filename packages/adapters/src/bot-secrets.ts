@@ -279,8 +279,9 @@ export function loginFieldLabelsArgument(value: unknown): unknown {
 }
 
 /**
- * The field labels a login card asks for. Only labels: whether a field is hidden is the person's
- * choice on the card, so anything else the bot sends with a field is dropped.
+ * The field labels a login card asks for. Only labels: the card derives each field's starting
+ * state from its label, the person has the last word, and anything else the bot sends with a
+ * field is dropped.
  */
 export function requestedLoginFields(value: unknown): { labels?: string[]; error?: string } {
   if (value === undefined || value === null) return {};

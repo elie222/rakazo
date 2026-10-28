@@ -1,4 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",
   "could not read": "konnte nicht gelesen werden",
@@ -47,9 +48,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Permissions: "Berechtigungen",
   "Open work": "Offene Aufgaben",
   "When it finishes or needs input": "Wenn der Bot fertig ist oder Eingaben benötigt",
-  "Edit label": "Label bearbeiten",
   "Edit name": "Namen bearbeiten",
-  "Add a label": "Label hinzufügen",
   "Pick a chat": "Wähle einen Chat",
   "Add an AI model to keep chatting": "Füge ein KI-Modell hinzu, um weiterzuchatten",
   "Not Now": "Jetzt nicht",

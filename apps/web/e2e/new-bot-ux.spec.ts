@@ -281,7 +281,6 @@ test("creation actions stay visible above a long bot list", async ({ page }, tes
   for (let index = 0; index < 12; index++) {
     await rpc(page, "bots/create", {
       name: `Helper ${index + 1}`,
-      title: "",
       description: "",
       notifyOnFinish: true,
       computerMode: "team",

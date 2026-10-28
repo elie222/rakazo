@@ -306,7 +306,7 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
       ),
   );
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Edit label" })).toHaveText("Add a label");
+  await expect(settings.getByRole("button", { name: "Edit name" })).toHaveText("Researcher");
   await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
 });

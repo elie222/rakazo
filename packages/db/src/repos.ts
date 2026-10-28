@@ -81,7 +81,6 @@ function mapBot(
     id: string;
     spaceId: string;
     name: string;
-    title: string;
     description: string;
     instructions: string;
     selfUpdateInstructions?: boolean;
@@ -124,7 +123,7 @@ function mapBot(
     id: bot.id,
     spaceId: bot.spaceId,
     name: bot.name,
-    title: displayName(bot.title, ""),
+    title: "",
     description: bot.description,
     instructions: bot.instructions,
     selfUpdateInstructions: bot.selfUpdateInstructions ?? false,
@@ -196,7 +195,6 @@ export function createRepos(
         id: true,
         spaceId: true,
         name: true,
-        title: true,
         color: true,
         avatarSet: true,
         notifyOnFinish: true,
@@ -222,7 +220,7 @@ export function createRepos(
         id: bot.id,
         spaceId: bot.spaceId,
         name: bot.name,
-        title: displayName(bot.title, ""),
+        title: "",
         color: bot.color,
         avatarSet: resolveBotAvatarSet(bot.avatarSet),
         notifyOnFinish: bot.notifyOnFinish,
@@ -519,7 +517,6 @@ export function createRepos(
       input: {
         id?: string;
         name: string;
-        title: string;
         description: string;
         instructions: string;
         notifyOnFinish: boolean;
@@ -610,7 +607,6 @@ export function createRepos(
               spaceId: actor.spaceId,
               userId: actor.userId,
               name: displayName(input.name, ""),
-              title: displayName(input.title, ""),
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,

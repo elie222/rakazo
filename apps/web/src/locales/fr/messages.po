@@ -498,10 +498,6 @@ msgstr "Ajoutez une commande à exécuter"
 msgid "Add a file or folder to watch"
 msgstr "Ajoutez un fichier ou dossier à surveiller"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "Ajouter une étiquette"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Ajoutez un modèle dans les Paramètres pour utiliser cette fonctionnalité."
@@ -2495,7 +2491,6 @@ msgstr "Refuser"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -2667,10 +2662,6 @@ msgstr "Modifier"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "Modifier d'abord"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "Modifier l’étiquette"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -3124,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Fréquence"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "Comment les autres bots le voient"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5900,7 +5895,6 @@ msgid "Timing may differ"
 msgstr "L’horaire peut varier"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Titre"
 

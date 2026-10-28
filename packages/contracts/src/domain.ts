@@ -92,6 +92,7 @@ export const BotSchema = z.object({
   id: Id,
   spaceId: Id,
   name: z.string(),
+  /** Always empty; installed mobile apps still read it. */
   title: z.string(),
   description: z.string(),
   instructions: z.string(),
@@ -368,7 +369,6 @@ export const SpaceNavigationSchema = z.object({
 export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
 export const BOT_NAME_MAX_LENGTH = 80;
-export const BOT_TITLE_MAX_LENGTH = 500;
 export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
@@ -379,7 +379,6 @@ export const CreateBotInput = z.object({
     .regex(/^c[a-z0-9]{24}$/)
     .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
-  title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
@@ -394,23 +393,10 @@ export const CreateBotInput = z.object({
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
-export function normalizeCreateBotProfile(
-  input: Pick<CreateBotInput, "name" | "title" | "description">,
-) {
-  const description = input.description.trim();
-  return {
-    name: input.name.trim().slice(0, BOT_NAME_MAX_LENGTH),
-    title: input.title.trim().slice(0, BOT_TITLE_MAX_LENGTH),
-    description: description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-    instructions: description.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
-  };
-}
-
 export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
     description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
     instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
@@ -456,6 +442,7 @@ export const UpdateBotInput = z
       });
     }
   });
+export type UpdateBotInput = z.infer<typeof UpdateBotInput>;
 
 /**
  * A routine's model is optional, but provider and id only mean something together,
@@ -1833,7 +1820,7 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }).extend({
+  bot: BotSchema.pick({ name: true, description: true, instructions: true }).extend({
     color: z.string().optional(),
     avatarSet: BotAvatarSetSchema.optional(),
   }),

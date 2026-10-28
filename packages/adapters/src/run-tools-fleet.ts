@@ -166,7 +166,6 @@ export const fleetTools: ToolHandlers = {
       runId,
       spawnKey: effectKey,
       name: String(args.name ?? ""),
-      title: args.title ? String(args.title) : undefined,
       description: args.description ? String(args.description) : undefined,
       instructions: args.instructions ? String(args.instructions) : undefined,
       prompt: args.prompt ? String(args.prompt) : undefined,
@@ -180,7 +179,6 @@ export const fleetTools: ToolHandlers = {
           kind: "child_bot",
           botId: spawned.botId,
           name: spawned.name,
-          title: spawned.title,
           status: "created",
         },
       ]);

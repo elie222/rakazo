@@ -95,7 +95,6 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "spawn_bot") {
     return Type.Object({
       name: Type.String(),
-      title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
@@ -105,7 +104,6 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "update_bot") {
     return Type.Object({
       name: Type.Optional(Type.String()),
-      title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       color: Type.Optional(Type.String()),
       artifact_id: Type.Optional(Type.String()),
@@ -301,7 +299,6 @@ const FLEET_STRING_ARGS = [
   "group_id",
   "group_name",
   "name",
-  "title",
   "description",
   "color",
   "artifact_id",

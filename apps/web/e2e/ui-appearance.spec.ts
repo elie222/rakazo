@@ -424,7 +424,6 @@ test("sidebar list fades above the transparent footer and keeps the last row rea
   for (let index = 0; index < 20; index++) {
     await rpc(page, "bots/create", {
       name: `Demo chat ${index}`,
-      title: "",
       description: "",
       notifyOnFinish: true,
       computerMode: "team",

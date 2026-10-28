@@ -1,6 +1,6 @@
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
-import { computerReplayContext, runComputerReplay } from "./computer-replay.js";
+import { computerReplayContext, controlsInTree, runComputerReplay } from "./computer-replay.js";
 import {
   CONTACTS_CSV,
   CONTACTS_PATH,
@@ -100,5 +100,29 @@ describe("computer replay with real Pi and stateful offline computer", () => {
       browser.close();
       await sandbox.destroy(computer, context);
     }
+  });
+});
+
+describe("controls read back from a snapshot tree", () => {
+  it("reads names with quotes, backslashes, line breaks, Hebrew and emoji", () => {
+    const names = [
+      'Export "2024"',
+      "C:\\temp",
+      "two\nlines",
+      "הצג תשואות",
+      "Save \u{1F4BE}",
+      "plain",
+    ];
+    const tree = [
+      "Some page text",
+      ...names.map(
+        (name, index) =>
+          `- ${index % 2 ? "link" : "file upload"} ${JSON.stringify(name)} [e${index + 7}] value="x"`,
+      ),
+      "- not a control line",
+    ].join("\n");
+    expect(controlsInTree(tree)).toEqual(
+      names.map((name, index) => ({ name, ref: `e${index + 7}` })),
+    );
   });
 });

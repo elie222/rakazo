@@ -227,7 +227,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("child_bot"),
     botId: z.string(),
     name: z.string(),
-    title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({

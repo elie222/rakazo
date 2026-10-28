@@ -49,7 +49,6 @@ test("onboarding skips model connect when a default model is already available",
   expect((await createRequest).postDataJSON()).toMatchObject({
     json: {
       name: "Chief",
-      title: "",
       description: "",
       instructions: "",
       spawnKey: "onboarding:first",

@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "How other bots see it": "其他机器人如何了解它",
   "Share to": "分享到",
   "{count} files": "{count} 个文件",
   "could not read": "无法读取",
@@ -42,9 +43,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Permissions: "权限",
   "Open work": "待办事项",
   "When it finishes or needs input": "完成或需要输入时",
-  "Edit label": "编辑标签",
   "Edit name": "编辑名称",
-  "Add a label": "添加标签",
   "Pick a chat": "选择聊天",
   "Add an AI model to keep chatting": "添加一个 AI 模型以继续聊天",
   "Not Now": "暂不",

@@ -39,7 +39,6 @@ const bot: MobileBot = {
   id: "bot-1",
   name: "Helper",
   preview: "",
-  title: "",
   color: "gray",
   computerMode: "team",
   notifyOnFinish: true,

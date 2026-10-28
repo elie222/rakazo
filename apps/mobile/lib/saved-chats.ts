@@ -110,7 +110,6 @@ export function writeSavedInbox(
         ({
           id,
           name,
-          title,
           color,
           preview,
           unread,
@@ -126,7 +125,6 @@ export function writeSavedInbox(
           ({
             id,
             name,
-            title,
             color,
             preview,
             unread,

@@ -498,10 +498,6 @@ msgstr "Een commando toevoegen om uit te voeren"
 msgid "Add a file or folder to watch"
 msgstr "Een bestand of map toevoegen om te volgen"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "Label toevoegen"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Voeg een model toe in Instellingen om dit te gebruiken."
@@ -2495,7 +2491,6 @@ msgstr "Weigeren"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Beschrijving"
 
@@ -2667,10 +2662,6 @@ msgstr "Bewerken"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "Eerst bewerken"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "Label bewerken"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -3124,6 +3115,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Hoe vaak"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "Hoe andere bots deze zien"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -5900,7 +5895,6 @@ msgid "Timing may differ"
 msgstr "Het tijdstip kan afwijken"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Titel"
 

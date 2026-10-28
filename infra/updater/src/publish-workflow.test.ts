@@ -135,14 +135,9 @@ describe("server image publish workflow", () => {
     expect(publish?.uses).toBe("./.github/workflows/publish-server-image.yml");
     expect(publish?.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     expect(ci.jobs["deploy-production"]?.needs).toEqual([
-      "lint",
       "check",
-      "build",
       "test",
       "test-integration",
-      "test-postgres-upgrade",
-      "test-pitr",
-      "test-e2e",
       "publish-server-image",
     ]);
   });

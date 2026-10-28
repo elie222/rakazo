@@ -22,7 +22,6 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   const selectedBotId = activeBotId(page);
   const previewBot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Compact Sample",
-    title: "Field notes from every venue we scouted downtown",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -40,23 +39,9 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await expect(sidebar).toHaveAttribute("data-bots-sidebar-density", "comfortable");
   await expect(selectedRow).toHaveAttribute("aria-current", "page");
   await expect(previewRow).toContainText(preview);
-  await expect(previewRow).toContainText("Field notes");
   await expect(previewRow.locator("[data-roster-bot-name]")).toHaveText("Compact Sample");
-  // The label sits beside the name on its line, and only the label gives way to a long value.
-  const rosterName = previewRow.locator("[data-roster-bot-name]");
-  const rosterTitle = previewRow.locator("[data-roster-bot-title]");
-  const nameBox = await rosterName.boundingBox();
-  const titleBox = await rosterTitle.boundingBox();
-  expect(titleBox?.height).toBeLessThanOrEqual(nameBox?.height ?? 0);
-  expect(Math.abs((titleBox?.y ?? 0) - (nameBox?.y ?? 0))).toBeLessThanOrEqual(1);
-  expect(await rosterName.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-    true,
-  );
-  expect(await rosterTitle.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
-    true,
-  );
   await page.mouse.move(1, 1);
-  await captureScreenshot(page, testInfo, "sidebar-density-comfortable-title");
+  await captureScreenshot(page, testInfo, "sidebar-density-comfortable");
   // Previews stay on one line and end in an ellipsis instead of wrapping.
   await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("white-space", "nowrap");
   await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("text-overflow", "ellipsis");

@@ -5,7 +5,6 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
-  BOT_TITLE_MAX_LENGTH,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
@@ -77,7 +76,6 @@ export default function BotSettingsScreen() {
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
   const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [color, setColor] = useState<string>(BOT_COLORS[0]);
@@ -140,20 +138,20 @@ export default function BotSettingsScreen() {
       }),
     [botId],
   );
-  const profileSaves = useMemo(() => {
-    const fieldQueue = (field: "name" | "title", onChange: (value: string) => void) =>
+  const nameSave = useMemo(
+    () =>
       createQueuedSave<string>("", {
-        save: async (value) => {
-          await rpc("bots/update", { botId, [field]: value });
+        save: async (name) => {
+          await rpc("bots/update", { botId, name });
         },
-        onChange,
-        onSaved: async (value) => {
-          setBot((prev) => (prev ? { ...prev, [field]: value } : prev));
+        onChange: setName,
+        onSaved: async (name) => {
+          setBot((prev) => (prev ? { ...prev, name } : prev));
         },
         onError: (err) => setError(errorText(err)),
-      });
-    return { name: fieldQueue("name", setName), title: fieldQueue("title", setTitle) };
-  }, [botId]);
+      }),
+    [botId],
+  );
 
   useEffect(() => {
     if (!botId) return;
@@ -161,10 +159,8 @@ export default function BotSettingsScreen() {
       .then((next) => {
         setBot(next);
         setName(next.name);
-        profileSaves.name.reset(next.name);
-        profileSaves.title.reset(next.title);
+        nameSave.reset(next.name);
         notifySave.reset(next.notifyOnFinish ?? true);
-        setTitle(next.title);
         setDescription(next.description ?? "");
         setInstructions(next.instructions ?? "");
         setColor(next.color);
@@ -184,7 +180,7 @@ export default function BotSettingsScreen() {
         fleetSave.reset(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
-  }, [botId, crossSpaceSave, fleetSave, notifySave, profileSaves]);
+  }, [botId, crossSpaceSave, fleetSave, notifySave, nameSave]);
 
   useEffect(() => {
     void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
@@ -416,8 +412,7 @@ export default function BotSettingsScreen() {
         crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),
-        profileSaves.name.flush(),
-        profileSaves.title.flush(),
+        nameSave.flush(),
       ]);
       router.back();
     } catch (err) {
@@ -538,17 +533,7 @@ export default function BotSettingsScreen() {
             maxLength={BOT_NAME_MAX_LENGTH}
             large
             onCommit={async (value) => {
-              if (value && botId) profileSaves.name.update(value);
-            }}
-          />
-          <ProfileEditDialog
-            label={t("Title")}
-            editLabel={t("Edit label")}
-            placeholder={t("Add a label")}
-            value={title}
-            maxLength={BOT_TITLE_MAX_LENGTH}
-            onCommit={async (value) => {
-              if (botId) profileSaves.title.update(value);
+              if (value && botId) nameSave.update(value);
             }}
           />
         </View>
@@ -763,9 +748,9 @@ export default function BotSettingsScreen() {
                 />
               </View>
             </SettingsGroup>
-            <SettingsGroup label={t("Description")}>
+            <SettingsGroup label={t("How other bots see it")}>
               <GrowingTextInput
-                label={t("Description")}
+                label={t("How other bots see it")}
                 value={description}
                 maxLength={BOT_DESCRIPTION_MAX_LENGTH}
                 onChangeText={setDescription}

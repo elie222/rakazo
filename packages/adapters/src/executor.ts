@@ -1289,7 +1289,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   id: { not: bot.id },
                   thread: { isNot: null },
                 },
-                select: { id: true, name: true, title: true, description: true },
+                select: { id: true, name: true, description: true },
                 orderBy: { createdAt: "asc" },
                 take: BOT_DIRECTORY_LIMIT,
               }),

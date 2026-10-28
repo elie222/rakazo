@@ -209,7 +209,6 @@ test("switching bots while a routine save is pending does not reopen stale state
   const firstBotId = activeBotId(page);
   const secondBot = await rpc<Bot>(page, "bots/create", {
     name: "Second",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: false,
