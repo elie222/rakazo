@@ -45,7 +45,13 @@ import {
 import { ACTIVE_RUN_STATUSES, scrollDirection } from "@rakazo/core";
 import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd, PrismaClient } from "@rakazo/db";
-import { createRepos, IsolationError, parseComputerMode, recordComputerRunEnd } from "@rakazo/db";
+import {
+  createRepos,
+  expireComputerExecutionLeases,
+  IsolationError,
+  parseComputerMode,
+  recordComputerRunEnd,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { scrollPoint } from "../computer-input.js";
 import {
@@ -163,8 +169,9 @@ export function computerRoutes(ctx: RouterContext) {
             message: "Other Team bots are still using this computer",
           });
         }
-        await deps.prisma.computerExecutionLease.deleteMany({
-          where: { computerId: bot.computer.id, botId: bot.id },
+        await expireComputerExecutionLeases(deps.prisma, {
+          computerId: bot.computer.id,
+          botId: bot.id,
         });
         try {
           let end: ComputerRunEnd = "stopped";

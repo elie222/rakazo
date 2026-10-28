@@ -33,6 +33,7 @@ import {
   botProfileLabelsChanged,
   ComputerLimitError,
   commitBotUpdate,
+  expireComputerExecutionLeases,
   InstructionConflictError,
   IsolationError,
   recordComputerRunEnd,
@@ -468,8 +469,9 @@ export function botsRoutes(ctx: RouterContext) {
             if (bot.computer.state === "running") {
               await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             }
-            await deps.prisma.computerExecutionLease.deleteMany({
-              where: { computerId: bot.computer.id, botId: bot.id },
+            await expireComputerExecutionLeases(deps.prisma, {
+              computerId: bot.computer.id,
+              botId: bot.id,
             });
             await deps.prisma.computer.update({
               where: { id: bot.computer.id },
