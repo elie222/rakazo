@@ -437,7 +437,7 @@ export function normalizeRunError(
     status === 404 ||
     status === 410 ||
     payload.param === "model" ||
-    /model[_ -]not[_ -](?:found|supported)|\bunsupported model\b/i.test(signals) ||
+    /model[_ -]not[_ -](?:found|supported)/i.test(signals) ||
     (!(status !== undefined && status >= 500) && MODEL_UNAVAILABLE.test(message))
   ) {
     recovery = "model";

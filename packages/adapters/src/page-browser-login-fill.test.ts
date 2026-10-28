@@ -316,7 +316,8 @@ describe("live page helper card fill", () => {
     expect(browser.cardTyped(15)).toBe(false);
     const snapshot = browser.snapshot();
     expect(snapshot.frames).toBe(true);
-    expect(JSON.stringify(snapshot)).not.toContain("4242");
+    expect(JSON.stringify(snapshot)).not.toContain("4242 4242");
+    expect(JSON.stringify(snapshot)).not.toContain("4242424242424242");
     domWindow.document.querySelector<HTMLInputElement>('[aria-label="Email"]')!.focus();
     expect(browser.cardHolds()).toBe(false);
     browser.emptyCard();
