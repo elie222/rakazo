@@ -166,6 +166,17 @@ describe("error serialization", () => {
     expect(serialized.message).toContain("[Redacted]");
   });
 
+  it("redacts user profile paths in error messages and stacks", () => {
+    const error = new Error("cannot open /home/example-user/app.db");
+    error.stack = `Error: cannot open /home/example-user/app.db\n    at run (/Users/example-user/app/index.js:1:1)\n    at load (C:\\Users\\example-user\\app\\index.js:2:1)`;
+    const serialized = serializeError(error);
+    expect(serialized.message).toBe("cannot open /[user]/app.db");
+    expect(serialized.stack).toBe(
+      "Error: cannot open /[user]/app.db\n    at run (/[user]/app/index.js:1:1)\n    at load ([user]\\app\\index.js:2:1)",
+    );
+    expect(JSON.stringify(serialized)).not.toContain("example-user");
+  });
+
   it("redacts secrets interpolated into the log message", () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
