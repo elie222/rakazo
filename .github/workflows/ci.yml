@@ -211,17 +211,43 @@ jobs:
           # change from a cancelled or skipped run is still published (or still blocks).
           runtime="$(jq -r .expo.version apps/mobile/app.json)"
           project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
-          published="$(
+          # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
+          # leave no body; neither may pass as "no published update", which would shrink the
+          # comparison to this push only and let an earlier native change escape the diff.
+          response="$(
             curl -fsS https://api.expo.dev/graphql \
               -H "authorization: Bearer $EXPO_TOKEN" \
               -H "content-type: application/json" \
               --data "$(jq -n --arg id "$project" '{
                 query: "query($id: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
                 variables: { id: $id }
-              }')" |
-              jq -r --arg runtime "$runtime" \
-                '[.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not) and .gitCommitHash != null)][0].gitCommitHash // ""'
-          )" || published=""
+              }')"
+          )" || response=""
+          published="$(
+            jq -er --arg runtime "$runtime" '
+              if has("errors") or (.data.app.byId | type) != "object" then
+                error("no usable update data")
+              else
+                [.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not) and .gitCommitHash != null)][0].gitCommitHash // ""
+              end
+            ' <<<"$response"
+          )" || published="unknown"
+          # A published update this checkout has no object for cannot anchor the diff either.
+          if [[ -n "$published" && "$published" != "unknown" ]] &&
+            ! git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null &&
+            ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
+            published="unknown"
+          fi
+          if [[ "$published" == "unknown" ]]; then
+            echo "::warning::Could not determine the last published update for runtime $runtime; not publishing this push."
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "Could not determine the last published update for runtime \`$runtime\`, so this job will not publish a partial-range update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [[ -n "$published" ]] && git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null; then
             base="$published"
           else
