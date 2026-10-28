@@ -128,9 +128,10 @@ it("shows what the open chat publishes, in the same title", () => {
   expect(avatar()?.getAttribute("data-color")).toBe("slot");
 });
 
-it("opens a group's settings from its title, with no avatar, and keeps a read-only chat inert", () => {
+it("opens group settings with a visible group mark before members load, and keeps a read-only chat inert", () => {
   render({ groupId: "group-1", name: "Team" });
   expect(avatar()).toBeNull();
+  expect(seats()?.getAttribute("data-members")).toBe("");
   act(() => button().click());
   expect(push).toHaveBeenCalledWith({
     pathname: "/group-settings",
@@ -211,10 +212,10 @@ it("keeps the inbox's seats while the open chat hasn't loaded its members", () =
   expect(seats()?.getAttribute("data-members")).toBe("b1");
 });
 
-it("seats nobody for an unknown group, and never for a one-to-one chat", () => {
+it("shows a group identity even with no roster, and never on a one-to-one chat", () => {
   render({ groupId: "group-9", name: "Team" });
-  expect(seats()).toBeNull();
-  setSearchInbox(inbox([helper], [{ id: "group-1", members: [member("b1")] }]));
+  expect(seats()?.getAttribute("data-members")).toBe("");
+  act(() => setSearchInbox(inbox([helper], [{ id: "group-1", members: [member("b1")] }])));
   render({ botId: "bot-1" });
   expect(seats()).toBeNull();
 });

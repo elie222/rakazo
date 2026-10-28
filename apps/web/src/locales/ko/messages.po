@@ -676,6 +676,7 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "허용"
@@ -691,6 +692,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "한 번 허용"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "허용 규칙"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -876,6 +881,10 @@ msgstr ""
 msgid "Ask"
 msgstr "묻기"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "승인 규칙"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -1005,9 +1014,14 @@ msgstr "Bearer 토큰"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "차단"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "차단 규칙"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1177,6 +1191,10 @@ msgstr "취소됨"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "취소됨"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "변경할 규칙"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -2028,6 +2046,10 @@ msgstr "샘플 음성을 재생하지 못했습니다."
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "규칙을 미리 볼 수 없습니다"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "모델 서버에 연결하지 못했습니다."
@@ -2332,6 +2354,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron 표현식"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "현재"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -4018,6 +4044,10 @@ msgstr ""
 msgid "No matching models"
 msgstr "일치하는 모델 없음"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "일치하는 규칙 없음"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "아직 연결된 MCP 서버가 없습니다."
@@ -4465,6 +4495,8 @@ msgstr "POST 대상"
 msgid "Preferences"
 msgstr "환경설정"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4704,6 +4736,7 @@ msgstr "새로고침"
 msgid "Remaining quota"
 msgstr "남은 할당량"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5697,6 +5730,10 @@ msgstr "API 키 테스트"
 msgid "Test connection"
 msgstr "연결 테스트"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "규칙 테스트"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "테스트 실행"
@@ -5971,6 +6008,7 @@ msgstr "도구 인수는 JSON 객체여야 합니다"
 msgid "Tool arguments must be JSON"
 msgstr "도구 인수는 JSON이어야 합니다"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "도구 이름"

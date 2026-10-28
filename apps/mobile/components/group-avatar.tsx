@@ -4,6 +4,7 @@ import type { ViewStyle } from "react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { native, useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
+import { NativeSymbol } from "./native-symbol";
 
 export interface GroupAvatarMember {
   botId?: string;
@@ -25,6 +26,8 @@ export const GroupAvatar = memo(function GroupAvatar({
   if (!firstMember) {
     return (
       <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
         style={[
           styles.fallback,
           {
@@ -34,7 +37,12 @@ export const GroupAvatar = memo(function GroupAvatar({
           },
         ]}
       >
-        <Text style={[styles.fallbackText, { fontSize: Math.round(size * 0.35) }]}>👥</Text>
+        <NativeSymbol
+          ios="person.2.fill"
+          android="people"
+          size={Math.round(size * 0.45)}
+          color={native.secondaryLabel}
+        />
       </View>
     );
   }
@@ -115,9 +123,6 @@ function createGroupAvatarStyles() {
       backgroundColor: native.fillPressed,
       alignItems: "center",
       justifyContent: "center",
-    },
-    fallbackText: {
-      color: native.secondaryLabel,
     },
   });
 }
