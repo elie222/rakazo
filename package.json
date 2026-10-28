@@ -21,7 +21,7 @@
     "sandbox:boat-snapshot": "tsx packages/adapters/src/cli/build-boat-snapshot.ts",
     "sandbox:novita-template": "tsx packages/adapters/src/cli/build-novita-template.ts",
     "sandbox:e2b-template": "tsx packages/adapters/src/cli/build-e2b-template.ts",
-    "test": "vitest run",
+    "test": "node --test scripts/pnpm.test.mjs && vitest run",
     "test:compose-smoke": "bash infra/compose/run-smokes.sh",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",
     "test:e2e": "tsx packages/testkit/src/cli/harness.ts --e2e",
