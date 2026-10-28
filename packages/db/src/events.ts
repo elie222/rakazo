@@ -5,8 +5,10 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
+  hasThinkingActivityMarker,
   LoginSecretValue,
   MessageBlock as MessageBlockSchema,
+  ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -71,6 +73,19 @@ export interface AppendEventInput {
   runId?: string;
   /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
   allowCancelledRun?: boolean;
+  /** Internal attempt fence for transient activity; never serialized to clients. */
+  activityLease?: { owner: string; fence: number };
+}
+
+/** Exact transient lifecycle payloads only: unrelated thread metadata must survive. */
+export function transientRunEventsWhere(): Prisma.EventWhereInput {
+  return {
+    OR: [
+      { type: "thread.progress" },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: true } } } },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: false } } } },
+    ],
+  };
 }
 
 export interface ThreadEvents {
@@ -1278,7 +1293,9 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: run?.userId ? { userId: run.userId } : {},
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     const continuationRunId = await createPendingSteeringRun(tx, input);
     return {
       threadId: waitingEvent.threadId,
@@ -1393,7 +1410,9 @@ export async function pauseRunForTakeover(
         retainedControl: retainControl,
       },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
   });
 
@@ -1768,7 +1787,9 @@ async function finalizeRunOnce(
       runId: input.runId,
       payload: input.outcome === "completed" ? {} : { error: input.error },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     if (writableRun) {
       await deleteRunSecretsInTransaction(tx, [
         { id: input.runId, userId: writableRun.userId, spaceId: input.spaceId },
@@ -1945,6 +1966,10 @@ export async function appendEventInTransaction(
   tx: Prisma.TransactionClient,
   input: AppendEventInput,
 ) {
+  if (input.type === "thread.meta" && hasThinkingActivityMarker(input.payload)) {
+    ThreadActivityPayloadSchema.parse(input.payload);
+    if (!input.runId || !input.activityLease) throw new RunHistoryWriteError();
+  }
   const thread = await tx.thread
     .update({
       where: { id: input.threadId },
@@ -1957,6 +1982,18 @@ export async function appendEventInTransaction(
       if (input.runId && isRecordNotFound(error)) throw new RunHistoryWriteError();
       throw error;
     });
+  if (input.type === "thread.meta" && hasThinkingActivityMarker(input.payload)) {
+    const active = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true, leaseFence: true },
+    });
+    if (
+      active?.status !== "running" ||
+      active.leaseOwner !== input.activityLease?.owner ||
+      active.leaseFence !== input.activityLease?.fence
+    )
+      throw new RunHistoryWriteError();
+  }
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
   let firstResponseAt: Date | null | undefined;

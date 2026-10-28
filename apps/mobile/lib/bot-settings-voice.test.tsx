@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   instructions: "",
   description: "",
   crossSpaceCommunication: false,
+  avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
   os: "ios",
   work: [] as unknown[],
@@ -83,6 +84,7 @@ vi.mock("./api", () => ({
         description: mocks.description,
         instructionHistory: mocks.history,
         color: BOT_COLORS[0],
+        avatarSet: mocks.avatarSet,
         autoSpeak: false,
         computerMode: "team",
         fleetManagement: false,
@@ -340,6 +342,7 @@ describe("bot settings device voice menu", () => {
   let container: HTMLDivElement;
   beforeEach(() => {
     mocks.crossSpaceCommunication = false;
+    mocks.avatarSet = undefined;
     vi.clearAllMocks();
     mocks.focus = undefined;
     mocks.instructions = "";
@@ -507,6 +510,50 @@ describe("bot settings device voice menu", () => {
         .click(),
     );
     expect(container.textContent).not.toContain("Shape");
+  });
+
+  it("keeps a legacy set until explicitly switched, saves the choice, and reloads it", async () => {
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit avatar"]')!.click(),
+    );
+    const setMenu = () => container.querySelector('[data-menu="Icon set"]')!;
+    const option = (label: string) =>
+      [...setMenu().querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === label,
+      )!;
+    expect(option("Original").dataset.state).toBe("on");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    await act(async () => option("Rakazo").click());
+    mocks.rpc.mockResolvedValueOnce({ avatarSet: "rakazo" });
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Save")!
+        .click(),
+    );
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      avatarSet: "rakazo",
+    });
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.avatarSet = "rakazo";
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit avatar"]')!.click(),
+    );
+    expect(option("Rakazo").dataset.state).toBe("on");
+    await act(async () => option("Original").click());
+    mocks.rpc.mockResolvedValueOnce({ avatarSet: "organic" });
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Save")!
+        .click(),
+    );
+    expect(mocks.rpc).toHaveBeenLastCalledWith("bots/update", {
+      botId: "bot-fixture",
+      avatarSet: "organic",
+    });
   });
 
   it("expands Advanced for a native model deep link", async () => {

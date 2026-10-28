@@ -223,6 +223,7 @@ function SpaceShell() {
       botId: bot.id,
       botName: bot.name,
       botColor: bot.color,
+      botAvatarSet: bot.avatarSet,
       transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
     });
   };
@@ -434,6 +435,7 @@ function SpaceShell() {
     return {
       botId: run.botId,
       color: bot?.color ?? FALLBACK_BOT_COLOR,
+      avatarSet: bot?.avatarSet,
       name: bot?.name,
       status: run.status,
     };

@@ -141,6 +141,7 @@ export function IncomingCall({
         botId: bot.id,
         botName: bot.name,
         botColor: bot.color,
+        botAvatarSet: bot.avatarSet,
         transcribe,
         answered: { callId: call.callId, opening: answered.opening },
       });
@@ -170,10 +171,10 @@ export function IncomingCall({
             style={{ borderColor: defaultBotAvatarValue(bot.color) }}
           />
           <span className="md:hidden">
-            <BotAvatar color={bot.color} identity={bot.id} size={120} />
+            <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.id} size={120} />
           </span>
           <span className="hidden md:block">
-            <BotAvatar color={bot.color} identity={bot.id} size={52} />
+            <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.id} size={52} />
           </span>
         </span>
         <span className="flex flex-col items-center gap-1 md:items-start">

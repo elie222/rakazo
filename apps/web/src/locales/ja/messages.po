@@ -6181,3 +6181,15 @@ msgstr "音声プロバイダーのクレジットが不足しています。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "音声プロバイダーのキーが拒否されました。"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"

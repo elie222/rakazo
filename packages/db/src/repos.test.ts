@@ -48,6 +48,26 @@ function reposFor(memoryScope: string | null) {
 }
 
 describe("createRepos.listBots", () => {
+  it.each([undefined, "organic", "rakazo"])(
+    "preserves appearance metadata on reload (set=%s)",
+    async (avatarSet) => {
+      const rows = ["#8B5CF6", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="].map(
+        (color, index) => ({ ...baseBot, id: `bot-${index}`, color, avatarSet }),
+      );
+      const prisma = {
+        bot: { findMany: vi.fn(async () => rows) },
+        run: { findMany: vi.fn(async () => []) },
+        $queryRaw: vi.fn(async () => []),
+      };
+      const bots = await createRepos(prisma as unknown as PrismaClient).listBots(actor);
+      expect(
+        bots.map((bot) => ({ id: bot.id, color: bot.color, avatarSet: bot.avatarSet })),
+      ).toEqual(
+        rows.map((row) => ({ id: row.id, color: row.color, avatarSet: avatarSet ?? "organic" })),
+      );
+    },
+  );
+
   it("surfaces a failed foreground run and clears the signal after recovery", async () => {
     const findMany = vi.fn(async () => [baseBot]);
     const queryRaw = vi.fn(async () => [] as unknown[]);
@@ -423,6 +443,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         name: "Support",
         title: "Customer support",
         color: "#123456",
+        avatarSet: "organic",
         notifyOnFinish: false,
         pinned: true,
         sectionId: null,
@@ -465,6 +486,7 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         name: "Support",
         title: "Customer support",
         color: "#123456",
+        avatarSet: "organic",
         notifyOnFinish: false,
         pinned: true,
         sectionId: null,

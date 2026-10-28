@@ -118,7 +118,11 @@ export const Transcript = memo(function Transcript({
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
-  peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
+  peerBot: (
+    botId: string,
+  ) =>
+    | { name?: string; color: string; status?: string; avatarSet?: "organic" | "rakazo" }
+    | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;

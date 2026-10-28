@@ -1,8 +1,17 @@
-import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
+import type {
+  Actor,
+  Bot,
+  BotAvatarSet,
+  BotSection,
+  MessageBlock,
+  SpaceBot,
+} from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  DEFAULT_NEW_BOT_AVATAR_SET,
   InstructionVersionSchema,
   initialBotMemory,
+  resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
@@ -74,6 +83,7 @@ function mapBot(
     selfUpdateInstructions?: boolean;
     instructionHistory?: unknown;
     color: string;
+    avatarSet?: string;
     notifyOnFinish: boolean;
     pinned: boolean;
     sectionId: string | null;
@@ -116,6 +126,7 @@ function mapBot(
     selfUpdateInstructions: bot.selfUpdateInstructions ?? false,
     instructionHistory: InstructionVersionSchema.array().parse(bot.instructionHistory ?? []),
     color: bot.color,
+    avatarSet: resolveBotAvatarSet(bot.avatarSet),
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,
     sectionId: bot.sectionId,
@@ -183,6 +194,7 @@ export function createRepos(
         name: true,
         title: true,
         color: true,
+        avatarSet: true,
         notifyOnFinish: true,
         pinned: true,
         sectionId: true,
@@ -208,6 +220,7 @@ export function createRepos(
         name: bot.name,
         title: displayName(bot.title, ""),
         color: bot.color,
+        avatarSet: resolveBotAvatarSet(bot.avatarSet),
         notifyOnFinish: bot.notifyOnFinish,
         pinned: bot.pinned,
         sectionId: bot.sectionId,
@@ -507,6 +520,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         fleetManagement?: boolean;
         color?: string;
+        avatarSet?: BotAvatarSet;
         avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -565,14 +579,17 @@ export function createRepos(
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },
           });
-          // Read under the creation lock so two bots made at once still differ.
+          const avatarSet = input.avatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET;
+          // Only Original balances existing looks; seeded logo colours need no roster read.
           const avatar = chooseBotAvatar(
-            await tx.bot.findMany({
-              where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
-              select: { id: true, color: true },
-            }),
+            avatarSet === "organic"
+              ? await tx.bot.findMany({
+                  where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+                  select: { id: true, color: true },
+                })
+              : [],
             input.color,
-            { family: input.avatarFamily },
+            { family: input.avatarFamily, avatarSet },
           );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",
@@ -592,6 +609,7 @@ export function createRepos(
               notifyOnFinish: input.notifyOnFinish,
               fleetManagement: input.fleetManagement,
               color: avatar.color,
+              avatarSet,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,

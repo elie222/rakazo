@@ -25,7 +25,7 @@ import type {
   SettingsScope,
   VaultPutInput,
 } from "@rakazo/contracts";
-import { BotSecretAuth } from "@rakazo/contracts";
+import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -302,6 +302,7 @@ export function botsRoutes(ctx: RouterContext) {
             instructions: source.instructions,
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
+            avatarSet: resolveBotAvatarSet(source.avatarSet),
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
             modelProvider: source.modelProvider,
             modelId: source.modelId,
@@ -377,6 +378,7 @@ export function botsRoutes(ctx: RouterContext) {
             selfUpdateInstructions: input.selfUpdateInstructions,
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
+            avatarSet: input.avatarSet,
             pinned: input.pinned,
             memoryScope: input.memoryScope,
             sectionId: input.sectionId,

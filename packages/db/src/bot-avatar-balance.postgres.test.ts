@@ -1,5 +1,10 @@
 import { BOT_COLORS } from "@rakazo/contracts";
-import { ORGANIC_AVATAR_HEART_FAMILY, organicAvatarFamily, organicAvatarLook } from "@rakazo/core";
+import {
+  ORGANIC_AVATAR_HEART_FAMILY,
+  organicAvatarFamily,
+  organicAvatarLook,
+  seededLogoAvatarColor,
+} from "@rakazo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -70,10 +75,18 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     const created = await runAsTenant(owner, async () => {
       const bots = [];
       for (let index = 0; index < 9; index++) {
-        bots.push(await repos.createBot(actor(), botInput(`Helper ${index}`)));
+        bots.push(
+          await repos.createBot(actor(), { ...botInput(`Helper ${index}`), avatarSet: "organic" }),
+        );
       }
       // A bot made by a bot goes through the same choice.
-      bots.push(await repos.createBot(actor(), { ...botInput("Child"), parentBotId: bots[0]!.id }));
+      bots.push(
+        await repos.createBot(actor(), {
+          ...botInput("Child"),
+          avatarSet: "organic",
+          parentBotId: bots[0]!.id,
+        }),
+      );
       return bots;
     });
 
@@ -98,6 +111,32 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     expect(after).toEqual(expect.arrayContaining(before));
   });
 
+  it("defaults only new creation to Rakazo and reloads explicit original sets without altering photos or shapes", async () => {
+    const repos = createRepos(prisma);
+    const created = await runAsTenant(owner, () =>
+      repos.createBot(actor(), botInput("Logo default")),
+    );
+    expect(created.avatarSet).toBe("rakazo");
+    expect(created.color).toBe(seededLogoAvatarColor(created.id));
+    const restored = await runAsTenant(owner, () => repos.getBot(actor(), created.id));
+    expect(restored.color).toBe(seededLogoAvatarColor(restored.id));
+    for (const color of ["#8B5CF6", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="]) {
+      const original = await runAsTenant(owner, () =>
+        repos.createBot(actor(), { ...botInput("Original look"), avatarSet: "organic", color }),
+      );
+      expect(original).toMatchObject({ avatarSet: "organic", color });
+      await asSystem(prisma).bot.update({
+        where: { id: original.id },
+        data: { avatarSet: "rakazo" },
+      });
+      const reloaded = await runAsTenant(owner, () => repos.listBots(actor()));
+      expect(reloaded.find((bot) => bot.id === original.id)).toMatchObject({
+        avatarSet: "rakazo",
+        color,
+      });
+    }
+  });
+
   it("serializes concurrent creation before reading the existing avatar looks", async () => {
     const repos = createRepos(prisma);
     await asSystem(prisma).bot.updateMany({
@@ -107,7 +146,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     const created = await runAsTenant(owner, () =>
       Promise.all(
         Array.from({ length: 8 }, (_, index) =>
-          repos.createBot(actor(), botInput(`Concurrent ${index}`)),
+          repos.createBot(actor(), { ...botInput(`Concurrent ${index}`), avatarSet: "organic" }),
         ),
       ),
     );
@@ -133,7 +172,7 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
       data: { archivedAt: new Date() },
     });
     const next = await runAsTenant(owner, () =>
-      repos.createBot(actor(), { ...botInput("Picked"), color: "#123456" }),
+      repos.createBot(actor(), { ...botInput("Picked"), avatarSet: "organic", color: "#123456" }),
     );
     expect(next.color).toBe("#123456");
     expect(organicAvatarLook(organicAvatarFamily(next.id))).not.toBe(

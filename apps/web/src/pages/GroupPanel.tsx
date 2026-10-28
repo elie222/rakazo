@@ -109,7 +109,13 @@ function MemberPicker({
                 onClick={() => onOpenBot?.(bot.id)}
                 className="flex min-w-0 flex-1 items-center gap-3 text-start"
               >
-                <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
+                <BotAvatar
+                  avatarSet={bot.avatarSet}
+                  color={bot.color}
+                  identity={bot.id}
+                  size={32}
+                  status={bot.status}
+                />
                 <span className="flex-1 text-[15px] text-foreground" dir="auto">
                   {bot.name}
                 </span>

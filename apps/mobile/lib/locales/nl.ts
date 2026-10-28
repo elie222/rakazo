@@ -924,6 +924,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Hide chats": "Chats verbergen",
   "Show chats": "Chats tonen",
   "Remove photo": "Foto verwijderen",
+  "Icon set": "Pictogrammenset",
+  Original: "Oorspronkelijk",
   Shape: "Vorm",
   "Shape {number}": "Vorm {number}",
   "Try again": "Opnieuw proberen",

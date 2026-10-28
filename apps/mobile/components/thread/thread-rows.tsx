@@ -182,6 +182,7 @@ export function useThreadRows({
           }
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
+          activityAvatarSet={activityBot?.avatarSet}
           activityStatus={activityStatus}
           userBubble={userBubble}
           inGroup={inGroup}

@@ -6181,3 +6181,15 @@ msgstr "Tu proveedor de voz se quedó sin crédito."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Tu proveedor de voz rechazó la clave."
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"

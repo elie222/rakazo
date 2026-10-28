@@ -69,6 +69,7 @@ import {
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { withPiTelemetry } from "./pi-telemetry.js";
+import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -202,6 +203,15 @@ export class PiAgentRuntime implements AgentRuntime {
       ? AbortSignal.any([controller.signal, context.signal])
       : controller.signal;
     const queue = createQueue();
+    let thinking = false;
+    const setThinking = (active: boolean) => {
+      const next = active && !signal.aborted;
+      if (thinking === next) return;
+      thinking = next;
+      queue.push({ type: "thinking", active: next });
+    };
+    const stopThinking = () => setThinking(false);
+    signal.addEventListener("abort", stopThinking, { once: true });
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
@@ -372,33 +382,36 @@ export class PiAgentRuntime implements AgentRuntime {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
             }
-            return reliableModelStream(
-              target.models,
-              target.model,
-              ctx,
-              withCloudflareAuth(target.config, options),
-              target.config.maxTokens,
-              () => target.credentials?.accessToken ?? target.apiKey,
-              (preparedOptions) =>
-                observedPiStream(
-                  target.models,
-                  target.model,
-                  ctx,
-                  preparedOptions,
-                  (event) => queue.push(event),
-                  target.config.callObserver ?? this.modelCallObserver,
-                  {
-                    operationKind: request.usageOperationKind ?? "answer",
-                    userId: context?.userId,
-                    runId: request.runId,
-                  },
-                  {
-                    ...usageHooks,
-                    prepareContext,
-                    onProviderError: (message) => providerFailures.add(message.content),
-                  },
-                ),
-              target.config.cacheCapabilities?.retentionMode,
+            return withPiThinkingActivity(
+              reliableModelStream(
+                target.models,
+                target.model,
+                ctx,
+                withCloudflareAuth(target.config, options),
+                target.config.maxTokens,
+                () => target.credentials?.accessToken ?? target.apiKey,
+                (preparedOptions) =>
+                  observedPiStream(
+                    target.models,
+                    target.model,
+                    ctx,
+                    preparedOptions,
+                    (event) => queue.push(event),
+                    target.config.callObserver ?? this.modelCallObserver,
+                    {
+                      operationKind: request.usageOperationKind ?? "answer",
+                      userId: context?.userId,
+                      runId: request.runId,
+                    },
+                    {
+                      ...usageHooks,
+                      prepareContext,
+                      onProviderError: (message) => providerFailures.add(message.content),
+                    },
+                  ),
+                target.config.cacheCapabilities?.retentionMode,
+              ),
+              setThinking,
             );
           },
           onContextLimit: (contextWindow) => {
@@ -591,9 +604,11 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "message_end") {
+            stopThinking();
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
+            stopThinking();
             finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
@@ -966,6 +981,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 : new Error(message),
         );
       } finally {
+        stopThinking();
+        signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
           const keepForResume =

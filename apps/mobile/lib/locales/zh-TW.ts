@@ -916,6 +916,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Hide chats": "隱藏聊天",
   "Show chats": "顯示聊天",
   "Remove photo": "移除照片",
+  "Icon set": "圖示集",
+  Original: "原版",
   Shape: "形狀",
   "Shape {number}": "形狀 {number}",
   "Try again": "重試",

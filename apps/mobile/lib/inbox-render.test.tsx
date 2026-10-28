@@ -631,6 +631,10 @@ it("adds a bot made from the inbox's Create menu to the inbox roster before open
     refreshBots: async () => undefined,
     openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
   });
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ avatarSet: "rakazo" }),
+  );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
   expect(calls.slice(0, 5)).toEqual([
     "session",

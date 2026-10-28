@@ -913,6 +913,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Hide chats": "チャットを非表示",
   "Show chats": "チャットを表示",
   "Remove photo": "写真を削除",
+  "Icon set": "アイコンセット",
+  Original: "オリジナル",
   Shape: "形状",
   "Shape {number}": "形状{number}",
   "Try again": "もう一度試す",

@@ -81,6 +81,10 @@ export const MessageBubble = memo(function MessageBubble({
         props.bots.find((bot) => bot.id === id)?.color ??
         props.members?.find((member) => member.botId === id)?.color
       }
+      avatarSetOf={(id) =>
+        props.bots.find((bot) => bot.id === id)?.avatarSet ??
+        props.members?.find((member) => member.botId === id)?.avatarSet
+      }
       tokens={mobileTokens()}
       onOpenBot={props.onOpenBot}
     >
@@ -284,6 +288,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const label = sent
       ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
       : t("Message from {peer}", { peer: peer ?? t("Bot") });
+    const peerAvatarSet =
+      bots.find((bot) => bot.id === peerBotId)?.avatarSet ??
+      members?.find((member) => member.botId === peerBotId)?.avatarSet;
     const peerColor =
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
@@ -326,7 +333,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           gap: 6,
         }}
       >
-        <BotAvatar color={peerColor} identity={peerBotId} size={16} />
+        <BotAvatar color={peerColor} avatarSet={peerAvatarSet} identity={peerBotId} size={16} />
         <Text
           numberOfLines={1}
           style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}

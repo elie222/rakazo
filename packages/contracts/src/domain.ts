@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
-import { BotAvatarValueSchema } from "./bot-avatar.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import {
   cloudflareGatewayRoutingId,
@@ -30,8 +30,8 @@ export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 /**
- * Deprecated: bots have one avatar style. Kept so app versions that still send or read it
- * keep working; the server ignores a sent style and always reports "organic".
+ * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
+ * app versions; the legacy settings endpoint still always reports "organic".
  */
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 
@@ -98,6 +98,7 @@ export const BotSchema = z.object({
   selfUpdateInstructions: z.boolean().optional(),
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
   sectionId: Id.nullable(),
@@ -150,6 +151,7 @@ export const GroupMemberSchema = z.object({
   botId: Id,
   name: z.string(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   status: z.string().optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
@@ -241,6 +243,7 @@ export const SpaceBotSchema = BotSchema.pick({
   name: true,
   title: true,
   color: true,
+  avatarSet: true,
   notifyOnFinish: true,
   pinned: true,
   sectionId: true,
@@ -377,6 +380,7 @@ export const CreateBotInput = z.object({
   notifyOnFinish: z.boolean().default(true),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
+  avatarSet: BotAvatarSetSchema.optional(),
   /** Organic body family (0-9) to draw the new bot with; the server picks an id that hashes to it. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
   computerMode: ComputerModeSchema.default("team"),
@@ -408,6 +412,7 @@ export const UpdateBotInput = z
     selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
     pinned: z.boolean().optional(),
     memoryScope: MemoryScopeSchema.nullable().optional(),
     sectionId: Id.nullable().optional(),
@@ -1716,7 +1721,10 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }),
+  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }).extend({
+    color: z.string().optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
+  }),
   memory: z.array(z.object({ path: z.string(), content: z.string() })),
   routines: z.array(RoutineSchema.pick({ name: true, prompt: true, crons: true, timezone: true })),
   files: z.array(

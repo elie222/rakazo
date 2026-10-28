@@ -6181,3 +6181,15 @@ msgstr "음성 서비스 크레딧이 모두 소진되었습니다."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "음성 서비스에서 키를 거부했습니다."
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"

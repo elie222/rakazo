@@ -270,3 +270,24 @@ describe("an imported server asked for twice", () => {
     expect(mcpCredentialValues).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("portable avatar appearance on import", () => {
+  it.each([undefined, "organic", "rakazo"] as const)(
+    "preserves explicit sets and keeps legacy imports organic (set=%s)",
+    async (avatarSet) => {
+      const createBot = vi.fn<AgentImportServices["createBot"]>(async (_actor, request) => {
+        await request.seed(fakeDb(), bot.id);
+        return bot;
+      });
+      await createImportedBot(services({ createBot }), actor, {
+        ...input,
+        color: "#8B5CF6::shape_3",
+        avatarSet,
+      });
+      expect(createBot.mock.calls[0]![1]).toMatchObject({
+        color: "#8B5CF6::shape_3",
+        avatarSet: avatarSet ?? "organic",
+      });
+    },
+  );
+});

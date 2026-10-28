@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import { BOT_NAME_MAX_LENGTH, DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
   ORGANIC_AVATAR_LOOKS,
   organicAvatarFamily,
@@ -30,7 +31,8 @@ function pick<T>(options: readonly T[]): T {
 
 export interface CreateBotDialogInput {
   name: string;
-  color: string;
+  color?: string;
+  avatarSet: BotAvatarSet;
   /** The organic family the preview drew; omitted when a studio shape is picked. */
   avatarFamily?: number;
 }
@@ -52,6 +54,8 @@ export function CreateBotDialog({
     value: pick(BOT_AVATAR_COLORS),
     identity: pick(ORGANIC_IDENTITIES),
   }));
+  const [avatarSet, setAvatarSet] = useState<BotAvatarSet>(DEFAULT_NEW_BOT_AVATAR_SET);
+  const [colorChosen, setColorChosen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = name.trim();
@@ -60,11 +64,12 @@ export function CreateBotDialog({
     if (!trimmed || submitting) return;
     setError(null);
     setSubmitting(true);
-    const organic = parseBotAvatar(look.value).shapeIndex === undefined;
+    const organic = avatarSet === "organic" && parseBotAvatar(look.value).shapeIndex === undefined;
     try {
       await onCreate({
         name: trimmed,
-        color: look.value,
+        ...(avatarSet === "organic" || colorChosen ? { color: look.value } : {}),
+        avatarSet,
         ...(organic ? { avatarFamily: organicAvatarFamily(look.identity) } : {}),
       });
     } catch (err) {
@@ -100,7 +105,12 @@ export function CreateBotDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="flex justify-center py-2">
-            <BotAvatar color={look.value} identity={look.identity} size={96} />
+            <BotAvatar
+              color={look.value}
+              identity={look.identity}
+              size={96}
+              avatarSet={avatarSet}
+            />
           </div>
           <Input
             ref={nameRef}
@@ -120,9 +130,15 @@ export function CreateBotDialog({
             value={look.value}
             identity={look.identity}
             organicIdentities={ORGANIC_IDENTITIES}
-            onChange={(value, identity) =>
-              setLook((current) => ({ value, identity: identity ?? current.identity }))
-            }
+            avatarSet={avatarSet}
+            onAvatarSetChange={(set, value) => {
+              setAvatarSet(set);
+              setLook((current) => ({ ...current, value }));
+            }}
+            onChange={(value, identity) => {
+              setColorChosen(true);
+              setLook((current) => ({ value, identity: identity ?? current.identity }));
+            }}
           />
           <DialogFooter>
             {onImport ? (

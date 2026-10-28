@@ -963,6 +963,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Hide chats": "Скрыть чаты",
   "Show chats": "Показать чаты",
   "Remove photo": "Удалить фото",
+  "Icon set": "Набор значков",
+  Original: "Исходный",
   Shape: "Форма",
   "Shape {number}": "Форма {number}",
   "Try again": "Повторить",

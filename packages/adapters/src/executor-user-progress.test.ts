@@ -1270,3 +1270,96 @@ describe("a kept partial reply in later history", () => {
     expect(content("m4")).toBe("A whole reply.");
   });
 });
+
+describe("public coarse thinking lifecycle", () => {
+  it("coalesces explicit boundaries and keeps activity out of messages", async () => {
+    const result = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [
+        { type: "thinking", active: true },
+        { type: "thinking", active: true },
+        { type: "thinking", active: false },
+        { type: "thinking", active: false },
+        { type: "text", text: "Public answer." },
+        { type: "done" },
+      ],
+    });
+    const activity = result.savedEvents.filter((event) => event.type === "thread.meta");
+    expect(activity.map(({ payload }) => payload)).toEqual([
+      { activity: { thinking: true } },
+      { activity: { thinking: false } },
+    ]);
+    expect(
+      activity.every(
+        ({ runId, threadId, botId }) =>
+          runId === "run-1" && threadId === "thread-1" && botId === "bot-1",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(result.messages)).not.toContain("thinking");
+  });
+  it.each<AgentRuntimeEvent>([
+    { type: "text", text: "Public reply." },
+    { type: "tool", name: "read_file", args: {}, executionId: "read-1" },
+    { type: "progress", text: "Reading", activity: true },
+    { type: "turn" },
+    { type: "ask", text: "Which option?" },
+    { type: "done" },
+  ])("resets before $type even if a runtime omits its end marker", async (boundary) => {
+    const result = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [{ type: "thinking", active: true }, boundary, { type: "done" }],
+    });
+    expect(
+      result.savedEvents
+        .filter((event) => event.type === "thread.meta")
+        .map(({ payload }) => payload),
+    ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+  });
+  it("resets on a runtime failure or exhausted iterator without a terminal marker", async () => {
+    for (const runtimeFailure of [false, true]) {
+      const result = await runTurn("", false, "", [], "request", {
+        runtimeFailure,
+        runtimeEvents: [{ type: "thinking", active: true }],
+      });
+      expect(
+        result.savedEvents
+          .filter((event) => event.type === "thread.meta")
+          .map(({ payload }) => payload),
+      ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+    }
+  });
+  it("does not emit background thinking or accept arbitrary runtime metadata into public payloads", async () => {
+    const privateMarker = {
+      type: "thinking",
+      active: true,
+      text: "private fixture reasoning",
+      partial: { content: "private" },
+    } as AgentRuntimeEvent;
+    const visible = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [privateMarker, { type: "done" }],
+    });
+    expect(
+      visible.savedEvents
+        .filter((event) => event.type === "thread.meta")
+        .map(({ payload }) => payload),
+    ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+    expect(JSON.stringify(visible.savedEvents)).not.toContain("private fixture reasoning");
+    const background = await runTurn("", true, "", [], "fyi", {
+      trigger: "tickets",
+      runtimeEvents: [privateMarker, { type: "done" }],
+    });
+    expect(background.savedEvents.some((event) => event.type === "thread.meta")).toBe(false);
+  });
+});
+
+it("terminal cancellation wins over a runtime's open thinking marker", async () => {
+  const result = await runTurn("", false, "", [], "request", {
+    runtimeCancel: true,
+    runtimeEvents: [{ type: "thinking", active: true }],
+  });
+  const payloads = result.savedEvents
+    .filter((event) => event.type === "thread.meta")
+    .map(({ payload }) => payload);
+  expect(payloads[0]).toEqual({ activity: { thinking: true } });
+  expect(result.finalizeRun).not.toHaveBeenCalledWith(
+    expect.objectContaining({ outcome: "failed" }),
+  );
+});

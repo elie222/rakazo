@@ -6182,3 +6182,15 @@ msgstr "你的語音供應商額度已用完。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的語音供應商拒絕了該金鑰。"
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"

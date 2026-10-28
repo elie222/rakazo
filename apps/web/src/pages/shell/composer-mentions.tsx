@@ -37,7 +37,14 @@ export function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
+  return (
+    <BotAvatar
+      avatarSet={mention.avatarSet}
+      color={mention.color ?? FALLBACK_BOT_COLOR}
+      identity={mention.id}
+      size={16}
+    />
+  );
 }
 
 export function MentionChipIcon({ mention }: { mention: ComposerMention }) {
@@ -54,7 +61,14 @@ export function MentionChipIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
+  return (
+    <BotAvatar
+      avatarSet={mention.avatarSet}
+      color={mention.color ?? FALLBACK_BOT_COLOR}
+      identity={mention.id}
+      size={16}
+    />
+  );
 }
 
 /** An inline skill or mention token in the composer field. */

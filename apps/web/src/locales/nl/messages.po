@@ -6181,3 +6181,15 @@ msgstr "Je spraakaanbieder heeft geen tegoed meer."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Je spraakaanbieder heeft de sleutel geweigerd."
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Icon set"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Original"
+msgstr ""
+
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Rakazo"
+msgstr "Rakazo"

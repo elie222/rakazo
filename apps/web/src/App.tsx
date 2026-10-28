@@ -19,6 +19,7 @@ import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { desktopBridge } from "./lib/desktop";
+import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
 import { identifyMonitoringUser } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
@@ -124,6 +125,10 @@ function SessionApp() {
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
+  useLayoutEffect(() => {
+    if (gate === "authenticated" || gate === "anonymous")
+      syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+  }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
   }, [gate, analyticsUserId]);

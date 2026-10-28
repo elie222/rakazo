@@ -24,6 +24,7 @@ export async function createInboxBot({
   const bot = await rpc("bots/create", {
     ...normalizeCreateBotProfile({ name: "New Bot", title: "", description: "" }),
     notifyOnFinish: true,
+    avatarSet: "rakazo",
     computerMode: "team",
   });
   void refreshBots().catch(() => undefined);

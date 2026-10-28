@@ -8213,7 +8213,11 @@ describe("export.bot", () => {
     return home;
   }
 
-  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+  async function exportManifest(
+    scope: "team" | "dedicated",
+    home: LocalAgentHomeStore,
+    appearance?: { color: string; avatarSet?: "organic" | "rakazo" },
+  ) {
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -8222,6 +8226,7 @@ describe("export.bot", () => {
           title: "",
           description: "",
           instructions: "",
+          ...appearance,
           thread: { id: "thread-1" },
           computer: { id: "computer-1", scope, homeKey: "home-1" },
         }),
@@ -8242,8 +8247,23 @@ describe("export.bot", () => {
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
     const manifest = await client.export.bot({ botId: "bot-1" });
-    return manifest.files.sort((a, b) => a.path.localeCompare(b.path));
+    return manifest;
   }
+
+  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+    return (await exportManifest(scope, home)).files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  it.each(["#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
+    "exports the selected set and untouched avatar value (%s)",
+    async (color) => {
+      const manifest = await exportManifest("team", await homeWith({}), {
+        color,
+        avatarSet: "rakazo",
+      });
+      expect(manifest.bot).toMatchObject({ color, avatarSet: "rakazo" });
+    },
+  );
 
   it("exports only the bot's own folder from a Team Computer", async () => {
     const home = await homeWith({

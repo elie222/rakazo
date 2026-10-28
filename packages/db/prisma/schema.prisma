@@ -541,6 +541,7 @@ model Bot {
   instructionHistory Json @default("[]")
   pendingInstructionsRunId String?
   color             String
+  avatarSet         String            @default("rakazo")
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
   position          Int               @default(0)

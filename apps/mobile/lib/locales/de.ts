@@ -932,6 +932,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Hide chats": "Chats ausblenden",
   "Show chats": "Chats einblenden",
   "Remove photo": "Foto entfernen",
+  "Icon set": "Symbolsatz",
+  Original: "Original",
   Shape: "Form",
   "Shape {number}": "Form {number}",
   "Try again": "Erneut versuchen",

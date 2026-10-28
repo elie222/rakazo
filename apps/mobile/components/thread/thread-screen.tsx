@@ -461,6 +461,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             id: currentBot.id,
             name: currentBot.name,
             color: currentBot.color,
+            avatarSet: currentBot.avatarSet,
             status: currentBotStatus,
           },
         ]
@@ -469,6 +470,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             id: bot.botId,
             name: bot.name,
             color: bot.color,
+            avatarSet: bot.avatarSet,
             status: bot.status,
           }))
         : [];
