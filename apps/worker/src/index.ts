@@ -242,6 +242,7 @@ async function main() {
     jobs,
     accessToken: process.env.EXPO_ACCESS_TOKEN,
   });
+  const shutdown = new AbortController();
   const executor = createRunExecutor({
     maxUploadSizeBytes: uploadSizeFromEnv(process.env),
     prisma,
@@ -296,6 +297,7 @@ async function main() {
             forwardSecret: userDeviceForwardSecret(resolveEncryptionKey(process.env)),
           }),
     paymentWallet,
+    shutdownSignal: shutdown.signal,
   });
 
   const jobHost: JobWorkerHost =
@@ -353,7 +355,6 @@ async function main() {
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
   });
   let stopHealth: (() => Promise<void>) | undefined;
-  const shutdown = new AbortController();
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
