@@ -1134,7 +1134,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "No connected providers": "没有已连接的提供商",
   Quota: "配额",
   "Quota unavailable": "配额不可用",
-  "Reset unknown": "重置时间未知",
   Session: "会话",
   Updated: "已更新",
   Weekly: "每周",

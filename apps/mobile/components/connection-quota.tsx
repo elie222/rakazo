@@ -90,7 +90,7 @@ export function ConnectionQuota({
           detail={
             window.resetsAt
               ? `${t("Resets")} ${new Date(window.resetsAt).toLocaleString()}`
-              : t("Reset unknown")
+              : undefined
           }
         />
       ))}

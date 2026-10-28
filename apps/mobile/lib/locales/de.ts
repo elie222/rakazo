@@ -1147,7 +1147,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "No connected providers": "Keine verbundenen Anbieter",
   Quota: "Kontingent",
   "Quota unavailable": "Kontingent nicht verfügbar",
-  "Reset unknown": "Zurücksetzung unbekannt",
   Session: "Sitzung",
   Updated: "Aktualisiert",
   Weekly: "Wöchentlich",

@@ -4871,10 +4871,6 @@ msgstr "Computer opnieuw instellen?"
 msgid "Reset password"
 msgstr "Wachtwoord opnieuw instellen"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Je wachtwoord opnieuw instellen"

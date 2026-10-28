@@ -143,16 +143,10 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
         aria-label={label}
         className="h-2 w-full appearance-none [&::-moz-meter-bar]:bg-foreground [&::-webkit-meter-bar]:border-0 [&::-webkit-meter-bar]:bg-muted [&::-webkit-meter-bar]:bg-none [&::-webkit-meter-optimum-value]:bg-foreground [&::-webkit-meter-optimum-value]:bg-none"
       />
-      {!compact ? (
+      {!compact && window.resetsAt ? (
         <p className="text-xs text-muted-foreground">
-          {window.resetsAt ? (
-            <>
-              <Trans>Resets</Trans>{" "}
-              <time dateTime={window.resetsAt}>{new Date(window.resetsAt).toLocaleString()}</time>
-            </>
-          ) : (
-            <Trans>Reset unknown</Trans>
-          )}
+          <Trans>Resets</Trans>{" "}
+          <time dateTime={window.resetsAt}>{new Date(window.resetsAt).toLocaleString()}</time>
         </p>
       ) : null}
     </div>

@@ -4871,10 +4871,6 @@ msgstr "コンピューターをリセットしますか？"
 msgid "Reset password"
 msgstr "パスワードをリセット"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "パスワードをリセット"

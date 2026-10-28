@@ -4872,10 +4872,6 @@ msgstr "重設電腦？"
 msgid "Reset password"
 msgstr "重設密碼"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "重設你的密碼"

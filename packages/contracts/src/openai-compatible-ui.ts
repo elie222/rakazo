@@ -59,7 +59,9 @@ export function openAiCompatibleProbeSuccessMessage(modelCount: number): string 
     : "Server found. Enter a model name.";
 }
 
-/** The canonical endpoint the server stores: trailing slashes dropped, `/v1` added when no `/vN`. */
+/** The canonical endpoint the server stores: trailing slashes dropped, `/v1` added only when no
+ * path segment is already a version (`v1`, `v4`, `v1beta`, ...), so gateways that route models by
+ * path (`/v1/some-model`) keep their URL verbatim. */
 export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
   const trimmed = raw.trim();
   let url: URL;

@@ -114,6 +114,15 @@ describe("model quota observations", () => {
     expect(changed.view.status).toBe("unavailable");
     expect(changed.view.observedAt).toBeNull();
   });
+  it("keeps the last reading as stale while an expired token refreshes", async () => {
+    const fetcher = vi.fn(async () => response(codex));
+    const reader = new ModelQuotaReader(fetcher);
+    const first = await reader.read(connection);
+    const expired = await reader.read({ ...connection, accessToken: null });
+    expect(expired.view.status).toBe("stale");
+    expect(expired.view.windows).toEqual(first.view.windows);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("never dispatches for unsupported, expired or unidentified Codex accounts", async () => {
     const fetcher = vi.fn();
     const reader = new ModelQuotaReader(fetcher);

@@ -1170,7 +1170,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "No connected providers": "接続済みのプロバイダーはありません",
   Quota: "利用枠",
   "Quota unavailable": "利用枠を取得できません",
-  "Reset unknown": "リセット時刻は不明",
   Session: "セッション",
   Updated: "更新日時",
   Weekly: "週間",

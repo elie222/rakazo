@@ -4871,10 +4871,6 @@ msgstr "컴퓨터를 재설정할까요?"
 msgid "Reset password"
 msgstr "비밀번호 재설정"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "비밀번호를 재설정하세요"

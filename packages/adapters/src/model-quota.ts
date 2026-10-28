@@ -210,6 +210,11 @@ async function jsonResponse(response: Response): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+function staleOr(previous: QuotaRead | undefined, empty: QuotaRead): QuotaRead {
+  if (!previous?.view.observedAt) return empty;
+  return { view: { ...previous.view, status: "stale", checkedAt: empty.view.checkedAt } };
+}
+
 /** Read-only, bounded readers. Authentication and refresh remain with the caller. */
 export class ModelQuotaReader {
   private readonly cache = new Map<string, { read: QuotaRead; retryAt: number }>();
@@ -235,7 +240,7 @@ export class ModelQuotaReader {
         windows: [],
       },
     };
-    if (!supported || !connection.accessToken) return empty;
+    if (!supported) return empty;
     const revision = createHash("sha256").update(connection.revision).digest("hex");
     const key = JSON.stringify([
       connection.userId,
@@ -245,10 +250,11 @@ export class ModelQuotaReader {
       revision,
     ]);
     const cached = this.cache.get(key);
+    if (!connection.accessToken) return staleOr(cached?.read, empty);
     if (!options.fresh && cached && cached.retryAt > this.now()) return cached.read;
     const inFlight = this.pending.get(key);
     if (inFlight) return inFlight;
-    const task = this.refresh(connection, empty, cached?.read).finally(() =>
+    const task = this.refresh(key, connection, empty, cached?.read).finally(() =>
       this.pending.delete(key),
     );
     this.pending.set(key, task);
@@ -256,19 +262,12 @@ export class ModelQuotaReader {
   }
 
   private async refresh(
+    key: string,
     connection: QuotaConnection,
     empty: QuotaRead,
     previous?: QuotaRead,
   ): Promise<QuotaRead> {
     const observedAt = this.now();
-    const revision = createHash("sha256").update(connection.revision).digest("hex");
-    const key = JSON.stringify([
-      connection.userId,
-      connection.provider,
-      connection.credentialId,
-      connection.baseUrl,
-      revision,
-    ]);
     let read = empty;
     try {
       const codex = connection.provider === "openai-codex";
@@ -330,11 +329,7 @@ export class ModelQuotaReader {
     } catch {
       // Provider errors can contain tokens and account identifiers. Preserve only
       // the last good observation with its original timestamp, never the body.
-      if (previous?.view.observedAt)
-        read = {
-          ...previous,
-          view: { ...previous.view, status: "stale", checkedAt: empty.view.checkedAt },
-        };
+      read = staleOr(previous, empty);
     }
     if (this.cache.size >= MAX_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, {

@@ -1177,7 +1177,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "No connected providers": "Нет подключённых провайдеров",
   Quota: "Квота",
   "Quota unavailable": "Квота недоступна",
-  "Reset unknown": "Время сброса неизвестно",
   Session: "Сеанс",
   Updated: "Обновлено",
   Weekly: "За неделю",

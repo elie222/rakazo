@@ -4871,10 +4871,6 @@ msgstr "לאפס את המחשב?"
 msgid "Reset password"
 msgstr "איפוס סיסמה"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "איפוס הסיסמה"

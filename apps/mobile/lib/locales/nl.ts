@@ -1139,7 +1139,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "No connected providers": "Geen verbonden aanbieders",
   Quota: "Quotum",
   "Quota unavailable": "Quotum niet beschikbaar",
-  "Reset unknown": "Reset onbekend",
   Session: "Sessie",
   Updated: "Bijgewerkt",
   Weekly: "Wekelijks",

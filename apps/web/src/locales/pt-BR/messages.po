@@ -4871,10 +4871,6 @@ msgstr "Redefinir o computador?"
 msgid "Reset password"
 msgstr "Redefinir senha"
 
-#: src/components/usage/connection-quota.tsx
-msgid "Reset unknown"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Redefina sua senha"
