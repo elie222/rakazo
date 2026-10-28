@@ -413,5 +413,452 @@ id() {
                 self.assertIn("Failed to create nss_wrapper passwd/group files", result.stderr)
 
 
+import ctypes
+import textwrap
+
+
+class XcaptureKeyTest(unittest.TestCase):
+    """Level-0 keysyms go through XTest; shifted names are left for xdotool."""
+
+    # name, keycode, level-0 name. None means this name is itself level 0.
+    KEYS = (
+        ("a", 38, None),
+        ("Shift_L", 50, None),
+        ("Control_L", 37, None),
+        ("Return", 36, None),
+        ("slash", 61, None),
+        ("equal", 21, None),
+        ("2", 11, None),
+        ("semicolon", 47, None),
+        ("1", 10, None),
+        ("question", 61, "slash"),
+        ("A", 38, "a"),
+        ("plus", 21, "equal"),
+        ("at", 11, "2"),
+        ("colon", 47, "semicolon"),
+        ("exclam", 10, "1"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        try:
+            root = Path(cls.directory.name)
+            include = root / "include"
+            for relative, content in cls.headers().items():
+                path = include / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            stub = root / "x11_stub.c"
+            stub.write_text(cls.stub_source())
+            library_path = root / "librakazo-xcapture.so"
+            compiled = subprocess.run(
+                [
+                    "cc",
+                    "-O2",
+                    "-fPIC",
+                    "-shared",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    f"-I{include}",
+                    str(Path(__file__).with_name("xcapture.c")),
+                    str(stub),
+                    "-o",
+                    str(library_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if compiled.returncode != 0:
+                raise RuntimeError(compiled.stderr or compiled.stdout or f"cc exited {compiled.returncode}")
+            library = ctypes.CDLL(str(library_path))
+            library.rakazo_xcapture_open.argtypes = [ctypes.c_char_p]
+            library.rakazo_xcapture_open.restype = ctypes.c_void_p
+            library.rakazo_xcapture_close.argtypes = [ctypes.c_void_p]
+            library.rakazo_xcapture_close.restype = None
+            library.rakazo_xinput_argv.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_char_p),
+            ]
+            library.rakazo_xinput_argv.restype = ctypes.c_int
+            library.rakazo_test_reset_keys.argtypes = []
+            library.rakazo_test_reset_keys.restype = None
+            library.rakazo_test_key_count.argtypes = []
+            library.rakazo_test_key_count.restype = ctypes.c_int
+            library.rakazo_test_key_code.argtypes = [ctypes.c_int]
+            library.rakazo_test_key_code.restype = ctypes.c_uint
+            library.rakazo_test_key_press.argtypes = [ctypes.c_int]
+            library.rakazo_test_key_press.restype = ctypes.c_int
+            context = library.rakazo_xcapture_open(b":1")
+            if not context:
+                raise RuntimeError("native capture did not open")
+            cls.library = library
+            cls.context = context
+        except Exception:
+            cls.directory.cleanup()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            if getattr(cls, "context", None):
+                cls.library.rakazo_xcapture_close(cls.context)
+        finally:
+            cls.directory.cleanup()
+
+    def native_key(self, combo):
+        self.library.rakazo_test_reset_keys()
+        argv = ["env", "DISPLAY=:1", "xdotool", "key", "--clearmodifiers", combo]
+        encoded = (ctypes.c_char_p * len(argv))(*(value.encode("utf-8") for value in argv))
+        code = self.library.rakazo_xinput_argv(self.context, len(argv), encoded)
+        count = self.library.rakazo_test_key_count()
+        events = [
+            (self.library.rakazo_test_key_code(index), self.library.rakazo_test_key_press(index))
+            for index in range(count)
+        ]
+        return code, events
+
+    def test_level_zero_keysyms_are_pressed_and_released(self):
+        cases = {
+            "a": [(38, 1), (38, 0)],
+            "Return": [(36, 1), (36, 0)],
+            "ctrl+a": [(37, 1), (38, 1), (38, 0), (37, 0)],
+            "shift+a": [(50, 1), (38, 1), (38, 0), (50, 0)],
+        }
+        for combo, events in cases.items():
+            with self.subTest(combo=combo):
+                self.assertEqual(self.native_key(combo), (1, events))
+
+    def test_shifted_keysyms_are_left_for_xdotool(self):
+        for combo in ("question", "A", "plus", "at", "colon", "exclam", "ctrl+A", ""):
+            with self.subTest(combo=combo):
+                self.assertEqual(self.native_key(combo), (0, []))
+
+    @classmethod
+    def headers(cls):
+        def source(text):
+            return textwrap.dedent(text)
+
+        return {
+            "X11/Xlib.h": source("""\
+                #ifndef RAKAZO_STUB_XLIB_H
+                #define RAKAZO_STUB_XLIB_H
+                typedef unsigned long XID;
+                typedef XID Window;
+                typedef XID Drawable;
+                typedef XID KeySym;
+                typedef unsigned char KeyCode;
+                typedef int Bool;
+                typedef int Status;
+                typedef struct _XDisplay Display;
+                typedef struct _Visual Visual;
+                typedef struct {
+                  int width;
+                  int height;
+                } XWindowAttributes;
+                typedef struct _XImage {
+                  char *data;
+                  int byte_order;
+                  int bytes_per_line;
+                  int bits_per_pixel;
+                  unsigned long red_mask;
+                  unsigned long green_mask;
+                  unsigned long blue_mask;
+                } XImage;
+                typedef struct {
+                  short x, y;
+                  unsigned short width, height;
+                } XRectangle;
+                #define True 1
+                #define False 0
+                #define None 0L
+                #define CurrentTime 0L
+                #define NoSymbol 0L
+                #define AllPlanes ((unsigned long)~0L)
+                #define ZPixmap 2
+                #define LSBFirst 0
+                #define DefaultScreen(dpy) ((void)(dpy), 0)
+                #define DefaultDepth(dpy, screen) ((void)(dpy), (void)(screen), 24)
+                #define DefaultVisual(dpy, screen) ((void)(dpy), (void)(screen), (Visual *)0)
+                #define RootWindow(dpy, screen) ((void)(dpy), (void)(screen), (Window)1)
+                Display *XOpenDisplay(const char *name);
+                int XCloseDisplay(Display *display);
+                int XSync(Display *display, Bool discard);
+                Status XGetWindowAttributes(Display *display, Window window, XWindowAttributes *attributes);
+                int XFlush(Display *display);
+                int XFree(void *data);
+                int XDestroyImage(XImage *image);
+                KeySym XStringToKeysym(const char *name);
+                KeyCode XKeysymToKeycode(Display *display, KeySym symbol);
+                #endif
+                """),
+            "X11/XKBlib.h": source("""\
+                #ifndef RAKAZO_STUB_XKBLIB_H
+                #define RAKAZO_STUB_XKBLIB_H
+                #include <X11/Xlib.h>
+                KeySym XkbKeycodeToKeysym(Display *display, KeyCode key, int group, int level);
+                #endif
+                """),
+            "X11/Xutil.h": source("""\
+                #ifndef RAKAZO_STUB_XUTIL_H
+                #define RAKAZO_STUB_XUTIL_H
+                #include <X11/Xlib.h>
+                #endif
+                """),
+            "X11/extensions/XShm.h": source("""\
+                #ifndef RAKAZO_STUB_XSHM_H
+                #define RAKAZO_STUB_XSHM_H
+                #include <X11/Xlib.h>
+                typedef struct {
+                  int shmid;
+                  char *shmaddr;
+                  Bool readOnly;
+                } XShmSegmentInfo;
+                Bool XShmQueryExtension(Display *display);
+                XImage *XShmCreateImage(Display *display, Visual *visual, unsigned int depth, int format,
+                    char *data, XShmSegmentInfo *shminfo, unsigned int width, unsigned int height);
+                Bool XShmAttach(Display *display, XShmSegmentInfo *shminfo);
+                Bool XShmDetach(Display *display, XShmSegmentInfo *shminfo);
+                Bool XShmGetImage(Display *display, Drawable drawable, XImage *image, int x, int y,
+                    unsigned long plane_mask);
+                #endif
+                """),
+            "X11/extensions/Xdamage.h": source("""\
+                #ifndef RAKAZO_STUB_XDAMAGE_H
+                #define RAKAZO_STUB_XDAMAGE_H
+                #include <X11/Xlib.h>
+                typedef XID Damage;
+                typedef XID XserverRegion;
+                #define XDamageReportNonEmpty 3
+                Bool XDamageQueryExtension(Display *display, int *event_base, int *error_base);
+                Damage XDamageCreate(Display *display, Drawable drawable, int level);
+                void XDamageSubtract(Display *display, Damage damage, XserverRegion repair, XserverRegion parts);
+                void XDamageDestroy(Display *display, Damage damage);
+                #endif
+                """),
+            "X11/extensions/Xfixes.h": source("""\
+                #ifndef RAKAZO_STUB_XFIXES_H
+                #define RAKAZO_STUB_XFIXES_H
+                #include <X11/Xlib.h>
+                #include <X11/extensions/Xdamage.h>
+                XserverRegion XFixesCreateRegion(Display *display, XRectangle *rectangles, int count);
+                XRectangle *XFixesFetchRegion(Display *display, XserverRegion region, int *count);
+                void XFixesDestroyRegion(Display *display, XserverRegion region);
+                #endif
+                """),
+            "X11/extensions/XTest.h": source("""\
+                #ifndef RAKAZO_STUB_XTEST_H
+                #define RAKAZO_STUB_XTEST_H
+                #include <X11/Xlib.h>
+                Bool XTestQueryExtension(Display *display, int *event_base, int *error_base, int *major, int *minor);
+                int XTestFakeKeyEvent(Display *display, unsigned int keycode, Bool is_press, unsigned long delay);
+                int XTestFakeButtonEvent(Display *display, unsigned int button, Bool is_press, unsigned long delay);
+                int XTestFakeMotionEvent(Display *display, int screen, int x, int y, unsigned long delay);
+                #endif
+                """),
+            "png.h": source("""\
+                #ifndef RAKAZO_STUB_PNG_H
+                #define RAKAZO_STUB_PNG_H
+                #include <setjmp.h>
+                #include <stddef.h>
+                #include <stdint.h>
+                typedef struct png_struct_def { jmp_buf jmpbuf; } png_struct;
+                typedef png_struct *png_structp;
+                typedef struct png_info_def { int unused; } png_info;
+                typedef png_info *png_infop;
+                typedef unsigned char png_byte;
+                typedef png_byte *png_bytep;
+                typedef size_t png_size_t;
+                typedef uint32_t png_uint_32;
+                typedef void (*png_rw_ptr)(png_structp, png_bytep, png_size_t);
+                typedef void (*png_flush_ptr)(png_structp);
+                #define PNG_LIBPNG_VER_STRING "1.6.0"
+                #define png_jmpbuf(png) ((png)->jmpbuf)
+                #define PNG_FILTER_TYPE_BASE 0
+                #define PNG_FILTER_SUB 1
+                #define PNG_FILTER_PAETH 2
+                #define PNG_COLOR_TYPE_RGB 2
+                #define PNG_INTERLACE_NONE 0
+                #define PNG_COMPRESSION_TYPE_BASE 0
+                void png_error(png_structp png, const char *message);
+                void *png_get_io_ptr(png_structp png);
+                png_structp png_create_write_struct(const char *version, void *error_ptr, void *error_fn, void *warn_fn);
+                png_infop png_create_info_struct(png_structp png);
+                void png_destroy_write_struct(png_structp *png, png_infop *info);
+                void png_set_write_fn(png_structp png, void *io, png_rw_ptr write, png_flush_ptr flush);
+                void png_set_compression_level(png_structp png, int level);
+                void png_set_filter(png_structp png, int method, int filters);
+                void png_set_IHDR(png_structp png, png_infop info, png_uint_32 width, png_uint_32 height, int depth,
+                    int color, int interlace, int compression, int filter);
+                void png_write_info(png_structp png, png_infop info);
+                void png_write_row(png_structp png, png_bytep row);
+                void png_write_end(png_structp png, png_infop info);
+                #endif
+                """),
+        }
+
+    @classmethod
+    def stub_source(cls):
+        rows = []
+        for name, code, level0 in cls.KEYS:
+            level = "NULL" if level0 is None else f'"{level0}"'
+            rows.append(f'{{"{name}", {code}, {level}}}')
+        table = ",\n  ".join(rows)
+        return textwrap.dedent("""\
+            #include <X11/Xlib.h>
+            #include <X11/XKBlib.h>
+            #include <X11/extensions/XShm.h>
+            #include <X11/extensions/Xdamage.h>
+            #include <X11/extensions/Xfixes.h>
+            #include <X11/extensions/XTest.h>
+            #include <png.h>
+            #include <stddef.h>
+            #include <string.h>
+
+            static int display_slot;
+
+            Display *XOpenDisplay(const char *name) {
+              (void)name;
+              display_slot = 1;
+              return (Display *)&display_slot;
+            }
+            int XCloseDisplay(Display *display) { (void)display; return 0; }
+            int XSync(Display *display, Bool discard) { (void)display; (void)discard; return 0; }
+            Status XGetWindowAttributes(Display *display, Window window, XWindowAttributes *attributes) {
+              (void)display; (void)window; (void)attributes; return 0;
+            }
+            int XFlush(Display *display) { (void)display; return 1; }
+            int XFree(void *data) { (void)data; return 0; }
+            int XDestroyImage(XImage *image) { (void)image; return 0; }
+
+            typedef struct {
+              const char *name;
+              unsigned int keycode;
+              const char *level0;
+            } KeyEntry;
+
+            static const KeyEntry KEYS[] = {
+              __KEYS__
+            };
+
+            static KeySym symbol_for(const char *name) {
+              for (size_t index = 0; index < sizeof KEYS / sizeof KEYS[0]; index++) {
+                if (!strcmp(KEYS[index].name, name)) return (KeySym)(index + 1);
+              }
+              return NoSymbol;
+            }
+
+            KeySym XStringToKeysym(const char *name) { return symbol_for(name); }
+
+            KeyCode XKeysymToKeycode(Display *display, KeySym symbol) {
+              (void)display;
+              if (symbol == NoSymbol || symbol > sizeof KEYS / sizeof KEYS[0]) return 0;
+              return (KeyCode)KEYS[symbol - 1].keycode;
+            }
+
+            KeySym XkbKeycodeToKeysym(Display *display, KeyCode key, int group, int level) {
+              (void)display;
+              if (group != 0 || level != 0) return NoSymbol;
+              for (size_t index = 0; index < sizeof KEYS / sizeof KEYS[0]; index++) {
+                if (KEYS[index].keycode == key && KEYS[index].level0 == NULL) return (KeySym)(index + 1);
+              }
+              return NoSymbol;
+            }
+
+            enum { KEY_EVENT_CAP = 64 };
+            static unsigned int key_codes[KEY_EVENT_CAP];
+            static int key_presses[KEY_EVENT_CAP];
+            static int key_event_count;
+
+            void rakazo_test_reset_keys(void) { key_event_count = 0; }
+            int rakazo_test_key_count(void) { return key_event_count; }
+            unsigned int rakazo_test_key_code(int index) {
+              if (index < 0 || index >= key_event_count || index >= KEY_EVENT_CAP) return 0;
+              return key_codes[index];
+            }
+            int rakazo_test_key_press(int index) {
+              if (index < 0 || index >= key_event_count || index >= KEY_EVENT_CAP) return 0;
+              return key_presses[index];
+            }
+
+            Bool XShmQueryExtension(Display *display) { (void)display; return True; }
+            XImage *XShmCreateImage(Display *display, Visual *visual, unsigned int depth, int format, char *data,
+                XShmSegmentInfo *shminfo, unsigned int width, unsigned int height) {
+              (void)display; (void)visual; (void)depth; (void)format; (void)data; (void)shminfo;
+              (void)width; (void)height; return 0;
+            }
+            Bool XShmAttach(Display *display, XShmSegmentInfo *shminfo) { (void)display; (void)shminfo; return False; }
+            Bool XShmDetach(Display *display, XShmSegmentInfo *shminfo) { (void)display; (void)shminfo; return True; }
+            Bool XShmGetImage(Display *display, Drawable drawable, XImage *image, int x, int y,
+                unsigned long plane_mask) {
+              (void)display; (void)drawable; (void)image; (void)x; (void)y; (void)plane_mask; return False;
+            }
+            Bool XDamageQueryExtension(Display *display, int *event_base, int *error_base) {
+              (void)display;
+              if (event_base) *event_base = 0;
+              if (error_base) *error_base = 0;
+              return False;
+            }
+            Damage XDamageCreate(Display *display, Drawable drawable, int level) {
+              (void)display; (void)drawable; (void)level; return 0;
+            }
+            void XDamageSubtract(Display *display, Damage damage, XserverRegion repair, XserverRegion parts) {
+              (void)display; (void)damage; (void)repair; (void)parts;
+            }
+            void XDamageDestroy(Display *display, Damage damage) { (void)display; (void)damage; }
+            XserverRegion XFixesCreateRegion(Display *display, XRectangle *rectangles, int count) {
+              (void)display; (void)rectangles; (void)count; return 0;
+            }
+            XRectangle *XFixesFetchRegion(Display *display, XserverRegion region, int *count) {
+              (void)display; (void)region; (void)count; return 0;
+            }
+            void XFixesDestroyRegion(Display *display, XserverRegion region) { (void)display; (void)region; }
+            Bool XTestQueryExtension(Display *display, int *event_base, int *error_base, int *major, int *minor) {
+              (void)display; (void)event_base; (void)error_base; (void)major; (void)minor; return True;
+            }
+            int XTestFakeKeyEvent(Display *display, unsigned int keycode, Bool is_press, unsigned long delay) {
+              (void)display; (void)delay;
+              if (key_event_count < KEY_EVENT_CAP) {
+                key_codes[key_event_count] = keycode;
+                key_presses[key_event_count] = is_press;
+              }
+              key_event_count++;
+              return 1;
+            }
+            int XTestFakeButtonEvent(Display *display, unsigned int button, Bool is_press, unsigned long delay) {
+              (void)display; (void)button; (void)is_press; (void)delay; return 1;
+            }
+            int XTestFakeMotionEvent(Display *display, int screen, int x, int y, unsigned long delay) {
+              (void)display; (void)screen; (void)x; (void)y; (void)delay; return 1;
+            }
+            void png_error(png_structp png, const char *message) { (void)png; (void)message; }
+            void *png_get_io_ptr(png_structp png) { (void)png; return 0; }
+            png_structp png_create_write_struct(const char *version, void *error_ptr, void *error_fn, void *warn_fn) {
+              (void)version; (void)error_ptr; (void)error_fn; (void)warn_fn; return 0;
+            }
+            png_infop png_create_info_struct(png_structp png) { (void)png; return 0; }
+            void png_destroy_write_struct(png_structp *png, png_infop *info) { (void)png; (void)info; }
+            void png_set_write_fn(png_structp png, void *io, png_rw_ptr write, png_flush_ptr flush) {
+              (void)png; (void)io; (void)write; (void)flush;
+            }
+            void png_set_compression_level(png_structp png, int level) { (void)png; (void)level; }
+            void png_set_filter(png_structp png, int method, int filters) {
+              (void)png; (void)method; (void)filters;
+            }
+            void png_set_IHDR(png_structp png, png_infop info, png_uint_32 width, png_uint_32 height, int depth,
+                int color, int interlace, int compression, int filter) {
+              (void)png; (void)info; (void)width; (void)height; (void)depth; (void)color;
+              (void)interlace; (void)compression; (void)filter;
+            }
+            void png_write_info(png_structp png, png_infop info) { (void)png; (void)info; }
+            void png_write_row(png_structp png, png_bytep row) { (void)png; (void)row; }
+            void png_write_end(png_structp png, png_infop info) { (void)png; (void)info; }
+            """).replace("__KEYS__", table)
+
+
 if __name__ == "__main__":
     unittest.main()

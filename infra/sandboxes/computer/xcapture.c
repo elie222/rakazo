@@ -1,5 +1,6 @@
 // Persistent, lossless X11 desktop capture with MIT-SHM and XDamage metadata.
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/Xdamage.h>
@@ -226,10 +227,12 @@ int rakazo_xinput_argv(void *context, int argc, const char *const *argv) {
     strcpy(combo, argv[5]);
     KeyCode keys[8]; int count = 0;
     for (char *part = strtok(combo, "+"); part; part = strtok(NULL, "+")) {
-      KeyCode key = XKeysymToKeycode(capture->display, key_symbol(part));
-      if (!key || count == 8) return 0;
+      const KeySym symbol = key_symbol(part);
+      const KeyCode key = symbol == NoSymbol ? 0 : XKeysymToKeycode(capture->display, symbol);
+      if (!key || XkbKeycodeToKeysym(capture->display, key, 0, 0) != symbol || count == 8) return 0;
       keys[count++] = key;
     }
+    if (!count) return 0;
     for (int i = 0; i < count; i++) XTestFakeKeyEvent(capture->display, keys[i], True, CurrentTime);
     for (int i = count - 1; i >= 0; i--) XTestFakeKeyEvent(capture->display, keys[i], False, CurrentTime);
     XFlush(capture->display);
