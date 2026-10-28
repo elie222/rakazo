@@ -1137,8 +1137,8 @@ describe("sandbox supervisor input containment", () => {
 });
 
 describe("docker exec stream demux", () => {
-  const frame = (type: number, text: string) => {
-    const payload = Buffer.from(text, "utf8");
+  const frame = (type: number, text: string | Buffer) => {
+    const payload = typeof text === "string" ? Buffer.from(text, "utf8") : text;
     const header = Buffer.alloc(8);
     header[0] = type;
     header.writeUInt32BE(payload.length, 4);
@@ -1214,6 +1214,37 @@ describe("docker exec stream demux", () => {
       stdout: "code: ABCD-1234\ndone\n",
       stderr: "waiting\n",
     });
+  });
+
+  it("keeps UTF-8 characters split across frames and chunks intact", () => {
+    const stderr = Buffer.from("😀é\n");
+    const multiplexed = Buffer.concat([
+      ...[...Buffer.from("é😀\n")].flatMap((byte, i) => [
+        frame(1, Buffer.from([byte])),
+        frame(2, stderr.subarray(i, i + 1)),
+      ]),
+      frame(2, Buffer.from([0xf0])),
+      frame(1, Buffer.from([0xe2])),
+      frame(2, Buffer.from([0x9f])),
+      frame(1, Buffer.from([0x82])),
+    ]);
+    const cases = [
+      [multiplexed, { stdout: "é😀\n\ufffd", stderr: "😀é\n\ufffd" }],
+      [
+        Buffer.concat([Buffer.from("raw é😀\n"), Buffer.from([0xe2, 0x82])]),
+        { stdout: "raw é😀\n\ufffd", stderr: "" },
+      ],
+      [Buffer.from([0x61, 0xc3]), { stdout: "a\ufffd", stderr: "" }],
+    ] as const;
+    for (const [bytes, expected] of cases) {
+      const demuxer = createDockerStreamDemuxer();
+      const live = [...bytes].flatMap((byte) => demuxer.push(Buffer.from([byte])));
+      live.push(...demuxer.finish());
+      const streamed = { stdout: "", stderr: "" };
+      for (const piece of live) streamed[piece.stream] += piece.data;
+      expect(streamed).toEqual(expected);
+      expect(demuxDockerStream(bytes)).toEqual(expected);
+    }
   });
 
   it("rejects frames with nonzero reserved header padding as raw stdout", () => {

@@ -918,13 +918,15 @@ async function* streamLocalCommand(
   );
   timeout.unref?.();
   signal.addEventListener("abort", abort, { once: true });
-  child.stdout?.on("data", (chunk: Buffer) => {
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (data: string) => {
     if (settled) return;
-    push({ type: "stdout", data: chunk.toString("utf8") });
+    push({ type: "stdout", data });
   });
-  child.stderr?.on("data", (chunk: Buffer) => {
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (data: string) => {
     if (settled) return;
-    push({ type: "stderr", data: chunk.toString("utf8") });
+    push({ type: "stderr", data });
   });
   child.on("error", (error) => {
     if (settled) return;
