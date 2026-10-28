@@ -372,7 +372,7 @@ function Study() {
           Original logo artwork. Seeded CSS motion; pauses offscreen. Controls replay fixture
           states.
         </span>
-        <span>Unknown work stays “working”. Thinking has no public runtime signal.</span>
+        <span>Unknown work stays “working”. Thinking follows reported reasoning events.</span>
       </footer>
       <details className="mt-4 text-caption text-muted-foreground">
         <summary>Timing details</summary>

@@ -22,7 +22,6 @@ export function useLogoAvatarLayers(
 ) {
   const serial = useRef(0);
   const clock = useRef<{ last: number; elapsed: number; running: boolean } | null>(null);
-  const resetFades = useRef(false);
   const knownFades = useRef(new WeakSet<Animation>());
   const [layers, setLayers] = useState<Layer[]>([
     { key: 0, activity, entering: false, outgoing: false, opacity: 1 },
@@ -47,12 +46,14 @@ export function useLogoAvatarLayers(
     };
     const outgoing = running
       ? layers.flatMap((layer) => {
+          // An interrupted transition must not extend an older exit's lifetime.
+          // Keep its original opacity origin and CSS clock until animationend.
+          if (layer.outgoing) return [layer];
           const element = ref.current?.querySelector(`[data-logo-layer="${layer.key}"]`);
           const opacity = element ? Number(getComputedStyle(element).opacity) : 0;
           return opacity > 0 ? [{ ...layer, entering: false, outgoing: true, opacity }] : [];
         })
       : [];
-    resetFades.current = true;
     setLayers([...outgoing, next]);
   }, [activity, layers, ref, running]);
 
@@ -69,12 +70,11 @@ export function useLogoAvatarLayers(
       if (animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY) {
         if (running) animation.startTime = now - elapsed;
         else animation.currentTime = elapsed;
-      } else if (resetFades.current || !knownFades.current.has(animation)) {
+      } else if (!knownFades.current.has(animation)) {
         animation.startTime = now;
         knownFades.current.add(animation);
       }
     }
-    resetFades.current = false;
   }, [layers, ref, running]);
 
   const finish = useCallback((key: number, name: string) => {

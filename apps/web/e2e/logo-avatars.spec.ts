@@ -349,6 +349,7 @@ test("activity crossfades start and finish with zero opacity velocity", async ({
     .getByRole("region", { name: "Transitions and runtime events" })
     .locator("article")
     .first();
+  await switcher.scrollIntoViewIfNeeded();
   // Observe and pause inside the same browser task as the click. A separate
   // Playwright round trip can arrive after the real 180ms fade has finished.
   const proof = await switcher.getByRole("button", { name: "Writing", exact: true }).evaluate(
@@ -879,4 +880,65 @@ test("seed colours persist through rerenders and reloads at actual avatar sizes"
     ).toEqual(before);
     await captureScreenshot(page, testInfo, `seeded-avatar-colours-${theme}`);
   }
+});
+
+test("new activity does not restart an existing outgoing fade", async ({ page }) => {
+  await page.goto("/e2e/fixtures/logo-avatars.html");
+  const switcher = page
+    .getByRole("region", { name: "Transitions and runtime events" })
+    .locator("article")
+    .first();
+  await switcher.scrollIntoViewIfNeeded();
+  await expect(switcher.locator(".rakazo-logo-avatar[role=img]")).toHaveAttribute(
+    "data-paused",
+    "false",
+  );
+  const proof = await switcher.evaluate(async (article) => {
+    const avatar = article.querySelector(".rakazo-logo-avatar[role=img]")!;
+    const change = (name: string, activity: string) =>
+      new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          observer.disconnect();
+          reject(new Error("Activity did not commit"));
+        }, 5000);
+        const observer = new MutationObserver(() => {
+          if (
+            avatar.querySelector(
+              `[data-logo-layer][data-outgoing="false"][data-activity="${activity}"]`,
+            )
+          ) {
+            observer.disconnect();
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+        observer.observe(avatar, { childList: true, subtree: true, attributes: true });
+        [...article.querySelectorAll("button")]
+          .find((button) => button.textContent === name)!
+          .click();
+      });
+    await change("Writing", "writing");
+    const outgoing = avatar.querySelector<SVGGElement>('[data-outgoing="true"]')!;
+    const fade = outgoing
+      .getAnimations()
+      .find((animation) => (animation as CSSAnimation).animationName === "logo-avatar-layer-out")!;
+    fade.pause();
+    await fade.ready;
+    fade.currentTime = 90;
+    const before = {
+      time: Number(fade.currentTime),
+      from: outgoing.style.getPropertyValue("--logo-exit-from"),
+    };
+    await change("Thinking", "thinking");
+    const after = {
+      time: Number(fade.currentTime),
+      from: outgoing.style.getPropertyValue("--logo-exit-from"),
+    };
+    const key = outgoing.dataset.logoLayer!;
+    fade.finish();
+    return { before, after, key };
+  });
+  expect(proof.after.time).toBeGreaterThanOrEqual(proof.before.time - 0.01);
+  expect(proof.after.from).toBe(proof.before.from);
+  await expect(switcher.locator(`[data-logo-layer="${proof.key}"]`)).toHaveCount(0);
 });
