@@ -1134,6 +1134,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",
+  "Always open {site}": "{site} を常に開く",
+  "Trusted sites": "信頼済みサイト",
   "Run history": "実行履歴",
   "No runs yet": "実行はまだありません",
   "Load older runs": "過去の実行を読み込む",

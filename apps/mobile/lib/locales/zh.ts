@@ -1099,6 +1099,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+  "Always open {site}": "始终打开 {site}",
+  "Trusted sites": "受信任的网站",
   "Run history": "运行记录",
   "No runs yet": "还没有运行记录",
   "Load older runs": "加载更早的运行记录",

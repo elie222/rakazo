@@ -1101,6 +1101,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+  "Always open {site}": "{site} altijd openen",
+  "Trusted sites": "Vertrouwde sites",
   "Run history": "Rungeschiedenis",
   "No runs yet": "Nog geen runs",
   "Load older runs": "Oudere runs laden",

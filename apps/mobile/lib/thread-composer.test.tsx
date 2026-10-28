@@ -17,6 +17,7 @@ const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 const input = vi.hoisted(() => ({
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
+  select: (_event: { nativeEvent: { selection: { start: number; end: number } } }) => {},
 }));
 const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
 vi.mock("./api", () => ({
@@ -77,6 +78,8 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       onKeyPress,
+      onSelectionChange,
+      selection,
       style,
       scrollEnabled,
     }: {
@@ -84,17 +87,21 @@ vi.mock("react-native", () => {
       value: string;
       onChangeText: typeof input.change;
       onKeyPress: typeof input.key;
+      onSelectionChange?: typeof input.select;
+      selection?: { start: number; end: number };
       style: object;
       scrollEnabled?: boolean;
     }) => {
       input.change = onChangeText;
       input.key = onKeyPress;
+      input.select = onSelectionChange ?? (() => {});
       return createElement("input", {
         ref,
         value,
         readOnly: true,
         "data-style": JSON.stringify(style),
         "data-scroll-enabled": scrollEnabled,
+        "data-selection": JSON.stringify(selection),
       });
     },
   };
@@ -210,6 +217,279 @@ describe("thread composer isolation", () => {
     vi.unstubAllGlobals();
   });
 
+  function select(start: number, end = start) {
+    act(() => input.select({ nativeEvent: { selection: { start, end } } }));
+  }
+
+  it("keeps inserted text when removing a chip afterwards", () => {
+    type("ask @He");
+    press("@{name}");
+    act(() => composer.current!.insert("shared text"));
+    press("Remove mention {name}");
+    expect(composer.current!.snapshot().promptText).toBe("ask  \nshared text");
+  });
+
+  it("keeps a selected bot at its inline position and continues typing after it", () => {
+    type("i need u to message @He");
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("i need u to message @Helper ");
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 28,
+      end: 28,
+    });
+    type("i need u to message @Helper and do this");
+    expect(composer.current!.snapshot().promptText).toBe("i need u to message @Helper and do this");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("replaces only the active query in existing text and keeps suffix whitespace", () => {
+    type("i need u to message @He  and do this");
+    select("i need u to message @He".length);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe(
+      "i need u to message @Helper  and do this",
+    );
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 28,
+      end: 28,
+    });
+    expect(composer.current!.snapshot().promptText).toBe(
+      "i need u to message @Helper  and do this",
+    );
+  });
+
+  it("replaces the full query when the caret is inside it and ignores a selected range", () => {
+    type("before @Hel after");
+    select(8, 11);
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    select(10);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("before @Helper after");
+    expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+      start: 15,
+      end: 15,
+    });
+  });
+
+  it("replaces routing metadata when completing over an already selected token", () => {
+    const other = { kind: "bot", id: "bot-3", name: "HelperOther" } as const;
+    render({ composerMentionTargets: [bot, other] });
+    type("before @He");
+    press("@{name}");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    select(10);
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    expect(options).toHaveLength(2);
+    act(() => options[1]!.click());
+    expect(container.querySelector("input")!.value).toBe("before @HelperOther ");
+    expect(composer.current!.snapshot().mentions).toEqual([other]);
+  });
+
+  function pickMentionAt(index: number) {
+    const options = container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]');
+    expect(options.length).toBeGreaterThan(index);
+    act(() => options[index]!.click());
+  }
+
+  it("replaces a selected group binding with a bot sharing its name at the same occurrence", () => {
+    const group = { kind: "group", id: "group-1", name: "Helper" } as const;
+    render({ composerMentionTargets: [group, bot] });
+    type("before @He");
+    pickMentionAt(0);
+    expect(composer.current!.snapshot().mentions).toMatchObject([group]);
+    select(10);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("before @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  const bobBot = { kind: "bot", id: "bob-bot", name: "Bob" } as const;
+  const bobGroup = { kind: "group", id: "bob-group", name: "Bob" } as const;
+
+  function selectBothBobs(separator = "and ") {
+    render({ composerMentionTargets: [bobBot, bobGroup] });
+    type("@Bo");
+    pickMentionAt(0);
+    type(`@Bob ${separator}@Bo`);
+    pickMentionAt(1);
+    expect(composer.current!.snapshot().mentions).toMatchObject([bobBot, bobGroup]);
+  }
+
+  it("removes only the deleted group binding when a bot has the same name", () => {
+    selectBothBobs();
+    select(9, 13);
+    type("@Bob and  ");
+    select(9);
+    expect(composer.current!.snapshot().mentions).toEqual([bobBot]);
+  });
+
+  it.each(["text-first", "selection-first"])(
+    "retains the second identity when deleting an identical first token with %s events",
+    (order) => {
+      selectBothBobs("");
+      select(0, 5);
+      if (order === "selection-first") select(0);
+      type("@Bob ");
+      if (order === "text-first") select(0);
+      expect(composer.current!.snapshot().mentions).toMatchObject([
+        { ...bobGroup, ranges: [{ start: 0, end: 4 }] },
+      ]);
+    },
+  );
+
+  it("uses the latest native caret after a previous selection when deleting identical tokens", () => {
+    selectBothBobs("");
+    select(0, 5);
+    select(10);
+    type("@Bob ");
+    select(5);
+    expect(composer.current!.snapshot().mentions).toEqual([bobBot]);
+  });
+
+  it.each([0, 1])("removes only the chip's bound identity at index %s", (index) => {
+    selectBothBobs();
+    const chips = container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Remove mention {name}"]',
+    );
+    act(() => chips[index]!.click());
+    expect(container.querySelector("input")!.value).toBe(index === 0 ? " and @Bob " : "@Bob and  ");
+    expect(composer.current!.snapshot().mentions).toMatchObject(
+      index === 0 ? [bobGroup] : [bobBot],
+    );
+  });
+
+  it.each([
+    { start: 21, end: 21, expectedStart: 14, expectedEnd: 14 },
+    { start: 15, end: 20, expectedStart: 8, expectedEnd: 13 },
+    { start: 9, end: 20, expectedStart: 7, expectedEnd: 13 },
+  ])(
+    "shifts both native selection endpoints after chip removal: $start-$end",
+    ({ start, end, expectedStart, expectedEnd }) => {
+      type("before @He");
+      press("@{name}");
+      type("before @Helper alpha omega");
+      select(start, end);
+      press("Remove mention {name}");
+      expect(container.querySelector("input")!.value).toBe("before  alpha omega");
+      expect(JSON.parse(container.querySelector("input")!.dataset.selection!)).toEqual({
+        start: expectedStart,
+        end: expectedEnd,
+      });
+    },
+  );
+
+  it.each(["bot", "group"] as const)(
+    "retires a shorter %s mention when replacing it with a multiword bot name",
+    (kind) => {
+      const shorter = { ...bot, kind };
+      const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+      render({ composerMentionTargets: [shorter, longer] });
+      type("before @He");
+      pickMentionAt(0);
+      select(10);
+      pickMentionAt(1);
+      expect(container.querySelector("input")!.value).toBe("before @Helper Smith ");
+      expect(composer.current!.snapshot().mentions).toEqual([longer]);
+    },
+  );
+
+  it("keeps a separate shorter mention when replacing another occurrence with a longer name", () => {
+    const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    render({ composerMentionTargets: [bot, longer] });
+    type("@He");
+    pickMentionAt(0);
+    type("@Helper and @He");
+    pickMentionAt(0);
+    select("@Helper and @He".length);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("@Helper and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot, longer]);
+    type("and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([longer]);
+  });
+
+  it("replaces the entire recognized multiword name when the caret is inside its first word", () => {
+    const smith = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    const jones = { kind: "bot", id: "bot-4", name: "Helper Jones" } as const;
+    render({ composerMentionTargets: [smith, jones] });
+    type("before @He");
+    pickMentionAt(0);
+    select(10);
+    pickMentionAt(1);
+    expect(container.querySelector("input")!.value).toBe("before @Helper Jones ");
+    expect(composer.current!.snapshot().mentions).toEqual([jones]);
+  });
+
+  it("removes a shorter mention chip without corrupting a longer recognized name", () => {
+    const longer = { kind: "bot", id: "bot-3", name: "Helper Smith" } as const;
+    render({ composerMentionTargets: [bot, longer] });
+    type("@He");
+    pickMentionAt(0);
+    type("@Helper and @He");
+    pickMentionAt(1);
+    press("Remove mention {name}");
+    expect(container.querySelector("input")!.value).toBe(" and @Helper Smith ");
+    expect(composer.current!.snapshot().mentions).toEqual([longer]);
+  });
+
+  it.each(["text-first", "selection-first"])(
+    "finds the query when native editing events arrive %s",
+    (order) => {
+      type("before  after");
+      select(7);
+      if (order === "selection-first") select(10);
+      type("before @He after");
+      if (order === "text-first") select(10);
+      press("@{name}");
+      expect(container.querySelector("input")!.value).toBe("before @Helper after");
+      expect(composer.current!.snapshot().promptText).toBe("before @Helper after");
+    },
+  );
+
+  it("leaves the native caret in control while editing repeated characters", () => {
+    type("aaa");
+    select(1);
+    select(2);
+    type("aaaa");
+    expect(container.querySelector("input")!.dataset.selection).toBeUndefined();
+    expect(container.querySelector("input")!.value).toBe("aaaa");
+  });
+
+  it("keeps the picker dismissed after restoring the completed caret before punctuation", () => {
+    type("before @He, after");
+    select(10);
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("before @Helper, after");
+    select(14);
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    select(8);
+    expect(container.querySelector('[data-testid="mention-picker"]')).not.toBeNull();
+  });
+
+  it("keeps repeated mentions in text and prunes metadata only after the final token is deleted", () => {
+    type("first @He");
+    press("@{name}");
+    type("first @Helper then @He");
+    press("@{name}");
+    expect(container.querySelector("input")!.value).toBe("first @Helper then @Helper ");
+    expect(composer.current!.snapshot().promptText).toBe("first @Helper then @Helper");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    type("first then @Helper ");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    type("first then done");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("removes inline mention tokens through the existing chip control without rewriting whitespace", () => {
+    type("first @He");
+    press("@{name}");
+    type("first @Helper  then @He");
+    press("@{name}");
+    press("Remove mention {name}");
+    expect(container.querySelector("input")!.value).toBe("first   then  ");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
   it("types 20 characters without rendering the parent and sends the latest ref snapshot", () => {
     const mounted = threadRenders;
     const text = "abcdefghijklmnopqrst";
@@ -248,7 +528,7 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().mentions).toMatchObject([
       { kind: "routine", id: "routine-1", name: "Morning" },
     ]);
-    expect(container.querySelector("input")!.value).toBe("Hello ");
+    expect(container.querySelector("input")!.value).toBe("Hello @Morning ");
     await act(async () => input.change("Again @"));
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
   });
@@ -279,23 +559,23 @@ describe("thread composer isolation", () => {
     await act(async () => root.render(<MentionThreadHarness />));
     await act(async () => input.change("@Mor"));
     press("@{name}");
-    await act(async () => input.change("Keep @Mor"));
+    await act(async () => input.change("@Morning Keep @Mor"));
     mentionApi.generation = 2;
     await act(async () => root.render(<MentionThreadHarness />));
 
-    expect(container.querySelector("input")!.value).toBe("Keep @Mor");
+    expect(container.querySelector("input")!.value).toBe("@Morning Keep @Mor");
     expect(composer.current!.snapshot().mentions).toMatchObject([{ id: "routine-1" }]);
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
 
-    await act(async () => input.change("Keep @Morn"));
+    await act(async () => input.change("@Morning Keep @Morn"));
     expect(mentionApi.rpc).toHaveBeenCalledTimes(6);
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toMatchObject([
       { id: "routine-1" },
       { id: "routine-2" },
     ]);
-    expect(container.querySelector("input")!.value).toBe("Keep ");
+    expect(container.querySelector("input")!.value).toBe("@Morning Keep @Morning ");
   });
 
   it("requires another mention edit after switching the composer target", async () => {
@@ -347,18 +627,17 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
-  it("selects mention and skill popovers and removes chips with backspace", () => {
+  it("selects mention and skill popovers, clears replaced mentions, and removes skills with backspace", () => {
     type("Hello @He");
     press("@{name}");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
-    expect(container.querySelector("input")!.value).toBe("Hello ");
+    expect(container.querySelector("input")!.value).toBe("Hello @Helper ");
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     type("/Wri");
     press("Skill {name}");
     expect(composer.current!.snapshot().skill).toEqual(skill);
     expect(container.querySelector("input")!.value).toBe("");
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
-    act(() => input.key({ nativeEvent: { key: "Backspace" } }));
     expect(composer.current!.snapshot().mentions).toEqual([]);
     expect(composer.current!.snapshot().skill).toEqual(skill);
     act(() => input.key({ nativeEvent: { key: "Backspace" } }));

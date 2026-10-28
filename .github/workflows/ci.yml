@@ -110,6 +110,8 @@ jobs:
         run: python3 .github/scripts/codex-subscription-auth.test.py
       - name: Dependency update patch safety tests
         run: python3 .github/scripts/dependency-update-patch.test.py
+      - name: App Store review submission tests
+        run: node --test .github/scripts/app-store-review.test.mjs
 
   native-computer:
     name: Native computer (${{ matrix.os }})

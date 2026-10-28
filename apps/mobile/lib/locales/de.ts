@@ -1109,6 +1109,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} bis {to}",
   "Every {day}": "Jeden {day}",
   "Every {days} and {last}": "Jeden {days} und {last}",
+  "Always open {site}": "Immer {site} öffnen",
+  "Trusted sites": "Vertrauenswürdige Websites",
   "Run history": "Ausführungsverlauf",
   "No runs yet": "Noch keine Ausführungen",
   "Load older runs": "Ältere Ausführungen laden",

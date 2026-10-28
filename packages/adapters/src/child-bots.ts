@@ -344,7 +344,7 @@ export async function archiveBot(
     });
     if (dedicated) {
       await tx.computer.updateMany({
-        where: { id: dedicated.id, state: { not: "running" } },
+        where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
         data: { state: "stopped" },
       });
     }
@@ -691,7 +691,14 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos", "kubernetes"]);
+const REMOTE_TEAM_SANDBOX_KINDS = new Set([
+  "e2b",
+  "novita",
+  "daytona",
+  "boat",
+  "createos",
+  "kubernetes",
+]);
 
 /**
  * Whether only the server writes this computer's stored home. A Kubernetes computer that

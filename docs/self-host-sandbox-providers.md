@@ -10,7 +10,7 @@ for the sharing and persistence contract.
 | --- | --- | --- |
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| Managed remote desktop | `e2b` / `novita` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
 | One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
@@ -129,6 +129,7 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | Value | Credential | Notes |
 | --- | --- | --- |
 | `e2b` | `E2B_API_KEY` | Hosted sandboxes |
+| `novita` | `NOVITA_API_KEY` | Build the desktop template first; optional `SANDBOX_TEMPLATE` |
 | `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
 | `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
 
@@ -219,6 +220,40 @@ E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
 Until it exists, new computers use the stock desktop template. Existing computers keep
 the size they were created with until they are replaced.
 
+### Novita computer template
+
+Set `SANDBOX_PROVIDER=novita` and `NOVITA_API_KEY` on both the API and worker.
+Build the desktop template once in the account that owns that key:
+
+```bash
+NOVITA_API_KEY=<deployment-key> pnpm sandbox:novita-template
+```
+
+The `rakazo-computer` template uses Novita's desktop image at 2 vCPU and 4 GB.
+The provider requires this template and does not fall back to the larger stock desktop.
+To use another desktop template, set `SANDBOX_TEMPLATE` to the same name when building
+and on both services. Rebuild when the template definition changes; existing computers
+keep their original template and resources.
+
+Computers pause on idle timeout and on stop, preserving files, browser profiles, and
+running-process memory. Reconnecting resumes the same computer. Destruction deletes
+it without resuming it. Stop retries pause requests and checks the remote state. Command
+cancellation and deadlines retry termination; if termination cannot be confirmed, the
+adapter attempts to pause the computer and reports that the command may remain suspended.
+An unconfirmed command stop also quarantines the computer in the shared database, so
+API heartbeats, worker jobs, and restarts cannot silently resume it. Use the existing
+Recover or Reset action to replace it from saved work; the paused guest is preserved
+until that explicit action. Normal reads and heartbeats do not resume a paused Novita
+computer.
+An outage can prevent both operations; the configured idle timeout remains the final
+auto-pause boundary. This recovery does not delete the saved computer. Paused storage remains subject to Novita's storage billing
+and retention terms. This provider uses the shared Linux desktop runtime for screens,
+takeover, terminal, and portable workspace transfer.
+
+A missing key disables computers without preventing startup. A present but invalid key,
+a missing template, or a quota failure surfaces when a computer starts; an authentication
+or network error does not authorize replacing an existing computer.
+
 ### Boat computer snapshot
 
 Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
@@ -245,7 +280,7 @@ docker compose --env-file .env -f docker-compose.images.yml up -d
 curl -fsS http://127.0.0.1:3100/internal/health
 ```
 
-Confirm `sandbox` equals the intended provider (`e2b`, `daytona`, or `boat`).
+Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, or `boat`).
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.

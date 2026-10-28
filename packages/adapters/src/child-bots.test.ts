@@ -914,7 +914,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["e2b", "createos"])(
+  it.each(["e2b", "novita", "createos"])(
     "removes the deleted bot's profile from a %s sandbox after the browser stops",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-remote-delete-"));
@@ -2170,30 +2170,41 @@ describe("archiveBot", () => {
     });
   });
 
-  it("archives a bot whose dedicated computer is damaged", async () => {
-    const stop = vi.fn().mockResolvedValue(undefined);
-    const updates = { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() };
-    const computer = { id: "c-1", homeKey: "bot-1", providerRef: "p-1", state: "running" };
-    const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
-    Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
-    const prisma = {
-      computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
-      run: { findMany: vi.fn().mockResolvedValue([]) },
-      routine: { findMany: vi.fn().mockResolvedValue([]) },
-      $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-    // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
-    const exportWorkspace = async function* () {
-      throw new SandboxDamagedError();
-    };
-    const sandbox = { exportWorkspace, stop } as unknown as SandboxProvider;
-    const jobs = { cancel: vi.fn() } as unknown as JobPublisher;
-    const bot = { id: "bot-1", spaceId: "s-1", userId: "u-1", name: "R", archivedAt: null };
+  it.each(["running", "quarantined"])(
+    "archives a bot whose dedicated computer is damaged without clearing %s state",
+    async (state) => {
+      const stop = vi.fn().mockResolvedValue(undefined);
+      const updates = { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() };
+      const computer = { id: "c-1", homeKey: "bot-1", providerRef: "p-1", state };
+      const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
+      Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
+      const prisma = {
+        computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
+        run: { findMany: vi.fn().mockResolvedValue([]) },
+        routine: { findMany: vi.fn().mockResolvedValue([]) },
+        $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
+      const exportWorkspace = async function* () {
+        throw new SandboxDamagedError();
+      };
+      const sandbox = { exportWorkspace, stop } as unknown as SandboxProvider;
+      const jobs = { cancel: vi.fn() } as unknown as JobPublisher;
+      const bot = { id: "bot-1", spaceId: "s-1", userId: "u-1", name: "R", archivedAt: null };
 
-    await archiveBot({ prisma, sandbox, home: {} as AgentHomeStore, jobs }, bot, context);
+      await archiveBot({ prisma, sandbox, home: {} as AgentHomeStore, jobs }, bot, context);
+      expect(updates.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "c-1", state: { notIn: ["running", "quarantined"] } },
+          data: { state: "stopped" },
+        }),
+      );
 
-    expect(stop).toHaveBeenCalledWith(expect.anything(), context, { discardUnsaved: true });
-  });
+      if (state === "running")
+        expect(stop).toHaveBeenCalledWith(expect.anything(), context, { discardUnsaved: true });
+      else expect(stop).not.toHaveBeenCalled();
+    },
+  );
 
   it("releases the archived bot's screen and keeps its browser profile", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-archive-"));

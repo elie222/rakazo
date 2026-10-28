@@ -139,6 +139,8 @@ async function main() {
       sandboxProvider: sandbox.provider,
       agentRuntime: "pi",
       e2bApiKey: process.env.E2B_API_KEY,
+      novitaApiKey: process.env.NOVITA_API_KEY,
+      sandboxTemplate: process.env.SANDBOX_TEMPLATE,
       boatApiKey: process.env.BOAT_API_KEY,
       boatApiUrl: process.env.BOAT_API_URL,
       wakeupDriver: "memory",

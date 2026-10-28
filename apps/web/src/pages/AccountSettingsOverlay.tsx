@@ -37,6 +37,7 @@ import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { ProviderQuotaStack } from "../components/usage/provider-quota-stack";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
@@ -456,6 +457,7 @@ export function GeneralSettingsPanels({
         </div>
       </Disclosure>
 
+      <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
       {showPassword || passkeysSupported ? (

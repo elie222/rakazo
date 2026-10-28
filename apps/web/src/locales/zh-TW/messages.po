@@ -742,6 +742,10 @@ msgstr "一律允許此工具"
 msgid "Always allowed"
 msgstr "一律允許"
 
+#: src/components/markdown-link-prompt.tsx
+msgid "Always open {site}"
+msgstr "一律開啟 {site}"
+
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此供應商儲存的是 API 金鑰，不是訂閱登入。"
@@ -1546,8 +1550,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr "電腦已可使用。請重新載入或開啟機器人以繼續。"
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "電腦未開啟。請設定 SANDBOX_PROVIDER=docker 並提供 SANDBOX_SUPERVISOR_TOKEN，或將 SANDBOX_PROVIDER 設為 e2b、daytona 或 boat 並提供對應 API 金鑰。更改 .env 後請重建環境。"
+msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
+msgstr "電腦未開啟。請設定 SANDBOX_PROVIDER=docker 並提供 SANDBOX_SUPERVISOR_TOKEN，或將 SANDBOX_PROVIDER 設為 e2b、novita、daytona 或 boat 並提供對應 API 金鑰。更改 .env 後請重建環境。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1844,6 +1848,7 @@ msgstr "無法連線至電腦螢幕"
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/TrustedLinkSitesSettings.tsx
 #: src/lib/account-security.ts
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
@@ -4741,6 +4746,7 @@ msgstr "剩餘配額"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
+#: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -4764,6 +4770,10 @@ msgstr "將 {0} 移出群組"
 #: src/components/VaultSettings.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
 msgstr "要移除 {secretName} 嗎？機器人將無法再使用它。"
+
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Remove {site}"
+msgstr "移除 {site}"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"
@@ -6046,6 +6056,10 @@ msgstr "試用"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial ends {day}"
 msgstr "試用於 {day} 結束"
+
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Trusted sites"
+msgstr "受信任的網站"
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
