@@ -55,6 +55,26 @@ describe("chooseBotAvatar", () => {
     }
   });
 
+  it("uses the supplied preview identity for both the final id and generated colour", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(chooseBotAvatar([], undefined, { avatarSet: "rakazo", id })).toEqual({
+      id,
+      color: seededLogoAvatarColor(id),
+    });
+    expect(chooseBotAvatar([], "#123456", { avatarSet: "rakazo", id })).toEqual({
+      id,
+      color: "#123456",
+    });
+  });
+
+  it("keeps an explicit identity ahead of an automatic organic family choice", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(chooseBotAvatar([], "#123456", { id, avatarSet: "organic", family: 9 })).toEqual({
+      id,
+      color: "#123456",
+    });
+  });
+
   it.each(["#123456", "#abc", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
     "keeps explicit Rakazo appearance %s",
     (color) => {

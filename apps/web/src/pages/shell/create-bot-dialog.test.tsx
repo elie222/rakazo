@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { ORGANIC_AVATAR_LOOKS } from "@rakazo/core";
+import { ORGANIC_AVATAR_LOOKS, seededLogoAvatarColor } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -85,7 +85,11 @@ describe("CreateBotDialog", () => {
     await click(button("Create"));
     expect(onCreate.mock.lastCall?.[0]).toMatchObject({ name: "Scout", avatarSet: "rakazo" });
     expect(onCreate.mock.lastCall?.[0]).not.toHaveProperty("avatarFamily");
-    expect(onCreate.mock.lastCall?.[0]).not.toHaveProperty("color");
+    const input = onCreate.mock.lastCall![0];
+    const preview = document.querySelector(".rakazo-logo-avatar")!;
+    expect(input.id).toMatch(/^c[a-z0-9]{24}$/);
+    expect(input.color?.toUpperCase()).toBe(preview.getAttribute("data-color")?.toUpperCase());
+    expect(input.color).toBe(seededLogoAvatarColor(input.id!));
   });
 
   it("preserves an explicitly chosen Rakazo colour through a failed create and retry", async () => {
@@ -166,4 +170,26 @@ describe("importing instead", () => {
     await act(async () => button("Import").click());
     expect(onImport).toHaveBeenCalledTimes(1);
   });
+});
+
+it("retains the preview identity and colour through rerenders, set toggles and a retry", async () => {
+  const onCreate = vi
+    .fn(async (_input: CreateBotDialogInput) => undefined)
+    .mockRejectedValueOnce(new Error("Try again"));
+  await render(onCreate);
+  const colour = document.querySelector(".rakazo-logo-avatar")!.getAttribute("data-color");
+  await typeName("First name");
+  await render(onCreate);
+  expect(document.querySelector(".rakazo-logo-avatar")!.getAttribute("data-color")).toBe(colour);
+  await click(button("Original"));
+  await click(button("Rakazo"));
+  await click(button("Create"));
+  const first = onCreate.mock.lastCall![0];
+  await typeName("Retry name");
+  await click(button("Create"));
+  const second = onCreate.mock.lastCall![0];
+  expect(first.id).toMatch(/^c[a-z0-9]{24}$/);
+  expect(second.id).toBe(first.id);
+  expect(second.color).toBe(first.color);
+  expect(second.color?.toUpperCase()).toBe(colour?.toUpperCase());
 });

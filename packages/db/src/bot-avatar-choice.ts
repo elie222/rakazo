@@ -79,7 +79,8 @@ function idForFamily(family: number, random: Random, now: number): string {
  * between colours goes to one no bot with the same look wears. Bots with a picture or an
  * Avatar Studio shape do not draw an organic body and are not counted for the look. A colour
  * passed by the caller is kept, and so is an organic family the caller picked (the create
- * dialog previews one before the bot has an id).
+ * dialog previews one before the bot has an id). A reserved preview id takes precedence
+ * over automatic family selection.
  */
 export function chooseBotAvatar(
   existing: readonly { id: string; color: string }[],
@@ -89,11 +90,13 @@ export function chooseBotAvatar(
     now = Date.now(),
     family,
     avatarSet = "organic",
-  }: { random?: Random; now?: number; family?: number; avatarSet?: BotAvatarSet } = {},
+    id: previewId,
+  }: { random?: Random; now?: number; family?: number; avatarSet?: BotAvatarSet; id?: string } = {},
 ): { id: string; color: string } {
   if (avatarSet === "rakazo") {
     // The logo uses no organic family. Keep automatic ids non-heart for a later
     // Original-set switch, without scanning the roster or balancing unused shapes.
+    if (previewId) return { id: previewId, color: color ?? seededLogoAvatarColor(previewId) };
     let id = family === undefined ? cuidShapedId(random, now) : idForFamily(family, random, now);
     while (family === undefined && organicAvatarFamily(id) === ORGANIC_AVATAR_HEART_FAMILY)
       id = cuidShapedId(random, now);
@@ -111,13 +114,14 @@ export function chooseBotAvatar(
   });
   const lookOf = (botId: string) => organicAvatarLook(organicAvatarFamily(botId));
   const id =
-    family === undefined
+    previewId ??
+    (family === undefined
       ? balancedId(
           avatars.flatMap((avatar) => (avatar.look === null ? [] : [avatar.look])),
           random,
           now,
         )
-      : idForFamily(family, random, now);
+      : idForFamily(family, random, now));
   const colors = (bots: typeof avatars) =>
     bots.flatMap((avatar) => (avatar.color === null ? [] : [avatar.color]));
   return {

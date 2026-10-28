@@ -373,6 +373,11 @@ export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
 export const CreateBotInput = z.object({
+  /** Optional reserved identity so a creation preview uses the final bot seed. */
+  id: z
+    .string()
+    .regex(/^c[a-z0-9]{24}$/)
+    .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
@@ -381,7 +386,7 @@ export const CreateBotInput = z.object({
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
   avatarSet: BotAvatarSetSchema.optional(),
-  /** Organic body family (0-9) to draw the new bot with; the server picks an id that hashes to it. */
+  /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
   computerMode: ComputerModeSchema.default("team"),
   /** Idempotency key within a space (unique with spaceId). */

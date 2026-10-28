@@ -74,6 +74,15 @@ describe("per-bot avatar sets", () => {
     expect(UpdateBotInput.safeParse({ botId: "bot-1", avatarSet: "other" }).success).toBe(false);
   });
 
+  it("accepts a reserved creation seed without changing old-client inputs", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(CreateBotInput.parse({ name: "Scout", id }).id).toBe(id);
+    expect(CreateBotInput.parse({ name: "Scout" }).id).toBeUndefined();
+    for (const invalid of ["", "existing-id", `${id}x`, id.toUpperCase()]) {
+      expect(CreateBotInput.safeParse({ name: "Scout", id: invalid }).success).toBe(false);
+    }
+  });
+
   it("roundtrips the set and untouched photo or shape through portable profiles", () => {
     const base = {
       version: 1,
