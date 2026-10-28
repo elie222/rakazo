@@ -137,3 +137,30 @@ it("retains the live pose through overlapping feed hydration, hidden updates and
   });
   expect(live().dataset.activity).toBe("working");
 });
+
+it("keeps static SVG artwork mounted through rapid live activity changes", async () => {
+  await act(async () =>
+    root.render(
+      <BotAvatarActivityProvider source={webLogoAvatarActivity}>
+        <BotAvatar identity="bot-a" color="#10B981" avatarSet="rakazo" size={22} status="running" />
+      </BotAvatarActivityProvider>,
+    ),
+  );
+  await act(async () => webLogoAvatarActivity.hydrate("chat", snapshot));
+  const body = container.querySelector(".logo-avatar-art");
+  const definition = body!.querySelector("defs");
+  for (let seq = 1; seq <= 40; seq++) {
+    await act(async () =>
+      webLogoAvatarActivity.apply(
+        "chat",
+        event(seq, "thread.meta", { activity: { thinking: seq % 2 === 0 } }),
+      ),
+    );
+    expect(container.querySelector(".rakazo-logo-avatar")!.getAttribute("data-activity")).toBe(
+      seq % 2 === 0 ? "thinking" : "working",
+    );
+    expect(container.querySelector(".logo-avatar-art")).toBe(body);
+    expect(body!.querySelector("defs")).toBe(definition);
+    expect(container.querySelectorAll("[data-logo-layer]")).toHaveLength(1);
+  }
+});

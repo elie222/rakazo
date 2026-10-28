@@ -38,7 +38,8 @@ export function useLogoAvatarLayers(
       return;
     }
     const next: Layer = {
-      key: ++serial.current,
+      // Static/reduced/offscreen poses reuse their SVG definitions and body DOM.
+      key: running ? ++serial.current : current.key,
       activity,
       entering: running,
       outgoing: false,

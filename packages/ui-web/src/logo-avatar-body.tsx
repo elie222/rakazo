@@ -5,9 +5,10 @@ import {
   LOGO_AVATAR_LIGHTING as lighting,
   logoAvatarPaint,
 } from "@rakazo/core";
+import { memo } from "react";
 
 /** Fully vector body. The photographic grain is intentionally simplified. */
-export function LogoAvatarBody({
+export const LogoAvatarBody = memo(function LogoAvatarBody({
   id,
   color,
   originalOrange,
@@ -205,4 +206,4 @@ export function LogoAvatarBody({
       </g>
     </g>
   );
-}
+});
