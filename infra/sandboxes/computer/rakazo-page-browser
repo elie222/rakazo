@@ -709,7 +709,12 @@ EVAL_HELPERS = r"""
     return tag;
   }
   function nameOf(el) {
+    const labelledBy = (el.getAttribute("aria-labelledby") || "")
+      .trim().split(/\s+/).filter(Boolean)
+      .map(id => el.ownerDocument.getElementById(id)?.textContent || "")
+      .join(" ").replace(/\s+/g, " ").trim();
     return (
+      labelledBy ||
       el.getAttribute("aria-label") ||
       Array.from(el.labels || []).map(label => label.textContent).join(" ").trim() ||
       el.getAttribute("placeholder") ||

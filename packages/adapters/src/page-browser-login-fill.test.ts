@@ -806,3 +806,25 @@ describe("live page helper upload targets", () => {
     expect(elements.filter((el) => el.role === "file upload")).toHaveLength(81);
   });
 });
+
+describe("live page helper referenced names", () => {
+  it("resolves label references in order, including hidden text, and falls back when empty", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://example.test/",
+      `
+      <span id="first" hidden>  Share </span><span id="second"> with   team </span><span id="empty"> </span>
+      <button aria-labelledby=" second missing first " aria-label="Other"></button>
+      <button aria-labelledby=" missing " aria-label="Fallback"></button>
+      <button aria-labelledby="   " aria-label="Whitespace fallback"></button>
+      <button aria-labelledby="empty" aria-label="Empty fallback"></button>
+    `,
+    );
+    expect(browser.snapshot().elements.map((element) => element.name)).toEqual([
+      "with team Share",
+      "Fallback",
+      "Whitespace fallback",
+      "Empty fallback",
+    ]);
+    domWindow.close();
+  });
+});

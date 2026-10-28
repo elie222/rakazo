@@ -421,6 +421,15 @@ function roleFor(win: DomWindow, el: DomElement): string {
 }
 
 function nameFor(win: DomWindow, el: DomElement): string {
+  const labelledBy = (el.getAttribute("aria-labelledby") ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (labelledBy) return labelledBy;
   const aria = el.getAttribute("aria-label")?.trim();
   if (aria) return aria;
   if (el instanceof win.HTMLInputElement || el instanceof win.HTMLTextAreaElement) {
