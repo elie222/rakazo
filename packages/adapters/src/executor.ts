@@ -1363,6 +1363,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         // Provider kind and model id only: custom endpoints are identified by kind, never host.
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
+        // Process shutdown leaves the run to recover once its lease expires: this
+        // worker still owns the lease, so the attempt must not be finalized here.
+        const interruptedByShutdown = async () => {
+          if (!deps.shutdownSignal?.aborted) return false;
+          if (!ctx.state.terminalCheckpointComplete) {
+            await ctx.computer.checkpoint.flush().catch(() => undefined);
+          }
+          return true;
+        };
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
@@ -1562,8 +1571,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             context,
           );
           if (await consumeRunEvents(ctx, runtimeEvents)) return;
+          if (await interruptedByShutdown()) return;
           await completeRun(ctx);
         } catch (caughtError) {
+          if (await interruptedByShutdown()) return;
           await failRun(ctx, caughtError, {
             ownCredential: resolved.ownCredential,
             active: activeModel,

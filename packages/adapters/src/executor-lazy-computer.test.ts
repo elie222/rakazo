@@ -40,6 +40,7 @@ async function runRoutine(
     priorSetupFailures?: number;
     exportError?: Error;
     setupError?: Error;
+    shutdownSignal?: AbortSignal;
     onRunStarted?: () => void;
   } = {},
 ) {
@@ -66,6 +67,9 @@ async function runRoutine(
   };
   const toolResults: unknown[] = [];
   const steeringInputs: unknown[] = [];
+  // A test-owned signal cannot be aborted mid-run, so the runtime fake trips this
+  // relay; the executor still sees the option's signal through AbortSignal.any.
+  const shutdownRelay = new AbortController();
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     if (options.steering && !options.steeringAfterFirst) {
       steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
@@ -79,10 +83,16 @@ async function runRoutine(
       if (index === 0 && options.steeringAfterFirst) {
         steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
       }
-      if (options.toolFailure === "abort") throw new DOMException("Aborted", "AbortError");
+      if (options.toolFailure === "abort") {
+        // Shutdown lands while the tool call is in flight, so the runtime aborts.
+        shutdownRelay.abort();
+        throw new DOMException("Aborted", "AbortError");
+      }
     };
     if (options.parallel) await Promise.all(toolCalls.map(execute));
     else for (const [index, call] of toolCalls.entries()) await execute(call, index);
+    // Shutdown lands mid-turn, yet the stream still ends without an exception.
+    shutdownRelay.abort();
     if (options.takeover) {
       yield { type: "takeover" as const, reason: "Sign in to the inbox." };
       return;
@@ -243,6 +253,9 @@ async function runRoutine(
     jobs: { enqueue },
     notifications: { send: vi.fn(async () => undefined) },
     secrets: [],
+    shutdownSignal: options.shutdownSignal
+      ? AbortSignal.any([options.shutdownSignal, shutdownRelay.signal])
+      : undefined,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   await executor.continueRun(
@@ -550,6 +563,29 @@ describe("run computer provisioning", () => {
       expect(enqueue).not.toHaveBeenCalled();
     },
   );
+
+  it("leaves an aborted tool run for lease recovery on shutdown instead of failing it", async () => {
+    const { finalizeRun, prisma } = await runRoutine([{ name: "list_files", args: { path: "" } }], {
+      toolFailure: "abort",
+      shutdownSignal: new AbortController().signal,
+    });
+
+    expect(finalizeRun).not.toHaveBeenCalled();
+    expect(prisma.attempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "interrupted" }) }),
+    );
+  });
+
+  it("leaves a finished run for lease recovery on shutdown instead of completing it", async () => {
+    const { finalizeRun, prisma } = await runRoutine([], {
+      shutdownSignal: new AbortController().signal,
+    });
+
+    expect(finalizeRun).not.toHaveBeenCalled();
+    expect(prisma.attempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "interrupted" }) }),
+    );
+  });
 });
 
 /** Models the run reads but these tests do not care about behave as empty tables. */
