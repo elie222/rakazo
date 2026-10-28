@@ -218,8 +218,7 @@ export function AgentImportForm({
   }
 
   /** Only the files an import uses leave the device; `.env`/`auth.json` are not read. */
-  async function loadSource(next: AgentImportReader) {
-    const read = ++latestRead.current;
+  async function loadSource(next: AgentImportReader, read = ++latestRead.current) {
     setError(null);
     setBusy(true);
     try {
@@ -274,6 +273,11 @@ export function AgentImportForm({
   }
 
   async function pickFolder(list: FileList | null) {
+    if (!list?.length) {
+      ++latestRead.current;
+      setBusy(false);
+      return;
+    }
     const byPath = new Map(
       [...(list ?? [])].map((file) => [file.webkitRelativePath || file.name, file]),
     );
@@ -286,31 +290,42 @@ export function AgentImportForm({
 
   /** Unpacked on this device, one file at a time. */
   async function pickArchive(file: File | undefined) {
-    if (!file) return;
+    const read = ++latestRead.current;
+    if (!file) {
+      setBusy(false);
+      return;
+    }
     setError(null);
     try {
       if (file.size > AGENT_IMPORT_ARCHIVE_LIMITS.archiveBytes) {
         throw new AgentImportArchiveError("too_large");
       }
-      const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()));
-      await loadSource(archive);
+      const bytes = await file.arrayBuffer();
+      if (read !== latestRead.current) return;
+      const archive = openAgentImportArchive(new Uint8Array(bytes));
+      await loadSource(archive, read);
     } catch (err) {
+      if (read !== latestRead.current) return;
       setError(readError(err));
+      setBusy(false);
     }
   }
 
-  const loaded = useRef<AgentImportReader | null>(null);
+  useEffect(
+    () => () => {
+      ++latestRead.current;
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!initialSource || loaded.current === initialSource) return;
-    loaded.current = initialSource;
-    void loadSourceRef.current(initialSource);
+    if (initialSource) void loadSourceRef.current(initialSource);
   }, [initialSource]);
 
   const secretsAvailable =
     hasSecretFiles || sourceFiles.some(({ home, content }) => hasAgentImportSecrets(home, content));
 
-  async function previewDocument(content: string) {
-    const read = ++latestRead.current;
+  async function previewDocument(content: string, read = ++latestRead.current) {
     setSource(null);
     setSourceFiles([]);
     setHasSecretFiles(false);
@@ -320,18 +335,31 @@ export function AgentImportForm({
   }
 
   async function pickDocument(list: FileList | null) {
+    const read = ++latestRead.current;
     const file = list?.[0];
-    if (!file) return;
+    if (!file) {
+      setBusy(false);
+      return;
+    }
     try {
       const text = await readAgentDocument(file);
+      if (read !== latestRead.current) return;
       if (text === null) {
         setError(t`These files are too large to import.`);
+        setBusy(false);
         return;
       }
-      await previewDocument(text);
+      await previewDocument(text, read);
     } catch (err) {
+      if (read !== latestRead.current) return;
       setError(readError(err));
+      setBusy(false);
     }
+  }
+
+  function stopReading() {
+    ++latestRead.current;
+    setBusy(false);
   }
 
   async function copyPrompt() {
@@ -533,7 +561,11 @@ export function AgentImportForm({
               variant="ghost"
               size="icon-sm"
               aria-label={t`Back`}
-              onClick={() => (plan ? setPlan(null) : onBack())}
+              onClick={() => {
+                stopReading();
+                if (plan) setPlan(null);
+                else onBack();
+              }}
             >
               <ArrowLeft size={16} strokeWidth={1.8} />
             </Button>
@@ -541,7 +573,15 @@ export function AgentImportForm({
               <Trans>Import an agent</Trans>
             </span>
           </div>
-          <Button variant="ghost" size="icon-sm" aria-label={t`Cancel new bot`} onClick={onCancel}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Cancel new bot`}
+            onClick={() => {
+              stopReading();
+              onCancel();
+            }}
+          >
             <X size={16} strokeWidth={1.8} />
           </Button>
         </div>
@@ -908,7 +948,14 @@ export function AgentImportForm({
               )}
             </Button>
             {page ? (
-              <Button variant="outline" disabled={busy} onClick={() => setPlan(null)}>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  stopReading();
+                  setPlan(null);
+                }}
+              >
                 <Trans>Back</Trans>
               </Button>
             ) : null}
@@ -949,7 +996,13 @@ export function AgentImportForm({
             <input
               ref={(node) => {
                 folderInput.current = node;
-                node?.setAttribute("webkitdirectory", "");
+                if (!node) return;
+                node.setAttribute("webkitdirectory", "");
+                node.addEventListener("cancel", stopReading);
+                return () => {
+                  node.removeEventListener("cancel", stopReading);
+                  folderInput.current = null;
+                };
               }}
               type="file"
               data-testid="agent-import-folder"
@@ -960,7 +1013,15 @@ export function AgentImportForm({
               }}
             />
             <input
-              ref={archiveInput}
+              ref={(node) => {
+                archiveInput.current = node;
+                if (!node) return;
+                node.addEventListener("cancel", stopReading);
+                return () => {
+                  node.removeEventListener("cancel", stopReading);
+                  archiveInput.current = null;
+                };
+              }}
               type="file"
               accept=".zip,.tar.gz,.tgz,application/zip,application/gzip"
               data-testid="agent-import-archive"
@@ -1009,7 +1070,15 @@ export function AgentImportForm({
               className="mt-3"
             />
             <input
-              ref={fileInput}
+              ref={(node) => {
+                fileInput.current = node;
+                if (!node) return;
+                node.addEventListener("cancel", stopReading);
+                return () => {
+                  node.removeEventListener("cancel", stopReading);
+                  fileInput.current = null;
+                };
+              }}
               type="file"
               accept=".md,text/markdown"
               data-testid="agent-import-document"
@@ -1029,7 +1098,14 @@ export function AgentImportForm({
             </div>
           </section>
           {page ? (
-            <Button variant="outline" className="mt-8" onClick={onBack}>
+            <Button
+              variant="outline"
+              className="mt-8"
+              onClick={() => {
+                stopReading();
+                onBack();
+              }}
+            >
               <Trans>Back</Trans>
             </Button>
           ) : null}
