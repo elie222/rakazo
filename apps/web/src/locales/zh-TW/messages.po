@@ -1797,6 +1797,7 @@ msgid "Could not connect to the computer screen"
 msgstr "無法連線至電腦螢幕"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountDataSettings.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
@@ -2003,6 +2004,7 @@ msgstr ""
 msgid "Could not reach the model server."
 msgstr "無法連線到模型伺服器。"
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/computer-sandbox.ts
@@ -2575,6 +2577,7 @@ msgstr "文件已變更，請重新開啟以編輯最新版本。"
 msgid "Don’t have an account?"
 msgstr "還沒有帳號？"
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
@@ -2803,6 +2806,10 @@ msgstr "已過期"
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "匯出"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Export data"
+msgstr "匯出資料"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Export this week's list from the CRM and drop it in the shared folder"
@@ -3135,6 +3142,10 @@ msgstr "匯入"
 #: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "匯入代理程式"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import data"
+msgstr "匯入資料"
 
 #: src/pages/shell/composer.tsx
 msgid "Import this agent as a bot?"

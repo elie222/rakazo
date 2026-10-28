@@ -63,6 +63,7 @@ export function SettingsOverlay({
   onNameSaved,
   timezone,
   onTimezoneChange,
+  onAccountImported,
   billingEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
@@ -88,6 +89,7 @@ export function SettingsOverlay({
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
+  onAccountImported?: () => Promise<void>;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
@@ -375,6 +377,7 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        onAccountImported={onAccountImported}
                       />
                       {/* One space is just the app, so there is nothing to tell apart or manage. */}
                       {spaces.length > 1 && onOpenSpace ? (

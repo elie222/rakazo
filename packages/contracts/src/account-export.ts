@@ -17,6 +17,8 @@ import { Id, IsoDate } from "./ids.js";
 export const ACCOUNT_EXPORT_FORMAT = "rakazo-account-export";
 export const ACCOUNT_EXPORT_VERSION = 1;
 export const ACCOUNT_EXPORT_MANIFEST_PATH = "manifest.json";
+/** Larger workspace files stay behind, matching the workspace export limit elsewhere. */
+export const ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES = 8 * 1024 * 1024;
 
 export const accountExportPaths = {
   records: (spaceId: string) => `spaces/${spaceId}/records.jsonl`,

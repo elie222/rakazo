@@ -1796,6 +1796,7 @@ msgid "Could not connect to the computer screen"
 msgstr ""
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountDataSettings.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
@@ -2002,6 +2003,7 @@ msgstr ""
 msgid "Could not reach the model server."
 msgstr "모델 서버에 연결하지 못했습니다."
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/computer-sandbox.ts
@@ -2574,6 +2576,7 @@ msgstr "문서가 변경되었습니다. 최신 버전을 편집하려면 다시
 msgid "Don’t have an account?"
 msgstr "계정이 없나요?"
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
@@ -2802,6 +2805,10 @@ msgstr "만료됨"
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "내보내기"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Export data"
+msgstr "데이터 내보내기"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Export this week's list from the CRM and drop it in the shared folder"
@@ -3134,6 +3141,10 @@ msgstr "가져오기"
 #: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "에이전트 가져오기"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import data"
+msgstr "데이터 가져오기"
 
 #: src/pages/shell/composer.tsx
 msgid "Import this agent as a bot?"

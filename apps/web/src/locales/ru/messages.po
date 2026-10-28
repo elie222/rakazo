@@ -1796,6 +1796,7 @@ msgid "Could not connect to the computer screen"
 msgstr "Не удалось подключиться к экрану компьютера"
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountDataSettings.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
@@ -2002,6 +2003,7 @@ msgstr ""
 msgid "Could not reach the model server."
 msgstr "Не удалось связаться с сервером модели."
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/computer-sandbox.ts
@@ -2574,6 +2576,7 @@ msgstr "Документ изменился. Откройте его снова,
 msgid "Don’t have an account?"
 msgstr "У вас нет учетной записи?"
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
@@ -2802,6 +2805,10 @@ msgstr "истёк срок"
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Экспорт"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Export data"
+msgstr "Экспорт данных"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Export this week's list from the CRM and drop it in the shared folder"
@@ -3134,6 +3141,10 @@ msgstr "Импорт"
 #: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "Импорт агента"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import data"
+msgstr "Импорт данных"
 
 #: src/pages/shell/composer.tsx
 msgid "Import this agent as a bot?"

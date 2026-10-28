@@ -1247,6 +1247,17 @@ A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that
 as omitted homes. Database or archive errors fail the backup. Discard the output directory of
 any failed run.
 
+## Moving an account between installs
+
+To move from Rakazo Cloud to your own install (or back), use **Settings → Export data** on the
+old install and **Import data** on the new one. The export is a zip of every space you belong
+to: bots, chats, files, memory, routines, skills, bot workspace files and, in spaces you own,
+the board. Content is decrypted inside the zip, so keep it private. Importing creates new
+spaces you own. Routines arrive switched off. Credentials and connections (model keys, apps,
+MCP servers, messaging) stay behind, so connect them again on the new install. Workspace files
+over 8 MiB are left out, the export must stay under 4 GiB, and the upload must finish within
+the server's request timeout (5 minutes by default in Node).
+
 ## Public single-VM deployment
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
