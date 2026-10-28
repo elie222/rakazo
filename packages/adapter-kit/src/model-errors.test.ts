@@ -307,6 +307,11 @@ describe("provider availability classification", () => {
     ],
     ["402 credits exhausted", { status: 402, message: "Your credits have been exhausted." }, true],
     [
+      "400 credit balance too low",
+      { status: 400, message: "Your credit balance is too low." },
+      true,
+    ],
+    [
       "403 insufficient balance",
       { status: 403, message: "Insufficient balance. Please top up." },
       true,
@@ -319,6 +324,11 @@ describe("provider availability classification", () => {
     [
       "400 mentioning credits in a validation message",
       { status: 400, message: "Invalid parameter: credits must be a positive integer." },
+      false,
+    ],
+    [
+      "400 balance lookup failure",
+      { status: 400, message: "Unable to retrieve credit balance." },
       false,
     ],
     [
