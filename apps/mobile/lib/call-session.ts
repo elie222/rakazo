@@ -134,6 +134,8 @@ let spokenMessageId: string | null = null;
 let failures = 0;
 /** Counts the caller's turns, so a closing cue that ends late starts no waiting sound for a newer turn. */
 let turnSeq = 0;
+/** Counts the bot's speeches, so one that settles late cannot act over a newer one. */
+let speechSeq = 0;
 /** Whether the provider can transcribe, so the fallback path is worth trying at all. */
 let canTranscribe = true;
 /** Whether this device does its own speech recognition; unknown until the first turn. */
@@ -257,7 +259,11 @@ export function endCall(): void {
     const closeServerCall = deps.endCall;
     callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
   }
-  if (state) deps.waitSound("release");
+  if (state) {
+    deps.waitSound("release");
+    // A reply can still be playing when the caller hangs up: cut it with the call.
+    deps.stopSpeaking();
+  }
   turn?.abort();
   turn = null;
   unwatch?.();
@@ -563,6 +569,13 @@ function speakAndListen(text: string): void {
   if (!state) return;
   const { botId } = state;
   const speakingCallId = callId;
+  // Bump before anything else: this attempt supersedes all older ones, even if it then
+  // declines to speak, so only the newest speech below may run its handlers.
+  const speechId = ++speechSeq;
+  // An older speech can settle long after a newer one started, because its barge-in
+  // stop need not resolve it: it must not act on the newer speech's call.
+  const superseded = () =>
+    state?.botId !== botId || callId !== speakingCallId || speechSeq !== speechId;
   let blockedByConsent = false;
   bargedIn = false;
   interim.clear();
@@ -585,7 +598,7 @@ function speakAndListen(text: string): void {
   void deps
     .speak(botId, text)
     .catch((error: unknown) => {
-      if (state?.botId !== botId || callId !== speakingCallId) return;
+      if (superseded()) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
         // Hang-up already committed server-side or via a sent goodbye.
@@ -599,7 +612,7 @@ function speakAndListen(text: string): void {
       set({ caption: errorText(error, t("Could not speak that.")) });
     })
     .finally(() => {
-      if (state?.botId !== botId || callId !== speakingCallId) return;
+      if (superseded()) return;
       if (blockedByConsent) return;
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;
