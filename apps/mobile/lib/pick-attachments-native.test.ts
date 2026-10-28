@@ -24,7 +24,9 @@ vi.mock("expo-file-system", () => ({
 vi.mock("expo-document-picker", () => ({
   getDocumentAsync: vi.fn().mockResolvedValue({
     canceled: false,
-    assets: [{ name: "large.txt", mimeType: "text/plain", uri: "file:///fake/large.txt" }],
+    assets: [
+      { name: "large.txt", mimeType: "text/plain", uri: "file:///fake/large.txt", lastModified: 0 },
+    ],
   }),
 }));
 vi.mock("expo-image-picker", () => ({}));
@@ -41,12 +43,14 @@ beforeEach(() => {
   file.base64.mockReset().mockResolvedValue("aGVsbG8=");
   vi.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({
     canceled: false,
-    assets: [{ name: "large.txt", mimeType: "text/plain", uri: "file:///fake/large.txt" }],
+    assets: [
+      { name: "large.txt", mimeType: "text/plain", uri: "file:///fake/large.txt", lastModified: 0 },
+    ],
   });
 });
 
 function document(name: string, mimeType = "text/plain") {
-  return { name, mimeType, uri: `file:///fake/${name}` };
+  return { name, mimeType, uri: `file:///fake/${name}`, lastModified: 0 };
 }
 
 describe("native attachment reads", () => {
