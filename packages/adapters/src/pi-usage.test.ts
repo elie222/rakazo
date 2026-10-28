@@ -403,7 +403,7 @@ describe("Pi usage accounting", () => {
       vi.fn(),
       { beforeCall, afterCall: vi.fn() },
       undefined,
-      { prepareContext: () => ({ messages: [], systemPrompt: "x".repeat(10000) }), onUsage },
+      { prepareContext: () => ({ messages: [], systemPrompt: "0".repeat(10000) }), onUsage },
     );
     for await (const _event of stream) {
     }
@@ -738,5 +738,111 @@ describe("Pi usage accounting", () => {
     const response = await fetcher("https://model.example.test");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
     expect(reported.has("inputTokens")).toBe(true);
+  });
+  it("records reported totalTokens and request id from WebSocket provider stream events when fetch is unused", async () => {
+    const codexModel: Model<Api> = {
+      ...model,
+      provider: "openai-codex",
+      id: "gpt-5.6-luna",
+      api: "openai-codex-responses",
+      cost: { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25 },
+    };
+    const onRequestId = vi.fn();
+    const afterCall = vi.fn();
+    const callerStreamEvent = vi.fn();
+    const events: AgentRuntimeEvent[] = [];
+    const terminalMessage = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: "Done" }],
+      api: codexModel.api,
+      provider: codexModel.provider,
+      model: codexModel.id,
+      usage: {
+        input: 2312,
+        output: 410,
+        cacheRead: 10112,
+        cacheWrite: 0,
+        reasoning: 190,
+        totalTokens: 12834,
+        cost: {
+          input: 0.0004624,
+          output: 0.000492,
+          cacheRead: 0.00020224,
+          cacheWrite: 0,
+          total: 0.00115664,
+        },
+      },
+      stopReason: "stop" as const,
+      timestamp: 1,
+    };
+    const models = {
+      streamSimple: (
+        streamModel: Model<Api>,
+        _context: unknown,
+        options?: {
+          onProviderStreamEvent?: (event: unknown, eventModel: Model<Api>) => void | Promise<void>;
+        },
+      ) => ({
+        async *[Symbol.asyncIterator]() {
+          await options?.onProviderStreamEvent?.(
+            { type: "response.created", response: { id: "resp_codex_ws_1" } },
+            streamModel,
+          );
+          await options?.onProviderStreamEvent?.(
+            {
+              type: "response.completed",
+              response: {
+                id: "resp_codex_ws_1",
+                status: "completed",
+                usage: {
+                  input_tokens: 12424,
+                  input_tokens_details: { cached_tokens: 10112 },
+                  output_tokens: 410,
+                  output_tokens_details: { reasoning_tokens: 190 },
+                  total_tokens: 12834,
+                },
+              },
+            },
+            streamModel,
+          );
+          yield { type: "done" as const, reason: "stop" as const, message: terminalMessage };
+        },
+        result: async () => terminalMessage,
+      }),
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(
+      models,
+      codexModel,
+      { messages: [] },
+      { onProviderStreamEvent: callerStreamEvent },
+      (event) => events.push(event),
+      { beforeCall: () => "reservation", onRequestId, afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect(onRequestId).toHaveBeenCalledWith("reservation", "resp_codex_ws_1");
+    expect(callerStreamEvent).toHaveBeenCalledTimes(2);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "usage",
+      provider: "openai-codex",
+      model: "gpt-5.6-luna",
+      providerRequestId: "resp_codex_ws_1",
+      inputTokens: 2312,
+      outputTokens: 410,
+      cacheReadTokens: 10112,
+      cacheWriteTokens: null,
+      reasoningTokens: 190,
+      totalTokens: 12834,
+      usageSource: "provider-reported-via-pi",
+    });
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        providerRequestId: "resp_codex_ws_1",
+        totalTokens: 12834,
+        usageSource: "provider-reported-via-pi",
+      }),
+    );
   });
 });

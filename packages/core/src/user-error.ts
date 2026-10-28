@@ -26,6 +26,7 @@ const TECHNICAL_MESSAGE = [
   /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/, // bare internal codes
   /\d+ bytes\b/,
   /unexpected token|is not a function|cannot read propert|undefined is not|null is not an object|json parse error/i,
+  /^input validation failed\b/i, // oRPC's generic schema-rejection banner names no field
 ];
 
 /** True when a thrown value means the server could not be reached at all. */

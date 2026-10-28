@@ -25,8 +25,7 @@ test("titled sidebar section expands and collapses", async ({ page }, testInfo) 
   const toggle = projects.getByRole("button", { name: /Collapse Projects|Expand Projects/ });
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-  // Rest (no hover): move pointer off the header before capturing.
-  await sidebar.getByPlaceholder("Search").hover();
+  await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "sidebar-section-expanded");
 
   // Hover header with Chief selected underneath — outer edges must match.
@@ -43,7 +42,7 @@ test("titled sidebar section expands and collapses", async ({ page }, testInfo) 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(projects.getByRole("button", { name: /^Chief/ })).toHaveCount(0);
-  await sidebar.getByPlaceholder("Search").hover();
+  await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "sidebar-section-collapsed");
 
   await toggle.click();

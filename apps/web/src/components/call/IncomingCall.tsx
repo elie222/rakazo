@@ -196,7 +196,7 @@ export function IncomingCall({
       <div className="grid w-full max-w-80 grid-cols-2 gap-3 md:max-w-none">
         <Button
           variant="destructive"
-          className="h-14 rounded-full text-sm md:h-11"
+          className="h-14 text-sm md:h-11"
           disabled={busy}
           onClick={() => void settle()}
         >
@@ -205,7 +205,7 @@ export function IncomingCall({
         </Button>
         <Button
           disabled={busy}
-          className="h-14 rounded-full bg-success text-sm text-background hover:bg-success/90 md:h-11"
+          className="h-14 bg-success text-sm text-background hover:bg-success/90 md:h-11"
           onClick={() => void answer()}
         >
           <Phone className="size-5" aria-hidden="true" />

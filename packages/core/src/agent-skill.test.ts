@@ -8,6 +8,7 @@ import {
   formatSkillsCatalogInstruction,
   mergeBuiltinSkills,
   parseSkillMd,
+  renameRoutineSkillMentions,
 } from "./agent-skill.js";
 
 describe("built-in skill merging", () => {
@@ -265,6 +266,109 @@ describe("skill prompt helpers", () => {
     ]);
   });
 
+  it.each([
+    ["@garden tools", ["garden tools"]],
+    ["@garden", ["garden"]],
+    ["@garden then @garden tools", ["garden tools", "garden"]],
+    ["@garden tools then @garden", ["garden tools", "garden"]],
+    ["(@GARDEN TOOLS), @garden tools. @GARDEN", ["garden tools", "garden"]],
+    ["Email@garden tools and @gardener", []],
+  ])("matches the longest catalog name at each mention in %j", (prompt, expected) => {
+    expect(extractRoutineSkillMentions(prompt, ["garden", "garden tools"])).toEqual(expected);
+  });
+
+  it("escapes catalog names and ignores blank names", () => {
+    expect(extractRoutineSkillMentions("@garden.tools", ["garden", "garden.tools"])).toEqual([
+      "garden.tools",
+    ]);
+    expect(extractRoutineSkillMentions("@gardenXtools", ["garden.tools"])).toEqual([]);
+    expect(extractRoutineSkillMentions("@garden", [" ", ""])).toEqual([]);
+  });
+
+  it.each(["，", "。", "、", "；", "：", "！", "？", "）", "】", "」", "』", "》"])(
+    "loads a Chinese skill before %s without leaving its mention behind",
+    (punctuation) => {
+      const prompt = `@日报${punctuation}发送结果`;
+      const skills = [
+        {
+          name: "日报",
+          description: "Daily report",
+          source: "user" as const,
+          readOnly: false,
+          content: "Report instructions.",
+        },
+      ];
+      expect(extractRoutineSkillMentions(prompt, ["日", "日报"])).toEqual(["日报"]);
+      const expanded = expandSkillReferencesInPrompt(prompt, skills);
+      expect(expanded).toBe(`Use skill: 日报\n\nReport instructions.\n\n${punctuation}发送结果`);
+      expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(
+        `@日报 2${punctuation}发送结果`,
+      );
+    },
+  );
+
+  it.each(["，", "。", "、", "；", "：", "！", "？", "（", "【", "「", "『", "《"])(
+    "recognizes and renames a skill after %s",
+    (punctuation) => {
+      const prompt = `执行${punctuation}@日报。`;
+      expect(extractRoutineSkillMentions(prompt, ["日报"])).toEqual(["日报"]);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(
+        `执行${punctuation}@日报 2。`,
+      );
+      expect(extractRoutineSkillMentions(`Run${punctuation}@Report。`)).toEqual(["Report"]);
+    },
+  );
+
+  it("keeps adjacent CJK mentions distinct and does not match inside words or email addresses", () => {
+    expect(extractRoutineSkillMentions("@日报，@周报。", ["日报", "周报"])).toEqual([
+      "日报",
+      "周报",
+    ]);
+    for (const prompt of ["邮箱@日报。", "Email@日报。", "@日报扩展。", "@日报_扩展。"]) {
+      expect(extractRoutineSkillMentions(prompt, ["日报"])).toEqual([]);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(prompt);
+    }
+  });
+
+  it("keeps the catalog name when regex case matching differs from lowercasing", () => {
+    expect(extractRoutineSkillMentions("@ς", ["Σ"])).toEqual(["Σ"]);
+    expect(extractRoutineSkillMentions("@ς tools", ["Σ", "Σ tools"])).toEqual(["Σ tools"]);
+    expect(extractRoutineSkillMentions("@ς @σ", ["Σ"])).toEqual(["Σ"]);
+    expect(extractRoutineSkillMentions("@µ", ["μ"])).toEqual(["μ"]);
+    expect(
+      expandSkillReferencesInPrompt("@ς", [
+        {
+          name: "Σ",
+          description: "Greek skill",
+          source: "user",
+          readOnly: false,
+          content: "Greek instructions.",
+        },
+      ]),
+    ).toBe("Use skill: Σ\n\nGreek instructions.");
+  });
+
+  it.each([
+    ["Run @garden tools", false],
+    ["Run @garden then @garden tools", true],
+    ["Run @garden tools then @garden", true],
+  ])("expands only the skills explicitly mentioned in %j", (prompt, includesShortSkill) => {
+    const skills = ["garden", "garden tools"].map((name) => ({
+      name,
+      description: name,
+      source: "user" as const,
+      readOnly: false,
+      content: `Instructions for ${name}.`,
+    }));
+    const expanded = expandSkillReferencesInPrompt(prompt, skills);
+    expect(expanded.split("Instructions for garden tools.")).toHaveLength(2);
+    expect(expanded.includes("Instructions for garden.")).toBe(includesShortSkill);
+    expect(expanded.endsWith(includesShortSkill ? "Run then" : "Run")).toBe(true);
+    expect(expanded).not.toContain("@");
+    expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+  });
+
   it("expands forced and mentioned skills into the prompt", () => {
     const skills = [
       {
@@ -356,5 +460,17 @@ describe("SKILL.md quoted frontmatter values", () => {
       const md = buildSkillMd({ name: "s", description, body: "b" });
       expect(md).toContain(`description: ${description}\n`);
     }
+  });
+});
+
+describe("renameRoutineSkillMentions", () => {
+  it("renames only changed names and lets a longer name win over a renamed prefix", () => {
+    const renames = new Map([
+      ["garden", "garden-2"],
+      ["garden tools", "garden tools"],
+    ]);
+    expect(
+      renameRoutineSkillMentions("Use @garden tools, then @Garden. Email@garden stays.", renames),
+    ).toBe("Use @garden tools, then @garden-2. Email@garden stays.");
   });
 });

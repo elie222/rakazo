@@ -1,17 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ComputerKeyboardCommand, ComputerKeyName } from "../lib/computer-keyboard";
-import {
-  COMPUTER_KEYBOARD_SEED,
-  commandsForKeyboardChange,
-  nextComputerKeyboardDraft,
-  normalizeComputerKeyboardEdit,
-} from "../lib/computer-keyboard";
+import { commandsForKeyboardChange, computerKeyboardChanges } from "../lib/computer-keyboard";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { NativeActionButton } from "./native-action-button";
+
+// Some Android keyboards report a Backspace key press just after the change that deleted with it.
+const DELETE_KEY_PRESS_MS = 50;
 
 function keySpecs(t: (message: string) => string): Array<{
   name: ComputerKeyName;
@@ -29,8 +27,11 @@ function keySpecs(t: (message: string) => string): Array<{
 }
 
 export function ComputerKeyboardBar({
+  active,
   onCommand,
 }: {
+  /** False once the screen is closing; the bar can stay mounted while it animates away. */
+  active: boolean;
   onCommand: (command: ComputerKeyboardCommand) => void;
 }) {
   const { t } = useI18n();
@@ -39,48 +40,99 @@ export function ComputerKeyboardBar({
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const inputRef = useRef<TextInput>(null);
-  const returnAt = useRef(0);
-  const [draft, setDraft] = useState(COMPUTER_KEYBOARD_SEED);
+  // The field's text as last handled, updated at once. A keystroke can be reported twice before
+  // React re-renders; measured from here, the repeat finds nothing new to send.
+  const handled = useRef("");
+  const deletedAt = useRef<number | null>(null);
+  const backspacePressed = useRef(false);
+  // On from the keyboard toggle until an explicit close; while on, a blur gives focus straight back.
+  const keepOpen = useRef(false);
+  const control = useRef(false);
   const [open, setOpen] = useState(false);
-  const [control, setControl] = useState(false);
+  const [controlLatched, setControlLatched] = useState(false);
 
-  function placeCaretAtEnd() {
-    const end = draft.length;
-    inputRef.current?.setNativeProps({ selection: { start: end, end } });
+  // Backgrounding is left to iOS, which keeps the keyboard and brings it back on return. A blur
+  // while in the background is never seen by the keyboard tracking, which leaves a gap.
+  useEffect(
+    () => () => {
+      keepOpen.current = false;
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (active) return;
+    keepOpen.current = false;
+    inputRef.current?.blur();
+  }, [active]);
+
+  function latch(next: boolean) {
+    control.current = next;
+    setControlLatched(next);
+  }
+
+  function send(changes: { backspaces: number; text: string }) {
+    if (!active) return;
+    const commands = commandsForKeyboardChange(changes, control.current);
+    for (const command of commands) onCommand(command);
+    if (control.current && commands.length > 0) latch(false);
   }
 
   function onChangeText(next: string) {
-    const edit = normalizeComputerKeyboardEdit(draft, next);
-    if (!edit.aligned) {
-      const end = draft.length;
-      inputRef.current?.setNativeProps({ text: draft, selection: { start: end, end } });
-      return;
+    const changes = computerKeyboardChanges(handled.current, next);
+    handled.current = next;
+    if (changes.backspaces > 0) {
+      deletedAt.current = backspacePressed.current ? null : Date.now();
     }
-    const latched = control;
-    const commands = commandsForKeyboardChange(edit.changes, latched);
-    if (commands.some((command) => command.type === "key" && command.name === "Return")) {
-      returnAt.current = Date.now();
-    }
-    for (const command of commands) onCommand(command);
-    if (latched && commands.length > 0) setControl(false);
-    setDraft(edit.draft);
-    if (next.length < 1) inputRef.current?.focus();
+    backspacePressed.current = false;
+    send(changes);
   }
 
-  function onSubmitEditing() {
-    const now = Date.now();
-    if (now - returnAt.current < 30) return;
-    returnAt.current = now;
-    onCommand(
-      control ? { type: "key", name: "Return", control: true } : { type: "key", name: "Return" },
-    );
-    if (control) setControl(false);
-    setDraft((current) => nextComputerKeyboardDraft(`${current}\n`));
+  // An empty field reports no change for Backspace, so its key press is the only signal there.
+  // With text, the change carries the deletion, whichever of the two arrives first.
+  function onKeyPress(key: string) {
+    if (!active || key !== "Backspace") return;
+    const deleted = deletedAt.current;
+    deletedAt.current = null;
+    if (deleted !== null && Date.now() - deleted < DELETE_KEY_PRESS_MS) return;
+    if (handled.current) {
+      backspacePressed.current = true;
+      return;
+    }
+    send({ backspaces: 1, text: "" });
+  }
+
+  // Edits only count at the end, where the remote caret is, so a caret moved by holding Space
+  // goes straight back there. A selection reported before its own change asks for the old end;
+  // the field drops that request as out of date, and the change still sends.
+  function onSelectionChange(start: number, end: number) {
+    const length = handled.current.length;
+    if (start < length || end < length) inputRef.current?.setSelection(length, length);
+  }
+
+  function onBlur() {
+    if (keepOpen.current) {
+      inputRef.current?.focus();
+      return;
+    }
+    setOpen(false);
+  }
+
+  function toggle() {
+    if (!active) return;
+    if (open) {
+      keepOpen.current = false;
+      inputRef.current?.blur();
+      return;
+    }
+    keepOpen.current = true;
+    inputRef.current?.focus();
   }
 
   function press(name: ComputerKeyName) {
-    onCommand(control ? { type: "key", name, control: true } : { type: "key", name });
-    if (control) setControl(false);
+    if (!active) return;
+    onCommand(control.current ? { type: "key", name, control: true } : { type: "key", name });
+    if (control.current) latch(false);
   }
 
   const keys = keySpecs(t);
@@ -98,18 +150,15 @@ export function ComputerKeyboardBar({
     >
       <TextInput
         ref={inputRef}
-        value={draft}
         onChangeText={onChangeText}
-        onSelectionChange={(event) => {
-          const { start, end } = event.nativeEvent.selection;
-          if (start >= draft.length && end >= draft.length) return;
-          placeCaretAtEnd();
-        }}
+        onKeyPress={(event) => onKeyPress(event.nativeEvent.key)}
+        onSelectionChange={(event) =>
+          onSelectionChange(event.nativeEvent.selection.start, event.nativeEvent.selection.end)
+        }
         onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onSubmitEditing={onSubmitEditing}
-        blurOnSubmit={false}
-        multiline
+        onBlur={onBlur}
+        onSubmitEditing={() => press("Return")}
+        submitBehavior="submit"
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}
@@ -124,7 +173,7 @@ export function ComputerKeyboardBar({
         prominence="secondary"
         fill
         selected={open}
-        onPress={() => (open ? inputRef.current?.blur() : inputRef.current?.focus())}
+        onPress={toggle}
         style={styles.toggle}
       />
       {keys.slice(0, 2).map((key) => (
@@ -145,8 +194,8 @@ export function ComputerKeyboardBar({
         size="compact"
         prominence="secondary"
         fill
-        selected={control}
-        onPress={() => setControl((value) => !value)}
+        selected={controlLatched}
+        onPress={() => latch(!control.current)}
         style={styles.key}
       />
       {keys.slice(2).map((key) => (

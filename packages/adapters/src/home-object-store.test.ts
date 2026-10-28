@@ -1,13 +1,17 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
+import { checkpointComputerWorkspace, restoreComputerWorkspace } from "./computer-workspace.js";
 import { LocalAgentHomeStore } from "./home.js";
 import {
   createAgentHomeStore,
+  HomeSaveConflictError,
   ObjectAgentHomeStore,
   PrismaAgentHomeRecords,
 } from "./home-object-store.js";
@@ -33,6 +37,8 @@ interface ComputerRow {
   homeStorageId: string | null;
   homeStorageKey: string | null;
   homeStorageRevision: string | null;
+  kind: string;
+  updatedAt: Date;
 }
 
 /** The slice of `prisma.computer` the records use, over an array of rows. */
@@ -40,6 +46,8 @@ function fakeComputers(rows: ComputerRow[]) {
   const matches = (row: ComputerRow, where: Record<string, unknown>) =>
     Object.entries(where).every(([field, value]) => {
       const actual = row[field as keyof ComputerRow];
+      if (value instanceof Date)
+        return actual instanceof Date && actual.getTime() === value.getTime();
       if (value && typeof value === "object" && "in" in value)
         return (value.in as unknown[]).includes(actual);
       return actual === value;
@@ -75,7 +83,8 @@ function fakeComputers(rows: ComputerRow[]) {
         data: Partial<ComputerRow>;
       }) => {
         const updated = rows.filter((row) => matches(row, where));
-        for (const row of updated) Object.assign(row, data);
+        // Like Prisma's @updatedAt: bumped on every write that doesn't set it.
+        for (const row of updated) Object.assign(row, { updatedAt: new Date() }, data);
         return { count: updated.length };
       },
     },
@@ -107,6 +116,8 @@ async function setup(homeKeys = ["bot-1"]) {
     homeStorageId: null,
     homeStorageKey: null,
     homeStorageRevision: null,
+    kind: "boat",
+    updatedAt: new Date(0),
   }));
   const storage = new MemoryObjectStorage();
   const records = new PrismaAgentHomeRecords(fakeComputers(rows), memoryRing());
@@ -161,6 +172,42 @@ describe("ObjectAgentHomeStore", () => {
     expect(rows[0]!.homeStorageKey).toMatch(/^rkz1:/);
   });
 
+  it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
+    const { store, rows } = await setup();
+    const claimedAt = new Date("2026-01-01T00:00:00Z");
+    rows[0]!.updatedAt = claimedAt;
+
+    await store.commit("bot-1", await staged({ "a.txt": "one" }), context);
+    await store.commit("bot-1", await staged({ "a.txt": "two" }), context);
+
+    expect(rows[0]!.homeStorageRevision).not.toBeNull();
+    expect(rows[0]!.updatedAt.getTime()).toBe(claimedAt.getTime());
+  });
+
+  it("retries a save when a lifecycle claim lands between its read and write", async () => {
+    const { rows } = await setup();
+    const claimedAt = new Date("2026-01-01T00:00:00Z");
+    const computers = fakeComputers(rows);
+    const updateMany = computers.computer.updateMany;
+    let claims = 0;
+    computers.computer.updateMany = ((args: { where: { updatedAt?: Date } }) => {
+      if (args.where.updatedAt && claims < 2) {
+        claims += 1;
+        rows[0]!.updatedAt = new Date(claimedAt.getTime() + claims);
+      }
+      return updateMany(args as Parameters<typeof updateMany>[0]);
+    }) as unknown as typeof updateMany;
+    const records = new PrismaAgentHomeRecords(computers, memoryRing());
+
+    const stored = await records.create("bot-1");
+    expect(await records.advance("bot-1", stored!.storageId, null, "rev-1")).toBe(true);
+
+    expect(claims).toBe(2);
+    expect(rows[0]!.homeStorageRevision).toBe("rev-1");
+    expect(rows[0]!.updatedAt.getTime()).toBe(claimedAt.getTime() + 2);
+    expect(await records.advance("bot-1", stored!.storageId, null, "rev-2")).toBe(false);
+  });
+
   it("restores a home on a host whose cache is empty", async () => {
     const { store, otherHost } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "one", "dir/b.txt": "two" }), context);
@@ -173,8 +220,8 @@ describe("ObjectAgentHomeStore", () => {
   it("downloads again after the cache is evicted, and replaces a stale cache", async () => {
     const { root, store, otherHost } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "first" }), context);
-    await rm(path.join(root, "homes"), { recursive: true });
-    await rm(path.join(root, "home-revisions"), { recursive: true });
+    await rm(path.join(root, "homes"), { recursive: true, force: true });
+    await rm(path.join(root, "home-revisions"), { recursive: true, force: true });
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("first");
 
     const other = await otherHost();
@@ -185,6 +232,7 @@ describe("ObjectAgentHomeStore", () => {
   it("downloads again when the cache directory is gone but its marker remains", async () => {
     const { root, store, storage, rows } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "stored" }), context);
+    await store.hydrate("bot-1");
     await rm(path.join(root, "homes"), { recursive: true });
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("stored");
 
@@ -204,19 +252,21 @@ describe("ObjectAgentHomeStore", () => {
       load: (homeKey) => records.load(homeKey),
       advance: (...args) => records.advance(...args),
       revisions: (ids) => records.revisions(ids),
+      kinds: (keys) => records.kinds(keys),
       create: async (homeKey) => {
         await interleave?.();
         return records.create(homeKey);
       },
     });
     await racing.commit("bot-1", await staged({ "a.txt": "first" }), context);
+    await racing.hydrate("bot-1");
     const other = await otherHost();
     interleave = async () => {
       interleave = undefined;
       await other.commit("bot-1", await staged({ "a.txt": "newer" }), context);
     };
 
-    await expect(racing.revise("bot-1")).rejects.toThrow(/saved elsewhere/);
+    await expect(racing.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
     expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("newer");
     expect(storage.objects.size).toBe(1);
   });
@@ -227,6 +277,7 @@ describe("ObjectAgentHomeStore", () => {
       load: (homeKey) => records.load(homeKey),
       create: (homeKey) => records.create(homeKey),
       revisions: (ids) => records.revisions(ids),
+      kinds: (keys) => records.kinds(keys),
       // The update commits, then the connection drops before the reply.
       advance: async (...args) => {
         await records.advance(...args);
@@ -251,6 +302,7 @@ describe("ObjectAgentHomeStore", () => {
   it("saves the cached copy a Docker computer changed in place", async () => {
     const { store, otherHost } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+    await store.hydrate("bot-1");
     await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "edited by the computer");
     await store.revise("bot-1");
     expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe(
@@ -324,6 +376,79 @@ describe("ObjectAgentHomeStore", () => {
     expect([...storage.objects.keys()].sort()).toEqual([kept, inProgress].sort());
   });
 
+  it("removes folders from the stored copy, so another host never gets them back", async () => {
+    const { store, otherHost } = await setup(["team-1"]);
+    await store.commit(
+      "team-1",
+      await staged({
+        "bots/gone/notes.txt": "deleted bot",
+        "bots/kept/notes.txt": "other bot",
+        ".browser-profiles/chromium-bot-gone/Cookies": "session",
+        "shared/plan.txt": "shared",
+      }),
+      context,
+    );
+
+    await expect(store.removeFolders("team-1", "bots", ["gone", "missing"])).resolves.toBe(true);
+    await store.removeFolders("team-1", ".browser-profiles", ["chromium-bot-gone"]);
+    // Nothing left to remove does not save a new revision.
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(false);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({
+      "bots/kept/notes.txt": "other bot",
+      "shared/plan.txt": "shared",
+    });
+  });
+
+  it("leaves the folders to a retry when the stored copy cannot be saved", async () => {
+    const { store, storage, otherHost } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const put = storage.put.bind(storage);
+    storage.put = async () => {
+      throw new Error("bucket unavailable");
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "bucket unavailable",
+    );
+    storage.put = put;
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({});
+  });
+
+  it("keeps the rest of a home never stored when its first save fails", async () => {
+    const { store, storage } = await setup(["team-1"]);
+    await mkdir(path.join(store.pathFor("team-1"), "bots/gone"), { recursive: true });
+    await mkdir(path.join(store.pathFor("team-1"), "bots/kept"), { recursive: true });
+    await writeFile(path.join(store.pathFor("team-1"), "bots/kept/work.txt"), "other bot");
+    storage.put = async () => {
+      throw new Error("bucket unavailable");
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "bucket unavailable",
+    );
+
+    await expect(readdir(path.join(store.pathFor("team-1"), "bots"))).resolves.toEqual(["kept"]);
+  });
+
+  it("removes a deleted home's cache, previous copy and revision marker", async () => {
+    const { root, store } = await setup(["team-1", "team-2"]);
+    await store.commit("team-1", await staged({ "a.txt": "gone" }), context);
+    await store.commit("team-2", await staged({ "a.txt": "kept" }), context);
+    await store.hydrate("team-1");
+    await store.hydrate("team-2");
+    await mkdir(`${store.pathFor("team-1")}.previous`, { recursive: true });
+    await writeFile(path.join(`${store.pathFor("team-1")}.previous`, "a.txt"), "gone");
+
+    await store.remove("team-1");
+    await store.remove("team-1");
+
+    await expect(readdir(path.join(root, "homes"))).resolves.toEqual(["team-2"]);
+    await expect(readdir(path.join(root, "home-revisions"))).resolves.toEqual(["team-2.txt"]);
+  });
+
   it("deletes nothing when the database knows none of the stored homes", async () => {
     const { store, storage, rows } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "keep" }), context);
@@ -390,6 +515,37 @@ describe("ObjectAgentHomeStore", () => {
   });
 });
 
+describe("object-backed Kubernetes workspaces", () => {
+  it("restores a replacement from object storage when its local cache was lost", async () => {
+    const { store, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "saved.txt": "stored bytes" }), context);
+    const restored: PortableFile[] = [];
+    const sandbox = {
+      describe: () => ({ capabilities: { persistentHome: true } }),
+      hasMountedHome: async () => true,
+      importWorkspace: async (_computer: unknown, files: AsyncIterable<PortableFile>) => {
+        for await (const file of files) restored.push(file);
+      },
+      exportWorkspace: async function* () {
+        yield { path: "new.txt", content: Buffer.from("new bytes") };
+      },
+    } as unknown as SandboxProvider;
+    const computer = {
+      id: "replacement",
+      botId: "bot-1",
+      providerRef: "replacement",
+      kind: "kubernetes" as const,
+    };
+    const freshCache = await otherHost();
+    await restoreComputerWorkspace(freshCache, sandbox, "bot-1", computer, context);
+    expect(restored.map((file) => [file.path, Buffer.from(file.content).toString()])).toEqual([
+      ["saved.txt", "stored bytes"],
+    ]);
+    await checkpointComputerWorkspace(freshCache, sandbox, "bot-1", computer, context);
+    expect(await (await otherHost()).readFile("bot-1", "new.txt", context)).toBe("new bytes");
+  });
+});
+
 describe("createAgentHomeStore", () => {
   it("keeps homes on local disk when object storage is not configured", async () => {
     const store = createAgentHomeStore("/tmp/unused", {} as PrismaClient, {});
@@ -407,3 +563,207 @@ describe("createAgentHomeStore", () => {
     ).toThrow(/content encryption keys/);
   });
 });
+
+describe("the local cache of object-backed homes", () => {
+  const boatComputer = {
+    id: "computer-1",
+    botId: "bot-1",
+    providerRef: "sb-1",
+    kind: "boat" as const,
+  };
+
+  /** A remote computer whose export yields `files`, read lazily. */
+  function remoteSandbox(files: () => AsyncIterable<PortableFile | StreamedPortableFile>) {
+    const restored: string[] = [];
+    const sandbox = {
+      describe: () => ({ capabilities: {} }),
+      importWorkspace: async (_computer: unknown, imported: AsyncIterable<PortableFile>) => {
+        for await (const file of imported) restored.push(file.path);
+      },
+      exportWorkspace: files,
+    } as unknown as SandboxProvider;
+    return { sandbox, restored };
+  }
+
+  it("saves a remote computer straight from its staged files and keeps no copy", async () => {
+    const { root, store, otherHost } = await setup();
+    const { sandbox } = remoteSandbox(async function* () {
+      yield { path: "notes/a.txt", content: Buffer.from("saved") };
+    });
+
+    await checkpointComputerWorkspace(store, sandbox, "bot-1", boatComputer, context);
+
+    expect(await entries(path.join(root, "homes"))).toEqual([]);
+    expect(await entries(path.join(root, "home-revisions"))).toEqual([]);
+    expect(await entries(path.join(root, "staging"))).toEqual([]);
+    expect(await (await otherHost()).readFile("bot-1", "notes/a.txt", context)).toBe("saved");
+    expect(await store.readFile("bot-1", "notes/a.txt", context)).toBe("saved");
+  });
+
+  it("never evicts a copy an export is still reading", async () => {
+    const { store } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "one", "b.txt": "two" }), context);
+    const reading = store.exportHome("bot-1", context)[Symbol.asyncIterator]();
+    await reading.next();
+
+    expect(await store.evictCache("bot-1")).toBe(false);
+    expect((await reading.next()).done).toBe(false);
+    await reading.return?.(undefined);
+    expect(await store.evictCache("bot-1")).toBe(true);
+  });
+
+  it("moves a local save into place instead of copying it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-local-homes-"));
+    dirs.push(root);
+    const store = new LocalAgentHomeStore(root);
+    const { sandbox } = remoteSandbox(async function* () {
+      yield { path: "a.txt", content: Buffer.from("saved") };
+    });
+
+    await checkpointComputerWorkspace(store, sandbox, "bot-1", boatComputer, context);
+
+    expect(await store.readFile("bot-1", "a.txt", context)).toBe("saved");
+    expect(await entries(path.join(root, "staging"))).toEqual([]);
+  });
+
+  it("keeps the only copy of a home that was never stored", async () => {
+    const { store } = await setup();
+    await mkdir(store.pathFor("bot-1"), { recursive: true });
+    await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "local only");
+
+    expect(await store.evictCache("bot-1")).toBe(false);
+    expect(await store.readFile("bot-1", "a.txt", context)).toBe("local only");
+  });
+
+  it("evicts idle copies of remote computers' homes, never a Docker computer's", async () => {
+    const { root, rows, store } = await setup(["remote-idle", "remote-recent", "docker-idle"]);
+    rows[2]!.kind = "docker";
+    for (const homeKey of ["remote-idle", "remote-recent", "docker-idle"]) {
+      await store.commit(homeKey, await staged({ "a.txt": homeKey }), context);
+      await store.hydrate(homeKey);
+    }
+    const now = Date.now();
+    const hoursAgo = new Date(now - 2 * 60 * 60_000);
+    for (const homeKey of ["remote-idle", "docker-idle"])
+      await utimes(path.join(root, "home-revisions", `${homeKey}.txt`), hoursAgo, hoursAgo);
+
+    expect(await store.evictIdleCaches(now)).toBe(1);
+    expect((await readdir(path.join(root, "homes"))).sort()).toEqual([
+      "docker-idle",
+      "remote-recent",
+    ]);
+    expect(await store.readFile("remote-idle", "a.txt", context)).toBe("remote-idle");
+  });
+
+  it("saves a large file streamed to disk and storage one chunk at a time", async () => {
+    const { root, rows } = await setup();
+    const storage = new CountingStorage();
+    const records = new PrismaAgentHomeRecords(fakeComputers(rows), memoryRing());
+    const store = new ObjectAgentHomeStore(root, storage, records);
+    const chunk = 1024 * 1024;
+    const chunks = 64;
+    const { sandbox } = remoteSandbox(async function* () {
+      yield {
+        path: "big.bin",
+        body: (async function* () {
+          for (let index = 0; index < chunks; index++) {
+            // Each chunk reaches the disk before the next one is asked for.
+            if (index > 0) expect((await stagedFile(root, "big.bin")).size).toBe(index * chunk);
+            yield Buffer.alloc(chunk, index);
+          }
+        })(),
+      };
+    });
+
+    await checkpointComputerWorkspace(store, sandbox, "bot-1", boatComputer, context);
+
+    expect(storage.bytes).toBeGreaterThan(chunks * chunk);
+    // Packing reads files in 1 MiB pieces and sealing cuts them smaller still.
+    expect(storage.largestChunk).toBeLessThanOrEqual(chunk);
+  });
+
+  it("refuses a workspace over the save limits and leaves no staged files", async () => {
+    const { root, store } = await setup();
+    const { sandbox } = remoteSandbox(async function* () {
+      for (let index = 0; ; index++) yield { path: `f${index}.txt`, content: Buffer.from("x") };
+    });
+
+    const limits = { maxBytes: 1024 ** 3, maxFiles: 100 };
+
+    await expect(
+      checkpointComputerWorkspace(
+        store,
+        sandbox,
+        "bot-1",
+        boatComputer,
+        context,
+        undefined,
+        limits,
+      ),
+    ).rejects.toEqual(new WorkspaceTooLargeError("files"));
+    await expect(readdir(path.join(root, "staging"))).resolves.toEqual([]);
+
+    const { sandbox: huge } = remoteSandbox(async function* () {
+      yield {
+        path: "endless.bin",
+        body: (async function* () {
+          for (;;) yield Buffer.alloc(1024 * 1024);
+        })(),
+      };
+    });
+    await expect(
+      checkpointComputerWorkspace(store, huge, "bot-1", boatComputer, context, undefined, {
+        maxBytes: 8 * 1024 * 1024,
+        maxFiles: 100,
+      }),
+    ).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
+    await expect(readdir(path.join(root, "staging"))).resolves.toEqual([]);
+  });
+
+  it("removes staging that a killed process left, but not staging in use", async () => {
+    const { root, store } = await setup();
+    const now = Date.now();
+    const old = new Date(now - 60 * 60_000);
+    const leftovers = [
+      path.join(root, "staging", "rakazo-workspace-dead"),
+      path.join(root, "homes", ".bot-1.staging-dead"),
+    ];
+    for (const dir of leftovers) {
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "file"), "x");
+      await utimes(dir, old, old);
+    }
+    const live = await store.createStaging();
+    await mkdir(path.join(root, "homes", "bot-2"), { recursive: true });
+    await utimes(path.join(root, "homes", "bot-2"), old, old);
+
+    // Leftovers of older releases in the shared temp directory may count too.
+    expect(await store.removeStaleStaging(now)).toBeGreaterThanOrEqual(2);
+    expect(await readdir(path.join(root, "staging"))).toEqual([path.basename(live.path)]);
+    expect(await readdir(path.join(root, "homes"))).toEqual(["bot-2"]);
+    await live.remove();
+  });
+});
+
+/** Keeps no bytes; records how much it was sent and in what pieces. */
+class CountingStorage extends MemoryObjectStorage {
+  bytes = 0;
+  largestChunk = 0;
+
+  override async put(key: string, body: AsyncIterable<Uint8Array>) {
+    for await (const chunk of body) {
+      this.bytes += chunk.byteLength;
+      this.largestChunk = Math.max(this.largestChunk, chunk.byteLength);
+    }
+    this.objects.set(key, { bytes: Buffer.alloc(0), lastModified: new Date() });
+  }
+}
+
+async function entries(dir: string) {
+  return readdir(dir).catch(() => []);
+}
+
+async function stagedFile(root: string, name: string) {
+  const [dir] = await readdir(path.join(root, "staging"));
+  return stat(path.join(root, "staging", dir!, name));
+}

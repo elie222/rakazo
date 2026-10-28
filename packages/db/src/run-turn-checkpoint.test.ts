@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import type { DataKey } from "./content-crypto.js";
-import { loadRunTurnCheckpoint, saveRunTurnCheckpoint } from "./run-turn-checkpoint.js";
+import {
+  dropRunTurnCheckpoint,
+  loadRunTurnCheckpoint,
+  saveRunTurnCheckpoint,
+} from "./run-turn-checkpoint.js";
 
 const run = { id: "fixture-run", spaceId: "fixture-space" };
 const key: DataKey = {
@@ -23,7 +27,8 @@ function fixture() {
       ring: { encryptWrites: true, current: async () => key, byId: async () => key },
     }),
     $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(client),
-    run: { updateMany: locked },
+    run: { updateMany: locked, findMany: vi.fn(async () => []) },
+    message: { findMany: vi.fn(async () => []) },
     externalEffect: {
       upsert,
       findMany: async () => (stored ? [{ result: stored }] : []),
@@ -34,6 +39,7 @@ function fixture() {
     },
     attempt: { updateMany: vi.fn() },
     task: { updateMany: vi.fn() },
+    secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { client: client as unknown as PrismaClient, upsert, locked, stored: () => stored };
 }
@@ -70,12 +76,23 @@ describe("encrypted run turn checkpoint", () => {
     ).rejects.toThrow("lease expired");
     expect(state.upsert).not.toHaveBeenCalled();
   });
+  it("drops a saved turn only for the worker that holds the lease", async () => {
+    const state = fixture();
+    await saveRunTurnCheckpoint(state.client, run, "fixture-worker", 1, "fixture");
+    state.locked.mockResolvedValueOnce({ count: 0 });
+    await expect(dropRunTurnCheckpoint(state.client, run, "stale-worker", 1)).rejects.toThrow(
+      "lease expired",
+    );
+    expect(await loadRunTurnCheckpoint(state.client, run)).toBe("fixture");
+    await dropRunTurnCheckpoint(state.client, run, "fixture-worker", 1);
+    expect(await loadRunTurnCheckpoint(state.client, run)).toBeUndefined();
+  });
   it("clears content in the same transaction as cancellation", async () => {
     const state = fixture();
     await saveRunTurnCheckpoint(state.client, run, "fixture-worker", 1, "fixture");
     await cancelRunsInTransaction(
       state.client,
-      [{ id: run.id, taskId: "fixture-task" }],
+      [{ id: run.id, taskId: "fixture-task", userId: "fixture-user", spaceId: run.spaceId }],
       new Date(0),
     );
     expect(await loadRunTurnCheckpoint(state.client, run)).toBeUndefined();

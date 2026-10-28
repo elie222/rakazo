@@ -8,21 +8,14 @@ export const threadScrollEdgeEffects = {
   right: "hidden",
 } as const;
 
-// The pill bottoms sit 10pt above the native header bottom.
+// The pill bottoms sit 10pt above the native header bottom; content rests 14pt below them.
 export const THREAD_HEADER_PILL_BOTTOM_INSET = 10;
-export const THREAD_HEADER_FADE_SOLID = 14;
-export const THREAD_HEADER_FADE_GRADIENT = 12;
+const THREAD_HEADER_CONTENT_GAP = 14;
 
 export function threadHeaderClearance(headerHeight: number) {
-  if (headerHeight <= 0) return { opaqueHeight: 0, padding: 8, anchor: 24, minHeight: 0 };
-  const pillBottom = headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET;
-  const opaqueHeight = pillBottom + THREAD_HEADER_FADE_SOLID;
-  return {
-    opaqueHeight,
-    padding: opaqueHeight,
-    anchor: opaqueHeight + THREAD_HEADER_FADE_GRADIENT + 8,
-    minHeight: opaqueHeight,
-  };
+  if (headerHeight <= 0) return { padding: 8, anchor: 24, minHeight: 0 };
+  const padding = headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET + THREAD_HEADER_CONTENT_GAP;
+  return { padding, anchor: padding + 20, minHeight: padding };
 }
 
 export function threadHeaderFloats() {

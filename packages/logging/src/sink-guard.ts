@@ -1,3 +1,5 @@
+import { redactSensitiveText } from "./redaction.js";
+
 const WINDOW_MS = 30_000;
 let lastReportAt = 0;
 let suppressed = 0;
@@ -24,7 +26,7 @@ export function reportSinkError(error: unknown): void {
   suppressed = 0;
   lastReportAt = now;
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`log sink failed${extra}`, message);
+  console.error(`log sink failed${extra}`, redactSensitiveText(message));
 }
 
 export function guardedWrite(write: () => void | Promise<void>): void {

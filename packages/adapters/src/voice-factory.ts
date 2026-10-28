@@ -72,7 +72,6 @@ export function isVoiceProviderId(value: string): value is VoiceProviderId {
   return VOICE_CATALOG.some((entry) => entry.id === value);
 }
 
-/** Construct the provider adapter selected by a persisted voice credential. */
 export function createVoiceProvider(
   kind: string,
   options: { allowPrivateEndpoint?: boolean } = {},

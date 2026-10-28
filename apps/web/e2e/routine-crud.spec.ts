@@ -127,7 +127,7 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     modelId: "llama-3.3-70b",
     thinkingLevel: null,
   });
-  await expect(page.getByRole("button", { name: /Model check/ })).toContainText(" · llama-3.3-70b");
+  await expect(page.getByRole("button", { name: /Model check/ })).toContainText("llama-3.3-70b");
 
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.locator("label:has-text('Name') input").fill("Renamed model check");
@@ -135,7 +135,6 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   for (const column of ["modelProvider", "modelId", "thinkingLevel"])
     expect(renamePatch).not.toHaveProperty(column);
 
-  // The deleted routine stays gone after a reload.
   await page.reload();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   expect((await rpc<Routine[]>(page, "routines/list", { botId })).map((r) => r.name)).toEqual([

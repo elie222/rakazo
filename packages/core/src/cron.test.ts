@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { CronPreset } from "./cron.js";
+import type { CronPreset, CronUnit } from "./cron.js";
 import {
   CRON_INTERVAL_MAX,
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,
   describeCronPreset,
+  ENGLISH_CRON_LABELS,
   formatCron,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
@@ -17,7 +18,77 @@ import {
   ONCE_ROUTINE_CRON,
   presetFromCron,
   resolveRoutineNextRunAt,
+  russianInterval,
+  zonedDateTime,
 } from "./cron.js";
+
+describe("zonedDateTime", () => {
+  it("reads a wall-clock time or date without an offset in the timezone", () => {
+    expect(zonedDateTime("2026-11-02T10:00", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T09:00:00.000Z",
+    );
+    expect(zonedDateTime("2026-11-02 10:00:30", "UTC")?.toISOString()).toBe(
+      "2026-11-02T10:00:30.000Z",
+    );
+    expect(zonedDateTime("2026-11-02T10:00:00.5", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T09:00:00.500Z",
+    );
+    expect(zonedDateTime("2026-11-02", "America/Los_Angeles")?.toISOString()).toBe(
+      "2026-11-02T08:00:00.000Z",
+    );
+  });
+
+  it("takes a time with an offset as written", () => {
+    expect(zonedDateTime("2026-11-02T10:00:00Z", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T10:00:00.000Z",
+    );
+    expect(zonedDateTime("2026-11-02T10:00+05:00", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-11-02T05:00:00.000Z",
+    );
+  });
+
+  it.each([
+    ["0099-03-01T10:00Z", "0099-03-01T10:00:00.000Z"],
+    ["2028-02-29T10:00Z", "2028-02-29T10:00:00.000Z"],
+    ["2030-03-01t10:00z", "2030-03-01T10:00:00.000Z"],
+    ["2030-03-01T00:30:15.125+05:30", "2030-02-28T19:00:15.125Z"],
+    ["2030-02-28T23:30-04:00", "2030-03-01T03:30:00.000Z"],
+    ["2030-03-01T00:30+0530", "2030-02-28T19:00:00.000Z"],
+  ])("preserves the valid offset datetime %s", (value, expected) => {
+    expect(zonedDateTime(value, "America/New_York")?.toISOString()).toBe(expected);
+  });
+
+  it.each([
+    "2030-02-30T10:00Z",
+    "2030-02-30T10:00:30.125Z",
+    "2030-02-29T10:00+05:30",
+    "2100-02-29T10:00Z",
+    "2030-04-31T10:00-04:00",
+    "2030-02-30T10:00+0530",
+    "2030-02-30T10:00-0400",
+    "2030-01-01T24:00Z",
+    "2030-01-01T24:00+05:30",
+    "2030-01-01T10:00+24:00",
+    "2030-01-01T10:00+05:60",
+  ])("rejects the impossible offset datetime %s", (value) => {
+    expect(zonedDateTime(value, "UTC")).toBeNull();
+  });
+
+  it("moves a time skipped by daylight saving forward and keeps the first of a repeated hour", () => {
+    expect(zonedDateTime("2026-03-29T02:30", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-03-29T01:30:00.000Z",
+    );
+    expect(zonedDateTime("2026-10-25T02:30", "Europe/Berlin")?.toISOString()).toBe(
+      "2026-10-25T00:30:00.000Z",
+    );
+  });
+
+  it("rejects impossible dates and non-ISO text", () => {
+    for (const value of ["2026-02-30", "2026-11-02T24:00", "next monday", "", "2026-11-02T10"]) {
+      expect(zonedDateTime(value, "UTC")).toBeNull();
+    }
+  });
+});
 
 function preset(partial: Partial<CronPreset> & Pick<CronPreset, "freq">): CronPreset {
   return {
@@ -168,6 +239,42 @@ describe("formatCron", () => {
     expect(formatCron("0 8 * * 0-6")).toBe("Every day at 8:00 AM");
   });
 
+  it("singularizes an interval of one instead of 'Every 1 minutes'", () => {
+    expect(formatCron("*/1 * * * *")).toBe("Every 1 minute");
+    expect(formatCron("0 */1 * * *")).toBe("Every 1 hour");
+    expect(formatCron("0 0 */1 * *")).toBe("Every 1 day");
+    expect(describeCronPreset(preset({ freq: "Interval", n: 1, unit: "minutes" }))).toEqual({
+      lead: "Every",
+      detail: "1 minute",
+    });
+  });
+
+  it("takes translated labels for lists and pickers", () => {
+    const labels = {
+      ...ENGLISH_CRON_LABELS,
+      everyDay: "毎日",
+      weekdays: "平日",
+      weekdayNames: ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"],
+      atTime: (time: string) => `${time}に`,
+      everyDays: (names: string[]) => `毎週${names.join("と")}`,
+      interval: (n: number, unit: CronUnit) => ({
+        lead: "",
+        detail: `${n}${unit === "minutes" ? "分" : unit === "hours" ? "時間" : "日"}ごと`,
+      }),
+    };
+    expect(formatCron("0 8 * * 1-5", labels)).toBe("平日 8:00 AMに");
+    expect(formatCron("*/15 * * * *", labels)).toBe("15分ごと");
+    expect(formatCron("0 9 * * 1,3,5", labels)).toBe("毎週月曜日と水曜日と金曜日 9:00 AMに");
+    expect(formatCron("0 6 * * *", labels)).toBe("毎日 6:00 AMに");
+  });
+
+  it("keeps Russian interval case forms for n=1 and plural amounts", () => {
+    expect(russianInterval(1, "minutes")).toEqual({ lead: "Каждую", detail: "минуту" });
+    expect(russianInterval(1, "hours")).toEqual({ lead: "Каждый", detail: "час" });
+    expect(russianInterval(5, "minutes")).toEqual({ lead: "Каждые", detail: "5 минут" });
+    expect(russianInterval(3, "days")).toEqual({ lead: "Каждые", detail: "3 дня" });
+  });
+
   it("describes any day of the month", () => {
     expect(formatCron("0 9 15 * *")).toBe("Monthly on the 15th at 9:00 AM");
     expect(formatCron("0 9 2 * *")).toBe("Monthly on the 2nd at 9:00 AM");
@@ -182,6 +289,24 @@ describe("formatCron", () => {
     expect(formatCron("5 * * * *")).toBe("Every hour at :05");
   });
 
+  it("describes a fixed minute every few hours", () => {
+    expect(formatCron("43 */2 * * *")).toBe("Every 2 hours at :43");
+    expect(formatCron("5 */6 * * *")).toBe("Every 6 hours at :05");
+    expect(formatCron("0 */2 * * *")).toBe("Every 2 hours");
+    expect(formatCron("30 */12 * * *")).toBe("Every 12 hours at :30");
+  });
+
+  it("names a fixed minute every few hours only when the step divides the day", () => {
+    // */5 runs at 00, 05, 10, 15 and 20, then 00 again: not every five hours.
+    expect(formatCron("15 */5 * * *")).toBe("Cron 15 */5 * * *");
+    expect(formatCron("15 */7 * * *")).toBe("Cron 15 */7 * * *");
+  });
+
+  it("keeps the cron fallback for every few hours when the labels can't say it", () => {
+    const { hoursAtMinute: _, ...labels } = ENGLISH_CRON_LABELS;
+    expect(formatCron("43 */2 * * *", labels)).toBe("Cron 43 */2 * * *");
+  });
+
   it.each([
     "0 9 * * 1-5/2",
     "0 9 * * MON",
@@ -191,6 +316,10 @@ describe("formatCron", () => {
     "0 9 32 * *",
     "0 9 15 1 *",
     "60 * * * *",
+    "15 */1 * * *",
+    "15 */24 * * *",
+    "60 */2 * * *",
+    "15 */2 1 * *",
   ])("keeps the cron fallback for %s", (cron) => {
     expect(formatCron(cron)).toBe(`Cron ${cron}`);
   });

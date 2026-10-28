@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
-import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  shortenedTextLength,
+  truncatePlainText,
+} from "@rakazo/core";
 
 export type ContextStrategy = AgentContextStrategy;
 export interface ContextMessage {
@@ -19,7 +23,7 @@ export interface ContextBudget {
   tools: unknown;
   /** Additional instructions, snapshots, retrieved passages or task state outside messages. */
   extraContext?: string;
-  /** Adapter-specific image planning estimate. Unknown images use serialized bytes. */
+  /** Adapter-specific image planning estimate. Images without one count their serialized bytes. */
   imageTokens?: number | ((image: object) => number | undefined);
 }
 export interface ContextSelectionOptions {
@@ -79,8 +83,45 @@ function imageBlocks(value: unknown): object[] {
   } else visitMessage(value);
   return found;
 }
-/** Conservative byte bound plus framing, not a tokenizer. Only actual user/tool
- * image blocks receive an adapter estimate; image-shaped tool arguments remain text.
+/**
+ * Provider-neutral token estimate for text, without a tokenizer. The weights were calibrated
+ * against cl100k, o200k, Llama 3, Qwen 2.5 and Mistral's original tokenizer, landing at or a
+ * little above the least efficient of them for prose, code, JSON, IDs and non-Latin scripts:
+ * about 3.3 ASCII characters per token (English prose is nearer 4.5), one token per digit and
+ * per camelCase or letter-digit boundary (IDs, hashes, base64), 0.6 per accented Latin, Greek
+ * or Cyrillic letter, and 1.25 per UTF-16 unit of other scripts and emoji. Byte-level
+ * tokenizers never exceed one token per UTF-8 byte, so that bounds the estimate.
+ */
+export function estimateTextTokens(text: string): number {
+  let total = 0;
+  let previous = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    // 1 lowercase, 2 uppercase, 3 digit, 0 anything else.
+    const kind =
+      code >= 97 && code <= 122
+        ? 1
+        : code >= 65 && code <= 90
+          ? 2
+          : code >= 48 && code <= 57
+            ? 3
+            : 0;
+    if (code >= 128) total += code < 0x0590 ? 0.6 : 1.25;
+    else if (kind === 3) total += 1;
+    else if (kind === 0 && code > 32 && code < 127) total += 0.4;
+    else total += 0.3;
+    if (
+      (previous === 1 && kind === 2) ||
+      (previous === 3 && (kind === 1 || kind === 2)) ||
+      ((previous === 1 || previous === 2) && kind === 3)
+    )
+      total += 1;
+    previous = kind;
+  }
+  return Math.min(Math.ceil(total), Buffer.byteLength(text, "utf8"));
+}
+/** Text estimate plus framing. Actual user/tool image blocks receive an adapter estimate;
+ * images without one keep a serialized byte count, and image-shaped tool arguments remain text.
  */
 export function estimateContextTokens(
   value: unknown,
@@ -88,20 +129,24 @@ export function estimateContextTokens(
 ): number {
   const images = new Set<object>();
   let imageTotal = 0;
-  if (imageTokens !== undefined) {
-    for (const image of imageBlocks(value)) {
-      const estimate = typeof imageTokens === "number" ? imageTokens : imageTokens(image);
-      if (estimate !== undefined && Number.isFinite(estimate) && estimate > 0) {
-        images.add(image);
-        imageTotal += estimate;
-      }
-    }
+  for (const image of imageBlocks(value)) {
+    const estimate =
+      imageTokens === undefined
+        ? undefined
+        : typeof imageTokens === "number"
+          ? imageTokens
+          : imageTokens(image);
+    images.add(image);
+    imageTotal +=
+      estimate !== undefined && Number.isFinite(estimate) && estimate > 0
+        ? estimate
+        : Buffer.byteLength(JSON.stringify(image), "utf8");
   }
   const serialized =
     JSON.stringify(value, (_key, item: unknown) =>
       item && typeof item === "object" && images.has(item) ? { type: "image" } : item,
     ) ?? "";
-  return Buffer.byteLength(serialized, "utf8") + imageTotal + 16;
+  return estimateTextTokens(serialized) + imageTotal + 16;
 }
 function fixedTokens(budget: ContextBudget): number {
   for (const value of [
@@ -160,17 +205,21 @@ function shortenHistoryResult(
   // Snapshot text is only navigation; original reference offsets retain exact evidence.
   for (const snapshot of Array.isArray(payload.snapshots) ? payload.snapshots : []) {
     if (!snapshot || typeof snapshot !== "object") continue;
-    if (typeof snapshot.topic === "string") snapshot.topic = snapshot.topic.slice(0, 80);
-    if (typeof snapshot.outcome === "string") snapshot.outcome = snapshot.outcome.slice(0, 80);
+    if (typeof snapshot.topic === "string") snapshot.topic = truncatePlainText(snapshot.topic, 80);
+    if (typeof snapshot.outcome === "string")
+      snapshot.outcome = truncatePlainText(snapshot.outcome, 80);
   }
   payload.contextTruncated = true;
   let encoded = JSON.stringify(payload);
   while (encoded.length > size) {
     const longest = refs.reduce<HistoryTextReference | undefined>(
-      (best, ref) => (!best || ref.text.length > best.text.length ? ref : best),
+      (best, ref) =>
+        shortenedTextLength(ref.text) > 0 && (!best || ref.text.length > best.text.length)
+          ? ref
+          : best,
       undefined,
     );
-    if (!longest || longest.text.length < 2) {
+    if (!longest) {
       return JSON.stringify({
         untrusted: true,
         contextTruncated: true,
@@ -183,7 +232,7 @@ function shortenHistoryResult(
         },
       });
     }
-    longest.text = longest.text.slice(0, Math.floor(longest.text.length / 2));
+    longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
     longest.nextTextOffset = longest.textOffset + longest.text.length;
     longest.truncated = true;
     encoded = JSON.stringify(payload);
@@ -464,7 +513,7 @@ export function selectContext<T extends ContextMessage>(
   droppedMessages: number;
   truncatedToolResults: number;
   availableMessageTokens: number;
-  estimation: "utf8-byte-bound";
+  estimation: "text-estimate";
 } {
   const fixed = fixedTokens(options.budget);
   const available = Math.floor(options.budget.contextWindow - options.budget.outputReserve - fixed);
@@ -590,7 +639,7 @@ export function selectContext<T extends ContextMessage>(
     droppedMessages: messages.length - selectedIndexes.size,
     truncatedToolResults: 0,
     availableMessageTokens: available,
-    estimation: "utf8-byte-bound" as const,
+    estimation: "text-estimate" as const,
   };
 }
 

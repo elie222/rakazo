@@ -29,6 +29,13 @@ describe("BotAvatar", () => {
     }
   });
 
+  // Button sizes any SVG without a size class, which beats width/height attributes but not inline styles.
+  it("sizes the shape with an inline style so icon sizing in a button cannot shrink it", () => {
+    const html = renderToString(<BotAvatar color="#8B5CF6::shape_0" size={26} />);
+    const shape = html.match(/<svg[^>]*transition-transform[^>]*>/)?.[0];
+    expect(shape).toMatch(/style="[^"]*width:26px;height:26px/);
+  });
+
   it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
     const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
     expect(html).toContain("<svg");

@@ -1,11 +1,7 @@
-import {
-  type AdapterContext,
-  computerControlExpireJob,
-  type JobPublisher,
-  runContinueJob,
-  type SandboxProvider,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
@@ -146,7 +142,13 @@ export async function clearInactiveUserComputerControl(
  * unless clearGoneRef: false (mid-replacement still names that ref for activation CAS). */
 export async function revokeScreenControl(
   deps: { prisma: PrismaClient; sandbox: SandboxProvider | undefined },
-  computer: { id: string; homeKey: string; kind: string; providerRef: string | null },
+  computer: {
+    id: string;
+    homeKey: string;
+    kind: string;
+    providerRef: string | null;
+    runningSince?: Date | null;
+  },
   context: AdapterContext,
   leaseId: string | undefined,
   opts?: { clearGoneRef?: boolean },
@@ -160,7 +162,7 @@ export async function revokeScreenControl(
     getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
     // Fence by lease + skip booting/suspending so a stale gone-cleanup cannot clobber an
     // in-flight replace/boot that still names this providerRef.
-    await deps.prisma.computer.updateMany({
+    const cleared = await deps.prisma.computer.updateMany({
       where: {
         id: computer.id,
         providerRef: computer.providerRef,
@@ -169,6 +171,7 @@ export async function revokeScreenControl(
       },
       data: { state: "stopped", providerRef: null },
     });
+    if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
   }
 }
 

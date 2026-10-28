@@ -282,20 +282,25 @@ export async function providerLiveListsModel(
   return (await savedCatalogSelections(prisma, userId)).has(`${provider}:${modelId}`);
 }
 
-/** Saved selections in every space survive retirement filtering. */
+/** Saved selections, the account's and every Space's, survive retirement filtering. */
 export async function savedCatalogSelections(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Set<string>> {
-  const [preferences, bots, routines, backups, settings] = await Promise.all([
-    prisma.spaceModelPreference.findMany({
+  const [preferences, bots, routines, accountRoles, spaceRoles, settings] = await Promise.all([
+    prisma.userModelPreference.findMany({
       where: { userId },
       select: { modelId: true, credential: { select: { provider: true } } },
     }),
     prisma.bot.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
     prisma.routine.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
-    prisma.spaceBackupModel.findMany({
+    prisma.userModelRoleChoice.findMany({
       where: { userId },
+      select: { provider: true, modelId: true },
+    }),
+    // A Space's own models count only while it overrides the account's.
+    prisma.spaceModelRoleChoice.findMany({
+      where: { userId, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
       select: { provider: true, modelId: true },
     }),
     prisma.deploymentSettings.findFirst({
@@ -310,7 +315,9 @@ export async function savedCatalogSelections(
     ...routines.map(
       (p) => `${p.modelProvider ? canonicalPiProviderId(p.modelProvider) : ""}:${p.modelId}`,
     ),
-    ...backups.map((p) => `${canonicalPiProviderId(p.provider)}:${p.modelId}`),
+    ...[...accountRoles, ...spaceRoles].map(
+      (p) => `${canonicalPiProviderId(p.provider)}:${p.modelId}`,
+    ),
     ...(settings ? [`${settings.defaultModelProvider}:${settings.defaultModelId}`] : []),
   ]);
 }

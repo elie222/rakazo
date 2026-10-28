@@ -40,7 +40,6 @@ function temporaryDirectory() {
   return directory;
 }
 
-/** Write a fixture file, creating its parent directories as needed. */
 function write(file: string, content: string | Buffer) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, content);

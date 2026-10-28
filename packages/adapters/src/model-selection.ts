@@ -1,4 +1,4 @@
-import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import {
@@ -6,8 +6,8 @@ import {
   selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
-import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
-import { chooseModelCredential, findModelCredential } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { chooseModelCredential, findModelCredential, findModelCredentialById } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
@@ -20,12 +20,12 @@ import {
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
-import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
-type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
+export type ModelCredential = Awaited<ReturnType<typeof findModelCredential>>;
 
 export function isCatalogModelChoice(provider: string, modelId: string) {
   return [...listPiCatalog(), scriptedCatalogEntry].some(
@@ -49,6 +49,46 @@ async function credentialLiveListsModel(
   return secret ? codexLiveListsModel(codex, userId, secret, modelId) : false;
 }
 
+/**
+ * Whether this connection can run the model: a bundled model its sign-in or key can call,
+ * or one its own live catalog lists. Two accounts of one provider can differ here.
+ */
+export async function connectionServesModel(
+  deps: {
+    prisma: PrismaClient;
+    secretStore: Pick<SecretStore, "load">;
+    codexCatalog?: CodexLiveCatalog;
+  },
+  userId: string,
+  credential: { secretId: string },
+  provider: string,
+  modelId: string,
+): Promise<boolean> {
+  if (isCatalogModelChoice(provider, modelId)) {
+    if (!modelAuthIsRestricted(provider, modelId)) return true;
+    return !(await validateStoredModelAuth(
+      deps.prisma,
+      deps.secretStore,
+      userId,
+      credential.secretId,
+      provider,
+      modelId,
+      deps.codexCatalog,
+    ));
+  }
+  // Models no live catalog lists, such as decision models, are not tied to an account.
+  if (!liveCatalogEntry(provider, modelId)) return true;
+  return credentialLiveListsModel(
+    deps.prisma,
+    deps.secretStore,
+    userId,
+    credential.secretId,
+    provider,
+    modelId,
+    deps.codexCatalog,
+  );
+}
+
 export function defaultCatalogModelId(
   provider: string,
   credentialPlaintext?: string,
@@ -58,11 +98,14 @@ export function defaultCatalogModelId(
     : "disconnected";
   const authByProvider: Partial<Record<string, ModelCredentialAuthKind>> =
     authKind === "disconnected" ? {} : { [provider]: authKind };
-  const entry = listAvailablePiCatalog(authByProvider).find(
+  const entries = offeredCatalog(listAvailablePiCatalog(authByProvider)).filter(
     (item) => item.provider === canonicalPiProviderId(provider),
   );
-  return usableModelId(entry?.id);
+  return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
 }
+
+/** A run pinned to a provider the user has no connection for. */
+export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
 
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
@@ -111,13 +154,11 @@ export async function modelCredentialAuthKindsForSpace(
         createdAt: true,
       },
     }),
-    prisma.spaceModelPreference.findMany({
-      where: { userId: scope.userId, spaceId: scope.spaceId },
+    prisma.userModelPreference.findMany({
+      where: { userId: scope.userId },
       select: {
-        id: true,
         modelId: true,
         thinkingLevel: true,
-        isDefault: true,
         updatedAt: true,
         credential: {
           select: {
@@ -416,6 +457,8 @@ async function loadModelSecret(
 }
 
 export type ConnectedModelResolution = {
+  /** The connection a role row is pinned to; nothing else may serve it. */
+  credentialId?: string | null;
   hostedProvider?: string;
   codexCatalog?: CodexLiveCatalog;
   /** Preview a connection save using the same runtime selection. */
@@ -431,6 +474,8 @@ export async function findConnectedModelCredential(
   modelId?: string | null,
   resolution: ConnectedModelResolution = {},
 ): Promise<ModelCredential> {
+  if (resolution.credentialId)
+    return findModelCredentialById(prisma, actor, resolution.credentialId, provider);
   let selected = await findModelCredential(prisma, actor, provider, modelId);
   const replacement = resolution.replacement;
   if (
@@ -463,7 +508,7 @@ export async function findConnectedModelCredential(
     if (credential.id === selected.id) continue;
     const candidate = await readSecret(credential);
     candidates.push({
-      credential: { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null },
+      credential: { ...credential, defaultModel: null, thinkingLevel: null },
       defaultModel: null,
       enabledModelIds: candidate?.kind === "openai_compatible" ? candidate.enabledModelIds : [],
     });
@@ -528,7 +573,7 @@ export async function validateBotModelChange(
           return { ok: false, error: "Unsupported thinking level" };
         return { ok: true, provider, model, thinkingLevel: input.thinkingLevel ?? null };
       }
-      return { ok: false, error: "Connect that model provider first" };
+      return { ok: false, error: PINNED_PROVIDER_NOT_CONNECTED };
     }
     const inCatalog =
       isCatalogModelChoice(provider, model) ||
@@ -695,7 +740,7 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
@@ -713,14 +758,14 @@ export async function validateConnectedModelChoice(
       ? undefined
       : "Unknown model for that provider";
   }
-  const savedChoice = await prisma.spaceModelPreference.findFirst({
+  const savedChoice = await prisma.userModelPreference.findFirst({
     where: {
-      spaceId: actor.spaceId,
       userId: actor.userId,
       modelId,
       credential: { userId: actor.userId, provider },
+      ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
     },
-    select: { id: true },
+    select: { credentialId: true },
   });
   if (savedChoice) return undefined;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
@@ -799,7 +844,7 @@ export function pinnedModelCredentialError(
   credential: { defaultModel: string | null } | null,
 ): string | undefined {
   if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   // The enabled list lives in the secret, so the run path checks openai-compatible ids.
   if (choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
   const modelId = usableModelId(choice.modelId);
@@ -812,50 +857,6 @@ export function pinnedModelCredentialError(
     return "Unknown model for that provider";
   }
   return undefined;
-}
-
-/** Select configuration without loading secrets or applying a runtime-specific fallback. */
-export function selectConfiguredModel(input: {
-  /** The bot's or the run's own model; null follows the space default. */
-  override: ModelChoice | null;
-  hostedProvider?: string;
-  overrideCredential: ModelCredential;
-  defaultCredential: ModelCredential;
-  settings: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
-  deployment: { provider: string; model: string } | null;
-}) {
-  const { override: bot, overrideCredential, defaultCredential, settings, deployment } = input;
-  const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
-  // The override provider, model and credential must win together.
-  const useOverride = Boolean(
-    hasOverride && (overrideCredential || bot?.modelProvider === input.hostedProvider),
-  );
-  const credential = useOverride ? overrideCredential : defaultCredential;
-  const id =
-    usableModelId(useOverride ? bot!.modelId : null) ??
-    usableModelId(credential?.defaultModel) ??
-    (credential ? defaultCatalogModelId(credential.provider) : null) ??
-    usableModelId(settings?.defaultModelId) ??
-    usableModelId(deployment?.model);
-  // A preference's thinking level is bound to its stored modelId, so it only applies
-  // when that model is the one being run.
-  const credentialThinkingLevel =
-    credential && id && credential.defaultModel === id ? credential.thinkingLevel : null;
-  return {
-    provider:
-      (useOverride ? bot!.modelProvider : null) ??
-      credential?.provider ??
-      settings?.defaultModelProvider ??
-      deployment?.provider,
-    id,
-    credential,
-    // Preserve bot thinking for the Space default; drop it for an unavailable override.
-    thinkingLevel:
-      hasOverride && !useOverride
-        ? null
-        : (((bot?.thinkingLevel ??
-            credentialThinkingLevel) as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
-  };
 }
 
 /** A server key is available only to the funded organization and only for its configured provider. */

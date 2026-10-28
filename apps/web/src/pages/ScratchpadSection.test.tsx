@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 
+import type { ScratchpadItem } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
+const rpcMock = vi.hoisted(() => ({
+  scratchpad: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
+}));
 vi.mock("../lib/rpc", () => ({
-  rpc: { scratchpad: { list: vi.fn().mockResolvedValue([]), remove: vi.fn() } },
+  rpc: rpcMock,
+  rpcForSpace: () => rpcMock,
+  createSpaceRpc: () => rpcMock,
+  selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
@@ -16,13 +25,46 @@ vi.mock("@lingui/react/macro", () => ({
 import { rpc } from "../lib/rpc";
 import { ScratchpadSection } from "./ScratchpadSection";
 
+let queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+afterEach(() => {
+  queryClient.clear();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  rpcMock.scratchpad.list.mockReset().mockResolvedValue([]);
+  rpcMock.scratchpad.create.mockReset();
+  rpcMock.scratchpad.remove.mockReset();
+});
+
+async function mount(root: Root, botId: string) {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <ScratchpadSection botId={botId} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+}
+
+function workItem(id: string, title: string): ScratchpadItem {
+  return {
+    id,
+    botId: "bot-fixture",
+    title,
+    notes: "",
+    status: "open",
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
 it("hides the entire empty section", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(<ScratchpadSection botId="bot-fixture" />));
+    await mount(root, "bot-fixture");
     expect(container.querySelector('[data-testid="bot-scratchpad"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
@@ -50,7 +92,7 @@ it("renders open and parked work without status chrome and removes a wrapped ite
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(<ScratchpadSection botId="bot-fixture" />));
+    await mount(root, "bot-fixture");
     expect(container.querySelector('[aria-label="New open-work item"]')).toBeNull();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
@@ -66,6 +108,7 @@ it("renders open and parked work without status chrome and removes a wrapped ite
     expect(remove).not.toBeNull();
     await act(async () => remove.click());
     expect(rpc.scratchpad.remove).toHaveBeenCalledWith({ itemId: item.id });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(container.textContent).not.toContain(title);
   } finally {
     await act(async () => root.unmount());
@@ -90,7 +133,7 @@ it("shows only the first five items until Show more", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
-    await act(async () => root.render(<ScratchpadSection botId="fixture" />));
+    await mount(root, "fixture");
     expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(5);
     expect(host.textContent).not.toContain("Task 6");
     await act(async () =>
@@ -100,6 +143,75 @@ it("shows only the first five items until Show more", async () => {
     );
     expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(7);
     expect(host.textContent).toContain("Task 6");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reopens on the cached list and refreshes it in the background", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.scratchpad.list.mockResolvedValueOnce([workItem("a", "Cached task")]);
+  const host = document.createElement("div");
+  let root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    await act(async () => root.unmount());
+
+    let resolveRead: (items: ScratchpadItem[]) => void = () => undefined;
+    rpcMock.scratchpad.list.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveRead = resolve)),
+    );
+    root = createRoot(host);
+    await mount(root, "bot-fixture");
+    expect(host.textContent).toContain("Cached task");
+    expect(rpcMock.scratchpad.list).toHaveBeenCalledTimes(2);
+    await act(async () => resolveRead([workItem("b", "Fresh task")]));
+    await vi.waitFor(() => expect(host.textContent).toContain("Fresh task"));
+    expect(host.textContent).not.toContain("Cached task");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps an added item when an older background read lands after it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const existing = workItem("a", "Existing task");
+  const added = workItem("b", "Added task");
+  rpcMock.scratchpad.list.mockResolvedValueOnce([existing]);
+  const host = document.createElement("div");
+  let root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    await act(async () => root.unmount());
+
+    let resolveOlderRead: (items: ScratchpadItem[]) => void = () => undefined;
+    rpcMock.scratchpad.list
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveOlderRead = resolve)))
+      .mockResolvedValueOnce([added, existing]);
+    rpcMock.scratchpad.create.mockResolvedValue(added);
+    root = createRoot(host);
+    await mount(root, "bot-fixture");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
+    );
+    const input = host.querySelector<HTMLInputElement>('[aria-label="New open-work item"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        input,
+        added.title,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => input.form!.requestSubmit());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(host.textContent).toContain("Added task");
+    await act(async () => {
+      resolveOlderRead([existing]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.textContent).toContain("Added task");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

@@ -4,10 +4,10 @@ import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
-  type MessagingPlatform,
   providerOfThreadId,
 } from "./chat-sdk-surface.js";
 import { enrichSlackTeamRoom } from "./messaging-platforms.js";
@@ -574,8 +574,7 @@ describe("ChatSdkMessagingSurface webhook waitUntil drain", () => {
       "mock",
       webhookRequest({ threadId: "mock:Duser:1", id: "m-slow", text: "hello" }),
     );
-    // If the surface returned before draining waitUntil, sinkDone would still be false
-    // when the promise settles... we assert after await that sink completed first.
+    // The response must wait for the waitUntil sink to finish.
     const response = await responsePromise;
     sawSinkPendingAtResponse = !sinkDone;
     expect(sawSinkPendingAtResponse).toBe(false);
@@ -683,18 +682,25 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["slack", "whatsapp", "lark", "sendblue"])(
-    "keeps %s replies as strings",
-    async (provider) => {
-      const { surface, adapter } = createSurface({ provider });
-      const body = "**bold** and [link](https://example.test)";
-      const threadId = `${provider}:C1:9`;
+  it.each(["whatsapp", "lark"])("posts %s replies as Markdown", async (provider) => {
+    const { surface, adapter } = createSurface({ provider });
+    const body = "**bold** and [link](https://example.test)";
+    const threadId = `${provider}:C1:9`;
 
-      await surface.sendToThread({ threadId, body }, context);
+    await surface.sendToThread({ threadId, body }, context);
 
-      expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
-    },
-  );
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, { markdown: body });
+  });
+
+  it.each(["slack", "sendblue"])("keeps %s replies as strings", async (provider) => {
+    const { surface, adapter } = createSurface({ provider });
+    const body = "**bold** and [link](https://example.test)";
+    const threadId = `${provider}:C1:9`;
+
+    await surface.sendToThread({ threadId, body }, context);
+
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+  });
 
   it("posts a Telegram image attachment as a photo", async () => {
     const { surface, adapter } = createSurface({ provider: "telegram" });
@@ -925,6 +931,8 @@ describe("ChatSdkMessagingSurface shape", () => {
     ]);
     expect(surface.describe().capabilities).toEqual({ providers: ["mock"] });
     expect(providerOfThreadId("mock:C1:9")).toBe("mock");
+    expect(providerOfThreadId("slack~installation-a:C1:9")).toBe("slack");
+    expect(providerOfThreadId("telegram-work:42")).toBe("telegram-work");
   });
 
   it("retries initialize after a failure and stops polling on shutdown", async () => {

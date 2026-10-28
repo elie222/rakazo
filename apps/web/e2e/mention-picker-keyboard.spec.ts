@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -32,8 +33,6 @@ test("mention picker completes with Enter and Tab", async ({ page }, testInfo) =
   await page.waitForURL(/\/app\/g\/[^/]+$/);
 
   const composer = page.getByRole("combobox", { name: "Message Mention keys team" });
-  await expect(composer).toBeVisible();
-
   await composer.fill("@Res");
   const picker = page.getByTestId("mention-picker");
   await expect(picker).toBeVisible();

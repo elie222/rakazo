@@ -1,4 +1,5 @@
-import { type CSSProperties, memo } from "react";
+import type { CSSProperties } from "react";
+import { memo } from "react";
 import { BotAvatar } from "./bot-avatar.js";
 import { cn } from "./lib/utils.js";
 
@@ -32,8 +33,7 @@ export const GroupAvatar = memo(function GroupAvatar({
       >
         <svg
           aria-hidden="true"
-          width={Math.round(size * 0.48)}
-          height={Math.round(size * 0.48)}
+          style={{ width: Math.round(size * 0.48), height: Math.round(size * 0.48) }}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

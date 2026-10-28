@@ -39,13 +39,10 @@ type StuckCandidate = {
 export const STUCK_NOTICE_CLAIM_TTL_MS = 2 * 60 * 1000;
 
 /**
- * Remind, then cancel, queued runs and human waits that have been sitting still.
- * Lives on the job reconciler so a second scheduler is not required. The notice
- * stamp is a thread.meta event keyed to this episode's updatedAt, so answering
- * or reclaiming the run (which bumps updatedAt) can remind again later. A pending
- * claim reserves the send and is not a delivery. It becomes delivered only after
- * the push is accepted, and it is removed when the push fails or no token can
- * receive it, so a crash or a dropped token can still remind.
+ * Remind, then cancel, queued runs and human waits that have been sitting still. The notice
+ * stamp is keyed to this episode's updatedAt, so answering or reclaiming the run can remind
+ * again later. A pending claim becomes delivered only after the push is accepted and is removed
+ * when the push fails, so a crash or a dropped token can still remind.
  */
 export async function reconcileStuckWork(deps: {
   prisma: PrismaClient;

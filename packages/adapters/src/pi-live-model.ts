@@ -1,4 +1,5 @@
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { DEFAULT_MODEL_CONTEXT_WINDOW } from "@rakazo/contracts";
 
 /** Models endpoints often mix chat models with tools and media endpoints. */
 export function isChatModelId(id: string): boolean {
@@ -8,6 +9,25 @@ export function isChatModelId(id: string): boolean {
       id,
     )
   );
+}
+
+/**
+ * The account catalog's image answer replaces whatever modalities were guessed.
+ * An absent answer leaves them alone, including the text-only cross-family fallback.
+ */
+export function withLiveImageInput(
+  model: Model<Api>,
+  supportsImages: boolean | undefined,
+): Model<Api> {
+  if (supportsImages === undefined) return model;
+  const input: Model<Api>["input"] = supportsImages ? ["text", "image"] : ["text"];
+  if (
+    model.input.length === input.length &&
+    input.every((modality, index) => model.input[index] === modality)
+  ) {
+    return model;
+  }
+  return { ...model, input };
 }
 
 /** A deterministic fallback shared by listing and execution; never changes provider or host. */
@@ -44,5 +64,7 @@ export function liveModelSibling(
     name: id,
     reasoning: sameFamily && sibling.reasoning,
     input: sameFamily ? [...sibling.input] : ["text"],
+    // An unrelated sibling's window says nothing about this model's.
+    contextWindow: sameFamily ? sibling.contextWindow : DEFAULT_MODEL_CONTEXT_WINDOW,
   };
 }

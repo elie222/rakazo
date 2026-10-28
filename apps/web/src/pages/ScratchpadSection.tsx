@@ -1,44 +1,36 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input } from "@rakazo/ui-web";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useSpaceQueries } from "../lib/query";
+import { useSpaceRpc } from "../lib/space-rpc";
 
-import { rpc } from "../lib/rpc";
+const NO_ITEMS: ScratchpadItem[] = [];
 
 export function ScratchpadSection({ botId }: { botId: string }) {
   const { t } = useLingui();
-  const [items, setItems] = useState<ScratchpadItem[]>([]);
+  const rpc = useSpaceRpc();
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const list = queries.scratchpad.list.queryOptions({ input: { botId } });
+  // The bot edits its open work as it runs, so every open refreshes behind the cached list.
+  const items = useQuery({ ...list, refetchOnMount: "always" }).data ?? NO_ITEMS;
   const [showAll, setShowAll] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const listGeneration = useRef(0);
 
-  async function refresh() {
-    const generation = ++listGeneration.current;
-    const list = await rpc.scratchpad.list({ botId });
-    if (generation !== listGeneration.current) return;
-    setItems(list);
+  function setItems(update: (current: ScratchpadItem[]) => ScratchpadItem[]) {
+    return writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
   }
 
-  useEffect(() => {
-    const generation = ++listGeneration.current;
-    void rpc.scratchpad
-      .list({ botId })
-      .then((list) => {
-        if (generation !== listGeneration.current) return;
-        setItems(list);
-      })
-      .catch(() => {
-        if (generation !== listGeneration.current) return;
-        setItems([]);
-      });
-    return () => {
-      listGeneration.current += 1;
-    };
-  }, [botId]);
+  async function refresh() {
+    await fetchFresh(queryClient, list);
+  }
 
   async function addItem() {
     const title = draft.trim();
@@ -49,7 +41,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
       const created = await rpc.scratchpad.create({ botId, title });
       setDraft("");
       setAdding(false);
-      setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      await setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       try {
         await refresh();
       } catch {
@@ -68,7 +60,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     setError(null);
     try {
       const updated = await rpc.scratchpad.update({ itemId: item.id, status });
-      setItems((current) => {
+      await setItems((current) => {
         const next = current.map((entry) => (entry.id === updated.id ? updated : entry));
         return status === "done" ? next.filter((entry) => entry.status !== "done") : next;
       });
@@ -90,7 +82,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     setError(null);
     try {
       await rpc.scratchpad.remove({ itemId: item.id });
-      setItems((current) => current.filter((entry) => entry.id !== item.id));
+      await setItems((current) => current.filter((entry) => entry.id !== item.id));
       try {
         await refresh();
       } catch {
@@ -186,7 +178,6 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             />
             <Button
               variant="secondary"
-              className="rounded-full"
               disabled={busy || !draft.trim()}
               onClick={() => void addItem()}
             >

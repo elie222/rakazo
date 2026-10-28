@@ -50,8 +50,9 @@ function deferredSave() {
   return { promise, resolve, reject };
 }
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./bot-voices", () => ({
-  voiceLabel: (voice: { language: string; name: string }) => `${voice.language} · ${voice.name}`,
+  voiceLabel: (voice: { language: string; name: string }) => `${voice.name} (${voice.language})`,
   deviceVoices: mocks.deviceVoices,
   voiceForBot: mocks.voiceForBot,
   setVoiceForBot: mocks.setVoiceForBot,
@@ -809,12 +810,6 @@ describe("bot settings device voice menu", () => {
     );
   });
 
-  it("shows a management subtitle instead of a help control", async () => {
-    await render();
-    expect(container.textContent).toContain("Can edit and organise bots it creates");
-    expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
-  });
-
   it("persists bot management toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();
@@ -1012,8 +1007,8 @@ describe("bot settings device voice menu", () => {
     await render();
     const actions = menu()!.querySelectorAll("button");
     expect([...actions].map((action) => [action.textContent, action.dataset.state])).toEqual([
-      ["en-US · Alice", "on"],
-      ["en-GB · Beth", "off"],
+      ["Alice (en-US)", "on"],
+      ["Beth (en-GB)", "off"],
     ]);
     const labels = [...container.querySelectorAll("span")];
     const label = (text: string) => labels.find((item) => item.textContent === text)!;
@@ -1027,8 +1022,8 @@ describe("bot settings device voice menu", () => {
     const trigger = menu()!.firstElementChild!;
     expect(trigger.getAttribute("role")).toBe("button");
     expect(trigger.getAttribute("aria-label")).toBe("Device voice");
-    expect(trigger.getAttribute("aria-valuetext")).toBe("en-US · Alice");
-    expect(label("en-US · Alice").dataset.style).toContain('"textAlign":"right"');
+    expect(trigger.getAttribute("aria-valuetext")).toBe("Alice (en-US)");
+    expect(label("Alice (en-US)").dataset.style).toContain('"textAlign":"right"');
     expect(menu()!.querySelector("i")!.dataset).toMatchObject({
       ios: "chevron.up.chevron.down",
       android: "chevron-expand",

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 // Harness pins CLOUD_AGENT_PROVIDER=emulator (see packages/testkit); do not point at a live Cursor key.
-// cloud_agent_launch is consequential but runs without a confirmation by default (optional in settings).
+// cloud_agent_launch is consequential, so Ask mode, the default, shows a card first.
 test("renders a compact cloud agent card from an emulator launch", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `cloud-agent-${stamp}@rakazo.test`, "password12", "Cloud Agent");
@@ -12,6 +12,9 @@ test("renders a compact cloud agent card from an emulator launch", async ({ page
   const composer = page.getByPlaceholder(/Message/);
   await composer.fill("launch a cloud agent to add a README");
   await page.keyboard.press("Enter");
+  const allowOnce = page.getByRole("button", { name: "Allow once", exact: true });
+  await expect(allowOnce).toBeVisible({ timeout: 60_000 });
+  await allowOnce.click();
 
   const card = page.getByTestId("cloud-agent-card");
   await expect(card).toBeVisible({ timeout: 60_000 });

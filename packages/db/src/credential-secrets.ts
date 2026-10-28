@@ -36,17 +36,14 @@ export async function deleteUnreferencedCredentialSecret(
 
 /**
  * Drop a model credential whose stored OAuth material is dead, along with the
- * secret row nothing else references. The provider then reports `disconnected`
- * through the existing catalog auth machinery.
+ * secret row nothing else references.
  *
  * Two guards keep a stale failure from deleting newer material:
  * - `secretId`: a reconnect swaps the credential to a fresh secret row, so a
- *   mismatch means the retired material is already gone — leave it alone.
- * - `matchesFailedSecret`: a concurrent successful refresh rewrites the SAME
- *   secret row in place, leaving `secretId` unchanged. The predicate reads a DB snapshot
- *   outside the transaction; the serializable delete rechecks its pointer and
- *   ciphertext. A mismatch means a newer credential won the race and the
- *   delete is skipped. When the secret row itself is already gone there is
+ *   mismatch means the retired material is already gone.
+ * - `matchesFailedSecret`: a concurrent successful refresh rewrites the same
+ *   secret row in place. The serializable delete rechecks its pointer and
+ *   ciphertext and skips on mismatch; a secret row that is already gone has
  *   nothing newer to protect, so the credential is still deleted.
  */
 export async function retireModelCredential(
@@ -101,9 +98,7 @@ export async function retireModelCredential(
           )
             return false;
         }
-        await tx.spaceModelPreference.deleteMany({
-          where: { userId: input.userId, credentialId: credential.id },
-        });
+        // Its own model and the role rows pinned to it go with it.
         await tx.userModelCredential.delete({ where: { id: credential.id } });
         await deleteUnreferencedCredentialSecret(tx, {
           credentialKind: "model",

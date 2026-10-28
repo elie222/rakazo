@@ -106,7 +106,12 @@ vi.mock("react-native", () => ({
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({
-  useMobileTokens: () => ({ mutedForeground: "#888", background: "#FFF", workingDot: "#3FA266" }),
+  useMobileTokens: () => ({
+    mutedForeground: "#888",
+    background: "#FFF",
+    workingDot: "#3FA266",
+    secondary: "#EEE",
+  }),
 }));
 
 const SHAPE = "#2A92FE::shape_2";
@@ -133,7 +138,6 @@ describe("avatar motion on mobile", () => {
   });
   const render = (node: ReactNode) => act(() => root.render(node));
   const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
-  /** Whether the avatar's clip clock started. */
   const clockStarted = () => motion.timings.some(([, duration]) => duration === CLOCK_MS);
   /** The last wake-up target: 1 moving, 0 still or only blinking. */
   const awake = () =>
@@ -258,6 +262,12 @@ describe("avatar motion on mobile", () => {
     expect(motion.springs.at(-1)?.[0]).toBe(0);
   });
 
+  it("holds a photo's place with a plain circle while the photo loads", () => {
+    render(<BotAvatar color="data:image/png;base64,AAAA" identity="bot-p" size={28} />);
+    const circle = container.querySelector('[data-bg="#EEE"]');
+    expect(circle?.getAttribute("data-width")).toBe("28");
+  });
+
   it("keeps tiny and photo avatars still", () => {
     render(
       <>
@@ -349,7 +359,6 @@ describe("activity mark", () => {
     { id: "bot-a", color: SHAPE, status: "running" },
     { id: "bot-b", color: "#FF781C", status: "running" },
   ];
-  /** The mark's grow-in spring. */
   const grewIn = () => motion.springs.some(([, config]) => config === MARK_SPRING);
 
   it("opens its row and grows in only once the chat is at the newest message", () => {

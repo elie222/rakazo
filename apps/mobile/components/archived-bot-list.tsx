@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import type { MobileBot, MobileGroup } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useResolvedAppearance } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { NativeSymbol } from "./native-symbol";
 import { Chevron } from "./row-accessories";
 
@@ -26,10 +27,15 @@ export function ArchivedBotList({
   onDelete,
   onRestoreGroup,
 }: ArchivedBotListProps) {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const scheme = useResolvedAppearance();
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 20 }}>
+    <ScrollView
+      style={sideInsets}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ padding: 20 }}
+    >
       <View style={{ borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" }}>
         {bots.map((bot) => (
           <MenuView

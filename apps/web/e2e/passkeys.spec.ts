@@ -66,7 +66,6 @@ test("adds a passkey after signup and signs in with it", async ({ page }, testIn
   await page.getByRole("button", { name: "Log out" }).click();
   await signedIn;
   await expect(account).toBeVisible();
-  // The offer was taken, so it never returns.
   await expect(page.getByTestId("passkey-offer")).toHaveCount(0);
 
   // Without a touch, autofill waits, and the button signs in.

@@ -36,12 +36,47 @@ type Tenant = {
 function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>]> {
   return [
     [
+      "spaceModelRoleChoice",
+      {
+        spaceId: t.spaceId,
+        userId: t.userId,
+        role: `approval-${tag}`,
+        position: 0,
+        provider: "openrouter",
+        modelId: `model-${tag}`,
+      },
+    ],
+    [
       "botSecret",
       {
         id: `rls-bot-secret-${tag}-${t.botId}`,
         userId: t.userId,
         spaceId: t.spaceId,
         botId: t.botId,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
+      "vaultCredential",
+      {
+        id: `rls-vault-space-${tag}-${t.spaceId}`,
+        userId: t.userId,
+        spaceId: t.spaceId,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
+      "vaultCredential",
+      {
+        id: `rls-vault-account-${tag}-${t.userId}`,
+        userId: t.userId,
+        spaceId: null,
         name: `n-${tag}`,
         origin: "https://example.test",
         auth: {},
@@ -168,6 +203,25 @@ describePostgres("row-level security (PostgreSQL)", () => {
           ciphertext: "c",
         },
       });
+      await o.member.create({
+        data: {
+          id: `${t.userId}-member`,
+          organizationId,
+          userId: t.userId,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
+      await o.spaceMember.create({
+        data: {
+          id: `${t.userId}-space-member`,
+          spaceId: t.spaceId,
+          userId: t.userId,
+          organizationId,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
       for (const [table, data] of rowsFor(t, "fixture")) {
         await Reflect.get(o, table).create({ data });
       }
@@ -187,17 +241,23 @@ describePostgres("row-level security (PostgreSQL)", () => {
   const threadIds = () => tenants.map((t) => t.threadId);
   const owners = () =>
     Promise.all(
-      ["botSecret", "agentSecret", "taughtSkill", "agentSkill", "userVoiceCredential"].map(
-        async (table) => {
-          const scope = table === "userVoiceCredential" ? "userId" : "spaceId";
-          const ids = tenants.map((t) => t[scope]);
-          const rows = (await Reflect.get(db, table).findMany({
-            where: { [scope]: { in: ids } },
-            select: { [scope]: true },
-          })) as Array<Record<string, string>>;
-          return [table, rows.map((row) => row[scope]).sort()] as const;
-        },
-      ),
+      [
+        "botSecret",
+        "vaultCredential",
+        "agentSecret",
+        "taughtSkill",
+        "agentSkill",
+        "userVoiceCredential",
+      ].map(async (table) => {
+        const scope =
+          table === "userVoiceCredential" || table === "vaultCredential" ? "userId" : "spaceId";
+        const ids = tenants.map((t) => t[scope]);
+        const rows = (await Reflect.get(db, table).findMany({
+          where: { [scope]: { in: ids } },
+          select: { [scope]: true },
+        })) as Array<Record<string, string>>;
+        return [table, rows.map((row) => row[scope]).sort()] as const;
+      }),
     ).then(Object.fromEntries);
   const visible = () =>
     Promise.all([
@@ -602,6 +662,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
   it("applies the same rules to secrets, skills and voice credentials", async () => {
     const none = {
       botSecret: [],
+      vaultCredential: [],
       agentSecret: [],
       taughtSkill: [],
       agentSkill: [],
@@ -610,6 +671,8 @@ describePostgres("row-level security (PostgreSQL)", () => {
     expect(await owners()).toEqual(none);
     expect(await runAsTenant(a, owners)).toEqual({
       botSecret: [a.spaceId],
+      // The member's account vault and their Space's own vault.
+      vaultCredential: [a.userId, a.userId],
       agentSecret: [a.spaceId],
       taughtSkill: [a.spaceId],
       agentSkill: [a.spaceId],

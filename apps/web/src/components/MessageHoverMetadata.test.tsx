@@ -17,7 +17,6 @@ describe("MessageHoverMetadata", () => {
     expect(html).toContain("-translate-y-1/2");
     expect(html).not.toContain("ms-1.5");
     expect(html).not.toContain("bottom-0");
-    expect(html).not.toContain("<time");
     expect(html).toContain("opacity-0");
     expect(html).toContain("@media(hover:hover)_and_(pointer:fine)");
     expect(html).toContain("group-hover/message:opacity-100");
@@ -34,7 +33,6 @@ describe("MessageHoverMetadata", () => {
     expect(html).toContain("end-full");
     expect(html).toContain("me-1");
     expect(html).not.toContain("start-full");
-    expect(html).not.toContain("<time");
   });
 
   it("drops the rail in-flow below the bubble on touch", () => {

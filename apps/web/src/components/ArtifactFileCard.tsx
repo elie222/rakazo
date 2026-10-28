@@ -1,8 +1,9 @@
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { t as translate } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { fileSizeParts } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { Code2, Download, FileText, Play, X } from "lucide-react";
 import type { RefObject } from "react";
@@ -10,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
 import { errorText } from "../lib/user-error";
+import { BuiCard } from "./ai/primitives";
 import { IconTooltip } from "./IconTooltip";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
@@ -49,14 +51,14 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
 
   if (isAttachmentAudioMimeType(props.mimeType)) {
     return (
-      <div className="min-w-[280px] rounded-2xl border border-border bg-card p-4 text-foreground">
+      <BuiCard className="min-w-[280px] p-4 text-foreground">
         <AudioArtifactPreview
           key={JSON.stringify([props.target, props.artifactId, props.mimeType])}
           {...props}
           onDownload={startDownload}
         />
         {downloadError ? <DownloadError message={downloadError} /> : null}
-      </div>
+      </BuiCard>
     );
   }
 
@@ -66,11 +68,12 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-2xl border border-border bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
+          className="rounded-[20px] bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
-          <div className="mt-1 text-muted-foreground">
-            {props.mimeType} · {formatBytes(props.size)}
+          <div className="mt-1 flex gap-2 text-muted-foreground">
+            <span>{props.mimeType}</span>
+            <span>{formatSize(props.size)}</span>
           </div>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}
@@ -81,7 +84,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
   return (
     <>
       <div>
-        <div className="flex min-w-[280px] overflow-hidden rounded-2xl border border-border bg-card text-left text-foreground">
+        <BuiCard className="flex min-w-[280px] overflow-hidden text-left text-foreground">
           <button
             ref={previewButton}
             type="button"
@@ -99,7 +102,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
             <span className="min-w-0">
               <span className="block truncate text-[14px] font-medium">{props.name}</span>
               <span className="mt-0.5 block text-[13px] text-muted-foreground">
-                {formatBytes(props.size)}
+                {formatSize(props.size)}
               </span>
             </span>
           </button>
@@ -113,7 +116,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
               <Download size={19} strokeWidth={1.8} />
             </button>
           </IconTooltip>
-        </div>
+        </BuiCard>
         {downloadError ? <DownloadError message={downloadError} /> : null}
       </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -304,14 +307,15 @@ function AudioArtifactPreview({
           </Button>
         ) : null}
         <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{name}</span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-lg"
           aria-label={t`Download ${name}`}
           onClick={() => void onDownload()}
-          className="shrink-0 p-2 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground"
         >
-          <Download size={19} strokeWidth={1.8} />
-        </button>
+          <Download strokeWidth={1.8} className="size-[19px]" />
+        </Button>
       </div>
       {state.status === "loading" ? (
         <span className="text-sm text-muted-foreground">
@@ -362,14 +366,20 @@ function DownloadError({ message }: { message: string }) {
   );
 }
 
-function formatBytes(size: number) {
-  const locale = i18n.locale || "en";
-  if (size < 1024) return t`${size} B`;
-  const format = (value: number) =>
-    new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    }).format(value);
-  if (size < 1024 * 1024) return t`${format(size / 1024)} KB`;
-  return t`${format(size / (1024 * 1024))} MB`;
+function formatSize(bytes: number): string {
+  const parts = fileSizeParts(bytes, i18n.locale || "en");
+  if (!parts) return "";
+  const size = parts.amount;
+  switch (parts.unit) {
+    case "B":
+      return translate`${size} B`;
+    case "KB":
+      return translate`${parts.amount} KB`;
+    case "MB":
+      return translate`${parts.amount} MB`;
+    case "GB":
+      return translate`${parts.amount} GB`;
+    case "TB":
+      return translate`${parts.amount} TB`;
+  }
 }

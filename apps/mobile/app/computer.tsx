@@ -1,5 +1,13 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
-import { displayName, isRetryableError } from "@rakazo/core";
+import type { ScreenPageState } from "@rakazo/core";
+import {
+  createScreenReconnect,
+  displayName,
+  isRetryableError,
+  SCREEN_RECONNECT_DELAY_MS,
+  screenProbeUrl,
+  waitForScreenPage,
+} from "@rakazo/core";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -34,11 +42,16 @@ import {
   computerLabel,
   controlLabel,
   embeddableScreenUrl,
+  fromScreenPage,
+  isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_OPEN_ATTEMPTS,
+  screenPageState,
+  screenPageStatus,
+  screenStreamKey,
 } from "../lib/computer";
 import type { ComputerKeyboardCommand } from "../lib/computer-keyboard";
 import {
@@ -49,24 +62,30 @@ import {
   NATIVE_COMPUTER_KEYBOARD_BOOT,
 } from "../lib/computer-keyboard";
 import { createComputerRefresh } from "../lib/computer-refresh";
+import { tabletopLayout } from "../lib/fold-layout";
+import { useFoldRegions } from "../lib/fold-regions";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { holdFreeRotation } from "../lib/orientation";
+import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { computerBootErrorDetail, errorText } from "../lib/user-error";
 
 export default function Computer() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const navigation = useNavigation();
-  const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
+  const windowSize = useWindowDimensions();
+  const stacked = stacksAtTextScale(windowSize.fontScale);
+  const folds = useFoldRegions();
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [screenOriginError, setScreenOriginError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readyBotId, setReadyBotId] = useState<string | null>(null);
   const [bootingCount, setBootingCount] = useState(0);
@@ -75,6 +94,8 @@ export default function Computer() {
   const [bootFailed, setBootFailed] = useState(false);
   const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
+  // The keyboard closes on the Release tap, not when the server answers.
+  const [releasing, setReleasing] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const screenWebViewRef = useRef<WebView>(null);
   const keyboardGate = useRef({
@@ -91,6 +112,8 @@ export default function Computer() {
   useEffect(() => setScreenError(null), [embeddedScreenUrl]);
 
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
+  // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
+  const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
     computerOpen && computer?.state === "running" && Boolean(embeddedScreenUrl) && !screenError;
   const loadedScreenUrl = nextLoadedScreenUrl(
@@ -135,9 +158,9 @@ export default function Computer() {
   const refreshController = useMemo(
     () =>
       createComputerRefresh({
-        readStatus: () => rpc<ComputerStatus>("computer/status", { botId }),
+        readStatus: () => rpc("computer/status", { botId: botId ?? "" }),
         readScreen: (attempts) =>
-          readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
+          readScreenUrl(() => rpc("computer/screenUrl", { botId: botId ?? "" }), {
             attempts,
           }),
         onStatus: (status) => {
@@ -160,6 +183,7 @@ export default function Computer() {
     setComputer(null);
     setScreenUrl(null);
     setScreenError(null);
+    setScreenOriginError(false);
     setError(null);
     setReadyBotId(null);
     setBootingCount(0);
@@ -258,6 +282,61 @@ export default function Computer() {
     setScreenReload((count) => count + 1);
   }, [refresh]);
 
+  // A screen that drops after connecting loads again by itself now and then; the load goes
+  // through the screen's full authorization, so a revoked one stays closed.
+  const screenReconnect = useRef(createScreenReconnect());
+  const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const screenReconnectWait = useRef<AbortController | null>(null);
+  const currentScreenUrl = useRef<string | null>(null);
+  currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
+  const onScreenState = useCallback(
+    (state: ScreenPageState) => {
+      const next = screenReconnect.current.report(state);
+      if (next !== "reconnect") {
+        // A drop that won't reconnect by itself shows why, with Retry.
+        const failed = next === "error";
+        setScreenOriginError(failed);
+        setScreenError(
+          !failed
+            ? null
+            : state === "failed"
+              ? t("Could not connect to the computer screen")
+              : t("The screen connection closed."),
+        );
+        return;
+      }
+      clearTimeout(screenReconnectTimer.current);
+      screenReconnectWait.current?.abort();
+      const wait = new AbortController();
+      screenReconnectWait.current = wait;
+      const url = currentScreenUrl.current;
+      screenReconnectTimer.current = setTimeout(() => {
+        // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
+        // reload then shows whatever the page answers.
+        // Only the proxy answers probes; another screen is loaded again straight away.
+        const probe = url && isProxiedScreenPage(url) ? screenProbeUrl(url) : null;
+        void waitForScreenPage(
+          async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
+          { signal: wait.signal },
+        ).then((outcome) => {
+          if (outcome !== "cancelled") void reloadScreen();
+        });
+      }, SCREEN_RECONNECT_DELAY_MS);
+    },
+    [reloadScreen, t],
+  );
+  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
+  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
+  // cancels a pending reconnect.
+  useEffect(
+    () => () => {
+      screenReconnectWait.current?.abort();
+      clearTimeout(screenReconnectTimer.current);
+    },
+    // A renewed link for the same screen keeps the page and the pending reconnect.
+    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+  );
+
   useEffect(() => {
     if (!computerOpen) return;
     let backgrounded = false;
@@ -269,9 +348,6 @@ export default function Computer() {
     });
     return () => subscription.remove();
   }, [computerOpen, reloadScreen]);
-
-  // Let the full-screen desktop rotate to landscape; phone-sized windows elsewhere stay portrait.
-  useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
 
   useEffect(() => {
     if (!botId || !foreground || computer?.state !== "running") return;
@@ -306,14 +382,19 @@ export default function Computer() {
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
+    setReleasing(true);
     try {
       await rpc("computer/release", { botId, reason });
       if (!action.isActive()) return;
       setComputerOpen(false);
       await action.refresh().catch(() => undefined);
     } catch {
-      if (action.isActive()) setScreenError(t("Could not continue"));
+      if (action.isActive()) {
+        setScreenOriginError(false);
+        setScreenError(t("Could not continue"));
+      }
     } finally {
+      setReleasing(false);
       action.finish();
     }
   }
@@ -346,17 +427,38 @@ export default function Computer() {
     }
   }
 
+  const keyboardBar = hasControl ? (
+    <ComputerKeyboardBar
+      active={computerOpen && !releasing}
+      onCommand={(command) => {
+        injectKeyboardCommands(keyboardGate.current.bridge.push(command));
+      }}
+    />
+  ) : null;
   const placeholder =
     screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
+  const screenRetry = computer?.state === "running" && screenOriginError && Boolean(screenError);
+  const retryScreenAction = screenRetry ? (
+    <NativeActionButton
+      style={{ marginBottom: 16 }}
+      label={t("Retry screen")}
+      prominence="primary"
+      size="default"
+      onPress={() => void reloadScreen()}
+    />
+  ) : null;
 
   return (
+    // The full window's Modal is a child of this scroll view. A tap there, on Close or on the
+    // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
     <ScrollView
-      style={{ flex: 1, backgroundColor: tokens.background }}
+      style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
       contentContainerStyle={{ padding: 24 }}
       contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="always"
     >
       {canRetry && computer?.state !== "running" ? (
         <View style={{ gap: 8, marginBottom: 16 }}>
@@ -375,6 +477,7 @@ export default function Computer() {
           {error ?? t("Something went wrong while it was starting. Try again in a moment.")}
         </Text>
       ) : null}
+      {retryScreenAction}
       {canRetry ? (
         <NativeActionButton
           label={t("Try again")}
@@ -406,9 +509,12 @@ export default function Computer() {
             key={screenReload}
             url={embeddedScreenUrl}
             interactive={false}
+            onScreenState={onScreenState}
+            onLoadStart={onScreenLoadStart}
             onRendererLost={() => void reloadScreen()}
             onError={() => {
               refreshController.invalidateScreen();
+              setScreenOriginError(true);
               setScreenError(
                 t("Could not load the desktop. This device cannot reach the screen URL."),
               );
@@ -496,6 +602,7 @@ export default function Computer() {
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <KeyboardAvoidingView
             behavior="height"
+            enabled={!tabletop}
             style={{ flex: 1, backgroundColor: tokens.background }}
           >
             <SafeAreaView
@@ -589,9 +696,12 @@ export default function Computer() {
                     if (!isComputerKeyboardReadyMessage(data, String(gate.session))) return;
                     injectKeyboardCommands(gate.bridge.ready());
                   }}
+                  onScreenState={onScreenState}
+                  onLoadStart={onScreenLoadStart}
                   onRendererLost={() => void reloadScreen()}
                   onError={() => {
                     refreshController.invalidateScreen();
+                    setScreenOriginError(true);
                     setScreenError(
                       t("Could not load the desktop. This device cannot reach the screen URL."),
                     );
@@ -604,16 +714,23 @@ export default function Computer() {
                   <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
                     {placeholder}
                   </Text>
+                  {retryScreenAction}
                 </View>
               )}
             </View>
-            {hasControl ? (
-              <ComputerKeyboardBar
-                onCommand={(command) => {
-                  injectKeyboardCommands(keyboardGate.current.bridge.push(command));
-                }}
-              />
-            ) : null}
+            {tabletop ? (
+              // A fixed lower half, so the keyboard lifts the bar without pushing the desktop.
+              <View style={{ height: windowSize.height - tabletop.top, paddingTop: tabletop.gap }}>
+                <KeyboardAvoidingView
+                  behavior="height"
+                  style={{ flex: 1, justifyContent: "flex-end" }}
+                >
+                  {keyboardBar}
+                </KeyboardAvoidingView>
+              </View>
+            ) : (
+              keyboardBar
+            )}
           </KeyboardAvoidingView>
         </SafeAreaProvider>
       </Modal>
@@ -659,6 +776,8 @@ function ScreenWebView({
   keyboardSession,
   webViewRef,
   onKeyboardMessage,
+  onScreenState,
+  onLoadStart,
   onRendererLost,
   onError,
 }: {
@@ -668,12 +787,27 @@ function ScreenWebView({
   keyboardSession?: string;
   webViewRef?: RefObject<WebView | null>;
   onKeyboardMessage?: (data: string) => void;
+  onScreenState?: (state: ScreenPageState) => void;
+  onLoadStart?: () => void;
   onRendererLost?: () => void;
   onError: () => void;
 }) {
   const tokens = useMobileTokens();
   const sourceUrl = useRef(url);
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
+  const loadedSource = sourceUrl.current;
+  const reportStarted = useRef(false);
+  const reportCallback = useRef(onScreenState);
+  reportCallback.current = onScreenState;
+  useEffect(() => {
+    reportStarted.current = false;
+    // Only proxy pages report their state; one that never starts shows as failed.
+    if (!isProxiedScreenPage(loadedSource)) return;
+    const timer = setTimeout(() => {
+      if (!reportStarted.current) reportCallback.current?.("failed");
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [loadedSource, nativeKeyboard]);
   return (
     <WebView
       ref={webViewRef}
@@ -687,13 +821,16 @@ function ScreenWebView({
       injectedJavaScript={
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
       }
-      onMessage={
-        nativeKeyboard
-          ? (event) => {
-              onKeyboardMessage?.(event.nativeEvent.data);
-            }
-          : undefined
-      }
+      onMessage={(event) => {
+        const state = fromScreenPage(event.nativeEvent.url, sourceUrl.current)
+          ? screenPageState(event.nativeEvent.data)
+          : null;
+        if (state) {
+          if (state !== "loading") reportStarted.current = true;
+          onScreenState?.(state);
+        } else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
+      }}
+      onLoadStart={onLoadStart}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       // A view-only screen is a picture: keep its page, including the hidden keyboard field,

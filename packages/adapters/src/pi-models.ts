@@ -1,7 +1,12 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import {
+  assertHeaderSafeApiKey,
+  canonicalPiProviderId,
+  MODEL_KEY_REJECTED_ERROR,
+} from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -36,19 +41,84 @@ export type PiCatalogEntry = {
   live?: true;
 };
 
-/** Product defaults for new connections; only exact catalog IDs are recommended. */
+/**
+ * Product defaults for new connections; only exact catalog IDs are recommended. A provider
+ * without one preselects its first offered model, so set one where that model is a poor start.
+ */
 const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
   "openai-codex": "gpt-6-luna",
   openai: "gpt-6-luna",
   openrouter: "openai/gpt-6-luna",
   anthropic: "claude-haiku-5-5",
+  google: "gemini-3.8-flash",
+  groq: "openai/gpt-oss-120b",
+  minimax: "MiniMax-M3",
 };
 
 export function isRecommendedCatalogModel(provider: string, id: string): boolean {
   return RECOMMENDED_MODEL_IDS[canonicalPiProviderId(provider)] === id;
 }
 
+/**
+ * Bundled ids the provider refuses to agent runs for every new account. The registry has no
+ * field that says so, so each entry is backed by the provider's own rejection:
+ * - google: "no longer available to new users" (the 2.5 family).
+ * - groq, minimax: retired, answered with "does not exist" / "no longer available".
+ * - github-copilot: "not available for integrator", the Copilot integration Pi identifies as.
+ */
+const UNSERVED_MODEL_IDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  google: new Set(["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]),
+  groq: new Set(["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]),
+  minimax: new Set(["MiniMax-M2.7"]),
+  "github-copilot": new Set(["gemini-3.7-flash", "grok-4.5", "mai-code-1-flash-picker"]),
+};
+
+/**
+ * Whether an agent run can use this model. Pickers leave the rest out so a new user cannot
+ * choose a model whose every run fails; saved choices keep working and stay visible.
+ */
+export function catalogModelServesAgents(
+  model: Pick<Model<Api>, "provider" | "id"> & {
+    cost?: Pick<Model<Api>["cost"], "input" | "output">;
+  },
+): boolean {
+  const provider = canonicalPiProviderId(model.provider);
+  // OpenRouter's `:batch` variants only exist on its batch endpoint, never on chat completions.
+  if (model.id.endsWith(":batch")) return false;
+  // OpenCode's free tier only answers its own app; the registry prices those models at zero.
+  if (provider === "opencode" && model.cost?.input === 0 && model.cost.output === 0) return false;
+  return !UNSERVED_MODEL_IDS[provider]?.has(model.id);
+}
+
+/** Drop models agents cannot run, keeping any `provider:id` the account has already saved. */
+export function offeredCatalog<T extends { provider: string; id: string }>(
+  entries: readonly T[],
+  saved: ReadonlySet<string> = new Set(),
+): T[] {
+  return entries.filter(
+    (entry) => !hiddenCatalogModel(entry) || saved.has(`${entry.provider}:${entry.id}`),
+  );
+}
+
+/** A bundled model priced in the registry, or a live id judged by its id alone. */
+export function hiddenCatalogModel(entry: { provider: string; id: string }): boolean {
+  listPiCatalog();
+  const key = `${canonicalPiProviderId(entry.provider)}:${entry.id}`;
+  return hiddenCatalogKeys.has(key) || !catalogModelServesAgents(entry);
+}
+
+const hiddenCatalogKeys = new Set<string>();
+
 const catalogProbeBaseUrls = new Map<string, string>();
+const catalogBaseUrls = new Map<string, Set<string>>();
+
+const trimBaseUrl = (url: string) => url.trim().replace(/\/+$/, "");
+
+/** Whether `url` is one the model registry itself uses for this catalog provider. */
+export function isCatalogProviderBaseUrl(provider: string, url: string): boolean {
+  listPiCatalog();
+  return catalogBaseUrls.get(canonicalPiProviderId(provider))?.has(trimBaseUrl(url)) ?? false;
+}
 
 /** Pinned models-list URL for a catalog provider, taken from the model registry. */
 export function catalogProviderProbeBaseUrl(provider: string): string | null {
@@ -96,6 +166,7 @@ export async function verifyCatalogProviderApiKey(
   fetchImpl: typeof fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<void> {
+  assertHeaderSafeApiKey(input.apiKey.trim());
   const provider = canonicalPiProviderId(input.provider);
   const url = KEY_CHECK_URLS.get(provider);
   if (!url) return;
@@ -122,7 +193,7 @@ export async function verifyCatalogProviderApiKey(
       : response.status === 401 || response.status === 403;
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
-    throw new Error("API key was rejected by the provider.");
+    throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
@@ -190,6 +261,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
+  catalogBaseUrls.clear();
+  hiddenCatalogKeys.clear();
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
@@ -210,8 +283,15 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const providerModels = provider.getModels();
     const probeBaseUrl = pinnedCatalogProbeBaseUrl(provider.id, providerModels);
     if (probeBaseUrl) catalogProbeBaseUrls.set(provider.id, probeBaseUrl);
+    catalogBaseUrls.set(
+      provider.id,
+      new Set(
+        providerModels.flatMap((model) => (model.baseUrl ? [trimBaseUrl(model.baseUrl)] : [])),
+      ),
+    );
     const modelIds = providerModels.map((model) => model.id);
     for (const model of providerModels) {
+      if (!catalogModelServesAgents(model)) hiddenCatalogKeys.add(`${provider.id}:${model.id}`);
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
       entries.push({
         provider: provider.id,

@@ -27,6 +27,7 @@
     "@react-native-vector-icons/ionicons": "13.1.4",
     "@react-native-vector-icons/material-design-icons": "13.1.4",
     "@sentry/react-native": "7.11.0",
+    "@tanstack/react-query": "5.104.5",
     "expo": "57.0.31",
     "expo-application": "57.0.3",
     "expo-audio": "57.0.5",
@@ -43,7 +44,6 @@
     "expo-modules-core": "57.0.24",
     "expo-notifications": "57.0.24",
     "expo-router": "57.0.29",
-    "expo-screen-orientation": "57.0.3",
     "expo-secure-store": "57.0.4",
     "expo-sharing": "57.0.24",
     "expo-speech": "57.0.3",
@@ -69,6 +69,7 @@
   },
   "devDependencies": {
     "@react-native/metro-config": "0.86.3",
+    "@sentry/cli": "2.58.4",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",

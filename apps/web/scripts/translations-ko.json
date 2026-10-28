@@ -154,7 +154,6 @@
   "Connect remote or local tool servers and choose which agents can use them.": "원격 또는 로컬 도구 서버를 연결하고 사용할 Bot을 선택하세요.",
   "Connect Treg": "Treg 연결",
   "Connected": "연결됨",
-  "Connected. Its tools are available from your next message.": "연결되었습니다. 다음 메시지부터 이 도구를 사용할 수 있습니다.",
   "Connected {0}.": "{0}에 연결했습니다.",
   "Connecting…": "연결 중…",
   "Connection to {0} is still pending. You can close this and check again.": "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다.",

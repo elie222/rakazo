@@ -116,7 +116,7 @@ export function PasskeyOffer() {
           {error}
         </p>
       ) : null}
-      <Button size="sm" className="mt-2 rounded-full" disabled={pending} onClick={() => void add()}>
+      <Button size="sm" className="mt-2" disabled={pending} onClick={() => void add()}>
         <Trans>Add passkey</Trans>
       </Button>
     </section>

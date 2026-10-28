@@ -12,6 +12,7 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await page.waitForURL(/\/app\/[^/]+$/);
 
   const picker = page.getByTestId("bot-create-picker");
+  await expect(page.getByTestId("create-menu-trigger")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+n");
   await expect(picker.getByPlaceholder("Search")).toBeFocused();
   await page.keyboard.press("Escape");
@@ -27,7 +28,7 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await picker.getByPlaceholder("Search").focus();
   await page.keyboard.press("ArrowDown");
   await expect(picker.locator('[data-slot="command-item"][data-selected="true"]')).toContainText(
-    "Chief",
+    "New group chat",
   );
   await captureScreenshot(page, testInfo, "plus-picker-highlight");
 
@@ -100,36 +101,21 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await page.getByTestId("create-menu-trigger").click();
   await expect(picker).toBeVisible();
 
-  await picker.getByTestId("create-new-group").hover();
-  const groupInfo = picker.getByTestId("picker-info-group");
-  await expect.poll(() => groupInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  await captureScreenshot(page, testInfo, "picker-group-info-hover");
-  await groupInfo.click();
-  const dialog = page.getByTestId("picker-info-dialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("Groups", { exact: true })).toBeVisible();
-  await expect(dialog).toContainText(
-    "Shared chat with 2-10 bots. They all reply in the same thread.",
-  );
-  await expect(page.getByTestId("side-panel")).not.toHaveAttribute("data-panel", "create-group");
-  await captureScreenshot(page, testInfo, "picker-group-info-dialog");
-  await dialog.getByRole("button", { name: "Close" }).click();
-  await expect(dialog).toBeHidden();
-
-  await page.getByTestId("create-menu-trigger").click();
   const spaceInfo = picker.getByTestId("picker-info-space");
   await expect.poll(() => spaceInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");
   await picker.getByTestId("create-new-space").hover();
   await expect.poll(() => spaceInfo.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  await spaceInfo.click();
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("Spaces", { exact: true })).toBeVisible();
-  await expect(dialog).toContainText("own bots and groups");
-  await captureScreenshot(page, testInfo, "picker-space-info-dialog");
+  await spaceInfo.hover();
+  const spaceTooltip = page
+    .locator('[data-slot="tooltip-content"]')
+    .filter({ hasText: "Private workspace with its own bots and groups." });
+  await expect(spaceTooltip).toBeVisible();
+  await captureScreenshot(page, testInfo, "picker-space-info-tooltip");
+  await page.mouse.move(0, 0);
+  await expect(spaceTooltip).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
+  await expect(picker).toHaveCount(0);
 
-  // An organic body picked in the dialog is the body the new bot gets.
   await page.getByTestId("create-menu-trigger").click();
   await picker.getByTestId("create-new-bot").click();
   await expect(createDialog).toBeVisible();
@@ -213,7 +199,6 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   const stamp = Date.now();
   await signup(page, `focus-delay-${stamp}@rakazo.test`, "password12", "Focus Delay");
   await completeOnboarding(page);
-  // First bot from onboarding shows the focus card immediately.
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
 
   await page.clock.install();
@@ -249,4 +234,43 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   ).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
+});
+
+test("creation actions stay visible above a long bot list", async ({ page }, testInfo) => {
+  await signup(page, `create-menu-${Date.now()}@rakazo.test`, "password12", "Create menu");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  for (let index = 0; index < 12; index++) {
+    await rpc(page, "bots/create", {
+      name: `Helper ${index + 1}`,
+      title: "",
+      description: "",
+      notifyOnFinish: true,
+      computerMode: "team",
+    });
+  }
+  await page.reload();
+  await page.getByTestId("create-menu-trigger").click();
+  const picker = page.getByTestId("bot-create-picker");
+  const group = picker.getByTestId("create-new-group");
+  const space = picker.getByTestId("create-new-space");
+  const firstBot = picker.locator('[data-testid^="picker-bot-"]').first();
+  await expect(picker.locator('[data-testid^="picker-bot-"]')).toHaveCount(13);
+  const groupBox = await group.boundingBox();
+  const botBox = await firstBot.boundingBox();
+  expect(groupBox!.y).toBeLessThan(botBox!.y);
+  await picker.locator('[data-testid^="picker-bot-"]').last().scrollIntoViewIfNeeded();
+  await expect(group).toBeInViewport();
+  await expect(space).toBeInViewport();
+  await captureScreenshot(page, testInfo, "create-menu-long-roster");
+  await page.setViewportSize({ width: 900, height: 360 });
+  const lastBot = picker.locator('[data-testid^="picker-bot-"]').last();
+  await lastBot.scrollIntoViewIfNeeded();
+  await expect(lastBot).toBeInViewport({ ratio: 1 });
+  await expect(group).toBeInViewport({ ratio: 1 });
+  await expect(space).toBeInViewport({ ratio: 1 });
+  await captureScreenshot(page, testInfo, "create-menu-short-window");
+  await group.click();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "create-group");
 });

@@ -1,5 +1,9 @@
 import { parseArgs } from "node:util";
-import { createAgentHomeStore, ObjectAgentHomeStore } from "@rakazo/adapters";
+import {
+  contentKeyProviderFromEnv,
+  createAgentHomeStore,
+  ObjectAgentHomeStore,
+} from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { createDb } from "@rakazo/db";
 
@@ -33,6 +37,7 @@ if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 
 const { prisma, pool } = createDb(process.env.DATABASE_URL, {
   applicationName: "rakazo-home-storage",
+  keyProvider: contentKeyProviderFromEnv(),
 });
 const write = (line: string) => process.stdout.write(`${line}\n`);
 let stopping = false;

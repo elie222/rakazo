@@ -28,9 +28,10 @@ export function isMonitoringUserId(value: unknown): value is string {
 }
 
 export function scrubMonitoringText(value: string): string {
+  // Leave later drive prefixes available for independent redaction.
   return redactSensitiveText(value)
-    .replace(/(?:\/Users\/|\/home\/)[^/\s]+/g, "/[user]")
-    .replace(/[A-Z]:\\Users\\[^\\\s]+/gi, "[user]");
+    .replace(/[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi, "[user]")
+    .replace(/(?:\/Users\/|\/home\/)[^/\s]+/g, "/[user]");
 }
 
 export function stripMonitoringUrl(value: string): string {
@@ -50,8 +51,22 @@ export function sanitizedError(
   const result = new Error(scrub(value.message));
   result.name = scrub(value.name);
   if (value.stack) result.stack = scrub(value.stack);
+  // A driver's code and Prisma's meta tell a timeout from a conflict; keep them, scrubbed.
+  const { code, meta } = value as { code?: unknown; meta?: unknown };
+  if (typeof code === "string") Object.assign(result, { code: scrub(code) });
+  if (meta && typeof meta === "object") Object.assign(result, { meta: scrubbed(meta, scrub) });
   if (value.cause !== undefined) result.cause = sanitizedError(value.cause, scrub, seen);
   return result;
+}
+
+function scrubbed(value: unknown, scrub: (text: string) => string, depth = 0): unknown {
+  if (typeof value === "string") return scrub(value);
+  if (!value || typeof value !== "object") return value;
+  if (depth >= 5) return "[Truncated]";
+  if (Array.isArray(value)) return value.map((item) => scrubbed(item, scrub, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, scrubbed(item, scrub, depth + 1)]),
+  );
 }
 
 interface MonitoringEvent {

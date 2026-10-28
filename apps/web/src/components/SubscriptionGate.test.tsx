@@ -8,6 +8,9 @@ const api = vi.hoisted(() => ({ me: vi.fn(), status: vi.fn() }));
 vi.mock("../lib/rpc", () => ({ rpc: { me: api.me, billing: { status: api.status } } }));
 vi.mock("../lib/bootstrap", () => ({ peekInitialBootstrap: () => undefined }));
 vi.mock("../pages/Paywall", () => ({ PaywallPage: () => <div>paywall</div> }));
+vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -27,13 +30,16 @@ async function renderGate(billing: boolean) {
   );
   vi.resetModules();
   const { SubscriptionGate } = await import("./SubscriptionGate");
+  const { MemoryRouter } = await import("react-router-dom");
   const container = document.createElement("div");
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <SubscriptionGate fallback={<div>loading</div>}>
-        <div>app</div>
-      </SubscriptionGate>,
+      <MemoryRouter>
+        <SubscriptionGate fallback={<div>loading</div>}>
+          <div>app</div>
+        </SubscriptionGate>
+      </MemoryRouter>,
     );
   });
   await act(async () => {

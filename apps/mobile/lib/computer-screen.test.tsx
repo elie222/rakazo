@@ -13,7 +13,18 @@ const rpc = vi.hoisted(() => vi.fn());
 const textScale = vi.hoisted(() => ({ fontScale: 1 }));
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 const foreground = vi.hoisted(() => ({ value: true }));
-const screens = vi.hoisted(() => ({ mounts: 0 }));
+const folds = vi.hoisted(() => ({
+  regions: [] as Array<{ x: number; y: number; width: number; height: number }>,
+}));
+const screens = vi.hoisted(() => ({
+  mounts: 0,
+  error: undefined as undefined | (() => void),
+  onMessage: undefined as
+    | ((event: { nativeEvent: { data: string; url?: string } }) => void)
+    | undefined,
+  source: "",
+  onLoadStart: undefined as (() => void) | undefined,
+}));
 const picker = vi.hoisted(() => ({
   mounts: 0,
   props: undefined as
@@ -21,10 +32,19 @@ const picker = vi.hoisted(() => ({
     | undefined,
 }));
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native", () => {
   function MockView(props: {
     children?: ReactNode;
-    style?: { flexDirection?: string; flex?: number; alignSelf?: string; color?: string };
+    style?: {
+      flexDirection?: string;
+      flex?: number;
+      alignSelf?: string;
+      color?: string;
+      height?: number;
+      paddingTop?: number;
+    };
+    keyboardShouldPersistTaps?: string;
   }) {
     return createElement(
       "div",
@@ -33,6 +53,9 @@ vi.mock("react-native", () => {
         "data-direction": props.style?.flexDirection,
         "data-flex": props.style?.flex,
         "data-align-self": props.style?.alignSelf,
+        "data-height": props.style?.height,
+        "data-padding-top": props.style?.paddingTop,
+        "data-persist-taps": props.keyboardShouldPersistTaps,
       },
       props.children,
     );
@@ -86,11 +109,12 @@ vi.mock("./app-foreground", () => ({
   useAppForeground: () => foreground.value,
 }));
 vi.mock("react-native-keyboard-controller", () => ({
-  KeyboardAvoidingView: ({ children }: { children: ReactNode }) =>
-    createElement(Fragment, null, children),
+  KeyboardAvoidingView: ({ children, enabled }: { children: ReactNode; enabled?: boolean }) =>
+    createElement("div", { "data-avoids-keyboard": String(enabled ?? true) }, children),
 }));
 vi.mock("../components/computer-keyboard-bar", () => ({
-  ComputerKeyboardBar: () => createElement("div", { "data-keyboard-bar": true }),
+  ComputerKeyboardBar: (props: { active: boolean }) =>
+    createElement("div", { "data-keyboard-bar": true, "data-active": String(props.active) }),
 }));
 
 vi.mock("react-native-webview", () => {
@@ -98,7 +122,15 @@ vi.mock("react-native-webview", () => {
     WebView: (props: {
       accessibilityElementsHidden?: boolean;
       importantForAccessibility?: string;
+      onMessage?: (event: { nativeEvent: { data: string; url?: string } }) => void;
+      onError?: () => void;
+      source?: { uri: string };
+      onLoadStart?: () => void;
     }) => {
+      screens.onMessage = props.onMessage;
+      screens.error = props.onError;
+      screens.source = props.source?.uri ?? "";
+      screens.onLoadStart = props.onLoadStart;
       useEffect(() => {
         screens.mounts += 1;
       }, []);
@@ -126,9 +158,7 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({ setOptions: () => undefined }),
 }));
 
-vi.mock("../lib/orientation", () => ({
-  holdFreeRotation: () => () => undefined,
-}));
+vi.mock("../lib/fold-regions", () => ({ useFoldRegions: () => folds.regions }));
 
 vi.mock("../components/native-action-button", () => {
   return {
@@ -184,7 +214,8 @@ vi.mock("../components/computer-mode-picker", () => {
   };
 });
 
-vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test", rpc }));
+const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
+vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
 
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>
@@ -225,10 +256,10 @@ const botWorking: ComputerStatus = {
   terminalAvailable: false,
 };
 
-function respond(status: ComputerStatus) {
+function respond(status: ComputerStatus, screenUrl = "https://screen.example.test/embed") {
   rpc.mockImplementation(async (method: string) => {
     if (method === "computer/status") return status;
-    if (method === "computer/screenUrl") return { url: "https://screen.example.test/embed" };
+    if (method === "computer/screenUrl") return { url: screenUrl };
     return {};
   });
 }
@@ -248,6 +279,7 @@ describe("computer screen", () => {
     picker.props = undefined;
     appState.listeners.clear();
     foreground.value = true;
+    folds.regions = [];
     screens.mounts = 0;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -290,6 +322,108 @@ describe("computer screen", () => {
       (button) => button.textContent === "Take control",
     );
   }
+
+  it("offers Retry screen when the full-window page fails to load", async () => {
+    respond(botWorking);
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(view.querySelector("section iframe")).not.toBeNull();
+    expect(screens.error).toBeTypeOf("function");
+    act(() => screens.error?.());
+    const window = view.querySelector("section");
+    expect(window?.textContent).toContain("Could not load the desktop.");
+    expect(window?.textContent).toContain("Retry screen");
+  });
+
+  it("shows a fixed screen failure when the page stalls", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) =>
+      method === "computer/screenUrl"
+        ? { url: "https://screen.example.test/novnc/session/view/1.first/vnc.html" }
+        : original(method, ...args),
+    );
+    const view = await render();
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("does not rearm a connected retained page on token rotation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    let token = "first";
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) =>
+      method === "computer/screenUrl"
+        ? { url: "https://screen.example.test/novnc/session/view/1." + token + "/vnc.html" }
+        : original(method, ...args),
+    );
+    const view = await render();
+    act(() =>
+      screens.onMessage?.({
+        nativeEvent: { data: JSON.stringify({ rakazoScreen: "connected" }), url: screens.source },
+      }),
+    );
+    token = "second";
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await settle();
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(view.textContent).not.toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("does not offer screen retry for a release error", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const original = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+      if (method === "computer/release") throw new Error("unavailable");
+      return original(method, ...args);
+    });
+    const view = await render();
+    const release = Array.from(view.querySelectorAll("button")).find(
+      (button) => button.textContent === "Release",
+    );
+    expect(release).toBeDefined();
+    await act(async () => release?.click());
+    await settle();
+    expect(view.textContent).toContain("Could not continue");
+    expect(view.textContent).not.toContain("Retry screen");
+  });
+
+  it("shows a fixed reason for a failed report and retries a healthy screen", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const view = await render();
+    const report = (data: Record<string, string>) =>
+      act(() =>
+        screens.onMessage?.({ nativeEvent: { data: JSON.stringify(data), url: screens.source } }),
+      );
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(screens.onMessage).toBeTypeOf("function");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    const mounted = screens.mounts;
+    const retry = Array.from(view.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry screen",
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    await settle();
+    expect(screens.mounts).toBeGreaterThan(mounted);
+    report({ rakazoScreen: "connected" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    // The first drop after connecting reconnects by itself; only a drop it can't ride out shows.
+    report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).not.toContain("The screen connection closed.");
+    report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).toContain("The screen connection closed.");
+    vi.useRealTimers();
+  });
 
   it("opens the full window from the preview without taking control from the bot", async () => {
     respond(botWorking);
@@ -487,6 +621,88 @@ describe("computer screen", () => {
     expect(screens[0]?.getAttribute("data-important")).toBe("auto");
   });
 
+  it("keeps the desktop above a tabletop fold and the keys below it", async () => {
+    folds.regions = [{ x: 0, y: 416, width: 393, height: 20 }];
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const fullWindow = view.querySelector("section");
+    expect(
+      fullWindow?.querySelector("[data-avoids-keyboard]")?.getAttribute("data-avoids-keyboard"),
+    ).toBe("false");
+    const lowerHalf = fullWindow?.querySelector('[data-height="436"]');
+    expect(lowerHalf?.getAttribute("data-padding-top")).toBe("20");
+    expect(lowerHalf?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
+    expect(lowerHalf?.querySelector('[data-avoids-keyboard="true"]')).not.toBeNull();
+    expect(lowerHalf?.contains(fullWindow?.querySelector("iframe") ?? null)).toBe(false);
+  });
+
+  it("keeps the keys under the desktop when flat or only viewing", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const flat = await render();
+    await act(async () => preview(flat).click());
+    await settle();
+    expect(
+      flat.querySelector("section [data-avoids-keyboard]")?.getAttribute("data-avoids-keyboard"),
+    ).toBe("true");
+    expect(flat.querySelector("section [data-height]")).toBeNull();
+    act(() => root?.unmount());
+    container?.remove();
+
+    folds.regions = [{ x: 0, y: 416, width: 393, height: 20 }];
+    respond(botWorking);
+    const viewing = await render();
+    await act(async () => preview(viewing).click());
+    await settle();
+    expect(viewing.querySelector("section [data-height]")).toBeNull();
+    expect(viewing.querySelector("[data-keyboard-bar]")).toBeNull();
+  });
+
+  it("lets the full window's buttons take a tap while the computer keyboard is up", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const close = view.querySelector('section [aria-label="Close computer"]');
+    const scroll = close?.closest("[data-persist-taps]");
+    expect(scroll?.getAttribute("data-persist-taps")).toBe("always");
+    expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
+  });
+
+  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+    const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
+    respond({ ...held, busyBotName: null });
+    let fail: (error: Error) => void = () => undefined;
+    const base = rpc.getMockImplementation();
+    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
+      method === "computer/release"
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : base?.(method, ...rest),
+    );
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const fullWindow = view.querySelector("section");
+    const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
+    expect(bar()?.dataset.active).toBe("true");
+    const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Release",
+    );
+    await act(async () => release?.click());
+    expect(calls("computer/release")).toHaveLength(1);
+    expect(bar()?.dataset.active).toBe("false");
+
+    await act(async () => fail(new Error("offline")));
+    await settle();
+    expect(bar()?.dataset.active).toBe("true");
+  });
+
   it("loads the screen again when the app returns from the background", async () => {
     respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
     const view = await render();
@@ -511,6 +727,162 @@ describe("computer screen", () => {
       "false",
     );
   });
+  describe("when a connected screen drops", () => {
+    // A screen through the web server's proxy, which answers the status-only probe.
+    async function openScreen(
+      screenUrl = "https://api.example.test/novnc/session/control/1.t/vnc.html",
+    ) {
+      respond(
+        { ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null },
+        screenUrl,
+      );
+      const view = await render();
+      await act(async () => preview(view).click());
+      await settle();
+      return view;
+    }
+    async function post(data: string, url = screens.source) {
+      await act(async () => screens.onMessage?.({ nativeEvent: { data, url } }));
+      await settle();
+    }
+    async function load() {
+      await act(async () => screens.onLoadStart?.());
+    }
+    const wait = (ms: number) =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+      });
+
+    it("loads the screen again by itself once, a second after the drop", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      expect(screens.mounts).toBe(opened);
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      expect(fetchStub).toHaveBeenCalledTimes(1);
+      // It asks the server's status-only probe, never the computer's page itself.
+      expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toContain("rakazo_probe=1");
+
+      // A second drop soon after is left showing; Retry is the user's.
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+    });
+
+    it("waits for a screen the API can't check yet before loading it again", async () => {
+      const statuses = [503, 503, 200];
+      const fetchStub = vi.fn(async () => ({ status: statuses.shift() ?? 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(2200);
+      await settle();
+      // Still waiting: two unavailable answers, no reload yet.
+      expect(screens.mounts).toBe(opened);
+      await wait(1100);
+      await settle();
+      expect(fetchStub).toHaveBeenCalledTimes(3);
+      expect(screens.mounts).toBe(opened + 1);
+    });
+
+    it("stops waiting when the screen is closed", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 503 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      const view = await openScreen();
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      const asked = fetchStub.mock.calls.length;
+      await act(async () =>
+        view.querySelector<HTMLButtonElement>('[aria-label="Close computer"]')?.click(),
+      );
+      await settle();
+      await wait(2200);
+      expect(fetchStub.mock.calls.length).toBeLessThanOrEqual(asked + 1);
+    });
+
+    it("probes a screen the web server serves on another port than the API", async () => {
+      // The default setup: the app talks to the API on :3100, and screens are sealed for the
+      // web server on :5173.
+      apiBase.current = "http://192.168.1.10:3100";
+      try {
+        const fetchStub = vi.fn(async () => ({ status: 204 }) as Response);
+        vi.stubGlobal("fetch", fetchStub);
+        await openScreen("http://192.168.1.10:5173/novnc/session/control/1.t/vnc.html");
+        await load();
+        await post('{"rakazoScreen":"connected"}');
+        const opened = screens.mounts;
+        await post('{"rakazoScreen":"disconnected"}');
+        await wait(1100);
+        await settle();
+        expect(String((fetchStub.mock.calls[0] as unknown[])[0])).toBe(
+          "http://192.168.1.10:5173/novnc/session/control/1.t/vnc.html?rakazo_probe=1",
+        );
+        expect(screens.mounts).toBe(opened + 1);
+      } finally {
+        apiBase.current = "https://api.example.test";
+      }
+    });
+
+    it("loads a screen outside the proxy again without probing it", async () => {
+      const fetchStub = vi.fn(async () => ({ status: 200 }) as Response);
+      vi.stubGlobal("fetch", fetchStub);
+      await openScreen("https://screen.example.test/embed");
+      await load();
+      await post('{"rakazoScreen":"connected"}');
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened + 1);
+      expect(fetchStub).not.toHaveBeenCalled();
+    });
+
+    it("only hears states from the screen's own page", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({ status: 200 }) as Response),
+      );
+      await openScreen();
+      await load();
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"connected"}', "https://elsewhere.example.test/page");
+      await post('{"rakazoScreen":"disconnected"}', "https://elsewhere.example.test/page");
+      await post('{"rakazoScreen":"connected"}', undefined as unknown as string);
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened);
+    });
+
+    it("doesn't reload a screen that never connected or posted something else", async () => {
+      await openScreen();
+      await load();
+      const opened = screens.mounts;
+      await post('{"rakazoScreen":"disconnected"}');
+      await post('{"rakazoScreen":"connected","detail":"x"}');
+      await post('{"rakazoScreen":"disconnected"}');
+      await post('{"rakazoScreen":"reconnect"}');
+      await post("not json");
+      await wait(1100);
+      await settle();
+      expect(screens.mounts).toBe(opened);
+    });
+  });
+
   describe("while the computer boots", () => {
     const stopped: ComputerStatus = { ...botWorking, state: "stopped", busyBotName: null };
     const idle: ComputerStatus = { ...botWorking, busyBotName: null };

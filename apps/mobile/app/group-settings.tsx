@@ -1,4 +1,4 @@
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
@@ -11,9 +11,11 @@ import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function GroupSettingsScreen() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
@@ -28,10 +30,8 @@ export default function GroupSettingsScreen() {
   useEffect(() => {
     if (!groupId) return;
     void Promise.all([
-      rpc<MobileGroup[]>("groups/list").then(
-        (groups) => groups.find((row) => row.id === groupId) ?? null,
-      ),
-      rpc<MobileBot[]>("bots/list"),
+      rpc("groups/list").then((groups) => groups.find((row) => row.id === groupId) ?? null),
+      rpc("bots/list"),
     ])
       .then(([nextGroup, nextBots]) => {
         if (!nextGroup) throw new Error(t("Group not found"));
@@ -73,7 +73,7 @@ export default function GroupSettingsScreen() {
     <>
       <Stack.Screen options={glassHeaderOptions(t("Group settings"))} />
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.background }}
+        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentContainerStyle={{ padding: 24 }}
         automaticallyAdjustKeyboardInsets
         contentInsetAdjustmentBehavior="automatic"
@@ -84,6 +84,7 @@ export default function GroupSettingsScreen() {
         <TextInput
           value={name}
           onChangeText={setName}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           placeholder={t("Group name")}
           placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"

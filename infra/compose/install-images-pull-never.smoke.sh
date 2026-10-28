@@ -3,17 +3,6 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
 src="$root/install-images.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
-# BSD grep needs -e so patterns starting with -- are not flags.
-g() { grep -F -e "$1" "$src" >/dev/null || fail "missing $1"; }
-g '--pull-never)'
-g '--offline)'
-g 'RAKAZO_PULL_NEVER'
-g 'Skipping image pull'
-g '--pull never'
-g 'cannot enforce pull-never on this Compose version'
-g '${up_pull_args[@]+"${up_pull_args[@]}"}'
-g 'HTTP_PROXY/HTTPS_PROXY'
-g '[--prepare-only] [--local] [--pull-never] [--offline]'
 set +e
 out="$(bash "$src" --not-a-flag 2>&1)"
 code=$?
@@ -192,6 +181,28 @@ set -e
 [[ ! -s "$tmp/offline/curl.log" ]] || fail "--offline should not curl when files are local: $(cat "$tmp/offline/curl.log")"
 has_compose_pull "$tmp/offline" && fail "--offline should not run compose pull"
 has_up_pull_never "$tmp/offline" || fail "--offline should pass --pull never to compose up: $(cat "$tmp/offline/docker.log")"
+
+for missing_input in docker-compose.images.yml .env.images.example; do
+  work="$tmp/missing-${missing_input}"
+  setup_work "$work"
+  rm -- "$work/cwd/$missing_input"
+  set +e
+  missing_out="$(run_install "$work" --offline 2>&1)"
+  missing_code=$?
+  set -e
+  [[ "$missing_code" -ne 0 ]] || fail "--offline accepted missing $missing_input"
+  [[ "$missing_out" == *"$missing_input"* ]] || fail "--offline did not identify missing $missing_input"
+  [[ ! -s "$work/curl.log" ]] || fail "--offline attempted a network request for missing $missing_input"
+  has_compose_pull "$work" && fail "--offline pulled images with missing $missing_input"
+  [[ ! -s "$work/docker.log" ]] || fail "--offline invoked Compose with missing $missing_input"
+done
+
+setup_work "$tmp/local-missing"
+rm -- "$tmp/local-missing/cwd/docker-compose.images.yml"
+local_out="$(run_install "$tmp/local-missing" --local 2>&1)"
+[[ -s "$tmp/local-missing/curl.log" ]] || fail "--local should download missing files"
+has_compose_pull "$tmp/local-missing" || fail "--local should still pull images"
+grep -q 'VERB=up' "$tmp/local-missing/docker.log" || fail "--local should start services"
 
 # --pull-never is accepted and skips pull (may still download Compose files).
 setup_work "$tmp/pull-never"

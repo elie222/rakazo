@@ -118,9 +118,9 @@ export function HostComputerPrompt({
         if (configuring) setOpen(next);
       }}
     >
-      <DialogContent showCloseButton={configuring} className="rounded-2xl p-6 sm:max-w-[440px]">
+      <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[22px]">
+          <DialogTitle className="text-heading2">
             <Trans>Where should bots run?</Trans>
           </DialogTitle>
           <DialogDescription className="space-y-2 leading-relaxed">
@@ -162,7 +162,6 @@ export function HostComputerPrompt({
               type="button"
               variant="secondary"
               size="sm"
-              className="rounded-full"
               disabled={busy}
               onClick={() => void refreshChoiceState()}
             >

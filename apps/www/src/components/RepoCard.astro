@@ -6,7 +6,7 @@ import { GITHUB_URL } from "../site";
 
 type Props = {
   locale: Locale;
-  starsLabel: string | null;
+  starsLabel: string;
   changes: RecentChange[];
 };
 
@@ -26,7 +26,7 @@ const formatDate = new Intl.DateTimeFormat(LOCALE_HREFLANG[locale], {
       ></path>
     </svg>
     <span class="repo-card__name">elie222/rakazo</span>
-    {starsLabel && <span class="repo-card__meta">★ {starsLabel}</span>}
+    <span class="repo-card__meta">★ {starsLabel}</span>
   </a>
   <ol class="repo-card__changes">
     {

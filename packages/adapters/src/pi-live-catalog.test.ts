@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_CONTEXT_WINDOW } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexCatalogCache } from "./pi-codex-catalog.js";
 import { liveModelCatalogEnabled } from "./pi-live-cache.js";
@@ -9,7 +10,7 @@ import {
 } from "./pi-live-catalog.js";
 import { isChatModelId } from "./pi-live-model.js";
 import { listPiCatalog } from "./pi-models.js";
-import { resolveRuntimeModel } from "./pi-runtime.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 
 const provider = "openai";
 const base = listPiCatalog();
@@ -90,6 +91,13 @@ describe("live catalog merge and execution", () => {
       reasoning: true,
       contextWindow: 16_384,
     });
+  });
+  it("gives a live-only model the default window instead of an unrelated sibling's", () => {
+    const unrelated = resolveRuntimeModel({ provider: "openrouter", id: "vendor/new-chat:free" });
+    expect(unrelated.model?.contextWindow).toBe(DEFAULT_MODEL_CONTEXT_WINDOW);
+    const sibling = resolveRuntimeModel({ provider: "openai", id: "gpt-4o" }).model!;
+    const dated = resolveRuntimeModel({ provider: "openai", id: "gpt-4o-2099-01-01" }).model;
+    expect(dated?.contextWindow).toBe(sibling.contextWindow);
   });
   it("keeps bundled metadata, hides retired models, preserves saved models and appends runnable additions", () => {
     const retired = ids[0]!;

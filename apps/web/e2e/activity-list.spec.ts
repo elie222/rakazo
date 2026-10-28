@@ -119,6 +119,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.emulateMedia({ colorScheme: "light" });
   await runSearch.fill("Chief");
   await activityToggle.click();
+  await aside.getByTestId("sidebar-search-trigger").click();
   const normalSearch = aside.getByRole("textbox", { name: "Search", exact: true });
   await expect(normalSearch).toHaveValue("");
   await normalSearch.fill("Chief");
@@ -177,10 +178,11 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(activityRow(page, "Chief")).toHaveCount(0);
 });
 
-test("activity filters keep retry when a refresh fails", async ({ page }) => {
+test("activity filters keep retry when a refresh fails", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `activity-retry-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
+  const now = new Date();
 
   type Phase = "ok" | "empty" | "fail" | "hang";
   let phase: Phase = "ok";
@@ -199,7 +201,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
     notificationsEnabled: false,
     agentMessage: null,
     promptSnippet: "filter me",
-    updatedAt: new Date().toISOString(),
+    updatedAt: new Date(now.getTime() - 45_000).toISOString(),
   };
 
   const agentRun = {
@@ -240,12 +242,15 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
   await activityToggle.click();
   // The list refreshes every 15s; drive that poll with a controlled clock.
   await page.clock.install();
+  await page.clock.setFixedTime(now);
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityRow(page, "Chief")).toBeVisible({ timeout: 20_000 });
 
   await expect(activityRow(page, "Chief")).toContainText("filter me");
+  await expect(activityRow(page, "Chief").getByText("just now", { exact: true })).toBeVisible();
   await expect(activityRow(page, "Helper")).toContainText("Update from Scout: filter me");
+  await captureActivitySidebar(page, testInfo, "61a-activity-first-minute");
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
   await activitySearch.fill("Update from Scout");
   await expect(activityRow(page, "Helper")).toBeVisible();

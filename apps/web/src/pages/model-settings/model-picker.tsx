@@ -24,17 +24,27 @@ export function ModelPicker({
   options,
   value,
   onChange,
+  provider,
+  disabled,
+  label,
+  placeholder,
 }: {
   options: ModelCatalogEntry[];
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, option: ModelCatalogEntry) => void;
+  provider?: string;
+  disabled?: boolean;
+  label?: string;
+  placeholder?: string;
 }) {
   const { t } = useLingui();
   const searchRef = useRef<HTMLInputElement>(null);
   const imagesHintId = useId();
   const selectedIndex = Math.max(
-    0,
-    options.findIndex((option) => option.id === value),
+    placeholder ? -1 : 0,
+    options.findIndex(
+      (option) => option.id === value && (provider === undefined || option.provider === provider),
+    ),
   );
   const selected = options[selectedIndex];
   const [open, setOpen] = useState(false);
@@ -71,7 +81,8 @@ export function ModelPicker({
         <span id={imagesHintId} hidden>{t`Can't read images`}</span>
         <PopoverTrigger
           role="combobox"
-          aria-label={t`Model`}
+          aria-label={label ?? t`Model`}
+          disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-describedby={selected?.images === false ? imagesHintId : undefined}
@@ -86,7 +97,7 @@ export function ModelPicker({
             }
           }}
         >
-          <span className="min-w-0 truncate">{selected?.label}</span>
+          <span className="min-w-0 truncate">{selected?.label ?? placeholder}</span>
           <span className="ml-3 flex shrink-0 items-center gap-2 text-muted-foreground">
             {selected?.images === false ? <TextOnlyMark /> : null}
             <ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -136,10 +147,13 @@ export function ModelPicker({
                     <CommandItem
                       key={optionValue(option)}
                       value={optionValue(option)}
-                      data-checked={option.id === value}
+                      data-checked={
+                        option.id === value &&
+                        (provider === undefined || option.provider === provider)
+                      }
                       aria-describedby={option.images === false ? imagesHintId : undefined}
                       onSelect={() => {
-                        onChange(option.id);
+                        onChange(option.id, option);
                         setOpen(false);
                       }}
                     >

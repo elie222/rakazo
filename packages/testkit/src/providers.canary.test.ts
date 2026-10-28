@@ -212,7 +212,7 @@ describePiApp("live OpenRouter product journey", () => {
   });
 
   it("completes a bot turn through the API with the live model", async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pi-"));
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,

@@ -74,8 +74,13 @@ function retirePrisma(state: {
       ),
       delete: vi.fn(async (args: { where: { id: string } }) => {
         const index = state.credentials.findIndex((row) => row.id === args.where.id);
-        if (index >= 0) return state.credentials.splice(index, 1)[0];
-        return null;
+        if (index < 0) return null;
+        const [removed] = state.credentials.splice(index, 1);
+        // The foreign key removes the connection's own model with it.
+        state.preferences = state.preferences.filter(
+          (row) => !(row.userId === removed!.userId && row.credentialId === removed!.id),
+        );
+        return removed;
       }),
       count: vi.fn(
         async (args: { where: { secretId: string; id?: { not: string } } }) =>
@@ -90,16 +95,6 @@ function retirePrisma(state: {
           (state.voiceCredentials ?? []).filter((row) => row.secretId === args.where.secretId)
             .length,
       ),
-    },
-    spaceModelPreference: {
-      deleteMany: vi.fn(async (args: { where: { userId: string; credentialId: string } }) => {
-        const before = state.preferences.length;
-        state.preferences = state.preferences.filter(
-          (row) =>
-            !(row.userId === args.where.userId && row.credentialId === args.where.credentialId),
-        );
-        return { count: before - state.preferences.length };
-      }),
     },
     secret: {
       findFirst: vi.fn(
@@ -140,7 +135,7 @@ function codexPreference(overrides: Partial<StoredPreferenceRow> = {}): StoredPr
 }
 
 describe("retireModelCredential", () => {
-  it("deletes the credential, its space preferences, and the orphaned secret", async () => {
+  it("deletes the credential, its preferences, and the orphaned secret", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [

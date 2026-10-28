@@ -38,9 +38,6 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await completeOnboarding(page);
 
   await expect(
-    page.getByTestId("composer-bar").getByRole("button", { name: "Voice", exact: true }),
-  ).toHaveCount(0);
-  await expect(
     page.getByTestId("composer-bar").getByRole("button", { name: "Hold to talk", exact: true }),
   ).toHaveCount(1);
   await expect(page.getByTestId("call-button")).toHaveAccessibleName("Call");
@@ -48,7 +45,6 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await page.getByTestId("call-button").click();
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dictate", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "voice-settings");
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("voice-settings")).toHaveCount(0);
@@ -123,7 +119,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByTestId("call-view").getByText("Calling…")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hang up" })).toBeVisible();
   await captureScreenshot(page, testInfo, "outgoing-ringing");
-  await expect(page.getByTestId("call-view").getByText(/· Listening/)).toBeVisible();
+  await expect(page.getByTestId("call-view").getByText("Listening", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "voice-call");
   await page.getByRole("button", { name: "Minimize call" }).click();
   await expect(page.getByTestId("call-view")).toHaveCount(0);
@@ -196,4 +192,55 @@ test("voice settings take a self-hosted speech server by URL", async ({ page }, 
 
   const credentials = await rpc<unknown[]>(page, "voice/credentials");
   expect(credentials).toEqual([]);
+});
+
+test("voice settings take a typed voice for a self-hosted server", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `voice-typed-${stamp}@rakazo.test`, "password12", `Voice Typed ${stamp}`);
+  await completeOnboarding(page);
+  // Model a connected self-hosted server; the E2E deployment has none listening.
+  await page.route("**/rpc/voice/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-local",
+            provider: "openai-compatible",
+            hasKey: false,
+            isDefault: true,
+            voiceId: "af_heart",
+            speechModel: "",
+            transcribe: true,
+            endpoint: "http://127.0.0.1:8880/v1",
+            ttsModel: "kokoro",
+            sttModel: "",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/voice/status", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json = { ...body.json, configured: true, ready: true, provider: "openai-compatible" };
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/voice/voices", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          { id: "af_heart", label: "Heart" },
+          { id: "af_bella", label: "Bella" },
+        ],
+      },
+    }),
+  );
+
+  await openUserSettings(page, "voice");
+  const settings = page.getByTestId("voice-settings");
+  const voice = settings.getByLabel("Voice", { exact: true });
+  await expect(voice).toHaveValue("af_heart");
+  await voice.fill("am_custom_blend");
+  await expect(voice).toHaveValue("am_custom_blend");
+  await captureScreenshot(page, testInfo, "voice-settings-self-hosted-typed-voice");
 });

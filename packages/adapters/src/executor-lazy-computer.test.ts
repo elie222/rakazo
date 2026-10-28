@@ -168,10 +168,9 @@ async function runRoutine(
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
-    spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    userModelPreference: { findFirst: vi.fn(async () => null) },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: { findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -179,8 +178,7 @@ async function runRoutine(
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
-    agentSecret: { findMany: vi.fn(async () => []) },
-    botSecret: { findMany: vi.fn(async () => []) },
+    vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
@@ -496,6 +494,13 @@ describe("run computer provisioning", () => {
     await runRoutine([], { takeover: true });
 
     expect(provisionComputer).toHaveBeenCalledOnce();
+  });
+
+  it("restarts the idle timer when it asks the user to take over", async () => {
+    const { sleepJobs } = await runRoutine([], { takeover: true });
+
+    // One from starting the computer, one from the takeover request.
+    expect(sleepJobs).toHaveLength(2);
   });
 
   it("keeps setup-failure retry semantics when the computer cannot start", async () => {

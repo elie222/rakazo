@@ -26,6 +26,8 @@ let primedBootstrap: {
   botId?: string;
   spaceId?: string;
   promise: Promise<AppBootstrap>;
+  /** What this space showed last time, painted while the fresh bootstrap loads. */
+  seed?: AppBootstrap;
 } | null = null;
 
 const initialTarget = initialBootstrapTarget(
@@ -47,14 +49,25 @@ export function peekInitialBootstrap(): Promise<AppBootstrap> | undefined {
   return primedBootstrap?.spaceId === undefined ? primedBootstrap?.promise : undefined;
 }
 
-export function takeInitialBootstrap(botId?: string) {
+function primedFor(botId: string | undefined) {
   const primed = primedBootstrap;
-  primedBootstrap = null;
-  if (
-    primed &&
+  return primed &&
     primed.botId === botId &&
     (primed.spaceId === undefined || primed.spaceId === selectedSpaceId())
-  ) {
+    ? primed
+    : null;
+}
+
+/** The cached bootstrap a revisited space opens with, if the switch had one. */
+export function peekBootstrapSeed(botId?: string): AppBootstrap | undefined {
+  return primedFor(botId)?.seed;
+}
+
+export function takeInitialBootstrap(botId?: string) {
+  const primed = primedFor(botId);
+  primedBootstrap = null;
+  if (primed) {
+    if (primed.seed) applyCapabilities(primed.seed);
     return (
       primed.spaceId === undefined ? primed.promise : primed.promise.then(applyCapabilities)
     ).then(
@@ -67,12 +80,17 @@ export function takeInitialBootstrap(botId?: string) {
 /**
  * Loads another space's bootstrap without selecting that space, and leaves it
  * for the shell to take once the space is selected. Rejects on failure so the
- * caller can fall back to a full reload.
+ * caller can fall back to a full reload. A `seed` from an earlier visit lets the
+ * shell paint at once while this request refreshes it.
  */
-export function primeSpaceBootstrap(spaceId: string, botId?: string): Promise<AppBootstrap> {
+export function primeSpaceBootstrap(
+  spaceId: string,
+  botId?: string,
+  seed?: AppBootstrap,
+): Promise<AppBootstrap> {
   const promise = requestBootstrap(botId, spaceId);
   void promise.catch(() => undefined);
-  primedBootstrap = { botId, spaceId, promise };
+  primedBootstrap = { botId, spaceId, promise, seed };
   return promise;
 }
 

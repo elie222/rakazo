@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
       return () => ipcRenderer.off("desktop.computer.configure", handler);
     },
   },
+  device: {
+    state: () => ipcRenderer.invoke("desktop.device.state"),
+    setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
+  },
+  passkeys: {
+    rpIds: () => ipcRenderer.invoke("desktop.passkeys.rpIds"),
+  },
   window: {
     close: () => ipcRenderer.invoke("desktop.window.close"),
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),

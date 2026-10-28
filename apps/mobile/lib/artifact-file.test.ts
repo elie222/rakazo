@@ -19,6 +19,29 @@ describe("artifactShareFileName", () => {
     expect(artifactShareFileName("..", "text/markdown")).toBe("attachment.md");
   });
 
+  it.each(["हिन्दी.pdf", "บันทึก.pdf", "Re\u0301sume\u0301.pdf"])(
+    "keeps combining marks in %s",
+    (name) => {
+      expect(artifactShareFileName(name, "application/pdf")).toBe(name);
+    },
+  );
+
+  it("sanitizes separators and invalid characters while keeping marks", () => {
+    expect(artifactShareFileName("../हिन्दी/บันทึก?:.pdf", "application/pdf")).toBe("हिन्दी_บันทึก.pdf");
+    expect(artifactShareFileName("///", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName("\u0301", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName("\u0301/\u0301", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName(`${"a".repeat(80)}extra.pdf`, "application/pdf")).toBe(
+      `${"a".repeat(80)}.pdf`,
+    );
+  });
+
+  it("does not split a supplementary combining mark at the length limit", () => {
+    const name = artifactShareFileName(`${"a".repeat(79)}\u{1D165}.pdf`, "application/pdf");
+    expect(name).toBe(`${"a".repeat(79)}.pdf`);
+    expect(() => encodeURIComponent(name)).not.toThrow();
+  });
+
   it("keeps unicode letters in the display name", () => {
     expect(artifactShareFileName("会议记录.md", "text/markdown")).toBe("会议记录.md");
     expect(artifactShareFileName("报告.pdf", "application/pdf")).toBe("报告.pdf");

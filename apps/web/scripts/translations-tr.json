@@ -149,7 +149,6 @@
   "Connect remote or local tool servers and choose which agents can use them.": "Uzak veya yerel araç sunucuları bağla ve hangi agent'ların kullanabileceğini seç.",
   "Connect Treg": "Treg'i bağla",
   "Connected": "Bağlandı",
-  "Connected. Its tools are available from your next message.": "Bağlandı. Araçları bir sonraki mesajından itibaren kullanılabilir.",
   "Connected {0}.": "{0} bağlandı.",
   "Connecting…": "Bağlanıyor…",
   "Connection to {0} is still pending. You can close this and check again.": "{0} bağlantısı hâlâ beklemede. Bunu kapatıp daha sonra tekrar kontrol edebilirsin.",

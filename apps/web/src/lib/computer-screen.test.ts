@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootComputerOnce,
+  createScreenRefocus,
   embeddableScreenUrl,
   isProxiedScreenUrl,
   loadComputerScreen,
   probeScreen,
+  probeScreenStatus,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -234,10 +236,12 @@ describe("screen frame reports", () => {
     expect(screenFrameError({ rakazoScreen: "connecting" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "connected" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "failed", detail: "Refused" }, "fallback")).toBe(
-      "Refused",
+      "fallback",
     );
     expect(screenFrameError({ rakazoScreen: "failed" }, "fallback")).toBe("fallback");
-    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe("fallback");
+    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe(
+      "The screen connection closed.",
+    );
   });
 
   it("only treats the proxy's own pages as reporting frames", () => {
@@ -268,15 +272,25 @@ describe("probeScreen", () => {
       probeScreen(url, "fallback", async () =>
         response(403, "Invalid or expired screen capability"),
       ),
-    ).resolves.toBe("Invalid or expired screen capability");
+    ).resolves.toBe("The screen link expired.");
     await expect(
       probeScreen(url, "fallback", async () =>
         response(502, "Screen unavailable (upstream_timeout)"),
       ),
-    ).resolves.toBe("Screen unavailable (upstream_timeout)");
-    await expect(probeScreen(url, "fallback", async () => response(503))).resolves.toBe(
-      "fallback (HTTP 503)",
-    );
+    ).resolves.toBe("The screen did not respond.");
+  });
+
+  it("reads an access check that couldn't reach the API as a connection problem", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(503, "Screen unavailable")),
+    ).resolves.toBe("fallback");
+    await expect(probeScreen(url, "fallback", async () => response(503))).resolves.toBe("fallback");
+  });
+
+  it("never shows untrusted plain text", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(500, "private token")),
+    ).resolves.toBe("fallback");
   });
 
   it("never shows an upstream HTML error page as the reason", async () => {
@@ -284,14 +298,12 @@ describe("probeScreen", () => {
       probeScreen(url, "fallback", async () =>
         response(502, "<!DOCTYPE html><html><body><h1>Bad gateway</h1></body></html>"),
       ),
-    ).resolves.toBe("fallback (HTTP 502)");
+    ).resolves.toBe("fallback");
     const html = {
       ...response(500, "Bad gateway"),
       headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
     } as Response;
-    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe(
-      "fallback (HTTP 500)",
-    );
+    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe("fallback");
   });
 
   it("falls back when the page cannot be fetched or would leave the app", async () => {
@@ -303,5 +315,74 @@ describe("probeScreen", () => {
     await expect(
       probeScreen(url, "fallback", async () => response(0, "", "opaqueredirect")),
     ).resolves.toBe("fallback");
+  });
+});
+
+describe("probeScreenStatus", () => {
+  const url = "http://127.0.0.1:5173/novnc/session/control/1.t/vnc.html";
+
+  it("returns only the status and drops the body unread", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const text = vi.fn(async () => "Invalid or expired screen capability");
+    const fetchImpl = vi.fn(
+      async () => ({ status: 403, type: "basic", body: { cancel }, text }) as unknown as Response,
+    );
+    await expect(probeScreenStatus(url, fetchImpl)).resolves.toBe(403);
+    expect(text).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledWith(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+    });
+  });
+
+  it("gives the request the wait's abort signal, so a stalled probe can be dropped", async () => {
+    const stop = new AbortController();
+    const fetchImpl = vi.fn(async () => ({ status: 204, type: "basic" }) as unknown as Response);
+    await probeScreenStatus(url, fetchImpl, stop.signal);
+    expect(fetchImpl).toHaveBeenCalledWith(url, expect.objectContaining({ signal: stop.signal }));
+  });
+
+  it("says when the page couldn't be asked or would leave the app", async () => {
+    await expect(
+      probeScreenStatus(url, async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      probeScreenStatus(url, async () => ({ status: 0, type: "opaqueredirect" }) as Response),
+    ).resolves.toBe(0);
+  });
+});
+
+describe("giving a reconnected screen the keyboard back", () => {
+  const frame = { name: "frame" } as unknown as Element;
+  const body = { name: "body" } as unknown as Element;
+  const chatBox = { name: "chat box" } as unknown as Element;
+
+  it("refocuses once, when the screen had the keyboard and nothing else took it", () => {
+    const refocus = createScreenRefocus();
+    refocus.dropped(true);
+    expect(refocus.connected(body, frame, body)).toBe(true);
+    expect(refocus.connected(body, frame, body)).toBe(false);
+    refocus.dropped(true);
+    expect(refocus.connected(null, frame, body)).toBe(true);
+  });
+
+  it("leaves the keyboard where the user put it during the wait", () => {
+    const refocus = createScreenRefocus();
+    refocus.dropped(true);
+    expect(refocus.connected(chatBox, frame, body)).toBe(false);
+    refocus.dropped(true);
+    refocus.forget();
+    expect(refocus.connected(body, frame, body)).toBe(false);
+  });
+
+  it("doesn't refocus a screen that didn't have the keyboard, or that a page says connected", () => {
+    const refocus = createScreenRefocus();
+    expect(refocus.connected(body, frame, body)).toBe(false);
+    refocus.dropped(false);
+    expect(refocus.connected(body, frame, body)).toBe(false);
   });
 });

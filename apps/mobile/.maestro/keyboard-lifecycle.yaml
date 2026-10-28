@@ -36,9 +36,6 @@ tags:
 
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
-- tapOn:
-    text: "Use password"
-    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard
@@ -95,9 +92,6 @@ tags:
     timeout: 15000
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
-- tapOn:
-    text: "Use password"
-    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard

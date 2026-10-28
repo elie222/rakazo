@@ -8,9 +8,17 @@ import { describe, expect, it, vi } from "vitest";
 // The macro compiles away in the app build; tests run the source, so expand the
 // plural by hand to assert the singular vs plural English forms.
 vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: unknown }) => children,
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
     (value === 1 ? one : other).replace("#", String(value)),
 }));
+
+/** The words a reader sees, with each element's text as its own word. */
+const visibleText = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -62,25 +70,25 @@ function mountCard() {
 describe("ToolActivityDisclosure", () => {
   it("labels a finished card with the tool count and duration", () => {
     const html = markup({ live: false, stepCount: 2, durationMs: 12000 });
-    expect(html).toContain("Done · 2 tools · 12s");
+    expect(visibleText(html)).toContain("Done 2 tools 12s");
   });
 
   it("uses the singular for one tool", () => {
-    expect(markup({ live: false, stepCount: 1, durationMs: 850 })).toContain(
-      "Done · 1 tool · 850ms",
+    expect(visibleText(markup({ live: false, stepCount: 1, durationMs: 850 }))).toContain(
+      "Done 1 tool 850ms",
     );
-    expect(markup({ live: true, stepCount: 1 })).toContain("Working… · 1 tool");
+    expect(visibleText(markup({ live: true, stepCount: 1 }))).toContain("Working… 1 tool");
   });
 
   it("omits the duration when it is not usable", () => {
     const html = markup({ live: false, stepCount: 3 });
-    expect(html).toContain("Done · 3 tools");
-    expect(html).not.toContain("Done · 3 tools ·");
+    expect(visibleText(html)).toContain("Done 3 tools");
+    expect(visibleText(html)).not.toMatch(/Done 3 tools \d/);
   });
 
   it("shows the live label while working", () => {
     const html = markup({ live: true, stepCount: 2 });
-    expect(html).toContain("Working… · 2 tools");
+    expect(visibleText(html)).toContain("Working… 2 tools");
     expect(html).toContain('data-live="true"');
   });
 
@@ -102,7 +110,7 @@ describe("ToolActivityDisclosure", () => {
 
     card.render(false);
     expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
-    expect(card.summary()?.textContent).toContain("Done · 2 tools");
+    expect(card.summary()?.textContent).toContain("Done2 tools");
     card.unmount();
   });
 
@@ -114,7 +122,7 @@ describe("ToolActivityDisclosure", () => {
 
     card.render(true, 3);
     expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
-    expect(card.summary()?.textContent).toContain("Working… · 3 tools");
+    expect(card.summary()?.textContent).toContain("Working…3 tools");
 
     card.render(false, 3);
     expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
@@ -169,6 +177,19 @@ describe("ToolSteps", () => {
     expect(fits).not.toContain("earlier");
     for (let i = 0; i < 9; i++) expect(all).toContain(`step-${i}<`);
   });
+
+  it("shows what the bot wrote before a step above it", () => {
+    const html = renderToStaticMarkup(
+      <ToolSteps
+        steps={[
+          { label: "Read calendar", count: 1 },
+          { label: "Save event", count: 1, note: "The meeting is with **Anna**." },
+        ]}
+      />,
+    );
+    expect(visibleText(html)).toBe("✓ Read calendar The meeting is with Anna . ✓ Save event");
+    expect(html).toContain("<strong>Anna</strong>");
+  });
 });
 
 describe("StandaloneToolActivity", () => {
@@ -177,7 +198,7 @@ describe("StandaloneToolActivity", () => {
       <StandaloneToolActivity live={false} steps={stepsOf(2)} stepCount={2} durationMs={4000} />,
     );
     expect(html).toContain('data-testid="tool-activity-line"');
-    expect(html).toContain("Done · 2 tools · 4s");
+    expect(visibleText(html)).toContain("Done 2 tools 4s");
     expect(html).not.toContain("bg-muted");
     expect(html).not.toContain("rounded-[20px]");
   });
@@ -203,7 +224,7 @@ describe("ToolOnlyNarration", () => {
       <ToolOnlyNarration live blocks={[{ kind: "steps", steps: stepsOf(2) }]} />,
     );
     expect(html).toContain('data-testid="tool-activity-line"');
-    expect(html).toContain("Working… · 2 tools");
+    expect(visibleText(html)).toContain("Working… 2 tools");
     expect(html).toMatch(OPEN_TRIGGER);
     expect(html).not.toContain("bg-muted");
   });
@@ -219,7 +240,7 @@ describe("ToolOnlyNarration", () => {
       />,
     );
     expect(html.match(/data-testid="tool-activity-line"/g)).toHaveLength(2);
-    expect(html).toContain("Done · 3 tools · 12s");
+    expect(visibleText(html)).toContain("Done 3 tools 12s");
     expect(html).not.toMatch(OPEN_TRIGGER);
   });
 });

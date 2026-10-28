@@ -199,28 +199,35 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
     this.directChats.add(chatId);
     return this.encodeThreadId({ chatId });
   }
-  private content(message: AdapterPostableMessage) {
-    const text =
+  private payload(message: AdapterPostableMessage): { msgType: string; content: string } {
+    const markdown =
       typeof message === "string"
-        ? message
+        ? null
         : "markdown" in message
           ? message.markdown
-          : "raw" in message
-            ? message.raw
-            : "ast" in message
-              ? this.renderFormatted(message.ast)
-              : "";
+          : "ast" in message
+            ? this.renderFormatted(message.ast)
+            : null;
+    if (markdown) {
+      // Rich text accepts a whole Markdown body as one md block.
+      return {
+        msgType: "post",
+        content: JSON.stringify({ zh_cn: { content: [[{ tag: "md", text: markdown }]] } }),
+      };
+    }
+    const text = typeof message === "string" ? message : "raw" in message ? message.raw : "";
     if (typeof text !== "string" || !text)
       throw new Error("Lark message content is empty or unsupported");
-    return JSON.stringify({ text });
+    return { msgType: "text", content: JSON.stringify({ text }) };
   }
   async postMessage(threadId: string, message: AdapterPostableMessage) {
     const decoded = this.decodeThreadId(threadId);
     if (decoded.threadId) throw new Error("Lark group thread replies are not supported");
+    const { msgType, content } = this.payload(message);
     const result = checked(
       await this.client.im.message.create({
         params: { receive_id_type: "chat_id" },
-        data: { receive_id: decoded.chatId, msg_type: "text", content: this.content(message) },
+        data: { receive_id: decoded.chatId, msg_type: msgType, content },
       }),
     );
     const id = result.data?.message_id;
@@ -228,10 +235,11 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
     return { id, threadId, raw: { message_id: id } };
   }
   async editMessage(threadId: string, messageId: string, message: AdapterPostableMessage) {
+    const { msgType, content } = this.payload(message);
     checked(
       await this.client.im.message.update({
         path: { message_id: messageId },
-        data: { msg_type: "text", content: this.content(message) },
+        data: { msg_type: msgType, content },
       }),
     );
     return { id: messageId, threadId, raw: { message_id: messageId } };

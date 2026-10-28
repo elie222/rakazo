@@ -35,7 +35,7 @@ describe("copyableMessageText", () => {
           },
         ]),
       ),
-    ).toBe("RCS · Alice: dinner at 7?");
+    ).toBe("Alice (RCS): dinner at 7?");
   });
 
   it("falls back to the provider label for unknown transport values", () => {
@@ -53,6 +53,6 @@ describe("copyableMessageText", () => {
           },
         ]),
       ),
-    ).toBe("iMessage · Alice: hello");
+    ).toBe("Alice (iMessage): hello");
   });
 });

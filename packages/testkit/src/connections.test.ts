@@ -9,9 +9,9 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { listSpaceBackupModels, replaceSpaceBackupModels, runAsSystem } from "@rakazo/db";
+import type { createApp } from "@rakazo/api/app";
+import { getModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
@@ -38,7 +38,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-connections-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     fake = new FakeComposioClient();
     composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
@@ -88,13 +88,14 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       { provider: "provider-b", modelId: "second" },
       { provider: "provider-c", modelId: "third" },
     ];
-    await replaceSpaceBackupModels(handles.prisma, other, first);
-    await Promise.all([
-      replaceSpaceBackupModels(handles.prisma, owner, first),
-      replaceSpaceBackupModels(handles.prisma, owner, second),
-    ]);
-    expect([first, second]).toContainEqual(await listSpaceBackupModels(handles.prisma, owner));
-    expect(await listSpaceBackupModels(handles.prisma, other)).toEqual(first);
+    const replace = (actor: Actor, backups: typeof first) =>
+      runAsTenant(actor, () => updateModelRole(handles.prisma, actor, "main", { backups }));
+    const backups = async (actor: Actor) =>
+      (await runAsTenant(actor, () => getModelRole(handles.prisma, actor, "main"))).backups;
+    await replace(other, first);
+    await Promise.all([replace(owner, first), replace(owner, second)]);
+    expect([first, second]).toContainEqual(await backups(owner));
+    expect(await backups(other)).toEqual(first);
   });
 
   it("reconciles one scoped row per provider under concurrent catalog fetches", async () => {
@@ -198,8 +199,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       ]),
     );
 
-    // Uninstall the remaining account: catalog must flip off Added (slug-only
-    // emulator refs used to skip remote revoke and leave Gmail stuck connected).
+    // Uninstall the remaining account: catalog must flip off Added.
     await rpc(app, cookie, "connections/revoke", { connectionId: second.connectionId });
     await expect(
       rpc<Array<{ slug: string; connected: boolean }>>(app, cookie, "connections/catalog", {

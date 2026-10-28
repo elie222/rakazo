@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
-import type { MobileMe, PasswordResetCapabilities } from "../lib/api";
+import type { PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
   displayApiHost,
@@ -60,14 +60,13 @@ export default function SignIn() {
   const [capabilityError, setCapabilityError] = useState(false);
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [resetSent, setResetSent] = useState(false);
-  const [usePassword, setUsePassword] = useState(false);
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
 
   useEffect(() => {
     setPasswordVisible(false);
-  }, [mode, apiBase, usePassword]);
+  }, [mode, apiBase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -133,8 +132,9 @@ export default function SignIn() {
   if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
-  const usingCode = codeFlow && !usePassword;
-  const codeStep = usingCode && codeSent;
+  // A blank password asks for an emailed code, so code-only accounts need no toggle.
+  const usingCode = codeFlow && (codeSent || !password);
+  const codeStep = codeFlow && codeSent;
 
   async function submit(enteredCode = code) {
     if (pending || !reset?.passwordAuth) return;
@@ -200,7 +200,7 @@ export default function SignIn() {
 
   // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
   async function openApp() {
-    const me = await rpc<MobileMe>("me").catch(() => null);
+    const me = await rpc("me").catch(() => null);
     router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
   }
 
@@ -388,7 +388,7 @@ export default function SignIn() {
                           color: tokens.foreground,
                         }}
                       />
-                      {mode !== "forgot" && !usingCode ? (
+                      {mode !== "forgot" ? (
                         <View
                           style={{
                             marginTop: 12,
@@ -457,25 +457,15 @@ export default function SignIn() {
                         onPress={() => void submit()}
                         style={{ marginTop: 16 }}
                       />
-                      {passkeys && mode === "in" && !codeSent ? (
+                      {passkeys && mode === "in" ? (
                         <NativeActionButton
                           label={t("Sign in with passkey")}
-                          prominence="quiet"
+                          icon={{ ios: "key.fill", android: "key-outline" }}
+                          prominence="secondary"
+                          fill
                           disabled={pending}
                           onPress={() => void externalSignIn(signInWithPasskey)}
-                          style={{ alignSelf: "center", marginTop: 16 }}
-                        />
-                      ) : null}
-                      {codeFlow ? (
-                        <NativeActionButton
-                          label={usingCode ? t("Use password") : t("Use email code")}
-                          prominence="quiet"
-                          disabled={pending}
-                          onPress={() => {
-                            setUsePassword(usingCode);
-                            setError(null);
-                          }}
-                          style={{ alignSelf: "center", marginTop: 16 }}
+                          style={{ marginTop: 12 }}
                         />
                       ) : null}
                       {reset.sso && mode !== "forgot" ? (
@@ -487,7 +477,7 @@ export default function SignIn() {
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}
-                      {mode === "in" && !usingCode && reset?.passwordReset && reset.resetUrl ? (
+                      {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}

@@ -9,6 +9,10 @@ describe("transient model errors", () => {
     ],
     ["overloaded status", "529 overloaded_error: Overloaded"],
     [
+      "provider concurrency limit",
+      "ResourceExhausted: Worker local total request limit reached (16/16)",
+    ],
+    [
       "rate limit",
       "429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit",
     ],
@@ -31,6 +35,7 @@ describe("transient model errors", () => {
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
     ["dropped fetch body", new TypeError("terminated")],
+    ["provider network stop", new Error("Provider finish_reason: network_error")],
     ["fetch failure", new TypeError("fetch failed")],
     ["SDK connection failure", new Error("Connection error.")],
     ["SDK connection timeout", new Error("Request timed out.")],
@@ -38,6 +43,14 @@ describe("transient model errors", () => {
     ["socket hang up", new Error("socket hang up")],
     ["closed websocket", "WebSocket closed 1006"],
     ["idle stream", "Codex stream idle timeout"],
+    [
+      "server-side processing failure",
+      "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-0000-0000-000000000000 in your message.",
+    ],
+    [
+      "per-minute token limit that links to billing",
+      "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
+    ],
   ])("treats %s as transient", (_label, error) => {
     expect(isTransientModelError(error)).toBe(true);
   });
@@ -72,6 +85,12 @@ describe("transient model errors", () => {
     ["auth failure mentioning a connection error", { status: 401, message: "Connection error." }],
     ["cancellation", new Error("Request was aborted")],
     ["unknown", new Error("Model stream ended without a terminal event")],
+    [
+      "a key that is not a valid header value",
+      new TypeError(
+        'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
+      ),
+    ],
   ])("treats %s as permanent", (_label, error) => {
     expect(isTransientModelError(error)).toBe(false);
   });

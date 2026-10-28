@@ -89,7 +89,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await chip.press("Enter");
   const view = page.getByTestId("peer-conversation-view");
   await expect(view).toBeVisible();
-  await expect(view.getByRole("heading", { name: /Chief · Researcher/ })).toBeVisible();
+  await expect(view.getByRole("heading", { name: /Chief\s*Researcher/ })).toBeVisible();
   await expect(view.getByText("This chat is view-only")).toBeVisible();
   await expect(view.getByRole("button", { name: "Close" })).toHaveCount(1);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
@@ -193,18 +193,19 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
   await collapse.click();
   await expect(reply).toHaveCount(0);
+  await page.getByTestId("sidebar-search-trigger").click();
   const search = page.getByTestId("sidebar-search").getByRole("textbox");
   await search.fill(foldedReplyText);
   // Researcher's "Messaged Chief" receipt also matches; jump to the folded reply itself.
   await page
     .getByRole("button")
-    .filter({ hasText: `Researcher · ${foldedReplyText} and come back with a result` })
+    .filter({ hasText: new RegExp(`Researcher\\s*${foldedReplyText} and come back with a result`) })
     .first()
     .click();
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
   await expect(reply).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-search-jump");
-  await search.fill("");
+  await expect(search).toHaveCount(0);
   await collapse.click();
   await expect(reply).toHaveCount(0);
 
@@ -229,7 +230,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
     .getAttribute("data-message-id");
   const replyRow = transcript.locator(`[data-message-id="${replyId}"]`);
 
-  // A reaction stays with its folded reply.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "React" }).click();
   await page.getByRole("button", { name: "👍", exact: true }).click();
@@ -246,7 +246,6 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await expect(reactions).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 
-  // A reply quote opens its folded parent.
   await replyRow.hover();
   await replyRow.getByRole("button", { name: "Reply", exact: true }).click();
   await composer.fill("peer-fold-quote");

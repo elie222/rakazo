@@ -1,10 +1,20 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
-import { createTelegramAdapter } from "@chat-adapter/telegram";
-import { createWhatsAppAdapter, splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import {
+  createTelegramAdapter,
+  escapeMarkdownV2,
+  TelegramFormatConverter,
+} from "@chat-adapter/telegram";
+import {
+  createWhatsAppAdapter,
+  splitMessage,
+  WhatsAppAdapter,
+  WhatsAppApiError,
+} from "@chat-adapter/whatsapp";
 import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
+import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
@@ -103,24 +113,14 @@ export function telegramBotsFromEnv(
 }
 
 /**
- * Build the platform list for every fully configured provider. Group
- * conversations stay sendblue-only until channel semantics are mapped for
- * the other platforms, so their capabilities say so instead of half-working.
+ * Group conversations stay sendblue-only until channel semantics are mapped
+ * for the other platforms.
  *
- * `pollInboundMessages` must be true only in the one process that also
- * registers the inbound sink (messaging.onInbound — apps/api/src/app.ts).
- * Telegram's "auto" mode starts a long-poll the moment anything calls
- * chat.initialize() when no webhook is registered — and that includes a
- * process that only ever meant to *send*: outbound delivery
- * (sendToThread) lazily initializes too. A second process polling with no
- * inbound sink attached doesn't just do nothing — it actively steals
- * Telegram's single getUpdates slot away from the process that IS
- * listening, so both sides spend every cycle losing a 409 Conflict to the
- * other and messages stop arriving at all. Any caller that only sends
- * (e.g. apps/worker/src/index.ts, for messaging.deliver jobs) must leave
- * this false so Telegram mode resolves to "webhook" (passive — resolves
- * bot identity for outbound calls, never polls, and no webhook route is
- * mounted there for it to receive on anyway).
+ * `pollInboundMessages` must be true only in the one process that registers
+ * the inbound sink. Telegram's "auto" mode long-polls as soon as anything,
+ * including a lazy outbound send, initializes the chat, and a second poller
+ * steals Telegram's single getUpdates slot, so both processes lose 409
+ * Conflicts and messages stop arriving. Send-only callers leave it false.
  */
 export function messagingPlatformsFromEnv(
   env: MessagingEnvironmentValues,
@@ -169,6 +169,7 @@ export function messagingPlatformsFromEnv(
       provider: "sendblue",
       capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
+      address: lineNumber,
       directThreadId: (address) =>
         adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
       peekStatuses: parseSendblueStatuses,
@@ -238,17 +239,9 @@ export function messagingPlatformsFromEnv(
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: false, receipt: null, files: true },
-      // Auto mode: uses the webhook route when Telegram has one registered
-      // (checked via getWebhookInfo), and otherwise falls back to
-      // long-polling getUpdates. Self-hosted/local deployments typically
-      // have no public HTTPS endpoint for Telegram to push to, so the API
-      // process calls initialize() at startup (apps/api/src/app.ts) to
-      // start that polling loop immediately rather than waiting for the
-      // first inbound webhook or outbound send. It must be the API
-      // process specifically: that's where the inbound sink is registered,
-      // and Telegram allows only one live getUpdates connection per bot —
-      // a second poller elsewhere would just steal that slot and drop
-      // every message into the void.
+      // Auto mode long-polls when no webhook is registered, for deployments
+      // without a public HTTPS endpoint. Only the API process may poll: it
+      // owns the inbound sink, and Telegram allows one getUpdates per bot.
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
@@ -341,13 +334,90 @@ const SLACK_PERMANENT_ERRORS = new Set([
 /** Meta 131047: outside the 24-hour window only a template can reach the user. */
 const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
 
-/**
- * WhatsApp caps one text at 4096 characters and the adapter sends longer
- * ones as several messages. The outbox splits first, the same way, so each
- * part is its own row and a retry re-sends only the parts that failed.
- */
+/** WhatsApp and Telegram both cap a text message at 4096 UTF-16 units. */
+const MESSAGE_PART_LIMIT = 4096;
+
+/** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
-  return provider === "whatsapp" ? splitMessage(body) : [body];
+  if (provider === "whatsapp") return splitWhatsAppPart(body);
+  if (provider !== "telegram" && !provider.startsWith("telegram-")) return [body];
+
+  return splitTelegramPart(body);
+}
+
+/** Split like the SDK, which counts UTF-16 units, but never end a part on half an emoji. */
+function splitKeepingPairs(body: string): string[] {
+  const parts: string[] = [];
+  let rest = body;
+  while (rest.length > MESSAGE_PART_LIMIT) {
+    // The SDK's first part only depends on the first MESSAGE_PART_LIMIT units.
+    const [first = ""] = splitMessage(rest.slice(0, MESSAGE_PART_LIMIT + 1));
+    const part = first.length > 1 && /[\uD800-\uDBFF]$/.test(first) ? first.slice(0, -1) : first;
+    parts.push(part);
+    rest = rest.slice(part.length).trimStart();
+  }
+  return rest || parts.length === 0 ? [...parts, rest] : parts;
+}
+
+const telegramFormat = new TelegramFormatConverter();
+
+function splitTelegramPart(body: string, literal = false): string[] {
+  const markdown = literal ? escapeMarkdownV2(body) : body;
+  const plainText = literal ? body : markdownToPlainText(body);
+  // The adapter truncates *after* rendering and emoji conversion, including
+  // its plain-text fallback. Measure both payloads in UTF-16 units as it does.
+  const payloads = [telegramFormat.fromMarkdown(markdown), plainText.trim() ? plainText : markdown];
+  if (
+    markdown.length <= MESSAGE_PART_LIMIT &&
+    payloads.every((text) => convertEmojiPlaceholders(text, "gchat").length <= MESSAGE_PART_LIMIT)
+  ) {
+    return [markdown];
+  }
+
+  // Parse before splitting: cutting Markdown can turn code into prose and
+  // consume literal backslashes. Oversized formatted replies use escaped text.
+  if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
+
+  const parts = splitKeepingPairs(body);
+  if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
+
+  return halve(body).flatMap((half) => splitTelegramPart(half, literal));
+}
+
+/** Exposes the adapter's Markdown rendering, which the package does not export. */
+class WhatsAppRenderer extends WhatsAppAdapter {
+  render(markdown: string): string {
+    return convertEmojiPlaceholders(this.formatConverter.renderPostable({ markdown }), "whatsapp");
+  }
+}
+
+let whatsappRenderer: WhatsAppRenderer | undefined;
+
+function splitWhatsAppPart(body: string): string[] {
+  whatsappRenderer ??= new WhatsAppRenderer({
+    accessToken: "",
+    appSecret: "",
+    logger: new ConsoleLogger("silent"),
+    phoneNumberId: "",
+    userName: "",
+    verifyToken: "",
+  });
+  // The adapter re-splits anything that renders past the limit, outside the
+  // queue's per-part retries and without keeping UTF-16 pairs together.
+  if (whatsappRenderer.render(body).length <= MESSAGE_PART_LIMIT) return [body];
+
+  const parts = splitKeepingPairs(body);
+  return (parts.length > 1 ? parts : halve(body)).flatMap(splitWhatsAppPart);
+}
+
+/** Refines chunks that only grow beyond the limit during rendering. */
+function halve(body: string): string[] {
+  const midpoint = Math.floor(body.length / 2);
+  const prefix = body.slice(0, midpoint);
+  let boundary = Math.max(prefix.lastIndexOf("\n"), prefix.lastIndexOf(" "));
+  if (boundary < midpoint / 2) boundary = midpoint;
+  if (/[\uD800-\uDBFF]/.test(body[boundary - 1]!)) boundary--;
+  return [body.slice(0, boundary), body.slice(boundary)];
 }
 
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */

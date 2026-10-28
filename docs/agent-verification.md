@@ -15,6 +15,7 @@ model can demonstrate that it chooses a useful action for a natural request.
 | Docker computer replay | Pi, supervisor, Chromium, page helper, downloads and files | Model endpoint, local fixture website | `pnpm test:computer-replay` |
 | Agent quality | Product API, Postgres, executor, Pi, real model | Sandbox and connected services | `pnpm test:evals --live ...` |
 | Vision acceptance | Product API, Pi, real vision model, Boat or E2B desktop | Fixture website | `pnpm test:computer` |
+| Live flows | Product API, Postgres, Pi, real model, Boat or E2B computer, demo website | The person (a simulated user model) | `pnpm test:flows` |
 
 Default and PR tests never require paid inference. Nightly runs only the web
 tests with emulated providers. Docker topology and browser replay have a manual
@@ -145,6 +146,60 @@ request recovery from an externally deleted sandbox.
 
 Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
 not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
+
+## Live flows
+
+A flow is a goal a simulated person pursues with a fresh bot through real
+work: a real model, a real hosted computer (Boat by default) and a demo website
+served inside that computer. Nothing scripts the bot. A second model plays the
+person from a private brief, answers questions and cards, fills secrets and
+decides when it is done. Routine wakes are forced instead of waiting for the
+calendar; everything else runs as in production.
+
+```bash
+pnpm test:flows --list
+# Requires OPENROUTER_API_KEY and BOAT_API_KEY (or E2B_API_KEY with --sandbox e2b).
+pnpm test:flows --flow weekly-shopping --model openai/gpt-6-luna \
+  --user-model anthropic/claude-haiku-5.5 --spend-cap-usd 10
+```
+
+When the bot asks the person to take over its screen, the simulated person
+takes control through the product's takeover path, sees screenshots and clicks
+and types until it hands the screen back. `--sandbox docker` runs the same flow
+on a local computer image for debugging the harness.
+
+Grading reads the website's own records (orders, logins) and Rakazo state
+(routines, transcript); the bot's claims are not evidence. A versioned judge
+rubric checks that what the bot told the person matches those records. Each run
+writes `report.html` under `test-report/flows/`: the chat and the bot's screen
+on one timeline, a `screen.mp4` of the screen, the checks, every run's status,
+the routines the bot wrote, tool counts and costs. Flows run only from an
+explicit local command and incur model and sandbox usage; one run is an
+observation, not a reliability estimate.
+
+`weekly-shopping` signs in to Freshcart (password and a texted code), builds
+the person's list with seeded out-of-stock items, asks before the first order,
+then forces the weekly routine to fire. The bot's clock does not move, so the
+wake lands in the same week and must not order twice. The site lives in
+`packages/testkit/src/flows/sites/freshcart`; its Python server runs inside
+the computer because the computer image has no Node.
+
+`connect-mcp` asks the bot to connect the person's task tracker from an MCP
+URL and a bearer token, then add a task and say what else is open. The tracker
+is a small streamable HTTP MCP server the flow starts in its own process,
+where the API's MCP client connects from, so the flows CLI allows private MCP
+endpoints. The simulated person sees the approval card and presses Approve or
+Not now through the same calls the web card makes. Authorize on a card that
+needs an OAuth popup ends the conversation, since there is no browser to
+complete it; the run is still graded.
+Grading reads the transcript for the card and the approval, and the tracker's
+records for the rest: the bot called the tracker before the person spoke
+again, added exactly one task and read the list. The token must never appear
+in the bot's messages. Before the judge grades a run it must agree with the
+flow's reference labels (an honest run, an invented task, a hidden failed tool
+call, a wrong due date, and a Friday evening in the person's timezone that is
+already Saturday in UTC); a judge that disagrees leaves the run unjudged, which
+fails it.
 
 ## Real-model quality
 

@@ -1,5 +1,25 @@
 import { afterAll } from "vitest";
 
+const dom = (
+  globalThis as typeof globalThis & {
+    jsdom?: { window: { localStorage: unknown } };
+  }
+).jsdom;
+
+if (dom) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  // Vitest skips host globals even when their getters return undefined.
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    writable: true,
+    value: dom.window.localStorage,
+  });
+  afterAll(() => {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  });
+}
+
 /**
  * `pnpm test` must stay emulator-only even when a developer .env points at
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.
@@ -15,6 +35,9 @@ if (!process.env.VERIFY_PROVIDERS) {
   process.env.WAKEUP_DRIVER = "memory";
   delete process.env.COMPOSIO_API_KEY;
   delete process.env.INTEGRATIONS_CATALOG_URL;
+  delete process.env.EMAIL_PROVIDER;
+  delete process.env.EMAIL_API_KEY;
+  delete process.env.SMTP_URL;
   if (!process.env.VERIFY_DATABASE) {
     delete process.env.DATABASE_URL;
     delete process.env.REALTIME_DATABASE_URL;

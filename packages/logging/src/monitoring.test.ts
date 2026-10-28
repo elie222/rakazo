@@ -5,9 +5,76 @@ import {
   responseCorrelation,
   sanitizedError,
   sanitizeMonitoringEvent,
+  scrubMonitoringText,
 } from "./monitoring.js";
 
 describe("client monitoring contract", () => {
+  it.each([
+    ["C:\\Users\\Example User\\app.js", "[user]\\app.js"],
+    ["c:\\users\\Example Middle User\\app.js:12:3", "[user]\\app.js:12:3"],
+    ["C:\\Users\\Example\\app.js", "[user]\\app.js"],
+    ["C:\\Users\\Example User", "[user]"],
+    ["C:\\Users\\Example User\n at next (app.js:2:1)", "[user]\n at next (app.js:2:1)"],
+    ["C:\\Users\\Example User\r\n at next (app.js:2:1)", "[user]\r\n at next (app.js:2:1)"],
+    ["C:/Users/Example User/app.js", "[user]/app.js"],
+    ["c:/users/Example Middle User/app.js:12:3", "[user]/app.js:12:3"],
+  ])("redacts the complete Windows profile in %j", (input, expected) => {
+    expect(scrubMonitoringText(input)).toBe(expected);
+  });
+
+  it.each([
+    ["C:\\Users\\Example -> C:\\Users\\Other\\app.js", "[user][user]\\app.js"],
+    ["C:\\Users\\Example User -> d:\\users\\Other User\\app.js", "[user][user]\\app.js"],
+    [
+      "C:\\Users\\Example -> D:\\Users\\Other -> e:\\users\\Third User\\app.js",
+      "[user][user][user]\\app.js",
+    ],
+    [
+      "C:\\Users\\Example User\\first.js -> D:\\Users\\Other User\\second.js",
+      "[user]\\first.js -> [user]\\second.js",
+    ],
+    ["C:\\Users\\Example User -> D:\\build\\app.js", "[user]D:\\build\\app.js"],
+    ["C:/Users/Example -> d:/users/Other User/app.js", "[user][user]/app.js"],
+  ])("keeps later drive prefixes available for redaction in %j", (input, expected) => {
+    expect(scrubMonitoringText(input)).toBe(expected);
+  });
+
+  it("scrubs every Windows profile in same-line error and monitoring messages", () => {
+    const message = "C:\\Users\\Example -> C:\\Users\\Other\\app.js";
+    expect(sanitizedError(message).message).toBe("[user][user]\\app.js");
+    expect(sanitizeMonitoringEvent({ message }).message).toBe("[user][user]\\app.js");
+  });
+
+  it("scrubs spaced Windows profiles in errors without changing the original", () => {
+    const path = "C:\\Users\\Example User\\app.js:12:3";
+    const source = new Error(`Failed at ${path}`, { cause: new Error(path) });
+    source.stack = `Error: Failed at ${path}\n at work (${path})`;
+    Object.assign(source, { meta: { path } });
+    const safe = sanitizedError(source);
+    expect(safe.message).toBe("Failed at [user]\\app.js:12:3");
+    expect(safe.stack).toBe("Error: Failed at [user]\\app.js:12:3\n at work ([user]\\app.js:12:3)");
+    expect((safe.cause as Error).message).toBe("[user]\\app.js:12:3");
+    expect((safe as Error & { meta: unknown }).meta).toEqual({ path: "[user]\\app.js:12:3" });
+    expect(source.message).toBe(`Failed at ${path}`);
+    expect(source.stack).toContain(path);
+  });
+
+  it("scrubs spaced Windows profiles from monitoring messages and frames", () => {
+    const path = "C:\\Users\\Example User\\app.js";
+    const result = sanitizeMonitoringEvent({
+      message: `Failed at ${path}`,
+      exception: {
+        values: [{ value: path, stacktrace: { frames: [{ filename: path, abs_path: path }] } }],
+      },
+    });
+    expect(result.message).toBe("Failed at [user]\\app.js");
+    expect(result.exception.values[0]?.value).toBe("[user]\\app.js");
+    expect(result.exception.values[0]?.stacktrace.frames[0]).toEqual({
+      filename: "[user]\\app.js",
+      abs_path: "[user]\\app.js",
+    });
+  });
+
   it("bounds startup reports, drains once, and clears disabled or previous-server reports", () => {
     const reporter = createClientErrorReporter();
     const capture = vi.fn();

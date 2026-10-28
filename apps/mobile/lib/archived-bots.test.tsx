@@ -26,6 +26,7 @@ const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selec
   }));
 const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
 const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
   selectSpace,
@@ -56,6 +57,12 @@ vi.mock("./native", () => ({
   useResolvedAppearance: () => "light",
 }));
 vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
+const addToSearchInbox = vi.hoisted(() => vi.fn());
+vi.mock("./search-inbox", () => ({
+  addToSearchInbox,
+  removeFromSearchInbox: vi.fn(),
+  searchInboxSession: () => ({ generation: 3, apiBase: "http://api.test" }),
+}));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => true }));
 vi.mock("./computer-updates", () => ({ computerUpdates: { start: vi.fn() } }));
 vi.mock("@expo/ui/community/menu", () => ({ MenuView: () => null }));
@@ -126,6 +133,18 @@ describe("archived chat read failures", () => {
     vi.unstubAllGlobals();
   });
 
+  it("adds the archived bot to the inbox roster before opening its chat, so its title is complete", async () => {
+    rpc.mockResolvedValueOnce({});
+    await act(async () => container.querySelector("button")!.click());
+    expect(addToSearchInbox).toHaveBeenCalledWith(
+      { kind: "bot", bot },
+      { generation: 3, apiBase: "http://api.test" },
+    );
+    expect(addToSearchInbox.mock.invocationCallOrder[0]).toBeLessThan(
+      push.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it.each([new TypeError("Network request failed"), new Error("Request timed out")])(
     "retries a failed read without restoring the bot: %s",
     async (cause) => {
@@ -143,6 +162,14 @@ describe("archived chat read failures", () => {
         pathname: "/thread",
         params: { botId: bot.id, name: bot.name, readOnly: "1" },
       });
+      // The chat finds the archived bot in the roster, so its title is complete at once.
+      expect(addToSearchInbox).toHaveBeenCalledWith(
+        { kind: "bot", bot },
+        { generation: 3, apiBase: "http://api.test" },
+      );
+      expect(addToSearchInbox.mock.invocationCallOrder[0]).toBeLessThan(
+        push.mock.invocationCallOrder[0] ?? 0,
+      );
       expect(closeSettingsSheet.mock.invocationCallOrder[0]).toBeLessThan(
         push.mock.invocationCallOrder[0] ?? 0,
       );

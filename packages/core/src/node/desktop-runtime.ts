@@ -35,12 +35,13 @@ export const DEFAULT_DESKTOP_ENV: DesktopEnvironment = {
   preservePrimaryDisplay: true,
 };
 function gatewayHost(host = "127.0.0.1") {
-  if (host !== "localhost" && !isIPv4(host)) throw new Error("invalid screen gateway bind host");
+  if (host !== "localhost" && host !== "::" && !isIPv4(host))
+    throw new Error("invalid screen gateway bind host");
   return host;
 }
 
 function gatewayProbeHost(host: string) {
-  return host === "0.0.0.0" ? "127.0.0.1" : host;
+  return host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
 }
 
 export function screenPorts(index: number, env = DEFAULT_DESKTOP_ENV) {
@@ -113,9 +114,6 @@ function browserRunningFunction(profile: string, pidFile: string) {
   const flag = shellQuote(`--user-data-dir=${profile}`);
   const profileQuoted = shellQuote(profile);
   return [
-    "browser_running() {",
-    `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
-    `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
     // Match the configured flag in either NUL-separated argv or Chromium's one-line
     // setproctitle. Searching for the whole flag keeps spaces and " --" inside the path.
     "  cmdline_text() {",
@@ -153,6 +151,9 @@ function browserRunningFunction(profile: string, pidFile: string) {
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
     "  }",
+    "browser_running() {",
+    `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
+    `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
     // Pid files and SingletonLock miss the browser after a supervisor restart or a wrapper
     // whose lock does not point at the process that still has --user-data-dir.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
@@ -215,7 +216,7 @@ function browserLauncherCommand(
     '  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi',
     "  unset _kept _rest _entry",
     "fi",
-    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
+    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
   ].join("\n");
 }
 
@@ -288,10 +289,12 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
     ...browserRunningFunction(profile, pidFile),
     `if browser_running; then`,
     `  python3 -c ${shellQuote(CLOSE_BROWSER)} "$pid" ${shellQuote(profile)} >/dev/null 2>&1 || true`,
-    `  for i in $(seq 1 40); do browser_running || break; sleep 0.25; done`,
-    `  if browser_running; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_running || break; sleep 0.25; done; fi`,
-    `  browser_running && kill -KILL "$pid" 2>/dev/null || true`,
+    `  for i in $(seq 1 40); do browser_matches "$pid" || break; sleep 0.25; done`,
+    `  if browser_matches "$pid"; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_matches "$pid" || break; sleep 0.25; done; fi`,
+    `  browser_matches "$pid" && kill -KILL "$pid" 2>/dev/null || true`,
     `fi`,
+    // A supervisor may have replaced the selected PID while it was closing.
+    // Rediscover once before removing lock state rather than on every close poll.
     `if browser_running; then echo 'browser still running' >&2; exit 1; fi`,
     `rm -f ${pidFile}`,
     `rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,
@@ -803,13 +806,17 @@ export function releaseDesktopCommand(
   ].join("\n");
 }
 
-/** Guard a control transition with the persisted allocation and execution fence. */
+/**
+ * Guard a control transition with the persisted allocation and execution fence.
+ * Revoking without a token ends any control on the display but keeps its slot, fence,
+ * view, and browser for the bot's next run.
+ */
 export function desktopControlCommand(
   screenId: string,
   leaseId: string | undefined,
   env: DesktopEnvironment,
   interactive: boolean,
-  token: string,
+  token?: string,
 ) {
   return [
     ...registryLockCommand(screenId),

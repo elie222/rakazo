@@ -4,6 +4,8 @@
   <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
 
   <queries>
     <intent>
@@ -16,5 +18,9 @@
       android:name=".RakazoNotificationService"
       android:exported="false"
       android:foregroundServiceType="remoteMessaging" />
+    <service
+      android:name=".RakazoCallService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
   </application>
 </manifest>

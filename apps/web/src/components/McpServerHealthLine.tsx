@@ -17,10 +17,10 @@ export function McpServerHealthLine({
   /** A Test connection run is in flight; shown until the server reports installing. */
   checking?: boolean;
 }) {
+  const toolCount = health.toolCount;
   const checked = health.checkedAt ? formatRelativeTime(health.checkedAt) : "";
   const checkedLabel = checked ? (
     <span className="font-normal text-muted-foreground">
-      {" · "}
       <Trans>Checked {checked}</Trans>
     </span>
   ) : null;
@@ -66,11 +66,12 @@ export function McpServerHealthLine({
         className="mt-2 flex items-center gap-1.5 text-xs font-medium text-success"
       >
         <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
-        <span>
-          {health.toolCount === null ? (
-            <Trans>Running</Trans>
-          ) : (
-            <Plural value={health.toolCount} one="Running · # tool" other="Running · # tools" />
+        <span className="flex flex-wrap gap-x-2">
+          <Trans>Running</Trans>
+          {toolCount === null ? null : (
+            <span>
+              <Plural value={toolCount} one="# tool" other="# tools" />
+            </span>
           )}
           {checkedLabel}
         </span>
@@ -83,7 +84,7 @@ export function McpServerHealthLine({
       <div data-testid="mcp-health" data-status="error" className="mt-2">
         <p role="status" className="flex items-center gap-1.5 text-xs font-medium text-destructive">
           <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>
+          <span className="flex flex-wrap gap-x-2">
             <Trans>Not working</Trans>
             {checkedLabel}
           </span>

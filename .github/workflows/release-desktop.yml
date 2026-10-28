@@ -148,17 +148,61 @@ jobs:
           umask 077
           printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY"
           chmod 600 "$APPLE_API_KEY"
+      - name: Prepare system passkey association
+        id: passkeys
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          # Optional: without it the release still ships and hides passkeys on macOS.
+          PROVISIONING_PROFILE: ${{ secrets.DESKTOP_MAC_PROVISIONING_PROFILE }}
+          PROFILE_PATH: ${{ runner.temp }}/rakazo.provisionprofile
+          ENTITLEMENTS_PATH: ${{ runner.temp }}/entitlements.passkeys.plist
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROVISIONING_PROFILE" ]]; then
+            echo "::notice::Building without system passkeys; DESKTOP_MAC_PROVISIONING_PROFILE is not set."
+            exit 0
+          fi
+          printf '%s' "$PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
+          profile="$(mktemp)"
+          security cms -D -i "$PROFILE_PATH" > "$profile"
+          if ! /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.associated-domains" "$profile" > /dev/null 2>&1; then
+            echo "::error::The provisioning profile's App ID lacks the Associated Domains capability."
+            exit 1
+          fi
+          APPLE_TEAM_ID="$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile")"
+          app_id="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" "$profile")"
+          bundle_id="$(node -p "require('./apps/desktop/package.json').build.appId")"
+          rm -f "$profile"
+          # macOS refuses to launch an app whose entitlements its profile does not authorize.
+          if [[ "$app_id" != "$APPLE_TEAM_ID.$bundle_id" ]]; then
+            echo "::error::The provisioning profile is not for $bundle_id."
+            exit 1
+          fi
+          APPLE_TEAM_ID="$APPLE_TEAM_ID" pnpm exec tsx apps/desktop/scripts/passkey-entitlements.ts > "$ENTITLEMENTS_PATH"
+          plutil -lint "$ENTITLEMENTS_PATH"
+          echo "profile=$PROFILE_PATH" >> "$GITHUB_OUTPUT"
+          echo "entitlements=$ENTITLEMENTS_PATH" >> "$GITHUB_OUTPUT"
       - name: Package signed and notarized universal macOS app
         if: runner.os == 'macOS'
+        shell: bash
         env:
           CSC_LINK: ${{ secrets.DESKTOP_MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_MAC_CSC_KEY_PASSWORD }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
-        run: >-
-          pnpm --filter @rakazo/desktop exec electron-builder
-          --mac --universal --publish never -c.forceCodeSigning=true
+          PASSKEY_PROFILE: ${{ steps.passkeys.outputs.profile }}
+          PASSKEY_ENTITLEMENTS: ${{ steps.passkeys.outputs.entitlements }}
+        run: |
+          set -eo pipefail
+          passkeys=()
+          if [[ -n "$PASSKEY_ENTITLEMENTS" ]]; then
+            # The main app alone gets the association; helpers keep entitlementsInherit.
+            passkeys=("-c.mac.entitlements=$PASSKEY_ENTITLEMENTS" "-c.mac.provisioningProfile=$PASSKEY_PROFILE")
+          fi
+          pnpm --filter @rakazo/desktop exec electron-builder \
+            --mac --universal --publish never -c.forceCodeSigning=true "${passkeys[@]}"
       - name: Remove the App Store Connect API key from the runner
         if: always() && runner.os == 'macOS'
         shell: bash
@@ -168,6 +212,8 @@ jobs:
       - name: Verify macOS signature, notarization ticket, and update feed
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          PASSKEY_ENTITLEMENTS: ${{ steps.passkeys.outputs.entitlements }}
         run: |
           set -euo pipefail
           app="apps/desktop/out/mac-universal/Rakazo.app"
@@ -183,6 +229,19 @@ jobs:
               exit 1
             fi
           done < <(find "$app" -type d -name "*.app" -print0)
+          if [[ -n "$PASSKEY_ENTITLEMENTS" ]]; then
+            # The signed app must carry exactly the generated association and its profile.
+            codesign -d --entitlements :- "$app" > "$entitlements" 2>/dev/null
+            for key in com.apple.application-identifier com.apple.developer.associated-domains; do
+              expected="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PASSKEY_ENTITLEMENTS")"
+              actual="$(/usr/libexec/PlistBuddy -c "Print :$key" "$entitlements" 2>/dev/null || true)"
+              if [[ "$actual" != "$expected" ]]; then
+                echo "::error::$app is missing the $key passkey entitlement"
+                exit 1
+              fi
+            done
+            test -f "$app/Contents/embedded.provisionprofile"
+          fi
           rm -f "$entitlements"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"

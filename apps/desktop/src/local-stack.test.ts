@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
+import type { LocalStackDeps } from "./local-stack.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
   ensureStackEnv,
   ensureStackToken,
   initialStackState,
   LocalStackController,
-  type LocalStackDeps,
   readStackToken,
   reduceStackState,
   renderStackEnv,
@@ -117,6 +117,50 @@ describe("ensureStackEnv", () => {
 
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
     await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=",
+    'POSTGRES_APP_PASSWORD=""',
+    "POSTGRES_APP_PASSWORD=''",
+    ' POSTGRES_APP_PASSWORD = "" # empty',
+    "POSTGRES_APP_PASSWORD=''# empty\r",
+    'POSTGRES_APP_PASSWORD=keep\nPOSTGRES_APP_PASSWORD=""',
+    "OTHER='first line\nPOSTGRES_APP_PASSWORD=phantom\nlast line'\nPOSTGRES_APP_PASSWORD=\"\"",
+  ])("fills an empty added secret in %j once", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `# preserve this file\n${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", fakeHex);
+    const updated = `${original}POSTGRES_APP_PASSWORD=${fakeHex(16)}\n`;
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must reuse the generated secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=keep",
+    ' POSTGRES_APP_PASSWORD = "keep" # note',
+    "POSTGRES_APP_PASSWORD='keep # literal'",
+    'POSTGRES_APP_PASSWORD=" "',
+    "POSTGRES_APP_PASSWORD= # literal comment",
+    "POSTGRES_APP_PASSWORD=#literal",
+    "export POSTGRES_APP_PASSWORD='keep'",
+    `POSTGRES_APP_PASSWORD=\${SYNTHETIC_PASSWORD}`,
+    'POSTGRES_APP_PASSWORD=""\nPOSTGRES_APP_PASSWORD=keep',
+    "POSTGRES_APP_PASSWORD='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+    "POSTGRES_APP_PASSWORD=\"first line\nPOSTGRES_APP_PASSWORD=''\nlast line\"",
+    "POSTGRES_APP_PASSWORD=keep\nOTHER='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+  ])("preserves a nonempty added secret in %j", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must preserve the configured secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(original);
   });
 
   it.runIf(process.platform !== "win32")(
@@ -404,6 +448,7 @@ describe("LocalStackController", () => {
     expect(phases).toEqual([
       "checking-docker",
       "checking-docker",
+      "preparing",
       "pulling",
       "starting",
       "waiting-healthy",
@@ -422,6 +467,7 @@ describe("LocalStackController", () => {
     expect(calls.map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
+      [...compose, "config", "--images"],
       [...compose, "pull"],
       [...compose, "up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)],
     ]);
@@ -464,6 +510,7 @@ describe("LocalStackController", () => {
       (call) => call.args[0] === "compose" && call.args[1] !== "version",
     );
     expect(commands.map((call) => call.args[7])).toEqual([
+      "config",
       "pull",
       "up",
       "up",
@@ -476,6 +523,58 @@ describe("LocalStackController", () => {
       expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
     }
   });
+
+  it("starts a pinned release offline when all resolved images are cached", async () => {
+    const images = ["registry.example.test/app:v1.2.3", "registry.example.test/computer:v1.2.3"];
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: `${images.join("\n")}\n` };
+      if (args[0] === "image" && args[1] === "inspect") return { stdout: "sha256:cached\n" };
+      if (args[7] === "pull") return { code: 1, stderr: "registry unavailable" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(false);
+    expect(calls.find((call) => call.args[0] === "image")?.args).toEqual([
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}}",
+      ...images,
+    ]);
+  });
+
+  it("pulls a pinned release when an image is missing", async () => {
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: "registry.example.test/app:v1.2.3\n" };
+      if (args[0] === "image") return { code: 1, stderr: "No such image" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[0] === "image")).toBe(true);
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+  });
+
+  it.each([
+    { code: 1, stdout: "", stderr: "Could not resolve images" },
+    { code: 0, stdout: "\n", stderr: "" },
+  ])("falls back to pulling when image resolution is inconclusive: %j", async (config) => {
+    const stack = controller({}, (args) => (args[7] === "config" ? config : ok(args)));
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+    expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+  });
+
+  it.each(["edge", "latest", "custom-tag", "v1.2.3-preview.1"])(
+    "refreshes the moving tag %s even when local images exist",
+    async (imageTag) => {
+      const stack = controller({ imageTag, probe: async () => imageTag });
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+      expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+    },
+  );
 
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
@@ -581,7 +680,12 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
+    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual([
+      "compose",
+      "info",
+      "config",
+      "pull",
+    ]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {

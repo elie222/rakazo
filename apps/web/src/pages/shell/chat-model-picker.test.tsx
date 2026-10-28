@@ -33,7 +33,7 @@ function choices(count: number): ChatModelChoice[] {
     { key: "", label: "Space default" },
     ...Array.from({ length: count }, (_, index) => ({
       key: `openrouter::vendor/model-${index + 1}`,
-      label: `OpenRouter · Model ${index + 1}`,
+      label: `Model ${index + 1} (OpenRouter)`,
       provider: "openrouter",
       providerLabel: "OpenRouter",
       modelLabel: `Model ${index + 1}`,
@@ -123,12 +123,12 @@ describe("ChatModelPicker", () => {
     render(choices(11), "openrouter::vendor/model-2");
     expect(container.querySelector("select")).toBeNull();
     const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
-    expect(trigger.textContent).toBe("OpenRouter · Model 2");
+    expect(trigger.textContent).toBe("Model 2 (OpenRouter)");
 
     act(() => trigger.click());
     expect(options()).toHaveLength(12);
     expect(document.querySelector("[cmdk-group-heading]")?.textContent).toBe("OpenRouter");
-    expect(options()[2]?.getAttribute("aria-label")).toBe("OpenRouter · Model 2");
+    expect(options()[2]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
     const checked = options().filter((option) => option.getAttribute("data-checked") === "true");
     expect(checked.map((option) => option.textContent)).toEqual(["Model 2"]);
 

@@ -1,10 +1,12 @@
 import { ORPCError, onError, os } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
+import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +26,18 @@ describe("logUnexpectedRpcError", () => {
       "readFile",
     ]);
 
+    expect(sink.events).toEqual([]);
+  });
+
+  it("keeps an image send the model cannot read out of error reports", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const rejection = new ORPCError("CONFLICT", {
+      message: MODEL_IMAGE_INPUT_ERROR,
+      data: { reason: "model_image_input_unsupported" },
+    });
+
+    expect(() => handleRpcError(rejection, ["threads", "send"])).not.toThrow();
     expect(sink.events).toEqual([]);
   });
 
@@ -47,7 +61,38 @@ describe("logUnexpectedRpcError", () => {
     });
   });
 
-  it("returns a provider rate limit as too many requests and still logs the cause", () => {
+  it("keeps a failure after the client disconnected out of error reports", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const client = new AbortController();
+    const router = {
+      voices: os.handler(() => {
+        client.abort("Client connection prematurely closed.");
+        throw new Error("Client connection prematurely closed.");
+      }),
+    };
+    const rpc = new RPCHandler(router, {
+      clientInterceptors: [
+        onError((error, { path, signal }) => handleRpcError(error, path, signal)),
+      ],
+    });
+
+    await rpc.handle(
+      new Request("http://localhost/rpc/voices", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+        signal: client.signal,
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc voices client disconnected"],
+    ]);
+  });
+
+  it("returns a provider rate limit as too many requests without an error report", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const error = new SandboxRateLimitError({ cause: new Error("HTTP 429, rate_limited") });
@@ -61,10 +106,13 @@ describe("logUnexpectedRpcError", () => {
 
     expect(thrown).toBeInstanceOf(ORPCError);
     expect(thrown).toMatchObject({ code: "TOO_MANY_REQUESTS", message: error.message });
-    expect(sink.events[0]).toMatchObject({
-      message: "rpc computer/boot failed",
-      error: { cause: { message: "HTTP 429, rate_limited" } },
-    });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/boot computer rate limited",
+        reason: "HTTP 429, rate_limited",
+      }),
+    ]);
   });
 
   it("returns a computer the provider never started as a retryable 503 without an error report", () => {
@@ -87,6 +135,25 @@ describe("logUnexpectedRpcError", () => {
         message: "rpc computer/boot computer unavailable",
         reason: "sandbox did not become ready",
       }),
+    ]);
+  });
+
+  it("returns a damaged computer's Recover message as a conflict without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxDamagedError();
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "CONFLICT", status: 409, message: error.message });
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc computer/boot computer damaged"],
     ]);
   });
 

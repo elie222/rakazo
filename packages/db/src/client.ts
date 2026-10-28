@@ -1,6 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
 import { resolveContentEncryption } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
 import { Pool } from "pg";
 import { withContentEncryption } from "./content-encryption.js";
@@ -13,6 +14,7 @@ import {
 } from "./content-keys.js";
 import { PrismaClient } from "./generated/prisma/client.js";
 import { installDbContext, withRowLevelSecurity } from "./row-security.js";
+import { withTextSanitization } from "./text-sanitization.js";
 
 export type Db = PrismaClient;
 
@@ -26,7 +28,10 @@ export interface DbClientOptions {
 }
 
 const DEFAULT_POOL_MAX = 4;
+const CHECKOUT_TIMEOUT_MS = 10_000;
 const CONNECT_RETRY_ATTEMPTS = 8;
+const SLOW_CHECKOUT_MS = 1_000;
+const SATURATION_REPORT_INTERVAL_MS = 10_000;
 
 export function createPool(connectionString: string, options: DbClientOptions = {}): Pool {
   const pool = new Pool({
@@ -34,7 +39,7 @@ export function createPool(connectionString: string, options: DbClientOptions = 
     max: options.poolMax ?? DEFAULT_POOL_MAX,
     // Fail a checkout instead of queueing forever when Postgres is already at
     // max_connections (53300) or the pool is saturated.
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: CHECKOUT_TIMEOUT_MS,
     // 0 disables idle eviction. Dropping idle clients and reopening them on the
     // next job burst is how a tight Postgres hits 53300; keep what we already have.
     idleTimeoutMillis: 0,
@@ -50,6 +55,7 @@ export function createPool(connectionString: string, options: DbClientOptions = 
   });
   installConnectRetry(pool);
   installDbContext(pool);
+  installSaturationReport(pool, options.applicationName);
   return pool;
 }
 
@@ -64,17 +70,24 @@ export function createDb(
 ): { prisma: PrismaClient; pool: Pool; contentKeys: ContentKeyRing } {
   // Read first, so an invalid CONTENT_ENCRYPTION stops startup before any pool opens.
   const encryptWrites = options.encryptContent ?? resolveContentEncryption();
+  // Without the configured key manager, new space keys would quietly be wrapped by
+  // master keys held on this host.
+  if (!options.keyProvider && (process.env.MASTER_KEY_PROVIDER?.trim() || "local") !== "local")
+    throw new Error(
+      "MASTER_KEY_PROVIDER needs createDb(url, { keyProvider }) from @rakazo/adapters",
+    );
   const pool = createPool(connectionString, options);
   const keyPool = new Pool({
     connectionString,
     max: 2,
-    connectionTimeoutMillis: 10_000,
+    connectionTimeoutMillis: CHECKOUT_TIMEOUT_MS,
     idleTimeoutMillis: 30_000,
     application_name: options.applicationName && `${options.applicationName}-keys`,
     keepAlive: true,
   });
   keyPool.on("error", () => undefined);
   installDbContext(keyPool);
+  installSaturationReport(keyPool, keyPool.options.application_name);
   const end = pool.end.bind(pool) as () => Promise<void>;
   pool.end = (async () => {
     await keyPool.end().catch(() => undefined);
@@ -86,10 +99,16 @@ export function createDb(
     { encryptWrites },
   );
   const adapter = new PrismaPg(pool);
+  // A transaction waits for a connection as long as any other query does. Prisma's 2s
+  // default failed runs whenever a busy pool took a few seconds to free a connection.
+  const client = new PrismaClient({
+    adapter,
+    transactionOptions: { maxWait: CHECKOUT_TIMEOUT_MS },
+  });
   // Row-level security wraps everything else, so its findUnique rewrite still runs
-  // through content encryption.
-  const prisma = withRowLevelSecurity(
-    withContentEncryption(new PrismaClient({ adapter }), contentKeys),
+  // through content encryption. Text is cleaned for Postgres before any of them see it.
+  const prisma = withTextSanitization(
+    withRowLevelSecurity(withContentEncryption(client, contentKeys)),
   );
   return { prisma, pool, contentKeys };
 }
@@ -157,6 +176,54 @@ function installConnectRetry(pool: Pool): void {
       });
     };
     attempt(0);
+  }
+
+  pool.connect = connect as Pool["connect"];
+}
+
+/**
+ * Warn when a checkout waited for a free connection, at most once per interval, so a pool
+ * that is running out shows up in the logs before requests start timing out on it.
+ */
+export function installSaturationReport(
+  pool: Pool,
+  name: string | undefined,
+  now: () => number = Date.now,
+): void {
+  type ConnectCallback = (
+    err: Error | undefined,
+    client: PoolClient | undefined,
+    done: (release?: unknown) => void,
+  ) => void;
+  const originalConnect = pool.connect.bind(pool) as {
+    (): Promise<PoolClient>;
+    (callback: ConnectCallback): void;
+  };
+  let reportedAt = -Infinity;
+  const report = (startedAt: number) => {
+    const at = now();
+    const waitMs = at - startedAt;
+    if (waitMs < SLOW_CHECKOUT_MS || at - reportedAt < SATURATION_REPORT_INTERVAL_MS) return;
+    reportedAt = at;
+    getLogger().warn("db.pool.saturated", {
+      "db.pool.name": name,
+      "db.pool.max": pool.options.max,
+      "db.pool.total": pool.totalCount,
+      "db.pool.idle": pool.idleCount,
+      "db.pool.waiting": pool.waitingCount,
+      "db.pool.wait_ms": waitMs,
+    });
+  };
+
+  function connect(): Promise<PoolClient>;
+  function connect(callback: ConnectCallback): void;
+  function connect(callback?: ConnectCallback): Promise<PoolClient> | undefined {
+    const startedAt = now();
+    if (!callback) return originalConnect().finally(() => report(startedAt));
+    originalConnect((err, client, done) => {
+      report(startedAt);
+      callback(err, client, done);
+    });
   }
 
   pool.connect = connect as Pool["connect"];

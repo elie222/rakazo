@@ -1,11 +1,5 @@
-import {
-  type Actor,
-  GROUP_MEMBER_MAX,
-  GROUP_MEMBER_MIN,
-  type Group,
-  type GroupMember,
-  type SpaceGroup,
-} from "@rakazo/contracts";
+import type { Actor, Group, GroupMember, SpaceGroup } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -503,7 +497,7 @@ export function createGroupRepos(prisma: PrismaClient) {
                   in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
                 },
               },
-              select: { id: true, taskId: true },
+              select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
         if (activeRuns.length) {
@@ -568,7 +562,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             threadId: current.thread.id,
             status: { in: activeRunStatuses },
           },
-          select: { id: true, taskId: true },
+          select: { id: true, taskId: true, userId: true, spaceId: true },
         });
         const runIds = activeRuns.map((run) => run.id);
         const now = new Date();

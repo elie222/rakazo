@@ -8,9 +8,12 @@ import {
   linkLabel,
   markdownLinkDisplayParts,
   markdownLinkRequiresConfirmation,
+  markdownMentionId,
   plainTextLinkParts,
   sanitizeMarkdownImageUrl,
   sanitizeMarkdownUrl,
+  withBlockMentions,
+  withMentions,
 } from "./markdown";
 
 type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
@@ -288,6 +291,17 @@ describe("link labels", () => {
     ).toBe("example.com/txt.exe");
   });
 
+  it("does not split a surrogate pair at the path truncation boundary", () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}\u{1F600}tail`;
+    expect(linkLabel(href, href)).toBe(`example.com/${prefix}…`);
+
+    const fits = `https://example.com/${"a".repeat(25)}\u{1F600}tail`;
+    expect(linkLabel(fits, fits)).toBe(`example.com/${"a".repeat(25)}\u{1F600}…`);
+    const short = "https://example.com/\u{1F600}";
+    expect(linkLabel(short, short)).toBe("example.com/\u{1F600}");
+  });
+
   it("never cuts the host, however long, and trims only the path", () => {
     const host = "www.paypal.com.account-verify-login-secure-update.example.com";
     expect(linkLabel(`https://${host}/x`, `https://${host}/x`)).toBe(
@@ -342,5 +356,62 @@ it("highlights the destination host after userinfo containing the same host text
     before: "https://docs.example:docs.example@",
     host: "docs.example",
     after: "/a",
+  });
+});
+
+describe("withMentions", () => {
+  const planner = { id: "bot-1", name: "Planner" };
+  const link = "[Planner](rakazo-mention:bot-1)";
+
+  it("links the first appearance of the name across the message", () => {
+    expect(
+      withMentions(["Working.", "Planner is ready. Ask Planner.", "Planner again."], [planner]),
+    ).toEqual(["Working.", `${link} is ready. Ask Planner.`, "Planner again."]);
+  });
+
+  it("puts the mention once at the start when the message does not name it", () => {
+    expect(withMentions(["Ready when you are.", "Done."], [planner])).toEqual([
+      `${link} Ready when you are.`,
+      "Done.",
+    ]);
+    expect(withMentions(["- first step"], [planner])).toEqual([`${link}\n\n- first step`]);
+  });
+
+  it("leaves code, links, and longer words alone", () => {
+    const text =
+      "`Planner` [Planner](https://example.test) Planners\n\n```\nPlanner\n```\n\n    Planner\n\nPlanner is ready.";
+    expect(withMentions([text], [planner])).toEqual([
+      text.replace("Planner is ready.", `${link} is ready.`),
+    ]);
+  });
+
+  it("keeps a mention link already in the text as its name", () => {
+    expect(withMentions(["[Planner](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
+      `${link} is ready.`,
+    ]);
+    const code = "`[Planner](rakazo-mention:bot-1)`\n\n```\n[Planner](rakazo-mention:bot-1)\n```";
+    expect(withMentions([code], [planner])).toEqual([`${link} ${code}`]);
+  });
+
+  it("escapes markdown in the name and encodes the id", () => {
+    expect(withMentions(["hi"], [{ id: "a/b", name: "[x]_y" }])).toEqual([
+      "[\\[x\\]\\_y](rakazo-mention:a%2Fb) hi",
+    ]);
+    expect(markdownMentionId("rakazo-mention:a%2Fb")).toBe("a/b");
+    expect(markdownMentionId("https://example.test")).toBeUndefined();
+  });
+
+  it("rewrites only prose blocks", () => {
+    const blocks = withBlockMentions(
+      [
+        { kind: "progress", text: "Planner tool", activity: true },
+        { kind: "text", text: "Planner is ready." },
+      ],
+      [planner],
+    );
+    expect(blocks).toEqual([
+      { kind: "progress", text: "Planner tool", activity: true },
+      { kind: "text", text: `${link} is ready.` },
+    ]);
   });
 });

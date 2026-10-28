@@ -1,4 +1,5 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,15 +11,15 @@ import {
   createApprovedEffectReplayQueue,
 } from "./approval-effect.js";
 import {
-  APPROVED_EFFECT_REPLAY_ORDER,
-  approvalReplayEffectToolName,
-  buildApprovalContinuation,
-} from "./executor.js";
-import {
   catalogEntries,
   disambiguateInstalledToolNames,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
+import {
+  APPROVED_EFFECT_REPLAY_ORDER,
+  approvalReplayEffectToolName,
+  buildApprovalContinuation,
+} from "./run-effects.js";
 
 describe("executor approval replay", () => {
   it.each([
@@ -61,7 +62,7 @@ describe("executor approval replay", () => {
 
     const queue = createApprovedEffectReplayQueue(effects);
     expect(queue.take("destination.write")).toEqual({ sequence: 1 });
-    expect(queue.assertDrained).toThrow("Approved tool requests were not fully replayed");
+    expect(queue.assertDrained).toThrow(APPROVED_ACTION_NOT_RUN_ERROR);
     expect(queue.take("destination.write")).toEqual({ sequence: 2 });
     expect(queue.take("destination.write")).toBeUndefined();
     expect(queue.assertDrained).not.toThrow();

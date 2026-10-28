@@ -1,12 +1,11 @@
 ---
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { GITHUB_URL } from "../site";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 ---
 
 <BaseLayout
@@ -17,7 +16,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">
       <h1>Terms of Service</h1>
-      <p><strong>Last updated: October 7, 2026</strong></p>
+      <p><strong>Last updated: October 27, 2026</strong></p>
       <p>
         These terms are an agreement between you and Inbox Zero Inc. (“Inbox Zero,” “we,” or “us”) for
         your use of the Rakazo service that we host, the Rakazo web, desktop, and mobile apps, and
@@ -101,11 +100,25 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
         If your plan starts with a free trial, we collect a payment method at signup and charge it
         when the trial ends unless you cancel before then. Cancelling during the trial ends it, and you
         are not charged.
-        Plans may include usage limits, and we may slow or pause usage that exceeds them or places an
-        unreasonable load on the Service. If a payment fails, we may pause paid features until it
+        Plans are subject to the <a href="#fair-use">fair use</a> limits below. If a payment fails, we may pause paid features until it
         succeeds. If you dispute a charge with your bank instead of contacting us, we may suspend the
         account while the dispute is open. We will notify you before a
         price change takes effect on your next renewal, and you can cancel before it does.
+      </p>
+
+      <h2 id="fair-use">Fair use</h2>
+      <p>
+        Hosted plans include up to 100 computer-hours a month and up to 5 computers running at once
+        per account, which is more than enough for most people. A computer counts toward those hours
+        only while it is running. Computers sleep after a few minutes without activity and run for up
+        to about two hours each time they wake, so they are not meant to stay on continuously. Each
+        computer currently has 4 vCPUs, 8 GB of memory, and 50 GB of disk. Files are saved when a
+        computer sleeps, up to 20 GB per computer, and kept until you delete the bot or your account.
+      </p>
+      <p>
+        If an account goes beyond these limits or places an unreasonable load on the Service, we may
+        slow or pause its computers and will contact you before taking further action. We do not
+        charge for computer use beyond your plan. These limits do not apply to self-hosted Rakazo.
       </p>
 
       <h2>Cancellation and refunds</h2>

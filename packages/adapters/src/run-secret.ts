@@ -1,20 +1,18 @@
 import type { AdapterContext, ManagedConnectorProvider, SecretStore } from "@rakazo/adapter-kit";
 import {
+  BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
-  LoginSecretValue,
+  loginAnswerValue,
   MessageBlock as MessageBlockSchema,
   SecretAskPurpose,
 } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
-import { withTransactionRetry } from "@rakazo/db";
-import { type ApprovalPausedToolResult, resolveDuplicateEffectGate } from "./approval-effect.js";
+import { runSecretKind, withTransactionRetry } from "@rakazo/db";
+import type { ApprovalPausedToolResult } from "./approval-effect.js";
+import { resolveDuplicateEffectGate } from "./approval-effect.js";
 import { prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
-
-export function runSecretKind(runId: string): string {
-  return `run-secret:${runId}`;
-}
 
 export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
   return SecretAskPurpose.safeParse(purpose).data ?? "otp";
@@ -149,24 +147,23 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
               throw new Error("Secret request changed; retry");
             },
           });
+        const login =
+          ask.credential?.auth.type === "login"
+            ? loginAnswerValue(ask.loginFields, input)
+            : undefined;
         if (
+          input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH ||
           (ask.credential && run.userId !== input.answeredByUserId) ||
-          (ask.credential?.auth.type === "login") !== Boolean(input.username?.trim()) ||
-          (ask.credential?.auth.type === "login" &&
-            !LoginSecretValue.safeParse({
-              username: input.username?.trim(),
-              password: input.answer,
-            }).success)
+          (ask.credential?.auth.type === "login"
+            ? !login
+            : input.username !== undefined || input.fields !== undefined)
         )
           return commit({
             store: async () => {
               throw new Error("Secret request changed; retry");
             },
           });
-        const plaintext =
-          ask.credential?.auth.type === "login"
-            ? encodeLoginSecret({ username: input.username?.trim() ?? "", password: input.answer })
-            : input.answer;
+        const plaintext = login ? encodeLoginSecret(login) : input.answer;
         const scope = { userId: run.userId, spaceId: input.spaceId, botId: run.botId };
         const prepared = ask.credential
           ? await prepareBotSecret({

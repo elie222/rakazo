@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,7 +8,8 @@ import { expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
-    t: (strings: TemplateStringsArray) => strings.join(""),
+    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
     i18n: { locale: "en" },
   }),
 }));
@@ -30,34 +32,6 @@ vi.mock("@rakazo/ui-web", () => ({
     "children"
   >) => <div {...props}>{children}</div>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
-  OptionSelect: ({
-    options,
-    value,
-    onValueChange,
-    "data-testid": testId,
-  }: {
-    options: readonly { value: string; label: string }[];
-    value: string;
-    onValueChange: (value: string) => void;
-    "data-testid"?: string;
-  }) => (
-    <div>
-      <button type="button" data-testid={testId}>
-        {options.find((option) => option.value === value)?.label}
-      </button>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="option"
-          aria-selected={option.value === value}
-          onClick={() => onValueChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  ),
 }));
 
 vi.mock("./AccountSettingsOverlay", () => ({
@@ -66,26 +40,66 @@ vi.mock("./AccountSettingsOverlay", () => ({
   UpdatesSettingsPanel: () => null,
   UsageSettingsPanel: () => null,
 }));
-const { memoryConfigs, providerConfig, updaterStatus } = vi.hoisted(() => ({
+const { memoryConfigs, memoryConfigChange, providerConfig, updaterStatus } = vi.hoisted(() => ({
   memoryConfigs: [] as unknown[],
+  memoryConfigChange: { current: (_config: unknown) => {} },
   providerConfig: vi.fn(async (_spaceId: string): Promise<unknown> => null),
   updaterStatus: vi.fn(async (): Promise<unknown> => ({ installKind: "compose" })),
 }));
 vi.mock("../lib/rpc", () => ({
   rpc: { updater: { status: updaterStatus } },
+  createSpaceRpc: () => ({ memory: { providerConfig: () => providerConfig("") } }),
+  selectedSpaceId: () => null,
   rpcForSpace: (spaceId: string) => ({
     memory: { providerConfig: () => providerConfig(spaceId) },
   }),
 }));
 vi.mock("./BillingSettingsPanel", () => ({ BillingSettingsPanel: () => null }));
+vi.mock("./PaymentWalletSettingsPanel", () => ({ PaymentWalletSettingsPanel: () => null }));
 vi.mock("./MemorySettingsOverlay", () => ({
-  MemorySettingsOverlay: ({ config }: { config: unknown }) => {
+  MemorySettingsOverlay: ({
+    config,
+    onConfigChange,
+  }: {
+    config: unknown;
+    onConfigChange: (config: unknown) => void;
+  }) => {
     memoryConfigs.push(config);
+    memoryConfigChange.current = onConfigChange;
     return null;
   },
 }));
-vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: () => null }));
-vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: () => null }));
+vi.mock("./SpaceSettingsPanel", () => ({
+  SpaceSettingsPanel: ({
+    space,
+    onDelete,
+  }: {
+    space: { name: string };
+    onDelete: () => Promise<void>;
+  }) => (
+    <button type="button" data-testid="space-settings" onClick={() => void onDelete()}>
+      {space.name}
+    </button>
+  ),
+}));
+const { scopes, recordScope } = vi.hoisted(() => {
+  const scopes: string[] = [];
+  return {
+    scopes,
+    recordScope:
+      (name: string) =>
+      ({ scope }: { scope: string }) => {
+        scopes.push(`${name}:${scope}`);
+        return null;
+      },
+  };
+});
+vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: recordScope("models") }));
+vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: recordScope("voice") }));
+vi.mock("../components/ApprovalRulesSettings", () => ({
+  ApprovalRulesSettings: recordScope("confirmations"),
+}));
+vi.mock("../components/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -100,21 +114,24 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rerender = async (next: Partial<React.ComponentProps<typeof SettingsOverlay>>) => {
     await act(async () => {
       root.render(
-        <SettingsOverlay
-          name="Jamie"
-          onUsageOpen={() => undefined}
-          timezone={null}
-          onTimezoneChange={async () => undefined}
-          memoryConfig={null}
-          onMemoryConfigChange={() => undefined}
-          onClose={() => undefined}
-          section="general"
-          onSectionChange={() => undefined}
-          {...next}
-        />,
+        <QueryClientProvider client={queryClient}>
+          <SettingsOverlay
+            name="Jamie"
+            onUsageOpen={() => undefined}
+            timezone={null}
+            onTimezoneChange={async () => undefined}
+            memoryConfig={null}
+            onMemoryConfigChange={() => undefined}
+            onClose={() => undefined}
+            section="general"
+            onSectionChange={() => undefined}
+            {...next}
+          />
+        </QueryClientProvider>,
       );
     });
   };
@@ -130,26 +147,59 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
   };
 }
 
-it("names the space a space-scoped section acts on and switches it in place", async () => {
-  const onSpaceChange = vi.fn();
+function button(container: HTMLElement, label: string) {
+  const match = [...container.querySelectorAll("button")].find(
+    (item) => item.getAttribute("aria-label") === label,
+  );
+  if (!match) throw new Error(`Missing ${label}`);
+  return match;
+}
+
+it("lists the spaces under General and opens the one picked", async () => {
+  const onOpenSpace = vi.fn();
+  const { container, cleanup } = await render({ spaces, onOpenSpace });
+  try {
+    const list = container.querySelector('[data-testid="settings-spaces"]');
+    expect(list?.textContent).toContain("Acme");
+    expect(list?.textContent).toContain("Beta");
+    await act(async () => button(container, "Manage Beta").click());
+    expect(onOpenSpace).toHaveBeenCalledWith("space-b");
+    // Spaces live under General, not in the nav.
+    expect(container.querySelector('[data-testid="settings-nav-space"]')).toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("lists no spaces when there is only one", async () => {
+  const { container, cleanup } = await render({ spaces: [acme], onOpenSpace: vi.fn() });
+  try {
+    expect(container.querySelector('[data-testid="settings-spaces"]')).toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("titles a space's page with its name and leads back to General", async () => {
+  const onDeleteSpace = vi.fn(async () => undefined);
+  const onSectionChange = vi.fn();
   const { container, cleanup } = await render({
-    space: acme,
+    space: { ...acme, canDelete: true },
     spaces,
-    onSpaceChange,
-    section: "models",
+    onDeleteSpace,
+    onSectionChange,
+    section: "space",
   });
   try {
-    const trigger = container.querySelector<HTMLButtonElement>('[data-testid="settings-space"]');
-    if (!trigger) throw new Error("Missing space switcher");
-    expect(trigger.textContent).toBe("Acme");
-
-    await act(async () => trigger.click());
-    const options = [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')];
-    expect(options.map((option) => option.textContent)).toEqual(["Acme", "Beta"]);
-
-    await act(async () => options[1]?.click());
-
-    await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b"));
+    expect(container.querySelector("h2")?.textContent).toBe("Acme");
+    expect(
+      container.querySelector('[data-testid="settings-nav-general"]')?.getAttribute("aria-current"),
+    ).toBe("page");
+    const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
+    await act(async () => panel?.click());
+    expect(onDeleteSpace).toHaveBeenCalledWith("space-a");
+    await act(async () => button(container, "Back").click());
+    expect(onSectionChange).toHaveBeenCalledWith("general");
   } finally {
     await cleanup();
   }
@@ -184,96 +234,48 @@ it("opens a linked billing section once billing turns out to be on", async () =>
   }
 });
 
-it("shows the space name without a switcher when there is only one space", async () => {
-  const { container, cleanup } = await render({
-    space: acme,
-    spaces: [acme],
-    onSpaceChange: vi.fn(),
-    section: "models",
-  });
+it("edits the account's models, voice, confirmations, and vault", async () => {
+  scopes.length = 0;
+  const props = { space: acme, spaces };
+  const { container, rerender, cleanup } = await render({ ...props, section: "models" });
   try {
-    const label = container.querySelector('[data-testid="settings-space"]');
-    expect(label?.tagName).toBe("P");
-    expect(label?.textContent).toBe("Acme");
+    for (const section of ["models", "voice", "confirmations", "vault"] as const) {
+      await rerender({ ...props, section });
+    }
+    const vaultNav = container.querySelector('[data-testid="settings-nav-vault"]');
+    expect(vaultNav?.textContent).toBe("Vault");
+    expect(vaultNav?.getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector("h2")?.textContent).toBe("Vault");
+    expect(new Set(scopes)).toEqual(
+      new Set(["models:account", "voice:account", "confirmations:account", "vault:account"]),
+    );
   } finally {
     await cleanup();
   }
 });
 
-it("shows no space picker on sections that are not per space", async () => {
-  const { container, cleanup } = await render({
-    space: acme,
-    spaces,
-    onSpaceChange: vi.fn(),
-    section: "general",
-  });
-  try {
-    expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
-  } finally {
-    await cleanup();
-  }
-});
-
-it("never hands one space's memory config to another space's panel", async () => {
-  const shared = { provider: "mem0", defaultMemoryScope: "shared" };
-  providerConfig.mockImplementation(async (spaceId) => (spaceId === "space-b" ? shared : null));
-  const gamma = { id: "space-c", name: "Gamma" };
-  const props = {
-    space: spaces[1],
-    spaces: [...spaces, gamma],
-    currentSpaceId: "space-a",
-    onSpaceChange: vi.fn(),
-    section: "memory" as const,
-  };
-  const { rerender, cleanup } = await render(props);
-  try {
-    await vi.waitFor(() => expect(memoryConfigs.at(-1)).toBe(shared));
-    memoryConfigs.length = 0;
-    // The parent answers onSpaceChange by passing the new space back in.
-    await rerender({ ...props, space: gamma });
-    await vi.waitFor(() => expect(memoryConfigs.at(-1)).toBeNull());
-    expect(memoryConfigs).not.toContain(shared);
-  } finally {
-    await cleanup();
-  }
-});
-
-it("withholds memory connection controls after a failed load and retries the edited space", async () => {
+it("edits the memory of the space the app is showing, even after another space's page", async () => {
   memoryConfigs.length = 0;
   providerConfig.mockReset();
-  providerConfig.mockRejectedValueOnce(new Error("Memory service unavailable"));
-  let resolveRetry: (config: unknown) => void = () => undefined;
-  providerConfig.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        resolveRetry = resolve;
-      }),
-  );
+  const shown = {
+    provider: "mem0",
+    settings: {},
+    defaultMemoryScope: "shared" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
   const onMemoryConfigChange = vi.fn();
-  const { container, cleanup } = await render({
+  const { cleanup } = await render({
     space: spaces[1],
-    currentSpaceId: "space-a",
+    spaces,
     section: "memory",
+    memoryConfig: shown,
     onMemoryConfigChange,
   });
   try {
-    expect(container.textContent).toContain("Memory service unavailable");
-    expect(memoryConfigs).not.toContain(null);
-    const rendersBeforeRetry = memoryConfigs.length;
-    const retry = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Retry",
-    );
-    expect(retry).toBeDefined();
-    await act(async () => retry?.click());
-    expect(container.textContent).not.toContain("Memory service unavailable");
-    expect(memoryConfigs.length).toBeGreaterThan(rendersBeforeRetry);
-    expect(memoryConfigs.at(-1)).toBeUndefined();
-    expect(providerConfig.mock.calls.map(([spaceId]) => spaceId)).toEqual(["space-b", "space-b"]);
-    const config = { provider: "mem0", defaultMemoryScope: "shared" };
-    await act(async () => resolveRetry(config));
-    expect(memoryConfigs.at(-1)).toBe(config);
-    expect(container.textContent).not.toContain("Retry");
-    expect(onMemoryConfigChange).not.toHaveBeenCalled();
+    expect(memoryConfigs.at(-1)).toBe(shown);
+    await act(async () => memoryConfigChange.current(null));
+    expect(onMemoryConfigChange).toHaveBeenCalledWith(null);
+    expect(providerConfig).not.toHaveBeenCalled();
   } finally {
     await cleanup();
   }
@@ -297,6 +299,21 @@ it("shows Updates in the desktop app", async () => {
   const { container, cleanup } = await render({});
   try {
     expect(updatesNav(container)).not.toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("offers Wallet only when the deployment has a wallet provider", async () => {
+  const { container, rerender, cleanup } = await render({ section: "wallet" });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).toBeNull();
+    expect(shown()).toBe("general");
+    await rerender({ section: "wallet", paymentWalletProvider: { id: "link", name: "Link" } });
+    expect(container.querySelector('[data-testid="settings-nav-wallet"]')).not.toBeNull();
+    expect(shown()).toBe("wallet");
   } finally {
     await cleanup();
   }

@@ -4,7 +4,6 @@ import { ScrollViewMarker } from "react-native-screens/experimental";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
-  THREAD_HEADER_FADE_GRADIENT,
   threadEdgeOptions,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -65,25 +64,18 @@ describe("thread scroll edges", () => {
 });
 
 it.each([64, 96, 116, 120])(
-  "places the band and jump targets below the pills at header height %s",
+  "rests content and jump targets below the pills at header height %s",
   (height) => {
     const clearance = threadHeaderClearance(height);
     const pillBottom = height - 10;
-    expect(clearance.opaqueHeight - pillBottom).toBe(14);
-    expect(THREAD_HEADER_FADE_GRADIENT).toBe(12);
-    expect(clearance.padding).toBe(clearance.opaqueHeight);
-    expect(clearance.minHeight).toBeGreaterThanOrEqual(clearance.opaqueHeight);
-    expect(clearance.anchor).toBeGreaterThan(clearance.opaqueHeight + THREAD_HEADER_FADE_GRADIENT);
+    expect(clearance.padding - pillBottom).toBe(14);
+    expect(clearance.minHeight).toBe(clearance.padding);
+    expect(clearance.anchor).toBe(clearance.padding + 20);
     // The first date has a 12pt margin and about 4pt of font leading.
     expect(clearance.padding + 16 - pillBottom).toBe(30);
   },
 );
 
 it("preserves Android clearance without a floating header", () => {
-  expect(threadHeaderClearance(0)).toEqual({
-    opaqueHeight: 0,
-    padding: 8,
-    anchor: 24,
-    minHeight: 0,
-  });
+  expect(threadHeaderClearance(0)).toEqual({ padding: 8, anchor: 24, minHeight: 0 });
 });

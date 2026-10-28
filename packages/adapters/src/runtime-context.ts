@@ -38,7 +38,7 @@ const messageHash = (message: Message) =>
   createHash("sha256")
     .update(JSON.stringify(providerContextPrefix("", [], [message])))
     .digest("hex");
-/** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated, a byte bound). */
+/** A rebuild breaks the cached prefix, so it must drop at least this much stale content (estimated). */
 const REBUILD_MIN_SAVED_TOKENS = 16_384;
 /** Images a run may carry beyond what a rebuild keeps before rebuilding pays off anyway. */
 const REBUILD_MAX_STALE_IMAGES = 16;

@@ -49,6 +49,24 @@ RAKAZO_DOWNLOAD_SKIP_EXISTING=1 bash install-images.sh --prepare-only
 Missing files are still downloaded. `--prepare-only` creates `.env` without starting the stack;
 continue with the image settings and startup instructions below.
 
+For an offline installation, copy `docker-compose.images.yml` and `.env.images.example` into the
+working directory and preload all required container images on the Docker host. Then run:
+
+```bash
+bash install-images.sh --offline
+```
+
+`--offline` fails before calling Compose if either required file is missing, even when `.env`
+already exists. It never downloads files and does not require curl. It skips image pulls and
+passes `--pull never` to startup when Compose supports it. Older Compose versions retain the
+startup path and print a warning when that flag is unavailable.
+
+To install restricted computer egress rules offline, also copy `restrict-computer-egress.sh`
+into the working directory. If that optional script is missing, the installer records open
+egress and warns instead of downloading it. An explicit `SANDBOX_COMPUTER_EGRESS` setting
+remains unchanged. See [restricted computer egress](./self-host.md#restricted-computer-egress)
+for host requirements.
+
 ## Container images
 
 After `--prepare-only`, set image overrides in `.env`. For mirrored Postgres or busybox, use

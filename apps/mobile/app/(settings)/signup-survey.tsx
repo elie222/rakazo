@@ -18,6 +18,7 @@ import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
 import { closeSettingsSheet } from "../../lib/settings-sheet";
+import { useSideInsets } from "../../lib/side-insets";
 import type { SignupSurveyTeamSize } from "../../lib/signup-survey";
 import { SIGNUP_SURVEY_TEAM_SIZE_CHOICES, signupSurveyAnswers } from "../../lib/signup-survey";
 
@@ -25,6 +26,7 @@ type Use = NonNullable<SignupSurveyAnswers["use"]>;
 
 /** Optional questions shown once after signing up on a billing deployment. */
 export default function SignupSurvey() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
@@ -56,6 +58,7 @@ export default function SignupSurvey() {
       style={styles.screen}
     >
       <ScrollView
+        style={sideInsets}
         contentContainerStyle={[styles.content, stacked && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"

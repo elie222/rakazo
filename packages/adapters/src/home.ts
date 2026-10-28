@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, createWriteStream } from "node:fs";
 import {
   access,
+  lstat,
   mkdir,
+  mkdtemp,
   open,
   readdir,
   readFile as readTextFile,
@@ -10,11 +12,21 @@ import {
   rename,
   rm,
   stat,
+  unlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
+
+const STAGING_PREFIX = "rakazo-workspace-";
+/** Staging directories in use are touched this often, so other processes can tell them apart. */
+const STAGING_HEARTBEAT_MS = 30_000;
+/** A staging directory untouched this long belongs to a process that died. */
+export const STALE_STAGING_MS = 5 * 60_000;
 
 export class LocalAgentHomeStore implements AgentHomeStore {
   private readonly botWrites = new Map<string, Promise<void>>();
@@ -52,8 +64,15 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   }
 
   async commit(botId: string, src: string, _context: AdapterContext): Promise<string> {
+    // Files staged on this volume by `createStaging` are moved into place, not copied, so a
+    // save never needs room for two copies.
+    const staged = path.dirname(path.resolve(src)) === path.resolve(this.root, "staging");
     return this.withBotWrite(botId, async () => {
-      await this.replaceHome(botId, (staging) => copyDir(src, staging));
+      await this.replaceHome(botId, async (staging) => {
+        if (!staged) return copyDir(src, staging);
+        await rm(staging, { recursive: true, force: true });
+        await rename(src, staging);
+      });
       return this.writeRevision(botId);
     });
   }
@@ -70,6 +89,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const previous = `${dest}.previous`;
     await mkdir(parent, { recursive: true });
     await mkdir(staging, { recursive: true });
+    const stopHeartbeat = keepFresh(staging);
     try {
       await fill(staging);
       await rm(previous, { recursive: true, force: true });
@@ -84,8 +104,38 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       }
       await rm(previous, { recursive: true, force: true });
     } finally {
+      stopHeartbeat();
       await rm(staging, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * A new directory on the data volume for a computer's files on their way into the store.
+   * It is touched while in use; call `remove` when done.
+   */
+  async createStaging(): Promise<StagingDirectory> {
+    return createStagingDirectory(path.join(this.root, "staging"));
+  }
+
+  /**
+   * Removes staging directories a killed process left behind: on the data volume once nothing
+   * has touched them for a while (another process may still be using them), and in the
+   * system temp directory, which older releases used, once they also predate this process.
+   */
+  async removeStaleStaging(now = Date.now()): Promise<number> {
+    const stale = now - STALE_STAGING_MS;
+    const [staged, homes, temporary] = await Promise.all([
+      staleEntries(path.join(this.root, "staging"), isStagingName, stale),
+      staleEntries(
+        path.join(this.root, "homes"),
+        (name) => name.startsWith(".") && name.includes(".staging-"),
+        stale,
+      ),
+      staleEntries(tmpdir(), isStagingName, Math.min(stale, performance.timeOrigin)),
+    ]);
+    const doomed = [...staged, ...homes, ...temporary];
+    await Promise.all(doomed.map((entry) => rm(entry, { recursive: true, force: true })));
+    return doomed.length;
   }
 
   async revise(botId: string): Promise<string> {
@@ -187,7 +237,49 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return listed.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
   }
 
-  /** Records the revision the local copy holds. */
+  /**
+   * Deletes folders directly under `parent` (a Team Computer's bot folders or browser profiles)
+   * and returns whether any were there. Only for a home no running computer mounts: a symlinked
+   * parent is refused and a final symlink is unlinked.
+   */
+  async removeFolders(botId: string, parent: string, names: readonly string[]): Promise<boolean> {
+    return this.withBotWrite(botId, async () => {
+      await this.recoverInterruptedCommit(botId);
+      let removed = false;
+      for (const name of names) {
+        if (await removeContainedDirectory(this.botDir(botId), parent, name)) removed = true;
+      }
+      return removed;
+    });
+  }
+
+  /** Deletes this host's copy of a home, an interrupted save's previous copy and its revision. */
+  async remove(botId: string): Promise<void> {
+    await this.withBotWrite(botId, () => this.removeCopy(botId));
+  }
+
+  /** `remove` for callers that already hold the bot's write lock. */
+  protected async removeCopy(botId: string) {
+    const dir = this.botDir(botId);
+    // The previous copy first, or a read in between would restore it as the home.
+    await rm(`${dir}.previous`, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
+    await rm(this.revisionFile(botId), { force: true });
+  }
+
+  protected async touchRevision(botId: string) {
+    const now = new Date();
+    await utimes(this.revisionFile(botId), now, now).catch(() => undefined);
+  }
+
+  /** When the local copy was last saved, downloaded or used, if it has a revision. */
+  protected async revisionUsedAt(botId: string): Promise<number | undefined> {
+    return stat(this.revisionFile(botId)).then(
+      (info) => info.mtimeMs,
+      () => undefined,
+    );
+  }
+
   protected async writeRevision(botId: string, revision = newRevision()) {
     const directory = path.join(this.root, "home-revisions");
     await mkdir(directory, { recursive: true });
@@ -195,7 +287,6 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return revision;
   }
 
-  /** The revision last recorded for the local copy, if any. */
   protected async localRevision(botId: string): Promise<string | undefined> {
     return readTextFile(this.revisionFile(botId), "utf8").catch((error: unknown) => {
       if (isMissing(error)) return undefined;
@@ -240,6 +331,31 @@ export class LocalAgentHomeStore implements AgentHomeStore {
 export function resolveAgentHomePath(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
   if (home instanceof LocalAgentHomeStore) return home.pathFor(homeKey);
   return path.resolve(dataDir, "homes", homeKey);
+}
+
+/** Deletes the home of a deleted computer from this host. */
+export async function removeAgentHome(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
+  if (home instanceof LocalAgentHomeStore) return home.remove(homeKey);
+  await rm(resolveAgentHomePath(home, homeKey, dataDir), { recursive: true, force: true });
+}
+
+/**
+ * Deletes folders under `parent` in a stored home and saves the result, so a computer that boots
+ * from it later, on any host, no longer has them.
+ */
+export async function removeAgentHomeFolders(
+  home: AgentHomeStore,
+  homeKey: string,
+  parent: string,
+  names: readonly string[],
+  dataDir = "./data",
+): Promise<void> {
+  if (home instanceof LocalAgentHomeStore) {
+    await home.removeFolders(homeKey, parent, names);
+    return;
+  }
+  for (const name of names)
+    await removeContainedDirectory(resolveAgentHomePath(home, homeKey, dataDir), parent, name);
 }
 
 export function newRevision() {
@@ -316,6 +432,41 @@ function isHiddenTopEntry(root: string, candidate: string) {
   return path.relative(root, candidate).split(path.sep)[0]!.startsWith(".");
 }
 
+/** Delete one folder in a home. A symlinked parent is refused; a final symlink is unlinked. */
+async function removeContainedDirectory(root: string, parent: string, name: string) {
+  const target = path.join(root, parent, name);
+  const info = await lstat(target).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!info) return false;
+  const parentInfo = await lstat(path.dirname(target)).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!parentInfo || parentInfo.isSymbolicLink() || !parentInfo.isDirectory()) {
+    throw new Error("folder escapes the team home");
+  }
+  if (info.isSymbolicLink()) {
+    await unlink(target);
+    return true;
+  }
+  const resolvedRoot = await realpath(root);
+  const resolvedTarget = await realpath(target);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  if (
+    path.dirname(resolvedTarget) !== path.join(resolvedRoot, parent) ||
+    path.basename(resolvedTarget) !== name ||
+    relative === "" ||
+    relative.startsWith("..") ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error("folder escapes the team home");
+  }
+  await rm(resolvedTarget, { recursive: true, force: true });
+  return true;
+}
+
 function isMissing(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
@@ -369,6 +520,69 @@ async function readTraversalFile(root: string, full: string, skipHidden = false)
   }
 }
 
+/** Copies one file in bounded chunks, with the same containment checks as reading it. */
+async function copyTraversalFile(root: string, full: string, to: string) {
+  const handle = await open(
+    full,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error("Home entry is not a regular file");
+    assertContained(root, await fileHandlePath(handle.fd));
+    await pipeline(
+      handle.createReadStream({ autoClose: false }),
+      createWriteStream(to, { mode: info.mode & 0o777 }),
+    );
+  } finally {
+    await handle.close();
+  }
+}
+
+export interface StagingDirectory {
+  path: string;
+  remove(): Promise<void>;
+}
+
+/** A private directory under `parent` that stays fresh until removed. */
+export async function createStagingDirectory(parent = tmpdir()): Promise<StagingDirectory> {
+  await mkdir(parent, { recursive: true, mode: 0o700 });
+  const directory = await mkdtemp(path.join(parent, STAGING_PREFIX));
+  const stopHeartbeat = keepFresh(directory);
+  return {
+    path: directory,
+    async remove() {
+      stopHeartbeat();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+function keepFresh(directory: string) {
+  const timer = setInterval(() => {
+    const now = new Date();
+    utimes(directory, now, now).catch(() => undefined);
+  }, STAGING_HEARTBEAT_MS);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
+function isStagingName(name: string) {
+  return name.startsWith(STAGING_PREFIX);
+}
+
+async function staleEntries(parent: string, matches: (name: string) => boolean, before: number) {
+  const names = await readdir(parent).catch(() => [] as string[]);
+  const found = await Promise.all(
+    names.filter(matches).map(async (name) => {
+      const entry = path.join(parent, name);
+      const info = await lstat(entry).catch(() => undefined);
+      return info?.isDirectory() && info.mtimeMs < before ? entry : undefined;
+    }),
+  );
+  return found.filter((entry): entry is string => entry !== undefined);
+}
+
 async function copyDir(
   src: string,
   dest: string,
@@ -387,10 +601,7 @@ async function copyDir(
     const to = path.join(dest, entry.name);
     const info = await stat(from);
     if (info.isDirectory()) await copyDir(from, to, root, visited);
-    else if (info.isFile()) {
-      const file = await readTraversalFile(root, from);
-      await writeFile(to, file.content, { mode: file.mode & 0o777 });
-    }
+    else if (info.isFile()) await copyTraversalFile(root, from, to);
   }
 }
 
@@ -415,11 +626,7 @@ async function* walkFiles(
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
-      yield {
-        path: portablePath,
-        content: new Uint8Array(content),
-        executable: Boolean(mode & 0o100),
-      };
+      yield { path: portablePath, content, executable: Boolean(mode & 0o100) };
     }
   }
 }

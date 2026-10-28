@@ -1477,7 +1477,7 @@ describe("native website links", () => {
         ?.querySelector("rn-view[data-background-color]")
         ?.getAttribute("data-background-color"),
     ).toBe(darkTokens.faviconPlate);
-    // Body colour, not the old blue; the underline sits on the label, not the tile.
+    // The underline sits on the label, not the tile.
     expect(link?.getAttribute("data-color")).toBe(darkTokens.foreground);
     expect(link?.getAttribute("data-text-decoration-line")).toBe("none");
     expect(load).toHaveBeenCalledWith("https://native-a.example.test");

@@ -9,7 +9,7 @@ import {
   discardAnsweredSteering,
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
-import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { clearEndedRunState } from "./run-secrets.js";
 
 export interface ExpireStuckRunInput {
   runId: string;
@@ -58,9 +58,7 @@ export async function expireStuckRun(
     },
   });
   if (cancelled.count !== 1) return null;
-  await tx.externalEffect.deleteMany({
-    where: { runId: input.runId, kind: RUN_TURN_CHECKPOINT_KIND, status: RUN_TURN_CHECKPOINT_KIND },
-  });
+  await clearEndedRunState(tx, [input.runId]);
 
   await tx.attempt.updateMany({
     where: {

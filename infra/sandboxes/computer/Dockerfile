@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-noto-cjk \
+    fonts-noto-color-emoji \
     locales \
     dbus-x11 \
     xdg-desktop-portal \
@@ -62,7 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && python3 -c 'import openpyxl; print(openpyxl.__version__)' \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
-  && mkdir -p /etc/rakazo/fluxbox \
+  && mkdir -p /etc/rakazo/fluxbox /etc/chromium/policies/managed /etc/brave/policies/managed \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
@@ -137,11 +138,17 @@ WORKDIR /home/rakazo
 COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=644 user-env.sh /usr/local/lib/rakazo-user-env.sh
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
+# Tells the supervisor this control service accepts scrolls aimed at a point and sideways
+# scrolls; it sends those to older images through its fallback instead.
+LABEL rakazo.control.aimedScroll="1"
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
 COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
 COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch
 COPY --chmod=755 rakazo-page-browser /usr/local/bin/rakazo-page-browser
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
+# Rakazo keeps credentials itself; the browser's save prompts would cover pages.
+COPY --chmod=644 browser-policy.json /etc/chromium/policies/managed/rakazo-browser.json
+COPY --chmod=644 browser-policy.json /etc/brave/policies/managed/rakazo-browser.json
 COPY --chmod=644 fluxbox.init /etc/rakazo/fluxbox/init
 COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
@@ -166,4 +173,5 @@ ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
 USER 1000:1000
-CMD ["/usr/local/bin/rakazo-computer"]
+# Start Bash without the wrapper; user-env enables it once both files exist.
+CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]

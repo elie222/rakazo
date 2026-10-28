@@ -1,4 +1,5 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type * as CoreModule from "@rakazo/core";
 import {
   callIdFromClientNonce,
   groupVoiceChats,
@@ -19,7 +20,7 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/core")>()),
+  ...(await importOriginal<typeof CoreModule>()),
   runThreadSubscription: vi.fn(async () => undefined),
 }));
 
@@ -75,6 +76,7 @@ describe("call session", () => {
     isSpeaking.mockReturnValue(false);
     listen.mockResolvedValue(undefined);
     answer.mockResolvedValue({ ok: true } as never);
+    followUp.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
     getThread.mockResolvedValue(snapshot([]) as never);
     send.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
     endCallRpc.mockResolvedValue({ ok: true } as never);
@@ -115,6 +117,235 @@ describe("call session", () => {
     speech?.({ status: "speaking", caption: "Are you there?" });
     await Promise.resolve();
     expect(listen).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps recovered active work when an older call refresh finishes late", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    const stale = deferred<ThreadSnapshot>();
+    getThread
+      .mockReturnValueOnce(stale.promise as never)
+      .mockResolvedValueOnce({ ...snapshot([], runningRun), cursor: 12 } as never);
+    const oldRefresh = feed.refresh();
+    await feed.refresh();
+    feed.applyEvent({
+      ...userMessageEvent("call-1"),
+      seq: 13,
+      type: "run.started",
+      runId: "run-1",
+      payload: { trigger: "user" },
+    });
+    stale.resolve({ ...snapshot([]), cursor: 10 });
+    await oldRefresh;
+
+    await heard("continue the current task");
+
+    expect(followUp).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "call-bot", text: "continue the current task" }),
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("accepts a usable older refresh when a newer request failed", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    const available = deferred<ThreadSnapshot>();
+    getThread
+      .mockReturnValueOnce(available.promise as never)
+      .mockRejectedValueOnce(new Error("refresh unavailable"));
+    const oldRefresh = feed.refresh();
+    await expect(feed.refresh()).rejects.toThrow("refresh unavailable");
+    available.resolve({ ...snapshot([], runningRun), cursor: 12 });
+    await oldRefresh;
+
+    await heard("continue the recovered task");
+
+    expect(followUp).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "call-bot", text: "continue the recovered task" }),
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each(["behind", "ahead"] as const)(
+    "keeps live call work after overlapping recovery snapshots %s of the stream",
+    async (position) => {
+      const actual = await vi.importActual<{ runThreadSubscription: typeof runThreadSubscription }>(
+        "@rakazo/core",
+      );
+      vi.mocked(runThreadSubscription).mockImplementationOnce(actual.runThreadSubscription);
+      const first = eventStream();
+      const recovered = eventStream();
+      const stale = deferred<ThreadSnapshot>();
+      const recoveredSnapshot = {
+        ...snapshot([], position === "ahead" ? runningRun : null),
+        cursor: position === "ahead" ? 15 : 12,
+      };
+      getThread
+        .mockRejectedValueOnce(new Error("snapshot unavailable"))
+        .mockReturnValueOnce(stale.promise as never)
+        .mockResolvedValue(recoveredSnapshot as never);
+      vi.mocked(rpc.threads.head).mockResolvedValue({
+        threadId: "thread-1",
+        cursor: 10,
+      } as never);
+      vi.mocked(rpc.threads.subscribe)
+        .mockResolvedValueOnce(first.events as never)
+        .mockResolvedValueOnce(recovered.events as never);
+
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      await vi.advanceTimersByTimeAsync(250);
+      for (const seq of [11, 12]) {
+        first.send({ ...userMessageEvent("call-1"), id: `event-${seq}`, seq });
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      first.end();
+      await vi.advanceTimersByTimeAsync(0);
+      recovered.send({
+        ...userMessageEvent("call-1"),
+        id: "event-13",
+        seq: 13,
+        type: "run.started",
+        runId: "run-1",
+        payload: { trigger: "user" },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      stale.resolve({
+        ...snapshot([botMessage("stale-reply", "An obsolete reply")]),
+        cursor: position === "ahead" ? 20 : 10,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      await heard("continue the current task");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(followUp).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ botId: "call-bot", text: "continue the current task" }),
+      );
+      expect(send).not.toHaveBeenCalled();
+      expect(speak).not.toHaveBeenCalled();
+
+      recovered.send({
+        ...userMessageEvent("call-1"),
+        id: "event-16",
+        seq: 16,
+        runId: "run-1",
+        payload: {
+          messageId: "current-reply",
+          role: "bot",
+          blocks: [{ kind: "text", text: "The current task is done" }],
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      recovered.send({
+        ...userMessageEvent("call-1"),
+        id: "event-17",
+        seq: 17,
+        type: "run.completed",
+        runId: "run-1",
+        payload: {},
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(speak).toHaveBeenCalledExactlyOnceWith("The current task is done", {
+        botId: "call-bot",
+        messageId: "current-reply",
+      });
+      expect(getSnapshot()?.exchanges).toEqual([
+        { role: "user", text: "continue the current task" },
+        { role: "bot", text: "The current task is done" },
+      ]);
+    },
+  );
+
+  it("keeps a newer live run when the post-send snapshot lags behind", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const callbacks = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    getThread.mockResolvedValueOnce({ ...snapshot([]), cursor: 12 } as never);
+    await callbacks.refresh();
+    const stale = deferred<ThreadSnapshot>();
+    getThread.mockReturnValueOnce(stale.promise as never);
+    await heard("start the task");
+    await flushMicrotasks();
+    callbacks.applyEvent({
+      ...userMessageEvent("call-1"),
+      seq: 13,
+      type: "run.started",
+      runId: "run-1",
+      payload: { trigger: "user" },
+    });
+    stale.resolve({ ...snapshot([botMessage("stale", "An obsolete reply")]), cursor: 12 });
+    await flushMicrotasks();
+    await heard("keep working");
+
+    expect(followUp).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ text: "keep working" }),
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(speak).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["refresh", "ended"],
+    ["refresh", "replaced"],
+    ["post-send", "ended"],
+    ["post-send", "replaced"],
+  ] as const)("ignores a late %s snapshot after the call is %s", async (source, retirement) => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const callbacks = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    const stale = deferred<ThreadSnapshot>();
+    getThread.mockReturnValueOnce(stale.promise as never);
+    const loading = source === "refresh" ? callbacks.refresh() : heard("old request");
+    await flushMicrotasks();
+    endCall();
+    if (retirement === "replaced") {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      const replacement = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      getThread.mockResolvedValue({ ...snapshot([], runningRun), cursor: 12 } as never);
+      await replacement.refresh();
+      await heard("continue the replacement task");
+      await flushMicrotasks();
+    }
+    stale.resolve({ ...snapshot([botMessage("stale", "An obsolete reply")]), cursor: 20 });
+    await loading;
+    await flushMicrotasks();
+
+    expect(speak).not.toHaveBeenCalled();
+    if (retirement === "ended") {
+      expect(getSnapshot()).toBeNull();
+    } else {
+      expect(getSnapshot()).toMatchObject({
+        phase: "thinking",
+        caption: "",
+        exchanges: [{ role: "user", text: "continue the replacement task" }],
+      });
+      await heard("still working on the replacement");
+      expect(followUp).toHaveBeenLastCalledWith(
+        expect.objectContaining({ text: "still working on the replacement" }),
+      );
+    }
+    const requests = getThread.mock.calls.length;
+    await callbacks.refresh();
+    expect(getThread).toHaveBeenCalledTimes(requests);
+  });
+
+  it("reports a post-send snapshot failure without losing the call", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    getThread.mockRejectedValueOnce(new Error("snapshot offline"));
+
+    await heard("start the task");
+    await flushMicrotasks();
+
+    expect(getSnapshot()).toMatchObject({
+      botId: "call-bot",
+      phase: "listening",
+      exchanges: [{ role: "user", text: "start the task" }],
+    });
+    expect(getSnapshot()?.caption).not.toBe("");
+    getThread.mockResolvedValue(snapshot([botMessage("current", "The task is done")]) as never);
+    await heard("try again");
+    await flushMicrotasks();
+    expect(speak).toHaveBeenCalledExactlyOnceWith("The task is done", {
+      botId: "call-bot",
+      messageId: "current",
+    });
   });
 
   it("sends what it heard to the bot on the call, not the bot on screen", async () => {
@@ -640,8 +871,7 @@ describe("call session", () => {
 
     const callId = callIdFromClientNonce(String(send.mock.calls[0]?.[0]?.clientNonce));
     expect(callId).toBeDefined();
-    // The event itself carries the call id, so the bubble groups with no run
-    // registered anywhere — note the event below has no runId at all.
+    // The event carries the call id and no runId, so the bubble groups with no run registered.
     const live = reduceThreadSnapshot(snapshot([]), userMessageEvent(String(callId)));
     expect(live?.messages[0]?.callId).toBe(callId);
     expect(groupVoiceChats(live?.messages ?? [])).toEqual([
@@ -768,7 +998,6 @@ describe("call session", () => {
   });
 });
 
-/** Drives a call to the point where the bot's reply is playing and the mic is open. */
 /** Starts a call and lets it pick up, the state every conversation test begins from. */
 async function answeredCall(call: Parameters<typeof startCall>[0]) {
   startCall(call);
@@ -796,6 +1025,26 @@ function deferred<T>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+function eventStream() {
+  let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+  const events: AsyncIterable<ProductEvent> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => {
+          const next = deferred<IteratorResult<ProductEvent>>();
+          deliver = next.resolve;
+          return next.promise;
+        },
+      };
+    },
+  };
+  return {
+    events,
+    send: (event: ProductEvent) => deliver?.({ value: event, done: false }),
+    end: () => deliver?.({ value: undefined, done: true }),
+  };
 }
 
 async function flushMicrotasks() {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type ComputerCommand, foldComputerCommands } from "./events.js";
+import type { ComputerCommand } from "./events.js";
+import { foldComputerCommands } from "./events.js";
 
 describe("computer command history", () => {
   const command = (executionId: string, status: ComputerCommand["status"]): ComputerCommand => ({

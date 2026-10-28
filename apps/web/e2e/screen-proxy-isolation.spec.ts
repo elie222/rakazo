@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { createServer as createHttpServer, type Server } from "node:http";
+import type { Server } from "node:http";
+import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import { openScreenCapability } from "@rakazo/core/node/screen-capability";
-import { createServer, type Plugin, preview, type ViteDevServer } from "vite";
-import { addScreenProxyCapability } from "../../api/src/screen-proxy";
+import {
+  addScreenProxyCapability,
+  openScreenCapability,
+} from "@rakazo/core/node/screen-capability";
+import { screenProbeUrl } from "@rakazo/core/screen-reconnect";
+import type { Plugin, ViteDevServer } from "vite";
+import { createServer, preview } from "vite";
 
 const scope = {
   botId: "bot",
@@ -18,6 +23,7 @@ const scope = {
   controlLeaseId: null,
 };
 const secret = "fake-screen-proxy-browser-test-secret";
+const providerHeaders = { cookie: "provider_auth=fake-provider-credential" };
 const screenHtml = `<!doctype html><title>Fake screen</title>
 <script type="module">
   import { loaded } from './core/rfb.js';
@@ -76,10 +82,16 @@ for (const mode of ["development", "preview"] as const) {
 
     let authorized = true;
     let assetAttempts = 0;
+    let upstreamRequests = 0;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
       const upstream = createHttpServer((req, res) => {
+        upstreamRequests += 1;
+        if (req.headers.cookie !== providerHeaders.cookie) {
+          res.writeHead(403).end("Provider authentication required");
+          return;
+        }
         // Even a listener explicitly requesting same-origin access cannot loosen the proxy policy.
         res.setHeader(
           "Content-Security-Policy",
@@ -107,6 +119,10 @@ for (const mode of ["development", "preview"] as const) {
         }
       });
       upstream.on("upgrade", (req, socket) => {
+        if (req.headers.cookie !== providerHeaders.cookie) {
+          socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+          return;
+        }
         const accept = createHash("sha1")
           .update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
           .digest("base64");
@@ -177,12 +193,21 @@ for (const mode of ["development", "preview"] as const) {
         origin = `http://127.0.0.1:${(server.httpServer!.address() as AddressInfo).port}`;
         // Exercise the same capability issuer used by the production API, with a configured web origin.
         // A loopback upstream serving /vnc.html stands in for E2B, Daytona, Boat and Railway.
-        screenUrl = addScreenProxyCapability(`${upstreamOrigin}/vnc.html`, secret, origin, scope);
+        screenUrl = addScreenProxyCapability(
+          `${upstreamOrigin}/vnc.html`,
+          secret,
+          origin,
+          scope,
+          undefined,
+          providerHeaders,
+        );
         otherPageUrl = addScreenProxyCapability(
           `${upstreamOrigin}/other.html`,
           secret,
           origin,
           scope,
+          undefined,
+          providerHeaders,
         );
         stop = async () => {
           await server.close();
@@ -210,6 +235,9 @@ for (const mode of ["development", "preview"] as const) {
       await expect(page.locator("body")).toContainText('"socket":"ok"');
       expect(assetAttempts).toBeGreaterThanOrEqual(2);
       const result = JSON.parse(await page.locator("body").innerText());
+      expect(await page.context().cookies(origin)).not.toContainEqual(
+        expect.objectContaining({ name: "provider_auth" }),
+      );
       expect(result).toMatchObject({
         asset: "module loaded",
         socket: "ok",
@@ -241,6 +269,25 @@ for (const mode of ["development", "preview"] as const) {
       expect(response.headers()["cache-control"]).toBe("no-store, no-transform");
       expect(response.headers()["last-modified"]).toBeUndefined();
       expect(await response.text()).toContain("const items = new Map()");
+    });
+
+    test("a status-only probe is answered after the access check and never reaches the computer", async ({
+      request,
+    }) => {
+      const before = upstreamRequests;
+      const allowed = await request.get(screenProbeUrl(screenUrl), { maxRedirects: 0 });
+      expect(allowed.status()).toBe(204);
+      expect(allowed.headers()["cache-control"]).toBe("no-store");
+      expect(await allowed.body()).toHaveLength(0);
+      authorized = false;
+      try {
+        const refused = await request.get(screenProbeUrl(screenUrl), { maxRedirects: 0 });
+        expect(refused.status()).toBe(403);
+        expect(await refused.body()).toHaveLength(0);
+      } finally {
+        authorized = true;
+      }
+      expect(upstreamRequests).toBe(before);
     });
 
     test("HTML that is not a noVNC page is passed through unchanged", async ({ page }) => {

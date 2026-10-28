@@ -8,8 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { LinkFavicons } from "./markdown.web";
 import {
   ChatMarkdown,
+  defaultMarkdownCopy,
   LinkFaviconsContext,
   LinkifiedText,
+  MarkdownCopyProvider,
   RemoteImagesContext,
 } from "./markdown.web";
 
@@ -228,6 +230,17 @@ describe("web markdown website links", () => {
     expect(view.container.querySelector("a")?.getAttribute("href")).toBe(
       "https://www.icon-b.example.test/status/123?s=20",
     );
+    await view.cleanup();
+  });
+
+  it("keeps the destination when a bare URL is shortened at an emoji", async () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}%F0%9F%98%80tail`;
+    const view = await renderLinks(`<${href}>`, { load: async () => ({ icon: null }) });
+    expect(view.container.querySelector(".rk-chat-link-label")?.textContent).toBe(
+      `example.com/${prefix}…`,
+    );
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(href);
     await view.cleanup();
   });
 
@@ -592,5 +605,68 @@ describe("web markdown code copy", () => {
     );
     expect(html.match(/<pre/g)).toHaveLength(3);
     expect(html.match(/aria-label="Copy code"/g)).toHaveLength(1);
+  });
+
+  it("renders provider copy in place of the English defaults", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => `| ${i + 1} | v${i + 1} |`).join("\n");
+    const markdown = ["```ts", "const a = 1;", "```", "", "| N | V |", "|---|---|", rows].join(
+      "\n",
+    );
+    const html = renderToStaticMarkup(
+      <MarkdownCopyProvider
+        copy={{
+          ...defaultMarkdownCopy,
+          copyCode: "Copiar código",
+          copyRows: "Copiar filas",
+          rowRange: (from, to, total) => `${from} a ${to} de ${total} filas`,
+        }}
+      >
+        <ChatMarkdown>{markdown}</ChatMarkdown>
+      </MarkdownCopyProvider>,
+    );
+    expect(html).toContain('aria-label="Copiar código"');
+    expect(html).toContain('aria-label="Copiar filas"');
+    expect(html).toContain("1 a 10 de 12 filas");
+  });
+});
+
+describe("web markdown mentions", () => {
+  it("draws a mention the app renders and keeps an unknown one as its name", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        renderMention={(id, name) => (id === "bot-1" ? <b data-id={id}>{name}</b> : undefined)}
+      >
+        {"[Planner](rakazo-mention:bot-1) and [Other](rakazo-mention:bot-2)"}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('<b data-id="bot-1">Planner</b>');
+    expect(html).toContain("<span>Other</span>");
+    expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown parser failure", () => {
+  it("shows a message the parser cannot handle as plain text", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const nested = `${">".repeat(20_000)} deep`;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{nested}</ChatMarkdown>);
+    });
+    expect(container.querySelector(".rk-chat-markdown p")?.textContent).toBe(nested);
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{"**fine**"}</ChatMarkdown>);
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("fine");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
   });
 });

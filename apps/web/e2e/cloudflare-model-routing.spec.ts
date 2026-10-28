@@ -3,7 +3,9 @@ import {
   captureScreenshot,
   chooseOption,
   completeOnboarding,
+  openModelConnection,
   openUserSettings,
+  pickReopenedModel,
   rpc,
   signup,
 } from "./helpers";
@@ -14,17 +16,20 @@ test("Workers AI settings save the account without requiring a gateway", async (
   await signup(page, `workers-settings-${Date.now()}@rakazo.test`, "password12", "Model setup");
   await completeOnboarding(page);
   await openUserSettings(page, "models");
-  await page.getByPlaceholder("Search providers").fill("Cloudflare Workers AI");
-  await page.getByRole("button", { name: /^Cloudflare Workers AI( |$)/ }).click();
-  const connect = page.getByRole("button", { name: "Connect API key", exact: true });
-  await page.getByLabel("API key", { exact: true }).fill("workers-fixture-key");
+  const dialog = await openModelConnection(page, "Cloudflare Workers AI");
+  const connect = dialog.getByRole("button", { name: "Connect API key", exact: true });
+  await dialog.getByLabel("API key", { exact: true }).fill("workers-fixture-key");
   await expect(connect).toBeDisabled();
-  await expect(page.getByLabel("Gateway ID", { exact: true })).toHaveCount(0);
-  await page.getByLabel("Account ID", { exact: true }).fill("account-fixture");
+  await expect(dialog.getByLabel("Gateway ID", { exact: true })).toHaveCount(0);
+  await dialog.getByLabel("Account ID", { exact: true }).fill("account-fixture");
   await expect(connect).toBeEnabled();
   await captureScreenshot(page, testInfo, "workers-ai-account-settings");
   await connect.click();
-  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await pickReopenedModel(page);
+  await expect(page.getByTestId("model-role-main").getByTestId("model-role-row-1")).toContainText(
+    "Cloudflare Workers AI",
+  );
   const credentials = await rpc<
     Array<{ provider: string; accountId?: string; gatewayId?: string }>
   >(page, "models/credentials", {});

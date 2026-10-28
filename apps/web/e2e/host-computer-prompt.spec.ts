@@ -71,7 +71,6 @@ for (const platform of ["darwin", "linux"]) {
       ),
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Docker", exact: true })).toBeVisible();
-    await expect(dialog.getByText(/recommended/i)).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: `Use ${host}` })).toBeVisible();
     await captureScreenshot(page, testInfo, `host-computer-choice-${platform}`);
     let updates = 0;

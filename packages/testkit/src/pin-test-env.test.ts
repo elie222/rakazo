@@ -21,6 +21,12 @@ describeFast("pnpm test emulator pin", () => {
     expect(process.env.INTEGRATIONS_CATALOG_URL).toBeUndefined();
   });
 
+  it("does not inherit live email delivery configuration", () => {
+    expect(process.env.EMAIL_PROVIDER).toBeUndefined();
+    expect(process.env.EMAIL_API_KEY).toBeUndefined();
+    expect(process.env.SMTP_URL).toBeUndefined();
+  });
+
   itOffline(
     "does not connect to an inherited database without an explicit integration flag",
     () => {

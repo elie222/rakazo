@@ -37,9 +37,17 @@ export function passkeyRelyingParty(
   };
 }
 
-/** Android Credential Manager reports `android:apk-key-hash:<base64url SHA-256 of the signer>`. */
+/**
+ * Android Credential Manager reports `android:apk-key-hash:<SHA-256 of the signer>`, in
+ * base64url on most devices and unpadded standard base64 on some.
+ */
 export function androidApkKeyHashOrigin(fingerprint: string): string[] {
   const hex = fingerprint.replace(/:/g, "").trim();
   if (!/^[0-9a-f]{64}$/i.test(hex)) return [];
-  return [`android:apk-key-hash:${Buffer.from(hex, "hex").toString("base64url")}`];
+  const hash = Buffer.from(hex, "hex");
+  const encodings = new Set([
+    hash.toString("base64url"),
+    hash.toString("base64").replace(/=+$/, ""),
+  ]);
+  return [...encodings].map((encoded) => `android:apk-key-hash:${encoded}`);
 }

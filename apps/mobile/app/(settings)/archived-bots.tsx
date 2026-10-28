@@ -13,10 +13,13 @@ import { confirmDeleteBot } from "../../lib/bot-lifecycle";
 import { useFloatingHeaderInset } from "../../lib/floating-header";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
+import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function ArchivedBots() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const router = useRouter();
   const tokens = useMobileTokens();
@@ -150,11 +153,13 @@ export default function ArchivedBots() {
     if (pending) return;
     setPending(true);
     const generation = focusGeneration.current;
+    const askedIn = searchInboxSession();
     try {
       await inSpace(bot.spaceId);
       await rpc("threads/get", { botId: bot.id });
       // Left or dismissed while loading, even if back since: a later sheet must not close for it.
       if (generation !== focusGeneration.current) return;
+      addToSearchInbox({ kind: "bot", bot }, askedIn);
       // The thread is not a settings page, so it opens on the root stack once the sheet closes.
       openFromSettingsSheet(router, {
         pathname: "/thread",
@@ -187,7 +192,7 @@ export default function ArchivedBots() {
   if (!bots?.length && !groups.length)
     return (
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.background }}
+        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: 24, gap: 12 }}
       >

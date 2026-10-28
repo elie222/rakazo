@@ -7,7 +7,12 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: <T>(styles: T) => styles, hairlineWidth: 1 },
 }));
 vi.mock("./appearance", () => ({
-  mobileTokens: () => ({ background: "background", border: "border", card: "card" }),
+  mobileTokens: () => ({
+    background: "background",
+    border: "border",
+    card: "card",
+    foreground: "foreground",
+  }),
 }));
 
 it("sizes the chat title like the header buttons beside it", () => {
@@ -16,8 +21,31 @@ it("sizes the chat title like the header buttons beside it", () => {
   expect(titleCapsule).not.toHaveProperty("paddingVertical");
 });
 
-it("uses a borderless fallback title fill and a short fade", () => {
+it("pads the chat title 14 at its start and 10 at its end, mirrored for right-to-left", () => {
+  const { titleCapsule } = createThreadHeaderStyles();
+  expect(titleCapsule).toMatchObject({ paddingStart: 14, paddingEnd: 10 });
+  for (const side of ["paddingHorizontal", "paddingLeft", "paddingRight"]) {
+    expect(titleCapsule).not.toHaveProperty(side);
+  }
+});
+
+it("uses a borderless fallback title fill and leaves the header buttons clear", () => {
   const styles = createThreadHeaderStyles();
   expect(styles.titleCapsuleFill).not.toHaveProperty("borderWidth");
-  expect(styles.headerFadeEdge.height).toBe(12);
+  expect(styles.statusBarFade).not.toHaveProperty("backgroundColor");
+});
+
+it("lets a long chat name give way to the avatars beside it", () => {
+  const { title } = createThreadHeaderStyles();
+  expect(title.flexShrink).toBe(1);
+});
+
+it("sets the chat title in medium 17 on a 22 line, in the text colour", () => {
+  const { title } = createThreadHeaderStyles();
+  expect(title).toMatchObject({
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "500",
+    color: "foreground",
+  });
 });

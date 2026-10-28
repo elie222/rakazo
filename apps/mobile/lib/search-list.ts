@@ -18,5 +18,5 @@ export function searchHitRowPreview(
   const preview = searchHitPreview(hit.snippet);
   if (!context) return preview;
   if (!preview) return context;
-  return `${context} · ${preview}`;
+  return `${context}: ${preview}`;
 }

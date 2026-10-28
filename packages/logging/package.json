@@ -28,7 +28,7 @@
   "dependencies": {
     "@axiomhq/js": "2.0.0",
     "@sentry/node": "11.8.0",
-    "hono": "4.13.13"
+    "hono": "4.13.14"
   },
   "devDependencies": {
     "typescript": "7.0.2",

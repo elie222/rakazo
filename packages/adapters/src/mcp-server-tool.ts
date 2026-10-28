@@ -1,14 +1,17 @@
-/** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
- * the executor wires the parsed result into Prisma + the secret store. */
-
-import type { McpTransport } from "@rakazo/contracts";
+import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import {
   McpRemoteEndpointSchema,
   McpTransportSchema,
   mcpOAuthEnvReferences,
 } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
+import type { McpServer, Prisma } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { mcpStdioRefusal } from "./mcp-transport.js";
 import { toStringRecord } from "./memory-provider-factory.js";
+import { assertSafeRemoteUrl } from "./remote-mcp.js";
+import { isUniqueViolation, persistMessageInTransaction } from "./run-messages.js";
 
 export { deriveMcpSlug } from "@rakazo/core";
 
@@ -158,4 +161,132 @@ export function needsOAuthProbe(parsed: {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
   return !parsed.secret && Object.keys(env).length === 0 && Object.keys(headers).length === 0;
+}
+
+/** add_mcp_server: registers the server and, when asked, posts its approval card. */
+export async function addMcpServerFromTool(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
+  botId: string,
+  args: Record<string, unknown>,
+  executionId: string,
+) {
+  const parsed = parseMcpServerToolArgs(args);
+  if (!parsed) {
+    return {
+      error:
+        "Invalid MCP server details. Required: name, transport (streamable_http|sse|stdio); endpoint for remote transports; command for stdio.",
+    };
+  }
+  const stdioRefusal =
+    parsed.transport === "stdio"
+      ? mcpStdioRefusal(parsed.command ?? "", deps.mcpStdio ?? {})
+      : undefined;
+  if (stdioRefusal) return { error: stdioRefusal };
+  if (parsed.endpoint) {
+    try {
+      await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
+        allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
+      });
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Invalid MCP endpoint",
+      };
+    }
+  }
+  if (!deps.secretStore) {
+    return {
+      error: "Secret storage is not available in this deployment.",
+    };
+  }
+  const credentialBlob = buildMcpCredentialBlob(parsed);
+  let storedCredential: { id: string; ciphertext: string } | null = null;
+  if (credentialBlob) {
+    storedCredential = await deps.secretStore.put(credentialBlob, {
+      operationId: executionId,
+      traceId: executionId,
+      spaceId: run.spaceId,
+      userId: run.userId,
+      botId,
+      signal: new AbortController().signal,
+    });
+  }
+  const oauthLikely = needsOAuthProbe(parsed);
+  let serverRow: McpServer;
+  let approvalEventSeq: number | undefined;
+  let approvalResponseRunId: string | undefined;
+  try {
+    const created = await deps.prisma.$transaction(async (tx) => {
+      if (storedCredential) {
+        await tx.secret.create({
+          data: {
+            id: storedCredential.id,
+            userId: run.userId,
+            spaceId: run.spaceId,
+            kind: "mcp",
+            ciphertext: storedCredential.ciphertext,
+          },
+        });
+      }
+      const server = await tx.mcpServer.create({
+        data: {
+          spaceId: run.spaceId,
+          userId: run.userId,
+          slug: parsed.slug,
+          name: parsed.name,
+          description: parsed.description,
+          transport: parsed.transport,
+          endpoint: parsed.endpoint ?? null,
+          command: parsed.command ?? null,
+          args: parsed.args as unknown as Prisma.InputJsonValue,
+          env: Object.fromEntries(Object.keys(parsed.env).map((key) => [key, true])),
+          headers: Object.fromEntries(Object.keys(parsed.headers).map((key) => [key, true])),
+          secretId: storedCredential?.id,
+          enabled: true,
+        },
+      });
+      if (!parsed.assignToSelf) return { server };
+      const blocks: MessageBlock[] = [
+        {
+          kind: "mcp_approval",
+          name: server.name,
+          serverId: server.id,
+          transport: parsed.transport,
+          endpoint: parsed.endpoint ?? null,
+          needsOAuth: oauthLikely,
+          status: "pending",
+        },
+      ];
+      const committed = await persistMessageInTransaction(tx, run, "bot", blocks);
+      return {
+        server,
+        eventSeq: committed.eventSeq,
+        firstResponseRunId: committed.firstResponseRunId,
+      };
+    });
+    serverRow = created.server;
+    approvalEventSeq = created.eventSeq;
+    approvalResponseRunId = created.firstResponseRunId;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return {
+        error: `An MCP server named "${parsed.name}" already exists. Ask the user to remove it first or pick another name.`,
+      };
+    }
+    throw error;
+  }
+  if (approvalEventSeq !== undefined) {
+    await deps.events
+      .notify(run.threadId, approvalEventSeq, approvalResponseRunId)
+      .catch((error) => {
+        getLogger().error("MCP approval realtime notification", error);
+      });
+  }
+  return {
+    ok: true,
+    server_id: serverRow.id,
+    next_step: parsed.assignToSelf
+      ? `An approval card is in the chat. End your turn with one short sentence asking the user to ${oauthLikely ? "authorize" : "approve"} it there; the card already shows the server's details. You will be told when they connect it.`
+      : "The server was registered without assigning it to this bot.",
+  };
 }

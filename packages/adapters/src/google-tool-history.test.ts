@@ -127,34 +127,128 @@ it.each(["google", "openai"])(
   },
 );
 
-it("leaves native-only history and other protocols unchanged", () => {
-  const options = { apiKey: "fixture-key" };
-  const context: Context = { messages: [assistant(model.id, [call("native", {})])] };
-  expect(withGoogleToolHistory(model, context, options)).toBe(options);
-  expect(
-    withGoogleToolHistory(
-      { ...model, api: "openai-completions" },
-      { messages: [assistant("other", [call("foreign", {})])] },
-      options,
-    ),
-  ).toBe(options);
-});
+type WirePart = {
+  functionCall?: { name: string; args?: unknown };
+  thoughtSignature?: string;
+};
 
-it("does not repair an ambiguous argument object shared with native history", async () => {
-  const args = {};
+async function wireCalls(context: Context): Promise<WirePart[]> {
+  let body: { contents: Array<{ role: string; parts: WirePart[] }> } | undefined;
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(
+      'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Ready"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":1,"totalTokenCount":11}}\n\n',
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  try {
+    const result = await observedPiStream(
+      builtinModels(),
+      model,
+      context,
+      { apiKey: "fixture-key", maxRetries: 0 },
+      () => undefined,
+    ).result();
+    expect(result.stopReason).toBe("stop");
+  } finally {
+    fetchMock.mockRestore();
+  }
+  return (body?.contents ?? []).flatMap((content) =>
+    content.parts.filter((part) => part.functionCall),
+  );
+}
+
+const results = (...ids: string[]) =>
+  ids.map((toolCallId) => ({
+    role: "toolResult" as const,
+    toolCallId,
+    toolName: "fixture_tool",
+    content: [{ type: "text" as const, text: "Fixture result." }],
+    isError: false,
+    timestamp: 3,
+  }));
+
+it("marks a restored step from another Google API whose signature Pi discards", async () => {
+  // A turn checkpoint written while the model ran on Vertex and resumed on the
+  // Gemini API keeps the same provider and model id, so the step looks native,
+  // but Pi only replays signatures for the same API.
   const context: Context = {
     messages: [
-      assistant("other", [call("foreign", args)]),
-      assistant(model.id, [call("native", args)]),
+      { role: "user", content: "Fixture request.", timestamp: 1 },
+      {
+        ...assistant(model.id, [
+          call("first", { query: "a" }, "bmF0aXZl"),
+          call("second", { query: "b" }),
+        ]),
+        api: "google-vertex",
+      },
+      ...results("first", "second"),
     ],
   };
+  const calls = await wireCalls(context);
+  expect(calls).toMatchObject([
+    {
+      functionCall: { name: "fixture_tool", args: { query: "a" } },
+      thoughtSignature: "skip_thought_signature_validator",
+    },
+    { functionCall: { name: "fixture_tool", args: { query: "b" } } },
+  ]);
+  expect(calls[1]).not.toHaveProperty("thoughtSignature");
+});
+
+it("marks every step whose first call reaches the wire unsigned and keeps real signatures", async () => {
+  const shared = { query: "shared" };
+  const context: Context = {
+    messages: [
+      { role: "user", content: "Fixture request.", timestamp: 1 },
+      assistant(model.id, [call("signed", { query: "signed" }, "c2lnbmVk")]),
+      ...results("signed"),
+      // Pi drops a signature that is not valid base64 for the bytes field.
+      assistant(model.id, [call("unusable", { query: "unusable" }, "not base64")]),
+      ...results("unusable"),
+      // An argument object shared with a foreign call must not matter.
+      assistant("fixture-origin", [call("foreign", shared, "Zm9yZWlnbg==")]),
+      ...results("foreign"),
+      assistant(model.id, [
+        { type: "text", text: "Checking both." },
+        call("native", shared),
+        call("parallel", { query: "parallel" }),
+      ]),
+      ...results("native", "parallel"),
+    ],
+  };
+  const before = JSON.stringify(context);
+  expect((await wireCalls(context)).map((part) => part.thoughtSignature)).toEqual([
+    "c2lnbmVk",
+    "skip_thought_signature_validator",
+    "skip_thought_signature_validator",
+    "skip_thought_signature_validator",
+    undefined,
+  ]);
+  expect(JSON.stringify(context)).toBe(before);
+});
+
+it("leaves other protocols and non-Gemini models unchanged", () => {
+  const options = { apiKey: "fixture-key" };
+  expect(withGoogleToolHistory({ ...model, api: "openai-completions" }, options)).toBe(options);
+  expect(withGoogleToolHistory({ ...model, id: "gemma-4-31b-it" }, options)).toBe(options);
+});
+
+it("keeps the caller's payload hook and its replacement", async () => {
   const payload = {
-    contents: [{ role: "model", parts: [{ functionCall: { name: "fixture_tool", args } }] }],
+    contents: [
+      { role: "user", parts: [{ text: "Fixture request." }] },
+      { role: "model", parts: [{ functionCall: { name: "fixture_tool", args: {} } }] },
+    ],
   };
   const replacement = { fixture: true };
   const onPayload = vi.fn(() => replacement);
-  const options = withGoogleToolHistory(model, context, { onPayload });
+  const options = withGoogleToolHistory(model, { onPayload });
   expect(await options.onPayload?.(payload, model)).toBe(replacement);
+  expect(payload.contents[1]?.parts[0]).toHaveProperty(
+    "thoughtSignature",
+    "skip_thought_signature_validator",
+  );
   expect(payload.contents[0]?.parts[0]).not.toHaveProperty("thoughtSignature");
-  expect(onPayload).toHaveBeenCalledOnce();
+  expect(onPayload).toHaveBeenCalledWith(payload, model);
 });

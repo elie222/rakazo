@@ -16,6 +16,7 @@ import type {
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
+import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import type { ContextBudget } from "./context-selection.js";
 import { withGoogleToolHistory } from "./google-tool-history.js";
 import { estimateModelContextTokens } from "./model-context.js";
@@ -28,6 +29,7 @@ import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 export type ReportedUsageFields = Set<keyof AgentUsage>;
 const reportedRequestIds = new WeakMap<ReportedUsageFields, string>();
 const rejectedRequests = new WeakSet<ReportedUsageFields>();
+const sseObserved = new WeakSet<ReportedUsageFields>();
 const reportedCosts = new WeakMap<ReportedUsageFields, number>();
 const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, number>>();
 export function normalizePiUsage(
@@ -100,6 +102,90 @@ export function normalizePiUsage(
   };
 }
 
+type RawUsage = Record<string, unknown> & {
+  prompt_tokens_details?: Record<string, unknown>;
+  input_tokens_details?: Record<string, unknown>;
+  completion_tokens_details?: Record<string, unknown>;
+  output_tokens_details?: Record<string, unknown>;
+  cache_creation?: Record<string, unknown>;
+};
+
+type RawUsageEvent = {
+  id?: unknown;
+  usage?: RawUsage;
+  response?: { id?: unknown; usage?: RawUsage };
+  message?: { id?: unknown; usage?: RawUsage };
+};
+
+async function observeUsageEvent(
+  raw: unknown,
+  reported: ReportedUsageFields,
+  onRequestId?: (id: string) => void | Promise<void>,
+): Promise<void> {
+  if (!raw || typeof raw !== "object") return;
+  const event = raw as RawUsageEvent;
+  const id = event.response?.id ?? event.message?.id ?? event.id;
+  if (
+    !reportedRequestIds.has(reported) &&
+    typeof id === "string" &&
+    id.length > 0 &&
+    id.length <= 256
+  ) {
+    reportedRequestIds.set(reported, id);
+    await onRequestId?.(id);
+  }
+  try {
+    const usage = event.usage ?? event.response?.usage ?? event.message?.usage;
+    if (!usage || typeof usage !== "object") return;
+    const mark = (value: unknown, key: keyof AgentUsage) => {
+      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+        reported.add(key);
+        const values = reportedValues.get(reported) ?? new Map();
+        values.set(key, value);
+        reportedValues.set(reported, values);
+      }
+    };
+    const rawInput = usage.prompt_tokens ?? usage.input_tokens;
+    const includesCache =
+      usage.prompt_tokens !== undefined ||
+      event.response !== undefined ||
+      usage.input_tokens_details !== undefined;
+    const rawRead =
+      usage.prompt_tokens_details?.cached_tokens ??
+      usage.input_tokens_details?.cached_tokens ??
+      usage.prompt_cache_hit_tokens ??
+      usage.cached_tokens;
+    const rawWrite =
+      usage.prompt_tokens_details?.cache_write_tokens ??
+      usage.input_tokens_details?.cache_write_tokens;
+    mark(
+      typeof rawInput === "number" && includesCache
+        ? Math.max(
+            0,
+            rawInput -
+              (typeof rawRead === "number" ? rawRead : 0) -
+              (typeof rawWrite === "number" ? rawWrite : 0),
+          )
+        : rawInput,
+      "inputTokens",
+    );
+    mark(usage.completion_tokens ?? usage.output_tokens, "outputTokens");
+    mark(usage.total_tokens, "totalTokens");
+    if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0)
+      reportedCosts.set(reported, usage.cost);
+    mark(rawRead ?? usage.cache_read_input_tokens, "cacheReadTokens");
+    mark(rawWrite ?? usage.cache_creation_input_tokens, "cacheWriteTokens");
+    mark(usage.cache_creation?.ephemeral_1h_input_tokens, "cacheWrite1hTokens");
+    mark(
+      usage.completion_tokens_details?.reasoning_tokens ??
+        usage.output_tokens_details?.reasoning_tokens,
+      "reasoningTokens",
+    );
+  } catch {
+    /* Invalid/non-JSON stream frames are handled by the provider parser. */
+  }
+}
+
 /** Read only bounded SSE frames, retaining field presence, never provider text or payloads. */
 export function usageReportingFetch(
   fetcher: typeof fetch,
@@ -114,6 +200,7 @@ export function usageReportingFetch(
         ? fetchPairedWithDispatcher(fetcher)
         : fetcher;
     rejectedRequests.delete(reported);
+    sseObserved.delete(reported);
     const response = await transport(input, init);
     // These HTTP responses reject the request before generation. Timeouts,
     // transport failures, and server errors remain uncertain and retain their holds.
@@ -124,6 +211,7 @@ export function usageReportingFetch(
       rejectedRequests.add(reported);
     if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream"))
       return response;
+    sseObserved.add(reported);
     let buffer = "";
     let dropping = false;
     const decoder = new TextDecoder();
@@ -134,85 +222,13 @@ export function usageReportingFetch(
         .map((line) => line.slice(5).trimStart())
         .join("\n");
       if (!data || data === "[DONE]") return;
-      type RawUsage = Record<string, unknown> & {
-        prompt_tokens_details?: Record<string, unknown>;
-        input_tokens_details?: Record<string, unknown>;
-        completion_tokens_details?: Record<string, unknown>;
-        output_tokens_details?: Record<string, unknown>;
-        cache_creation?: Record<string, unknown>;
-      };
-      let event: {
-        id?: unknown;
-        usage?: RawUsage;
-        response?: { id?: unknown; usage?: RawUsage };
-        message?: { id?: unknown; usage?: RawUsage };
-      };
+      let event: unknown;
       try {
         event = JSON.parse(data);
-        if (!event || typeof event !== "object") return;
       } catch {
         return;
       }
-      const id = event.response?.id ?? event.message?.id ?? event.id;
-      if (
-        !reportedRequestIds.has(reported) &&
-        typeof id === "string" &&
-        id.length > 0 &&
-        id.length <= 256
-      ) {
-        reportedRequestIds.set(reported, id);
-        await onRequestId?.(id);
-      }
-      try {
-        const usage = event.usage ?? event.response?.usage ?? event.message?.usage;
-        if (!usage || typeof usage !== "object") return;
-        const mark = (value: unknown, key: keyof AgentUsage) => {
-          if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
-            reported.add(key);
-            const values = reportedValues.get(reported) ?? new Map();
-            values.set(key, value);
-            reportedValues.set(reported, values);
-          }
-        };
-        const rawInput = usage.prompt_tokens ?? usage.input_tokens;
-        const includesCache =
-          usage.prompt_tokens !== undefined ||
-          event.response !== undefined ||
-          usage.input_tokens_details !== undefined;
-        const rawRead =
-          usage.prompt_tokens_details?.cached_tokens ??
-          usage.input_tokens_details?.cached_tokens ??
-          usage.prompt_cache_hit_tokens ??
-          usage.cached_tokens;
-        const rawWrite =
-          usage.prompt_tokens_details?.cache_write_tokens ??
-          usage.input_tokens_details?.cache_write_tokens;
-        mark(
-          typeof rawInput === "number" && includesCache
-            ? Math.max(
-                0,
-                rawInput -
-                  (typeof rawRead === "number" ? rawRead : 0) -
-                  (typeof rawWrite === "number" ? rawWrite : 0),
-              )
-            : rawInput,
-          "inputTokens",
-        );
-        mark(usage.completion_tokens ?? usage.output_tokens, "outputTokens");
-        mark(usage.total_tokens, "totalTokens");
-        if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0)
-          reportedCosts.set(reported, usage.cost);
-        mark(rawRead ?? usage.cache_read_input_tokens, "cacheReadTokens");
-        mark(rawWrite ?? usage.cache_creation_input_tokens, "cacheWriteTokens");
-        mark(usage.cache_creation?.ephemeral_1h_input_tokens, "cacheWrite1hTokens");
-        mark(
-          usage.completion_tokens_details?.reasoning_tokens ??
-            usage.output_tokens_details?.reasoning_tokens,
-          "reasoningTokens",
-        );
-      } catch {
-        /* Invalid/non-JSON SSE frames are handled by the provider parser. */
-      }
+      await observeUsageEvent(event, reported, onRequestId);
     };
     const body = response.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
@@ -362,13 +378,19 @@ export function observedPiStream(
         const collectRawUsage =
           /^(openai-|anthropic-)/.test(model.api) && !model.provider.startsWith("google");
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
-        const streamOptions = withGoogleToolHistory(model, preparedContext, {
-          ...options,
-          ...(cacheRetention ? { cacheRetention } : {}),
-          ...(observer ? { maxRetries: 0 } : {}),
-        });
+        const streamOptions = withGoogleToolHistory(
+          model,
+          withChatCompletionsCompatibility(model, {
+            ...options,
+            ...(cacheRetention ? { cacheRetention } : {}),
+            ...(observer ? { maxRetries: 0 } : {}),
+          }),
+        );
         let upstream: ReturnType<Models["streamSimple"]>;
         try {
+          const reportRequestId = (id: string) =>
+            reservation !== undefined ? observer?.onRequestId?.(reservation, id) : undefined;
+          const callerOnProviderStreamEvent = streamOptions?.onProviderStreamEvent;
           upstream = models.streamSimple(
             model,
             preparedContext,
@@ -383,11 +405,14 @@ export function observedPiStream(
                         )
                       : (streamOptions?.fetch ?? globalThis.fetch),
                     reported,
-                    (id) =>
-                      reservation !== undefined
-                        ? observer?.onRequestId?.(reservation, id)
-                        : undefined,
+                    reportRequestId,
                   ),
+                  onProviderStreamEvent: async (event, eventModel) => {
+                    if (!sseObserved.has(reported)) {
+                      await observeUsageEvent(event, reported, reportRequestId);
+                    }
+                    await callerOnProviderStreamEvent?.(event, eventModel);
+                  },
                 }
               : streamOptions,
           );

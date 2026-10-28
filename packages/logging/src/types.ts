@@ -15,6 +15,7 @@ export interface SerializedError {
   name: string;
   message: string;
   code?: string;
+  meta?: Record<string, unknown>;
   stack?: string;
   cause?: SerializedError;
 }

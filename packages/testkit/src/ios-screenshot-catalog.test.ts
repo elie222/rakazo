@@ -20,6 +20,7 @@ describe("iOS screenshot catalog", () => {
       "thread-errors",
       "search",
       "compose",
+      "split-view",
       "settings",
     ]);
     for (const section of sections) {

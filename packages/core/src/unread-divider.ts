@@ -2,7 +2,8 @@ type DividerCandidate = { id: string; role: string; seq?: number };
 
 /**
  * The message the "New" divider sits above: the first bot message after the seq the user
- * had read up to when the chat opened. Their own messages never start it. `olderCursor` is
+ * had read up to when the chat opened. Their own messages never start it, and it never sits
+ * above the start of the chat, where there is nothing read to divide from. `olderCursor` is
  * the seq the loaded page starts at, hidden messages included (null once nothing older is
  * left); while the first unread seq is older than that, it waits.
  * `messages` are in reading order.
@@ -14,11 +15,11 @@ export function unreadDividerMessageId(
 ): string | null {
   if (readUpToSeq === null) return null;
   if (olderCursor !== null && olderCursor > readUpToSeq + 1) return null;
-  return (
-    messages.find(
-      (message) => message.role === "bot" && message.seq !== undefined && message.seq > readUpToSeq,
-    )?.id ?? null
+  const index = messages.findIndex(
+    (message) => message.role === "bot" && message.seq !== undefined && message.seq > readUpToSeq,
   );
+  if (index === -1 || (index === 0 && olderCursor === null)) return null;
+  return messages[index]?.id ?? null;
 }
 
 /** A voice card gets the divider above it when any message inside it starts the unread part. */
@@ -30,23 +31,24 @@ export function voiceChatHoldsMessage(
 }
 
 /**
- * Runs tasks one at a time, in the order they were queued, whether or not earlier ones fail.
- * markRead calls go through one so their answers arrive in the order they were sent, which
- * lets the first answer of a visit stand for the request that opened it. A task that hangs
- * holds the queue for at most `maxWaitMs`, so one stuck request can't stop later reads.
+ * Starts tasks in queue order after the prior task settles or reaches `maxWaitMs` from its
+ * start. Failed tasks do not block the queue. A timeout only releases the queue; it does not
+ * cancel the task or its effects.
  */
 export function createSerialQueue(maxWaitMs = 10_000): <T>(task: () => Promise<T>) => Promise<T> {
-  // The last queued task, settled either way; null while the queue is idle.
+  // The last queued task's settlement or timeout; null while the queue is idle.
   let tail: Promise<void> | null = null;
   return (task) => {
-    const run = (tail ? waitAtMost(tail, maxWaitMs) : Promise.resolve()).then(task);
+    const previous = tail ?? Promise.resolve();
+    const run = previous.then(task);
     const settled = run.then(
       () => undefined,
       () => undefined,
     );
-    tail = settled;
-    void settled.then(() => {
-      if (tail === settled) tail = null;
+    const released = previous.then(() => waitAtMost(settled, maxWaitMs));
+    tail = released;
+    void released.then(() => {
+      if (tail === released) tail = null;
     });
     return run;
   };

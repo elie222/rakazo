@@ -9,7 +9,8 @@
     "node": "^22.22.2 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "cross-env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 turbo dev --env-mode=loose --filter=@rakazo/api --filter=@rakazo/worker --filter=@rakazo/web --filter=@rakazo/sandbox-supervisor",
+    "dev": "node scripts/dev.mjs",
+    "gallery": "pnpm --filter @rakazo/web dev --open /e2e/fixtures/gallery.html",
     "build": "turbo build",
     "check": "turbo check",
     "lint": "biome check .",
@@ -31,6 +32,7 @@
     "test:evals": "tsx packages/testkit/src/cli/evals.ts",
     "test:computer-replay": "tsx packages/testkit/src/cli/computer-replay.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
+    "test:flows": "tsx packages/testkit/src/cli/flows.ts",
     "perf:desktop": "tsx packages/testkit/src/cli/desktop-performance.ts",
     "perf:compare": "tsx packages/testkit/src/cli/compare-performance.ts",
     "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
@@ -42,7 +44,7 @@
     "cross-env": "10.1.0",
     "esbuild": "0.28.2",
     "tsx": "4.23.15",
-    "turbo": "2.11.9",
+    "turbo": "2.11.10",
     "typescript": "7.0.2",
     "vitest": "4.1.12"
   },
@@ -61,6 +63,8 @@
       "react": "19.2.3",
       "react-dom": "19.2.3",
       "proxy-addr@<2.0.8": "2.0.8",
+      "dompurify@<3.4.17": "3.4.17",
+      "ws@>=8 <8.21.1": "8.22.0",
       "e2b>undici8": "npm:undici@8.10.2"
     },
     "patchedDependencies": {

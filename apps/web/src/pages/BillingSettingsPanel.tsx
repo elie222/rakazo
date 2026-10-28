@@ -81,18 +81,17 @@ export function BillingSettingsPanel() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {status ? (
-            <h3 className="text-[15px] font-medium text-foreground">{stateLabel}</h3>
+            <h3 className="text-heading3 font-medium text-foreground">{stateLabel}</h3>
           ) : error ? null : (
             <Skeleton className="h-5 w-24" />
           )}
           {price ? (
-            <p className="mt-3 text-[14px] text-foreground/75">
-              {price}
+            <p className="mt-3 flex flex-wrap gap-x-2 text-[14px] text-foreground/75">
+              <span>{price}</span>
               {seats > 1 ? (
-                <>
-                  {" · "}
+                <span className="text-muted-foreground">
                   <Plural value={seats} one="# seat" other="# seats" />
-                </>
+                </span>
               ) : null}
             </p>
           ) : null}

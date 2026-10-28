@@ -38,7 +38,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Record current catalog versions
         id: before
@@ -90,11 +89,26 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: model-catalog-bump
+          path: ${{ runner.temp }}/model-catalog-bump
       - name: Apply bump patch
-        run: git apply bump.patch
+        env:
+          BUMP_DIR: ${{ runner.temp }}/model-catalog-bump
+        run: |
+          set -euo pipefail
+          shopt -s dotglob nullglob
+          files=("$BUMP_DIR"/*)
+          [ "${#files[@]}" -eq 1 ]
+          [ "${files[0]}" = "$BUMP_DIR/bump.patch" ]
+          [ -f "$BUMP_DIR/bump.patch" ] && [ ! -L "$BUMP_DIR/bump.patch" ]
+          git apply --index --include=packages/adapters/package.json --include=pnpm-lock.yaml "$BUMP_DIR/bump.patch"
+          for file in packages/adapters/package.json pnpm-lock.yaml; do
+            [ "$(git ls-files --format='%(objectmode)' -- "$file")" = 100644 ]
+          done
       - name: Push branch and open PR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -108,7 +122,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           branch="deps/pi-catalog-ai-${NEW_AI}-core-${NEW_CORE}"
           git checkout -B "$branch"
-          git add packages/adapters/package.json pnpm-lock.yaml
           git commit -m "Bump model catalog packages to pi-ai ${NEW_AI} / pi-agent-core ${NEW_CORE}"
           if gh pr list --state open --head "$branch" --json number --jq '.[0].number' | grep -q .; then
             echo "PR already open for $branch; leaving it in place."
@@ -125,6 +138,7 @@ jobs:
               exit 1
             fi
           fi
+          gh auth setup-git
           git push --force-with-lease="refs/heads/$branch" -u origin "$branch"
           while read -r pr head; do
             [ "$head" = "$branch" ] && continue

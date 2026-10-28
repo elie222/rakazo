@@ -3,12 +3,36 @@ import {
   notificationOpenTarget,
   notificationOpenTargetFromLink,
   notificationResponseRoute,
+  threadRouteId,
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
   threadSpaceSwitchResult,
 } from "./notification-open.js";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";
+
+describe("thread route identity", () => {
+  it("reuses a chat screen for the same bot or group", () => {
+    expect(threadRouteId("thread", { botId: "bot-1", name: "Ada" })).toBe(
+      threadRouteId("thread", { botId: "bot-1", threadId: "thread-1", spaceId: "space-1" }),
+    );
+    expect(threadRouteId("group-thread", { botId: "bot-1", groupId: "group-1" })).toBe(
+      threadRouteId("group-thread", { botId: "bot-2", groupId: "group-1" }),
+    );
+  });
+
+  it("keeps different bots and group chats distinct", () => {
+    const bot = threadRouteId("thread", { botId: "bot-1" });
+    expect(bot).not.toBe(threadRouteId("thread", { botId: "bot-2" }));
+    expect(bot).not.toBe(threadRouteId("group-thread", { botId: "bot-1", groupId: "group-1" }));
+  });
+
+  it("does not assign an identity without a bot or group", () => {
+    expect(threadRouteId("thread", {})).toBeUndefined();
+    expect(threadRouteId("thread", { botId: "" })).toBeUndefined();
+    expect(threadRouteId("thread", { botId: ["bot-1", "bot-2"] })).toBeUndefined();
+  });
+});
 
 describe("notification tap routing", () => {
   it("opens the bot thread from an Expo push payload", () => {

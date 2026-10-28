@@ -19,6 +19,42 @@ describe("search helpers", () => {
     ]);
   });
 
+  it.each([
+    "https://[2001:db8::1]/guide",
+    "http://[::1]:8080/guide?q=search#part",
+    "https://[::ffff:192.0.2.1]:8443/guide",
+    "https://[2001:db8::1]",
+  ])("keeps the complete IPv6 URL %s", (url) => {
+    expect(extractLinksFromText(`see ${url}.`)).toEqual([url]);
+  });
+
+  it.each([
+    "[https://[2001:db8::1]/guide]",
+    "[docs](https://[2001:db8::1]/guide)",
+    "([docs](https://[2001:db8::1]/guide)).",
+  ])("keeps IPv6 brackets inside a wrapped link: %s", (text) => {
+    expect(extractLinksFromText(text)).toEqual(["https://[2001:db8::1]/guide"]);
+  });
+
+  it("stops at unmatched closing square brackets and keeps adjacent links", () => {
+    expect(
+      extractLinksFromText("[https://example.com/guide],[https://[2001:db8::1]/guide]"),
+    ).toEqual(["https://example.com/guide", "https://[2001:db8::1]/guide"]);
+  });
+
+  it("keeps balanced parentheses and square brackets in the same URL", () => {
+    expect(extractLinksFromText("[docs](https://[2001:db8::1]/a_(b))")).toEqual([
+      "https://[2001:db8::1]/a_(b)",
+    ]);
+  });
+
+  it("ignores a bare scheme before an unmatched closing square bracket", () => {
+    expect(extractLinksFromText("https://]")).toEqual([]);
+    expect(extractLinksFromText("[https://example.com/guide]https://]")).toEqual([
+      "https://example.com/guide",
+    ]);
+  });
+
   it("keeps balanced parentheses inside a link", () => {
     expect(
       extractLinksFromText(
@@ -49,9 +85,11 @@ describe("search helpers", () => {
     ]);
   });
 
-  it("handles thousands of adjacent wrapped links without recursing", () => {
-    const text = "(https://x.test/),".repeat(50_000);
-    expect(extractLinksFromText(text)).toEqual(["https://x.test/"]);
+  it.each([
+    ["(https://x.test/),", "https://x.test/"],
+    ["[https://[2001:db8::1]/guide],", "https://[2001:db8::1]/guide"],
+  ])("handles thousands of adjacent wrapped links without recursing: %s", (wrapped, url) => {
+    expect(extractLinksFromText(wrapped.repeat(50_000))).toEqual([url]);
   });
 
   it("matches case-insensitive substrings", () => {
@@ -87,6 +125,38 @@ describe("search helpers", () => {
     expect(snippetAroundMatch(text, "gamma", 20)).toContain("gamma");
   });
 
+  it("keeps the match after characters that expand when lowercased", () => {
+    const text = `${"İ".repeat(50)} needle result details`;
+    expect(matchesSearchQuery("needle", text)).toBe(true);
+    expect(snippetAroundMatch(text, " NEEDLE ")).toBe(`…${"İ".repeat(39)} needle result details`);
+  });
+
+  it("preserves snippet bounds and original casing after lowercase expansion", () => {
+    const text = `${"İ😀".repeat(50)} NeEdLe ${"tail ".repeat(30)}`;
+    const index = text.indexOf("NeEdLe");
+    expect(snippetAroundMatch(text, "needle")).toBe(`…${text.slice(index - 40, index + 80)}…`);
+  });
+
+  it.each(["i", "\u0307", "i\u0307"])(
+    "maps a match within an expanded character back to that character: %j",
+    (query) => {
+      const text = `${"x".repeat(80)}İ result details`;
+      expect(matchesSearchQuery(query, text)).toBe(true);
+      expect(snippetAroundMatch(text, query)).toBe(`…${"x".repeat(40)}İ result details`);
+    },
+  );
+
+  it("retains whole-string lowercase matching for contextual characters", () => {
+    const text = `${"İ".repeat(50)} ΟΣ result details`;
+    expect(matchesSearchQuery("ος", text)).toBe(true);
+    expect(snippetAroundMatch(text, "ος")).toBe(`…${"İ".repeat(39)} ΟΣ result details`);
+  });
+
+  it.each(["", "   ", "missing"])("keeps the leading fallback for %j", (query) => {
+    const text = "İ".repeat(150);
+    expect(snippetAroundMatch(text, query)).toBe(text.slice(0, 120));
+  });
+
   it("uses groupId for group search message jumps", () => {
     expect(searchHitThreadTarget({ groupId: "group-1" })).toEqual({ groupId: "group-1" });
     expect(searchHitThreadTarget({ botId: "bot-1" })).toEqual({ botId: "bot-1" });
@@ -117,7 +187,7 @@ function file(artifactId: string): SearchHit {
     botId: "bot-1",
     botName: "Scout",
     title: `${artifactId}.png`,
-    snippet: "image/png · 10 bytes",
+    snippet: "image/png, 10 bytes",
     messageId: "message-1",
     seq: 4,
     artifactId,

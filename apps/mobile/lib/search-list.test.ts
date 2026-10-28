@@ -31,6 +31,6 @@ describe("searchHitPreview", () => {
         botName: "Scout",
         snippet: "See **this** ![x](data:image/png;base64,aaaa)",
       }),
-    ).toBe("Scout · See this x");
+    ).toBe("Scout: See this x");
   });
 });

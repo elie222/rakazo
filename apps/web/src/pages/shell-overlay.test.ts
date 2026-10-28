@@ -16,6 +16,11 @@ describe("readShellOverlay", () => {
 
   it("opens a settings section, falling back to general for bare or unknown values", () => {
     expect(read("?settings=voice")).toEqual({ kind: "settings", section: "voice", spaceId: null });
+    expect(read("?settings=space&space=sp_1")).toEqual({
+      kind: "settings",
+      section: "space",
+      spaceId: "sp_1",
+    });
     expect(read("?settings")).toEqual({ kind: "settings", section: "general", spaceId: null });
     expect(read("?settings=nope")).toEqual({ kind: "settings", section: "general", spaceId: null });
   });
@@ -32,7 +37,11 @@ describe("readShellOverlay", () => {
   it("reads flag overlays with or without a value", () => {
     expect(read("?integrations")).toEqual({ kind: "integrations" });
     expect(read("?mcp=")).toEqual({ kind: "mcp" });
-    expect(read("?messaging=1")).toEqual({ kind: "messaging" });
+    expect(read("?mcp=srv_1")).toEqual({ kind: "mcp", serverId: "srv_1" });
+  });
+
+  it("opens Messaging settings from the old messaging link", () => {
+    expect(read("?messaging")).toEqual({ kind: "settings", section: "messaging", spaceId: null });
   });
 });
 
@@ -46,7 +55,8 @@ describe("withShellOverlay", () => {
 
   it("replaces the open overlay instead of stacking another", () => {
     expect(write("?integrations&routine=r_1", { kind: "mcp" })).toBe("?routine=r_1&mcp");
-    expect(write("?settings=models&space=sp_1", { kind: "messaging" })).toBe("?messaging");
+    expect(write("", { kind: "mcp", serverId: "srv_1" })).toBe("?mcp=srv_1");
+    expect(write("?settings=models&space=sp_1", { kind: "integrations" })).toBe("?integrations");
   });
 
   it("writes the settings section and space", () => {

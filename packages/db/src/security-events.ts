@@ -110,7 +110,6 @@ export function securityEventRetentionDays(source: NodeJS.ProcessEnv = process.e
   );
 }
 
-/** Delete events older than the retention window. Returns how many were removed. */
 export async function pruneSecurityEvents(
   db: SecurityEventDb,
   retentionDays: number,

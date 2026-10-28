@@ -41,12 +41,15 @@ export function normalizedHttpUrl(input: string): string | undefined {
 }
 
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+// Delimit email-shaped text instead of requiring ASCII-only addresses or a public suffix.
+const EMAIL_IN_TEXT =
+  /(?:"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>()[\]\\,;:"@，；、！？])[^\s<>()[\]\\,;:"@，；、！？]+)@(?:\[[^\]\r\n]+\]|[^\s<>()[\]\\,;:"@，；、！？]+)/g;
 const DOMAIN_IN_TEXT =
   /(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}[a-z0-9](?![\w-])/gi;
 
 /**
  * The sites a person named in their own words: http(s) links and bare domain names on a known
- * public suffix. An address after `@` is an email, not a site to fetch.
+ * public suffix. Neither part of an email address names a site to fetch.
  */
 export function sitesInText(text: string): Set<string> {
   const sites = new Set<string>();
@@ -55,8 +58,9 @@ export function sitesInText(text: string): Set<string> {
     if (site) sites.add(site);
   }
   // A link grants only its own host: a domain in its path or query is not one the person named.
-  const withoutLinks = text.replace(URL_IN_TEXT, " ");
-  for (const [match] of withoutLinks.matchAll(DOMAIN_IN_TEXT)) {
+  // A domain-shaped email local part does not name a site either.
+  const withoutLinksOrEmails = text.replace(URL_IN_TEXT, " ").replace(EMAIL_IN_TEXT, " ");
+  for (const [match] of withoutLinksOrEmails.matchAll(DOMAIN_IN_TEXT)) {
     const parsed = parse(match.toLowerCase(), { allowPrivateDomains: true });
     if ((parsed.isIcann || parsed.isPrivate) && parsed.domain) sites.add(parsed.domain);
   }

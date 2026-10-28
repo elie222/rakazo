@@ -49,7 +49,6 @@ export function formatNativeVersionLabel(
   return version ?? build;
 }
 
-/** Shorten a UUID update id for footer display. */
 export function shortUpdateId(updateId: string): string {
   const compact = updateId.replace(/-/g, "").toLowerCase();
   return compact.slice(0, 8) || updateId.slice(0, 8);
@@ -81,13 +80,12 @@ function resolveUpdateIdentity(): AppUpdateIdentity {
 export function formatUpdateLabel(update: AppUpdateIdentity, t: Translate): string {
   if (update.kind === "embedded") return t("Embedded");
   const { id, channel, createdAt } = update;
-  if (channel && createdAt) return t("{channel} · {id} · {date}", { channel, id, date: createdAt });
-  if (channel) return t("{channel} · {id}", { channel, id });
-  if (createdAt) return t("OTA · {id} · {date}", { id, date: createdAt });
-  return t("OTA · {id}", { id });
+  if (channel && createdAt) return t("{channel} {id}, {date}", { channel, id, date: createdAt });
+  if (channel) return t("{channel} {id}", { channel, id });
+  if (createdAt) return t("OTA {id}, {date}", { id, date: createdAt });
+  return t("OTA {id}", { id });
 }
 
-/** Read native store version and OTA identity for the account footer. */
 export function getAppVersionInfo(): AppVersionInfo {
   let applicationVersion: string | null = null;
   let buildVersion: string | null = null;

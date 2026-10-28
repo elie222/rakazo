@@ -35,6 +35,16 @@ export function unreadOverrideKey(kind: InboxChatKind, id: string) {
   return `${kind}:${id}`;
 }
 
+/** Leaves out chats being archived: the row goes at the tap, and a poll can't bring it back. */
+export function withoutArchiving<T extends { id: string }>(
+  kind: InboxChatKind,
+  chats: T[],
+  archiving: ReadonlySet<string>,
+): T[] {
+  if (archiving.size === 0) return chats;
+  return chats.filter((chat) => !archiving.has(unreadOverrideKey(kind, chat.id)));
+}
+
 /** Shows read state the user just changed until its request settles, so a poll can't undo it. */
 export function applyUnreadOverrides<T extends { id: string; unread?: boolean }>(
   kind: InboxChatKind,

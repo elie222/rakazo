@@ -21,12 +21,14 @@ export function MessageHoverActions({
   side,
   onReply,
   onMarkUnread,
+  markedUnread = false,
   onReact,
 }: {
   message: ThreadMessage;
   side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
+  markedUnread?: boolean;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
@@ -97,7 +99,7 @@ export function MessageHoverActions({
               <Reply size={14} strokeWidth={1.7} />
               <Trans>Reply</Trans>
             </DropdownMenuItem>
-            {canMarkMessageUnread(message) ? (
+            {canMarkMessageUnread(message) && !markedUnread ? (
               <DropdownMenuItem
                 onClick={() => {
                   setMoreOpen(false);

@@ -35,6 +35,11 @@
     "flow": "flows/compose.yaml"
   },
   {
+    "id": "split-view",
+    "title": "Split view",
+    "flow": "flows/split-view.yaml"
+  },
+  {
     "id": "settings",
     "title": "Settings",
     "flow": "flows/settings.yaml"

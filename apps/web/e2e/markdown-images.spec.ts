@@ -26,7 +26,6 @@ test("remote markdown images in bot replies load only after the reader asks", as
   await signup(page, `markdown-image-${Date.now()}@rakazo.test`, "password12", "Markdown Image");
   await completeOnboarding(page);
   const composer = page.getByRole("combobox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
   await composer.fill(`Here is the chart: ![Quarterly chart](${remoteImage})`);
   await composer.press("Enter");
   // The scripted runtime echoes the prompt back, so the markdown image lands in a bot bubble.
@@ -47,7 +46,6 @@ test("remote markdown images in bot replies load only after the reader asks", as
   expect(requests.map((request) => request.url)).toEqual([remoteImage]);
   expect(requests[0]?.referer).toBeUndefined();
 
-  // With the setting on, remote images load at once.
   requests.length = 0;
   await page.evaluate(() => localStorage.setItem("rakazo.loadRemoteImages", "on"));
   await page.reload();

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import * as core from "@rakazo/core";
 import { AiConsentBlocked, MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
@@ -9,13 +10,15 @@ import { createRoot } from "react-dom/client";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { MobileSnapshot } from "./api";
+import type { MobileSnapshot, rpc } from "./api";
 import { applyMobileThreadEvent } from "./api";
+import { filterPickedAttachments } from "./pick-attachments-filter";
 import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
   clearFailedSends,
   configureUnsentSends,
   confirmEchoes,
+  deliverSend,
   restoreUnsentSends,
   sendWaitingMessages,
   settleComposer,
@@ -214,7 +217,7 @@ describe("scoped mobile outbox", () => {
       await feedback.send(second);
     });
     expect(request).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     expect(disk.save).toHaveBeenLastCalledWith([first, second]);
     reachable = true;
     await act(async () => {
@@ -223,6 +226,168 @@ describe("scoped mobile outbox", () => {
     expect(
       request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
     ).toEqual(["First", "Second"]);
+  });
+  const fileNote = "The bot can use the file but won't see the picture.";
+  it("uploads distinct files after removal and reuses their artifacts on retry", async () => {
+    const a = { name: "first.txt", mimeType: "text/plain", size: 4, contentBase64: "YWFhYQ==" };
+    const b = { name: "same.txt", mimeType: "text/plain", size: 4, contentBase64: "YmJiYg==" };
+    const c = { ...b, contentBase64: "Y2NjYw==" };
+    const ids = vi.spyOn(core, "newClientId");
+    ids.mockReturnValueOnce("a").mockReturnValueOnce("b").mockReturnValueOnce("c");
+    const remaining = filterPickedAttachments(0, [a, b]).attachments.slice(1);
+    const attachments = [
+      ...remaining,
+      ...filterPickedAttachments(remaining.length, [c]).attachments,
+    ];
+    ids.mockRestore();
+    const sendPayload = { ...payload(), attachments };
+    const attempt = feedback.sendAttempt(sendPayload);
+    let sendsAttempted = 0;
+    request.mockImplementation(async (proc, body) => {
+      if (proc === "artifacts/create") {
+        return { id: body.contentBase64 === b.contentBase64 ? "artifact-b" : "artifact-c" };
+      }
+      if (++sendsAttempted === 1) throw new Error("Send interrupted");
+      return { seq: 42 };
+    });
+
+    await expect(
+      deliverSend(sendPayload, attempt, request as unknown as typeof rpc),
+    ).rejects.toThrow("Send interrupted");
+    await deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+
+    const uploads = request.mock.calls.filter(([proc]) => proc === "artifacts/create");
+    expect(uploads.map(([, body]) => body.contentBase64)).toEqual([
+      b.contentBase64,
+      c.contentBase64,
+    ]);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
+  it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("This model cannot read images. Choose a model that supports images."),
+          { status: 409 },
+        ),
+      );
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(attempt.payload.attachments).toHaveLength(1);
+    expect(attempt.artifactIds.size).toBe(1);
+    expect(container.textContent).toContain("Not sent. Tap to retry");
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
+  it.each(["ios", "android"])(
+    "offers explicit file confirmation on %s and reuses the original upload",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request
+        .mockResolvedValueOnce({ id: "artifact-a" })
+        .mockRejectedValueOnce(
+          Object.assign(
+            new Error("This model cannot read images. Choose a model that supports images."),
+            { status: 409, data: { reason: "model_image_input_unsupported" } },
+          ),
+        );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.imageConfirmation).toBe(true);
+      expect(container.textContent).toContain("Not sent. Tap for options");
+      act(() =>
+        container
+          .querySelector("button")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      if (os === "ios") {
+        const [options, choose] = vi
+          .mocked(ActionSheetIOS.showActionSheetWithOptions)
+          .mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
+        expect(options.message).toContain(fileNote);
+        await act(async () => {
+          choose(0);
+        });
+      } else {
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toContain(fileNote);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Delete", "Cancel"]);
+        await act(async () => {
+          buttons![0]!.onPress?.();
+        });
+      }
+      expect(attempt.imageHandling).toBe("file");
+      await act(async () => {
+        await feedback.send(attempt, true);
+      });
+      const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+      expect(sends.at(-1)?.[1]).toEqual({ ...sends[0]?.[1], imageHandling: "file" });
+      expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+      Platform.OS = "ios";
+    },
+  );
+
+  it.each(["ios", "android"])(
+    "opens discoverable file and retry choices on tap (%s)",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request.mockResolvedValueOnce({ id: "artifact-a" }).mockRejectedValueOnce(
+        Object.assign(new Error("Image input is not configured for this model."), {
+          status: 409,
+          data: { reason: "model_image_input_unsupported" },
+        }),
+      );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      act(() => container.querySelector("button")!.click());
+      if (os === "ios") {
+        const [options, choose] = vi
+          .mocked(ActionSheetIOS.showActionSheetWithOptions)
+          .mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(options.message).toBe(
+          `Image input is not configured for this model.\n\n${fileNote}`,
+        );
+        act(() => choose(1));
+      } else {
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toBe(`Image input is not configured for this model.\n\n${fileNote}`);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
+        act(() => buttons![1]!.onPress?.());
+      }
+      expect(retry).toHaveBeenCalledOnce();
+      expect(attempt.imageHandling).toBeUndefined();
+      Platform.OS = "ios";
+    },
+  );
+  it("does not offer new confirmation for an older server's unstructured error", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error("Conflict"), { status: 409 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.imageConfirmation).toBe(false);
+    expect(attempt.state).toBe("failed");
   });
   it("drops late failures and further uploads after a session wipe", async () => {
     let finish!: (value: { id: string }) => void;
@@ -262,7 +427,7 @@ describe("scoped mobile outbox", () => {
         await feedback.send(attempt);
       });
       expect(attempt.state).toBe("failed");
-      expect(container.textContent).toContain("Not sent · No model");
+      expect(container.textContent).toContain("Not sent. No model");
       expect(container.textContent).not.toContain("Tap to retry");
       act(() =>
         container
@@ -347,11 +512,11 @@ describe("scoped mobile outbox", () => {
     });
     needsModel = true;
     act(() => root.render(<Probe threadKey="bot-1" />));
-    expect(container.textContent).toContain("Not sent · No model");
+    expect(container.textContent).toContain("Not sent. No model");
     expect(container.textContent).not.toContain("Tap to retry");
     needsModel = false;
     act(() => root.render(<Probe threadKey="bot-1" />));
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     expect(container.textContent).not.toContain("No model");
     act(() =>
       container
@@ -403,7 +568,7 @@ describe("scoped mobile outbox", () => {
       await feedback.send(attempt);
     });
     expect(attempt.state).toBe("failed");
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     act(() => container.querySelector("button")!.click());
     expect(retry).toHaveBeenCalledOnce();
     await act(async () => {
@@ -687,7 +852,7 @@ describe("a send and its echo", () => {
     await act(async () => {
       await feedback.send(attempt);
     });
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     reachable = true;
     await act(async () => {
       await sendWaitingMessages();
@@ -716,7 +881,7 @@ describe("a send and its echo", () => {
     );
     expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
     expect(container.querySelectorAll("button")).toHaveLength(1);
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     await act(async () => {
       container.querySelector("button")!.click();
       await vi.waitFor(() => expect(attempt.acceptedSeq).toBe(42));

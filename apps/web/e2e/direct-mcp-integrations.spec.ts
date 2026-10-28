@@ -17,7 +17,6 @@ test("shows directly registered MCP servers in Integrations without catalog conn
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "MCP servers", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Server name", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close MCP servers", exact: true }).click();
   for (const name of ["Dropbox", "GitHub"])

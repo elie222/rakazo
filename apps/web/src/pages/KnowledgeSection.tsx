@@ -2,13 +2,19 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
+
+const NO_DOCS: MemoryDocument[] = [];
+const NO_SKILLS: AgentSkillCatalogEntry[] = [];
 
 const fieldClass = "mt-2 w-full font-mono text-[13px] leading-relaxed";
 
@@ -22,14 +28,13 @@ function rowClass(open: boolean): string {
  */
 export function KnowledgeSection({
   botId,
-  onSkillsChange,
   skillsOnly = false,
 }: {
   botId: string;
-  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
+  /** Unused: skills are read from and saved to the shared cached list. */
+  onSkillsChange?: (skills: AgentSkillCatalogEntry[]) => void;
   skillsOnly?: boolean;
 }) {
-  const rpc = useSpaceRpc();
   if (skillsOnly)
     return (
       <section data-testid="bot-knowledge">
@@ -37,14 +42,14 @@ export function KnowledgeSection({
           <Trans>Skills</Trans>
         </h3>
         <div className="rounded-xl bg-muted/50 p-4">
-          <AgentSkills onSkillsChange={onSkillsChange} />
+          <AgentSkills />
         </div>
       </section>
     );
   return (
     <MemoryDocumentList
       key={botId}
-      load={() => rpc.memory.list({ botId, scope: "bot" })}
+      input={{ botId, scope: "bot" }}
       testId="bot-knowledge-memory"
       compact
     />
@@ -53,71 +58,59 @@ export function KnowledgeSection({
 
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
-  const rpc = useSpaceRpc();
   return (
     <section
       className="rounded-xl border border-border px-4 py-4"
       data-testid="space-memory-documents"
     >
       <SettingsSectionHeading className="mb-0">
-        <Trans>Shared documents</Trans>
+        <Trans>Shared memory</Trans>
       </SettingsSectionHeading>
+      <p className="mt-1 text-[13px] text-muted-foreground">
+        <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
+      </p>
       <div className="mt-3">
-        <MemoryDocumentList
-          load={() => rpc.memory.list({ scope: "user" })}
-          testId="space-memory-list"
-        />
+        <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
       </div>
     </section>
   );
 }
 
 function MemoryDocumentList({
-  load,
+  input,
   testId,
   compact = false,
 }: {
-  load: () => Promise<MemoryDocument[]>;
+  input: { botId?: string; scope: "bot" | "user" };
   testId: string;
   compact?: boolean;
 }) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const list = queries.memory.list.queryOptions({ input });
+  // Bots write memory as they run, so every open refreshes behind the cached list.
+  const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  const docs = listQuery.data ?? NO_DOCS;
+  const loading = listQuery.isPending;
   const [showAll, setShowAll] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [docs, setDocs] = useState<MemoryDocument[]>([]);
-  const [memoryVisible, setMemoryVisible] = useState(false);
+  // Once shown, memory stays visible while the panel is open, even if emptied.
+  const [memoryShown, setMemoryShown] = useState(false);
+  const memoryVisible = memoryShown || docs.some((doc) => !isEmptyBotMemory(doc));
+  if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
   const [conflicted, setConflicted] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const generation = useRef(0);
-  const loadRef = useRef(load);
-  loadRef.current = load;
 
-  useEffect(() => {
-    const current = ++generation.current;
-    void loadRef
-      .current()
-      .then((list) => {
-        if (current !== generation.current) return;
-        setDocs(list);
-        setMemoryVisible((visible) => visible || list.some((doc) => !isEmptyBotMemory(doc)));
-        setLoading(false);
-      })
-      .catch(() => {
-        if (current !== generation.current) return;
-        setDocs([]);
-        setLoading(false);
-        setError(t`Could not load`);
-      });
-    return () => {
-      generation.current += 1;
-    };
-  }, [t]);
+  function setDocs(update: (current: MemoryDocument[]) => MemoryDocument[]) {
+    return writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
+  }
 
   function openDoc(doc: MemoryDocument) {
     setLoadedRevision(doc.revision);
@@ -144,7 +137,7 @@ function MemoryDocumentList({
     setError(null);
     try {
       await rpc.memory.remove({ documentId: doc.id });
-      setDocs((current) => current.filter((entry) => entry.id !== doc.id));
+      await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
       closeDoc();
     } catch {
       setError(t`Could not remove`);
@@ -163,13 +156,15 @@ function MemoryDocumentList({
         content: draft,
         expectedRevision: loadedRevision,
       });
-      setDocs((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      await setDocs((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
       closeDoc();
     } catch (err) {
       if (err instanceof ORPCError && err.code === "CONFLICT") {
         setConflicted(true);
         try {
-          setDocs(await loadRef.current());
+          await fetchFresh(queryClient, list);
         } catch {
           // Keep the draft and conflict state even if refreshing fails.
         }
@@ -186,7 +181,7 @@ function MemoryDocumentList({
     setBusy(true);
     setError(null);
     try {
-      const latest = (await loadRef.current()).find((entry) => entry.id === doc.id);
+      const latest = (await fetchFresh(queryClient, list)).find((entry) => entry.id === doc.id);
       if (!latest) throw new Error("Document unavailable");
       downloadArtifactBytes(
         latest.path.split("/").at(-1) ?? latest.path,
@@ -271,7 +266,6 @@ function MemoryDocumentList({
                       type="button"
                       disabled={busy || conflicted || draft === doc.content}
                       onClick={() => void save(doc)}
-                      className="rounded-full"
                     >
                       <Trans>Save</Trans>
                     </Button>
@@ -337,52 +331,35 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-function AgentSkills({
-  onSkillsChange,
-}: {
-  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
-}) {
+function AgentSkills() {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
-  const [loading, setLoading] = useState(true);
-  const [skills, setSkills] = useState<AgentSkillCatalogEntry[]>([]);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  // The same list the composer offers as skill mentions, so a change here shows there at once.
+  const list = queries.agentSkills.list.queryOptions();
+  const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  const skills = listQuery.data ?? NO_SKILLS;
+  const loading = listQuery.isPending;
   const [open, setOpen] = useState<AgentSkill | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const generation = useRef(0);
   const selection = useRef(0);
 
   async function refresh() {
-    const current = ++generation.current;
-    const list = await rpc.agentSkills.list();
-    if (current !== generation.current) return;
-    setSkills(list);
-    onSkillsChange(list);
+    await fetchFresh(queryClient, list);
   }
 
-  useEffect(() => {
-    const current = ++generation.current;
-    void rpc.agentSkills
-      .list()
-      .then((list) => {
-        if (current !== generation.current) return;
-        setSkills(list);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (current !== generation.current) return;
-        setSkills([]);
-        setLoading(false);
-        setError(t`Could not load`);
-      });
-    return () => {
-      generation.current += 1;
+  useEffect(
+    () => () => {
       selection.current += 1;
-    };
-  }, [t]);
+    },
+    [],
+  );
 
   async function openSkill(entry: AgentSkillCatalogEntry) {
     if (busy) return;
@@ -519,7 +496,7 @@ function AgentSkills({
                 type="button"
                 disabled={busy || !draft.trim() || (!creating && draft === open?.content)}
                 onClick={() => void save()}
-                className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
+                className="bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
               >
                 <Trans>Save</Trans>
               </Button>
@@ -534,7 +511,7 @@ function AgentSkills({
                 setCreating(false);
                 setConfirmingDelete(false);
               }}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
+              className="px-3 py-1.5 text-[13px] text-muted-foreground"
             >
               {open?.readOnly ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
             </Button>
@@ -544,7 +521,7 @@ function AgentSkills({
                 type="button"
                 disabled={busy}
                 onClick={() => void remove(open)}
-                className={`ms-auto rounded-lg px-3 py-1.5 text-[13px] ${
+                className={`ms-auto px-3 py-1.5 text-[13px] ${
                   confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >

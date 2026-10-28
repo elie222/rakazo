@@ -1,14 +1,17 @@
+import type { CallExchange } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   AiConsentBlocked,
   abortableDelay,
+  CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
-  INTERIM_BARGE_IN_MS,
+  createCallSendTracker,
+  createInterimBargeIn,
   isCallBargeIn,
   isFarewell,
-  isInterimCallBargeIn,
   isRetryableError,
   latestSpokenCallReply,
+  newClientId,
   retryDelayMs,
   speechLocaleTag,
   spokenMemory,
@@ -40,7 +43,6 @@ import { errorText, voiceAccountErrorText } from "./user-error";
 import { speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
-export type CallExchange = { role: "user" | "bot"; text: string };
 
 export type CallState = {
   botId: string;
@@ -94,8 +96,6 @@ export type CallSwitch = { name: string; ring: () => void };
 /** What the bot's own `end_call` carries: the call it ends and the goodbye to speak. */
 export type CallEnded = { callId?: string; farewell?: string };
 
-/** How long a goodbye waits for a reply that may never come before hanging up anyway. */
-const FAREWELL_TIMEOUT_MS = 20_000;
 /** A call that cannot reach the microphone or the server this many turns in a row hangs up. */
 const MAX_TURN_FAILURES = 3;
 
@@ -114,7 +114,7 @@ let state: CallState | null = null;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
 let callId = "";
 /** Requests for this call that must persist before its server-side hang-up. */
-const pendingCallSends = new Map<string, Set<Promise<unknown>>>();
+const callSends = createCallSendTracker();
 /** The run this call's last turn started: replies to anything else are not spoken. */
 let callRunId: string | null = null;
 let deps: CallDeps = productionDeps();
@@ -143,7 +143,12 @@ let opening = false;
 /** The caller cut the reply off: the speaker going idle must not reopen the microphone. */
 let bargedIn = false;
 /** Counting down a phrase heard over the reply, before it counts as cutting in. */
-let interimTimer: ReturnType<typeof setTimeout> | null = null;
+const interim = createInterimBargeIn(() => {
+  if (state?.phase !== "speaking") return;
+  bargedIn = true;
+  deps.stopSpeaking();
+  set({ phase: "listening", caption: "" });
+});
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
 let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
 let switching = false;
@@ -196,7 +201,7 @@ export function startCall(
   endCall();
   deps = { ...productionDeps(), ...overrides };
   switchBot = call.switchBot;
-  callId = randomId();
+  callId = newClientId();
   callRunId = null;
   canTranscribe = call.transcribe ?? true;
   onDevice = null;
@@ -246,14 +251,7 @@ export function endCall(): void {
     const { botId } = state;
     const closingCallId = callId;
     const closeServerCall = deps.endCall;
-    const pendingSends = [...(pendingCallSends.get(closingCallId) ?? [])];
-    // The server checks durable user messages, so its close must follow an in-flight write.
-    if (pendingSends.length === 0)
-      void closeServerCall(botId, closingCallId).catch(() => undefined);
-    else
-      void Promise.allSettled(pendingSends)
-        .then(() => closeServerCall(botId, closingCallId))
-        .catch(() => undefined);
+    callSends.closeAfterSends(closingCallId, () => closeServerCall(botId, closingCallId));
   }
   if (state) deps.waitSound("release");
   turn?.abort();
@@ -274,7 +272,7 @@ export function endCall(): void {
   bargedIn = false;
   switchBot = undefined;
   switching = false;
-  clearInterim();
+  interim.clear();
   spokenMemory.clear();
   if (!state) return;
   state = null;
@@ -289,7 +287,7 @@ export function toggleMute(): void {
     turn?.abort();
     turn = null;
     micOpen = false;
-    clearInterim();
+    interim.clear();
     return;
   }
   consentBlocked = false;
@@ -337,7 +335,7 @@ async function openMic(): Promise<void> {
             if (!mine()) return;
             controller.abort();
             micOpen = false;
-            clearInterim();
+            interim.clear();
             set({ heard: "" });
             if (reason === "failed") onDevice = false;
             // Recording must wait for playback; recognition can still hear a barge-in.
@@ -401,7 +399,7 @@ async function handleTranscript(raw: string): Promise<void> {
     }
     // The caller talked over the reply: cut the audio, and never resume that message.
     bargedIn = true;
-    clearInterim();
+    interim.clear();
     deps.stopSpeaking();
     set({ phase: "thinking", caption: "" });
   }
@@ -438,12 +436,12 @@ async function handleTranscript(raw: string): Promise<void> {
     // A second goodbye replaces this timer. Clear the previous one or it can
     // end the next call after this one has already hung up.
     if (hangUpTimer) clearTimeout(hangUpTimer);
-    hangUpTimer = setTimeout(endCall, FAREWELL_TIMEOUT_MS);
+    hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
   }
   let releasePendingSend: (() => void) | undefined;
   try {
     const sendRequest = deps.send(botId, text, callClientNonce(turnCallId));
-    releasePendingSend = trackPendingCallSend(turnCallId, sendRequest);
+    releasePendingSend = callSends.track(turnCallId, sendRequest);
     const runId = await sendRequest;
     if (state?.botId === botId && callId === turnCallId) {
       callRunId = runId ?? null;
@@ -488,7 +486,7 @@ function blockForConsent(error: AiConsentBlocked): void {
   turn?.abort();
   turn = null;
   micOpen = false;
-  clearInterim();
+  interim.clear();
   set({
     phase: "listening",
     muted: true,
@@ -506,27 +504,11 @@ function blockForConsent(error: AiConsentBlocked): void {
 function heardInterim(text: string): void {
   if (!state) return;
   if (state.phase !== "speaking") {
-    clearInterim();
+    interim.clear();
     set({ heard: text });
     return;
   }
-  if (!isInterimCallBargeIn(text)) {
-    clearInterim();
-    return;
-  }
-  if (interimTimer) return;
-  interimTimer = setTimeout(() => {
-    interimTimer = null;
-    if (state?.phase !== "speaking") return;
-    bargedIn = true;
-    deps.stopSpeaking();
-    set({ phase: "listening", caption: "" });
-  }, INTERIM_BARGE_IN_MS);
-}
-
-function clearInterim(): void {
-  if (interimTimer) clearTimeout(interimTimer);
-  interimTimer = null;
+  interim.hear(text);
 }
 
 function onReply(messageId: string, text: string, runId?: string): void {
@@ -579,7 +561,7 @@ function speakAndListen(text: string): void {
   const speakingCallId = callId;
   let blockedByConsent = false;
   bargedIn = false;
-  clearInterim();
+  interim.clear();
   set({ exchanges: [...state.exchanges, { role: "bot", text }] });
   // A prior disclosure refuse stays muted until unmute; do not re-open speech consent.
   if (consentBlocked) {
@@ -627,7 +609,7 @@ function onCallEnded(ended: CallEnded): void {
   hangUpAfterReply = true;
   botEndedCall = true;
   if (hangUpTimer) clearTimeout(hangUpTimer);
-  hangUpTimer = setTimeout(endCall, FAREWELL_TIMEOUT_MS);
+  hangUpTimer = setTimeout(endCall, CALL_FAREWELL_TIMEOUT_MS);
   const farewell = ended.farewell?.trim();
   // Nothing to say: hang up instead of waiting out the fallback.
   if (!farewell) {
@@ -744,7 +726,7 @@ async function sendHeard(
   text: string,
   clientNonce: string,
 ): Promise<string | undefined> {
-  const sent = await rpc<{ runId?: string }>("threads/send", { botId, clientNonce, text });
+  const sent = await rpc("threads/send", { botId, clientNonce, text });
   return sent.runId;
 }
 
@@ -779,11 +761,7 @@ function watchReplies(
     while (!controller.signal.aborted) {
       try {
         if (!snapshot) {
-          snapshot = await rpc<MobileSnapshot>(
-            "threads/get",
-            { botId },
-            { signal: controller.signal },
-          );
+          snapshot = await rpc("threads/get", { botId }, { signal: controller.signal });
           lastSeen = latestSpokenCallReply(snapshot.messages, watchedCallId)?.id ?? null;
           cursor = snapshot.cursor ?? 0;
         }
@@ -832,20 +810,4 @@ function watchReplies(
 
 function asText(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function trackPendingCallSend(callId: string, request: Promise<unknown>): () => void {
-  const pending = pendingCallSends.get(callId) ?? new Set<Promise<unknown>>();
-  pending.add(request);
-  pendingCallSends.set(callId, pending);
-  return () => {
-    pending.delete(request);
-    if (pending.size === 0) pendingCallSends.delete(callId);
-  };
-}
-
-function randomId(): string {
-  const webCrypto = globalThis.crypto;
-  if (webCrypto && typeof webCrypto.randomUUID === "function") return webCrypto.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

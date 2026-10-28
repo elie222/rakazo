@@ -152,6 +152,102 @@ export const lightTokens = {
   scrollbarHover: "#A8A8A4",
 } as const satisfies ColorTokens;
 
+/** Web and Electron only: the primary fill's hover and disabled states. Mobile has no hover. */
+export type WebColorTokens = ColorTokens & {
+  primaryHover: string;
+  primaryDisabled: string;
+};
+
+/**
+ * Web and Electron values for the tokens they draw differently from the palettes above, which
+ * follow the iOS system design for mobile. Mobile reads `darkTokens` / `lightTokens`; web reads
+ * `tokens.css`, rendered from these merged palettes. Surfaces are opaque; text, borders, hover
+ * and selection are the ink at an opacity, so they read the same on every surface.
+ */
+export const webDarkOverrides = {
+  background: "#161616",
+  dialog: "#1F1F1F",
+  foreground: "#F5F5F5",
+  card: "#1F1F1F",
+  cardForeground: "#F5F5F5",
+  popover: "#1F1F1F",
+  popoverForeground: "#F5F5F5",
+  primary: "#F5F5F5",
+  primaryHover: "#DBDBDB",
+  primaryDisabled: "#F5F5F521",
+  primaryForeground: "#121212",
+  secondary: "#F5F5F50A",
+  secondaryForeground: "#F5F5F5",
+  chatUser: "#3E3E3E",
+  chatUserForeground: "#F5F5F5",
+  muted: "#1F1F1F",
+  mutedForeground: "#F5F5F5A8",
+  faintForeground: "#F5F5F58A",
+  accent: "#F5F5F50F",
+  accentForeground: "#F5F5F5",
+  destructive: "#FF6463",
+  destructiveFill: "#CF2B35",
+  border: "#F5F5F51A",
+  input: "#F5F5F538",
+  ring: "#1884FC",
+  sidebar: "#0E0E0E",
+  sidebarForeground: "#F5F5F5",
+  sidebarBorder: "#F5F5F51A",
+  sidebarAccent: "#F5F5F514",
+  sidebarAccentForeground: "#F5F5F5",
+  link: "#4D9BFF",
+  success: "#00BA69",
+  warning: "#E28600",
+  statusWorking: "#4D9BFF",
+  unread: "#4D9BFF",
+  workingDot: "#0E9F5A",
+  overlay: "#000000B2",
+  scrollbar: "#F5F5F538",
+  scrollbarHover: "#F5F5F580",
+} as const satisfies Partial<WebColorTokens>;
+
+export const webLightOverrides = {
+  background: "#FFFFFF",
+  foreground: "#1C1C1C",
+  card: "#F2F2F2",
+  cardForeground: "#1C1C1C",
+  popoverForeground: "#1C1C1C",
+  primary: "#1C1C1C",
+  primaryHover: "#363636",
+  primaryDisabled: "#1C1C1C26",
+  primaryForeground: "#FCFCFC",
+  secondary: "#1C1C1C0F",
+  secondaryForeground: "#1C1C1C",
+  chatUser: "#1C1C1C",
+  muted: "#F2F2F2",
+  mutedForeground: "#1C1C1CAD",
+  faintForeground: "#1C1C1C8F",
+  accent: "#1C1C1C0F",
+  accentForeground: "#1C1C1C",
+  destructive: "#CD2834",
+  destructiveFill: "#E72E3B",
+  border: "#1C1C1C1F",
+  input: "#1C1C1C3D",
+  ring: "#1E86FC",
+  sidebar: "#F5F5F5",
+  sidebarForeground: "#1C1C1C",
+  sidebarBorder: "#1C1C1C1F",
+  sidebarAccent: "#1C1C1C14",
+  sidebarAccentForeground: "#1C1C1C",
+  link: "#0B6DD3",
+  success: "#00854A",
+  warning: "#AA6300",
+  statusWorking: "#0B6DD3",
+  unread: "#0B6DD3",
+  workingDot: "#10AB61",
+  overlay: "#00000080",
+  scrollbar: "#1C1C1C3D",
+  scrollbarHover: "#1C1C1C85",
+} as const satisfies Partial<WebColorTokens>;
+
+export const webDarkTokens: WebColorTokens = { ...darkTokens, ...webDarkOverrides };
+export const webLightTokens: WebColorTokens = { ...lightTokens, ...webLightOverrides };
+
 /** Dark palette. Prefer `tokensForAppearance` when theme-aware. */
 export const tokens = darkTokens;
 
@@ -178,6 +274,9 @@ export const typeScale = {
  * accessibility sizes keep that size, so message bubbles, rows and cards keep their layout.
  */
 export const MAX_FONT_SCALE = 23 / typeScale.body.fontSize;
+
+/** The ink of a drawn bot's eyes, the same on every body colour and in both themes. */
+export const botEyeColor = "#101014";
 
 export const botColors = [
   "#3EC5A8",
@@ -248,6 +347,11 @@ export function tokensForAppearance(appearance: ResolvedAppearance): ColorTokens
   return appearance === "light" ? lightTokens : darkTokens;
 }
 
+/** The web and Electron palette; `tokensForAppearance` is the mobile one. */
+export function webTokensForAppearance(appearance: ResolvedAppearance): WebColorTokens {
+  return appearance === "light" ? webLightTokens : webDarkTokens;
+}
+
 function readStoredAppearance(storage: Pick<Storage, "getItem"> | null | undefined): string | null {
   if (!storage) return null;
   try {
@@ -258,22 +362,22 @@ function readStoredAppearance(storage: Pick<Storage, "getItem"> | null | undefin
 }
 
 /** `cardForeground` -> `--card-foreground` */
-export function cssVariableName(token: keyof ColorTokens): string {
+export function cssVariableName(token: keyof WebColorTokens): string {
   return `--${token.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
 }
 
-function renderBlock(selector: string, colorScheme: ResolvedAppearance, palette: ColorTokens) {
-  const lines = (Object.keys(palette) as (keyof ColorTokens)[]).map(
+function renderBlock(selector: string, colorScheme: ResolvedAppearance, palette: WebColorTokens) {
+  const lines = (Object.keys(palette) as (keyof WebColorTokens)[]).map(
     (token) => `  ${cssVariableName(token)}: ${palette[token].toLowerCase()};`,
   );
   return `${selector} {\n  color-scheme: ${colorScheme};\n${lines.join("\n")}\n  --radius: ${RADIUS};\n}`;
 }
 
-/** The CSS in `tokens.css`. Generated from the TS palette so both stay in sync. */
+/** The CSS in `tokens.css` (web and Electron). Generated from the web palettes so both stay in sync. */
 export function renderTokensCss(): string {
   return `${[
     "/* Generated by `pnpm --filter @rakazo/ui-tokens generate`. Edit src/index.ts instead. */",
-    renderBlock(':root,\n[data-theme="dark"]', "dark", darkTokens),
-    renderBlock('[data-theme="light"]', "light", lightTokens),
+    renderBlock(':root,\n[data-theme="dark"]', "dark", webDarkTokens),
+    renderBlock('[data-theme="light"]', "light", webLightTokens),
   ].join("\n\n")}\n`;
 }

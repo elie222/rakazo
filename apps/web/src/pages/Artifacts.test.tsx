@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ listSpace: vi.fn() }));
-vi.mock("../lib/rpc", () => ({ rpc: { artifacts: api } }));
+const rpcClient = vi.hoisted(() => ({ artifacts: api, bootstrap: vi.fn() }));
+vi.mock("../lib/rpc", () => ({
+  rpc: rpcClient,
+  rpcForSpace: () => rpcClient,
+  createSpaceRpc: () => rpcClient,
+  selectedSpaceId: () => null,
+}));
 vi.mock("../lib/bootstrap", () => ({
   takeInitialBootstrap: vi.fn().mockResolvedValue({ bots: [] }),
 }));
@@ -75,17 +82,26 @@ function typeSearch(container: HTMLElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+let queryClient: QueryClient;
+beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+});
+
 async function renderArtifacts() {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () =>
     root.render(
-      <MemoryRouter initialEntries={["/app/artifacts"]}>
-        <ArtifactsPage />
-      </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/app/artifacts"]}>
+          <ArtifactsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
     ),
   );
+  // Let query results reach the screen.
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
   return {
     container,
     async cleanup() {
@@ -140,7 +156,10 @@ it("keeps loading later pages when search hides the current snapshot", async () 
       });
     });
     expect(page.container.textContent).not.toContain("Alpha notes");
-    expect(api.listSpace).toHaveBeenCalledWith(expect.objectContaining({ cursor: "artifact-1" }));
+    expect(api.listSpace).toHaveBeenCalledWith(
+      expect.objectContaining({ cursor: "artifact-1" }),
+      expect.anything(),
+    );
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();
@@ -188,6 +207,37 @@ it("still offers Load more when filters match nothing on the loaded page", async
       await vi.waitFor(() => {
         expect(page.container.textContent).toContain("Beta report");
       });
+    });
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reopens with cached artifacts and refreshes them in the background", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.listSpace.mockReset().mockResolvedValue({
+    items: [artifact("Cached notes", "artifact-1")],
+    nextCursor: null,
+  });
+  const first = await renderArtifacts();
+  expect(first.container.textContent).toContain("Cached notes");
+  await first.cleanup();
+  await queryClient.invalidateQueries();
+
+  let finish: (page: { items: ReturnType<typeof artifact>[]; nextCursor: null }) => void = () =>
+    undefined;
+  api.listSpace.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  const page = await renderArtifacts();
+  try {
+    // Painted from the cache while the refresh is still out, with no spinner.
+    expect(page.container.textContent).toContain("Cached notes");
+    expect(page.container.querySelector('[aria-label="Loading…"]')).toBeNull();
+    await act(async () =>
+      finish({ items: [artifact("Fresh report", "artifact-2")], nextCursor: null }),
+    );
+    await act(async () => {
+      await vi.waitFor(() => expect(page.container.textContent).toContain("Fresh report"));
     });
   } finally {
     await page.cleanup();

@@ -1,15 +1,10 @@
 import type { Message, MutableModels, Provider, TranscriptContext } from "@earendil-works/pi-ai";
 
 /**
- * A tool call is only replayable when it carries a name. Some OpenAI-compatible
- * gateways stream tool-call deltas whose `function.name` never arrives, and some
- * models replay a call for a tool that was never declared. pi-ai keeps such a
- * block with an empty name, and the gateway then rejects the whole transcript on
- * the next turn with `messages[N].tool_calls[0] is missing a function name`.
- *
- * The call can neither be executed nor replayed, so it is dropped together with
- * the result that belongs to it. The alternative — sending it back — fails the
- * request outright.
+ * Some OpenAI-compatible gateways stream tool-call deltas whose `function.name`
+ * never arrives. pi-ai keeps such a block with an empty name, and the gateway
+ * then rejects the whole transcript on the next turn, so the call is dropped
+ * together with its result.
  */
 function hasToolCallName(name: string | undefined): boolean {
   return typeof name === "string" && name.trim().length > 0;

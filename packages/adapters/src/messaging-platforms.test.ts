@@ -1,14 +1,14 @@
-import { WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
@@ -44,6 +44,14 @@ describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
     expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+  });
+
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
   });
 
   it("requires all four sendblue values", () => {
@@ -382,10 +390,47 @@ describe("parseWhatsAppStatuses", () => {
 });
 
 describe("splitOutboundBody", () => {
-  it("splits only WhatsApp bodies over its per-message limit", () => {
+  it.each(["telegram", "telegram-work"])(
+    "splits %s replies on paragraph boundaries",
+    (provider) => {
+      const paragraph = "a".repeat(3000);
+      expect(splitOutboundBody(provider, `${paragraph}\n\n${paragraph}`)).toEqual([
+        paragraph,
+        paragraph,
+      ]);
+      expect(splitOutboundBody(provider, "short")).toEqual(["short"]);
+      expect(splitOutboundBody(provider, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
+    },
+  );
+
+  it.each([
+    "a".repeat(4097),
+    `${"a".repeat(4095)}😀${"b".repeat(4096)}`,
+    "😀".repeat(4097),
+    "!".repeat(4096),
+  ])("preserves the full text without breaking UTF-16 pairs", (body) => {
+    const parts = splitOutboundBody("telegram", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it.each([
+    ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
+    ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+  ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
+    const parts = splitOutboundBody("whatsapp", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
+    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

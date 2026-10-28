@@ -27,5 +27,7 @@ Run one section:
 pnpm ios:screenshots -- --section settings
 ```
 
+For iPhone Duo screenshots, set `SIM_UDID` to the iPhone Duo simulator, opened.
+
 Output defaults to `test-report/ios-screenshots` (gitignored). Override it with
 `IOS_SCREENSHOT_OUT`. Open `index.html` in that folder. Maestro must be on `PATH`.

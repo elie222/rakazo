@@ -14,7 +14,6 @@ test("opening a bot reply link asks before leaving the app", async ({ page }, te
   await completeOnboarding(page);
 
   const composer = page.getByRole("combobox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
   await composer.fill(`Read the [guide](${destination})`);
   await composer.press("Enter");
 

@@ -43,13 +43,6 @@ export class CannotDeleteLastSpaceError extends Error {
   }
 }
 
-export class SpaceNotEmptyError extends Error {
-  constructor() {
-    super("Delete its bots and groups first");
-    this.name = "SpaceNotEmptyError";
-  }
-}
-
 export class CannotDeleteSpaceAsNonOwnerError extends Error {
   constructor() {
     super("Only the space owner can delete it");
@@ -75,14 +68,7 @@ export const SPACE_DELETION_CLAIM_TIMEOUT_MS = 5 * 60_000;
 
 type SpaceClient = Pick<
   PrismaClient,
-  | "space"
-  | "spaceMember"
-  | "spaceModelPreference"
-  | "spaceVoicePreference"
-  | "memoryDocument"
-  | "notificationPreference"
-  | "bot"
-  | "chatGroup"
+  "space" | "spaceMember" | "memoryDocument" | "notificationPreference" | "bot" | "chatGroup"
 >;
 
 interface CreateSpaceInput {
@@ -135,49 +121,6 @@ async function createSpaceDefaults(
       userId: input.userId,
     },
   });
-}
-
-async function copyProviderPreferences(
-  prisma: SpaceClient,
-  input: { sourceSpaceId: string; targetSpaceId: string; userId: string; createdAt: Date },
-): Promise<void> {
-  const [modelPreferences, voicePreferences] = await Promise.all([
-    prisma.spaceModelPreference.findMany({
-      where: { spaceId: input.sourceSpaceId, userId: input.userId },
-    }),
-    prisma.spaceVoicePreference.findMany({
-      where: { spaceId: input.sourceSpaceId, userId: input.userId },
-    }),
-  ]);
-  await Promise.all([
-    modelPreferences.length
-      ? prisma.spaceModelPreference.createMany({
-          data: modelPreferences.map((preference) => ({
-            spaceId: input.targetSpaceId,
-            userId: input.userId,
-            credentialId: preference.credentialId,
-            modelId: preference.modelId,
-            isDefault: preference.isDefault,
-            createdAt: input.createdAt,
-            updatedAt: input.createdAt,
-          })),
-        })
-      : Promise.resolve(),
-    voicePreferences.length
-      ? prisma.spaceVoicePreference.createMany({
-          data: voicePreferences.map((preference) => ({
-            spaceId: input.targetSpaceId,
-            userId: input.userId,
-            credentialId: preference.credentialId,
-            voiceId: preference.voiceId,
-            speechModel: preference.speechModel,
-            isDefault: preference.isDefault,
-            createdAt: input.createdAt,
-            updatedAt: input.createdAt,
-          })),
-        })
-      : Promise.resolve(),
-  ]);
 }
 
 function normalizeSpaceName(name: string): string {
@@ -233,12 +176,6 @@ export async function createSpaceForMember(
           userId: input.userId,
           memoryContent: "# Space memory\n\n",
         });
-        await copyProviderPreferences(tx, {
-          sourceSpaceId: input.currentSpaceId,
-          targetSpaceId: spaceId,
-          userId: input.userId,
-          createdAt,
-        });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
@@ -281,8 +218,6 @@ async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string):
 
 type ClaimedSpaceDeleteInput = SpaceMemberTargetInput & { claimId: string };
 
-type SpaceDeleteDb = Pick<PrismaClient, "spaceMember" | "bot" | "chatGroup" | "computer">;
-
 async function loadActorSpace(
   db: Pick<PrismaClient, "spaceMember">,
   input: SpaceMemberTargetInput,
@@ -321,18 +256,11 @@ async function loadActorSpace(
   };
 }
 
-async function assertEmptySpaceDeletable(
-  db: SpaceDeleteDb,
+/** Owner of a non-default Space that is not their last one in the organization. */
+async function assertSpaceDeletable(
+  db: Pick<PrismaClient, "spaceMember">,
   input: SpaceMemberTargetInput,
-): Promise<{
-  organizationId: string;
-  memberships: Array<{
-    spaceId: string;
-    createdAt: Date;
-    space: { isDefault: boolean };
-  }>;
-  computers: Array<{ homeKey: string; kind: string; providerRef: string }>;
-}> {
+): Promise<Array<{ spaceId: string; space: { isDefault: boolean } }>> {
   const owned = await loadActorSpace(db, input);
   if (owned.role !== "owner") throw new CannotDeleteSpaceAsNonOwnerError();
   if (owned.isDefault) throw new CannotDeleteDefaultSpaceError();
@@ -341,58 +269,31 @@ async function assertEmptySpaceDeletable(
       userId: input.userId,
       organizationId: owned.organizationId,
     },
-    select: {
-      spaceId: true,
-      createdAt: true,
-      space: { select: { isDefault: true } },
-    },
+    select: { spaceId: true, space: { select: { isDefault: true } } },
     orderBy: { createdAt: "asc" },
   });
   if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
-  const [botCount, groupCount, computers] = await Promise.all([
-    db.bot.count({ where: { spaceId: input.spaceId } }),
-    db.chatGroup.count({ where: { spaceId: input.spaceId } }),
-    db.computer.findMany({
-      where: { spaceId: input.spaceId, providerRef: { not: null } },
-      select: { homeKey: true, kind: true, providerRef: true },
-    }),
-  ]);
-  if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
-  return {
-    organizationId: owned.organizationId,
-    memberships,
-    computers: computers.flatMap((computer) =>
-      computer.providerRef
-        ? [{ homeKey: computer.homeKey, kind: computer.kind, providerRef: computer.providerRef }]
-        : [],
-    ),
-  };
+  return memberships;
 }
 
-/** Claim an empty Space before external teardown.
- *
- * Content creation takes the same advisory lock and rejects a claimed Space,
- * so no bot or group can appear after this emptiness check. A stale claim may
- * be retried after five minutes if a process exits. Takeover is safe because
- * provider destroy is idempotent (missing remotes succeed), every worker
- * verifies its claim token before and after each destroy, provider-handle
- * clearing is conditioned on the claim token, and no worker releases its
- * claim after external teardown starts — so content can never be unblocked
- * while an old destroy may still be in flight. */
-export async function claimEmptySpaceDeletionForMember(
+/**
+ * Claim a Space before tearing down its content. Bot and group creation take the same
+ * advisory lock and reject a claimed Space, so once claimed it only loses content. A stale
+ * claim may be taken over after five minutes; that is safe because destroys are idempotent,
+ * every worker verifies its claim token before and after each destroy, provider-handle
+ * clearing is conditioned on the claim token, and no worker releases its claim once
+ * destructive teardown starts.
+ */
+export async function claimSpaceDeletionForMember(
   prisma: PrismaClient,
   input: SpaceMemberTargetInput,
-): Promise<{
-  claimId: string;
-  recovered: boolean;
-  computers: Array<{ homeKey: string; kind: string; providerRef: string }>;
-}> {
+): Promise<{ claimId: string; recovered: boolean }> {
   const claimId = randomUUID();
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
         await lockSpaceDeletion(tx, input.spaceId);
-        const planned = await assertEmptySpaceDeletable(tx, input);
+        await assertSpaceDeletable(tx, input);
         const lifecycle = await tx.space.findUnique({
           where: { id: input.spaceId },
           select: { deletingAt: true },
@@ -406,18 +307,51 @@ export async function claimEmptySpaceDeletionForMember(
           data: { deletingAt: new Date(), deletionClaimId: claimId },
         });
         if (claimed.count === 0) throw new SpaceDeletionInProgressError();
-        return {
-          claimId,
-          recovered: Boolean(lifecycle?.deletingAt),
-          computers: planned.computers,
-        };
+        return { claimId, recovered: Boolean(lifecycle?.deletingAt) };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
 }
 
-/** Renew an active claim while provider teardown is in flight. */
+/** Every bot of a claimed Space, archived and other members' included, for per-bot teardown. */
+export async function listClaimedSpaceBots(
+  prisma: Pick<PrismaClient, "bot">,
+  input: ClaimedSpaceDeleteInput,
+) {
+  return prisma.bot.findMany({
+    where: { spaceId: input.spaceId, space: { deletionClaimId: input.claimId } },
+    select: {
+      id: true,
+      userId: true,
+      spaceId: true,
+      name: true,
+      archivedAt: true,
+      computerId: true,
+      webhookSecretId: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+/** Sandboxes still provisioned in a claimed Space once its bots are gone (team computers). */
+export async function listClaimedSpaceComputers(
+  prisma: Pick<PrismaClient, "computer">,
+  input: ClaimedSpaceDeleteInput,
+): Promise<Array<{ id: string; homeKey: string; kind: string; providerRef: string }>> {
+  const computers = await prisma.computer.findMany({
+    where: {
+      spaceId: input.spaceId,
+      providerRef: { not: null },
+      space: { deletionClaimId: input.claimId },
+    },
+    select: { id: true, homeKey: true, kind: true, providerRef: true },
+  });
+  return computers.flatMap((computer) =>
+    computer.providerRef ? [{ ...computer, providerRef: computer.providerRef }] : [],
+  );
+}
+
 export async function renewSpaceDeletionClaim(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
@@ -433,7 +367,7 @@ export async function renewSpaceDeletionClaim(
   return renewed.count === 1;
 }
 
-/** Release only this caller's deletion claim after teardown or validation fails. */
+/** Release only this caller's deletion claim when nothing has been torn down yet. */
 export async function releaseSpaceDeletionClaim(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
@@ -448,23 +382,17 @@ export async function releaseSpaceDeletionClaim(
   });
 }
 
-/** Delete an empty, non-default privacy boundary.
- *
- * Only the SpaceMember owner may delete, and only empty spaces: bots
- * (including archived) and groups would otherwise orphan sandbox computers and
- * files that `destroyBot` cleans up per bot. Callers must destroy any leftover
- * team sandboxes and clear those providerRefs before invoking this so a failed
- * `sandbox.destroy` cannot lose the only persisted handle, and a failed delete
- * cannot leave a stale ref to a destroyed sandbox. Callers should surface
- * `SpaceNotEmptyError` as "delete its bots and groups first" so an empty space
- * is always deletable in two steps without an onboarding trap. Returns the
- * space the client should switch to when the active space was deleted (the
- * current space when deleting another; otherwise the default, else the oldest
- * remaining). */
-export async function deleteEmptySpaceForMember(
+/**
+ * Delete a claimed, non-default Space and everything left in it. Callers must first
+ * destroy every bot and leftover sandbox, clearing its providerRef, so a failed external
+ * destroy never loses the only persisted handle; remaining rows go by cascade. Returns the
+ * stored artifacts and computer homes to remove after commit, and the space the client
+ * should switch to when the active space was deleted.
+ */
+export async function deleteClaimedSpaceForMember(
   prisma: PrismaClient,
   input: ClaimedSpaceDeleteInput,
-): Promise<{ id: string }> {
+): Promise<{ id: string; artifactKeys: string[]; homeKeys: string[] }> {
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
@@ -474,24 +402,154 @@ export async function deleteEmptySpaceForMember(
           select: { id: true },
         });
         if (!claim) throw new SpaceDeletionInProgressError();
-        const planned = await assertEmptySpaceDeletable(tx, input);
+        const memberships = await assertSpaceDeletable(tx, input);
+        const [remainingBots, provisioned, artifacts, computers] = await Promise.all([
+          tx.bot.count({ where: { spaceId: input.spaceId } }),
+          tx.computer.count({ where: { spaceId: input.spaceId, providerRef: { not: null } } }),
+          tx.artifact.findMany({
+            where: { spaceId: input.spaceId },
+            select: { storageKey: true },
+          }),
+          tx.computer.findMany({ where: { spaceId: input.spaceId }, select: { homeKey: true } }),
+        ]);
+        // Content creation is blocked while claimed, so this only trips when teardown
+        // was cut short; a retry finishes it.
+        if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         await tx.space.delete({ where: { id: input.spaceId } });
+        const removed = {
+          artifactKeys: artifacts.map((artifact) => artifact.storageKey),
+          homeKeys: computers.map((computer) => computer.homeKey),
+        };
         if (input.spaceId !== input.currentSpaceId) {
-          return { id: input.currentSpaceId };
+          return { id: input.currentSpaceId, ...removed };
         }
-        const remaining = planned.memberships.filter(
-          (membership) => membership.spaceId !== input.spaceId,
-        );
+        const remaining = memberships.filter((membership) => membership.spaceId !== input.spaceId);
         const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
         if (!fallback) throw new CannotDeleteLastSpaceError();
-        return { id: fallback.spaceId };
+        return { id: fallback.spaceId, ...removed };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
 }
 
-/** Rename a space the caller owns in the active organization. */
+/** Organizations whose only member is this user; they are deleted with the account. */
+export async function personalOrganizationIds(
+  prisma: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<string[]> {
+  const memberships = await prisma.member.findMany({
+    where: { userId },
+    select: {
+      organizationId: true,
+      organization: { select: { members: { select: { userId: true } } } },
+    },
+  });
+  return memberships
+    .filter(({ organization }) => organization.members.every((member) => member.userId === userId))
+    .map(({ organizationId }) => organizationId);
+}
+
+/**
+ * Claim the spaces nobody else can use once this account is gone: every space of its personal
+ * organizations, and spaces elsewhere where it is the only member. A claimed space refuses new
+ * content, so nobody who joins later can lose a bot to the teardown. A retry after a failed
+ * deletion keeps every space this account already claimed, even one someone has since joined,
+ * so the last step can release it. A space another deletion is still working on fails the
+ * account deletion until that claim finishes or goes stale.
+ */
+export async function claimSpacesLeavingWithAccount(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<string[]> {
+  const organizationIds = await personalOrganizationIds(prisma, userId);
+  const claimId = accountDeletionClaimId(userId);
+  const candidates = await prisma.space.findMany({
+    where: {
+      OR: [
+        { organizationId: { in: organizationIds } },
+        { memberships: { some: { userId }, every: { userId } } },
+        { deletionClaimId: claimId },
+      ],
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const claimed: string[] = [];
+  for (const { id } of candidates) {
+    const won = await withTransactionRetry(() =>
+      prisma.$transaction(
+        async (tx) => {
+          await lockSpaceDeletion(tx, id);
+          const space = await tx.space.findUnique({
+            where: { id },
+            select: { deletingAt: true, deletionClaimId: true },
+          });
+          if (!space) return false;
+          if (space.deletionClaimId === claimId) return true;
+          const others = await tx.spaceMember.count({
+            where: { spaceId: id, userId: { not: userId } },
+          });
+          if (others > 0) return false;
+          const stale = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
+          if (space.deletionClaimId && space.deletingAt && space.deletingAt >= stale)
+            throw new SpaceDeletionInProgressError();
+          await tx.space.update({
+            where: { id },
+            data: { deletingAt: new Date(), deletionClaimId: claimId },
+          });
+          return true;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    );
+    if (won) claimed.push(id);
+  }
+  return claimed;
+}
+
+/**
+ * Delete a space claimed by `claimSpacesLeavingWithAccount`, once its bots and sandboxes are
+ * gone. Rows left in it go by cascade, and its keys with it. Returns the stored artifacts to
+ * remove after commit, or null when someone joined after the claim: the space stays, unclaimed.
+ */
+export async function deleteSpaceLeavingWithAccount(
+  prisma: PrismaClient,
+  input: { spaceId: string; userId: string },
+): Promise<{ artifactKeys: string[] } | null> {
+  const claimId = accountDeletionClaimId(input.userId);
+  return withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        await lockSpaceDeletion(tx, input.spaceId);
+        const [others, remainingBots, remainingComputers, artifacts] = await Promise.all([
+          tx.spaceMember.count({
+            where: { spaceId: input.spaceId, userId: { not: input.userId } },
+          }),
+          tx.bot.count({ where: { spaceId: input.spaceId } }),
+          tx.computer.count({ where: { spaceId: input.spaceId } }),
+          tx.artifact.findMany({
+            where: { spaceId: input.spaceId },
+            select: { storageKey: true },
+          }),
+        ]);
+        if (others > 0) {
+          await tx.space.updateMany({
+            where: { id: input.spaceId, deletionClaimId: claimId },
+            data: { deletingAt: null, deletionClaimId: null },
+          });
+          return null;
+        }
+        // Teardown was cut short; deleting again finishes it.
+        if (remainingBots > 0 || remainingComputers > 0) throw new SpaceDeletionInProgressError();
+        await tx.space.deleteMany({ where: { id: input.spaceId, deletionClaimId: claimId } });
+        return { artifactKeys: artifacts.map((artifact) => artifact.storageKey) };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  );
+}
+
 export async function renameSpaceForMember(
   prisma: PrismaClient,
   input: SpaceMemberTargetInput & { name: string },
@@ -513,4 +571,9 @@ export async function renameSpaceForMember(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
+}
+
+/** Stable per account, so a retried deletion keeps its own claims. */
+function accountDeletionClaimId(userId: string) {
+  return `account-deletion:${userId}`;
 }

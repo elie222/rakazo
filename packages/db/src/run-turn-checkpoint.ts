@@ -73,6 +73,23 @@ export async function saveRunTurnCheckpoint(
   });
 }
 
+/** Drop a running run's saved turn, only while this worker still holds its lease. */
+export async function dropRunTurnCheckpoint(
+  prisma: PrismaClient,
+  run: { id: string; spaceId: string },
+  leaseOwner: string,
+  leaseFence: number,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const locked = await tx.run.updateMany({
+      where: { id: run.id, spaceId: run.spaceId, status: "running", leaseOwner, leaseFence },
+      data: { leaseFence },
+    });
+    if (locked.count !== 1) throw new Error("Run lease expired before checkpoint");
+    await clearRunTurnCheckpoints(tx, [run.id]);
+  });
+}
+
 /** Call after the terminal status write; its fence rejects later checkpoint writes. */
 export async function clearRunTurnCheckpoints(
   prisma: Pick<PrismaClient, "externalEffect">,

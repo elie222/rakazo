@@ -1,12 +1,53 @@
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
+import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 
-/** Subscription states that let an organization use the product. */
 const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
 
 export function hasBillingAccess(status: string | null): boolean {
   return status !== null && ACCESS_STATUSES.has(status);
+}
+
+/**
+ * Whether a model-credit organization can run bots. Any live subscription grants it, as does a
+ * credit balance outside own-key mode. Otherwise only a free own-key plan or free period does.
+ */
+export function hasModelAccess(
+  credits: { mode: string | null; balanceMicros: bigint; byokFreeUntil: Date | null },
+  subscriptionStatus: string | null,
+  now = new Date(),
+): boolean {
+  if (hasBillingAccess(subscriptionStatus)) return true;
+  if (credits.mode === "byok")
+    return BYOK_MONTHLY_PRICE_CENTS === null || byokFreeUntil(credits, now) !== null;
+  if (credits.balanceMicros > 0n) return true;
+  return BYOK_MONTHLY_PRICE_CENTS === null && credits.mode === "credits";
+}
+
+/** The free period's end while it is still running. */
+export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new Date()) {
+  return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
+}
+
+export async function spaceHasModelAccess(prisma: PrismaClient, spaceId: string) {
+  const space = await prisma.space.findUnique({
+    where: { id: spaceId },
+    select: {
+      organization: {
+        select: {
+          modelCredits: { select: { mode: true, balanceMicros: true, byokFreeUntil: true } },
+          billing: { select: { status: true } },
+        },
+      },
+    },
+  });
+  if (!space) return false;
+  const { modelCredits, billing } = space.organization;
+  return hasModelAccess(
+    modelCredits ?? { mode: null, balanceMicros: 0n, byokFreeUntil: null },
+    billing?.status ?? null,
+  );
 }
 
 export function billingAccountForOrganization(
@@ -143,7 +184,6 @@ export async function organizationForMember(
   return { organizationId: space.organizationId, isOwner: isOwnerRole(member.role) };
 }
 
-/** Organizations the user owns that have a billing customer. */
 export async function ownedBillingAccounts(
   prisma: PrismaClient,
   userId: string,

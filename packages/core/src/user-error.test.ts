@@ -111,6 +111,7 @@ describe("userErrorMessage", () => {
   it("passes human messages through and replaces technical ones", () => {
     expect(userErrorMessage(new Error("Bot not found"), copy)).toBe("Bot not found");
     expect(userErrorMessage(new Error("rpc bots/list failed"), copy)).toBe(copy.fallback);
+    expect(userErrorMessage(new Error("Input validation failed"), copy)).toBe(copy.fallback);
     expect(userErrorMessage(new Error("  "), copy)).toBe(copy.fallback);
     expect(userErrorMessage({ message: "Bot not found" }, copy)).toBe(copy.fallback);
     expect(userErrorMessage("Bot not found", copy)).toBe("Bot not found");

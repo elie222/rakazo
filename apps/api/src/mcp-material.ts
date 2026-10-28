@@ -29,22 +29,14 @@ export type McpMaterialUpdate =
   | { action: "keep" }
   | { action: "store"; material: McpSecretMaterial };
 
-/** Compute the next encrypted credential blob for an MCP server update.
- *
- * - "keep": the update carries no credential data; leave the stored blob as is.
- * - "store": rewrite the blob. An empty material means credentials were
- *   cleared entirely — the caller should delete the secret row and null the
- *   server's secretId instead of storing an empty object.
- *
- * env/headers/files use full-replace semantics (the update payload is the
- * complete set), matching the create handler; files are kept when omitted and
- * only exist for stdio servers. OAuth state is preserved unless the
- * endpoint changed, since tokens issued for one endpoint must never be sent to
- * another server. */
+/** An empty "store" material means credentials were cleared: the caller deletes the secret
+ * row and nulls `secretId` instead of storing an empty object. env/headers are full-replace;
+ * files are kept when omitted. OAuth state is dropped when the endpoint changed, since tokens
+ * issued for one endpoint must never be sent to another server. */
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,
-  options: { clearOAuth?: boolean } = {},
+  options: { clearOAuth?: boolean; endpointChanged?: boolean } = {},
 ): McpMaterialUpdate {
   const client = nextOAuthClient(
     existing.oauthClient,
@@ -70,10 +62,23 @@ export function buildMcpUpdateMaterial(
     };
   }
   const secret = "secret" in config && config.secret ? config.secret : undefined;
-  const env = "env" in config ? config.env : undefined;
-  const headers = "headers" in config ? config.headers : undefined;
+  // Clients never read stored values back, so a blank one keeps what is stored under its
+  // name, unless that would send it to a different endpoint.
+  const keepBlank = (next: Record<string, string>, stored: Record<string, string> = {}) =>
+    options.endpointChanged
+      ? next
+      : Object.fromEntries(
+          Object.entries(next).map(([name, value]) => [name, value || (stored[name] ?? "")]),
+        );
+  const env = "env" in config ? keepBlank(config.env, material.env) : undefined;
+  const headers = "headers" in config ? keepBlank(config.headers, material.headers) : undefined;
   const { files: storedFiles, ...withoutFiles } = material;
-  const files = config.transport === "stdio" ? (config.files ?? storedFiles) : undefined;
+  const files =
+    config.transport === "stdio"
+      ? config.files
+        ? keepBlank(config.files, storedFiles)
+        : storedFiles
+      : undefined;
   const hasFiles = files !== undefined && Object.keys(files).length > 0;
   const existingHasMaterial = Boolean(
     material.secret ||

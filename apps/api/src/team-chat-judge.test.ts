@@ -1,10 +1,17 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import {
-  ModelTeamChatEngagementJudge,
+  ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
   renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+
+class ModelTeamChatEngagementJudge extends Judge {
+  constructor(deps: ConstructorParameters<typeof Judge>[0]) {
+    super({ ...deps, prisma: withModelRoles(deps.prisma) });
+  }
+}
 
 describe("team chat engagement judge", () => {
   it("renders untrusted messages without treating them as instructions", () => {
@@ -50,7 +57,7 @@ describe("team chat engagement judge", () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
-      spaceModelPreference: {
+      userModelPreference: {
         findFirst: vi.fn(async () => ({
           credential: {
             id: "credential-fixture",
@@ -58,11 +65,17 @@ describe("team chat engagement judge", () => {
             secretId: "secret-fixture",
           },
           modelId: "model-fixture",
-          isDefault: true,
         })),
       },
       secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext: "encrypted" })) },
     };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        "openai-compatible",
+        "model-fixture",
+      ),
+    ]);
     const run = vi.fn((_request: unknown) => {
       throw new Error("upstream echoed route-value-fixture 12345678 us");
     });
@@ -124,7 +137,7 @@ describe("team chat engagement judge", () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
-      spaceModelPreference: { findFirst: vi.fn(async () => null) },
+      userModelPreference: { findFirst: vi.fn(async () => null) },
       $transaction: async (work: (tx: unknown) => Promise<unknown>) =>
         work({ usageRecord: { createMany } }),
     };
@@ -218,7 +231,7 @@ describe("team chat engagement judge", () => {
         const judge = new ModelTeamChatEngagementJudge({
           prisma: {
             deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
-            spaceModelPreference: {
+            userModelPreference: {
               findFirst: async () =>
                 personal
                   ? {
@@ -274,7 +287,7 @@ describe("team chat engagement judge", () => {
     const judge = new ModelTeamChatEngagementJudge({
       prisma: {
         deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
-        spaceModelPreference: { findFirst: async () => null },
+        userModelPreference: { findFirst: async () => null },
         space: { findUnique: async () => ({ organizationId: "org" }) },
         member: { findUnique: async () => ({ role: "owner" }) },
         billingAccount: { findUnique: async () => null },
@@ -313,7 +326,7 @@ describe("team chat engagement judge", () => {
       const prisma = {
         user: { findUnique },
         deploymentSettings: { findUnique: vi.fn(async () => null) },
-        spaceModelPreference: { findFirst: vi.fn(async () => null) },
+        userModelPreference: { findFirst: vi.fn(async () => null) },
         usageRecord: { create: vi.fn(async () => ({ id: "usage-1" })) },
       };
       let instructions = "";

@@ -67,15 +67,12 @@ function normalizePath(pathname: string): string {
   return pathname.replace(/\/+$/, "");
 }
 
-export function noindexPathnames(): string[] {
-  return BLOG_CATEGORIES.filter((category) => !categoryIsIndexed(category)).map((category) =>
-    categoryPath(category),
-  );
-}
-
 /** True when a built URL should appear in the sitemap. */
 export function isIndexedPath(pathname: string): boolean {
   const normalized = normalizePath(pathname);
   if (normalized.endsWith(".xml")) return false;
-  return !noindexPathnames().some((path) => normalizePath(path) === normalized);
+  const category = BLOG_CATEGORIES.find(
+    (candidate) => normalizePath(categoryPath(candidate)) === normalized,
+  );
+  return category === undefined || categoryIsIndexed(category);
 }

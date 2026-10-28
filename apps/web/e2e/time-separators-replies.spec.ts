@@ -31,16 +31,21 @@ test("a short reply thread shows one time separator and navigates to its parent"
   await parent.hover();
   await parent.getByRole("button", { name: "Reply", exact: true }).click();
   await captureScreenshot(page, testInfo, "time-separator-reply-composer");
-  await composer.fill("Start with the mobile changes.");
+  await composer.fill("OK");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByTestId("reply-chip")).toHaveCount(0);
   const reply = transcript
     .locator("[data-message-id]")
     .filter({ has: page.getByTestId("message-user-bubble") })
-    .filter({ hasText: "Start with the mobile changes." })
+    .filter({ hasText: "OK" })
     .first();
   const quote = reply.getByTestId("reply-parent-preview");
   await expect(quote).toHaveText("↩ You: Let's review the release notes.");
+  // A quote wider than its bubble must not pull the user bubble off the right edge.
+  const quoteBox = (await quote.boundingBox())!;
+  const bubbleBox = (await reply.getByTestId("message-user-bubble").boundingBox())!;
+  expect(quoteBox.width).toBeGreaterThan(bubbleBox.width);
+  expect(bubbleBox.x + bubbleBox.width).toBeCloseTo(quoteBox.x + quoteBox.width, 0);
   await expect(transcript.getByTestId("time-separator")).toHaveCount(1);
   await expect(transcript.getByTestId("time-separator")).toContainText("Today");
   await quote.click();

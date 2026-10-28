@@ -111,6 +111,11 @@ describe("foreground AI consent", () => {
     ).toEqual(["model", "memory"]);
     expect(aiConsentTarget({ routineId: "routine-1" })).toEqual({ routineId: "routine-1" });
     expect(aiConsentTarget({ botId: "bot", text: "hello" })).toEqual({ botId: "bot" });
+    // A voice request for the account's copy is asked about the account's provider.
+    expect(aiConsentTarget({ text: "hello", scope: "account" })).toEqual({
+      settingsScope: "account",
+    });
+    expect(aiConsentTarget({ botId: "bot", scope: "elsewhere" })).toEqual({ botId: "bot" });
   });
   it("coalesces concurrent prompts and grants for one account-space recipient", async () => {
     let decide!: (allowed: boolean) => void;

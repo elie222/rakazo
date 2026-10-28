@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   canMarkMessageUnread,
   createChatQueues,
@@ -29,8 +29,9 @@ describe("unreadDividerMessageId", () => {
     expect(unreadDividerMessageId(thread.slice(0, 3), 0, null)).toBeNull();
   });
 
-  it("marks a chat never read from its first bot message", () => {
-    expect(unreadDividerMessageId(thread, -1, null)).toBe("m0");
+  it("shows nothing above the start of a chat never read", () => {
+    expect(unreadDividerMessageId(thread, -1, null)).toBeNull();
+    expect(unreadDividerMessageId(thread.slice(1), -1, null)).toBe("m3");
   });
 
   it("ignores rows without a seq, such as live progress", () => {
@@ -43,7 +44,7 @@ describe("unreadDividerMessageId", () => {
     const latestPage = thread.slice(3);
     expect(unreadDividerMessageId(latestPage, 0, 3)).toBeNull();
     expect(unreadDividerMessageId(latestPage, 2, 3)).toBe("m3");
-    expect(unreadDividerMessageId(latestPage, 0, null)).toBe("m3");
+    expect(unreadDividerMessageId(latestPage, 2, null)).toBeNull();
   });
 
   it("doesn't wait when the loaded page starts with a hidden message right after the cursor", () => {
@@ -112,6 +113,32 @@ describe("createSerialQueue", () => {
     void inOrder(() => new Promise<never>(() => undefined));
     await expect(inOrder(async () => "next")).resolves.toBe("next");
   });
+
+  it("gives each hanging task its own wait cap after it starts", async () => {
+    vi.useFakeTimers();
+    try {
+      const inOrder = createSerialQueue();
+      const started: number[] = [];
+      for (const id of [1, 2]) {
+        void inOrder(() => {
+          started.push(id);
+          return new Promise<never>(() => undefined);
+        });
+      }
+      const last = inOrder(async () => started.push(3));
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(started).toEqual([1, 2]);
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(started).toEqual([1, 2]);
+      await vi.advanceTimersByTimeAsync(1);
+      await last;
+      expect(started).toEqual([1, 2, 3]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("createChatQueues", () => {
@@ -152,6 +179,43 @@ describe("canMarkMessageUnread", () => {
 });
 
 describe("marking unread through a chat's read queue", () => {
+  it("keeps a later read behind mark-unread after an earlier read times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const inOrder = createChatQueues();
+      const started: string[] = [];
+      let unread = false;
+      let finishMarkUnread!: () => void;
+      void inOrder("bot:a", () => {
+        started.push("opening");
+        return new Promise<never>(() => undefined);
+      });
+      const mark = inOrder("bot:a", () => {
+        started.push("mark-unread");
+        return new Promise<void>((resolve) => {
+          finishMarkUnread = () => {
+            unread = true;
+            resolve();
+          };
+        });
+      });
+      const read = inOrder("bot:a", async () => {
+        started.push("read");
+        unread = false;
+      });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(started).toEqual(["opening", "mark-unread"]);
+      finishMarkUnread();
+      await Promise.all([mark, read]);
+      expect(started).toEqual(["opening", "mark-unread", "read"]);
+      expect(unread).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lands after a read already in flight, and a read still queued skips while held", async () => {
     const inOrder = createChatQueues();
     let unread = false;

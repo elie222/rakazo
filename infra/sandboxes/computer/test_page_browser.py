@@ -1,6 +1,7 @@
 """Offline protocol/error regressions for the live browser helper."""
 import importlib.machinery
 import importlib.util
+import json
 from pathlib import Path
 import struct
 import os
@@ -8,11 +9,117 @@ import subprocess
 import sys
 import unittest
 from unittest.mock import Mock, patch
+from urllib.parse import urlsplit
 
 loader = importlib.machinery.SourceFileLoader("page_browser", str(Path(__file__).with_name("rakazo-page-browser")))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 helper = importlib.util.module_from_spec(spec)
 loader.exec_module(helper)
+
+
+MERCHANT = "https://shop.example.test"
+CARD_NUMBER = "4242424242424242"
+
+
+class CardBrowser:
+    """A stand-in Chromium: a merchant page with one card frame in its own CDP session."""
+
+    def __init__(self, frame_url="https://js.stripe.com/v3/elements-inner-card.html", main_found=0, frame_found=1,
+                 kept=None, owned=True, shown=True, top_origin=MERCHANT, on_focus=None, after_key=None,
+                 clears=True):
+        self.frame_url, self.main_found, self.frame_found = frame_url, main_found, frame_found
+        self.kept, self.owned, self.shown, self.top_origin = kept, owned, shown, top_origin
+        self.on_focus, self.after_key, self.clears = on_focus, after_key, clears
+        self.typed, self.cleared, self.focused = "", False, False
+        self.sent, self.evaluated = [], []
+        self.client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        self.client.context_id = 1
+        self.client.call = self.call
+
+    def call(self, method, params=None, *, session_id=None, timeout_s=30.0):
+        params = params or {}
+        self.sent.append((method, params, session_id))
+        if method == "Target.setAutoAttach":
+            self.client._handle_event({"method": "Target.attachedToTarget", "sessionId": session_id, "params": {
+                "sessionId": "frame-session", "targetInfo": {"type": "iframe", "url": self.frame_url}}})
+        elif method == "Page.getFrameTree":
+            frame = {"id": "card-frame", "url": self.frame_url} if session_id == "frame-session" else {"id": "main"}
+            return {"frameTree": {"frame": frame}}
+        elif method == "DOM.getFrameOwner":
+            if not self.owned:
+                raise RuntimeError("DOM.getFrameOwner failed: Frame with given id does not belong to target.")
+            return {"backendNodeId": 7}
+        elif method == "DOM.resolveNode":
+            return {"object": {"objectId": "owner"}}
+        elif method == "Runtime.callFunctionOn":
+            return {"result": {"value": self.shown}}
+        elif method == "Page.createIsolatedWorld":
+            return {"executionContextId": 2}
+        elif method == "Runtime.evaluate":
+            return {"result": {"value": self.evaluate(params["expression"], params["contextId"] == 2)}}
+        elif method == "Input.insertText":
+            self.typed += params["text"]
+            if self.after_key:
+                self.after_key(self)
+        return {}
+
+    def evaluate(self, expression, in_frame):
+        self.evaluated.append(expression)
+        if expression == "location.origin":
+            return urlsplit_origin(self.frame_url) if in_frame else self.top_origin
+        if "snapshot()" in expression:
+            return {"url": MERCHANT, "title": "", "elements": [], "tree": "Checkout", "frames": True}
+        if "findCard(" in expression:
+            return self.frame_found if in_frame else self.main_found
+        if "hasCardField()" in expression:
+            return in_frame and self.frame_found > 0
+        if "focusCard()" in expression:
+            self.focused = True
+            if self.on_focus:
+                self.on_focus(self)
+            return True
+        if "cardHolds()" in expression:
+            return self.focused
+        if "cardTyped(" in expression:
+            kept = len(self.typed) if self.kept is None else self.kept
+            return kept == int(expression.split("(")[-1].rstrip(")"))
+        if "emptyCard()" in expression:
+            self.cleared = True
+            if self.clears:
+                self.typed, self.kept = "", None
+            return None
+        return True
+
+
+PAY_TOKEN = "lpt_fake_secret_token"
+
+
+class PayTokenBrowser(CardBrowser):
+    """A merchant page whose pay token block is in the page or in a frame it shows."""
+
+    def __init__(self, main_account=None, frame_account="acct_fake123", accepted=True, **kwargs):
+        super().__init__(**kwargs)
+        self.main_account, self.frame_account, self.accepted = main_account, frame_account, accepted
+        self.handed = []
+
+    def call(self, method, params=None, *, session_id=None, timeout_s=30.0):
+        if method == "Runtime.callFunctionOn" and "arguments" in params:
+            self.sent.append((method, params, session_id))
+            self.handed.append((params["arguments"][0]["value"], session_id, params["executionContextId"]))
+            if self.on_focus:
+                self.on_focus(self)
+            return {"result": {"value": self.accepted}}
+        return super().call(method, params, session_id=session_id, timeout_s=timeout_s)
+
+    def evaluate(self, expression, in_frame):
+        if "payTokenAccount()" in expression:
+            return self.frame_account if in_frame else self.main_account
+        return super().evaluate(expression, in_frame)
+
+
+def urlsplit_origin(url):
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
 
 
 class PageBrowserTest(unittest.TestCase):
@@ -182,12 +289,30 @@ class PageBrowserTest(unittest.TestCase):
                 patch.object(helper, "eval_json") as evaluate:
             evaluate.side_effect = [True, {}]
             helper.act(Mock(), "session", [
-                {"kind": "fill", "ref": "e1", "text": "fake-password", "origin": "https://login.example.test"},
+                {"kind": "fill", "ref": "e1", "text": "fake-password", "origin": "https://login.example.test",
+                 "field": "password"},
             ])
         self.assertEqual(
             evaluate.call_args_list[1].args[2],
-            'window.__rakazoPageBrowser.fill("e1", "fake-password", "https://login.example.test")',
+            'window.__rakazoPageBrowser.fill("e1", "fake-password", "https://login.example.test", "password")',
         )
+
+    def test_reports_a_refused_fill_as_settled_with_its_reason(self):
+        client = Mock()
+        client.call.side_effect = [
+            {"result": {"value": True}},
+            {"exceptionDetails": {"text": "Uncaught", "exception": {
+                "description": "Error: Refused: The page is not on the site this login was saved for."
+                               "\n    at Object.fill (<anonymous>:1:1)",
+            }}},
+        ]
+        with patch.object(helper, "ensure_helpers"):
+            result = helper.act(client, "session", [
+                {"kind": "fill", "ref": "e1", "text": "fake-password", "origin": "https://login.example.test",
+                 "field": "password"},
+            ])
+        self.assertEqual(result, {"ok": False, "completed": 0, "uncertain": False,
+                                  "error": "The page is not on the site this login was saved for."})
 
     def test_rejects_origin_outside_fill_before_any_action(self):
         with patch.object(helper, "ensure_helpers") as ensure:
@@ -196,6 +321,411 @@ class PageBrowserTest(unittest.TestCase):
                     {"kind": "type", "ref": "e1", "text": "x", "origin": "https://login.example.test"},
                 ])
             ensure.assert_not_called()
+
+    def test_binds_card_fill_to_the_merchant_origin_in_the_same_evaluation(self):
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "snapshot", return_value={"ok": True}), \
+                patch.object(helper, "eval_json") as evaluate:
+            evaluate.side_effect = [True, {}]
+            helper.act(Mock(), "session", [
+                {"kind": "fill", "ref": "e1", "text": "4242424242424242", "origin": "https://shop.example.test",
+                 "field": "card"},
+            ])
+        self.assertEqual(
+            evaluate.call_args_list[1].args[2],
+            'window.__rakazoPageBrowser.fill("e1", "4242424242424242", "https://shop.example.test", "card")',
+        )
+
+    def test_rejects_card_fill_without_its_origin_before_any_action(self):
+        with patch.object(helper, "ensure_helpers") as ensure:
+            with self.assertRaisesRegex(RuntimeError, "card fill needs its origin"):
+                helper.act(Mock(), "session", [
+                    {"kind": "fill", "ref": "e1", "text": "4242424242424242", "field": "card"},
+                ])
+            ensure.assert_not_called()
+
+    def test_card_fill_without_a_ref_needs_its_card_field_and_others_need_a_ref(self):
+        for step, error in (
+            ({"kind": "fill", "text": "4242424242424242", "origin": "https://shop.example.test", "field": "card"},
+             "needs its card field"),
+            ({"kind": "fill", "text": "x", "cardField": "number"}, "ref is required"),
+            ({"kind": "type", "text": "4242", "origin": "https://shop.example.test", "field": "card",
+              "cardField": "number"}, "ref is required"),
+        ):
+            with self.subTest(step=step), patch.object(helper, "ensure_helpers") as ensure:
+                with self.assertRaisesRegex(RuntimeError, error):
+                    helper.act(Mock(), "session", [step])
+                ensure.assert_not_called()
+
+    def card_fill(self, browser, field="number", text=CARD_NUMBER):
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "snapshot", return_value={"ok": True}):
+            return helper.act(browser.client, "page", [
+                {"kind": "fill", "text": text, "origin": MERCHANT, "field": "card", "cardField": field},
+            ])
+
+    def test_card_fill_finds_the_field_in_a_payment_frame_and_types_it_there(self):
+        browser = CardBrowser()
+        result = self.card_fill(browser)
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(browser.typed, CARD_NUMBER)
+        self.assertEqual({session for method, _, session in browser.sent if method.startswith("Input.")},
+                         {"frame-session"})
+        self.assertIn('findCard("cc-number")', "".join(browser.evaluated))
+        self.assertNotIn(CARD_NUMBER, "".join(browser.evaluated))
+
+    def test_card_fill_types_into_the_page_itself_when_the_field_is_there(self):
+        browser = CardBrowser(main_found=1)
+        result = self.card_fill(browser, "expiry", "1234")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual({session for method, _, session in browser.sent if method.startswith("Input.")}, {"page"})
+        self.assertNotIn("Target.setAutoAttach", [method for method, _, _ in browser.sent])
+
+    def test_card_fill_types_nothing_into_frames_the_page_does_not_own_or_providers_not_listed(self):
+        for browser in (CardBrowser(frame_url="https://pay.example.test/card"),
+                        CardBrowser(frame_url="http://js.stripe.com/card"),
+                        CardBrowser(frame_url="https://js.stripe.com.example.test/card"),
+                        CardBrowser(owned=False), CardBrowser(shown=False)):
+            with self.subTest(frame=browser.frame_url, owned=browser.owned, shown=browser.shown):
+                result = self.card_fill(browser)
+                self.assertEqual(result, {"ok": False, "completed": 0, "uncertain": False,
+                                          "error": helper.CARD_FIELD_MISSING})
+                self.assertEqual(browser.typed, "")
+
+    def test_card_fill_refuses_more_than_one_matching_field(self):
+        for browser in (CardBrowser(main_found=2), CardBrowser(frame_found=2)):
+            result = self.card_fill(browser)
+            self.assertEqual(result["error"], helper.CARD_FIELD_AMBIGUOUS)
+            self.assertEqual(browser.typed, "")
+
+    def test_card_fill_refuses_a_page_that_left_the_merchant_before_typing(self):
+        def leave(browser):
+            browser.top_origin = "https://evil.example.test"
+
+        def navigate(browser):
+            browser.client._handle_event({"method": "Page.frameNavigated", "sessionId": "page",
+                                          "params": {"frame": {"id": "main"}}})
+
+        for before_typing in (leave, navigate):
+            with self.subTest(before_typing=before_typing.__name__):
+                browser = CardBrowser(on_focus=before_typing)
+                result = self.card_fill(browser)
+                self.assertEqual(result, {"ok": False, "completed": 0, "uncertain": False,
+                                          "error": helper.NOT_ON_MERCHANT})
+                self.assertEqual(browser.typed, "")
+        browser = CardBrowser(top_origin="https://evil.example.test")
+        self.assertEqual(self.card_fill(browser)["error"], helper.NOT_ON_MERCHANT)
+        self.assertNotIn("Target.setAutoAttach", [method for method, _, _ in browser.sent])
+
+    def test_card_fill_stops_when_the_payment_frame_changes_mid_card(self):
+        def frame_moves(browser):
+            if len(browser.typed) == 4:
+                browser.client._handle_event({"method": "Page.frameNavigated", "sessionId": "frame-session",
+                                              "params": {"frame": {"id": "card-frame"}}})
+
+        browser = CardBrowser(after_key=frame_moves)
+        result = self.card_fill(browser)
+        self.assertFalse(result["ok"])
+        self.assertIn("payment frame changed", result["error"])
+        self.assertEqual([method for method, _, _ in browser.sent].count("Input.insertText"), 4)
+        self.assertTrue(browser.cleared)
+
+    def test_card_fill_clears_a_field_that_did_not_keep_every_digit(self):
+        browser = CardBrowser(kept=12)
+        result = self.card_fill(browser)
+        self.assertEqual(result, {"ok": False, "completed": 0, "uncertain": False,
+                                  "error": "This field didn't accept the card, so it was cleared."})
+        self.assertIn(("Input.dispatchKeyEvent", "Backspace", "frame-session"),
+                      [(method, params.get("key"), session) for method, params, session in browser.sent])
+        self.assertTrue(browser.cleared)
+        self.assertNotIn(CARD_NUMBER, str(result))
+
+    def test_card_fill_reports_a_field_it_could_not_confirm_empty_as_uncertain(self):
+        browser = CardBrowser(kept=12, clears=False)
+        result = self.card_fill(browser)
+        self.assertEqual(result["uncertain"], True)
+        self.assertFalse(result["ok"])
+        self.assertIn("could not be confirmed empty", result["error"])
+        self.assertNotIn(CARD_NUMBER, str(result))
+
+    def test_card_fill_clears_a_field_whose_page_left_after_the_last_key(self):
+        def leave_at_end(browser):
+            if len(browser.typed) == len(CARD_NUMBER):
+                browser.top_origin = "https://evil.example.test"
+
+        browser = CardBrowser(after_key=leave_at_end)
+        result = self.card_fill(browser)
+        self.assertEqual(result["error"], helper.NOT_ON_MERCHANT)
+        self.assertTrue(browser.cleared)
+
+    def test_card_fill_types_only_the_digits_of_an_expiry(self):
+        browser = CardBrowser()
+        self.assertEqual(self.card_fill(browser, "expiry", "03/34"), {"ok": True, "completed": 1})
+        self.assertEqual(browser.typed, "0334")
+
+    def test_card_fill_counts_formatted_digits_as_kept(self):
+        browser = CardBrowser()
+        self.card_fill(browser)
+        self.assertIn("cardTyped(16)", "".join(browser.evaluated))
+
+    def test_snapshot_points_to_fill_card_only_for_payment_frames_with_card_fields(self):
+        for browser, line in ((CardBrowser(), helper.PAYMENT_FRAME_HINT),
+                              (CardBrowser(frame_found=0), "Embedded frames require desktop tools."),
+                              (CardBrowser(frame_url="https://ads.example.test/"),
+                               "Embedded frames require desktop tools.")):
+            with self.subTest(frame=browser.frame_url), patch.object(helper, "wait_for_settle", return_value=True), \
+                    patch.object(helper, "ensure_helpers"):
+                result = helper.snapshot(browser.client, "page")
+            self.assertEqual(result["tree"], f"Checkout\n{line}")
+            self.assertNotIn("frames", result)
+
+    def test_snapshot_names_the_merchant_account_of_a_pay_token_checkout(self):
+        for browser, account in ((PayTokenBrowser(), "acct_fake123"),
+                                 (PayTokenBrowser(main_account="acct_main1", frame_account=None), "acct_main1"),
+                                 (PayTokenBrowser(frame_url="https://checkout.pci.shopifyinc.com/card"), None),
+                                 (PayTokenBrowser(frame_account=None), None)):
+            with self.subTest(frame=browser.frame_url), patch.object(helper, "wait_for_settle", return_value=True), \
+                    patch.object(helper, "ensure_helpers"):
+                tree = helper.snapshot(browser.client, "page")["tree"]
+            if account:
+                self.assertTrue(tree.endswith(helper.pay_token_hint(account)), tree)
+            else:
+                self.assertNotIn("pay token", tree)
+
+    def pay_token_fill(self, browser, account="acct_fake123", origin=MERCHANT):
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "snapshot", return_value={"ok": True}):
+            return helper.act(browser.client, "page", [
+                {"kind": "pay_token", "text": PAY_TOKEN, "origin": origin, "merchantAccountId": account},
+            ])
+
+    def test_pay_token_goes_to_the_stripe_frame_block_as_an_argument_only(self):
+        browser = PayTokenBrowser()
+        self.assertEqual(self.pay_token_fill(browser), {"ok": True, "completed": 1})
+        self.assertEqual(browser.handed, [(PAY_TOKEN, "frame-session", 2)])
+        self.assertNotIn(PAY_TOKEN, "".join(browser.evaluated))
+        self.assertNotIn(PAY_TOKEN, json.dumps([params for method, params, _ in browser.sent
+                                                if method != "Runtime.callFunctionOn"]))
+
+    def test_pay_token_goes_to_the_page_itself_when_its_block_is_there(self):
+        browser = PayTokenBrowser(main_account="acct_fake123", frame_account=None)
+        self.assertEqual(self.pay_token_fill(browser), {"ok": True, "completed": 1})
+        self.assertEqual(browser.handed, [(PAY_TOKEN, "page", 1)])
+        self.assertNotIn("Target.setAutoAttach", [method for method, _, _ in browser.sent])
+
+    def test_pay_token_refuses_other_merchants_frames_and_sites(self):
+        for browser, kwargs, error in (
+            (PayTokenBrowser(frame_account="acct_other"), {}, helper.PAY_TOKEN_MISSING),
+            (PayTokenBrowser(frame_url="https://checkout.pci.shopifyinc.com/card"), {}, helper.PAY_TOKEN_MISSING),
+            (PayTokenBrowser(owned=False), {}, helper.PAY_TOKEN_MISSING),
+            (PayTokenBrowser(top_origin="https://evil.example.test"), {}, helper.NOT_ON_MERCHANT),
+            (PayTokenBrowser(), {"origin": "http://shop.example.test"}, "only be filled on HTTPS"),
+        ):
+            with self.subTest(frame=browser.frame_url, kwargs=kwargs):
+                result = self.pay_token_fill(browser, **kwargs)
+                self.assertEqual(result["ok"], False)
+                self.assertEqual(result["uncertain"], False)
+                self.assertIn(error, result["error"])
+                self.assertEqual(browser.handed, [])
+
+    def test_pay_token_reports_a_checkout_that_did_not_take_it_without_the_token(self):
+        result = self.pay_token_fill(PayTokenBrowser(accepted=False))
+        self.assertEqual(result["ok"], False)
+        self.assertIn("didn't take the pay token", result["error"])
+        self.assertNotIn(PAY_TOKEN, json.dumps(result))
+
+    def test_pay_token_steps_need_their_token_origin_and_account_and_no_ref(self):
+        for step in ({"kind": "pay_token", "text": PAY_TOKEN, "origin": MERCHANT},
+                     {"kind": "pay_token", "text": "", "origin": MERCHANT, "merchantAccountId": "acct_1"},
+                     {"kind": "pay_token", "ref": "e1", "text": PAY_TOKEN, "origin": MERCHANT,
+                      "merchantAccountId": "acct_1"}):
+            with self.subTest(step=step), patch.object(helper, "ensure_helpers") as ensure:
+                with self.assertRaisesRegex(RuntimeError, "pay token needs"):
+                    helper.act(Mock(), "session", [step])
+                ensure.assert_not_called()
+
+    def test_key_events_press_printable_characters_and_insert_the_rest(self):
+        self.assertEqual(helper.key_event("6"),
+                         {"key": "6", "code": "Digit6", "text": "6", "windowsVirtualKeyCode": 54})
+        self.assertEqual(helper.key_event("q")["code"], "KeyQ")
+        self.assertEqual(helper.key_event("Q")["windowsVirtualKeyCode"], 81)
+        self.assertEqual(helper.key_event(" ")["code"], "Space")
+        self.assertEqual(helper.key_event("\n"), {"key": "Enter", "code": "Enter", "text": "\r",
+                                                  "windowsVirtualKeyCode": 13, "modifiers": 8})
+        self.assertEqual(helper.key_event("@"), {"key": "@", "text": "@"})
+        self.assertIsNone(helper.key_event("é"))
+
+    def type_once(self, focus, text, typed=True, after_key=None, more=(), on_clear=None, page=None):
+        """Runs one type step against a stand-in browser.
+
+        after_key(n, client, state) runs once key n has landed; on_clear(client, state) while the field is emptied.
+        """
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        sent = []
+        state = {"focused": True, "gone": False}
+
+        def call(method, params=None, **_):
+            if method == "Page.getFrameTree":
+                document = (client.navigations("session", "main"), state["gone"])
+                return {"frameTree": {"frame": {"id": "main", "loaderId": str(document)}}}
+            sent.append((method, params))
+            if after_key and (method == "Input.insertText" or params.get("type") == "keyUp"):
+                after_key(sum(m == "Input.insertText" or p.get("type") == "keyUp" for m, p in sent), client, state)
+            return {}
+
+        def evaluate(_, __, expression):
+            if state["gone"]:
+                raise RuntimeError("Runtime.evaluate failed: Cannot find context with specified id")
+            if "resolve(" in expression:
+                return True
+            if "focusForKeys(" in expression:
+                if on_clear:
+                    on_clear(client, state)
+                return focus
+            if "focusHolds()" in expression:
+                return state["focused"]
+            if "typed(" in expression:
+                return typed
+            return {}
+
+        client.call = call
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value=page or {"ok": True}), \
+                patch.object(helper, "eval_json", side_effect=evaluate) as evaluated:
+            result = helper.act(client, "session", [{"kind": "type", "ref": "e1", "text": text}, *more])
+        return result, sent, [call.args[2] for call in evaluated.call_args_list]
+
+    @staticmethod
+    def navigate_on(key, event="Page.frameRequestedNavigation", **params):
+        def after_key(n, client, state):
+            if n == key:
+                client._handle_event({"method": event, "sessionId": "session",
+                                      "params": {"frameId": "main", **params}})
+        return after_key
+
+    def test_type_presses_each_key_into_the_focused_field(self):
+        result, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "6é")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[1], 'window.__rakazoPageBrowser.focusForKeys("e1", true)')
+        self.assertEqual(evaluated[-1], 'window.__rakazoPageBrowser.typed("e1", "6\\u00e9")')
+        self.assertEqual(sent, [
+            ("Input.dispatchKeyEvent", {"type": "keyDown", "key": "6", "code": "Digit6", "text": "6",
+                                        "windowsVirtualKeyCode": 54, "unmodifiedText": "6"}),
+            ("Input.dispatchKeyEvent", {"type": "keyUp", "key": "6", "code": "Digit6", "windowsVirtualKeyCode": 54}),
+            ("Input.insertText", {"text": "é"}),
+        ])
+
+    def test_type_of_one_character_replaces_only_the_box_it_is_typed_into(self):
+        result, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "8")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[1], 'window.__rakazoPageBrowser.focusForKeys("e1", false)')
+        self.assertEqual([params["key"] for _, params in sent if params.get("type") == "keyDown"], ["8"])
+
+    def test_type_checks_the_page_before_every_key_and_after_the_last(self):
+        _, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "482913")
+        self.assertEqual(len([params for _, params in sent if params.get("type") == "keyDown"]), 6)
+        self.assertEqual(evaluated.count("window.__rakazoPageBrowser.focusHolds()"), 7)
+
+    def test_type_presses_no_key_when_emptying_the_field_made_the_page_navigate(self):
+        def on_clear(client, _):
+            client._handle_event({"method": "Page.frameRequestedNavigation", "sessionId": "session",
+                                  "params": {"frameId": "main", "disposition": "currentTab"}})
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", on_clear=on_clear)
+        self.assertEqual(sent, [])
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+        self.assertIn("page changed while typing, after 0 of 6 characters", result["error"])
+
+    def test_type_breaks_lines_with_shift_enter_only_where_a_line_break_belongs(self):
+        _, one_line, _ = self.type_once({"focused": True, "multiline": False}, "a\r\nb\n")
+        self.assertNotIn("Enter", [params.get("key") for _, params in one_line])
+        _, text_area, _ = self.type_once({"focused": True, "multiline": True}, "a\r\nb\rc")
+        enters = [params for _, params in text_area if params.get("key") == "Enter"]
+        # One line break per newline, each a Shift+Enter in both the key press and its release.
+        self.assertEqual([(params["type"], params["modifiers"]) for params in enters],
+                         [("keyDown", 8), ("keyUp", 8)] * 2)
+        self.assertNotIn("Input.insertText", [method for method, _ in text_area])
+
+    def test_type_reports_characters_the_page_did_not_keep(self):
+        result, _, _ = self.type_once({"focused": True, "multiline": False}, "A7K29Q", typed=False)
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 1})
+        self.assertIn("did not keep every character", result["error"])
+        self.assertNotIn("A7K29Q", result["error"])
+
+    def test_type_stops_at_once_when_the_page_navigates_mid_code(self):
+        events = [
+            ("Page.frameRequestedNavigation", {"disposition": "currentTab"}),
+            ("Page.frameStartedNavigating", {"navigationType": "differentDocument"}),
+            ("Page.frameNavigated", {}),
+        ]
+        for event, params in events:
+            with self.subTest(event=event):
+                if event == "Page.frameNavigated":
+                    def after_key(n, client, _):
+                        if n == 2:
+                            client._handle_event({"method": event, "sessionId": "session",
+                                                  "params": {"frame": {"id": "main"}}})
+                else:
+                    after_key = self.navigate_on(2, event, **params)
+                result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913",
+                                                 after_key=after_key)
+                self.assertEqual([p["key"] for _, p in sent if p.get("type") == "keyDown"], ["4", "8"])
+                self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+                self.assertIn("page changed while typing, after 2 of 6 characters", result["error"])
+                self.assertNotIn("482913", result["error"])
+
+    def test_type_stops_when_the_document_is_gone_before_any_event_arrives(self):
+        def after_key(n, _, state):
+            state["gone"] = n == 3
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 3)
+        self.assertIn("page changed while typing", result["error"])
+
+    def test_type_keeps_going_through_same_document_and_other_tab_navigations(self):
+        elsewhere = [
+            ("Page.frameStartedNavigating", {"frameId": "main", "navigationType": "sameDocument"}),
+            ("Page.frameRequestedNavigation", {"frameId": "main", "disposition": "newTab"}),
+            ("Page.frameRequestedNavigation", {"frameId": "ad", "disposition": "currentTab"}),
+        ]
+
+        def after_key(n, client, _):
+            if n == 1:
+                for event, params in elsewhere:
+                    client._handle_event({"method": event, "sessionId": "session", "params": params})
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 6)
+
+    def test_type_that_submits_on_the_last_key_is_done_and_later_steps_are_stale(self):
+        signed_in = {"ok": True, "url": "https://code.example.test/done", "title": "Signed in", "elements": []}
+        result, sent, evaluated = self.type_once(
+            {"focused": True, "multiline": False}, "482913", after_key=self.navigate_on(6),
+            more=[{"kind": "click", "ref": "e2"}], page=signed_in)
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 6)
+        # The result is the page the code led to.
+        self.assertEqual({key: result.get(key) for key in ("ok", "completed", "url", "title")},
+                         {"ok": False, "completed": 1, "url": signed_in["url"], "title": "Signed in"})
+        self.assertIn("Stale element ref", result["error"])
+        self.assertFalse(any("typed(" in expression or "click(" in expression for expression in evaluated))
+        alone, _, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=self.navigate_on(6))
+        self.assertEqual(alone, {"ok": True, "completed": 1})
+
+    def test_type_stops_when_focus_leaves_the_field_or_its_code(self):
+        def after_key(n, _, state):
+            state["focused"] = n < 3
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual([p["key"] for _, p in sent if p.get("type") == "keyDown"], ["4", "8", "2"])
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+        self.assertIn("Focus left the field while typing, after 3 of 6 characters", result["error"])
+        self.assertNotIn("482913", result["error"])
+
+    def test_type_into_a_select_chooses_the_option_as_fill_does(self):
+        result, sent, evaluated = self.type_once({"select": True}, "Blue")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[2], 'window.__rakazoPageBrowser.fill("e1", "Blue")')
+        self.assertEqual(sent, [])
+
+    def test_type_presses_nothing_when_the_field_does_not_take_focus(self):
+        result, sent, _ = self.type_once({"focused": False, "multiline": False}, "x")
+        self.assertFalse(result["ok"])
+        self.assertIn("keyboard focus", result["error"])
+        self.assertEqual(sent, [])
 
     def test_reads_arguments_from_one_stdin_line_only(self):
         payload = b'{"actions": []}\nrest'

@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./computer-spec": "./src/computer-spec.ts"
+  },
   "scripts": {
     "dev": "node ../../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
@@ -14,7 +18,7 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "dockerode": "5.0.1",
-    "hono": "4.13.13",
+    "hono": "4.13.14",
     "tsx": "4.23.15",
     "zod": "4.6.7"
   },

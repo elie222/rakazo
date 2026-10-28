@@ -91,7 +91,7 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
             type="button"
             variant="outline"
             size="sm"
-            className="mt-3 rounded-full"
+            className="mt-3"
             disabled={pending}
             onClick={() => setConfirming(true)}
           >

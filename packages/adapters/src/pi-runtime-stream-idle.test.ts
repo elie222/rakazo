@@ -10,12 +10,12 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import {
   MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
   modelStreamIdleWatchdog,
   reliableModelStream,
-} from "./pi-runtime.js";
-import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
+} from "./pi-runtime-stream.js";
 
 function assistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
   return {
@@ -83,9 +83,7 @@ describe("Model stream idle watchdog", () => {
     const stream = watchdog.wrap(inner);
     const iterator = stream[Symbol.asyncIterator]();
 
-    // No idle budget burns before response headers land: the pre-headers
-    // window is bounded per attempt by timeoutMs, so this wait must never
-    // abort.
+    // No idle budget burns before response headers land.
     const pending = iterator.next();
     await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS * 2);
     expect(watchdog.signal.aborted).toBe(false);

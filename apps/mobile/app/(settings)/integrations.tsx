@@ -3,7 +3,9 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
+  RpcOutput,
 } from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -46,14 +48,16 @@ import {
 } from "../../lib/integrations-cache";
 import { loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
-type ConnectionTool = { name: string; description: string };
+type ConnectionTool = RpcOutput<"connections/tools">[number];
 
 const LOGO_SIZE = 32;
 
 export default function Integrations() {
+  const sideInsets = useSideInsets();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useI18n();
   const { width } = useWindowDimensions();
@@ -220,7 +224,7 @@ export default function Integrations() {
     }
     const generation = ++refreshGeneration.current;
     const sourceGeneration = ++sourcesGeneration.current;
-    void rpc<McpServer[]>("mcp/servers/list")
+    void rpc("mcp/servers/list")
       .then((servers) => {
         if (
           mounted.current &&
@@ -241,7 +245,7 @@ export default function Integrations() {
         )
           setMcpError(errorText(reason, t("Could not load MCP servers")));
       });
-    void rpc<CapabilityInstall[]>("capabilities/list")
+    void rpc("capabilities/list")
       .then((installs) => {
         if (
           mounted.current &&
@@ -260,8 +264,8 @@ export default function Integrations() {
     let next: IntegrationsSnapshot;
     try {
       // The catalog call reconciles connection rows, so list them after it.
-      const catalog = await rpc<ConnectionCatalogItem[]>("connections/catalog");
-      const connections = await rpc<Connection[]>("connections/list");
+      const catalog = await rpc("connections/catalog");
+      const connections = await rpc("connections/list");
       next = { catalog, connections };
     } catch (reason) {
       if (!mounted.current || focus !== focusGeneration.current) return;
@@ -330,7 +334,7 @@ export default function Integrations() {
     }
     let cancelled = false;
     setToolsLoading(true);
-    void rpc<ConnectionTool[]>("connections/tools", {
+    void rpc("connections/tools", {
       connectorId: detailKey.connectorId,
       provider: detailKey.slug,
     })
@@ -399,12 +403,8 @@ export default function Integrations() {
     setCatalogError(null);
     try {
       const result = await connectCatalogItem(item, connections, {
-        begin: (input) =>
-          rpc<{ connectionId: string; authorizationUrl: string | null }>(
-            "connections/begin",
-            input,
-          ),
-        complete: (input) => rpc<Connection>("connections/complete", input),
+        begin: (input) => rpc("connections/begin", input),
+        complete: (input) => rpc("connections/complete", input),
         openUrl: (url) => Linking.openURL(url),
         signal: controller.signal,
         isCurrent,
@@ -459,7 +459,7 @@ export default function Integrations() {
     setPending(`rename:${row.id}`);
     setCatalogError(null);
     try {
-      const updated = await rpc<Connection>("connections/rename", {
+      const updated = await rpc("connections/rename", {
         connectionId: row.id,
         displayName,
       });
@@ -665,6 +665,7 @@ export default function Integrations() {
             <View key={row.id} style={styles.accountRow}>
               <TextInput
                 value={labelDrafts[row.id] ?? row.displayName}
+                maxLength={CONNECTION_LABEL_MAX_LENGTH}
                 onChangeText={(value) =>
                   setLabelDrafts((current) => ({ ...current, [row.id]: value }))
                 }
@@ -733,6 +734,7 @@ export default function Integrations() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        style={sideInsets}
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -1017,8 +1019,9 @@ export default function Integrations() {
                   <View key={source.id} style={styles.row}>
                     <View style={styles.grow}>
                       <Text style={styles.title}>{source.name}</Text>
+                      <Text style={styles.secondary}>{source.kind.toUpperCase()}</Text>
                       <Text numberOfLines={1} style={styles.secondary}>
-                        {source.kind.toUpperCase()} · {source.source}
+                        {source.source}
                       </Text>
                     </View>
                     <NativeActionButton

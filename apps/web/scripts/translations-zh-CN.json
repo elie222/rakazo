@@ -154,7 +154,6 @@
   "Connect remote or local tool servers and choose which agents can use them.": "连接远程或本地工具服务器，并选择哪些 Agent 可以使用。",
   "Connect Treg": "连接 Treg",
   "Connected": "已连接",
-  "Connected. Its tools are available from your next message.": "已连接，下一条消息起即可使用其工具。",
   "Connected {0}.": "已连接 {0}。",
   "Connecting…": "正在连接…",
   "Connection to {0} is still pending. You can close this and check again.": "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。",

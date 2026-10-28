@@ -1,48 +1,36 @@
-import type { Api, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 
-/** Keep foreign tool history usable without replaying another model's signatures. */
+// Google's documented marker for function calls whose original signature is unavailable:
+// https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures#faqs
+const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+
+/**
+ * Gemini rejects a request when the first function call of a model step has no thought
+ * signature. Pi replays a signature only for calls the same provider, API and model made,
+ * and only when it is valid base64, so transferred history (another model, a backup model,
+ * a restored turn on a different API) and any call whose signature was lost reach the wire
+ * unsigned. Real signatures are kept; only the first unsigned call of a step is marked.
+ * Later calls in a parallel batch legitimately carry no signature and stay as they are.
+ */
 export function withGoogleToolHistory(
   model: Model<Api>,
-  context: Context,
   options: SimpleStreamOptions,
 ): SimpleStreamOptions {
   if (model.api !== "google-generative-ai" && model.api !== "google-vertex") return options;
-  const foreign = new WeakSet<object>();
-  const native = new WeakSet<object>();
-  let hasForeignCalls = false;
-  for (const message of context.messages) {
-    if (message.role !== "assistant") continue;
-    const sameModel = message.provider === model.provider && message.model === model.id;
-    for (const part of message.content) {
-      if (part.type !== "toolCall" || !isRecord(part.arguments)) continue;
-      (sameModel ? native : foreign).add(part.arguments);
-      hasForeignCalls ||= !sameModel;
-    }
-  }
-  if (!hasForeignCalls) return options;
+  if (!/gemini/i.test(model.id)) return options;
   return {
     ...options,
     async onPayload(payload, requestedModel) {
-      // Pi retains argument object identity in its Google payload. Do not match tool
-      // names or guess which unsigned native parts belong to a parallel call.
       if (isRecord(payload) && Array.isArray(payload.contents)) {
         for (const content of payload.contents) {
           if (!isRecord(content) || content.role !== "model" || !Array.isArray(content.parts))
             continue;
-          for (const part of content.parts) {
-            if (
-              !isRecord(part) ||
-              part.thoughtSignature !== undefined ||
-              !isRecord(part.functionCall)
-            )
-              continue;
-            const args = part.functionCall.args;
-            if (isRecord(args) && foreign.has(args) && !native.has(args)) {
-              // Google's documented escape hatch is only for transferred history:
-              // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures#faqs
-              part.thoughtSignature = "skip_thought_signature_validator";
-            }
-          }
+          const firstCall = content.parts.find(
+            (part): part is Record<string, unknown> =>
+              isRecord(part) && isRecord(part.functionCall),
+          );
+          if (firstCall && !firstCall.thoughtSignature)
+            firstCall.thoughtSignature = SKIP_THOUGHT_SIGNATURE;
         }
       }
       const replacement = await options.onPayload?.(payload, requestedModel);

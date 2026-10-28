@@ -6,6 +6,17 @@ export function routineTimerNonce(routineId: string, scheduledFor: string): stri
   return `routine-timer:${routineId}:${scheduledFor}`;
 }
 
+/** The scheduled occurrence a recurring timer run was created for, if it is one. */
+export function routineTimerScheduledFor(
+  routineId: string,
+  clientNonce: string | null | undefined,
+): Date | undefined {
+  const prefix = routineTimerNonce(routineId, "");
+  if (!clientNonce?.startsWith(prefix)) return undefined;
+  const scheduledFor = new Date(clientNonce.slice(prefix.length));
+  return Number.isFinite(scheduledFor.getTime()) ? scheduledFor : undefined;
+}
+
 /**
  * Call while holding the routine row lock. Keep at most one unstarted catch-up
  * for the same work; never fold an event, manual test, retry, or actually attempted run.

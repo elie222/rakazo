@@ -222,6 +222,14 @@ describe("contracts", () => {
     );
   });
 
+  it("keeps a note on a step and still reads steps saved without one", () => {
+    const steps = [
+      { label: "Read file", count: 1, note: "The meeting is with Anna." },
+      { label: "Save", count: 1 },
+    ];
+    expect(MessageBlock.parse({ kind: "steps", steps })).toEqual({ kind: "steps", steps });
+  });
+
   it("limits reactions to persisted non-channel messages", () => {
     expect(
       canReactToThreadMessage({ id: "message-1", blocks: [{ kind: "text", text: "hi" }] }),

@@ -1,21 +1,12 @@
-import {
-  createProvider,
-  type Model,
-  type MutableModels,
-  type Provider,
-} from "@earendil-works/pi-ai";
+import type { Model, MutableModels, Provider } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
- *
- * Pi's built-in catalog only ships hosted providers, so a model running on the
- * operator's own machine has no catalog entry to select. This registers one
- * from environment configuration. The server is keyless: `resolve` returns a
- * placeholder because OpenAI-compatible local servers ignore the header, but
- * Models treats a provider with no resolvable auth as unconfigured and hides
- * its models.
+ * The server is keyless, but `resolve` returns a placeholder because Models
+ * hides providers with no resolvable auth.
  */
 export const LOCAL_PROVIDER_ID = "local";
 
@@ -44,13 +35,7 @@ export function localBaseUrl(): string {
   return value;
 }
 
-/**
- * A token count from the environment, or the default when unset.
- *
- * Token limits are only meaningful as finite positive integers, so anything
- * else is a configuration mistake. Throwing beats `Number(x) || default`, which
- * would accept a negative window and silently swallow a typo as the default.
- */
+/** Throws instead of `Number(x) || default`, which would swallow a typo or accept a negative window. */
 function tokenLimit(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -86,7 +71,6 @@ function localModel(id: string): Model<"openai-completions"> {
   };
 }
 
-/** The provider, or undefined when no local models are configured. */
 export function localProvider(): Provider | undefined {
   const ids = localModelIds();
   if (!ids.length) return undefined;
@@ -108,7 +92,6 @@ export function localProvider(): Provider | undefined {
   });
 }
 
-/** Register the local provider on a Models collection. No-op when unconfigured. */
 export function registerLocalProvider(models: MutableModels): MutableModels {
   const provider = localProvider();
   if (provider) models.setProvider(provider);

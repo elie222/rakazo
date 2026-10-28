@@ -24,6 +24,13 @@ test("keeps the approved MCP card state after the thread remounts", async ({ pag
 
   await card.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(card.getByText(/Connected/i)).toBeVisible({ timeout: 15_000 });
+  // Approving is the user's turn: the bot carries on without another message.
+  await expect(
+    page.getByTestId("transcript").getByText(/connected the MCP server "Fixture MCP"/),
+  ).toBeVisible({
+    timeout: 60_000,
+  });
+  await captureScreenshot(page, testInfo, "mcp-approval-connected");
 
   // The assignment and the card decision live server-side, so a full remount
   // must render the approved state instead of fresh approval buttons.

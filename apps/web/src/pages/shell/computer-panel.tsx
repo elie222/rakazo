@@ -13,6 +13,8 @@ type ComputerPanelProps = {
   computer: ComputerStatus | null;
   computerOpen: boolean;
   embeddedScreenUrl: string | null;
+  /** Changes to load the screen again in a new frame. */
+  screenFrameKey?: number;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -36,6 +38,7 @@ export function ComputerPanel({
   computer,
   computerOpen,
   embeddedScreenUrl,
+  screenFrameKey,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -53,6 +56,11 @@ export function ComputerPanel({
   onEditRoutine,
   onStopRun,
 }: ComputerPanelProps) {
+  const canOpen = !computerScreenError && !showingRecoveryHint;
+  // The Open pill replaces the status text on hover; fade it so they never overlap.
+  const hideOnHover = canOpen
+    ? "transition-opacity group-hover:opacity-0 group-has-[:focus-visible]:opacity-0"
+    : "";
   return (
     <div>
       <div
@@ -62,13 +70,18 @@ export function ComputerPanel({
         }`}
       >
         {computerOpen ? (
-          <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+          <div
+            className={`grid h-full place-items-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+          >
             <Trans>Open in full window</Trans>
           </div>
         ) : computer?.kind === "desktop" ? (
-          <DesktopKindEmptyState className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80" />
+          <DesktopKindEmptyState
+            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+          />
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
           <iframe
+            key={screenFrameKey}
             title={t`Bot screen preview`}
             ref={screenFrameRef}
             src={embeddedScreenUrl}
@@ -78,7 +91,9 @@ export function ComputerPanel({
             style={{ pointerEvents: "none" }}
           />
         ) : (
-          <div className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80">
+          <div
+            className={`grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80 ${hideOnHover}`}
+          >
             {computerScreenError ??
               (showComputerRecoveryHint ? (
                 <ComputersUnavailableHint
@@ -97,7 +112,7 @@ export function ComputerPanel({
               ))}
           </div>
         )}
-        {!computerScreenError && !showingRecoveryHint ? (
+        {canOpen ? (
           <button
             type="button"
             data-testid="computer-preview-open"
@@ -105,7 +120,7 @@ export function ComputerPanel({
             aria-label={t`Open`}
             onClick={onOpen}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-overlay px-3.5 py-2 text-[14px] text-foreground shadow-md">
+            <span className="inline-flex items-center gap-2 rounded-full bg-background px-3.5 py-2 text-[14px] text-foreground shadow-md">
               <Maximize2 size={15} strokeWidth={1.9} aria-hidden />
               <Trans>Open</Trans>
             </span>
