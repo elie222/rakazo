@@ -170,11 +170,18 @@ so the mode does not apply there.
 Where Docker Engine runs in a Linux VM, as with OrbStack on macOS, the rules belong in the VM,
 which `sudo` on the host cannot reach. Apply them from a container on the VM's host network
 instead, and keep it running: the VM does not persist the rules, so a loop puts them back after
-a restart. The installer does not download the script on macOS, so save
-`restrict-computer-egress.sh` from the repository's `infra/compose/` directory, and next to it
-a separate Compose file such as `egress.yml`, started with `docker compose -f egress.yml up -d`:
+a restart. The installer does not download the script on macOS. From the directory that holds
+the stack's `.env`:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/restrict-computer-egress.sh
+```
+
+Save the following as `egress.yml` beside that script and start it with
+`docker compose -f egress.yml up -d`. The name keeps it in its own Compose project:
 
 ```yaml
+name: rakazo-computer-egress
 services:
   computer-egress:
     image: alpine:3
