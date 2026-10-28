@@ -12,7 +12,11 @@ import type {
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { isToolPauseResult } from "./approval-effect.js";
-import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
+import {
+  connectionIdArgument,
+  credentialArgument,
+  loginFieldLabelsArgument,
+} from "./bot-secrets.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -232,6 +236,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
+    ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };
 }
 

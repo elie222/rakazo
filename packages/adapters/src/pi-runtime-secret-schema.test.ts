@@ -180,6 +180,26 @@ describe("prepareRequestSecretArguments", () => {
     expect(out).toMatchObject({ replace: true, credential });
   });
 
+  it("keeps only the labels of a login's fields, never a hidden choice or a value", () => {
+    const credential = {
+      name: "bank",
+      origin: "https://bank.example.test",
+      auth: { type: "login" },
+    };
+    const out = prepareRequestSecretArguments({
+      label: "Bank",
+      purpose: "password",
+      credential,
+      fields: ["ID number", { label: "Phone number", hidden: false, value: "fake-planted" }],
+    });
+    expect(out).toEqual({
+      label: "Bank",
+      purpose: "password",
+      credential,
+      fields: ["ID number", "Phone number"],
+    });
+  });
+
   it("still passes connectionId for the connector-code path", () => {
     const out = prepareRequestSecretArguments({ label: "c", purpose: "otp", connectionId: "abc" });
     expect(out).toEqual({ label: "c", purpose: "otp", connectionId: "abc" });

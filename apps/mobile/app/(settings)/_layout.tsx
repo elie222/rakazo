@@ -79,7 +79,7 @@ export default function SettingsLayout() {
       <Stack.Screen
         name="approvals"
         options={{
-          ...glassHeaderOptions(t("Approvals")),
+          ...glassHeaderOptions(t("Rules")),
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />

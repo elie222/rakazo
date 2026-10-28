@@ -1,5 +1,5 @@
 import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
 import {
@@ -179,7 +179,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onAnswer: (
     message: MobileMessage,
     answer: string,
-    username?: string,
+    fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
   ) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
@@ -234,7 +234,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           actionProps={actionProps}
           canAnswer={canAnswer}
           canDismiss={canDismiss}
-          onAnswer={(answer, username) => onAnswer(message, answer, username)}
+          onAnswer={(answer, fields) => onAnswer(message, answer, fields)}
           onDismiss={() => onAnswer(message, "", undefined, true)}
         />
         {appConnectBlocks.map((block, index) => (

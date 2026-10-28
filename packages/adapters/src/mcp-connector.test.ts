@@ -863,6 +863,39 @@ describe("MCP connector session cache", () => {
       }
     });
 
+    it.each([
+      [
+        "a web page",
+        () =>
+          new Response("<!doctype html><title>Home</title>", {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          }),
+      ],
+      [
+        "a non-MCP API",
+        () => Response.json({ error: { code: "model_required" } }, { status: 400 }),
+      ],
+      ["a redirect", () => new Response(null, { status: 302, headers: { location: "/login" } })],
+    ])("warns when the endpoint answers with %s", async (_, answer) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => answer()),
+      );
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.any(String),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("still reports an unexpected server failure as an error", async () => {
       vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
       const connector = connectorWith(SERVER);

@@ -8,7 +8,6 @@ import { MAX_BROWSER_UPLOAD_FILES } from "@rakazo/adapter-kit";
 import type { PurchaseCardField } from "@rakazo/contracts";
 import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
-import type { LoginField } from "./bot-secrets.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 
 const MAX_BROWSER_ACTIONS = 24;
@@ -24,12 +23,12 @@ export const BROWSER_ACT_KINDS = [
 ] as const;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
 
-/** Fills a saved website login by name; the model never supplies or sees the value. */
+/** Fills a saved website login's field by its label; the model never supplies or sees the value. */
 export type SecretFillStep = {
   kind: "fill_secret";
   ref: string;
   secret: string;
-  field: LoginField;
+  field: string;
 };
 /** The model never supplies or sees the value. */
 export type CardFillStep = {
@@ -45,7 +44,7 @@ export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | P
 export type PageToolOptions = { desktopTools?: boolean };
 export type ResolveSecretFill = (
   step: SecretFillStep,
-) => Promise<{ text: string; origin: string } | { error: string }>;
+) => Promise<{ text: string; origin: string; hidden: boolean } | { error: string }>;
 
 export type ResolveCardFill = (
   step: CardFillStep,
@@ -170,7 +169,7 @@ export async function browserActFromTool(
         continue;
       }
       const card = step.kind === "fill_card";
-      let resolved: { text: string; origin: string } | { error: string };
+      let resolved: { text: string; origin: string; hidden?: boolean } | { error: string };
       try {
         resolved = card
           ? options.resolveCardFill
@@ -206,7 +205,9 @@ export async function browserActFromTool(
           ref: step.ref,
           text,
           origin,
-          field: card ? "card" : step.field,
+          // Every page browser, older computer images included, types "password" only into a
+          // password field and "username" into a text, email or telephone field.
+          field: card ? "card" : resolved.hidden === false ? "username" : "password",
         });
       }
     }
@@ -291,14 +292,14 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
     }
     if (kind === "fill_secret") {
       const secret = String(action.secret ?? "").trim();
-      const field = action.field;
+      const field = typeof action.field === "string" ? action.field.trim() : "";
       if (!secret)
         throw new BrowserToolInputError(
           "browser_act fill_secret needs secret: the name of a login saved with request_secret",
         );
-      if (field !== "username" && field !== "password") {
+      if (!field) {
         throw new BrowserToolInputError(
-          'browser_act fill_secret needs field: "username" or "password"',
+          "browser_act fill_secret needs field: the label of one of the login's fields",
         );
       }
       return { kind, ref, secret, field };

@@ -513,6 +513,10 @@ msgstr "新增 Executor"
 msgid "Add fallback"
 msgstr "新增備援模型"
 
+#: src/components/LoginFields.tsx
+msgid "Add field"
+msgstr "新增欄位"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
 msgstr "新增 GraphQL"
@@ -2571,10 +2575,6 @@ msgstr "何時參與… 忽略哪些內容…"
 msgid "Enter a password"
 msgstr "請輸入密碼"
 
-#: src/components/VaultSettings.tsx
-msgid "Enter a username and password"
-msgstr "輸入使用者名稱與密碼"
-
 #: src/lib/user-error.ts
 msgid "Enter a valid email"
 msgstr "請輸入有效的電子郵件地址"
@@ -2918,6 +2918,10 @@ msgstr "試聽"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "你好，這是我朗讀回覆時的聲音。"
 
+#: src/components/LoginFields.tsx
+msgid "Hidden"
+msgstr "隱藏"
+
 #: src/components/VaultSettings.tsx
 msgid "Hide"
 msgstr "隱藏"
@@ -3190,6 +3194,10 @@ msgstr "已保留"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "金鑰"
+
+#: src/components/LoginFields.tsx
+msgid "Label"
+msgstr "標籤"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -4462,6 +4470,7 @@ msgid "Reload"
 msgstr "重新載入"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -5932,6 +5941,7 @@ msgstr "使用你的 API 金鑰"
 msgid "Using your API key. Free plan ends {freeUntil}."
 msgstr "正在使用你的 API 金鑰。免費方案將於 {freeUntil} 結束。"
 
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Value"

@@ -331,6 +331,14 @@ type LoginFn = (
   options?: { codePage?: boolean; verifier?: string },
 ) => Promise<Credential>;
 
+/** A pasted-code sign-in the user has to correct or start again. */
+export class ModelSignInError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelSignInError";
+  }
+}
+
 type SignInActor = { userId: string; spaceId: string };
 
 type BeginInput = SignInActor & {
@@ -1044,13 +1052,13 @@ export class PiOAuthLogins {
       session = undefined;
     }
     if (!session && normalizedCode) session = await this.resume(loginId, actor);
-    if (!session) throw new Error("Sign-in session not found. Start sign-in again.");
-    if (session.error) throw new Error(session.error);
-    if (!normalizedCode) throw new Error("Paste an authorization code or callback URL.");
+    if (!session) throw new ModelSignInError("Sign-in session not found. Start sign-in again.");
+    if (session.error) throw new ModelSignInError(session.error);
+    if (!normalizedCode) throw new ModelSignInError("Paste an authorization code or callback URL.");
     const resolve = session.submitCode;
     if (session.codeSubmitted) return { ok: true };
     if (!resolve) {
-      throw new Error("This sign-in is not waiting for a pasted code.");
+      throw new ModelSignInError("This sign-in is not waiting for a pasted code.");
     }
     session.codeSubmitted = true;
     // The code is in: no other process may resume this sign-in with the stored verifier.

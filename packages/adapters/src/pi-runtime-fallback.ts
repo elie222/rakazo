@@ -4,6 +4,7 @@ import type {
   Context,
   ModelsSimpleStreamOptions,
   ModelThinkingLevel,
+  ThinkingLevelMap,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
@@ -28,6 +29,7 @@ import {
 } from "./pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "./pi-runtime-models.js";
 import {
+  acceptedReasoningEfforts,
   cardOutputCeiling,
   modelForCompletion,
   modelTargetKey,
@@ -74,6 +76,8 @@ export interface FallbackStreamState {
   dropThinkingBlocks?: boolean;
   /** Output reservations reduced by a rejected request, scoped to this run and model. */
   outputCaps?: Map<string, number>;
+  /** Thinking levels narrowed to the reasoning efforts an endpoint accepts, scoped to this run and connection. */
+  thinkingLevelMaps?: Map<string, ThinkingLevelMap>;
   /**
    * Messages written before the last switch to a backup model. Their thinking is bound to the
    * model and transcript it was written for, and the backup's policy starts with a rebuild that
@@ -426,8 +430,13 @@ export function fallbackAwareModelStream(
         output.end(failure.error);
         return;
       }
-      const target = state.getActive();
-      const targetKey = JSON.stringify([target.config.provider, target.config.id]);
+      const active = state.getActive();
+      const targetKey = JSON.stringify([active.config.provider, active.config.id]);
+      const connectionKey = modelTargetKey(active.config);
+      const thinkingLevelMap = state.thinkingLevelMaps?.get(connectionKey);
+      const target = thinkingLevelMap
+        ? { ...active, model: { ...active.model, thinkingLevelMap } }
+        : active;
       const outputCap = state.outputCaps?.get(targetKey);
       const attemptOptions = {
         ...options,
@@ -527,6 +536,21 @@ export function fallbackAwareModelStream(
                 restart = true;
                 break;
               }
+            }
+            const narrowedThinking =
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
+              event.reason === "error" &&
+              !signalAborted() &&
+              !thinkingLevelMap
+                ? acceptedReasoningEfforts(target.model, event.error.errorMessage)
+                : undefined;
+            if (narrowedThinking) {
+              state.thinkingLevelMaps ??= new Map();
+              state.thinkingLevelMaps.set(connectionKey, narrowedThinking);
+              buffered = [];
+              restart = true;
+              break;
             }
             if (
               !sawVisibleOutput &&

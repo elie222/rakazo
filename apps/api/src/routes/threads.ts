@@ -527,6 +527,7 @@ export function threadsRoutes(ctx: RouterContext) {
             answeredByUserId: context.actor.userId,
             answer: input.answer,
             clientNonce: input.clientNonce,
+            fields: input.fields,
             username: input.username,
             dismiss: input.dismiss,
           })

@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
-import { MODEL_CONTEXT_TOO_SMALL_ERROR, shortenedTextLength, textBoundary } from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  shortenedTextLength,
+  truncatePlainText,
+} from "@rakazo/core";
 
 export type ContextStrategy = AgentContextStrategy;
 export interface ContextMessage {
@@ -201,10 +205,9 @@ function shortenHistoryResult(
   // Snapshot text is only navigation; original reference offsets retain exact evidence.
   for (const snapshot of Array.isArray(payload.snapshots) ? payload.snapshots : []) {
     if (!snapshot || typeof snapshot !== "object") continue;
-    if (typeof snapshot.topic === "string")
-      snapshot.topic = snapshot.topic.slice(0, textBoundary(snapshot.topic, 80));
+    if (typeof snapshot.topic === "string") snapshot.topic = truncatePlainText(snapshot.topic, 80);
     if (typeof snapshot.outcome === "string")
-      snapshot.outcome = snapshot.outcome.slice(0, textBoundary(snapshot.outcome, 80));
+      snapshot.outcome = truncatePlainText(snapshot.outcome, 80);
   }
   payload.contextTruncated = true;
   let encoded = JSON.stringify(payload);

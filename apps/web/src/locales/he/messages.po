@@ -512,6 +512,10 @@ msgstr "הוספת Executor"
 msgid "Add fallback"
 msgstr "הוספת חלופה"
 
+#: src/components/LoginFields.tsx
+msgid "Add field"
+msgstr "הוספת שדה"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
 msgstr "הוספת GraphQL"
@@ -2570,10 +2574,6 @@ msgstr "להגיב כאשר... להתעלם מ..."
 msgid "Enter a password"
 msgstr "יש להזין סיסמה"
 
-#: src/components/VaultSettings.tsx
-msgid "Enter a username and password"
-msgstr "יש להזין שם משתמש וסיסמה"
-
 #: src/lib/user-error.ts
 msgid "Enter a valid email"
 msgstr "יש להזין אימייל תקין"
@@ -2917,6 +2917,10 @@ msgstr "השמעת דוגמה"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "היי, כך אשמע כשאקריא תשובות בקול."
 
+#: src/components/LoginFields.tsx
+msgid "Hidden"
+msgstr "מוסתר"
+
 #: src/components/VaultSettings.tsx
 msgid "Hide"
 msgstr "הסתרה"
@@ -3189,6 +3193,10 @@ msgstr "יישמר"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "מפתח"
+
+#: src/components/LoginFields.tsx
+msgid "Label"
+msgstr "תווית"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -4461,6 +4469,7 @@ msgid "Reload"
 msgstr "טעינה מחדש"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -5931,6 +5940,7 @@ msgstr ""
 msgid "Using your API key. Free plan ends {freeUntil}."
 msgstr "נעשה שימוש במפתח ה-API שלך. התוכנית החינמית מסתיימת ב-{freeUntil}."
 
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Value"

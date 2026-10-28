@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   alert: vi.fn(),
   overrides: [] as string[],
   focusCount: 0,
+  rules: [] as { id: string }[],
 }));
 type SwitchProps = {
   accessibilityLabel?: string;
@@ -37,7 +38,11 @@ const { element, toggle } = vi.hoisted(() => ({
 
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
+vi.mock("./native", () => ({
+  native: {},
+  useResolvedAppearance: () => "light",
+  useThemedStyles: (factory: () => unknown) => factory(),
+}));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>
     text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
@@ -64,6 +69,35 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("span"),
 }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    actions,
+    onPressAction,
+    children,
+  }: {
+    actions: { id: string; title: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    children: ReactNode;
+  }) =>
+    createElement(
+      "div",
+      null,
+      children,
+      actions.map((action) =>
+        createElement(
+          "button",
+          {
+            key: action.id,
+            type: "button",
+            "data-menu": "",
+            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
+          },
+          action.title,
+        ),
+      ),
+    ),
+}));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
@@ -74,16 +108,18 @@ vi.mock("../components/settings-group", () => ({
   SettingsGroup: element("section"),
   SettingsRow: ({
     title,
+    value,
     onPress,
     trailing,
   }: {
     title: string;
+    value?: string;
     onPress?: () => void;
     trailing?: ReactNode;
   }) =>
     createElement(
       "div",
-      null,
+      { "data-row": [title, value].filter(Boolean).join(": ") },
       onPress ? createElement("button", { type: "button", onClick: onPress }, title) : title,
       trailing,
     ),
@@ -104,6 +140,7 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.overrides = [];
   state.focusCount = 0;
+  state.rules = [];
   state.push.mockReset();
   state.alert.mockReset();
   state.rpc
@@ -117,6 +154,9 @@ beforeEach(async () => {
           : state.overrides.filter((entry) => entry !== setting);
         return state.overrides;
       }
+      if (proc === "autoReview/get")
+        return { mode: "never", enabled: false, skipApprovals: true, checkerAvailable: false };
+      if (proc === "approvalRules/list") return state.rules;
       throw new Error(`Unexpected RPC: ${proc}`);
     });
   container = document.createElement("div");
@@ -164,17 +204,66 @@ it("follows the account until a setting is customized, then opens the same scree
   expect(control("Customize Models")?.checked).toBe(false);
 });
 
-it("opens the Approvals screen for the Space once approvals are customized", async () => {
+it("shows the Space's approval mode and rules right here once approvals are customized", async () => {
+  const rows = () =>
+    Array.from(container.querySelectorAll("[data-row]"), (row) => row.getAttribute("data-row"));
+  expect(rows()).toEqual(["Models", "Voice", "Approvals", "Vault"]);
+  expect(state.rpc).not.toHaveBeenCalledWith("autoReview/get", expect.anything(), spaceContext);
+
+  state.rules = [{ id: "rule-1" }];
   await act(async () => control("Customize Approvals")!.click());
   expect(state.rpc).toHaveBeenCalledWith(
     "spaceSettings/setOverride",
     { setting: "confirmations", enabled: true },
     spaceContext,
   );
+  expect(state.push).not.toHaveBeenCalled();
+  expect(state.rpc).toHaveBeenCalledWith("autoReview/get", { scope: "space" }, spaceContext);
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/list", { scope: "space" }, spaceContext);
+  expect(rows()).toEqual([
+    "Models",
+    "Voice",
+    "Approvals",
+    "Vault",
+    "Approvals: Never ask",
+    "Rules: 1",
+  ]);
+
+  await act(async () => container.querySelector<HTMLElement>("button:not([data-menu])")!.click());
   expect(state.push).toHaveBeenCalledWith({
     pathname: "/approvals",
     params: { spaceId: "space-other" },
   });
+
+  await act(async () => control("Customize Approvals")!.click());
+  expect(rows()).toEqual(["Models", "Voice", "Approvals", "Vault"]);
+});
+
+it("holds the Approvals switch while the Space's mode is saving", async () => {
+  await act(async () => control("Customize Approvals")!.click());
+  const base = state.rpc.getMockImplementation()!;
+  let finish: () => void = () => undefined;
+  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
+    proc === "autoReview/set"
+      ? new Promise((resolve) => {
+          finish = () => resolve({ mode: input!.mode, checkerAvailable: false });
+        })
+      : base(proc, input),
+  );
+  const ask = [...container.querySelectorAll<HTMLElement>("[data-menu]")].find(
+    (node) => node.textContent === "Ask",
+  )!;
+  await act(async () => ask.click());
+  expect(state.rpc).toHaveBeenCalledWith(
+    "autoReview/set",
+    { scope: "space", mode: "ask" },
+    spaceContext,
+  );
+  expect(control("Customize Approvals")?.disabled).toBe(true);
+  expect(control("Customize Models")?.disabled).toBe(false);
+
+  await act(async () => finish());
+  expect(control("Customize Approvals")?.disabled).toBe(false);
 });
 
 type AlertButton = { text: string; style?: string; onPress?: () => void };

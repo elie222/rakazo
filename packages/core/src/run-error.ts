@@ -325,7 +325,8 @@ export function normalizeRunError(
       /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
         signals,
       )) &&
-    !financialQuota
+    // OpenAI's per-minute limits link to billing as a way to raise them.
+    (!financialQuota || /\b(?:rpm|tpm)\b/i.test(signals))
   ) {
     kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
@@ -421,7 +422,7 @@ export function normalizeRunError(
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
-  } else if (status === 403) {
+  } else if (status === 403 || payload.code === "model_terms_required") {
     // The key works, but the provider refuses this model to the account or plan, or serves it
     // only inside its own apps.
     recovery = "model";
@@ -431,7 +432,7 @@ export function normalizeRunError(
     status === 404 ||
     status === 410 ||
     payload.param === "model" ||
-    /model[_ -]not[_ -](?:found|supported)/i.test(signals) ||
+    /model[_ -]not[_ -](?:found|supported)|\bunsupported model\b/i.test(signals) ||
     (!(status !== undefined && status >= 500) && MODEL_UNAVAILABLE.test(message))
   ) {
     recovery = "model";

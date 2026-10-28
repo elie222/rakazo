@@ -1,12 +1,17 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
+import type {
+  BotSecretDestination,
+  LoginFieldInput,
+  MessageBlock,
+  ProductEvent,
+} from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
   hasThinkingActivityMarker,
-  LoginSecretValue,
+  loginAnswerValue,
   MessageBlock as MessageBlockSchema,
   ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
@@ -265,7 +270,9 @@ export interface AnswerRunInput {
   answer: string;
   /** Identifies a spoken answer as part of a live voice call. */
   clientNonce?: string;
-  /** Only for a login card; `answer` carries its password. */
+  /** A login card's answer, one per requested field. */
+  fields?: LoginFieldInput[];
+  /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
   username?: string;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
@@ -821,12 +828,9 @@ async function commitAnswerRunInput(
   if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
-  // A username belongs only to a login card, which cannot be saved without one.
-  if (loginAsk !== Boolean(input.username?.trim())) return null;
-  const login = loginAsk
-    ? LoginSecretValue.safeParse({ username: input.username!.trim(), password: input.answer })
-    : undefined;
-  if (login && !login.success) return null;
+  const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
+  // Login fields belong only to a login card, which cannot be saved without them.
+  if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
   if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
     throw new AnswerTooLongError();
   let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
@@ -983,7 +987,7 @@ async function commitAnswerRunInput(
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login?.success ? encodeLoginSecret(login.data) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : input.answer,
       tx,
     });
     await tx.externalEffect.updateMany({

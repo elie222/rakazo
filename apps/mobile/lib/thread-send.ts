@@ -1,4 +1,4 @@
-import type { MessageReaction } from "@rakazo/contracts";
+import type { LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import type { SlashActionId } from "@rakazo/core";
 import { attachmentsForThread, newClientId, resolveComposerSendPlan } from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
@@ -254,12 +254,17 @@ export function useThreadSend({
   }
 
   const answer = useCallback(
-    (message: MobileMessage, answer: string, username?: string, dismiss?: boolean) =>
+    (
+      message: MobileMessage,
+      answer: string,
+      fields?: readonly LoginFieldInput[],
+      dismiss?: boolean,
+    ) =>
       answerThreadMessage(
         { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
         message,
         answer,
-        username,
+        fields,
         dismiss,
       ),
     [botId, groupId, readOnly],

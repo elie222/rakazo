@@ -61,6 +61,7 @@ import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { ConnectorRedirectError } from "./remote-mcp.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 
 type SessionEntry = {
@@ -139,8 +140,13 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   if (error instanceof McpConnectFailure) return error.expected;
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
-  if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403))
-    return "reconnect";
+  if (error instanceof StreamableHTTPError) {
+    if (error.code === 408 || error.code === 429) return "unreachable";
+    // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
+    if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
+      return "reconnect";
+  }
+  if (error instanceof ConnectorRedirectError) return "reconnect";
   // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
   if (error instanceof ServerError || error instanceof TemporarilyUnavailableError)
     return "unreachable";

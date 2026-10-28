@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
-import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
+import type { LoginFieldInput, MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import type { FoldedTranscript } from "@rakazo/core";
 import {
   expandPeerReplies,
@@ -107,7 +107,7 @@ export const Transcript = memo(function Transcript({
   onAnswer: (
     message: ThreadMessage,
     text: string,
-    username?: string,
+    fields?: LoginFieldInput[],
     dismiss?: boolean,
   ) => Promise<void>;
   onReply: (message: ThreadMessage) => void;

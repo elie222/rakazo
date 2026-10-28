@@ -512,6 +512,10 @@ msgstr "Executor toevoegen"
 msgid "Add fallback"
 msgstr "Terugvalmodel toevoegen"
 
+#: src/components/LoginFields.tsx
+msgid "Add field"
+msgstr "Veld toevoegen"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
 msgstr "GraphQL toevoegen"
@@ -2570,10 +2574,6 @@ msgstr "Reageren wanneer... Negeren..."
 msgid "Enter a password"
 msgstr "Voer een wachtwoord in"
 
-#: src/components/VaultSettings.tsx
-msgid "Enter a username and password"
-msgstr "Voer een gebruikersnaam en wachtwoord in"
-
 #: src/lib/user-error.ts
 msgid "Enter a valid email"
 msgstr "Voer een geldig e-mailadres in"
@@ -2917,6 +2917,10 @@ msgstr "Luister naar een voorbeeld"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "Hoi, zo klink ik als ik antwoorden hardop voorlees."
 
+#: src/components/LoginFields.tsx
+msgid "Hidden"
+msgstr "Verborgen"
+
 #: src/components/VaultSettings.tsx
 msgid "Hide"
 msgstr "Verbergen"
@@ -3189,6 +3193,10 @@ msgstr "Behouden"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "sleutel"
+
+#: src/components/LoginFields.tsx
+msgid "Label"
+msgstr "Label"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -4461,6 +4469,7 @@ msgid "Reload"
 msgstr "Herladen"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -5931,6 +5940,7 @@ msgstr ""
 msgid "Using your API key. Free plan ends {freeUntil}."
 msgstr "Je eigen API-sleutel wordt gebruikt. Gratis abonnement eindigt op {freeUntil}."
 
+#: src/components/LoginFields.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Value"

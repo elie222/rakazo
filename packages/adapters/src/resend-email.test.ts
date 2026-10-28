@@ -65,6 +65,33 @@ describe("ResendEmailProvider", () => {
     },
   );
 
+  it("names Resend's validation error without the recipient", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          statusCode: 422,
+          name: "validation_error",
+          message: "Invalid `to` field: user@example.test",
+        },
+        { status: 422 },
+      ),
+    );
+    await expect(provider(request).send(message)).rejects.toThrow(
+      /^Resend email request failed \(HTTP 422: validation_error: Invalid `to` field: <address>\)$/,
+    );
+  });
+
+  it("does not read an oversized error body", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ name: "validation_error", message: "x".repeat(10_000) }, { status: 422 }),
+      );
+    await expect(provider(request).send(message)).rejects.toThrow(
+      /^Resend email request failed \(HTTP 422\)$/,
+    );
+  });
+
   it("bounds retries and strips network errors", async () => {
     const request = vi.fn<typeof fetch>().mockRejectedValue(new Error("private credentials"));
     await expect(provider(request).send(message)).rejects.toThrow(/^Resend email request failed$/);

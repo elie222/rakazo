@@ -1,19 +1,28 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, SettingsScope } from "@rakazo/contracts";
+import type {
+  BotSecretDestination,
+  LoginField,
+  LoginSecretValue,
+  SettingsScope,
+} from "@rakazo/contracts";
 import {
   BotSecretAuth,
   BotSecretName,
   botSecretDestinationSchema,
   commandVariableName,
   commandVariableProblem,
+  DEFAULT_LOGIN_FIELD_LABELS,
   decodeLoginSecret,
   encodeLoginSecret,
   GeneratedSecretRules,
   GenerateSecretInput,
   isPrivateNetworkHost,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldLabels,
   loginCommandName,
   SecretHttpRequest,
+  sameLoginFieldLabel,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { lockSpaceSettings, settingsTarget, withTransactionRetry } from "@rakazo/db";
@@ -262,6 +271,26 @@ export function resolveRequestSecretDestination(
   return { error: "Provide either a reusable credential destination or a connectionId." };
 }
 
+/** Labels only, also from `{ label, hidden }` objects, so a bot's `hidden` is never recorded. */
+export function loginFieldLabelsArgument(value: unknown): unknown {
+  return Array.isArray(value)
+    ? value.map((field) => (isPlainObject(field) ? field.label : field))
+    : value;
+}
+
+/**
+ * The field labels a login card asks for. Only labels: whether a field is hidden is the person's
+ * choice on the card, so anything else the bot sends with a field is dropped.
+ */
+export function requestedLoginFields(value: unknown): { labels?: string[]; error?: string } {
+  if (value === undefined || value === null) return {};
+  const parsed = LoginFieldLabels.safeParse(loginFieldLabelsArgument(value));
+  if (parsed.success) return { labels: parsed.data };
+  return {
+    error: `fields must list 1 to ${LOGIN_FIELD_LIMIT} different labels of at most 64 characters, such as ["Email", "Password"].`,
+  };
+}
+
 const destinationFields = ["name", "origin", "auth"] as const;
 
 /**
@@ -421,11 +450,14 @@ export async function prepareBotSecret(input: {
   /** Refuse instead of replacing a credential saved under this name, even by a concurrent call. */
   createOnly?: boolean;
 }) {
-  const { prisma, secretStore, scope, plaintext } = input;
+  const { prisma, secretStore, scope } = input;
+  let { plaintext } = input;
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
-  if (destination.auth.type === "login") decodeLoginSecret(plaintext);
-  else if (destination.auth.type === "command") {
+  if (destination.auth.type === "login") {
+    // Saved in its current shape, also when an older app sends a username and password.
+    plaintext = encodeLoginSecret(decodeLoginSecret(plaintext));
+  } else if (destination.auth.type === "command") {
     // NUL cannot be an environment value. An unpaired surrogate cannot be percent-encoded
     // later, and that throw would abort every subsequent shell command for this bot.
     if (plaintext.includes("\0") || percentEncoded(plaintext) === undefined) {
@@ -576,7 +608,15 @@ export async function generateBotSecret(input: {
     scope: input.scope,
     createOnly: true,
   };
-  const plaintext = username ? encodeLoginSecret({ username, password: value }) : value;
+  const [usernameLabel, passwordLabel] = DEFAULT_LOGIN_FIELD_LABELS;
+  const plaintext = username
+    ? encodeLoginSecret({
+        fields: [
+          { label: usernameLabel, value: username, hidden: false },
+          { label: passwordLabel, value, hidden: true },
+        ],
+      })
+    : value;
   try {
     if (command) {
       await storeLoginWithCommand(
@@ -630,14 +670,14 @@ export async function getBotSecretMetadata(
 
 /**
  * A saved value for its owner to read. Only for the owner-facing reveal, which confirms the
- * person first; bots never read values. A login returns its username and password.
+ * person first; bots never read values. A login returns its fields.
  */
 export async function revealBotSecret(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
   name: string;
-}): Promise<{ username: string; password: string } | { value: string } | null> {
+}): Promise<LoginSecretValue | { value: string } | null> {
   const row = await input.prisma.vaultCredential.findFirst({
     where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
   });
@@ -750,9 +790,9 @@ export async function requestWithBotSecret(input: {
   }
 }
 
-export type LoginField = "username" | "password";
-const MIN_REDACTED_USERNAME = 6;
-const MIN_REDACTED_PASSWORD_EVERY_RUN = MIN_REDACTED_USERNAME;
+// Redaction is substring replacement, so a short visible value would mangle unrelated text.
+const MIN_REDACTED_VISIBLE_VALUE = 6;
+const MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN = MIN_REDACTED_VISIBLE_VALUE;
 
 function passwordRedactionForms(password: string): string[] {
   return [
@@ -765,9 +805,9 @@ function passwordRedactionForms(password: string): string[] {
 }
 
 /**
- * Redaction forms of the password of every website login saved for this bot. A filled login
- * stays on its page after the run that filled it, so each run hides the passwords before any
- * tool output reaches the model. Usernames stay visible outside the filling run: one is often
+ * Redaction forms of the hidden fields of every website login saved for this bot. A filled
+ * login stays on its page after the run that filled it, so each run hides them before any tool
+ * output reaches the model. Visible fields stay readable outside the filling run: one is often
  * the user's own email, which ordinary tasks need. Only login rows are decrypted.
  */
 export async function loadLoginPasswordRedactions(
@@ -784,10 +824,12 @@ export async function loadLoginPasswordRedactions(
   for (const row of rows) {
     if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") continue;
     try {
-      const { password } = decodeLoginSecret(await secretStore.load(row.ciphertext, row.id));
-      // Every run would mangle each occurrence of a short password; the filling run still hides it.
-      if (password.length < MIN_REDACTED_PASSWORD_EVERY_RUN) continue;
-      for (const form of passwordRedactionForms(password)) forms.add(form);
+      const { fields } = decodeLoginSecret(await secretStore.load(row.ciphertext, row.id));
+      for (const field of fields) {
+        // Every run would mangle each occurrence of a short value; the filling run still hides it.
+        if (!field.hidden || field.value.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
+        for (const form of passwordRedactionForms(field.value)) forms.add(form);
+      }
     } catch {
       // Like an unreadable command variable, it must not stop every computer tool. The id only:
       // an operator can see which login is no longer hidden. Not under a "secret" key, which
@@ -799,16 +841,32 @@ export async function loadLoginPasswordRedactions(
 }
 
 /**
+ * The login field a fill names: by its label, or "username" and "password" for the first visible
+ * and the first hidden field, as a login saved before fields existed was filled.
+ */
+export function findLoginField(fields: readonly LoginField[], name: string) {
+  const labelled = fields.find((field) => sameLoginFieldLabel(field.label, name));
+  if (labelled) return labelled;
+  const key = name.trim().toLowerCase();
+  if (key === "username") return fields.find((field) => !field.hidden);
+  if (key === "password") return fields.find((field) => field.hidden);
+  return undefined;
+}
+
+/**
  * Resolve one field of a saved website login for a page fill. The caller must pass `origin` to
- * the page browser, which refuses to fill unless the page is still on that origin.
+ * the page browser, which refuses to fill unless the page is still on that origin, and must type
+ * a hidden field only into a password field.
  */
 export async function resolveLoginFill(input: {
   prisma: PrismaClient;
   secretStore: SecretStore;
   scope: BotSecretScope;
   name: string;
-  field: LoginField;
-}): Promise<{ text: string; origin: string; redactions: string[] } | { error: string }> {
+  field: string;
+}): Promise<
+  { text: string; hidden: boolean; origin: string; redactions: string[] } | { error: string }
+> {
   const row = await input.prisma.vaultCredential.findFirst({
     where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
   });
@@ -835,18 +893,22 @@ export async function resolveLoginFill(input: {
   if (destination.origin !== storedOrigin.origin) {
     return { error: "Website logins can only be filled on an HTTPS origin." };
   }
-  const login = decodeLoginSecret(await input.secretStore.load(row.ciphertext, row.id));
+  const { fields } = decodeLoginSecret(await input.secretStore.load(row.ciphertext, row.id));
+  const field = findLoginField(fields, input.field);
+  if (!field) {
+    return {
+      error: `This login has no field named ${JSON.stringify(input.field)}. Its fields: ${fields.map((entry) => entry.label).join(", ")}.`,
+    };
+  }
   return {
-    text: login[input.field],
+    text: field.value,
+    hidden: field.hidden,
     origin: destination.origin,
-    // Redaction is substring replacement, so a short username would mangle unrelated text.
     redactions: [
       ...new Set(
-        [login.password, encodeURIComponent(login.password)].concat(
-          login.username.length >= MIN_REDACTED_USERNAME
-            ? [login.username, encodeURIComponent(login.username)]
-            : [],
-        ),
+        fields
+          .filter((entry) => entry.hidden || entry.value.length >= MIN_REDACTED_VISIBLE_VALUE)
+          .flatMap((entry) => [entry.value, encodeURIComponent(entry.value)]),
       ),
     ],
   };

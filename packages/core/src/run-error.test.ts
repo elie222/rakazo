@@ -222,6 +222,13 @@ describe("normalizeRunError", () => {
         },
       ],
       ['504: {"message":"Gateway error"}', { summary: tookTooLong }],
+      [
+        "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
+        {
+          summary: "Your OpenAI is rate limiting requests. Try again shortly.",
+          kind: "rate",
+        },
+      ],
     ])("keeps upstream's earlier branch for %s", (details, expected) => {
       expect(normalizeRunError(details)).toMatchObject({ ...expected, details });
     });
@@ -305,6 +312,7 @@ describe("normalizeRunError", () => {
         message: "Permission denied: this project cannot use the requested model.",
         status: "PERMISSION_DENIED",
       }),
+      '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
     ])("explains a provider refusing the model to the account: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider denied access to this model.",
@@ -323,6 +331,7 @@ describe("normalizeRunError", () => {
       `{"detail":"The 'example-model' model is not supported when using Codex with a ChatGPT account."}`,
       "Validation error: Invocation of model ID example.model-v1 with on-demand throughput isn’t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
       "Validation error: This model doesn't support the image field for user messages.",
+      '400: {"code":"400","message":"Unsupported model example-model"}',
     ])("asks for another model when the provider cannot serve it: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });

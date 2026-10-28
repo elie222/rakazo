@@ -13,7 +13,6 @@ import type {
   CredentialAuth,
   CredentialDestination,
   CredentialDraft,
-  CredentialSecret,
   CredentialType,
 } from "../lib/vault";
 import {
@@ -26,14 +25,14 @@ import {
   EMPTY_DRAFT,
   secretReady,
 } from "../lib/vault";
+import type { LoginFieldRow } from "./login-fields-editor";
+import { LoginFieldsEditor } from "./login-fields-editor";
 import { MenuPicker } from "./menu-picker";
 import { NativeActionButton } from "./native-action-button";
 
-const EMPTY_SECRET: CredentialSecret = { username: "", value: "" };
-
 /**
- * Adds a credential to a vault, or replaces a saved one's value. The username of a website login
- * and the value live only in this sheet's state and are cleared on save and before it closes.
+ * Adds a credential to a vault, or replaces a saved one's value. The value, or a website login's
+ * fields, live only in this sheet's state and are cleared on save and before it closes.
  */
 export function VaultCredentialSheet({
   replacing,
@@ -49,18 +48,23 @@ export function VaultCredentialSheet({
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const usernameInput = useRef<TextInput>(null);
-  const valueInput = useRef<TextInput>(null);
+  const inputs = useRef<(TextInput | null)[]>([]);
   const [draft, setDraft] = useState<CredentialDraft>(EMPTY_DRAFT);
-  const [secret, setSecret] = useState<CredentialSecret>(EMPTY_SECRET);
+  const [secret, setSecret] = useState<{ value: string; fields: LoginFieldRow[] }>(() => ({
+    value: "",
+    fields: [
+      { id: 0, label: t("Username"), value: "", hidden: false },
+      { id: 1, label: t("Password"), value: "", hidden: true },
+    ],
+  }));
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const clear = () => setSecret(EMPTY_SECRET);
-  const { close, closing, endEditing } = useSecretSheetClose(
-    [usernameInput, valueInput],
-    clear,
-    onClose,
-  );
+  const clear = () =>
+    setSecret((prev) => ({
+      value: "",
+      fields: prev.fields.map((field) => ({ ...field, value: "" })),
+    }));
+  const { close, closing, endEditing } = useSecretSheetClose(inputs, clear, onClose);
 
   const type: CredentialType = replacing?.auth.type ?? draft.type;
   const ready = replacing ? secretReady(type, secret) : draftReady(draft, secret);
@@ -211,39 +215,35 @@ export function VaultCredentialSheet({
             </>
           )}
           {type === "login" ? (
+            <LoginFieldsEditor
+              fields={secret.fields}
+              onChange={(update) => setSecret((prev) => ({ ...prev, fields: update(prev.fields) }))}
+              editable={editable}
+              inputs={inputs}
+              onEndEditing={endEditing}
+              onSubmit={() => void save()}
+            />
+          ) : (
             <TextInput
-              ref={usernameInput}
-              accessibilityLabel={t("Username")}
-              value={secret.username}
-              onChangeText={(username) => setSecret((prev) => ({ ...prev, username }))}
-              placeholder={t("Username")}
+              ref={(node) => {
+                inputs.current[0] = node;
+              }}
+              accessibilityLabel={t("Value")}
+              value={secret.value}
+              onChangeText={(value) => setSecret((prev) => ({ ...prev, value }))}
+              placeholder={t("Value")}
               placeholderTextColor={styles.placeholder.color}
-              textContentType="username"
-              autoComplete="username"
+              secureTextEntry
+              {...secretFieldTraits(undefined, { auth: { type } })}
               autoCorrect={false}
               autoCapitalize="none"
+              returnKeyType="done"
+              onSubmitEditing={() => void save()}
               editable={editable}
               onEndEditing={(event) => endEditing(event.nativeEvent.text)}
               style={styles.field}
             />
-          ) : null}
-          <TextInput
-            ref={valueInput}
-            accessibilityLabel={type === "login" ? t("Password") : t("Value")}
-            value={secret.value}
-            onChangeText={(value) => setSecret((prev) => ({ ...prev, value }))}
-            placeholder={type === "login" ? t("Password") : t("Value")}
-            placeholderTextColor={styles.placeholder.color}
-            secureTextEntry
-            {...secretFieldTraits(undefined, { auth: { type } })}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="done"
-            onSubmitEditing={() => void save()}
-            editable={editable}
-            onEndEditing={(event) => endEditing(event.nativeEvent.text)}
-            style={styles.field}
-          />
+          )}
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}

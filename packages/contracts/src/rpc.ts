@@ -37,6 +37,8 @@ import {
 import {
   BotSecretMetadata,
   BotSecretPutInput,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldInput,
   StoredBotSecretName,
   VaultPutInput,
   VaultRevealed,
@@ -576,7 +578,9 @@ export const appContract = {
             answer: z.string(),
             /** Carries the call id for an answer spoken during a call. */
             clientNonce: z.string().min(1).max(200).optional(),
-            /** Only for a login card; `answer` carries its password. */
+            /** A login card's answer, one per requested field; `answer` is then empty. */
+            fields: z.array(LoginFieldInput).min(1).max(LOGIN_FIELD_LIMIT).optional(),
+            /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
             username: z.string().min(1).max(512).optional(),
             /** Turns down a pending secret request; `answer` is then empty. */
             dismiss: z.literal(true).optional(),
@@ -584,8 +588,10 @@ export const appContract = {
           .refine(
             (input) =>
               input.dismiss
-                ? input.answer === "" && !input.username && !input.clientNonce
-                : input.answer.length > 0,
+                ? input.answer === "" && !input.username && !input.fields && !input.clientNonce
+                : input.fields
+                  ? input.answer === "" && !input.username
+                  : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
       )

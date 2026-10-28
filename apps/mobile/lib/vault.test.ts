@@ -12,6 +12,7 @@ import {
   draftReady,
   EMPTY_DRAFT,
   readableCredential,
+  secretReady,
   withCredential,
 } from "./vault";
 
@@ -27,7 +28,11 @@ const saved = (change: Record<string, unknown>) => ({
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...change,
 });
-const secret = { username: "", value: "example-value" };
+const secret = { value: "example-value", fields: [] };
+const loginFields = [
+  { label: "Username", value: " ada ", hidden: false },
+  { label: "Password", value: "example-password", hidden: true },
+];
 
 describe("vault credentials", () => {
   it("shows a site, a login's host, or the variable a command receives", () => {
@@ -65,8 +70,18 @@ describe("vault credentials", () => {
     expect(draftReady({ ...header, headerName: "X-Api-Key" }, secret)).toBe(true);
     const login = draft({ name: "site", origin: "https://example.test", type: "login" });
     expect(draftReady(login, secret)).toBe(false);
-    expect(draftReady(login, { ...secret, username: "ada" })).toBe(true);
-    expect(draftReady(login, { username: "ada", value: "" })).toBe(false);
+    expect(draftReady(login, { value: "", fields: loginFields })).toBe(true);
+  });
+
+  it("needs every login field named, filled and named differently", () => {
+    const ready = (fields: typeof loginFields) => secretReady("login", { value: "", fields });
+    const [username, password] = loginFields;
+    expect(ready(loginFields)).toBe(true);
+    expect(ready([{ ...username!, label: " " }, password!])).toBe(false);
+    expect(ready([{ ...username!, value: "  " }, password!])).toBe(false);
+    expect(ready([username!, { ...password!, value: "" }])).toBe(false);
+    expect(ready([username!, { ...password!, label: " username " }])).toBe(false);
+    expect(ready([])).toBe(false);
   });
 
   it("sends no site for a command variable and trims the rest", () => {
@@ -89,11 +104,21 @@ describe("vault credentials", () => {
     });
   });
 
-  it("saves a website login as one username and password pair", () => {
-    expect(credentialValue("bearer", { username: "", value: " token " })).toBe(" token ");
+  it("saves a website login as its encoded fields", () => {
+    expect(credentialValue("bearer", { value: " token ", fields: [] })).toBe(" token ");
     expect(
-      decodeLoginSecret(credentialValue("login", { username: " ada ", value: "example-password" })),
-    ).toEqual({ username: "ada", password: "example-password" });
+      decodeLoginSecret(
+        credentialValue("login", {
+          value: "",
+          fields: loginFields.map((field, id) => ({ ...field, id })),
+        }),
+      ),
+    ).toEqual({
+      fields: [
+        { label: "Username", value: "ada", hidden: false },
+        { label: "Password", value: "example-password", hidden: true },
+      ],
+    });
   });
 
   it("replaces a saved credential with the same name or adds it", () => {

@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useRef, useState } from "react";
+import { Component, createContext, memo, useCallback, useContext, useRef, useState } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -528,6 +528,29 @@ const components: Components = {
   },
 };
 
+type PlainTextState = { text: string; failed: boolean };
+
+/** The parser recurses, so a pathological message can exhaust the stack; show it as plain text. */
+class PlainTextOnFailure extends Component<{ text: string; children: ReactNode }, PlainTextState> {
+  override state = { text: this.props.text, failed: false };
+
+  static getDerivedStateFromProps(props: { text: string }, state: PlainTextState) {
+    return props.text === state.text ? null : { text: props.text, failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override render() {
+    return this.state.failed ? (
+      <p className="whitespace-pre-wrap">{this.props.text}</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 export function LinkifiedText({ children }: { children: string }) {
   const { request, dialog } = useExternalLinkConfirm();
   return (
@@ -567,20 +590,22 @@ export const ChatMarkdown = memo(function ChatMarkdown({
           <LinkFaviconsPausedContext.Provider value={streaming}>
             <StreamingSourceContext.Provider value={streaming ? children : undefined}>
               <MarkdownTableSourceContext.Provider value={source}>
-                <ReactMarkdown
-                  components={components}
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[preserveSkippedTableText]}
-                  skipHtml
-                  // MarkdownImage decides what an image source may do, so it receives the source as written.
-                  urlTransform={(url, key) =>
-                    key === "src" || markdownMentionId(url)
-                      ? url
-                      : (sanitizeMarkdownUrl(url, true) ?? "")
-                  }
-                >
-                  {source}
-                </ReactMarkdown>
+                <PlainTextOnFailure text={children}>
+                  <ReactMarkdown
+                    components={components}
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[preserveSkippedTableText]}
+                    skipHtml
+                    // MarkdownImage decides what an image source may do, so it receives the source as written.
+                    urlTransform={(url, key) =>
+                      key === "src" || markdownMentionId(url)
+                        ? url
+                        : (sanitizeMarkdownUrl(url, true) ?? "")
+                    }
+                  >
+                    {source}
+                  </ReactMarkdown>
+                </PlainTextOnFailure>
               </MarkdownTableSourceContext.Provider>
             </StreamingSourceContext.Provider>
           </LinkFaviconsPausedContext.Provider>

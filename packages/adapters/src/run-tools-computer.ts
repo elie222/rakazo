@@ -181,7 +181,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               });
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
-              return { text: resolved.text, origin: resolved.origin };
+              return { text: resolved.text, origin: resolved.origin, hidden: resolved.hidden };
             },
             resolveCardFill: async (step) => {
               const paymentWallet = deps.paymentWallet;

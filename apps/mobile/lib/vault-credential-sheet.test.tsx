@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { decodeLoginSecret } from "@rakazo/contracts";
+import { decodeLoginSecret, LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -53,16 +53,36 @@ vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fa
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
+    accessibilityLabel,
     onPress,
     disabled,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     onPress: () => void;
     disabled?: boolean;
   }) => (
     <button type="button" onClick={onPress} disabled={disabled}>
-      {label}
+      {label ?? accessibilityLabel}
     </button>
+  ),
+}));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    value,
+    onValueChange,
+    accessibilityLabel,
+  }: {
+    value: boolean;
+    onValueChange: (next: boolean) => void;
+    accessibilityLabel: string;
+  }) => (
+    <input
+      type="checkbox"
+      checked={value}
+      onChange={(event) => onValueChange(event.target.checked)}
+      aria-label={accessibilityLabel}
+    />
   ),
 }));
 vi.mock("../components/menu-picker", () => ({
@@ -112,13 +132,14 @@ const field = (label: string) =>
 const save = () =>
   [...container.querySelectorAll("button")].find((node) => node.textContent === "Save")!;
 
-async function type(label: string, value: string) {
+async function typeInto(input: HTMLInputElement, value: string) {
   await act(async () => {
-    const input = field(label)!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+const type = (label: string, value: string) => typeInto(field(label)!, value);
 
 async function choose(type: string) {
   await act(async () => {
@@ -172,18 +193,32 @@ it("explains a name that cannot be saved", async () => {
   );
 });
 
-it("replaces a website login's username and password on its saved site", async () => {
+const savedLogin = {
+  name: "example-login",
+  origin: "https://login.example.test",
+  auth: { type: "login" as const },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+const buttonNamed = (label: string) =>
+  [...container.querySelectorAll("button")].filter((node) => node.textContent === label);
+const labelFields = () => [
+  ...container.querySelectorAll<HTMLInputElement>('input[aria-label="Label"]'),
+];
+const hiddenSwitches = () => [
+  ...container.querySelectorAll<HTMLInputElement>('input[aria-label="Hidden"]'),
+];
+
+it("replaces a website login's fields on its saved site", async () => {
   onSave.mockResolvedValue();
-  await render({
-    name: "example-login",
-    origin: "https://login.example.test",
-    auth: { type: "login" },
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  });
+  await render(savedLogin);
   expect(container.textContent).toContain("example-login");
   expect(container.textContent).toContain("login.example.test");
   expect(field("Name")).toBeNull();
+  expect(labelFields().map((input) => input.value)).toEqual(["Username", "Password"]);
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, true]);
+  expect(field("Username")!.type).toBe("text");
+  expect(field("Password")!.type).toBe("password");
   expect(field("Password")!.dataset.contentType).toBe("password");
   await type("Username", " ada ");
   await type("Password", "example-password");
@@ -195,9 +230,54 @@ it("replaces a website login's username and password on its saved site", async (
     origin: "https://login.example.test",
     auth: { type: "login" },
   });
-  expect(decodeLoginSecret(value)).toEqual({ username: "ada", password: "example-password" });
+  expect(decodeLoginSecret(value)).toEqual({
+    fields: [
+      { label: "Username", value: "ada", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
+    ],
+  });
   expect(field("Username")!.value).toBe("");
   expect(field("Password")!.value).toBe("");
+});
+
+it("adds, names and removes login fields, saving only a complete login", async () => {
+  onSave.mockResolvedValue();
+  await render(savedLogin);
+  await type("Username", "ada");
+  await type("Password", "example-password");
+  expect(save().disabled).toBe(false);
+
+  await act(async () => buttonNamed("Add field")[0]!.click());
+  expect(labelFields()).toHaveLength(3);
+  expect(hiddenSwitches()[2]!.checked).toBe(true);
+  expect(field("Value")!.type).toBe("password");
+  expect(save().disabled).toBe(true);
+
+  await type("Value", "1234");
+  expect(save().disabled).toBe(true);
+  await typeInto(labelFields()[2]!, " password ");
+  expect(save().disabled).toBe(true);
+  await typeInto(labelFields()[2]!, "PIN");
+  expect(save().disabled).toBe(false);
+
+  await act(async () => buttonNamed("Remove")[0]!.click());
+  expect(labelFields().map((input) => input.value)).toEqual(["Password", "PIN"]);
+  await act(async () => buttonNamed("Remove")[0]!.click());
+  expect(buttonNamed("Remove")).toHaveLength(0);
+
+  await act(async () => save().click());
+  expect(decodeLoginSecret(onSave.mock.lastCall![1])).toEqual({
+    fields: [{ label: "PIN", value: "1234", hidden: true }],
+  });
+});
+
+it("stops offering Add field at the login field limit", async () => {
+  await render(savedLogin);
+  for (let count = 2; count < LOGIN_FIELD_LIMIT; count += 1) {
+    await act(async () => buttonNamed("Add field")[0]!.click());
+  }
+  expect(labelFields()).toHaveLength(LOGIN_FIELD_LIMIT);
+  expect(buttonNamed("Add field")).toHaveLength(0);
 });
 
 it("clears the value and shows an error when saving fails", async () => {

@@ -1,5 +1,5 @@
 import { markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type { BotAvatarSet, MessageReaction } from "@rakazo/contracts";
+import type { BotAvatarSet, LoginFieldInput, MessageReaction } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
 import { canMarkMessageUnread, isPeerReceiptBlocks, liveMessageComposing } from "@rakazo/core";
@@ -47,7 +47,7 @@ export type MessageRowActions = {
   answer: (
     message: MobileMessage,
     answer: string,
-    username?: string,
+    fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;

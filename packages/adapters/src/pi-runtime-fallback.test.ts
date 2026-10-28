@@ -5,8 +5,10 @@ import type {
   Context,
   CredentialStore,
   Model,
+  ModelThinkingLevel,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
@@ -2694,4 +2696,58 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
       backupA.provider,
     ]);
   });
+});
+
+describe("Pi runtime reasoning efforts an endpoint refuses", () => {
+  const refused =
+    '400: {"message":"reasoning_effort must be one of: low, medium, high, max","type":"invalid_request_error","param":"","code":null}';
+
+  it.each([
+    ["minimal", ["minimal", "low", "low"]],
+    ["off", ["off", "off", "off"]],
+  ] as const)(
+    "retries a refused %s effort with one the endpoint accepts for the rest of the run",
+    async (thinkingLevel, sentLevels) => {
+      providerState.models.set(`${primary.provider}/${primary.id}`, {
+        ...primary,
+        reasoning: true,
+        thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" },
+      });
+      const input = request();
+      input.model.thinkingLevel = thinkingLevel;
+      providerState.stream
+        .mockImplementationOnce((target: Model<"openai-completions">) =>
+          stream(target, message(target, [], "error", refused)),
+        )
+        .mockImplementationOnce((target: Model<"openai-completions">) =>
+          stream(
+            target,
+            message(
+              target,
+              [{ type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } }],
+              "toolUse",
+            ),
+          ),
+        )
+        .mockImplementation((target: Model<"openai-completions">) =>
+          stream(target, message(target, [{ type: "text", text: "Done." }], "stop")),
+        );
+
+      const events = await run(input);
+
+      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      const calls = providerState.stream.mock.calls as [
+        Model<"openai-completions">,
+        unknown,
+        { reasoning?: ModelThinkingLevel } | undefined,
+      ][];
+      expect(
+        calls.map(([target, , options]) => clampThinkingLevel(target, options?.reasoning ?? "off")),
+      ).toEqual(sentLevels);
+      expect(calls.slice(1).map(([target]) => target.thinkingLevelMap?.off)).toEqual([
+        undefined,
+        undefined,
+      ]);
+    },
+  );
 });

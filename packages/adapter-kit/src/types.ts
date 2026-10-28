@@ -1049,8 +1049,9 @@ export type BrowserActStep =
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
       /**
-       * What `text` is: part of a saved login (a password is typed only into a password field) or
-       * an approved purchase's card detail. A card fill always carries `origin`.
+       * What `text` is: a saved login's hidden field ("password", typed only into a password
+       * field) or visible field ("username"), or an approved purchase's card detail. A card fill
+       * always carries `origin`.
        */
       field?: "username" | "password" | "card";
     }
