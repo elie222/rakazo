@@ -1161,3 +1161,4 @@ function withViewOnly(url: string, viewOnly: boolean) {
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
 }
+// CI measurement only; do not merge.
