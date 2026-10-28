@@ -41,7 +41,8 @@ import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import { errorText, voiceAccountErrorText } from "./user-error";
-import { speakText, stopSpeaking } from "./voice";
+import type { SpeechOwner } from "./voice";
+import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 
@@ -637,14 +638,17 @@ function onCallEnded(ended: CallEnded): void {
 }
 
 function productionDeps(): CallDeps {
+  // One owner per call: its hang-up and barge-in stop only its own speech, never
+  // unrelated read-aloud that has since replaced it.
+  const speechOwner = createSpeechOwner();
   return {
     dictate: dictateTurn,
     record: recordClip,
     transcribe: transcribeClip,
     send: sendHeard,
     endCall: closeCall,
-    speak: speakReply,
-    stopSpeaking,
+    speak: (botId, text) => speakReply(botId, text, speechOwner),
+    stopSpeaking: () => stopSpeaking(speechOwner),
     cue: playCallCue,
     waitSound: (action) => {
       if (action === "start") void startWaitSound().catch(() => undefined);
@@ -751,8 +755,8 @@ async function closeCall(botId: string, id: string): Promise<void> {
   await rpc("threads/endCall", { botId, callId: id });
 }
 
-async function speakReply(botId: string, text: string): Promise<void> {
-  if (!(await speakText(text, { botId }))) {
+async function speakReply(botId: string, text: string, owner: SpeechOwner): Promise<void> {
+  if (!(await speakText(text, { botId, owner }))) {
     throw new Error(t("Add a voice provider in Voice settings."));
   }
 }
