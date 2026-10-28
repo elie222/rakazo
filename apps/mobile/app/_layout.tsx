@@ -66,7 +66,7 @@ import {
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import {
-  currentSessionGeneration,
+  currentReadySessionGeneration,
   registerSessionDiskCache,
   subscribeSessionGeneration,
 } from "../lib/session";
@@ -223,7 +223,7 @@ function ChatContentProviders({
     () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
     [endpoint],
   );
-  const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  const session = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
   const trustedSites = useTrustedLinkSites();
   useEffect(() => {
     void loadTrustedLinkSites().catch(() => undefined);
