@@ -214,8 +214,8 @@ function ZoomableImage({
 
 /**
  * Full-screen image viewer: zoom, share or export through the system sheet, close. Rendered as
- * its own stack screen (see app/image.tsx) rather than a React Native Modal: presenting the share
- * sheet over a full-screen Modal and cancelling it leaves that Modal black on iOS.
+ * a transparent stack screen (see app/image.tsx) so dragging reveals the thread underneath.
+ * A React Native Modal instead leaves the viewer black on iOS after cancelling the share sheet.
  */
 export function ImageArtifactViewer({
   threadTarget,
