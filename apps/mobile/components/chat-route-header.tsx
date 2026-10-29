@@ -48,6 +48,11 @@ export function chatRouteHeader(
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
       onBotActions: () => undefined,
+      onComputer: () =>
+        router.push({
+          pathname: "/computer",
+          params: { botId: botId ?? "", name: params.name ?? t("Bot") },
+        }),
       menuActions: [],
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, t, color }),
