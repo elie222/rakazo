@@ -1,27 +1,19 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
 import type { ThreadScrollState } from "@rakazo/core";
-import {
-  appendNewerThreadPage,
-  leaveThreadWindow,
-  openThreadWindow,
-  reconcileThreadScrollState,
-} from "@rakazo/core";
+import { appendNewerThreadPage, leaveThreadWindow, openThreadWindow } from "@rakazo/core";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
+import type { MobileSnapshot } from "./api";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { ThreadScrollBehavior } from "./thread-scroll";
+import type { PinnedThreadWindow } from "./thread-window";
+import { showLatestThread } from "./thread-window";
 
-// Exercise the screen's actual handler without importing its native dependencies.
-// Keep Vitest's jsdom URL transform from replacing the file URL with self.location.
-const testFileUrl = import.meta.url;
-const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-const handler = source.slice(
-  source.indexOf("  function showLatest() {"),
-  source.indexOf("  async function loadOlderMessages() {"),
-);
+vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
+vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => ({}) }));
 
 function page(seqs: number[]) {
   return {
@@ -43,39 +35,37 @@ describe("mobile jump to latest", () => {
           : appendNewerThreadPage(opened.snapshot, opened.newerCursor!, page([2, 3, 4, 5]));
       expect(window.newerCursor).toBeNull();
       expect(leaveThreadWindow(window.snapshot, window.newerCursor)).toBe(window.snapshot);
+      const snapshot = window.snapshot as unknown as MobileSnapshot;
 
       function Probe() {
-        const [snap, setSnap] = useState(window.snapshot);
-        const snapRef = useRef(snap);
-        const pinnedAroundRef = useRef<{ newerCursor: number | null } | null>(window);
+        const [snap, setSnap] = useState(snapshot);
+        const pinnedAroundRef = useRef<PinnedThreadWindow | null>({
+          messageId: "message-4",
+          threadId: "thread-1",
+          newerCursor: window.newerCursor,
+        });
         const jumpScrollTarget = useRef<string | null>("message-4");
         const [scrollState, setThreadScrollState] = useState<ThreadScrollState>({
           detached: false,
           unread: false,
         });
-        const scope = {
+        const thread = {
           pinnedAroundRef,
           joinPinnedAfterLayout: useRef<number | null>(0),
           jumpScrollTarget,
           jumpAnchor: useRef(new ThreadJumpAnchor()),
           expandedHistoryThread: useRef<string | null>("thread-1"),
           scrollBehavior: useRef(new ThreadScrollBehavior()),
+          snapRef: useRef<MobileSnapshot | null>(snap),
           setThreadScrollState,
-          publishThreadScrollState: (next: ThreadScrollState) =>
-            setThreadScrollState((previous) => reconcileThreadScrollState(previous, next)),
-          snapRef,
-          commitSnap: setSnap,
-          leaveThreadWindow,
+          commitSnap: (next: MobileSnapshot | null) => setSnap(next!),
         };
-        const showLatest = new Function(...Object.keys(scope), `${handler}; return showLatest;`)(
-          ...Object.values(scope),
-        );
         const pinned = pinnedAroundRef.current != null || jumpScrollTarget.current != null;
         return (
           <>
             <div data-list={pinned ? "pinned" : "live"}>{snap.messages.length}</div>
             {pinned || scrollState.detached ? (
-              <button type="button" onClick={showLatest}>
+              <button type="button" onClick={() => showLatestThread(thread)}>
                 Jump to latest
               </button>
             ) : null}

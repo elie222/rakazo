@@ -1,0 +1,20 @@
+---
+import type { Integration } from "../integrations";
+
+type Props = {
+  integration: Pick<Integration, "name" | "logo">;
+  size?: "md" | "lg" | "xl";
+};
+
+const { integration, size = "md" } = Astro.props;
+---
+
+<span class:list={["ix-logo", `ix-logo--${size}`]} aria-hidden="true">
+  {
+    integration.logo ? (
+      <img src={integration.logo} alt="" loading="lazy" decoding="async" />
+    ) : (
+      <span>{integration.name.charAt(0)}</span>
+    )
+  }
+</span>

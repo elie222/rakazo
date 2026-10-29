@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ElectronAutoUpdater, UpdaterEvent } from "./auto-update.js";
 import {
   classifyUpdaterFailure,
   DesktopUpdateController,
-  type ElectronAutoUpdater,
   initialUpdateState,
   MIN_CHECK_INTERVAL_MS,
   reduceUpdateState,
   shouldCheck,
-  type UpdaterEvent,
   updaterSupport,
 } from "./auto-update.js";
 
@@ -81,7 +80,11 @@ describe("classifyUpdaterFailure", () => {
   });
 
   it("stays silent when the machine is simply offline", () => {
-    for (const message of ["getaddrinfo ENOTFOUND github.com", "net::ERR_INTERNET_DISCONNECTED"]) {
+    for (const message of [
+      "getaddrinfo ENOTFOUND github.com",
+      "net::ERR_INTERNET_DISCONNECTED",
+      "HttpError: 618 \nData:\n<title>618 jwt:expired</title>",
+    ]) {
       expect(classifyUpdaterFailure(new Error(message))).toEqual({
         kind: "offline",
         message: null,
@@ -361,6 +364,81 @@ describe("DesktopUpdateController", () => {
 
     expect(controller.state()).toMatchObject({ phase: "idle", message: null });
   });
+
+  it.each(["event", "rejection"] as const)(
+    "keeps background offline failures silent after a throttled manual check (%s)",
+    async (failureMode) => {
+      let now = 1_000;
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          if (vi.mocked(fake.updater.checkForUpdates).mock.calls.length === 1) {
+            fake.emit("update-not-available");
+            return;
+          }
+          const error = new Error("net::ERR_INTERNET_DISCONNECTED");
+          if (failureMode === "rejection") throw error;
+          fake.emit("error", error);
+        }),
+      });
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+        now: () => now,
+        iso: () => NOW,
+      });
+
+      await controller.check(false);
+      const previous = controller.state();
+      expect(await controller.check(true)).toBe(previous);
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+
+      now += MIN_CHECK_INTERVAL_MS;
+      await controller.check(false);
+
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+      expect(controller.state()).toMatchObject({ phase: "idle", message: null });
+    },
+  );
+
+  it.each(["loading", "checking"] as const)(
+    "reports offline failures when a manual check joins a background check during %s",
+    async (joinDuring) => {
+      const loading = deferred();
+      const checking = deferred();
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          await checking.promise;
+          fake.emit("error", new Error("net::ERR_INTERNET_DISCONNECTED"));
+        }),
+      });
+      const controller = new DesktopUpdateController(
+        packaged,
+        async () => {
+          await loading.promise;
+          return fake.updater;
+        },
+        clock,
+      );
+
+      const background = controller.check(false);
+      if (joinDuring === "checking") {
+        loading.resolve();
+        await vi.waitFor(() => expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1));
+      }
+      expect(controller.check(true)).toBe(background);
+      loading.resolve();
+      checking.resolve();
+      await background;
+
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+      expect(controller.state()).toMatchObject({
+        phase: "idle",
+        message: "Could not reach the update server.",
+      });
+    },
+  );
 
   it("runs installation at most once", async () => {
     let fake: ReturnType<typeof fakeUpdater>;

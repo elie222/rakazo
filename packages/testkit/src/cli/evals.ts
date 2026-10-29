@@ -8,7 +8,6 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
@@ -27,6 +26,7 @@ import {
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
+import { startPostgres } from "./postgres.js";
 
 async function main() {
   const { values } = parseArgs({
@@ -418,13 +418,15 @@ async function main() {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-evals-"));
   let postgres: StartedPostgreSqlContainer | undefined;
   let stopRequested = false;
+  const stop = new AbortController();
   const requestStop = () => {
     stopRequested = true;
+    stop.abort();
   };
   process.on("SIGINT", requestStop);
   process.on("SIGTERM", requestStop);
   try {
-    postgres = await new PostgreSqlContainer("postgres:18-alpine").start();
+    postgres = await startPostgres(stop.signal);
     const databaseUrl = postgres.getConnectionUri();
     Object.assign(process.env, {
       DATABASE_URL: databaseUrl,
@@ -469,7 +471,7 @@ async function main() {
       timeout: 120_000,
     });
     // Import runtime modules only after generation; their barrel exports load Prisma.
-    const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const { runTrial } = await import("../evals/runner.js");
     const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");

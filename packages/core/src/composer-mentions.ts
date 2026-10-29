@@ -1,19 +1,24 @@
+import type { BotAvatarSet, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import type { CronLabels } from "./cron.js";
 import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
-import { hasMentionToken } from "./group-mentions.js";
 
 export const COMPOSER_MENTION_KINDS = ["bot", "group", "routine", "connector", "everyone"] as const;
 
 export type ComposerMentionKind = (typeof COMPOSER_MENTION_KINDS)[number];
+
+export type ComposerMentionRange = { start: number; end: number };
 
 /** Chip selected in the composer `@` picker. */
 export type ComposerMention = {
   kind: ComposerMentionKind;
   id: string;
   name: string;
+  /** Exact prompt occurrences for client-side action-token cleanup. */
+  ranges?: ComposerMentionRange[];
   subtitle?: string;
   color?: string;
+  avatarSet?: BotAvatarSet;
   /** Owning bot for routine chips (test-run lands on that bot). */
   botId?: string;
   /** Connected connection row id when kind is connector + connected. */
@@ -21,7 +26,12 @@ export type ComposerMention = {
   authStatus?: "connected" | "needs_auth";
 };
 
-export type MentionPickerBot = { id: string; name: string; color?: string };
+export type MentionPickerBot = {
+  id: string;
+  name: string;
+  color?: string;
+  avatarSet?: BotAvatarSet;
+};
 export type MentionPickerGroup = { id: string; name: string };
 export type MentionPickerRoutine = {
   id: string;
@@ -37,6 +47,41 @@ export type MentionPickerConnector = {
   connectionId?: string;
 };
 
+/**
+ * Connected apps first, then catalog apps the user could still connect. A catalog
+ * entry already covered by a connected row (same provider or name) is skipped.
+ */
+export function mentionConnectorsFrom(
+  connections: readonly Pick<Connection, "id" | "displayName" | "provider" | "status">[],
+  catalog: readonly Pick<
+    ConnectionCatalogItem,
+    "connectorId" | "slug" | "name" | "connected" | "noAuth"
+  >[],
+): MentionPickerConnector[] {
+  const connected = connections.filter((row) => row.status === "connected");
+  const options: MentionPickerConnector[] = connected.map((row) => ({
+    id: row.id,
+    name: row.displayName,
+    authStatus: "connected",
+    connectionId: row.id,
+  }));
+  for (const item of catalog) {
+    if (item.connected || item.noAuth) continue;
+    const covered = connected.some(
+      (row) =>
+        row.provider.toLowerCase() === item.slug.toLowerCase() ||
+        row.displayName.toLowerCase() === item.name.toLowerCase(),
+    );
+    if (covered) continue;
+    options.push({
+      id: `catalog:${item.connectorId}:${item.slug}`,
+      name: item.name,
+      authStatus: "needs_auth",
+    });
+  }
+  return options;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -45,15 +90,94 @@ export function mentionChipKey(mention: Pick<ComposerMention, "kind" | "id">): s
   return `${mention.kind}:${mention.id}`;
 }
 
-export function stripMentionToken(text: string, mentionName: string): string {
-  const normalized = mentionName.trim();
-  if (!normalized) return text.trim();
+type MentionName = { name: string };
+
+/** Recognize each full mention once, so a name is not also its shorter prefix. */
+function composerMentionSpans(text: string, mentions: readonly MentionName[]) {
+  const names = [...new Set(mentions.map((mention) => mention.name.trim()).filter(Boolean))].sort(
+    (a, b) => b.length - a.length,
+  );
+  if (names.length === 0) return [];
   const pattern = new RegExp(
-    `(^|[^\\p{L}\\p{N}_-])@${escapeRegExp(normalized)}(?![\\p{L}\\p{N}_-])`,
+    `(?<![\\p{L}\\p{N}_-])@(${names.map(escapeRegExp).join("|")})(?![\\p{L}\\p{N}_-])`,
     "giu",
   );
-  return text
-    .replace(pattern, (_match, prefix: string) => prefix ?? "")
+  return [...text.matchAll(pattern)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    name: match[1]!.toLowerCase(),
+  }));
+}
+
+/** The active @query at a collapsed caret, including its full recognized name. */
+export type ComposerMentionQuery = { start: number; end: number; query: string };
+
+export function composerMentionQuery(
+  text: string,
+  selectionStart = text.length,
+  selectionEnd = selectionStart,
+  knownMentions: readonly MentionName[] = [],
+  bindings: readonly (ComposerMentionRange & { mention: MentionName })[] = [],
+): ComposerMentionQuery | null {
+  if (selectionStart !== selectionEnd || selectionStart < 0 || selectionStart > text.length)
+    return null;
+  const bound = bindings.find((span) => selectionStart > span.start && selectionStart <= span.end);
+  if (bound)
+    return {
+      start: bound.start,
+      end: bound.end,
+      query: text.slice(bound.start + 1, selectionStart),
+    };
+  const recognized = composerMentionSpans(text, knownMentions).find(
+    (span) => selectionStart > span.start && selectionStart <= span.end,
+  );
+  if (recognized) return { ...recognized, query: text.slice(recognized.start + 1, selectionStart) };
+  const match = /(?:^|\s)@([\w-]*)$/.exec(text.slice(0, selectionStart));
+  if (!match) return null;
+  const query = match[1] ?? "";
+  const start = selectionStart - query.length - 1;
+  const rest = /^[\w-]*/.exec(text.slice(selectionStart))?.[0] ?? "";
+  return { start, end: selectionStart + rest.length, query };
+}
+
+export function completeComposerMention(
+  text: string,
+  query: ComposerMentionQuery,
+  mention: MentionName,
+): { text: string; caret: number } {
+  const suffix = text.slice(query.end);
+  const token = `@${mention.name}`;
+  const separator = suffix.length === 0 ? " " : "";
+  return {
+    text: `${text.slice(0, query.start)}${token}${separator}${suffix}`,
+    caret: query.start + token.length + (separator || suffix.startsWith(" ") ? 1 : 0),
+  };
+}
+
+/** Remove selected full tokens without rewriting surrounding text or whitespace. */
+export function removeComposerMention(
+  text: string,
+  mention: MentionName,
+  knownMentions: readonly MentionName[] = [],
+): string {
+  const spans = composerMentionSpans(text, [...knownMentions, mention]);
+  let result = text;
+  for (const span of spans.reverse()) {
+    if (span.name === mention.name.trim().toLowerCase()) {
+      result = result.slice(0, span.start) + result.slice(span.end);
+    }
+  }
+  return result;
+}
+
+export function stripMentionToken(
+  text: string,
+  mentionName: string,
+  knownMentions: readonly MentionName[] = [],
+): string {
+  const normalized = mentionName.trim();
+  if (!normalized) return text.trim();
+  return removeComposerMention(text, { name: normalized }, knownMentions)
     .replace(/[^\S\n]+/g, " ")
     .replace(/[^\S\n]*\n/g, "\n")
     .trim();
@@ -61,15 +185,35 @@ export function stripMentionToken(text: string, mentionName: string): string {
 
 export function stripMentionKinds(
   text: string,
-  mentions: readonly Pick<ComposerMention, "kind" | "name">[],
+  mentions: readonly Pick<ComposerMention, "kind" | "name" | "ranges">[],
   kinds: readonly ComposerMentionKind[],
 ): string {
+  const ranges = mentions
+    .filter((mention) => kinds.includes(mention.kind))
+    .flatMap((mention) =>
+      (mention.ranges ?? []).filter(
+        (range) =>
+          Number.isInteger(range.start) &&
+          Number.isInteger(range.end) &&
+          range.start >= 0 &&
+          range.end <= text.length &&
+          text.slice(range.start, range.end) === `@${mention.name}`,
+      ),
+    )
+    .sort((a, b) => b.start - a.start);
   let result = text;
+  let previousStart = text.length;
+  for (const range of ranges) {
+    if (range.end > previousStart) continue;
+    result = result.slice(0, range.start) + result.slice(range.end);
+    previousStart = range.start;
+  }
   for (const mention of mentions) {
-    if (kinds.includes(mention.kind)) {
-      result = stripMentionToken(result, mention.name);
+    if (kinds.includes(mention.kind) && mention.ranges === undefined) {
+      result = stripMentionToken(result, mention.name, mentions);
     }
   }
+  if (ranges.length) result = result.replace(/[^\S\n]+/g, " ").replace(/[^\S\n]*\n/g, "\n");
   return result.trim();
 }
 
@@ -187,6 +331,7 @@ export function buildComposerMentionOptions(input: {
       name,
       subtitle: "Bot",
       color: bot.color,
+      avatarSet: bot.avatarSet,
     });
   }
 
@@ -263,11 +408,7 @@ export function resolveComposerSendPlan(input: {
 } {
   const parts = partitionComposerMentions(input.mentions);
   const mentionedGroup = parts.groups[0];
-  let trimmed = stripMentionKinds(input.text.trim(), input.mentions, [
-    "group",
-    "routine",
-    "connector",
-  ]);
+  let trimmed = stripMentionKinds(input.text, input.mentions, ["group", "routine", "connector"]);
   trimmed = appendConnectorIntent(trimmed, needsAuthConnectorNames(input.mentions));
   if (!trimmed && parts.connectors.length) {
     trimmed = parts.connectors.map((mention) => `@${mention.name}`).join(" ");
@@ -289,11 +430,4 @@ export function resolveComposerSendPlan(input: {
     shouldRunRoutines,
     isNoOp: !shouldSend && !shouldOpenGroup && !shouldRunRoutines,
   };
-}
-
-export function mentionStillInPrompt(
-  text: string,
-  mention: Pick<ComposerMention, "name">,
-): boolean {
-  return hasMentionToken(text, mention.name);
 }

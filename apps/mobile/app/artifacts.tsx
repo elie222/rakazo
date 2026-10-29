@@ -95,7 +95,7 @@ export default function ArtifactsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      rpc<MobileBot[]>("bots/list")
+      rpc("bots/list")
         .then(setBots)
         .catch(() => undefined);
     }, []),
@@ -262,7 +262,14 @@ export default function ArtifactsScreen() {
                 label={bot.name}
                 active={activeBotId === bot.id}
                 onPress={() => setActiveBotId(bot.id)}
-                avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+                avatar={
+                  <BotAvatar
+                    color={bot.color}
+                    avatarSet={bot.avatarSet}
+                    identity={bot.id}
+                    size={16}
+                  />
+                }
               />
             ))}
           </ScrollView>
@@ -412,7 +419,7 @@ function ArtifactRow({
         <View style={styles.rowFooter}>
           {bot ? (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={14} />
+              <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={14} />
               <Text style={styles.rowBotName} numberOfLines={1}>
                 {bot.name}
               </Text>

@@ -2,23 +2,13 @@ import { dateLocaleForUi } from "./i18n";
 
 const DAY_MS = 86_400_000;
 
-export function filterBots<T extends { name: string; title?: string; preview: string }>(
+export function filterBots<T extends { name: string; preview: string }>(
   bots: T[],
   query: string,
 ): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return bots;
-  return bots.filter((bot) =>
-    `${bot.name} ${bot.title ?? ""} ${bot.preview}`.toLowerCase().includes(needle),
-  );
-}
-
-// Inboxes saved before titles were kept have none.
-export function botTag(title: string | undefined, name: string, maxLength = 22) {
-  const tag = title?.trim() ?? "";
-  if (!tag || tag.toLowerCase() === name.trim().toLowerCase()) return "";
-  if (tag.length > maxLength) return "";
-  return tag;
+  return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
 }
 
 export function formatThreadTime(iso: string, now = new Date()) {

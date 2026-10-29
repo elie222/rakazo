@@ -16,11 +16,9 @@ export interface AvatarClip {
   rotation?: readonly AvatarKey[];
   zoom?: readonly AvatarKey[];
   lids?: readonly AvatarKey[];
-  /** Times of authored blinks. */
   blinks?: readonly number[];
 }
 
-/** A clip's name. */
 export type AvatarClipName = string;
 
 /** Ease in and out: the default. */
@@ -29,7 +27,6 @@ const SOFT: Ease = [0.45, 0, 0.55, 1];
 const DART: Ease = [0.35, 0.1, 0.25, 1];
 /** A return home that settles with the slightest overshoot. */
 const HOME: Ease = [0.4, 0, 0.3, 1.06];
-/** A key, eased in and out unless told otherwise. */
 const key = (time: number, value: readonly number[], ease: Ease = SOFT): AvatarKey => [
   time,
   value,
@@ -253,7 +250,6 @@ export const AVATAR_REST_POSE: AvatarPose = {
 /** How long the bridge between two clips lasts when their poses differ, and its ease. */
 export const AVATAR_BRIDGE = { seconds: 0.6, ease: SOFT };
 
-/** The ease of a key without its own. */
 const DEFAULT_EASE: Ease = SOFT;
 /** An authored blink: seconds to shut, then seconds to open again. */
 const BLINK = { close: 0.08, open: 0.14 };

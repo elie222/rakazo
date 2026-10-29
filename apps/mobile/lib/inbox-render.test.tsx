@@ -1,514 +1,61 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { ACTIVE_RUN_STATUSES, isRunWorking } from "@rakazo/core";
-import type { ComponentType, ReactElement, ReactNode } from "react";
-import * as React from "react";
-import { act, memo, useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactElement, ReactNode } from "react";
+import { act, cloneElement, useEffect, useMemo, useState } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useInboxRenderItem } from "../components/inbox-render-item";
+import { BotRow } from "../components/inbox-rows";
 import type { MobileBot } from "./api";
-import { botTag, formatThreadTime } from "./inbox";
+import { createInboxBot } from "./create-inbox-bot";
+import { formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
-import { canDeleteInboxSpace, spaceInboxItems } from "./inbox-spaces";
-import { inboxRowActionList } from "./inbox-swipe";
+import type { InboxItem, InboxSpace } from "./inbox-spaces";
+import { inboxItemKey, spaceInboxItems } from "./inbox-spaces";
+import { useCollapsedSections } from "./use-collapsed-sections";
+import { useInboxDay } from "./use-inbox-day";
+import { usePublishSearchInbox } from "./use-publish-search-inbox";
 
-// Section headings use the real item builder; its space actions stay unused here.
-vi.mock("./api", () => ({}));
+type MenuProps = {
+  actions: { id: string; title: string }[];
+  onPressAction: (event: { nativeEvent: { event: string } }) => void;
+  children?: ReactNode;
+};
+const ui = vi.hoisted(() => ({
+  focused: true,
+  appStateListener: undefined as ((state: string) => void) | undefined,
+  previews: 0,
+  push: vi.fn(),
+  menus: [] as MenuProps[],
+  swipeRows: [] as string[],
+  avatars: [] as string[],
+  chevronStarts: [] as number[],
+  chevronTargets: [] as number[],
+  rpc: vi.fn(),
+  setSearchInbox: vi.fn(),
+  addToSearchInbox: vi.fn(),
+  searchInboxSession: vi.fn(),
+  loadCollapsedSections: vi.fn(),
+  saveCollapsedSections: vi.fn(),
+}));
 
-const testFileUrl = import.meta.url;
-const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
-const rowDimensions = source.slice(
-  source.indexOf("const INBOX_ROW ="),
-  source.indexOf("function ConversationRow("),
-);
-
-// Run the actual row and renderItem code with native presentation stubbed out.
-// React still performs real memo comparisons; this measures JS row executions only.
-function measure(before: boolean) {
-  let renders = 0;
-  const rowSource = source.slice(
-    source.indexOf("const BotRow = memo("),
-    source.indexOf("const GroupRow = memo("),
-  );
-  const listSource = source.slice(
-    source.indexOf("  const renderItem = useCallback("),
-    source.indexOf("  if (!ready) {"),
-  );
-  const scope = {
-    React,
-    memo: before ? (component: ComponentType) => component : memo,
-    useCallback,
-    useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => {
-      renders++;
-      return text;
+vi.mock("react-native", () => {
+  const flatten = (style: unknown): CSSProperties =>
+    Object.assign({}, ...[style].flat(Number.POSITIVE_INFINITY).filter(Boolean));
+  return {
+    AppState: {
+      addEventListener: (_event: string, listener: (state: string) => void) => {
+        ui.appStateListener = listener;
+        return { remove: () => (ui.appStateListener = undefined) };
+      },
     },
-    formatThreadTime: () => "",
-    botTag: () => "",
-    isRunWorking,
-    FALLBACK_COLOR: "gray",
-    ConversationRow: () => null,
-    BotAvatar: () => null,
-    AvatarRow: ({ children }: { children: ReactElement }) => children,
-    // Rows in the current space carry the iOS swipe host; it must not defeat the memo.
-    InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
-    inboxRowActionList,
-  };
-  const compile = (text: string) =>
-    ts.transpileModule(text, {
-      compilerOptions: {
-        jsx: ts.JsxEmit.React,
-        target: ts.ScriptTarget.ES2022,
-        module: ts.ModuleKind.CommonJS,
-      },
-    }).outputText;
-  const BotRow = new Function(
-    ...Object.keys(scope),
-    compile(`${rowDimensions}\n${rowSource}\nreturn BotRow;`),
-  )(...Object.values(scope));
-  const action = vi.fn();
-  const dependencies = {
-    React,
-    useCallback,
-    BotRow,
-    appearance: "light",
-    botAction: action,
-    botSections: [],
-    editSectionFromMenu: action,
-    organizeFromMenu: action,
-    SWIPE_ROWS: true,
-    day: new Date(2026, 9, 10).getTime(),
-    chooseInboxSpace: action,
-    collapsed: new Set(),
-    confirmDeleteSpace: action,
-    deleteSection: action,
-    me: { spaceId: "space-1" },
-    openBot: action,
-    openGroup: action,
-    groupAction: action,
-    organizeBot: action,
-    organizeGroup: action,
-    spaceBusy: false,
-    router: { push: action },
-    spaceRecoveryId: null,
-    styles: {},
-    t: action,
-    toggleCollapsed: action,
-  };
-  const useRenderItem = new Function(
-    ...Object.keys(dependencies),
-    compile(`${listSource}\nreturn renderItem;`),
-  );
-  let previousRenderItem: unknown;
-  function List({ bots }: { bots: MobileBot[] }) {
-    const renderItem = useRenderItem(...Object.values(dependencies)) as (info: {
-      item: unknown;
-    }) => ReactElement;
-    if (previousRenderItem) expect(renderItem).toBe(previousRenderItem);
-    previousRenderItem = renderItem;
-    return bots.map((bot) =>
-      before ? (
-        <BotRow
-          key={bot.id}
-          bot={bot}
-          onPress={() => action(bot)}
-          onLongPress={() => action(bot)}
-        />
-      ) : (
-        React.cloneElement(renderItem({ item: { type: "bot", bot } }), { key: bot.id })
-      ),
-    );
-  }
-  let bots = Array.from({ length: 30 }, (_, index) => ({
-    id: `bot-${index}`,
-    name: `Helper ${index}`,
-    spaceId: "space-1",
-    preview: "",
-    title: "",
-    color: "gray",
-    status: "idle",
-    notifyOnFinish: true,
-    unread: false,
-  })) as MobileBot[];
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    act(() => root.render(<List bots={bots} />));
-    const mount = renders;
-    for (let poll = 0; poll < 12; poll++) {
-      const fetched = structuredClone(bots);
-      bots = before ? fetched : retainInboxValue(bots, fetched);
-      // Force parent rendering too, as with activity/refresh state changes.
-      act(() => root.render(<List bots={bots} />));
-    }
-    const idle = renders - mount;
-    const fetched = structuredClone(bots);
-    fetched[0]!.status = "running";
-    fetched[0]!.unread = true;
-    bots = before ? fetched : retainInboxValue(bots, fetched);
-    act(() => root.render(<List bots={bots} />));
-    return { mount, idle, changed: renders - mount - idle };
-  } finally {
-    act(() => root.unmount());
-  }
-}
-
-it("skips unchanged inbox rows for 12 idle polls and renders the changed bot", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  try {
-    expect(measure(true)).toEqual({ mount: 30, idle: 360, changed: 30 });
-    expect(measure(false)).toEqual({ mount: 30, idle: 0, changed: 1 });
-  } finally {
-    vi.unstubAllGlobals();
-  }
-});
-
-it.each(["midnight", "focus", "foreground"])(
-  "refreshes unchanged bot and group timestamps on %s",
-  (trigger) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 9, 10, 23, 59));
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    let focused = true;
-    let onAppStateChange: ((state: string) => void) | undefined;
-    const remove = vi.fn(() => {
-      onAppStateChange = undefined;
-    });
-    const action = vi.fn();
-    const scope = {
-      React,
-      memo,
-      useCallback,
-      useState,
-      useFocusEffect: (effect: () => (() => void) | undefined) => {
-        useEffect(() => (focused ? effect() : undefined), [effect, focused]);
-      },
-      AppState: {
-        addEventListener: (_event: string, listener: (state: string) => void) => {
-          onAppStateChange = listener;
-          return { remove };
-        },
-      },
-      useI18n: () => ({ t: (text: string) => text }),
-      previewSnippet: (text: string) => text,
-      formatThreadTime,
-      botTag: () => "",
-      isRunWorking,
-      FALLBACK_COLOR: "gray",
-      ConversationRow: ({ time }: { time: string }) => <span>{time}</span>,
-      BotAvatar: () => null,
-      AvatarRow: ({ children }: { children: ReactElement }) => children,
-      GroupAvatar: () => null,
-      InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
-      inboxRowActionList,
-      appearance: "light",
-      botAction: action,
-      groupAction: action,
-      botSections: [],
-      editSectionFromMenu: action,
-      organizeFromMenu: action,
-      SWIPE_ROWS: true,
-      chooseInboxSpace: action,
-      collapsed: new Set(),
-      confirmDeleteSpace: action,
-      deleteSection: action,
-      me: { spaceId: "space-1" },
-      openBot: action,
-      openGroup: action,
-      organizeBot: action,
-      organizeGroup: action,
-      spaceBusy: false,
-      router: { push: action },
-      spaceRecoveryId: null,
-      styles: {},
-      t: action,
-      toggleCollapsed: action,
-    };
-    const rowSource = source.slice(
-      source.indexOf("const BotRow = memo("),
-      source.indexOf("function createHomeStyles()"),
-    );
-    const daySource = source.slice(
-      source.indexOf("  const [day, setDay]"),
-      source.indexOf("  const [bots, setBots]"),
-    );
-    const listSource = source.slice(
-      source.indexOf("  const renderItem = useCallback("),
-      source.indexOf("  if (!ready) {"),
-    );
-    const compiled = ts.transpileModule(
-      `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${daySource}\n${listSource}
-        return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
-      };`,
-      { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-    ).outputText;
-    const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-    const today = new Date(2026, 9, 10, 12, 30).toISOString();
-    const sixDaysAgo = new Date(2026, 9, 4, 12, 30).toISOString();
-    // Keep the response and every row object identical throughout the date change.
-    const items = [today, sixDaysAgo].flatMap((updatedAt) => [
-      { type: "bot", bot: { id: updatedAt, name: "Helper", preview: "", updatedAt } },
-      {
-        type: "group",
-        group: { id: updatedAt, name: "Team", preview: "", members: [], updatedAt },
-      },
-    ]);
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    const labels = () => Array.from(container.querySelectorAll("span"), (span) => span.textContent);
-    try {
-      act(() => root.render(<List items={items} />));
-      const weekday = formatThreadTime(sixDaysAgo);
-      expect(labels()).toEqual(["12:30", "12:30", weekday, weekday]);
-      if (trigger === "focus") {
-        focused = false;
-        act(() => root.render(<List items={items} />));
-        expect(onAppStateChange).toBeUndefined();
-        expect(vi.getTimerCount()).toBe(0);
-      }
-      if (trigger === "midnight") {
-        act(() => vi.advanceTimersByTime(60_000));
-      } else {
-        // Suspended native timers need not fire before the app returns.
-        vi.setSystemTime(new Date(2026, 9, 11, 8));
-        act(() => {
-          if (trigger === "foreground") onAppStateChange?.("active");
-          else {
-            focused = true;
-            root.render(<List items={items} />);
-          }
-        });
-      }
-      expect(labels()).toEqual([
-        formatThreadTime(today),
-        formatThreadTime(today),
-        formatThreadTime(sixDaysAgo),
-        formatThreadTime(sixDaysAgo),
-      ]);
-      expect(labels()[0]).not.toBe("12:30");
-      expect(labels()[2]).not.toBe(weekday);
-      expect(vi.getTimerCount()).toBe(1);
-    } finally {
-      act(() => root.unmount());
-      expect(onAppStateChange).toBeUndefined();
-      expect(vi.getTimerCount()).toBe(0);
-      vi.useRealTimers();
-      vi.unstubAllGlobals();
-    }
-  },
-);
-
-it("renders saved bot rows without a title or notification setting", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const scope = {
-    React,
-    memo,
-    useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => text,
-    formatThreadTime,
-    botTag,
-    isRunWorking,
-    FALLBACK_COLOR: "gray",
-    ConversationRow: ({
-      tag,
-      preview,
-      accessibilityLabel,
-      avatar,
-    }: {
-      tag: string;
-      preview: string;
-      accessibilityLabel: string;
-      avatar: ReactElement;
-    }) => (
-      <span>
-        {[tag, preview, accessibilityLabel].join("|")}
-        {avatar}
-      </span>
-    ),
-    BotAvatar: ({ muted, motion }: { muted: boolean; motion?: string }) =>
-      `${muted ? " muted" : ""}${motion ? ` ${motion}` : ""}`,
-    // The row's avatar freezes while the row is scrolled out of view.
-    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
-      <i data-row={id}>{children}</i>
-    ),
-  };
-  const rowSource = source.slice(
-    source.indexOf("const BotRow = memo("),
-    source.indexOf("const GroupRow = memo("),
-  );
-  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-  // Inboxes saved before titles and notification settings were kept have bots without them.
-  const bots = [
-    { id: "bot-a", name: "Alpha", title: "Research", preview: "", notifyOnFinish: true },
-    { id: "bot-b", name: "Beta", preview: "" },
-    { id: "bot-c", name: "Gamma", title: "", preview: "", notifyOnFinish: false },
-  ];
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    act(() =>
-      root.render(
-        bots.map((bot) => <BotRow key={bot.id} bot={bot} day={0} onPress={() => undefined} />),
-      ),
-    );
-    expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Research|Research|Alpha, Research, Research lazy",
-      "|No messages yet|Beta, No messages yet lazy",
-      "|No messages yet|Gamma, notifications silenced, No messages yet muted lazy",
-    ]);
-    expect(Array.from(container.querySelectorAll("i"), (row) => row.dataset.row)).toEqual([
-      "bot-a",
-      "bot-b",
-      "bot-c",
-    ]);
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("says working only while the bot works, and shows nothing beside the time", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const scope = {
-    React,
-    memo,
-    useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => text,
-    formatThreadTime,
-    botTag: () => "",
-    ACTIVE_RUN_STATUSES,
-    isRunWorking,
-    FALLBACK_COLOR: "gray",
-    // The avatar's motion and corner dot are the only working sign; the time stands alone.
-    ConversationRow: (props: { accessibilityLabel: string }) => (
-      <span data-indicator={"indicator" in props}>{props.accessibilityLabel}</span>
-    ),
-    BotAvatar: () => null,
-    AvatarRow: ({ children }: { children: ReactElement }) => children,
-  };
-  const rowSource = source.slice(
-    source.indexOf("const BotRow = memo("),
-    source.indexOf("const GroupRow = memo("),
-  );
-  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-  const bots = ["running", "waiting_takeover", "waiting_input", "idle"].map((status) => ({
-    id: status,
-    name: "Helper",
-    preview: "Hi",
-    status,
-  }));
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    act(() =>
-      root.render(
-        bots.map((bot) => <BotRow key={bot.id} bot={bot} day={0} onPress={() => undefined} />),
-      ),
-    );
-    // A "Needs you" computer card or an ask card is the state; the row must not claim work.
-    expect(
-      Array.from(container.querySelectorAll("span"), (span) => span.dataset.indicator),
-    ).toEqual(["false", "false", "false", "false"]);
-    expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Helper, Working…, Hi",
-      "Helper, Hi",
-      "Helper, Hi",
-      "Helper, Hi",
-    ]);
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const action = vi.fn();
-  const listSource = source.slice(
-    source.indexOf("  const renderItem = useCallback("),
-    source.indexOf("  if (!ready) {"),
-  );
-  // The list's own key for each item.
-  const keySource = source.slice(
-    source.indexOf("function inboxItemKey("),
-    source.indexOf("function inboxSignal("),
-  );
-  const scope = {
-    React,
-    useCallback,
-    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
-      <i data-row={id}>{children}</i>
-    ),
-    PinnedTiles: () => <b />,
-    appearance: "light",
-    botAction: action,
-    botSections: [],
-    chooseInboxSpace: action,
-    collapsed: new Set(),
-    confirmDeleteSpace: action,
-    deleteSection: action,
-    day: 0,
-    editSectionFromMenu: action,
-    groupAction: action,
-    me: { spaceId: "space-1" },
-    openBot: action,
-    openGroup: action,
-    organizeBot: action,
-    organizeFromMenu: action,
-    organizeGroup: action,
-    spaceBusy: false,
-    router: { push: action },
-    spaceRecoveryId: null,
-    styles: {},
-    t: action,
-    toggleCollapsed: action,
-  };
-  const compiled = ts.transpileModule(
-    `${keySource}\nreturn function List() {\n${listSource}\nreturn renderItem({ item: { type: "pinned", chats: [] } });\n};`,
-    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    act(() => root.render(<List />));
-    expect(container.querySelector('[data-row="pinned"] > b')).not.toBeNull();
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
-
-it("collapses a section from its heading and keeps the choice for the account", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const action = vi.fn();
-  const loadCollapsedSections = vi.fn(
-    async (): Promise<{ userId: string; keys: Set<string> } | null> => null,
-  );
-  const saveCollapsedSections = vi.fn();
-  const renderedRows: string[] = [];
-  const chevrons: boolean[] = [];
-  const scope = {
-    React,
-    useCallback,
-    useEffect,
-    useMemo,
-    useState,
-    spaceInboxItems,
-    loadSessionToken: async () => "token",
-    loadCollapsedSections,
-    saveCollapsedSections,
     Platform: { OS: "ios" },
-    View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    PlatformColor: (name: string) => name,
+    StyleSheet: { create: <T,>(styles: T) => styles },
+    useWindowDimensions: () => ({ width: 400, height: 800, fontScale: 1 }),
+    View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
     Pressable: ({
       children,
       accessibilityLabel,
@@ -517,83 +64,383 @@ it("collapses a section from its heading and keeps the choice for the account", 
       onPress,
       style,
     }: {
-      children: ReactNode;
+      children?: ReactNode;
       accessibilityLabel?: string;
       accessibilityState?: { expanded?: boolean };
       accessibilityValue?: { text?: string };
       onPress?: () => void;
-      style?: (state: { pressed: boolean }) => ({ minHeight?: number } | false)[];
+      style?: unknown;
     }) => (
       <button
         type="button"
         aria-label={accessibilityLabel}
         aria-expanded={accessibilityState?.expanded}
         data-value={accessibilityValue?.text}
-        data-min-height={Object.assign({}, ...(style?.({ pressed: false }) ?? [])).minHeight}
+        data-min-height={
+          flatten(typeof style === "function" ? style({ pressed: false }) : style).minHeight
+        }
         onClick={onPress}
       >
         {children}
       </button>
     ),
-    MenuView: ({ children }: { children: ReactNode }) => children,
-    NativeSymbol: () => null,
-    SectionChevron: ({ collapsed }: { collapsed: boolean }) => {
-      chevrons.push(collapsed);
-      return <i data-collapsed={String(collapsed)} />;
-    },
-    BotRow: ({ bot }: { bot: MobileBot }) => {
-      renderedRows.push(bot.name);
-      return <p>{bot.name}</p>;
-    },
-    GroupRow: () => null,
-    appearance: "light",
-    botAction: action,
-    botSections: [],
-    chooseInboxSpace: action,
-    confirmDeleteSpace: action,
-    deleteSection: action,
-    day: 0,
-    editSectionFromMenu: action,
-    groupAction: action,
-    openBot: action,
-    openGroup: action,
-    organizeBot: action,
-    organizeFromMenu: action,
-    organizeGroup: action,
-    spaceBusy: false,
-    router: { push: action },
-    spaceRecoveryId: null,
-    // The heading's own style, so its tap target is checked against the real value.
-    styles: new Function(
-      `return {${source.slice(source.indexOf("    sectionToggle: {"), source.indexOf("    sectionTitle: {"))}};`,
-    )(),
-    t: (text: string, values?: { name?: string }) => text.replace("{name}", values?.name ?? ""),
-    SWIPE_ROWS: true,
   };
-  const slice = (from: string, to: string) =>
-    source.slice(source.indexOf(from), source.indexOf(to));
-  const stateSource = slice(
-    "  // Roster parent bot ids and section heading keys",
-    "  useEffect(() => {\n    void loadActivityMode()",
+});
+vi.mock("react-native-reanimated", () => ({
+  default: { View: ({ children }: { children?: ReactNode }) => <div>{children}</div> },
+  Easing: { out: (easing: unknown) => easing, cubic: "cubic" },
+  ReduceMotion: { System: "system" },
+  useAnimatedStyle: (style: () => unknown) => style(),
+  useSharedValue: (value: number) => {
+    const [shared] = useState(() => {
+      ui.chevronStarts.push(value);
+      return { value };
+    });
+    return shared;
+  },
+  withTiming: (value: number) => {
+    ui.chevronTargets.push(value);
+    return value;
+  },
+}));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: (props: MenuProps) => {
+    ui.menus.push(props);
+    return props.children;
+  },
+}));
+vi.mock("expo-router", () => {
+  const router = { push: ui.push };
+  return {
+    useRouter: () => router,
+    // The inbox's focus: expo-router reruns the effect when focus returns.
+    useFocusEffect: (effect: () => (() => void) | undefined) => {
+      const focused = ui.focused;
+      useEffect(() => (focused ? effect() : undefined), [effect, focused]);
+    },
+  };
+});
+vi.mock("./api", () => ({ rpc: ui.rpc }));
+vi.mock("./native", () => ({
+  native: {},
+  useThemedStyles: (factory: () => unknown) => useMemo(factory, [factory]),
+}));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("./i18n", () => {
+  const t = (text: string, values?: Record<string, string>) =>
+    text.replace(/\{(\w+)\}/g, (_, key: string) => values?.[key] ?? key);
+  return { t, useI18n: () => ({ t }), dateLocaleForUi: () => "en-US" };
+});
+// The row's avatar freezes while the row is scrolled out of view.
+vi.mock("./avatar-life", () => ({
+  AvatarRow: ({ id, children }: { id: string; children: ReactNode }) => (
+    <i data-row={id}>{children}</i>
+  ),
+}));
+// Counts row executions: every bot row render builds its preview once.
+vi.mock("./preview", () => ({
+  previewSnippet: (text: string) => {
+    ui.previews++;
+    return text;
+  },
+}));
+vi.mock("./collapsed-sections", () => ({
+  loadCollapsedSections: ui.loadCollapsedSections,
+  saveCollapsedSections: ui.saveCollapsedSections,
+}));
+vi.mock("./search-inbox", () => ({
+  setSearchInbox: ui.setSearchInbox,
+  addToSearchInbox: ui.addToSearchInbox,
+  searchInboxSession: ui.searchInboxSession,
+}));
+vi.mock("./focus-prompt", () => ({ allowFocusPrompt: vi.fn(), scheduleFocusPrompt: vi.fn() }));
+vi.mock("../components/bot-avatar", () => ({
+  BotAvatar: ({
+    identity,
+    muted,
+    motion,
+  }: {
+    identity: string;
+    muted?: boolean;
+    motion?: string;
+  }) => {
+    ui.avatars.push(identity);
+    return <b data-identity={identity} data-muted={String(Boolean(muted))} data-motion={motion} />;
+  },
+}));
+vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
+// Rows in the current space carry the iOS swipe host and its long-press menu.
+vi.mock("../components/inbox-swipe-row", () => ({
+  InboxSwipeRow: ({ rowKey, children }: { rowKey: string; children: ReactElement }) => {
+    ui.swipeRows.push(rowKey);
+    return children;
+  },
+}));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+
+const action = vi.fn();
+const callbacks = {
+  appearance: "light" as const,
+  botAction: action,
+  botSections: [],
+  chooseInboxSpace: action,
+  confirmDeleteSpace: action,
+  deleteSection: action,
+  editSectionFromMenu: action,
+  groupAction: action,
+  openBot: action,
+  openGroup: action,
+  organizeBot: action,
+  organizeFromMenu: action,
+  organizeGroup: action,
+  sharing: false,
+  spaceBusy: false,
+  spaceRecoveryId: null,
+  toggleCollapsed: action,
+};
+
+let onRenderItem: ((renderItem: unknown) => void) | undefined;
+function List({
+  items,
+  spaceId = "space-1",
+  day = 0,
+  options,
+}: {
+  items: InboxItem[];
+  spaceId?: string;
+  day?: number;
+  options?: Partial<Parameters<typeof useInboxRenderItem>[0]>;
+}) {
+  const renderItem = useInboxRenderItem({ ...callbacks, ...options, day, spaceId });
+  onRenderItem?.(renderItem);
+  // Keyed like the inbox's FlatList.
+  return items.map((item) => cloneElement(renderItem({ item }), { key: inboxItemKey(item) }));
+}
+
+function DayList({ items }: { items: InboxItem[] }) {
+  return <List items={items} day={useInboxDay()} />;
+}
+
+let container: HTMLDivElement;
+let root: Root;
+const render = (element: ReactNode) => act(() => root.render(element));
+const rowLabels = () =>
+  Array.from(container.querySelectorAll("button"), (button) => button.getAttribute("aria-label"));
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  Object.assign(ui, {
+    focused: true,
+    previews: 0,
+    menus: [],
+    swipeRows: [],
+    avatars: [],
+    chevronStarts: [],
+    chevronTargets: [],
+  });
+  onRenderItem = undefined;
+  container = document.createElement("div");
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+function measure(retain: boolean) {
+  let previousRenderItem: unknown;
+  onRenderItem = (renderItem) => {
+    // Parent renders must not hand the list a new renderer, or every row would render.
+    if (previousRenderItem) expect(renderItem).toBe(previousRenderItem);
+    previousRenderItem = renderItem;
+  };
+  const items = (bots: MobileBot[]) => bots.map((bot) => ({ type: "bot" as const, bot }));
+  let bots = Array.from({ length: 30 }, (_, index) => ({
+    id: `bot-${index}`,
+    name: `Helper ${index}`,
+    spaceId: "space-1",
+    preview: "",
+    color: "gray",
+    status: "idle",
+    notifyOnFinish: true,
+    unread: false,
+  })) as MobileBot[];
+  ui.previews = 0;
+  render(<List items={items(bots)} />);
+  const mount = ui.previews;
+  for (let poll = 0; poll < 12; poll++) {
+    const fetched = structuredClone(bots);
+    bots = retain ? retainInboxValue(bots, fetched) : fetched;
+    // Force parent rendering too, as with activity/refresh state changes.
+    render(<List items={items(bots)} />);
+  }
+  const idle = ui.previews - mount;
+  const fetched = structuredClone(bots);
+  fetched[0]!.status = "running";
+  fetched[0]!.unread = true;
+  bots = retain ? retainInboxValue(bots, fetched) : fetched;
+  render(<List items={items(bots)} />);
+  act(() => root.unmount());
+  root = createRoot(container);
+  return { mount, idle, changed: ui.previews - mount - idle };
+}
+
+it("skips unchanged inbox rows for 12 idle polls and renders the changed bot", () => {
+  // Without retained poll results every row renders on every poll.
+  expect(measure(false)).toEqual({ mount: 30, idle: 360, changed: 30 });
+  expect(measure(true)).toEqual({ mount: 30, idle: 0, changed: 1 });
+});
+
+it.each(["midnight", "focus", "foreground"])(
+  "refreshes unchanged bot and group timestamps on %s",
+  (trigger) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 10, 23, 59));
+    const today = new Date(2026, 9, 10, 12, 30).toISOString();
+    const sixDaysAgo = new Date(2026, 9, 4, 12, 30).toISOString();
+    // Keep the response and every row object identical throughout the date change.
+    const items = [today, sixDaysAgo].flatMap((updatedAt): InboxItem[] => [
+      { type: "bot", bot: { id: updatedAt, name: "Helper", preview: "", updatedAt } as MobileBot },
+      {
+        type: "group",
+        group: { id: updatedAt, name: "Team", preview: "", members: [], updatedAt },
+      } as unknown as InboxItem,
+    ]);
+    const labels = (todayTime: string, weekTime: string) => [
+      `Helper, ${todayTime}, No messages yet`,
+      `Team, ${todayTime}`,
+      `Helper, ${weekTime}, No messages yet`,
+      `Team, ${weekTime}`,
+    ];
+    try {
+      render(<DayList items={items} />);
+      const weekday = formatThreadTime(sixDaysAgo, new Date(2026, 9, 10));
+      expect(rowLabels()).toEqual(labels("12:30", weekday));
+      if (trigger === "focus") {
+        ui.focused = false;
+        render(<DayList items={items} />);
+        expect(ui.appStateListener).toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+      }
+      if (trigger === "midnight") {
+        act(() => vi.advanceTimersByTime(60_000));
+      } else {
+        // Suspended native timers need not fire before the app returns.
+        vi.setSystemTime(new Date(2026, 9, 11, 8));
+        act(() => {
+          if (trigger === "foreground") ui.appStateListener?.("active");
+          else {
+            ui.focused = true;
+            root.render(<DayList items={items} />);
+          }
+        });
+      }
+      expect(rowLabels()).toEqual(labels(formatThreadTime(today), formatThreadTime(sixDaysAgo)));
+      expect(formatThreadTime(today)).not.toBe("12:30");
+      expect(formatThreadTime(sixDaysAgo)).not.toBe(weekday);
+      expect(vi.getTimerCount()).toBe(1);
+      act(() => root.unmount());
+      expect(ui.appStateListener).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      root = createRoot(container);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("renders saved bot rows without a notification setting", () => {
+  // Inboxes saved before notification settings were kept have bots without them.
+  const bots = [
+    { id: "bot-a", name: "Alpha", preview: "", notifyOnFinish: true },
+    { id: "bot-b", name: "Beta", preview: "" },
+    { id: "bot-c", name: "Gamma", preview: "", notifyOnFinish: false },
+  ] as MobileBot[];
+  render(
+    bots.map((bot) => (
+      <BotRow
+        key={bot.id}
+        bot={bot}
+        day={0}
+        onPress={action}
+        sections={[]}
+        onOrganize={action}
+        onEditSection={action}
+      />
+    )),
   );
-  const sessionSource = slice(
-    "  useEffect(() => {\n    void Promise.all([loadSessionToken(), loadCollapsedSections()])",
-    "  useEffect(() => {\n    if (!hasSession) return;\n    void registerPushToken",
+  expect(rowLabels()).toEqual([
+    "Alpha, No messages yet",
+    "Beta, No messages yet",
+    "Gamma, notifications silenced, No messages yet",
+  ]);
+  expect(Array.from(container.querySelectorAll("button"), (row) => row.textContent)).toEqual([
+    "AlphaNo messages yet",
+    "BetaNo messages yet",
+    "GammaNo messages yet",
+  ]);
+  const avatars = Array.from(container.querySelectorAll("i[data-row] > b"));
+  expect(avatars.map((avatar) => avatar.parentElement?.dataset.row)).toEqual([
+    "bot-a",
+    "bot-b",
+    "bot-c",
+  ]);
+  expect(avatars.map((avatar) => (avatar as HTMLElement).dataset.muted)).toEqual([
+    "false",
+    "false",
+    "true",
+  ]);
+  expect(avatars.every((avatar) => (avatar as HTMLElement).dataset.motion === "lazy")).toBe(true);
+});
+
+it("says working only while the bot works, and shows nothing beside the time", () => {
+  const bots = ["running", "waiting_takeover", "waiting_input", "idle"].map(
+    (status) => ({ id: status, name: "Helper", preview: "Hi", status }) as MobileBot,
   );
-  const listSource = slice("  const renderItem = useCallback(", "  if (!ready) {");
-  const compiled = ts.transpileModule(
-    `return function List({ spaces, me }) {
-      const [ready, setReady] = useState(false);
-      const [, setHasSession] = useState(false);
-      ${stateSource}\n${sessionSource}\n${listSource}
-      if (!ready) return null;
-      return spaceInboxItems(spaces, collapsed, me.spaceId).map((item, index) =>
-        React.cloneElement(renderItem({ item }), { key: index }),
-      );
-    };`,
-    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  render(
+    bots.map((bot) => (
+      <BotRow
+        key={bot.id}
+        bot={bot}
+        day={0}
+        onPress={action}
+        sections={[]}
+        onOrganize={action}
+        onEditSection={action}
+      />
+    )),
+  );
+  // A "Needs you" computer card or an ask card is the state; the row must not claim work.
+  expect(rowLabels()).toEqual(["Helper, Working…, Hi", "Helper, Hi", "Helper, Hi", "Helper, Hi"]);
+  // The avatar's motion and corner dot are the only working sign; the time stands alone.
+  expect(Array.from(container.querySelectorAll("button"), (row) => row.textContent)).toEqual([
+    "HelperHi",
+    "HelperHi",
+    "HelperHi",
+    "HelperHi",
+  ]);
+});
+
+it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
+  const bot = { id: "bot-p", name: "Pinned", preview: "", pinned: true } as MobileBot;
+  render(<List items={[{ type: "pinned", chats: [{ kind: "bot", bot }] }]} />);
+  expect(container.querySelector('[data-row="pinned"] b[data-identity="bot-p"]')).not.toBeNull();
+});
+
+it("collapses a section from its heading and keeps the choice for the account", async () => {
+  ui.loadCollapsedSections.mockReset().mockResolvedValue(null);
+  ui.saveCollapsedSections.mockReset();
+  function SectionList({ spaces, me }: { spaces: InboxSpace[]; me: { userId: string } }) {
+    const { collapsed, toggleCollapsed, loaded } = useCollapsedSections(me.userId);
+    const renderItem = useInboxRenderItem({ ...callbacks, toggleCollapsed, day: 0, spaceId });
+    // The inbox waits for the saved choice, so a collapsed section never draws open first.
+    if (!loaded) return null;
+    return spaceInboxItems(spaces, collapsed, spaceId).map((item) =>
+      cloneElement(renderItem({ item }), { key: inboxItemKey(item) }),
+    );
+  }
+  const spaceId = "space-1";
   const work = {
     id: "work",
     name: "Work",
@@ -603,7 +450,7 @@ it("collapses a section from its heading and keeps the choice for the account", 
   };
   const spaces = [
     {
-      id: "space-1",
+      id: spaceId,
       name: "Personal",
       isDefault: true,
       hasContent: true,
@@ -615,194 +462,104 @@ it("collapses a section from its heading and keeps the choice for the account", 
         { id: "bot-c", name: "Gamma", preview: "", sectionId: null },
       ],
     },
-  ];
-  const userOne = { userId: "user-1", spaceId: "space-1" };
-  const container = document.createElement("div");
-  const root = createRoot(container);
+  ] as unknown as InboxSpace[];
+  const userOne = { userId: "user-1" };
   const heading = () => container.querySelector("button")!;
-  const names = () => Array.from(container.querySelectorAll("p"), (row) => row.textContent);
-  try {
-    await act(async () => root.render(<List spaces={spaces} me={userOne} />));
-    expect(loadCollapsedSections).toHaveBeenCalledTimes(1);
-    expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
-    expect(heading().getAttribute("aria-expanded")).toBe("true");
-    expect(heading().hasAttribute("data-value")).toBe(false);
-    expect(heading().textContent).toBe("Work");
-    // Every heading is a full tap target, with or without the section "…" menu beside it.
-    expect(heading().dataset.minHeight).toBe("44");
-    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
-
-    act(() => heading().click());
-    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
-    expect(heading().getAttribute("aria-expanded")).toBe("false");
-    expect(heading().getAttribute("data-value")).toBe("2");
-    expect(heading().textContent).toBe("Work2");
-    expect(heading().querySelector("i")?.dataset.collapsed).toBe("true");
-    expect(names()).toEqual(["Gamma"]);
-    expect(saveCollapsedSections).toHaveBeenLastCalledWith(
-      "user-1",
-      new Set(["space-1:section:work"]),
+  const names = () =>
+    Array.from(container.querySelectorAll("b[data-identity]"), (row) =>
+      row.getAttribute("data-identity"),
     );
+  await act(async () => root.render(<SectionList spaces={spaces} me={userOne} />));
+  expect(ui.loadCollapsedSections).toHaveBeenCalledTimes(1);
+  expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
+  expect(heading().getAttribute("aria-expanded")).toBe("true");
+  expect(heading().hasAttribute("data-value")).toBe(false);
+  expect(heading().textContent).toBe("Work");
+  // Every heading is a full tap target, with or without the section "…" menu beside it.
+  expect(heading().dataset.minHeight).toBe("44");
+  expect(names()).toEqual(["bot-a", "bot-b", "bot-c"]);
 
-    act(() => heading().click());
-    expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
-    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
-    expect(saveCollapsedSections).toHaveBeenLastCalledWith("user-1", new Set());
+  ui.chevronTargets = [];
+  act(() => heading().click());
+  expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+  expect(heading().getAttribute("aria-expanded")).toBe("false");
+  expect(heading().getAttribute("data-value")).toBe("2");
+  expect(heading().textContent).toBe("Work2");
+  // The chevron turns back to point right.
+  expect(ui.chevronTargets).toEqual([0]);
+  expect(names()).toEqual(["bot-c"]);
+  expect(ui.saveCollapsedSections).toHaveBeenLastCalledWith(
+    "user-1",
+    new Set(["space-1:section:work"]),
+  );
 
-    // Quick taps save once per committed state, the final one last.
-    act(() => {
-      heading().click();
-      heading().click();
-      heading().click();
-    });
-    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
-    expect(saveCollapsedSections).toHaveBeenLastCalledWith(
-      "user-1",
-      new Set(["space-1:section:work"]),
-    );
-  } finally {
-    act(() => root.unmount());
-  }
+  act(() => heading().click());
+  expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
+  expect(names()).toEqual(["bot-a", "bot-b", "bot-c"]);
+  expect(ui.saveCollapsedSections).toHaveBeenLastCalledWith("user-1", new Set());
+
+  // Quick taps save once per committed state, the final one last.
+  act(() => {
+    heading().click();
+    heading().click();
+    heading().click();
+  });
+  expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+  expect(ui.saveCollapsedSections).toHaveBeenLastCalledWith(
+    "user-1",
+    new Set(["space-1:section:work"]),
+  );
+  act(() => root.unmount());
 
   // A relaunch draws the account's collapsed sections folded from the first frame.
-  loadCollapsedSections.mockResolvedValueOnce({
+  ui.loadCollapsedSections.mockResolvedValueOnce({
     userId: "user-1",
     keys: new Set(["space-1:section:work"]),
   });
-  renderedRows.length = 0;
-  chevrons.length = 0;
-  const relaunched = createRoot(container);
-  try {
-    await act(async () => relaunched.render(<List spaces={spaces} me={userOne} />));
-    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
-    expect(names()).toEqual(["Gamma"]);
-    expect(renderedRows).not.toContain("Alpha");
-    // Work's chevron mounts collapsed (no fold animation); Unassigned's mounts expanded.
-    expect(chevrons.slice(0, 2)).toEqual([true, false]);
+  ui.avatars = [];
+  ui.chevronStarts = [];
+  root = createRoot(container);
+  await act(async () => root.render(<SectionList spaces={spaces} me={userOne} />));
+  expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+  expect(names()).toEqual(["bot-c"]);
+  expect(ui.avatars).not.toContain("bot-a");
+  // Work's chevron mounts pointing right (no fold animation); Unassigned's mounts turned down.
+  expect(ui.chevronStarts.slice(0, 2)).toEqual([0, 90]);
 
-    // Another account on this device starts expanded; the saved account keeps its choice.
-    act(() => relaunched.render(<List spaces={spaces} me={{ ...userOne, userId: "user-2" }} />));
-    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
-    act(() => relaunched.render(<List spaces={spaces} me={userOne} />));
-    expect(names()).toEqual(["Gamma"]);
-  } finally {
-    act(() => relaunched.unmount());
-    vi.unstubAllGlobals();
-  }
+  // Another account on this device starts expanded; the saved account keeps its choice.
+  render(<SectionList spaces={spaces} me={{ userId: "user-2" }} />);
+  expect(names()).toEqual(["bot-a", "bot-b", "bot-c"]);
+  render(<SectionList spaces={spaces} me={userOne} />);
+  expect(names()).toEqual(["bot-c"]);
 });
 
 it("waits for a saved or live inbox before publishing a remounted session's search roster", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const publish = vi.fn();
-  const effectStart = source.indexOf(
-    "  useEffect(() => {\n",
-    source.indexOf("  const inboxSpaces ="),
-  );
-  const effect = source.slice(effectStart, source.indexOf("  const listData =", effectStart));
-  const compiled = ts.transpileModule(
-    `return function PublishRoster({ me, inboxSpaces }) { ${effect}\nreturn null; };`,
-    { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const PublishRoster = new Function("useEffect", "setSearchInbox", compiled)(
-    useEffect,
-    publish,
-  ) as ComponentType<{ me: { spaceId: string } | null; inboxSpaces: unknown[] }>;
-  const root = createRoot(document.createElement("div"));
-  const loaded = [{ id: "space-a", bots: [{ id: "bot-a" }], groups: [] }];
-  try {
-    act(() => root.render(<PublishRoster key="session-1" me={null} inboxSpaces={[]} />));
-    expect(publish).not.toHaveBeenCalled();
-    // Either a verified saved inbox or the first live response supplies me and the roster.
-    act(() =>
-      root.render(
-        <PublishRoster key="session-1" me={{ spaceId: "space-a" }} inboxSpaces={loaded} />,
-      ),
-    );
-    expect(publish).toHaveBeenLastCalledWith(loaded);
-    publish.mockClear();
-    // HomeSession remounts Home for the new generation, even behind an unfocused route.
-    act(() => root.render(<PublishRoster key="session-2" me={null} inboxSpaces={[]} />));
-    expect(publish).not.toHaveBeenCalled();
-    act(() =>
-      root.render(
-        <PublishRoster key="session-2" me={{ spaceId: "space-a" }} inboxSpaces={loaded} />,
-      ),
-    );
-    expect(publish).toHaveBeenCalledExactlyOnceWith(loaded);
-    // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
-    act(() =>
-      root.render(<PublishRoster key="session-2" me={{ spaceId: "space-a" }} inboxSpaces={[]} />),
-    );
-    expect(publish).toHaveBeenLastCalledWith([]);
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
+  const publish = ui.setSearchInbox.mockReset();
+  function PublishRoster({ me, inboxSpaces }: { me: object | null; inboxSpaces: InboxSpace[] }) {
+    usePublishSearchInbox(inboxSpaces, me !== null);
+    return null;
   }
+  const me = { spaceId: "space-a" };
+  const loaded = [
+    { id: "space-a", bots: [{ id: "bot-a" }], groups: [] },
+  ] as unknown as InboxSpace[];
+  render(<PublishRoster key="session-1" me={null} inboxSpaces={[]} />);
+  expect(publish).not.toHaveBeenCalled();
+  // Either a verified saved inbox or the first live response supplies me and the roster.
+  render(<PublishRoster key="session-1" me={me} inboxSpaces={loaded} />);
+  expect(publish).toHaveBeenLastCalledWith(loaded);
+  publish.mockClear();
+  // HomeSession remounts Home for the new generation, even behind an unfocused route.
+  render(<PublishRoster key="session-2" me={null} inboxSpaces={[]} />);
+  expect(publish).not.toHaveBeenCalled();
+  render(<PublishRoster key="session-2" me={me} inboxSpaces={loaded} />);
+  expect(publish).toHaveBeenCalledExactlyOnceWith(loaded);
+  // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
+  render(<PublishRoster key="session-2" me={me} inboxSpaces={[]} />);
+  expect(publish).toHaveBeenLastCalledWith([]);
 });
 
 it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const action = vi.fn();
-  const withMenu: string[] = [];
-  const scope = {
-    React,
-    memo,
-    useCallback,
-    useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => text,
-    formatThreadTime: () => "",
-    botTag: () => "",
-    ACTIVE_RUN_STATUSES,
-    isRunWorking,
-    FALLBACK_COLOR: "gray",
-    ConversationRow: () => null,
-    BotAvatar: () => null,
-    AvatarRow: ({ children }: { children: ReactElement }) => children,
-    GroupAvatar: () => null,
-    InboxSwipeRow: ({ rowKey }: { rowKey: string }) => {
-      withMenu.push(rowKey);
-      return null;
-    },
-    inboxRowActionList,
-    appearance: "light",
-    botAction: action,
-    groupAction: action,
-    botSections: [],
-    editSectionFromMenu: action,
-    organizeFromMenu: action,
-    SWIPE_ROWS: true,
-    day: 0,
-    chooseInboxSpace: action,
-    collapsed: new Set(),
-    confirmDeleteSpace: action,
-    deleteSection: action,
-    me: { spaceId: "space-current" },
-    openBot: action,
-    openGroup: action,
-    organizeBot: action,
-    organizeGroup: action,
-    spaceBusy: false,
-    router: { push: action },
-    spaceRecoveryId: null,
-    styles: {},
-    t: action,
-    toggleCollapsed: action,
-  };
-  const rowSource = source.slice(
-    source.indexOf("const BotRow = memo("),
-    source.indexOf("function createHomeStyles()"),
-  );
-  const listSource = source.slice(
-    source.indexOf("  const renderItem = useCallback("),
-    source.indexOf("  if (!ready) {"),
-  );
-  const compiled = ts.transpileModule(
-    `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${listSource}
-      return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
-    };`,
-    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
   const chat = (id: string, spaceId: string) => ({
     id,
     spaceId,
@@ -816,144 +573,73 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     { type: "group", group: chat("current-group", "space-current") },
     { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
-  ];
-  const root = createRoot(document.createElement("div"));
-  try {
-    act(() => root.render(<List items={items} />));
-    expect(withMenu).toEqual(["bot:current-bot", "group:current-group"]);
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-  }
+  ] as unknown as InboxItem[];
+  render(<List items={items} spaceId="space-current" />);
+  expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
 });
 
 it("offers every space heading's Settings, and Delete only where the member may delete it", () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const push = vi.fn();
   const confirmDeleteSpace = vi.fn();
-  type Menu = {
-    actions: { id: string; title: string }[];
-    onPressAction: (event: { nativeEvent: { event: string } }) => void;
-  };
-  const menus: Menu[] = [];
-  const action = vi.fn();
-  const scope = {
-    React,
-    useCallback,
-    canDeleteInboxSpace,
-    View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-    Pressable: ({ children }: { children?: ReactNode }) => (
-      <button type="button">{children}</button>
-    ),
-    MenuView: (props: Menu & { children?: ReactNode }) => {
-      menus.push(props);
-      return props.children;
-    },
-    NativeSymbol: () => null,
-    appearance: "light",
-    botAction: action,
-    botSections: [],
-    chooseInboxSpace: action,
-    confirmDeleteSpace,
-    deleteSection: action,
-    day: 0,
-    editSectionFromMenu: action,
-    groupAction: action,
-    me: { spaceId: "space-home" },
-    openBot: action,
-    openGroup: action,
-    organizeBot: action,
-    organizeFromMenu: action,
-    organizeGroup: action,
-    router: { push },
-    spaceBusy: false,
-    spaceRecoveryId: null,
-    styles: {},
-    t: (text: string) => text,
-    toggleCollapsed: action,
-  };
-  const listSource = source.slice(
-    source.indexOf("  const renderItem = useCallback("),
-    source.indexOf("  if (!ready) {"),
+  ui.push.mockReset();
+  const heading = (id: string, name: string, canDelete: boolean) =>
+    ({
+      type: "heading",
+      key: id,
+      title: name,
+      space: { id, name, isDefault: !canDelete, canDelete, bots: [], groups: [], botSections: [] },
+    }) as unknown as InboxItem;
+  render(
+    <List
+      items={[heading("space-home", "Home", false), heading("space-work", "Work", true)]}
+      spaceId="space-home"
+      options={{ confirmDeleteSpace }}
+    />,
   );
-  const compiled = ts.transpileModule(
-    `return function List({ items }) {\n${listSource}
-      return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
-    };`,
-    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-  const heading = (id: string, name: string, canDelete: boolean) => ({
-    type: "heading",
-    key: id,
-    title: name,
-    space: { id, name, isDefault: !canDelete, canDelete, bots: [], groups: [], botSections: [] },
+  expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
+    ["settings"],
+    ["settings", "delete"],
+  ]);
+  // Settings open the Space's own page, which edits that Space even when another is selected.
+  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
+  expect(ui.push).toHaveBeenCalledWith({
+    pathname: "/space",
+    params: { spaceId: "space-work", name: "Work" },
   });
-  const root = createRoot(document.createElement("div"));
-  try {
-    act(() =>
-      root.render(
-        <List
-          items={[heading("space-home", "Home", false), heading("space-work", "Work", true)]}
-        />,
-      ),
-    );
-    expect(menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
-      ["settings"],
-      ["settings", "delete"],
-    ]);
-    // Settings open the Space's own page, which edits that Space even when another is selected.
-    act(() => menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
-    expect(push).toHaveBeenCalledWith({
-      pathname: "/space",
-      params: { spaceId: "space-work", name: "Work" },
-    });
-    act(() => menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
-    expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
-  } finally {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-  }
+  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
+  expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
 });
 
 it("adds a bot made from the inbox's Create menu to the inbox roster before opening its chat", async () => {
-  const start = source.indexOf("  const createQuickBot = useCallback(");
-  const body = source.slice(start, source.indexOf("  const runCreateAction =", start));
-  const compiled = ts.transpileModule(`${body}\nreturn createQuickBot;`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText;
   const bot = { id: "bot-new", name: "New Bot", spaceId: "space-a" };
+  const askedIn = { generation: 7, apiBase: "http://api.test" };
   const calls: string[] = [];
-  const rpc = vi.fn(async (method: string) => (method === "bots/create" ? bot : []));
-  const scope = {
-    useCallback: (callback: unknown) => callback,
-    creatingBotRef: { current: false },
-    spaceActionRef: { current: { busy: false, recoveryId: null } },
-    rpc,
-    normalizeCreateBotProfile: (profile: unknown) => profile,
+  ui.rpc.mockReset().mockImplementation(async (method: string) => {
+    calls.push(method);
+    return method === "bots/create" ? bot : [];
+  });
+  ui.searchInboxSession.mockReset().mockImplementation(() => {
+    calls.push("session");
+    return askedIn;
+  });
+  ui.addToSearchInbox
+    .mockReset()
+    .mockImplementation((item: unknown, session: unknown) =>
+      calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(session)}`),
+    );
+  await createInboxBot({
     refreshBots: async () => undefined,
-    allowFocusPrompt: () => undefined,
-    scheduleFocusPrompt: () => undefined,
-    searchInboxSession: () => {
-      calls.push("session");
-      return { generation: 7, apiBase: "http://api.test" };
-    },
-    addToSearchInbox: (item: unknown, askedIn: unknown) =>
-      calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(askedIn)}`),
-    openChat: (destination: unknown) => calls.push(`open ${JSON.stringify(destination)}`),
-    setError: () => undefined,
-    errorText: () => "",
-    t: (text: string) => text,
-  };
-  const createQuickBot = new Function(...Object.keys(scope), compiled)(
-    ...Object.values(scope),
-  ) as () => Promise<void>;
-  await createQuickBot();
+    openChat: (destination) => calls.push(`open ${JSON.stringify(destination)}`),
+  });
+  expect(ui.rpc).toHaveBeenCalledWith(
+    "bots/create",
+    expect.objectContaining({ avatarSet: "organic" }),
+  );
   // The session is taken before the requests, so a bot that lands after a switch is dropped.
-  expect(calls).toEqual([
+  expect(calls.slice(0, 5)).toEqual([
     "session",
-    `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify({ generation: 7, apiBase: "http://api.test" })}`,
+    "bots/list",
+    "bots/create",
+    `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify(askedIn)}`,
     `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
   ]);
 });

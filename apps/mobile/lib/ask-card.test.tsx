@@ -1,125 +1,125 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { fontWeight, typeScale } from "@rakazo/ui-tokens";
-import type { ReactNode } from "react";
-import React, { act, useRef, useState } from "react";
+import type { LoginFieldInput } from "@rakazo/contracts";
+import type { CSSProperties, ReactNode } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { secretDestinationLabel } from "./secret-destination";
-
-// Render the screen's actual ask card without importing its native dependencies.
-// Keep Vitest's jsdom URL transform from replacing the file URL with self.location.
-const testFileUrl = import.meta.url;
-const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-const cardSource = source.slice(
-  source.indexOf("function AskBlock({"),
-  source.indexOf("const askInputStyles = StyleSheet.create("),
-);
-const stylesSource = source.slice(
-  source.indexOf("const askInputStyles = StyleSheet.create("),
-  source.indexOf("});", source.indexOf("const askInputStyles = StyleSheet.create(")) + 3,
-);
-const askInputStyles = new Function(
-  "StyleSheet",
-  `${ts.transpileModule(stylesSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText}\nreturn askInputStyles;`,
-)({ create: <T,>(value: T) => value });
+import type { MobileMessage } from "./api";
+import { messageRowLayout } from "./message-row-layout";
+import { answerThreadMessage } from "./thread-answer";
 
 type SheetProps = {
   destination: string;
   pending: boolean;
   onClose: () => void;
-  onSave: (password: string, username: string) => Promise<void>;
+  loginFields: readonly string[] | undefined;
+  onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 };
 let sheet: SheetProps;
-const scope = {
-  typeScale,
-  fontWeight,
-  React,
-  useState,
-  useRef,
+
+vi.mock("react-native", async () => {
+  const { createElement } = await import("react");
+  const flatten = (style: unknown): CSSProperties =>
+    Array.isArray(style)
+      ? Object.assign({}, ...style.map(flatten))
+      : ((style as CSSProperties) ?? {});
+  return {
+    StyleSheet: { create: <T,>(styles: T) => styles },
+    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+      createElement("div", { style: flatten(style) }, children),
+    Text: ({
+      children,
+      numberOfLines,
+      style,
+    }: {
+      children?: ReactNode;
+      numberOfLines?: number;
+      style?: { color?: string; fontWeight?: string; marginTop?: number };
+    }) =>
+      createElement(
+        "span",
+        {
+          "data-lines": numberOfLines,
+          "data-color": style?.color,
+          "data-weight": style?.fontWeight,
+          "data-spacing": style?.marginTop,
+        },
+        children,
+      ),
+    TextInput: ({
+      accessibilityLabel,
+      style,
+      onChangeText,
+    }: {
+      accessibilityLabel?: string;
+      style?: unknown;
+      onChangeText: (value: string) => void;
+    }) =>
+      createElement("input", {
+        "aria-label": accessibilityLabel,
+        style: flatten(style),
+        onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+      }),
+  };
+});
+
+vi.mock("./native", () => ({
   useMobileTokens: () => ({ success: "success", mutedForeground: "muted" }),
+}));
+
+vi.mock("./i18n", () => ({
+  t: (text: string) => text,
   useI18n: () => ({ t: (text: string) => text }),
-  isSecretAskBlock: (block: { input?: string }) => block.input === "secret",
-  plainAskTitle: (text: string) => text,
-  secretDestinationLabel,
-  secretFieldTraits: () => ({}),
-  errorText: (_error: unknown, fallback: string) => fallback,
-  askInputStyles,
-  View: ({ children, style }: { children?: ReactNode; style?: React.CSSProperties }) => (
-    <div style={style}>{children}</div>
-  ),
-  Text: ({
-    children,
-    numberOfLines,
-    style,
-  }: {
-    children?: ReactNode;
-    numberOfLines?: number;
-    style?: { color?: string; fontWeight?: string; marginTop?: number };
-  }) => (
-    <span
-      data-lines={numberOfLines}
-      data-color={style?.color}
-      data-weight={style?.fontWeight}
-      data-spacing={style?.marginTop}
-    >
-      {children}
-    </span>
-  ),
-  TextInput: ({
-    accessibilityLabel,
-    style,
-    onChangeText,
-  }: {
-    accessibilityLabel?: string;
-    style: React.CSSProperties[];
-    onChangeText: (value: string) => void;
-  }) => (
-    <input
-      aria-label={accessibilityLabel}
-      style={Object.assign({}, ...style)}
-      onChange={(event) => onChangeText(event.target.value)}
-    />
-  ),
-  NativeActionButton: ({
-    label,
-    onPress,
-    disabled,
-    prominence = "primary",
-    fill,
-    style,
-  }: {
-    label: string;
-    onPress: () => void;
-    disabled?: boolean;
-    prominence?: string;
-    fill?: boolean;
-    style?: React.CSSProperties;
-  }) => (
-    <button
-      type="button"
-      onClick={onPress}
-      disabled={disabled}
-      data-prominence={prominence}
-      data-fill={fill}
-      style={style}
-    >
-      {label}
-    </button>
-  ),
-  SecretAskSheet: (props: SheetProps) => {
-    sheet = props;
-    return <div data-sheet>{props.destination}</div>;
-  },
-};
-const AskBlock = new Function(
-  ...Object.keys(scope),
-  ts.transpileModule(`${cardSource}\nreturn AskBlock;`, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText,
-)(...Object.values(scope));
+}));
+
+vi.mock("../components/native-action-button", async () => {
+  const { createElement } = await import("react");
+  return {
+    NativeActionButton: ({
+      label,
+      onPress,
+      disabled,
+      prominence = "primary",
+      fill,
+      style,
+    }: {
+      label: string;
+      onPress: () => void;
+      disabled?: boolean;
+      prominence?: string;
+      fill?: boolean;
+      style?: CSSProperties;
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: onPress,
+          disabled,
+          "data-prominence": prominence,
+          "data-fill": fill,
+          style,
+        },
+        label,
+      ),
+  };
+});
+
+vi.mock("../components/secret-ask-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    SecretAskSheet: (props: SheetProps) => {
+      sheet = props;
+      return createElement("div", { "data-sheet": true }, props.destination);
+    },
+  };
+});
+
+import { AskBlock } from "../components/thread/ask-block";
+
+type AskBlockProps = Parameters<typeof AskBlock>[0];
+type Ask = AskBlockProps["ask"];
 
 const longTitle = "Sign in to the example account so I can finish the export you asked for";
 let container: HTMLDivElement;
@@ -144,7 +144,7 @@ async function render(
   await act(async () =>
     root.render(
       <AskBlock
-        ask={{ kind: "ask", text: longTitle, status: "pending", ...ask }}
+        ask={{ kind: "ask", text: longTitle, status: "pending", ...ask } as Ask}
         canAnswer
         canDismiss
         onAnswer={onAnswer}
@@ -187,17 +187,50 @@ const loginAsk = {
   },
 };
 
+const loginAnswer = [
+  { label: "Username", value: "example-user", hidden: false },
+  { label: "Password", value: "example-password", hidden: true },
+];
+
 async function openSheet() {
   await act(async () => container.querySelector("button")!.click());
   expect(sheet.destination).toBe("login.example.test");
 }
+
+it("asks for a login card's fields and answers with them and an empty answer", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render({ ...loginAsk, loginFields: ["Email", "PIN"] }, onAnswer);
+  await openSheet();
+  expect(sheet.loginFields).toEqual(["Email", "PIN"]);
+
+  await act(async () => sheet.onSave(loginAnswer, true));
+  expect(onAnswer).toHaveBeenCalledWith("", loginAnswer);
+  expect(container.textContent).toContain("Saved");
+});
+
+it("answers a login with Save to Vault off for this run only and reads Sent", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginAsk, onAnswer);
+  await openSheet();
+
+  await act(async () => sheet.onSave(loginAnswer, false));
+  expect(onAnswer).toHaveBeenCalledWith("", loginAnswer, false);
+  expect(state("Sent")?.dataset.color).toBe("success");
+  expect(container.textContent).not.toContain("Saved");
+});
+
+it("leaves a login card without requested fields to the default labels", async () => {
+  await render(loginAsk);
+  await openSheet();
+  expect(sheet.loginFields).toBeUndefined();
+});
 
 it("closes an open login sheet once the viewer is no longer the run's user", async () => {
   const renderAs = (canDismiss: boolean) =>
     act(async () =>
       root.render(
         <AskBlock
-          ask={{ kind: "ask", text: longTitle, status: "pending", ...loginAsk }}
+          ask={{ kind: "ask", text: longTitle, status: "pending", ...loginAsk } as Ask}
           canAnswer
           canDismiss={canDismiss}
           onAnswer={async () => undefined}
@@ -235,7 +268,7 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
   const first = sheet;
   let saving!: Promise<void>;
   await act(async () => {
-    saving = first.onSave("example-password", "example-user");
+    saving = first.onSave(loginAnswer, true);
   });
   await act(async () => first.onClose());
   await openSheet();
@@ -258,32 +291,23 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
 it("closes the current sheet and keeps the card saved when refresh fails", async () => {
   const refresh = vi.fn().mockRejectedValue(new Error("offline"));
   const rpc = vi.fn().mockResolvedValue(undefined);
-  const handler = source.slice(
-    source.indexOf("  const answerMessage = useCallback("),
-    source.indexOf("  const openBot = useCallback("),
-  );
-  const handlerScope = {
-    useCallback: <T,>(callback: T) => callback,
-    botId: "bot-1",
-    groupId: undefined,
-    readOnly: false,
-    rpc,
-    isCurrentTarget: () => true,
-    refresh,
-    setReadBoundary: vi.fn(),
-    readVisit: { current: { visit: 1 } },
-  };
-  const answerMessage = new Function(
-    ...Object.keys(handlerScope),
-    ts.transpileModule(`${handler}\nreturn answerMessage;`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
-  )(...Object.values(handlerScope));
   await render(loginAsk, () =>
-    answerMessage({ id: "message-1", runId: "run-1" }, "example-password"),
+    answerThreadMessage(
+      {
+        botId: "bot-1",
+        groupId: undefined,
+        readOnly: false,
+        rpc,
+        isCurrentTarget: () => true,
+        refresh,
+        markRead: vi.fn(),
+      },
+      { id: "message-1", runId: "run-1" },
+      "example-password",
+    ),
   );
   await openSheet();
-  await act(async () => sheet.onSave("example-password", "example-user"));
+  await act(async () => sheet.onSave(loginAnswer, true));
   expect(rpc).toHaveBeenCalledTimes(1);
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(container.querySelector("[data-sheet]")).toBeNull();
@@ -343,6 +367,9 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   await render({ input: "secret", status: "answered", answer: "" });
   expect(state("Saved")?.dataset.color).toBe("success");
   expect(container.textContent).not.toContain("Dismissed");
+  // A login used for this run only reads Sent, also once the card is reloaded.
+  await render({ input: "secret", status: "answered", answer: "", remembered: false });
+  expect(state("Sent")?.dataset.color).toBe("success");
 });
 
 it("offers Dismiss only on secret cards", async () => {
@@ -365,20 +392,13 @@ it("dismisses a login card directly without opening the sheet", async () => {
   expect(buttons()).toEqual([]);
 });
 
-it("lets the card's buttons wrap instead of overflowing at large text sizes", () => {
-  const stylesSource = source.slice(
-    source.indexOf("const askInputStyles = StyleSheet.create("),
-    source.indexOf("});", source.indexOf("const askInputStyles = StyleSheet.create(")) + 3,
-  );
-  const styles = new Function(
-    "StyleSheet",
-    `${
-      ts.transpileModule(stylesSource, {
-        compilerOptions: { target: ts.ScriptTarget.ES2022 },
-      }).outputText
-    }\nreturn askInputStyles;`,
-  )({ create: <T,>(value: T) => value });
-  expect(styles.buttons).toMatchObject({ flexDirection: "row", flexWrap: "wrap" });
+it("lets the card's buttons wrap instead of overflowing at large text sizes", async () => {
+  for (const ask of [{ input: "secret", purpose: "otp" }, loginAsk]) {
+    await render(ask);
+    const row = button("Dismiss").parentElement!;
+    expect(row.style.flexDirection).toBe("row");
+    expect(row.style.flexWrap).toBe("wrap");
+  }
 });
 
 for (const input of ["secret", "login"]) {
@@ -444,17 +464,9 @@ it("stretches secret inputs and equal actions, enabling Save only with input", a
 });
 
 it("fills the message column only for secret asks, including answered and login asks", async () => {
-  const helperSource = source.slice(
-    source.indexOf("function isWideAskBlock("),
-    source.indexOf("const MessageRow = memo("),
-  );
-  const isWideAskBlock = new Function(
-    "isSecretAskBlock",
-    `${ts.transpileModule(helperSource, {}).outputText}\nreturn isWideAskBlock;`,
-  )(
-    (block: { kind: string; input?: string; approvalEffectId?: string }) =>
-      block.kind === "ask" && block.input === "secret" && !block.approvalEffectId,
-  );
+  const isWideAskBlock = (blocks: unknown[]) =>
+    messageRowLayout(blocks as MobileMessage["blocks"], { inGroup: false, columnWidth: 400 })
+      .menuFullWidth;
   for (const status of ["pending", "answered"]) {
     for (const ask of [{ input: "secret" }, loginAsk]) {
       expect(isWideAskBlock([{ kind: "ask", ...ask, status }])).toBe(true);
@@ -471,52 +483,46 @@ it("fills the message column only for secret asks, including answered and login 
 });
 
 it("uses the full column for wide asks and reserves only the visible avatar gutter", () => {
-  const rowSource = source.slice(source.indexOf("const MessageRow = memo("));
-  const wrapperSource = rowSource.slice(
-    rowSource.indexOf("width:\n"),
-    rowSource.indexOf("{isPeerReceiptBlocks(message.blocks)"),
-  );
-  const menuSource = rowSource.slice(rowSource.indexOf("<MessageContextMenu"));
-  const widthExpression = menuSource
-    .slice(
-      menuSource.indexOf("maxWidth={") + "maxWidth={".length,
-      menuSource.indexOf("colorScheme="),
-    )
-    .replace(/}\s*$/, "");
-  const measure = new Function(
-    "wide",
-    "activityBotId",
-    "inGroup",
-    "columnWidth",
-    "appConnect",
-    `const message = { blocks: [] };
-     const isWideAskBlock = () => wide;
-     const hasAppConnectBlock = () => appConnect;
-     const isCenteredAgentEvent = () => false;
-     return {
-       wrapper: { ${wrapperSource.slice(0, wrapperSource.indexOf("}}"))} },
-       menuWidth: (${widthExpression}),
-     };`,
-  );
+  const blocks = {
+    wide: [{ kind: "ask", text: "Secret", input: "secret", status: "pending" }],
+    regular: [{ kind: "text", text: "Hello" }],
+    appConnect: [
+      {
+        kind: "app_connect",
+        provider: "example",
+        name: "Example",
+        description: "",
+        logo: null,
+        status: "pending",
+      },
+    ],
+  };
+  const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
+    messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
+      activityBotId: avatar ? "bot-1" : undefined,
+      inGroup,
+      columnWidth: 400,
+    });
   for (const [avatar, inGroup, gutter] of [
     [false, false, 0],
     [true, false, 36],
     [true, true, 28],
   ] as const) {
-    const { wrapper, menuWidth } = measure(true, avatar, inGroup, 400);
-    expect(wrapper.width).toBe("100%");
-    expect(wrapper.maxWidth).toBe("100%");
-    expect(menuWidth).toBe(400 - 40 - gutter);
-    const regular = measure(false, avatar, inGroup, 400);
-    expect(regular.wrapper.width).toBeUndefined();
-    expect(regular.wrapper.maxWidth).toBe(avatar ? undefined : "90%");
-    expect(regular.menuWidth).toBe(avatar ? 360 - gutter : 324);
+    const wide = measure("wide", avatar, inGroup);
+    expect(wide.width).toBe("100%");
+    expect(wide.maxWidth).toBe("100%");
+    expect(wide.menuMaxWidth).toBe(400 - 40 - gutter);
+    const regular = measure("regular", avatar, inGroup);
+    expect(regular.width).toBeUndefined();
+    expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
+    expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
   // Connect cards take the full bubble width rather than shrinking to their button.
-  const card = measure(false, undefined, false, 400, true);
-  expect(card.wrapper.width).toBe("90%");
-  expect(card.wrapper.maxWidth).toBe("90%");
-  expect(card.menuWidth).toBe(324);
+  const card = measure("appConnect", false, false);
+  expect(card.width).toBe("90%");
+  expect(card.maxWidth).toBe("90%");
+  expect(card.menuMaxWidth).toBe(324);
+  expect(card.menuFullWidth).toBe(true);
 });
 
 it.each([
@@ -532,7 +538,9 @@ it.each([
       act(async () =>
         root.render(
           <AskBlock
-            ask={{ kind: "ask", text: "Secret", input: "secret", status: "pending", credential }}
+            ask={
+              { kind: "ask", text: "Secret", input: "secret", status: "pending", credential } as Ask
+            }
             canAnswer
             canDismiss={canDismiss}
             onAnswer={async () => {}}

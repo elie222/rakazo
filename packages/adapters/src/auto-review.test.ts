@@ -4,7 +4,6 @@ import {
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
   buildAutoReviewPrompt,
-  deploymentAutoReviewDefault,
   isAutoReviewCheckerConfigured,
   parseAutoReviewJudgeText,
   redactToolArgsForReview,
@@ -146,14 +145,6 @@ describe("isAutoReviewCheckerConfigured", () => {
         env: { RAKAZO_AUTO_REVIEW_PROVIDER: "scripted" },
       }),
     ).toBe(false);
-  });
-});
-
-describe("deploymentAutoReviewDefault", () => {
-  it("defaults off", () => {
-    expect(deploymentAutoReviewDefault({})).toBe(false);
-    expect(deploymentAutoReviewDefault({ RAKAZO_AUTO_REVIEW: "1" })).toBe(true);
-    expect(deploymentAutoReviewDefault({ RAKAZO_AUTO_REVIEW: "true" })).toBe(true);
   });
 });
 

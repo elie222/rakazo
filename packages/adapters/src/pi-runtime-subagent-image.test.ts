@@ -2,11 +2,12 @@ import type { Context, Model } from "@earendil-works/pi-ai";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
+import type * as RuntimeContextModule from "./runtime-context.js";
 
 const captured = vi.hoisted(() => ({ policies: [] as unknown[] }));
 
 vi.mock("./runtime-context.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./runtime-context.js")>();
+  const actual = await importOriginal<typeof RuntimeContextModule>();
   return {
     ...actual,
     createRuntimeContextPolicy: (...args: Parameters<typeof actual.createRuntimeContextPolicy>) => {

@@ -1,4 +1,9 @@
-import { getSupportedThinkingLevels, normalizeContext } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  normalizeContext,
+} from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
@@ -7,7 +12,11 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { listPiCatalog } from "./pi-models.js";
 import { resolveModelAuth } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
-import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime.js";
+import {
+  acceptedReasoningEfforts,
+  modelsForRequest,
+  resolveRuntimeModel,
+} from "./pi-runtime-models.js";
 
 function requestModel(id: string, baseUrl: string): Pick<AgentRunRequest, "model"> {
   return {
@@ -186,4 +195,44 @@ it("resolves a saved Azure provider reference without changing its model id", ()
   expect(modelAcceptsImageInput(provider, id)).toBe(true);
   expect(isCatalogModelChoice(provider, id)).toBe(true);
   expect(defaultCatalogModelId(provider)).toBeTruthy();
+});
+
+describe("reasoning efforts an endpoint refuses", () => {
+  const model = (thinkingLevelMap: Model<Api>["thinkingLevelMap"]) =>
+    ({ id: "example", reasoning: true, thinkingLevelMap }) as Model<Api>;
+
+  it("keeps only the levels a generic endpoint lists and sends no effort for off", () => {
+    const levels = acceptedReasoningEfforts(
+      model({ off: "none", xhigh: "xhigh", max: "max" }),
+      '400: {"message":"reasoning_effort must be one of: low, medium, high, max","type":"invalid_request_error","param":"","code":null}',
+    );
+    const narrowed = model(levels);
+    expect(getSupportedThinkingLevels(narrowed)).toEqual(["off", "low", "medium", "high", "max"]);
+    expect(levels?.off).toBeUndefined();
+    expect(clampThinkingLevel(narrowed, "minimal")).toBe("low");
+    expect(clampThinkingLevel(narrowed, "xhigh")).toBe("max");
+  });
+
+  it("reads OpenAI's wording and keeps an accepted off value", () => {
+    const levels = acceptedReasoningEfforts(
+      model({ off: "none" }),
+      "400 Unsupported value: 'reasoning_effort' does not support 'minimal' with this model. Supported values are: 'none', 'low', 'medium', and 'high'.",
+    );
+    expect(levels).toEqual({
+      off: "none",
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: null,
+      max: null,
+    });
+  });
+
+  it.each([
+    '400: {"message":"Unexpected message role.","type":"invalid_request_error"}',
+    '400: {"message":"reasoning_effort must be one of: turbo","type":"invalid_request_error"}',
+  ])("ignores a rejection that names no usable effort: %s", (error) => {
+    expect(acceptedReasoningEfforts(model({ off: "none" }), error)).toBeUndefined();
+  });
 });

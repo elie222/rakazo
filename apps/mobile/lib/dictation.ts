@@ -69,6 +69,7 @@ export function setSpeechRecognizer(recognizer: SpeechRecognizer | null): void {
 
 async function load(): Promise<SpeechRecognizer> {
   if (injected) return injected;
+  // The native recognizer loads on first dictation, not with every screen that imports this.
   const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
   return ExpoSpeechRecognitionModule as unknown as SpeechRecognizer;
 }
@@ -117,6 +118,8 @@ export async function listen(opts: {
   const recognizer = await load();
   // A hang-up or a newer session landed while the native module was loading.
   if (token !== mine) return;
+  // A signal aborted during loading never fires the listener added below, so check it here.
+  if (opts.signal?.aborted) return;
   const session: Session = {
     recognizer,
     lang: opts.lang || "en-US",

@@ -3,13 +3,11 @@ import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import type { DesktopLocalStackState } from "@rakazo/contracts";
+import type { DockerFailureKind, RunDocker, RunDockerResult } from "./docker-cli.js";
 import {
   classifyDockerFailure,
   composeSupportsWaitTimeout,
-  type DockerFailureKind,
   dockerSpawnEnv,
-  type RunDocker,
-  type RunDockerResult,
   resolveDockerBinary,
 } from "./docker-cli.js";
 import { readPrivateFile, writePrivateFile } from "./setup-store.js";
@@ -129,7 +127,16 @@ const ADDED_SECRETS = ["POSTGRES_APP_PASSWORD"];
 
 /** Lines to append so an existing `.env` has every added secret, or "" when it already does. */
 export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
-  return ADDED_SECRETS.filter((name) => !new RegExp(`^${name}=\\S`, "m").test(env))
+  const values = new Map<string, string>();
+  // Consume quoted values across lines so their contents cannot become assignments.
+  const assignments = env.matchAll(
+    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=[\t ]*(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
+  );
+  for (const match of assignments) {
+    values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
+  }
+  // Compose uses the last assignment; empty quotes still fail its required-value check.
+  return ADDED_SECRETS.filter((name) => (values.get(name) ?? "") === "")
     .map((name) => `${name}=${randomHex(GENERATED_SECRETS[name]!)}\n`)
     .join("");
 }

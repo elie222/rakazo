@@ -88,7 +88,13 @@ export function ComputerOverlay({
           className="app-no-drag flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5"
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <BotAvatar color={bot.color} identity={bot.id} size={28} status={bot.status} />
+            <BotAvatar
+              avatarSet={bot.avatarSet}
+              color={bot.color}
+              identity={bot.id}
+              size={28}
+              status={bot.status}
+            />
             {recordingSkill ? (
               <TeachRecordingChrome
                 recording={recordingSkill}

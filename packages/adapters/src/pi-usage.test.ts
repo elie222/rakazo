@@ -236,6 +236,55 @@ describe("Pi usage accounting", () => {
     expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
     expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
   });
+  it("keeps OpenRouter's generation id over the upstream message id in an Anthropic-format stream", async () => {
+    const onRequestId = vi.fn();
+    const fields = new Set<keyof AgentUsage>();
+    const wrapped = usageReportingFetch(
+      async () =>
+        new Response(
+          'data: {"type":"message_start","message":{"id":"msg_fixture","usage":{"input_tokens":1}}}\n\n',
+          {
+            headers: {
+              "content-type": "text/event-stream",
+              "x-generation-id": "gen-1-fixture",
+            },
+          },
+        ),
+      fields,
+      onRequestId,
+    );
+    await (await wrapped("https://openrouter.ai/api/v1/messages")).text();
+    expect(onRequestId.mock.calls).toEqual([["gen-1-fixture"]]);
+    expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen-1-fixture");
+  });
+  it.each([
+    [{ upstream_inference_cost: 0.0042 }, 0.0042, "provider-reported"],
+    [{ upstream_inference_cost: null }, null, null],
+  ] as const)(
+    "adds the upstream inference cost of a bring-your-own-key generation (%j)",
+    async (costDetails, costUsd, costSource) => {
+      const fields = new Set<keyof AgentUsage>();
+      const wrapped = usageReportingFetch(
+        async () =>
+          new Response(
+            `data: ${JSON.stringify({
+              type: "message_delta",
+              usage: {
+                input_tokens: 10,
+                output_tokens: 2,
+                cost: 0,
+                is_byok: true,
+                cost_details: costDetails,
+              },
+            })}\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        fields,
+      );
+      await (await wrapped("https://openrouter.ai/api/v1/messages")).text();
+      expect(normalizePiUsage(undefined, model, fields)).toMatchObject({ costUsd, costSource });
+    },
+  );
   it("retains a provider cost receipt when a stream throws after reporting it", async () => {
     const afterCall = vi.fn();
     const events: AgentRuntimeEvent[] = [];

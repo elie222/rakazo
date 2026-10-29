@@ -5,10 +5,11 @@ import { lightTokens } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Body, Container, Head, Html, Link, render, Text, toPlainText } from "react-email";
 
-async function message(
+export async function message(
   to: string,
   subject: string,
   content: ReactNode,
+  headers?: Record<string, string>,
 ): Promise<TransactionalEmail> {
   const html = await render(
     <Html lang="en">
@@ -24,10 +25,10 @@ async function message(
       </Body>
     </Html>,
   );
-  return { to, subject, html, text: toPlainText(html) };
+  return { to, subject, html, text: toPlainText(html), ...(headers ? { headers } : {}) };
 }
 
-const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
+export const linkStyle = { color: lightTokens.primary, textDecoration: "underline" };
 
 export function verificationEmail(email: string, url: string): Promise<TransactionalEmail> {
   return message(
@@ -91,6 +92,20 @@ export function accountDeletionEmail(email: string, code: string): Promise<Trans
       <Text>
         This code expires in ten minutes. If you did not request deletion, ignore this email.
       </Text>
+    </>,
+  );
+}
+
+export function identityCodeEmail(email: string, code: string): Promise<TransactionalEmail> {
+  return message(
+    email,
+    "Your Rakazo confirmation code",
+    <>
+      <Text>Enter this code in Rakazo to confirm it's you:</Text>
+      <Text>
+        <strong>{code}</strong>
+      </Text>
+      <Text>This code expires in ten minutes. If you did not request it, ignore this email.</Text>
     </>,
   );
 }

@@ -28,9 +28,7 @@ export function isMonitoringUserId(value: unknown): value is string {
 }
 
 export function scrubMonitoringText(value: string): string {
-  return redactSensitiveText(value)
-    .replace(/(?:\/Users\/|\/home\/)[^/\s]+/g, "/[user]")
-    .replace(/[A-Z]:\\Users\\[^\\\s]+/gi, "[user]");
+  return redactSensitiveText(value);
 }
 
 export function stripMonitoringUrl(value: string): string {

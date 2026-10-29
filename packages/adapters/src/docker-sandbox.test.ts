@@ -157,6 +157,54 @@ describe("Docker sandbox", () => {
     await expect(rest).resolves.toEqual({ value: { type: "exit", code: 0 }, done: false });
   });
 
+  it("ends a stalled streaming exec at its stream deadline and cancels the body", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    const encoder = new TextEncoder();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  encoder.encode(`${JSON.stringify({ type: "stdout", data: "started\n" })}\n`),
+                );
+              },
+              cancel,
+            }),
+            { headers: { "content-type": "application/x-ndjson" } },
+          ),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    try {
+      const iterator = provider
+        .execute(
+          { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+          { argv: ["sleep", "infinity"], timeoutMs: 100 },
+          context,
+        )
+        [Symbol.asyncIterator]();
+      await expect(iterator.next()).resolves.toEqual({
+        value: { type: "stdout", data: "started\n" },
+        done: false,
+      });
+      let settled: unknown;
+      iterator.next().then(
+        () => (settled = "resolved"),
+        (error: unknown) => (settled = error),
+      );
+      deadline.abort(new DOMException("The operation timed out.", "TimeoutError"));
+      await vi.waitFor(() => expect(settled).toBe(deadline.signal.reason));
+      expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("rejects a declared oversized success response without buffering it", async () => {
     const cancel = vi.fn();
     vi.stubGlobal(
@@ -382,6 +430,14 @@ describe("Docker sandbox", () => {
     await expect(provider.stop(computer, context)).rejects.toThrow("sandbox stop failed: 500 boom");
     await expect(provider.destroy(computer, context)).rejects.toThrow(
       "sandbox destroy failed: 500 boom",
+    );
+
+    fetchMock.mockImplementation(async () => Response.json({ ok: true }));
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+    // A 404 that does not say the computer is missing could still leave it running.
+    fetchMock.mockImplementation(async () => new Response("404 Not Found", { status: 404 }));
+    await expect(provider.destroy(computer, context)).rejects.toThrow(
+      "sandbox destroy failed: 404 404 Not Found",
     );
   });
 

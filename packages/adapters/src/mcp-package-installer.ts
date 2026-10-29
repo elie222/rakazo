@@ -137,7 +137,6 @@ export type EnsureMcpPackageOptions = {
   root?: string;
   /** Bin to launch (from `npx -p <spec> <bin>`). */
   binName?: string;
-  /** Upper bound for one `npm install`. */
   timeoutMs?: number;
   /** Stops this caller waiting. A started install keeps going, so the next launch finds it. */
   signal?: AbortSignal;

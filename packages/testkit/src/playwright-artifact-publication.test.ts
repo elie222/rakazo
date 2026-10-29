@@ -40,7 +40,6 @@ function temporaryDirectory() {
   return directory;
 }
 
-/** Write a fixture file, creating its parent directories as needed. */
 function write(file: string, content: string | Buffer) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, content);
@@ -84,6 +83,39 @@ with zipfile.ZipFile(sys.argv[1], "w") as archive:
 }
 
 describe("Playwright artifact publication boundary", () => {
+  // GitHub's Ubuntu runner provides bash and jq; Windows does not necessarily provide either.
+  it.skipIf(process.platform === "win32")(
+    "reads the triggering attempt across every jobs page",
+    () => {
+      const root = temporaryDirectory();
+      const output = path.join(root, "output");
+      const step = workflow
+        .split("      - name: Read Playwright job result\n")[1]
+        ?.split("\n  publish:\n")[0];
+      expect(step).toContain("RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}");
+      const script = step?.split("        run: |\n")[1]?.replace(/^ {10}/gm, "");
+      expect(script).toBeTruthy();
+      const mock = `gh() {
+  if [[ "$*" == *"/attempts/2/jobs"* && "$*" == *"--paginate"* && "$*" == *"--slurp"* ]]; then
+    printf '%s\\n' '[{"jobs":[{"name":"Other","conclusion":"success"}]},{"jobs":[{"name":"Web E2E / Web E2E","conclusion":"failure"}]}]'
+  else
+    printf '%s\\n' success
+  fi
+}
+${script}`;
+      execFileSync("bash", ["-eo", "pipefail", "-c", mock], {
+        env: {
+          ...process.env,
+          GITHUB_REPOSITORY: "example/repo",
+          RUN_ID: "123",
+          RUN_ATTEMPT: "2",
+          GITHUB_OUTPUT: output,
+        },
+      });
+      expect(readFileSync(output, "utf8")).toBe("job_result=failure\nresult=failure\n");
+    },
+  );
+
   it("keeps extraction and explicit report inputs outside the trusted checkout", () => {
     expect(workflow).not.toContain("actions/download-artifact@");
     expect(workflow).toContain(
@@ -136,7 +168,7 @@ describe("Playwright artifact publication boundary", () => {
     expect(existsSync(path.join(root, "overwrite.txt"))).toBe(false);
   });
 
-  it.each(["pull_request", "push", "timed_out"])(
+  it.each(["pull_request", "schedule", "timed_out"])(
     "publishes %s through trusted code with fake storage and credentials",
     (scenario) => {
       const root = temporaryDirectory();
@@ -144,7 +176,7 @@ describe("Playwright artifact publication boundary", () => {
       const runnerTemp = path.join(root, "runner-temp");
       const artifacts = path.join(runnerTemp, "playwright-artifacts");
       const hasArtifact = scenario !== "timed_out";
-      const isPr = scenario !== "push";
+      const isPr = scenario !== "schedule";
       const trustedFiles = [
         "package.json",
         "scripts/publish-playwright-report.sh",
@@ -219,7 +251,7 @@ else:
         PLAYWRIGHT_RUN_NUMBER: "10",
         PLAYWRIGHT_RUN_URL: "https://example.invalid/actions/runs/200",
         PLAYWRIGHT_SHA: "a".repeat(40),
-        PLAYWRIGHT_EVENT: isPr ? "pull_request" : "push",
+        PLAYWRIGHT_EVENT: isPr ? "pull_request" : scenario,
         PLAYWRIGHT_BRANCH: isPr ? "example-change" : "main",
         PLAYWRIGHT_PR_NUMBER: isPr ? "42" : "",
         PLAYWRIGHT_REPOSITORY_URL: "https://example.invalid/project",

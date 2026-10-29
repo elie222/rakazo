@@ -11,6 +11,7 @@ import {
   fetchCodexCatalog,
   parseCodexCatalog,
 } from "./pi-codex-catalog.js";
+import { liveCatalogEntry } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
 import { CHATGPT_OAUTH_PROVIDER, parseModelSecret } from "./pi-oauth.js";
 
@@ -205,6 +206,24 @@ describe("parseCodexCatalog", () => {
     expect(parsed?.[0]?.supportsFastTier).toBe(true);
     expect(parsed?.[0]?.supportsImages).toBe(false);
   });
+
+  it.each([undefined, null])(
+    "leaves image support unset when input modalities are %s",
+    (inputModalities) => {
+      const parsed = parseCodexCatalog(
+        catalogPayload([
+          {
+            slug: "gpt-6.1-sol",
+            visibility: "list",
+            supported_in_api: true,
+            ...(inputModalities === null ? { input_modalities: null } : {}),
+          },
+        ]),
+      );
+      expect(parsed?.[0]?.supportsImages).toBeUndefined();
+      expect(parsed?.[0]?.supportsFastTier).toBe(false);
+    },
+  );
 
   it.each([
     ["non-object payload", "nope"],
@@ -1170,6 +1189,77 @@ describe("applyCodexLiveCatalog", () => {
       "secret-a": [liveModel("some-unrelated-model"), liveModel("another-foreign")],
     });
     expect(applyCodexLiveCatalog(base, oauthAuth, foreign)).toEqual(base);
+  });
+
+  it("keeps image support from the account list when a live slug is outside its sibling family", () => {
+    const terra = "gpt-6.1-terra";
+    const sol = "gpt-6.1-sol";
+    const bundled = base.find(
+      (entry) => entry.provider === CHATGPT_OAUTH_PROVIDER && entry.id === sol,
+    );
+    expect(bundled?.images).toBe(true);
+    expect(liveCatalogEntry(CHATGPT_OAUTH_PROVIDER, terra)?.images).toBe(false);
+
+    const modalities = (image: boolean) =>
+      parseCodexCatalog(
+        catalogPayload([
+          {
+            slug: sol,
+            visibility: "list",
+            supported_in_api: true,
+            input_modalities: image ? ["text", "image"] : ["text"],
+          },
+          {
+            slug: terra,
+            visibility: "list",
+            supported_in_api: true,
+            input_modalities: image ? ["text", "image"] : ["text"],
+          },
+        ]),
+      )!;
+    const imagesOf = (models: CodexCatalogModel[], id: string) =>
+      applyCodexLiveCatalog(base, oauthAuth, liveFor({ "secret-a": models })).find(
+        (entry) => entry.provider === CHATGPT_OAUTH_PROVIDER && entry.id === id,
+      )?.images;
+
+    expect(imagesOf(modalities(true), terra)).toBe(true);
+    expect(imagesOf(modalities(true), sol)).toBe(true);
+    expect(imagesOf(modalities(false), terra)).toBe(false);
+    expect(imagesOf(modalities(false), sol)).toBe(false);
+  });
+
+  it("keeps bundled image support when the account omits input modalities", () => {
+    const sol = "gpt-6.1-sol";
+    const terra = "gpt-6.1-terra";
+    const parsed = (inputModalities: null | undefined | string[]) =>
+      parseCodexCatalog(
+        catalogPayload([
+          {
+            slug: sol,
+            visibility: "list",
+            supported_in_api: true,
+            ...(inputModalities !== undefined ? { input_modalities: inputModalities } : {}),
+          },
+          {
+            slug: terra,
+            visibility: "list",
+            supported_in_api: true,
+            ...(inputModalities !== undefined ? { input_modalities: inputModalities } : {}),
+          },
+        ]),
+      )!;
+    const imagesOf = (models: CodexCatalogModel[], id: string) =>
+      applyCodexLiveCatalog(base, oauthAuth, liveFor({ "secret-a": models })).find(
+        (entry) => entry.provider === CHATGPT_OAUTH_PROVIDER && entry.id === id,
+      )?.images;
+
+    expect(parsed(undefined)[0]?.supportsImages).toBeUndefined();
+    expect(parsed(null)[0]?.supportsImages).toBeUndefined();
+    expect(imagesOf(parsed(undefined), sol)).toBe(true);
+    expect(imagesOf(parsed(null), sol)).toBe(true);
+    expect(imagesOf(parsed(undefined), terra)).toBe(false);
+    expect(imagesOf(parsed(["text"]), sol)).toBe(false);
+    expect(imagesOf(parsed(["text"]), terra)).toBe(false);
   });
 
   it("leaves other providers untouched", () => {

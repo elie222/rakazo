@@ -5,6 +5,7 @@ import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../components/ai/primitives";
+import { OptionRow } from "../../components/OptionRow";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
@@ -17,13 +18,10 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
-  onImportAgent,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
-  /** Offered on the first-run focus card while it is unanswered. */
-  onImportAgent?: () => void;
 }) {
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
@@ -79,45 +77,24 @@ export function ChoiceCard({
         {block.subtitle ? (
           <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
         ) : null}
-        <div className="mt-3 space-y-2">
-          {block.options
-            .filter((option) => !block.answerId || option.id === block.answerId)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={Boolean(block.answerId) || pending}
-                onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-start text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-60 ${block.answerId ? "bg-foreground/10" : "bg-background enabled:hover:bg-foreground/5 enabled:active:bg-foreground/15"}`}
-              >
-                <span className="grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[7px] bg-card text-[12.5px] leading-none font-medium text-foreground/75">
-                  {option.letter}
-                </span>
-                <span
-                  className={`flex-1 text-[15px] leading-[1.35] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
-                >
-                  <OnboardingFocusOptionLabel
-                    id={option.id}
-                    label={option.label}
-                    question={block.question}
-                  />
-                </span>
-                {block.answerId === option.id ? (
-                  <span className="text-foreground/75">✓</span>
-                ) : null}
-              </button>
-            ))}
+        <div className="mt-2.5 space-y-0.5">
+          {block.options.map((option) => (
+            <OptionRow
+              key={option.id}
+              letter={option.letter}
+              selected={block.answerId === option.id}
+              disabled={Boolean(block.answerId) || pending}
+              onClick={() => void choose(option.id)}
+            >
+              <OnboardingFocusOptionLabel
+                id={option.id}
+                label={option.label}
+                question={block.question}
+              />
+            </OptionRow>
+          ))}
         </div>
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-        {onImportAgent && !block.answerId && block.question === FOCUS_QUESTION ? (
-          <Button
-            variant="link"
-            className="mt-2 h-auto px-0 text-muted-foreground"
-            onClick={onImportAgent}
-          >
-            <Trans>Import an agent</Trans>
-          </Button>
-        ) : null}
       </BuiCard>
     </div>
   );

@@ -1,3 +1,5 @@
+import { matchUiLocale } from "@rakazo/core";
+
 export const UI_LOCALES = ["en", "zh-CN", "zh-TW", "ru", "de", "nl", "ja"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
@@ -14,52 +16,13 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ja: "日本語",
 };
 
-/** Convert an internal locale identifier to the document language tag. */
 export function htmlLangForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : locale;
 }
 
-/** Return whether a value is one of the supported mobile UI locales. */
-export function isUiLocale(value: string | null | undefined): value is UiLocale {
-  return (
-    value === "en" ||
-    value === "zh-CN" ||
-    value === "zh-TW" ||
-    value === "ru" ||
-    value === "de" ||
-    value === "nl" ||
-    value === "ja"
-  );
-}
-
 /** Normalize BCP-47 tags to a mobile UI locale, else `en`. */
 export function normalizeUiLocale(raw: string | null | undefined): UiLocale {
-  if (!raw) return "en";
-  const normalized = raw.trim().toLowerCase().replace(/_/g, "-");
-  // Explicit script takes precedence over region (for example zh-Hans-TW).
-  const [language, scriptOrRegion] = normalized.split("-");
-  if (
-    language === "zh" &&
-    (scriptOrRegion === "hant" ||
-      scriptOrRegion === "tw" ||
-      scriptOrRegion === "hk" ||
-      scriptOrRegion === "mo")
-  ) {
-    return "zh-TW";
-  }
-  if (
-    normalized === "zh" ||
-    normalized === "zh-cn" ||
-    normalized === "zh-hans" ||
-    normalized === "zh-sg" ||
-    normalized.startsWith("zh-hans-") ||
-    normalized.startsWith("zh-cn-")
-  ) {
-    return "zh-CN";
-  }
-  if (normalized === "ru" || normalized.startsWith("ru-")) return "ru";
-  const primary = normalized.split("-")[0] ?? "";
-  return isUiLocale(primary) ? primary : "en";
+  return matchUiLocale(raw, UI_LOCALES);
 }
 
 export type ResolveUiLocaleOptions = {

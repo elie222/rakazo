@@ -6,7 +6,7 @@ import {
   messageBot,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 
 const run = {
   id: "run-1",

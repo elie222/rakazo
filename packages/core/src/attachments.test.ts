@@ -68,16 +68,11 @@ describe("attachment helpers", () => {
   });
 
   it("validates a large base64 payload without blowing the stack", () => {
-    // Regression test: the original validator used a grouped-repetition regex
-    // (`/^(?:[chars]{4})*(...)?$/`) that stack-overflows V8 on inputs in the
-    // megabytes-of-characters range — a 5 MiB string reliably reproduced it,
-    // well within reach of the current 10 MiB attachment limit (~13.3 MiB of
-    // base64 once encoded).
+    // A grouped-repetition base64 regex stack-overflows V8 on multi-megabyte inputs.
     const validLarge = "A".repeat(6 * 1024 * 1024);
     expect(() => decodeAttachmentBase64(validLarge)).not.toThrow();
 
-    // A base64 string decoding to just over the 10 MiB byte limit must still
-    // be rejected for size — and, same regression, without a stack overflow.
+    // Just over the 10 MiB byte limit: rejected for size, without a stack overflow.
     const oversized = "A".repeat(15 * 1024 * 1024);
     expect(() => decodeAttachmentBase64(oversized)).not.toThrow(RangeError);
     expect(() => decodeAttachmentBase64(oversized)).toThrow(AttachmentValidationError);

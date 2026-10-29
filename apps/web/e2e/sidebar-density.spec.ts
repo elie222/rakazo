@@ -22,7 +22,6 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   const selectedBotId = activeBotId(page);
   const previewBot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Compact Sample",
-    title: "Field notes",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -40,9 +39,12 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await expect(sidebar).toHaveAttribute("data-bots-sidebar-density", "comfortable");
   await expect(selectedRow).toHaveAttribute("aria-current", "page");
   await expect(previewRow).toContainText(preview);
-  await expect(previewRow).toContainText("Field notes");
   await expect(previewRow.locator("[data-roster-bot-name]")).toHaveText("Compact Sample");
-  await expect(previewRow.locator("[data-roster-preview]")).toHaveClass(/line-clamp-2/);
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "sidebar-density-comfortable");
+  // Previews stay on one line and end in an ellipsis instead of wrapping.
+  await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("white-space", "nowrap");
+  await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS("text-overflow", "ellipsis");
   await expect(previewRow).toHaveAttribute("data-roster-unread", "true");
   await expect(previewRow).toHaveAccessibleName(/Compact Sample.*unread/i);
   // The unread dot is the one blue in the sidebar, not ink.

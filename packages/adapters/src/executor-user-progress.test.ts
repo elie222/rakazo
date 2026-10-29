@@ -13,6 +13,7 @@ import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.j
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { userProgressClientNonce } from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -51,6 +52,14 @@ async function runTurn(
     failHelperId?: string;
     failMessageOnce?: boolean;
     history?: Array<{ id: string; seq: number; role: string; text: string; clientNonce?: string }>;
+    /** When the run started; defaults to now, a turn too fresh for interim messages. */
+    startedAt?: Date;
+    /** Runs each scripted tool call through the executor, as a real runtime does. */
+    executeTools?: boolean;
+    /** A hand-written runtime, for orderings a flat event list can't express. */
+    runtime?: (request: AgentRunRequest) => AsyncGenerator<AgentRuntimeEvent>;
+    /** Lets a test hold an event write open, to land runtime events while it waits. */
+    appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -73,11 +82,19 @@ async function runTurn(
     trigger: options.trigger ?? (silent ? "bot_message" : "user"),
     sourceMessageId: "source-1",
     leaseFence: 0,
+    ...(options.startedAt ? { startedAt: options.startedAt } : {}),
   };
-  const runtimeRun = vi.fn(async function* (_request: AgentRunRequest) {
+  const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
+    if (options.runtime) {
+      yield* options.runtime(request);
+      return;
+    }
     if (options.runtimeEvents) {
       for (const event of options.runtimeEvents) {
         yield event;
+        if (options.executeTools && event.type === "tool") {
+          await request.executeTool?.(event.name, event.args, event.executionId);
+        }
       }
       if (options.runtimeCancel) {
         run.status = "cancelled";
@@ -215,7 +232,7 @@ async function runTurn(
         async () => null,
       ),
     },
-    secret: { findFirst: vi.fn(async () => null) },
+    secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: vi.fn(async () => []) },
@@ -226,11 +243,21 @@ async function runTurn(
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
-    agentSecret: { findMany: vi.fn(async () => []) },
-    botSecret: { findMany: vi.fn(async () => []) },
+    vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
-    externalEffect: { findMany: vi.fn(async () => []) },
+    externalEffect: {
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => null),
+      findUnique: vi.fn(async () => null),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: `effect-${data.idempotencyKey}`,
+        ...data,
+      })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    userActionApprovalRule: { findMany: vi.fn(async () => []) },
+    userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     computerExecutionLease: {
       updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -251,9 +278,10 @@ async function runTurn(
   const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[] }) => ({
     continuationRunId: null,
   }));
-  const append = vi.fn(async (event: AppendEventInput) =>
-    appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event),
-  );
+  const append = vi.fn(async (event: AppendEventInput) => {
+    await options.appendGate?.(event);
+    return appendEventInTransaction(prisma as unknown as Prisma.TransactionClient, event);
+  });
   const pauseRunForInput = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
@@ -282,6 +310,13 @@ async function runTurn(
   if (!options.runtimeFailure)
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun };
+}
+
+/** Notes saved on the final reply's steps, in order. */
+function stepNotes(finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) {
+  return finalizeRun.mock.calls[0]![0].blocks.flatMap((block) =>
+    block.kind === "steps" ? block.steps.flatMap((step) => (step.note ? [step.note] : [])) : [],
+  );
 }
 
 describe.each(["routine", "reaction", "bot_message", "messaging"])(
@@ -472,42 +507,409 @@ describe("held-back narration on peer requests", () => {
 });
 
 describe("withheld narration on short reply-producing turns", () => {
+  // A short pre-tool note now becomes the working line, so it stays in the reply only when
+  // no final text follows (it used to be kept before a final as well).
   it.each(["", "Checked: all clear."])("keeps pre-tool text with final %j", async (finalText) => {
     const { finalizeRun } = await runTurn(finalText, false);
     const text = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
       .map((block) => block.text)
       .join("");
-    expect(text).toBe(`I will check that.${finalText ? `\n\n${finalText}` : ""}`);
+    expect(text).toBe(finalText || "I will check that.");
   });
 });
 
 describe("text from separate assistant turns", () => {
-  it.each(["The draft is posted.", "The draft is posted at https://example.com/drafts/42"])(
-    "keeps a paragraph break after %j in finalized blocks",
-    async (narration) => {
-      const { finalizeRun } = await runTurn("Nothing has changed since then.", false, narration);
-      const text = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
-        .map((block) => block.text)
-        .join("");
-      expect(text).toBe(`${narration}\n\nNothing has changed since then.`);
-    },
-  );
-
+  // The note now leaves the live text for the working line, so what streams after it is the
+  // final text alone; the redactor's held-back copy of the note is not streamed again.
   it("streams the break when the redactor holds all pre-tool text", async () => {
     const narration = "I will check that.";
     const finalText = "Checked: all clear.";
     const { append } = await runTurn(finalText, false, narration, [
       "fake-secret-longer-than-the-entire-reply-for-redactor-buffering",
     ]);
-    const text = append.mock.calls
+    const payloads = append.mock.calls
       .map(([event]) => event)
       .filter((event) => event.type === "thread.progress")
-      .map((event) => {
-        const payload = event.payload as { text?: string; delta?: string };
-        return payload.text ?? payload.delta ?? "";
-      })
+      .map((event) => event.payload as { text?: string; delta?: string; reset?: boolean });
+    const reset = payloads.findIndex((payload) => payload.reset);
+    expect(payloads[reset]).toMatchObject({ text: narration });
+    const after = payloads
+      .slice(reset + 1)
+      .map((payload) => payload.text ?? payload.delta ?? "")
       .join("");
-    expect(text).toBe(`${narration}\n\n${finalText}`);
+    expect(after).toBe(finalText);
+  });
+});
+
+describe("notes that can't be posted as messages", () => {
+  const finalText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+  const progress = (append: Awaited<ReturnType<typeof runTurn>>["append"]) =>
+    append.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "thread.progress" || event.type === "agent.tool.called");
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+
+  it("leaves a fresh turn's note out of the reply and shows it as the working line", async () => {
+    const { finalizeRun, append } = await runTurn("Checked: all clear.", false);
+    expect(finalText(finalizeRun)).toBe("Checked: all clear.");
+    const events = progress(append);
+    const tool = events.findIndex((event) => event.type === "agent.tool.called");
+    // The streamed note is replaced by the working line once the step starts.
+    expect(events[tool + 1]).toMatchObject({
+      type: "thread.progress",
+      payload: { reset: true, text: "I will check that.", activity: true },
+    });
+  });
+
+  it("keeps the last note as the reply when nothing comes after the last step", async () => {
+    const { finalizeRun } = await runTurn("", false);
+    expect(finalText(finalizeRun)).toBe("I will check that.");
+  });
+
+  it("posts three notes on a long turn and shows the rest only as the working line", async () => {
+    const notes = ["One.", "Two.", "Three.", "Four.", "Five.", "Six."];
+    const { finalizeRun, append, messages } = await runTurn("All done.", false, notes, [], "fyi", {
+      startedAt: new Date(Date.now() - 120_000),
+    });
+    expect(sentTexts(messages)).toEqual(["One.", "Two.", "Three."]);
+    expect(finalText(finalizeRun)).toBe("All done.");
+    const statuses = progress(append)
+      .filter((event) => (event.payload as { reset?: boolean }).reset)
+      .map((event) => (event.payload as { text: string }).text);
+    expect(statuses).toEqual(["Four.", "Five.", "Six."]);
+  });
+
+  it.each([
+    "Checking the totals.",
+    `Opening the supplier portal ${"and checking every invoice ".repeat(4)}now.`,
+    "The report is at https://example.com/reports/7",
+    "Run `npm test` before merging.",
+    "Totals:\n- March: 4\n- April: 7",
+    "The total is $42.",
+  ])("keeps text written before a step out of the reply, on that step: %j", async (narration) => {
+    const { finalizeRun, append } = await runTurn("Done.", false, narration);
+    expect(finalText(finalizeRun)).toBe("Done.");
+    expect(stepNotes(finalizeRun)).toEqual([narration]);
+    expect(progress(append).some((event) => (event.payload as { reset?: boolean }).reset)).toBe(
+      true,
+    );
+  });
+
+  it("keeps an answer written before the last step and replies with what follows it", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "The meeting is with Anna." },
+        { type: "tool", name: "save_event", args: {}, executionId: "call-1" },
+        { type: "text", text: "Saved." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(finalText(finalizeRun)).toBe("Saved.");
+    expect(finalizeRun.mock.calls[0]![0].blocks).toContainEqual({
+      kind: "steps",
+      steps: [{ label: "Save event", count: 1, note: "The meeting is with Anna." }],
+    });
+  });
+
+  it("brings every working-line note back, in order, when nothing follows the last step", async () => {
+    const { finalizeRun } = await runTurn("", false, ["Paragraph A.", "Paragraph B."]);
+    expect(finalText(finalizeRun)).toBe("Paragraph A.\n\nParagraph B.");
+    expect(stepNotes(finalizeRun)).toEqual([]);
+  });
+
+  it("keeps a long answer written before a closing step whole", async () => {
+    const answer = `Here is the summary. ${"Every supplier was checked against the order. ".repeat(15)}`;
+    const { finalizeRun } = await runTurn("", false, answer);
+    expect(answer.length).toBeGreaterThan(500);
+    expect(finalText(finalizeRun).trim()).toBe(answer.trim());
+  });
+
+  it("never cuts long text into a message, even once messages may be posted", async () => {
+    const long =
+      `Here is what I found so far. ${"Each supplier matched the order totals. ".repeat(15)}`.trim();
+    const { finalizeRun, messages } = await runTurn(
+      "Done.",
+      false,
+      [long, "Saving the file."],
+      [],
+      "fyi",
+      {
+        startedAt: new Date(Date.now() - 120_000),
+      },
+    );
+    expect(long.length).toBeGreaterThan(500);
+    // The long text stays whole on its step; the short one after it is posted on its own.
+    expect(sentTexts(messages)).toEqual(["Saving the file."]);
+    expect(stepNotes(finalizeRun)).toEqual([long]);
+    expect(finalText(finalizeRun)).toBe("Done.");
+  });
+
+  it("redacts notes like the reply", async () => {
+    const { finalizeRun, append } = await runTurn("Done.", false, "The fake-secret-value is set.", [
+      "fake-secret-value",
+    ]);
+    expect(stepNotes(finalizeRun)).toEqual(["The [redacted] is set."]);
+    expect(JSON.stringify(append.mock.calls)).not.toContain("fake-secret-value");
+  });
+
+  it.each([
+    ["once messages may be posted", new Date(Date.now() - 120_000)],
+    ["on a fresh turn", undefined],
+  ])("hides the rest of a secret split across two steps, %s", async (_, startedAt) => {
+    const { finalizeRun, append, messages } = await runTurn(
+      "Done.",
+      false,
+      ["The token is hunter", " abcxyz saved."],
+      ["hunter abcxyz"],
+      "fyi",
+      { startedAt },
+    );
+    const shown = JSON.stringify([append.mock.calls, messages, stepNotes(finalizeRun)]);
+    expect(shown).not.toContain("abcxyz");
+    expect(shown).toContain("[redacted] saved.");
+  });
+
+  it("keeps tool status lines from replacing the note until the bot writes again", async () => {
+    const { append } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Checking the totals." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "progress", text: "Reading totals.csv", activity: true },
+        { type: "text", text: "They match." },
+        { type: "done", text: "Checking the totals.They match." },
+      ],
+    });
+    const lines = progress(append)
+      .filter((event) => event.type === "thread.progress")
+      .map((event) => event.payload as { text?: string; activity?: boolean });
+    expect(lines.some((line) => line.text === "Reading totals.csv")).toBe(false);
+    expect(lines.at(-1)).toMatchObject({ text: "They match." });
+  });
+
+  it("shows the next step's status line once a step starts without a note of its own", async () => {
+    const { append } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Checking the totals." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-2" },
+        { type: "progress", text: "Reading march.csv", activity: true },
+        { type: "text", text: "They match." },
+        { type: "done", text: "Checking the totals.They match." },
+      ],
+    });
+    // The live view drops the note when the next step starts, so that step's status shows.
+    const lines = progress(append)
+      .filter((event) => event.type === "thread.progress")
+      .map((event) => event.payload as { text?: string; activity?: boolean });
+    expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
+  });
+});
+
+describe("a message from the person while the bot works", () => {
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+  const finalText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+
+  it("posts what came before it on its own and lets the next note answer at once", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Found three suppliers so far." },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Yes, I'm still on it." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Checking the fourth." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-2" },
+        { type: "text", text: "All four checked." },
+        { type: "done", text: "" },
+      ],
+    });
+    // The turn is still fresh, yet the answer to the person is a message, then the budget
+    // waits again: the next note stays a working line.
+    expect(sentTexts(messages)).toEqual(["Found three suppliers so far.", "Yes, I'm still on it."]);
+    expect(finalText(finalizeRun)).toBe("All four checked.");
+  });
+
+  it("posts a message_user answer to the person at once, even on a fresh turn", async () => {
+    const answer = async (steered: boolean) =>
+      (
+        await runTurn("", false, undefined, [], "fyi", {
+          executeTools: true,
+          runtimeEvents: [
+            ...(steered ? [{ type: "steered" as const, fromRunUser: true }] : []),
+            {
+              type: "tool",
+              name: "message_user",
+              args: { message: "Yes, still on it." },
+              executionId: "call-1",
+            },
+            { type: "text", text: "All four checked." },
+            { type: "done", text: "" },
+          ],
+        })
+      ).messages;
+    expect(sentTexts(await answer(true))).toEqual(["Yes, still on it."]);
+    // Without the person's message the turn is too fresh for an interim message.
+    expect(sentTexts(await answer(false))).toEqual([]);
+  });
+
+  it("keeps a plain answer with no step after it in the reply", async () => {
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Yes, still on it." },
+        { type: "turn" },
+        { type: "text", text: "All four checked." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe("Yes, still on it.\n\nAll four checked.");
+  });
+
+  it("keeps a long answer to the person in the reply, whole", async () => {
+    const summary = `Full summary: ${"Supplier totals match the order. ".repeat(60)}`.trim();
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: summary },
+        { type: "turn" },
+        { type: "text", text: "That's everything." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(summary.length).toBeGreaterThan(1_900);
+    expect(sentTexts(messages)).toEqual([]);
+    expect(finalText(finalizeRun)).toBe(`${summary}\n\nThat's everything.`);
+  });
+
+  it("keeps the immediate answer for message_user when the bot writes something before it", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      executeTools: true,
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Let me answer that." },
+        {
+          type: "tool",
+          name: "message_user",
+          args: { message: "Yes, still on it." },
+          executionId: "call-1",
+        },
+        { type: "text", text: "All four checked." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["Yes, still on it."]);
+  });
+
+  it("keeps a long answer to the person whole on the step that follows it", async () => {
+    const summary = `Full summary: ${"Supplier totals match the order. ".repeat(20)}`.trim();
+    const { messages, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: summary },
+        { type: "turn" },
+        { type: "text", text: "Checking one more file." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "text", text: "Done." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(summary.length).toBeGreaterThan(500);
+    expect(sentTexts(messages)).toEqual([]);
+    expect(stepNotes(finalizeRun)).toEqual([`${summary}\n\nChecking one more file.`]);
+    expect(finalText(finalizeRun)).toBe("Done.");
+  });
+
+  it("keeps an allowance granted by a mid-task message that lands during message_user", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let reached!: () => void;
+    const statusWriting = new Promise<void>((resolve) => (reached = resolve));
+    let holding = true;
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      // The status line for the text before message_user is held open, so the person's
+      // message is handled while message_user is still running.
+      appendGate: (event) => {
+        if (!holding || !(event.payload as { reset?: boolean } | undefined)?.reset) return;
+        reached();
+        return gate;
+      },
+      runtime: async function* (request) {
+        yield { type: "text", text: "Let me check." };
+        const call = request.executeTool!("message_user", { message: "Working on it." }, "call-1");
+        await statusWriting;
+        yield { type: "steered", fromRunUser: true };
+        holding = false;
+        release();
+        await call;
+        yield { type: "text", text: "Yes, still on it." };
+        yield { type: "tool", name: "read_file", args: {}, executionId: "call-2" };
+        yield { type: "text", text: "Done." };
+        yield { type: "done", text: "" };
+      },
+    });
+    // The allowance the person's message granted mid-call isn't reset when the call ends: the
+    // turn is still fresh, yet the message_user update is posted.
+    expect(sentTexts(messages)).toEqual(["Working on it."]);
+  });
+
+  it("keeps messages from webhooks, external chats and other members on the normal budget", async () => {
+    const steps = ["One.", "Two.", "Three.", "Four.", "Five."].flatMap((text, index) => [
+      { type: "steered" as const, fromRunUser: false },
+      { type: "text" as const, text },
+      { type: "tool" as const, name: "read_file", args: {}, executionId: `call-${index}` },
+    ]);
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      startedAt: new Date(Date.now() - 120_000),
+      runtimeEvents: [...steps, { type: "text", text: "Done." }, { type: "done", text: "" }],
+    });
+    expect(sentTexts(messages)).toEqual(["One.", "Two.", "Three."]);
+  });
+
+  it("restarts the budget at most once a minute however often the person writes", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Reply one." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Reply two." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-2" },
+        { type: "text", text: "Done." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["Reply one."]);
+  });
+
+  it("starts the interim-message budget again after it", async () => {
+    const notes = ["One.", "Two.", "Three.", "Four."].flatMap((text, index) => [
+      { type: "text" as const, text },
+      { type: "tool" as const, name: "read_file", args: {}, executionId: `before-${index}` },
+    ]);
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      startedAt: new Date(Date.now() - 120_000),
+      runtimeEvents: [
+        ...notes,
+        { type: "steered", fromRunUser: true },
+        { type: "text", text: "Switching to the new list." },
+        { type: "tool", name: "read_file", args: {}, executionId: "after-1" },
+        { type: "text", text: "Done." },
+        { type: "done", text: "" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual(["One.", "Two.", "Three.", "Switching to the new list."]);
   });
 });
 
@@ -584,6 +986,24 @@ describe("a stray NO_RESPONSE on runs that must reply", () => {
     });
     expect(savedText(finalizeRun)).toBe("The report is ready.");
   });
+
+  it.each(["request", "question"] as const)(
+    "tells the asker there is nothing new instead of relaying a bare sentinel (%s)",
+    async (intent) => {
+      vi.mocked(returnBotMessageOutcome).mockClear();
+      const { finalizeRun } = await runTurn("NO_RESPONSE", true, undefined, [], intent, {
+        trigger: "bot_message",
+      });
+      expect(savedText(finalizeRun)).toBe(PEER_NOTHING_NEW_REPLY);
+      expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        PEER_NOTHING_NEW_REPLY,
+        "result",
+      );
+    },
+  );
 
   it("returns a peer request's result without the sentinel", async () => {
     vi.mocked(returnBotMessageOutcome).mockClear();
@@ -849,4 +1269,97 @@ describe("a kept partial reply in later history", () => {
     expect(content("m2")).toBe(`Part one. Part tw\n\n${PARTIAL_REPLY_NOTE}`);
     expect(content("m4")).toBe("A whole reply.");
   });
+});
+
+describe("public coarse thinking lifecycle", () => {
+  it("coalesces explicit boundaries and keeps activity out of messages", async () => {
+    const result = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [
+        { type: "thinking", active: true },
+        { type: "thinking", active: true },
+        { type: "thinking", active: false },
+        { type: "thinking", active: false },
+        { type: "text", text: "Public answer." },
+        { type: "done" },
+      ],
+    });
+    const activity = result.savedEvents.filter((event) => event.type === "thread.meta");
+    expect(activity.map(({ payload }) => payload)).toEqual([
+      { activity: { thinking: true } },
+      { activity: { thinking: false } },
+    ]);
+    expect(
+      activity.every(
+        ({ runId, threadId, botId }) =>
+          runId === "run-1" && threadId === "thread-1" && botId === "bot-1",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(result.messages)).not.toContain("thinking");
+  });
+  it.each<AgentRuntimeEvent>([
+    { type: "text", text: "Public reply." },
+    { type: "tool", name: "read_file", args: {}, executionId: "read-1" },
+    { type: "progress", text: "Reading", activity: true },
+    { type: "turn" },
+    { type: "ask", text: "Which option?" },
+    { type: "done" },
+  ])("resets before $type even if a runtime omits its end marker", async (boundary) => {
+    const result = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [{ type: "thinking", active: true }, boundary, { type: "done" }],
+    });
+    expect(
+      result.savedEvents
+        .filter((event) => event.type === "thread.meta")
+        .map(({ payload }) => payload),
+    ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+  });
+  it("resets on a runtime failure or exhausted iterator without a terminal marker", async () => {
+    for (const runtimeFailure of [false, true]) {
+      const result = await runTurn("", false, "", [], "request", {
+        runtimeFailure,
+        runtimeEvents: [{ type: "thinking", active: true }],
+      });
+      expect(
+        result.savedEvents
+          .filter((event) => event.type === "thread.meta")
+          .map(({ payload }) => payload),
+      ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+    }
+  });
+  it("does not emit background thinking or accept arbitrary runtime metadata into public payloads", async () => {
+    const privateMarker = {
+      type: "thinking",
+      active: true,
+      text: "private fixture reasoning",
+      partial: { content: "private" },
+    } as AgentRuntimeEvent;
+    const visible = await runTurn("", false, "", [], "request", {
+      runtimeEvents: [privateMarker, { type: "done" }],
+    });
+    expect(
+      visible.savedEvents
+        .filter((event) => event.type === "thread.meta")
+        .map(({ payload }) => payload),
+    ).toEqual([{ activity: { thinking: true } }, { activity: { thinking: false } }]);
+    expect(JSON.stringify(visible.savedEvents)).not.toContain("private fixture reasoning");
+    const background = await runTurn("", true, "", [], "fyi", {
+      trigger: "tickets",
+      runtimeEvents: [privateMarker, { type: "done" }],
+    });
+    expect(background.savedEvents.some((event) => event.type === "thread.meta")).toBe(false);
+  });
+});
+
+it("terminal cancellation wins over a runtime's open thinking marker", async () => {
+  const result = await runTurn("", false, "", [], "request", {
+    runtimeCancel: true,
+    runtimeEvents: [{ type: "thinking", active: true }],
+  });
+  const payloads = result.savedEvents
+    .filter((event) => event.type === "thread.meta")
+    .map(({ payload }) => payload);
+  expect(payloads[0]).toEqual({ activity: { thinking: true } });
+  expect(result.finalizeRun).not.toHaveBeenCalledWith(
+    expect.objectContaining({ outcome: "failed" }),
+  );
 });

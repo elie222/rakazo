@@ -14,6 +14,7 @@ import {
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
+  parseCrispWebsiteId,
 } from "@rakazo/contracts/content-security-policy";
 import {
   safeScreenProxyResponseHeaders,
@@ -291,7 +292,12 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
     const path = novncRequestPath(req.url);
-    if (!path) return;
+    // Node drops its own socket error handler on upgrade, so a client reset with no listener
+    // crashes the server. Other upgrades may be Vite's HMR, so only their errors are ignored.
+    if (!path) {
+      socket.on("error", () => {});
+      return;
+    }
     req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();
@@ -299,6 +305,16 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
+    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
+    // Listen before the access check; the close handler below tears down the upstream.
+    socket.on("error", (error) => {
+      screenLog.warn("screen.proxy.websocket_error", {
+        ...bindings,
+        "screen.side": "client",
+        "error.code": socketErrorCode(error),
+      });
+      closeInitiator ??= "client";
+    });
     const confirmedAt = performance.now();
     const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
       screenLog.warn("screen.proxy.target_rejected", {
@@ -318,7 +334,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         : net.connect(target.port, target.hostname);
     let upgraded = false;
     let closed = false;
-    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
     const logClose = (side: "client" | "upstream") => {
       if (closed) return;
       closed = true;
@@ -439,15 +454,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       closeInitiator ??= "upstream";
       socket.destroy();
     });
-    socket.on("error", (error) => {
-      screenLog.warn("screen.proxy.websocket_error", {
-        ...bindings,
-        "screen.side": "client",
-        "error.code": socketErrorCode(error),
-      });
-      closeInitiator ??= "client";
-      upstream.destroy();
-    });
   });
 }
 
@@ -508,6 +514,7 @@ export default defineConfig(({ command, mode }) => {
       "RAKAZO_CSP_CONNECT_SRC",
       process.env.RAKAZO_CSP_CONNECT_SRC ?? rootEnv.RAKAZO_CSP_CONNECT_SRC,
     ),
+    crisp: parseCrispWebsiteId(process.env.CRISP_WEBSITE_ID ?? rootEnv.CRISP_WEBSITE_ID) !== null,
   });
   return {
     build: { sourcemap: true },

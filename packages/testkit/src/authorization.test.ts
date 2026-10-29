@@ -7,6 +7,7 @@ import {
   FakeComposioClient,
   PrismaPushTokenStore,
 } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
 import {
   claimSpaceDeletionForMember,
@@ -20,7 +21,6 @@ import {
   setSpaceSettingOverride,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -56,7 +56,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       encryptionKey,
@@ -76,6 +76,63 @@ describeWithDatabase("API authorization and resource isolation", () => {
   afterAll(async () => {
     await handles?.stop();
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("batches routine mentions with the same user, space and archive isolation as per-bot reads", async () => {
+    const owner = await signup(app, `routine-mentions-owner-${stamp}@rakazo.test`, "Owner");
+    const peer = await signup(app, `routine-mentions-peer-${stamp}@rakazo.test`, "Peer");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const peerActor = await rpc<Actor>(app, peer, "me");
+    const space = await db.space.findUniqueOrThrow({ where: { id: ownerActor.spaceId } });
+    await db.member.deleteMany({ where: { userId: peerActor.userId } });
+    await db.member.create({
+      data: {
+        id: `mention-member-${stamp}`,
+        organizationId: space.organizationId,
+        userId: peerActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const own = await rpc<Bot>(app, owner, "bots/create", botInput("Own"), space.id);
+    const other = await rpc<Bot>(app, peer, "bots/create", botInput("Peer"), space.id);
+    const archived = await rpc<Bot>(app, owner, "bots/create", botInput("Archived"), space.id);
+    const second = await rpc<Space>(app, owner, "spaces/create", { name: "Second" });
+    const cross = await rpc<Bot>(app, owner, "bots/create", botInput("Cross"), second.id);
+    for (const [cookie, bot, targetSpace] of [
+      [owner, own, space.id],
+      [peer, other, space.id],
+      [owner, archived, space.id],
+      [owner, cross, second.id],
+    ] as const) {
+      await rpc(app, cookie, "routines/create", routineInput(bot.id), targetSpace);
+    }
+    await rpc(app, owner, "bots/archive", { botId: archived.id }, space.id);
+    const botIds = [own.id, other.id, archived.id, cross.id, "missing-bot"];
+    const ownRows = await rpc<unknown[]>(app, owner, "routines/list", { botId: own.id }, space.id);
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual([
+      { botId: own.id, routines: ownRows },
+    ]);
+    const peerRows = await rpc<unknown[]>(
+      app,
+      peer,
+      "routines/list",
+      { botId: other.id },
+      space.id,
+    );
+    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual([
+      { botId: other.id, routines: peerRows },
+    ]);
+    const crossRows = await rpc<unknown[]>(
+      app,
+      owner,
+      "routines/list",
+      { botId: cross.id },
+      second.id,
+    );
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, second.id)).toEqual([
+      { botId: cross.id, routines: crossRows },
+    ]);
   });
 
   it("rejects unauthenticated calls to every protected RPC family", async () => {
@@ -160,6 +217,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/update", { documentId: "missing-memory", content: "Nope" }],
       ["memory/exportMarkdown", {}],
       ["routines/list", { botId: "missing-bot" }],
+      ["routines/listForMentions", { botIds: ["missing-bot"] }],
       ["routines/create", routineInput("missing-bot")],
       ["routines/update", { routineId: "missing-routine", name: "Nope" }],
       ["routines/remove", { routineId: "missing-routine" }],
@@ -198,6 +256,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["approvalRules/list"],
+      [
+        "approvalRules/preview",
+        { id: "missing-rule", effect: "remove", sample: { tools: [{ name: "send_email" }] } },
+      ],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
       ["artifacts/list", { botId: "missing-bot" }],
@@ -799,6 +861,22 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
       expect.objectContaining({ id: memberRule.id }),
     ]);
+
+    const candidate = {
+      scope: "account",
+      id: ownerRule.id,
+      effect: "deny",
+      sample: { tools: [{ name: "destination.write" }] },
+    };
+    expect(await rpc(app, owner, "approvalRules/preview", candidate)).toEqual({
+      before: "always_allow",
+      after: "deny",
+    });
+    const foreignPreview = await raw(app, member, "approvalRules/preview", candidate);
+    expect(foreignPreview.status).toBe(404);
+    expect(
+      await rpc<Array<{ id: string; effect: string }>>(app, owner, "approvalRules/list"),
+    ).toEqual([expect.objectContaining({ id: ownerRule.id, effect: "always_allow" })]);
 
     await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
     expect(

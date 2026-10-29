@@ -13,15 +13,15 @@ const logger = createRootLogger(SERVICE_NAMES.api);
 
 try {
   const env = loadEnv();
-  const { app, stop } = await createApp({ ...env, logger });
+  const { app, stop, handleUpgrade } = await createApp({ ...env, logger });
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.apiHost }, () => {
     logger.info("api listening", { "http.host": env.apiHost, "http.port": env.port });
   });
+  // Desktop apps hold an outbound socket so bots can reach the user's own computer.
+  if (handleUpgrade) server.on("upgrade", handleUpgrade);
 
-  // Long-lived connections (threads.subscribe SSE streams) never end on their
-  // own, so server.close() alone waits forever for them. Track sockets and
-  // force-close any still open after a short grace period for in-flight
-  // requests, or every restart/shutdown hangs until something force-kills it.
+  // SSE streams never end on their own, so server.close() alone would wait forever;
+  // force-close sockets still open after a short grace period.
   const sockets = new Set<Socket>();
   server.on("connection", (socket) => {
     sockets.add(socket);

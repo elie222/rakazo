@@ -19,9 +19,6 @@ export function isOneShotRoutineCron(cron: string): boolean {
   return cron.trim() === ONCE_ROUTINE_CRON;
 }
 
-// A routine is one-shot only when it has exactly one schedule and that
-// schedule is @once — a mix of @once plus recurring schedules doesn't make
-// sense (the one-shot slot would never get a "next run" to compute).
 export function isOneShotRoutineCrons(crons: string[]): boolean {
   return crons.length === 1 && isOneShotRoutineCron(crons[0] ?? "");
 }
@@ -186,6 +183,8 @@ export type CronLabels = {
   onThe1stAt(time: string): string;
   onDayAt(day: number, time: string): string;
   hourAtMinute(minute: number): string;
+  /** Every few hours at a fixed minute; without it such schedules keep the cron fallback. */
+  hoursAtMinute?(hours: number, minute: number): string;
   daySpan(fromName: string, toName: string): string;
   everyDays(names: string[]): string;
 };
@@ -208,6 +207,7 @@ export const ENGLISH_CRON_LABELS: CronLabels = {
   onThe1stAt: (time) => `on the 1st at ${time}`,
   onDayAt: (day, time) => `on the ${ordinal(day)} at ${time}`,
   hourAtMinute: (minute) => `Every hour at :${String(minute).padStart(2, "0")}`,
+  hoursAtMinute: (hours, minute) => `Every ${hours} hours at :${String(minute).padStart(2, "0")}`,
   daySpan: (fromName, toName) => `${fromName} to ${toName}`,
   everyDays: (names) =>
     names.length === 1
@@ -299,6 +299,14 @@ function describeCronFields(cron: string, labels: CronLabels): string | null {
   if (hour === "*" && day === "*" && dow === "*" && isInt(minute)) {
     const m = Number(minute);
     return m >= 1 && m <= 59 ? labels.hourAtMinute(m) : null;
+  }
+  // Only steps that divide the day repeat evenly; "*/5" restarts at midnight after four hours.
+  const hours = stepValue(hour);
+  if (hours && day === "*" && dow === "*" && isInt(minute)) {
+    const m = Number(minute);
+    return labels.hoursAtMinute && hours >= 2 && hours < 24 && 24 % hours === 0 && m >= 1 && m <= 59
+      ? labels.hoursAtMinute(hours, m)
+      : null;
   }
   if (!isCronClock(minute, hour)) return null;
   const time = formatClock(Number(hour), Number(minute));
@@ -469,10 +477,8 @@ export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"
   return earliest;
 }
 
-// Same as nextCronDateAcross, but throws on the first malformed recurring
-// cron instead of silently skipping it. Use this before persisting a
-// routine's crons — a partially-invalid array should be rejected outright,
-// not saved with the bad entry quietly never firing.
+// Throws on the first malformed recurring cron instead of skipping it, so a persisted
+// routine never keeps a bad entry that silently never fires.
 export function nextCronDateAcrossStrict(
   crons: string[],
   from: Date,
@@ -487,8 +493,8 @@ export function nextCronDateAcrossStrict(
   return earliest;
 }
 
-const OFFSET_SUFFIX = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
-const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/;
+const ISO_DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
 
 /**
  * An ISO date or datetime as an instant. One with an offset (or Z) is taken as written; a date
@@ -497,19 +503,15 @@ const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:
  */
 export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
   const text = value.trim();
-  const wall = WALL_CLOCK.exec(text);
-  if (!wall) {
-    if (!OFFSET_SUFFIX.test(text) || !/\d{2}:\d{2}/.test(text)) return null;
-    const instant = new Date(text);
-    return Number.isFinite(instant.getTime()) ? instant : null;
-  }
+  const wall = ISO_DATE_TIME.exec(text);
+  if (!wall) return null;
   const [year, month, day, hour, minute, second] = wall
     .slice(1, 7)
     .map((part) => (part === undefined ? 0 : Number(part)));
   const ms = wall[7] ? Math.floor(Number(`0.${wall[7]}`) * 1000) : 0;
-  const check = new Date(
-    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, second ?? 0),
-  );
+  const check = new Date(0);
+  check.setUTCFullYear(year ?? 0, (month ?? 1) - 1, day ?? 1);
+  check.setUTCHours(hour ?? 0, minute ?? 0, second ?? 0);
   if (
     check.getUTCFullYear() !== year ||
     check.getUTCMonth() !== (month ?? 1) - 1 ||
@@ -519,6 +521,11 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
     check.getUTCSeconds() !== second
   ) {
     return null;
+  }
+  if (wall[8]) {
+    // Date only parses an offset with minutes; ISO 8601 also allows hours alone (+05).
+    const instant = new Date(/^[+-]\d{2}$/.test(wall[8]) ? `${text}:00` : text);
+    return Number.isFinite(instant.getTime()) ? instant : null;
   }
   const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
   local.year = check.getUTCFullYear();

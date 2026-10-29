@@ -199,6 +199,53 @@ describe("user-visible messages", () => {
     ]);
   });
 
+  it("folds chart-only peer replies under their received marker and expands them", () => {
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const activity = message("activity", "run-peer", [
+      { kind: "steps", steps: [{ label: "Work", count: 1 }] },
+    ]);
+    const transcript = foldPeerReplies([received, activity, chartReply], {
+      includePeerReceipts: true,
+    });
+
+    expect(transcript.messages).toEqual([received]);
+    expect(transcript.folded.get("received")).toEqual([chartReply]);
+    expect(transcript.markerOf.get("chart_reply")).toBe("received");
+    expect(expandPeerReplies(transcript, new Set())).toEqual([received]);
+    expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([received, chartReply]);
+  });
+
+  it("keeps chart-only relays inline", () => {
+    const relayReceipt = { ...received, replyToMessageId: "sent" };
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const transcript = foldPeerReplies([relayReceipt, chartReply], {
+      includePeerReceipts: true,
+      includeDelegatedReplyText: false,
+    });
+
+    expect(transcript.messages).toEqual([relayReceipt, chartReply]);
+    expect(transcript.folded.size).toBe(0);
+  });
+
+  it("hides chart-only background replies even when their peer receipt is expanded", () => {
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const transcript = foldPeerReplies([received, chartReply], {
+      includePeerReceipts: true,
+      backgroundRunIds: ["run-peer"],
+    });
+
+    expect(transcript.messages).toEqual([]);
+    expect(transcript.folded.size).toBe(0);
+    expect(transcript.markerOf.size).toBe(0);
+    expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([]);
+  });
+
   it("keeps peer-run user-input cards inline while folding the reply", () => {
     const messages = [
       ...peerExchange,

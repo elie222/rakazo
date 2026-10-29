@@ -1,16 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  adoptDeletedSpaceFallback,
-  type MobileBot,
-  rpc,
-  selectedSpaceId,
-  selectSpace,
-} from "./api";
+import type { MobileBot } from "./api";
+import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { activateUiLocale } from "./i18n";
+import type { InboxSpace } from "./inbox-spaces";
 import {
   canDeleteInboxSpace,
   deleteSpaceTitle,
-  type InboxSpace,
   inboxHasNoChats,
   inboxNeedsCreateHint,
   removeInboxSpace,
@@ -44,7 +39,6 @@ const bot: MobileBot = {
   id: "bot-1",
   name: "Helper",
   preview: "",
-  title: "",
   color: "gray",
   computerMode: "team",
   notifyOnFinish: true,

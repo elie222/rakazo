@@ -2,11 +2,21 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
-import { describe, expect, it, vi } from "vitest";
-import { fakeBoatProvider as fakeBoat } from "./boat-sandbox.test-support.js";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  fakeBoatProvider as fakeBoat,
+  routeFakeBoatDownloads,
+} from "./boat-sandbox.test-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { emulatedNovita } from "./novita-sandbox.test-support.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
+
+let restoreFetch: () => void;
+beforeAll(() => {
+  restoreFetch = routeFakeBoatDownloads();
+});
+afterAll(() => restoreFetch());
 
 const ctx = {
   operationId: "1",
@@ -26,26 +36,31 @@ async function drain(provider: SandboxProvider, computer: ComputerRef) {
 }
 
 describe("sandbox conformance", () => {
-  it("runs the same graphical command across fake, Boat, and desktop", async () => {
+  it("runs the same graphical command across fake, Boat, Novita, and desktop", async () => {
     const fake = new FakeSandboxProvider();
     const boat = fakeBoat();
+    const novita = emulatedNovita().provider();
     const desktop = new DesktopSandboxProvider();
     const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
     const b = await provisionPrepared(boat, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
     const c = await provisionPrepared(desktop, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
+    const d = await provisionPrepared(novita, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
     expect(await drain(fake, a)).toContain("graphical-ok");
     expect(await drain(boat, b)).toContain("graphical-ok");
     expect(await drain(desktop, c)).toContain("graphical-ok");
-    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
+    expect(await drain(novita, d)).toContain("graphical-ok");
+    expect(new Set([a.id, b.id, c.id, d.id]).size).toBe(4);
     await fake.destroy(a, ctx);
     await boat.destroy(b, ctx);
     await desktop.destroy(c, ctx);
+    await novita.destroy(d, ctx);
   });
 
   it("offers the same observation, action, and workspace contract across providers", async () => {
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
       fakeBoat(),
+      emulatedNovita().provider(),
       new DesktopSandboxProvider(),
     ];
     for (const [index, provider] of providers.entries()) {
@@ -64,6 +79,7 @@ describe("sandbox conformance", () => {
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
       fakeBoat(),
+      emulatedNovita().provider(),
       new DesktopSandboxProvider({ root }),
     ];
     vi.stubEnv("RAKAZO_COMMAND_UNSET_TEST", "fake-host-value");
@@ -232,6 +248,7 @@ describe("sandbox conformance", () => {
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
       fakeBoat(),
+      emulatedNovita().provider(),
       new DesktopSandboxProvider({ root }),
     ];
     for (const [index, provider] of providers.entries()) {

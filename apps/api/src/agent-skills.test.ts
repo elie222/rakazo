@@ -26,9 +26,13 @@ function savedSkill(name: string, source = "user") {
 }
 
 function setup(rows: ReturnType<typeof savedSkill>[] = []) {
-  type Where = { id?: string; spaceId: string; userId: string; source?: string };
-  const matches = (row: ReturnType<typeof savedSkill>, where: Where) =>
-    Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value);
+  type Where = { id?: string; spaceId?: string; userId: string; source?: string; OR?: object[] };
+  const matches = (row: ReturnType<typeof savedSkill>, where: object): boolean =>
+    Object.entries(where).every(([key, value]) =>
+      key === "OR"
+        ? (value as object[]).some((branch) => matches(row, branch))
+        : row[key as keyof typeof row] === value,
+    );
   const agentSkill = {
     findMany: vi.fn(async ({ where }: { where: Where }) =>
       rows.filter((row) => matches(row, where)),
@@ -49,9 +53,11 @@ function setup(rows: ReturnType<typeof savedSkill>[] = []) {
       return { count: 1 };
     }),
   };
+  const tx = { agentSkill, $executeRaw: vi.fn(async () => 0), $queryRaw: vi.fn(async () => []) };
+  const $transaction = vi.fn(async (run: (client: typeof tx) => unknown) => run(tx));
   return {
     agentSkill,
-    service: createAgentSkillsService({ agentSkill } as unknown as PrismaClient),
+    service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient),
   };
 }
 

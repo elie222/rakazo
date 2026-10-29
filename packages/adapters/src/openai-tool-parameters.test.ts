@@ -5,7 +5,7 @@ import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
 } from "./openai-tool-parameters.js";
-import { parametersFor } from "./pi-runtime.js";
+import { parametersFor } from "./pi-runtime-tool-parameters.js";
 
 describe("normalizeOpenAiToolParameters", () => {
   it("conjoins referenced fields with sibling constraints and follows local reference chains", () => {
@@ -151,6 +151,87 @@ describe("normalizeOpenAiToolParameters", () => {
     });
   });
 
+  it("combines sibling allOf and oneOf fields and required constraints", () => {
+    expect(
+      normalizeOpenAiToolParameters({
+        type: "object",
+        allOf: [{ properties: { projectId: { type: "string" } }, required: ["projectId"] }],
+        oneOf: [
+          {
+            properties: { action: { const: "start" }, startAt: { type: "string" } },
+            required: ["action", "startAt"],
+          },
+          {
+            properties: { action: { const: "stop" }, reason: { type: "string" } },
+            required: ["action", "reason"],
+          },
+        ],
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        action: { anyOf: [{ const: "start" }, { const: "stop" }] },
+        startAt: { type: "string" },
+        reason: { type: "string" },
+      },
+      required: ["projectId", "action"],
+    });
+  });
+
+  it("conjoins overlapping root, allOf, and union property constraints", () => {
+    expect(
+      normalizeOpenAiToolParameters({
+        type: "object",
+        properties: { count: { type: "integer" } },
+        allOf: [{ properties: { count: { minimum: 1 } }, required: ["count"] }],
+        oneOf: [{ properties: { count: { const: 1 } } }, { properties: { count: { const: 2 } } }],
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        count: {
+          allOf: [{ type: "integer" }, { minimum: 1 }, { anyOf: [{ const: 1 }, { const: 2 }] }],
+        },
+      },
+      required: ["count"],
+    });
+  });
+
+  it("conjoins sibling anyOf and oneOf alternatives", () => {
+    expect(
+      normalizeOpenAiToolParameters({
+        type: "object",
+        anyOf: [
+          { properties: { value: { type: "string" } }, required: ["value"] },
+          { properties: { value: { type: "number" } }, required: ["value"] },
+        ],
+        oneOf: [
+          {
+            properties: { value: { const: "ready" }, mode: { const: "text" } },
+            required: ["mode"],
+          },
+          {
+            properties: { value: { const: 1 }, mode: { const: "numeric" } },
+            required: ["mode"],
+          },
+        ],
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        value: {
+          allOf: [
+            { anyOf: [{ type: "string" }, { type: "number" }] },
+            { anyOf: [{ const: "ready" }, { const: 1 }] },
+          ],
+        },
+        mode: { anyOf: [{ const: "text" }, { const: "numeric" }] },
+      },
+      required: ["value", "mode"],
+    });
+  });
+
   it("preserves required, additionalProperties, and existing properties", () => {
     expect(
       normalizeOpenAiToolParameters({
@@ -207,6 +288,168 @@ describe("openAiToolParametersNeedNormalization", () => {
 });
 
 describe("parametersFor OpenAI wire fidelity", () => {
+  it("does not close a union after dropping its branch pattern properties", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            anyOf: [
+              { patternProperties: { "^x": { type: "string" } }, additionalProperties: false },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).not.toHaveProperty("additionalProperties");
+  });
+
+  it("preserves an unconstrained boolean union alternative through conversion", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            anyOf: [true, { properties: { action: { type: "string" } }, required: ["action"] }],
+          },
+        }),
+      ),
+    );
+    expect(wire.properties.action).toEqual({});
+    expect(wire).not.toHaveProperty("required");
+  });
+
+  it("retains gateway-compatible string discriminators for a plain root union", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            oneOf: [
+              { properties: { action: { const: "start" } }, required: ["action"] },
+              { properties: { action: { const: "stop" } }, required: ["action"] },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire.properties.action).toEqual({
+      anyOf: [
+        { type: "string", const: "start", enum: ["start"] },
+        { type: "string", const: "stop", enum: ["stop"] },
+      ],
+    });
+  });
+
+  it("preserves root required alongside oneOf without root properties", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            required: ["projectId"],
+            oneOf: [
+              {
+                properties: { projectId: { type: "string" }, action: { const: "start" } },
+                required: ["action"],
+              },
+              {
+                properties: { projectId: { type: "string" }, action: { const: "stop" } },
+                required: ["action"],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).toEqual({
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
+      },
+      required: ["projectId", "action"],
+    });
+  });
+
+  it("serializes sibling allOf and oneOf fields with their shared requirements", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            allOf: [{ properties: { projectId: { type: "string" } }, required: ["projectId"] }],
+            oneOf: [
+              { properties: { action: { const: "start" } }, required: ["action"] },
+              { properties: { action: { const: "stop" } }, required: ["action"] },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).toEqual({
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
+      },
+      required: ["projectId", "action"],
+    });
+  });
+
+  it("serializes root properties together with oneOf fields", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        parametersFor({
+          name: "manage_project",
+          description: "Manage a project",
+          inputSchema: {
+            type: "object",
+            properties: { projectId: { type: "string" } },
+            required: ["projectId"],
+            oneOf: [
+              { properties: { action: { const: "start" } }, required: ["action"] },
+              { properties: { action: { const: "stop" } }, required: ["action"] },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(wire).toEqual({
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        action: {
+          anyOf: [
+            { type: "string", const: "start", enum: ["start"] },
+            { type: "string", const: "stop", enum: ["stop"] },
+          ],
+        },
+      },
+      required: ["projectId", "action"],
+    });
+  });
+
   it("serializes zero-argument tools with type object and empty properties", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "list_secrets");
     if (!tool) throw new Error("missing list_secrets");
@@ -226,6 +469,7 @@ describe("parametersFor OpenAI wire fidelity", () => {
     expect(Object.keys(wire.properties as object).sort()).toEqual([
       "connectionId",
       "credential",
+      "fields",
       "label",
       "purpose",
       "replace",

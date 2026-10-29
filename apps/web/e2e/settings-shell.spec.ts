@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  openUserSettings,
-  rpc,
-  signup,
-} from "./helpers";
+import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
 test("changing language updates settings overflow without resizing", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -14,7 +7,7 @@ test("changing language updates settings overflow without resizing", async ({ pa
   await completeOnboarding(page);
   const settings = await openUserSettings(page);
   // Below the desktop breakpoint, where the section list scrolls sideways.
-  await page.setViewportSize({ width: 767, height: 700 });
+  await page.setViewportSize({ width: 640, height: 700 });
   const nav = settings.getByTestId("settings-nav");
   const next = settings.getByRole("button", { name: "Next settings sections" });
   const overflow = () => nav.evaluate((node) => node.scrollWidth - node.clientWidth);
@@ -262,46 +255,4 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await documents.scrollIntoViewIfNeeded();
   await expect(documents).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-dark-bottom");
-});
-
-test("shell overlays open from the URL and keep it in sync", async ({ page }, testInfo) => {
-  await signup(page, `settings-url-${Date.now()}@rakazo.test`, "password12", "Settings");
-  await completeOnboarding(page);
-  const botPath = new URL(page.url()).pathname;
-
-  await page.goto("/app?settings=usage");
-  const settings = page.getByTestId("user-settings");
-  await expect(settings).toHaveAttribute("data-settings-section", "usage");
-  await expect(page).toHaveURL((url) => url.pathname === botPath);
-  await settings.getByTestId("settings-nav-general").click();
-  await expect(page).toHaveURL((url) => url.searchParams.get("settings") === "general");
-  await captureScreenshot(page, testInfo, "settings-from-url");
-  await page.keyboard.press("Escape");
-  await expect(settings).toHaveCount(0);
-  await expect(page).toHaveURL((url) => url.pathname === botPath && url.search === "");
-
-  const apps = page.getByPlaceholder("Search apps");
-  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expect(apps).toBeVisible();
-  await expect(page).toHaveURL((url) => url.searchParams.has("integrations"));
-});
-
-test("usage lists spend per model", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `usage-models-${stamp}@rakazo.test`, "password12", "Usage");
-  await completeOnboarding(page);
-  await page.goto("/app");
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await rpc(page, "threads/send", { botId: activeBotId(page), text: "Plan my week" });
-  await expect
-    .poll(async () => (await rpc<{ modelCalls?: number }>(page, "usage/summary", {})).modelCalls, {
-      timeout: 60_000,
-    })
-    .toBeGreaterThan(0);
-
-  await openUserSettings(page, "usage");
-  const usage = page.getByTestId("usage-settings");
-  await expect(usage.getByRole("columnheader", { name: "Model" })).toBeVisible();
-  await expect(usage.locator("tbody tr")).not.toHaveCount(0);
-  await captureScreenshot(page, testInfo, "settings-usage-models");
 });

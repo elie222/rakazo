@@ -22,6 +22,7 @@ import {
   listRoutinesDto,
   mapRoutine,
   nextRoutineDate,
+  routineDto,
   routineNextRunAt,
   routineRowData,
 } from "../routines.js";
@@ -32,8 +33,28 @@ export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
   return {
     routines: {
+      listForMentions: authed.routines.listForMentions.handler(async ({ context, input }) => {
+        const { actor } = context;
+        // Same ownership predicates as getBot, so a batch never widens what routines/list allows.
+        const bots = await deps.prisma.bot.findMany({
+          where: {
+            id: { in: input.botIds },
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            archivedAt: null,
+          },
+          select: { id: true },
+        });
+        const rows = await deps.prisma.routine.findMany({
+          where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
+        });
+        return bots.map((bot) => ({
+          botId: bot.id,
+          routines: rows.filter((row) => row.botId === bot.id).map((row) => routineDto(row, actor)),
+        }));
+      }),
       history: authed.routines.history.handler(async ({ context, input }) =>
-        listRoutineRuns(deps.prisma, context.actor, input.routineId, input.before),
+        listRoutineRuns(deps.prisma, context.actor, input.routineId, input.before, input.limit),
       ),
       list: authed.routines.list.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);

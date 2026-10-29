@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
+import {
+  jsonSchemaParameters,
+  parametersFor,
+  prepareFleetArguments,
+} from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
   it.each([
@@ -338,10 +342,10 @@ describe("bot management tool parameters", () => {
     );
   });
 
-  it("update_bot carries bot_id for a child and never instructions", () => {
+  it("update_bot carries bot_id for a child and first instructions, never a version", () => {
     const props = Object.keys(wireFor("update_bot").properties as object);
     expect(props).toContain("bot_id");
-    expect(props).not.toContain("instructions");
+    expect(props).toContain("instructions");
     expect(props).not.toContain("expected_version");
     expect(Object.keys(wireFor("set_child_instructions").properties as object).sort()).toEqual([
       "bot_id",

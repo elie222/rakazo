@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
@@ -11,6 +12,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  contentKeyProviderFromEnv,
   createAgentHomeStore,
   createArtifactStore,
   createBackgroundJobHandlers,
@@ -21,6 +23,7 @@ import {
   createJobReconciler,
   createMessagingContextLoader,
   createModelCreditReconciler,
+  createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
   createReservedGraphileJobWorkerHost,
@@ -52,9 +55,11 @@ import {
   PrismaPushTokenStore,
   pipedreamConfigFromEnv,
   RunJobPublisher,
+  RunStarter,
   RunWorkerHost,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcilePurchases,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -62,6 +67,8 @@ import {
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
   shutdownPiTelemetry,
+  UserDevices,
+  userDeviceForwardSecret,
   withRunWorker,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -101,6 +108,7 @@ async function main() {
   const created = createDb(databaseUrl, {
     poolMax,
     applicationName: "rakazo-worker",
+    keyProvider: contentKeyProviderFromEnv(),
   });
   const { pool } = created;
   let { prisma } = created;
@@ -173,10 +181,8 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  // pollInboundMessages stays false (the default) here: this process
-  // only ever sends outbound (messaging.deliver jobs). It must never poll
-  // Telegram — that would steal the single getUpdates slot away from the
-  // API process, which is the one with the inbound sink actually wired up.
+  // Never poll inbound here: Telegram allows a single getUpdates consumer,
+  // and that is the API process, which owns the inbound sink.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env)).filter(
     (platform) => platform.provider !== "slack" || !process.env.SLACK_CLIENT_ID,
   );
@@ -205,10 +211,13 @@ async function main() {
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = createAgentHomeStore(dataDir, prisma);
+  void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
   const artifacts = createArtifactStore(dataDir, prisma);
+  const shutdown = new AbortController();
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
+  const runs = new RunStarter(realtime, { signal: shutdown.signal });
   const jobs: JobPublisher =
-    inMemoryJobs ?? new RunJobPublisher(prisma, realtime, new GraphileJobPublisher(pool, prisma));
+    inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
   const { messaging } = installedMessaging(
     prisma,
     secrets,
@@ -229,6 +238,7 @@ async function main() {
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
+  const paymentWallet = await createPaymentWalletProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
   const pushTokens = new PrismaPushTokenStore(prisma, resolveEncryptionKey(process.env));
   const notifications = new ExpoPushProvider(pushTokens, {
@@ -281,12 +291,22 @@ async function main() {
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
+    // Device sockets live in an API process; the worker forwards to whichever one holds it.
+    userDevices:
+      process.env.USER_DEVICES_ENABLED === "false"
+        ? undefined
+        : new UserDevices({
+            prisma,
+            forwardSecret: userDeviceForwardSecret(resolveEncryptionKey(process.env)),
+          }),
+    paymentWallet,
+    shutdownSignal: shutdown.signal,
   });
 
   const jobHost: JobWorkerHost =
     inMemoryJobs ??
     withRunWorker(
-      new RunWorkerHost(prisma, realtime),
+      new RunWorkerHost(prisma, realtime, runs, { pool }),
       createReservedGraphileJobWorkerHost(pool, {
         concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
       }),
@@ -300,7 +320,8 @@ async function main() {
     artifacts,
     jobs,
     events,
-    workerId: process.pid.toString(),
+    // Deploys run the old and new worker side by side, and every container runs node as the same pid.
+    workerId: `${hostname()}:${process.pid}`,
     runtime,
     secretStore: secrets,
     memoryProviders,
@@ -308,6 +329,7 @@ async function main() {
     deploymentModelConfigured,
     messaging,
     cloudAgent,
+    paymentWallet,
     notifications,
   });
   const reconciler = createJobReconciler({
@@ -321,6 +343,7 @@ async function main() {
       lookup: deploymentModelUsageLookup(),
     }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
+    reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
       ? undefined
@@ -336,7 +359,6 @@ async function main() {
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
   });
   let stopHealth: (() => Promise<void>) | undefined;
-  const shutdown = new AbortController();
   let stopping = false;
   const stop = async () => {
     if (stopping) return;

@@ -36,6 +36,31 @@ describe("logger", () => {
     });
   });
 
+  it("serializes a warning's error binding like an error log's error", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    const cause = new Error("could not prepare the workspace");
+    logger.warn("computer.provision_failed", {
+      provider: "fake",
+      error: new AggregateError([cause, new Error("rollback failed")], "provisioning failed"),
+    });
+    expect(sink.events[0]).toMatchObject({
+      provider: "fake",
+      error: {
+        name: "AggregateError",
+        message: "provisioning failed",
+        cause: { name: "Error", message: "could not prepare the workspace" },
+      },
+    });
+  });
+
+  it("serializes an error bound on a child logger", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    logger.child({ error: new TypeError("bound failure") }).warn("child");
+    expect(sink.events[0]?.error).toMatchObject({ name: "TypeError", message: "bound failure" });
+  });
+
   it("keeps the configured service name when bindings try to overwrite it", () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
@@ -139,6 +164,17 @@ describe("error serialization", () => {
     expect(JSON.stringify(serialized)).not.toContain("supersecret");
     expect(JSON.stringify(serialized)).not.toContain("person@example.com");
     expect(serialized.message).toContain("[Redacted]");
+  });
+
+  it("redacts user profile paths in error messages and stacks", () => {
+    const error = new Error("cannot open /home/example-user/app.db");
+    error.stack = `Error: cannot open /home/example-user/app.db\n    at run (/Users/example-user/app/index.js:1:1)\n    at load (C:\\Users\\example-user\\app\\index.js:2:1)`;
+    const serialized = serializeError(error);
+    expect(serialized.message).toBe("cannot open /[user]/app.db");
+    expect(serialized.stack).toBe(
+      "Error: cannot open /[user]/app.db\n    at run (/[user]/app/index.js:1:1)\n    at load ([user]\\app\\index.js:2:1)",
+    );
+    expect(JSON.stringify(serialized)).not.toContain("example-user");
   });
 
   it("redacts secrets interpolated into the log message", () => {

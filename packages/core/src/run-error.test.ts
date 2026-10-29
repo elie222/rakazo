@@ -2,10 +2,16 @@ import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
+  HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+  isImageInputConfirmation,
   isModelRequiredSendError,
+  MISSING_MODEL_RUN_ERROR,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_IMAGE_INPUT_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
   modelFallbackFailure,
   normalizeRunError,
@@ -56,12 +62,9 @@ describe("normalizeRunError", () => {
     ],
     [
       '404: {"error":{"message":"Model fake-model does not exist"}}',
-      "Your model provider could not find the requested model.",
+      "Your model provider can't run this model.",
     ],
-    [
-      '{"error":{"code":"model_not_found"}}',
-      "Your model provider could not find the requested model.",
-    ],
+    ['{"error":{"code":"model_not_found"}}', "Your model provider can't run this model."],
     ["Request timed out", "Your model provider took too long to respond. Try again."],
     [
       '504: {"message":"Gateway error"}',
@@ -71,10 +74,7 @@ describe("normalizeRunError", () => {
       '403: {"message":"Policy blocked the request"}',
       "Your model provider denied access to this model.",
     ],
-    [
-      '404: {"message":"Route not found"}',
-      "Your model provider could not find the requested model.",
-    ],
+    ['404: {"message":"Route not found"}', "Your model provider can't run this model."],
     [
       "500: {malformed https://example.test/keys/fake-key-id",
       "The model provider returned an error.",
@@ -181,6 +181,10 @@ describe("normalizeRunError", () => {
         tooLong,
       ],
       ["prompt is too long: 210344 tokens > 200000 maximum", tooLong],
+      [
+        '400: {"code":400,"message":"request (19563 tokens) exceeds the available context size (2048 tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":19563,"n_ctx":2048}',
+        tooLong,
+      ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
       ["terminated", tookTooLong],
@@ -211,7 +215,6 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toEqual({
         summary: "Your model provider couldn't be reached. Check that it's running.",
         details,
-        recovery: "connection",
       });
     });
 
@@ -224,6 +227,13 @@ describe("normalizeRunError", () => {
         },
       ],
       ['504: {"message":"Gateway error"}', { summary: tookTooLong }],
+      [
+        "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
+        {
+          summary: "Your OpenAI is rate limiting requests. Try again shortly.",
+          kind: "rate",
+        },
+      ],
     ])("keeps upstream's earlier branch for %s", (details, expected) => {
       expect(normalizeRunError(details)).toMatchObject({ ...expected, details });
     });
@@ -269,8 +279,8 @@ describe("normalizeRunError", () => {
         }),
         "spending",
       ],
-    ])("sends a billing or quota failure to the connection: %s", (details, kind) => {
-      expect(normalizeRunError(details)).toMatchObject({ kind, recovery: "connection" });
+    ])("offers another model when the account is out of money or quota: %s", (details, kind) => {
+      expect(normalizeRunError(details)).toMatchObject({ kind, recovery: "model" });
     });
 
     it.each([
@@ -278,6 +288,7 @@ describe("normalizeRunError", () => {
       '401 {"status":401,"title":"Unauthorized","detail":"Invalid unsecured/JWS/JWE header: Invalid JSON object"}',
       'xai API error (400): 400 "Incorrect API key provided. You can obtain an API key from the console."',
       "Your authentication token has expired. Please try refreshing it.",
+      "Encountered invalidated oauth token for user, failing request",
       // A key pasted with code around it; the code's words are not provider signals.
       'Headers.append: "Bearer example-key\nclient = Client(timeout=30, credits=5, rate_limit=1)" is an invalid header value.',
       "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
@@ -307,11 +318,12 @@ describe("normalizeRunError", () => {
         message: "Permission denied: this project cannot use the requested model.",
         status: "PERMISSION_DENIED",
       }),
+      '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
     ])("explains a provider refusing the model to the account: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider denied access to this model.",
         kind: "access",
-        recovery: "connection",
+        recovery: "model",
       });
     });
 
@@ -325,15 +337,28 @@ describe("normalizeRunError", () => {
       `{"detail":"The 'example-model' model is not supported when using Codex with a ChatGPT account."}`,
       "Validation error: Invocation of model ID example.model-v1 with on-demand throughput isn’t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
       "Validation error: This model doesn't support the image field for user messages.",
+      '400: {"code":"400","message":"Unsupported model example-model"}',
     ])("asks for another model when the provider cannot serve it: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });
 
-    it("asks for another model when instructions and tools fill its window", () => {
-      expect(normalizeRunError(MODEL_CONTEXT_TOO_SMALL_ERROR)).toEqual({
-        summary: MODEL_CONTEXT_TOO_SMALL_ERROR,
-        details: MODEL_CONTEXT_TOO_SMALL_ERROR,
-        kind: "context",
+    it.each([MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_REQUEST_LIMIT_ERROR])(
+      "offers another model for an unusable request budget: %s",
+      (details) => {
+        expect(normalizeRunError(details)).toEqual({
+          summary: details,
+          details,
+          kind: "context",
+          recovery: "model",
+        });
+      },
+    );
+
+    it("says a reply was cut off at the output limit, with the model's fix", () => {
+      expect(normalizeRunError(MODEL_OUTPUT_CUT_ERROR)).toEqual({
+        summary: MODEL_OUTPUT_CUT_ERROR,
+        details: MODEL_OUTPUT_CUT_ERROR,
+        kind: "output",
         recovery: "model",
       });
     });
@@ -341,7 +366,7 @@ describe("normalizeRunError", () => {
     it("treats a request over the plan's token window as too long", () => {
       expect(
         normalizeRunError(
-          '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM): Limit 8000, Requested 9000."}',
+          '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large for model `fixture-model` on tokens per minute (TPM): Limit 2000, Requested 3000."}',
         ),
       ).toMatchObject({ kind: "context" });
     });
@@ -386,6 +411,9 @@ describe("normalizeRunError", () => {
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
+      '503: {"message":"Unsupported model fixture-model"}',
+      '400: {"message":"Unsupported model parameter: fixture_option"}',
+      '400: {"message":"Unknown model setting: fixture_option"}',
       "TypeError: Cannot read properties of undefined (reading 'content')",
     ])("leaves requests we built and unknown shapes unattributed: %s", (details) => {
       expect(normalizeRunError(details).kind).toBeUndefined();
@@ -419,7 +447,7 @@ it("keeps a future reset and identifies recovery", () => {
     recovery: "connection",
   });
   expect(normalizeRunError('401: {"message":"Invalid API key"}').recovery).toBe("connection");
-  expect(normalizeRunError('429: {"message":"Too many requests"}').recovery).toBe("connection");
+  expect(normalizeRunError('429: {"message":"Too many requests"}').recovery).toBeUndefined();
   expect(normalizeRunError('500: {"message":"Internal error"}').recovery).toBeUndefined();
 });
 
@@ -428,10 +456,12 @@ it.each([
   "Weekly request limit exceeded",
   "Per-minute quota exceeded",
 ])("keeps request quotas as rate limits: %s", (message) => {
-  expect(normalizeRunError(`429: ${JSON.stringify({ message })}`)).toMatchObject({
+  const error = normalizeRunError(`429: ${JSON.stringify({ message })}`);
+  expect(error).toMatchObject({
     summary: "Your model provider is rate limiting requests. Try again shortly.",
-    recovery: "connection",
+    kind: "rate",
   });
+  expect(error.recovery).toBeUndefined();
 });
 it.each(["Insufficient credit balance", "Monthly spending limit exceeded"])(
   "keeps financial 429 failures as quota errors: %s",
@@ -500,6 +530,34 @@ describe("isModelRequiredSendError", () => {
     `${MODEL_REQUIRED_SEND_ERROR} suffix`,
   ])("rejects unrelated values: %s", (error) => {
     expect(isModelRequiredSendError(error)).toBe(false);
+  });
+});
+
+it("normalizes the shared image rejection with model recovery", () => {
+  const translate = (message: string) => `translated:${message}`;
+  expect(normalizeRunError(MODEL_IMAGE_INPUT_ERROR, translate)).toMatchObject({
+    summary: `translated:${MODEL_IMAGE_INPUT_ERROR}`,
+    recovery: "model",
+    kind: "model",
+  });
+});
+
+it("requires structured server metadata before offering file confirmation", () => {
+  expect(
+    isImageInputConfirmation({ status: 409, data: { reason: "model_image_input_unsupported" } }),
+  ).toBe(true);
+  expect(isImageInputConfirmation({ status: 409, message: MODEL_IMAGE_INPUT_ERROR })).toBe(false);
+  expect(isImageInputConfirmation(MODEL_IMAGE_INPUT_ERROR)).toBe(false);
+});
+
+it("keeps model recovery for an image rejection after backups are exhausted", () => {
+  const details = modelFallbackFailure(MODEL_IMAGE_INPUT_ERROR, [
+    { provider: "fake-provider", modelId: "fake-model", status: "failed", reason: "fake" },
+  ]);
+  expect(normalizeRunError(details)).toMatchObject({
+    summary: `${MODEL_IMAGE_INPUT_ERROR} Your backup models also failed.`,
+    recovery: "model",
+    kind: "model",
   });
 });
 
@@ -598,4 +656,170 @@ describe("userRunError", () => {
   ])("passes a provider message through: %s", (message) => {
     expect(userRunError(new Error(message))).toBe(message);
   });
+});
+
+describe("the one action that fixes a failed run", () => {
+  // Gateways in front of Google pass Google's error envelope through as a JSON string.
+  const google = (error: Record<string, unknown>) =>
+    JSON.stringify({ error: { message: JSON.stringify({ error }, null, 2), code: error.code } });
+  const now = Date.parse("2026-10-01T00:00:00Z");
+  const action = (details: string) => {
+    const { summary, kind, period, recovery } = normalizeRunError(details, undefined, "en", now);
+    return { summary, kind, period, recovery };
+  };
+
+  it.each([
+    [
+      '429: {"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day","code":429,"metadata":{"limit_source":"openrouter_free_tier_daily","remedy_hint":"Wait for the daily reset, or purchase credits to raise your free-model daily limit."}}',
+      { kind: "credit", period: "daily" },
+    ],
+    [
+      '402: {"message":"Insufficient credits. This account never purchased credits. Make sure your key is on the correct account or org, and if so, purchase more at https://example.test/credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}',
+      { kind: "credit", period: "none" },
+    ],
+    [
+      '402: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 1000.","code":402}',
+      { kind: "credit" },
+    ],
+    [
+      "You have no credits remaining. Add credits to continue using the API at https://example.test/billing.",
+      { kind: "credit" },
+    ],
+    [
+      'xai API error (402): 402 "You have run out of credits or need a subscription. Add credits at https://example.test/usage."',
+      { kind: "credit" },
+    ],
+    [
+      '402 "You have no remaining credits. Purchase pre-paid credits to continue using Inference Providers. Alternatively, subscribe to PRO to get monthly included credits."',
+      { kind: "credit", period: "none" },
+    ],
+    [
+      google({
+        code: 429,
+        message:
+          "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://example.test/rate-limits.",
+        status: "RESOURCE_EXHAUSTED",
+      }),
+      { kind: "spending" },
+    ],
+    [
+      google({
+        code: 402,
+        message:
+          "Your prepayment credits are depleted. Please go to https://example.test to manage your project and billing.",
+        status: "FAILED_PRECONDITION",
+      }),
+      { kind: "credit" },
+    ],
+    [
+      'opencode API error (402): {"type":"server_error","message":"Upstream request failed: Insufficient account funds"}',
+      { kind: "spending" },
+    ],
+  ])("offers another model when the provider account is out of quota: %s", (details, expected) => {
+    expect(action(details)).toMatchObject({ ...expected, recovery: "model" });
+  });
+
+  it("sends a capped key back to the connection", () => {
+    expect(
+      action(
+        '403: {"message":"Key limit exceeded (weekly limit). Manage it using https://example.test/keys/fake-key-id $5.01 of $5.00 used; resets 2026-10-12T00:00:00.000Z.","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}',
+      ),
+    ).toEqual({
+      summary: "Your OpenRouter key hit its weekly limit. Resets Oct 12.",
+      kind: "key",
+      period: "weekly",
+      recovery: "connection",
+    });
+  });
+
+  it.each([
+    '401: {"message":"Missing Authentication header","code":401}',
+    '401: {"message":"User not found.","code":401}',
+    '401 {"status":401,"title":"Unauthorized","detail":"Invalid JWT serialization: Missing dot delimiter(s)"}',
+    '403 {"status":403,"title":"Forbidden","detail":"Authorization failed"}',
+    '401: {"message":"Invalid API Key","type":"invalid_request_error","code":"invalid_api_key"}',
+    '401: {"type":"server_error","message":"Upstream request failed: Invalid credential"}',
+    '401 "Invalid username or password."',
+    "AccessDeniedException: Invalid API Key format: Must start with pre-defined prefix",
+  ])("asks for a new key when the provider rejects it: %s", (details) => {
+    expect(action(details)).toMatchObject({ kind: "auth", recovery: "connection" });
+  });
+
+  it.each([
+    `403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}`,
+    '403: {"message":"example/model:free is only available on agentic harnesses. Try plugging it into a coding agent listed on https://example.test/apps","code":403}',
+    '403: {"type":"server_error","message":"Upstream request failed: An active subscription is required to use these models."}',
+    google({
+      code: 403,
+      message: "Your project has been denied access. Please contact support.",
+      status: "PERMISSION_DENIED",
+    }),
+  ])("offers another model when the provider refuses this one to the account: %s", (details) => {
+    expect(action(details)).toMatchObject({ kind: "access", recovery: "model" });
+  });
+
+  it.each([
+    google({
+      code: 404,
+      message:
+        "This model models/example-flash is no longer available to new users. Please update your code to use models/example-flash-2.",
+      status: "NOT_FOUND",
+    }),
+    '404: {"message":"The model `example-model` does not exist or you do not have access to it.","type":"invalid_request_error","code":"model_not_found"}',
+    'github-copilot API error (400): {"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}',
+    'opencode API error (410): {"type":"ModelDeprecated","message":"Model example-free has been deprecated."}',
+    '400: {"message":"example/model:batch cannot be used with the chat/completions endpoint.","code":400,"param":"model"}',
+    "The 'example-model' model is not supported when using Codex with a ChatGPT account.",
+    "Validation error: This model doesn't support the image field for user messages. Remove image and try again.",
+    '400: {"code":"400","message":"Unsupported model fixture-model"}',
+    '400: {"error":{"message":"Unknown model: fixture-model"}}',
+    '400: {"message":"Unrecognized model fixture-model"}',
+  ])("offers another model when the provider cannot run it: %s", (details) => {
+    expect(action(details)).toMatchObject({
+      summary: "Your model provider can't run this model.",
+      kind: "model",
+      recovery: "model",
+    });
+  });
+
+  it("offers another model when its output cap is below every request", () => {
+    expect(
+      action(
+        '400: {"message":"`max_completion_tokens` must be less than or equal to `512`, the maximum value for `max_completion_tokens` is less than the `context_window` for this model","type":"invalid_request_error","param":"max_completion_tokens"}',
+      ),
+    ).toMatchObject({
+      summary: MODEL_CONTEXT_TOO_SMALL_ERROR,
+      kind: "context",
+      recovery: "model",
+    });
+  });
+
+  it.each([
+    "Request timed out.",
+    "Model stream idle timeout",
+    "Upstream idle timeout exceeded",
+    "Stream ended without finish_reason",
+    google({
+      code: 503,
+      message: "This model is currently experiencing high demand. Please try again later.",
+      status: "UNAVAILABLE",
+    }),
+    '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"example/model:free is temporarily rate-limited upstream. Please retry shortly."}}',
+    '429 {"status":429,"title":"Too Many Requests"}',
+  ])("leaves a transient failure to its retry advice: %s", (details) => {
+    const error = action(details);
+    expect(error.summary).toMatch(/Try again/);
+    expect(error.recovery).toBeUndefined();
+  });
+
+  it.each([MISSING_MODEL_RUN_ERROR, HOSTED_MODEL_CREDITS_REQUIRED_ERROR])(
+    "keeps the app's own advice and opens the connections: %s",
+    (details) => {
+      expect(normalizeRunError(details)).toEqual({
+        summary: details,
+        details,
+        recovery: "connection",
+      });
+    },
+  );
 });

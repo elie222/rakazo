@@ -68,19 +68,46 @@ export function isProviderTimeout(error: unknown): boolean {
   return /timed? out|timeout/.test(errorFacts(error).text);
 }
 
+/** An explicit statement that the account is out of credits, balance, quota or a usage window. */
+const EXHAUSTION_SIGNAL =
+  /insufficient[ _](?:credits?|funds|balance|quota)|(?:out of|no (?:more|remaining)) (?:credits?|balance|quota)|credits? (?:have been |are |is )?(?:exhausted|depleted|used up)|(?:credit )?balance (?:is )?(?:too )?(?:low|empty|insufficient|exhausted|depleted)|(?:low|empty|insufficient|exhausted|depleted) (?:credit )?balance|(?:purchase|buy|add) more credits|(?:exceeded|exhausted|used up) your (?:current )?quota|quota (?:exceeded|exhausted)|(?:reached|hit) your (?:[a-z0-9()-]+ ){0,4}usage limit|usage limit (?:reached|exceeded)|out of budget/;
+
+/**
+ * Terminal wording that outranks an exhaustion phrase: the request itself is invalid or
+ * unauthorised, was cancelled, or the limit is a short rate window rather than the account.
+ */
+const NOT_EXHAUSTION =
+  /not (?:yet )?(?:reached|hit)|unsupported parameter|invalid[ _](?:api[ _]key|parameter|param|input|argument|tool|schema|credential)|validation|must be|context[ _-](?:length|window)|too many tokens|model not found|bad request|unauthori[sz]ed|forbidden|access denied|permission (?:is )?(?:denied|refused|declined)|(?:expired|revoked|missing) (?:api )?(?:key|credential|token)|authentication (?:failed|failure|denied|expired|invalid)|abort|cancel|\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|concurrent/;
+
+/**
+ * Providers report an exhausted account as 400, 402 or 403 depending on the vendor. A 4xx
+ * counts only when the response says so explicitly and nothing marks it as an auth, permission
+ * or input failure. A 401 never counts, even when it wraps an exhaustion message.
+ */
+function isAccountExhaustion(text: string, statuses: ReadonlySet<number>): boolean {
+  if (statuses.has(401)) return false;
+  if (![400, 402, 403].some((status) => statuses.has(status))) return false;
+  return EXHAUSTION_SIGNAL.test(text) && !NOT_EXHAUSTION.test(text);
+}
+
+/**
+ * The provider refused the connection's own credential: a bad key, or a sign-in that was
+ * revoked or expired. Retrying that connection cannot help; another connection can.
+ */
+export function isModelCredentialRejected(error: unknown): boolean {
+  const { text, statuses } = errorFacts(error);
+  if (statuses.has(401)) return true;
+  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?key (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)/.test(
+    text,
+  );
+}
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
-  if (statuses.has(400) || statuses.has(401)) return false;
-  // Kimi For Coding reports an exhausted usage window as HTTP 403. errorFacts lowercases text.
-  if (
-    statuses.has(403) &&
-    /you['\u2019]ve reached your (?:5-hour usage limit|weekly \(7-day\) usage limit|monthly usage limit|usage limit for this billing cycle)/.test(
-      text,
-    )
-  ) {
-    return true;
-  }
+  if (statuses.has(401)) return false;
+  if (isAccountExhaustion(text, statuses)) return true;
+  if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
   if (
@@ -126,7 +153,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|an error occurred while processing your request|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -140,6 +167,8 @@ export function isTransientModelError(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
   // Payment required never clears during a retry.
   if (statuses.has(402)) return false;
+  // An exhausted account stays exhausted; retrying the same model cannot help.
+  if (isAccountExhaustion(text, statuses)) return false;
   // Short rate windows can reset during a retry; subscription and billing limits cannot.
   const shortWindow =
     /\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|retry[- ]after[: ]+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b/.test(
@@ -147,9 +176,10 @@ export function isTransientModelError(error: unknown): boolean {
     );
   return (
     isRetryableProviderUnavailable(error) &&
-    !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|billing|credit balance|insufficient (?:funds|balance|credits)|payment|out of budget/.test(
+    !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|credit balance|insufficient (?:funds|balance|credits)|out of budget/.test(
       text,
     ) &&
-    !(text.includes("usage limit") && !shortWindow)
+    // OpenAI's per-minute limits link to billing as a way to raise them.
+    (shortWindow || !/billing|payment|usage limit/.test(text))
   );
 }

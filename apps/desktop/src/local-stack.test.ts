@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunDocker, RunDockerResult } from "./docker-cli.js";
+import type { LocalStackDeps } from "./local-stack.js";
 import {
   COMPOSE_WAIT_TIMEOUT_S,
   ensureStackEnv,
   ensureStackToken,
   initialStackState,
   LocalStackController,
-  type LocalStackDeps,
   readStackToken,
   reduceStackState,
   renderStackEnv,
@@ -117,6 +117,50 @@ describe("ensureStackEnv", () => {
 
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
     await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=",
+    'POSTGRES_APP_PASSWORD=""',
+    "POSTGRES_APP_PASSWORD=''",
+    ' POSTGRES_APP_PASSWORD = "" # empty',
+    "POSTGRES_APP_PASSWORD=''# empty\r",
+    'POSTGRES_APP_PASSWORD=keep\nPOSTGRES_APP_PASSWORD=""',
+    "OTHER='first line\nPOSTGRES_APP_PASSWORD=phantom\nlast line'\nPOSTGRES_APP_PASSWORD=\"\"",
+  ])("fills an empty added secret in %j once", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `# preserve this file\n${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", fakeHex);
+    const updated = `${original}POSTGRES_APP_PASSWORD=${fakeHex(16)}\n`;
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must reuse the generated secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(updated);
+  });
+
+  it.each([
+    "POSTGRES_APP_PASSWORD=keep",
+    ' POSTGRES_APP_PASSWORD = "keep" # note',
+    "POSTGRES_APP_PASSWORD='keep # literal'",
+    'POSTGRES_APP_PASSWORD=" "',
+    "POSTGRES_APP_PASSWORD= # literal comment",
+    "POSTGRES_APP_PASSWORD=#literal",
+    "export POSTGRES_APP_PASSWORD='keep'",
+    `POSTGRES_APP_PASSWORD=\${SYNTHETIC_PASSWORD}`,
+    'POSTGRES_APP_PASSWORD=""\nPOSTGRES_APP_PASSWORD=keep',
+    "POSTGRES_APP_PASSWORD='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+    "POSTGRES_APP_PASSWORD=\"first line\nPOSTGRES_APP_PASSWORD=''\nlast line\"",
+    "POSTGRES_APP_PASSWORD=keep\nOTHER='first line\nPOSTGRES_APP_PASSWORD=\"\"\nlast line'",
+  ])("preserves a nonempty added secret in %j", async (assignment) => {
+    const file = path.join(dir, STACK_ENV_FILE);
+    const original = `${assignment}\n`;
+    await writeFile(file, original, "utf8");
+    await ensureStackEnv(dir, "", () => {
+      throw new Error("Must preserve the configured secret");
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(original);
   });
 
   it.runIf(process.platform !== "win32")(

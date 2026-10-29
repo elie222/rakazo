@@ -1,8 +1,8 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { MobileScreenshot } from "../playwright-report-dashboard.js";
 import {
   MAX_PLAYWRIGHT_SCREENSHOT_BYTES,
-  type MobileScreenshot,
   renderMobileScreenshotGallery,
   screenshotTitleFromFileName,
 } from "../playwright-report-dashboard.js";

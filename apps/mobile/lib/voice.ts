@@ -1,5 +1,14 @@
 import type { SettingsScope } from "@rakazo/contracts";
-import { ensureAiDataConsent, readBoundedResponseBytes, toUtterances } from "@rakazo/core";
+import {
+  ensureAiDataConsent,
+  readVoiceAudio,
+  readVoiceError,
+  requestDeadline,
+  toUtterances,
+  VOICE_RESPONSE_TIMEOUT_MS,
+  withAbort,
+} from "@rakazo/core";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
 import { Platform } from "react-native";
@@ -13,6 +22,14 @@ import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
+/** Who started a speech, so their Stop call reaches only their own playback. */
+export type SpeechOwner = symbol;
+
+/** A unique owner for the speech one surface is about to start, e.g. the current call. */
+export function createSpeechOwner(): SpeechOwner {
+  return Symbol("SpeechOwner");
+}
+
 type SpeechOptions = {
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
@@ -20,13 +37,12 @@ type SpeechOptions = {
   botId?: string;
   messageId?: string;
   speaker?: PlaybackSpeaker;
+  /** Tags this speech for its starter, so stopSpeaking(owner) cuts only this playback. */
+  owner?: SpeechOwner;
 };
-export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
-export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
-const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
-// --- Playback status: lets a persistent mini-player show what's speaking and
-// control it, without every screen re-deriving state from the speak calls below.
+// Playback status lets a persistent mini-player show and control what's speaking, without every
+// screen re-deriving state from the speak calls below.
 
 export type VoicePlaybackStatus = "idle" | "playing" | "paused";
 export type VoicePlaybackState = {
@@ -84,7 +100,10 @@ export function stopVoicePlayback(): void {
 }
 
 /** Cuts the reply off mid-sentence, for a caller who talked over it. */
-export function stopSpeaking(): void {
+export function stopSpeaking(owner?: SpeechOwner): void {
+  // An owner's stop reaches only its own speech: a hang-up must not cut unrelated
+  // playback that has since replaced it.
+  if (owner !== undefined && activeSpeechOwner !== owner) return;
   stopVoicePlayback();
 }
 
@@ -98,24 +117,26 @@ export function setVoiceBackgroundPlayback(enabled: boolean): void {
   playsInBackground = enabled;
 }
 
-// --- Sequential playback across several messages: speaking a message plays
-// it, then keeps going through the rest of the queue until Stop is pressed or
-// the last one finishes. Built on top of speakText, one call at a time, so a
-// single Stop (above) always reaches whatever is actually playing right now.
+// Queued playback runs speakText one call at a time, so a single Stop always reaches whatever is
+// actually playing right now.
 
 export type SpeechQueueItem = SpeechOptions & { text: string };
 
 let speechQueue: SpeechQueueItem[] = [];
 /** Invalidates in-flight speak calls. Stop and a new speak or queue each bump it. */
 let playbackEpoch = 0;
+/** The owner of the speech holding the current epoch, replaced as each new speech begins. */
+let activeSpeechOwner: SpeechOwner | undefined;
 
 function isCurrentSpeech(epoch: number): boolean {
   return epoch === playbackEpoch;
 }
 
-function beginSpeech(): number {
+function beginSpeech(owner?: SpeechOwner): number {
   playbackEpoch += 1;
   speechQueue = [];
+  // Own the epoch before the first await, so a stale owner cannot stop this preparation.
+  activeSpeechOwner = owner;
   // Replacing activeControl leaves the previous player running.
   activeControl?.stop();
   return playbackEpoch;
@@ -152,11 +173,13 @@ async function advanceSpeechQueue(epoch: number): Promise<boolean> {
 }
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
-  return speakPrepared(text, opts, beginSpeech());
+  return speakPrepared(text, opts, beginSpeech(opts.owner));
 }
 
 async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): Promise<boolean> {
   if (!isCurrentSpeech(epoch)) return false;
+  // Each queued item owns the epoch while it prepares and plays.
+  activeSpeechOwner = opts.owner;
   announcedSpeaker =
     opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
   // Stop has to work before a player exists. Pause stays hidden until one does.
@@ -189,7 +212,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
     }
     const requestContext = await captureApiRequestContext();
     if (!isCurrentSpeech(epoch)) return false;
-    const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
+    const prepared = await rpc(
       "voice/prepare",
       { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
       { requestContext },
@@ -229,13 +252,27 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
       { status: "playing", botId: opts.botId, messageId: opts.messageId, canPause: true },
       control,
     );
+    const utterances = prepared.utterances;
+    // Render one clip ahead; failures ride as values so an abandoned prefetch never rejects unhandled.
+    type Rendered = { audio: Uint8Array; error?: never } | { audio?: never; error: unknown };
+    const render = (text: string): Promise<Rendered> =>
+      renderUtterance(text, opts, requestContext).then(
+        (audio) => ({ audio }),
+        (error: unknown) => ({ error }),
+      );
     let finished = false;
     try {
-      for (const utterance of prepared.utterances) {
+      let next: Promise<Rendered> | null =
+        utterances.length > 0 ? render(utterances[0] ?? "") : null;
+      for (let i = 0; i < utterances.length; i += 1) {
         if (session.isStopped || !isCurrentSpeech(epoch)) break;
-        const audio = await renderUtterance(utterance, opts, requestContext);
+        const current = next;
+        next = i + 1 < utterances.length ? render(utterances[i + 1] ?? "") : null;
+        if (!current) break;
+        const rendered = await current;
+        if ("error" in rendered) throw rendered.error;
         if (session.isStopped || !isCurrentSpeech(epoch)) break;
-        await playMpeg(audio, session);
+        await playSpeechClip(rendered.audio, session);
       }
       finished = !session.isStopped && isCurrentSpeech(epoch);
     } finally {
@@ -386,7 +423,7 @@ async function renderUtterance(
   opts: SpeechOptions,
   requestContext: ApiRequestContext,
 ): Promise<Uint8Array> {
-  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS);
+  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
   try {
     const res = await withAbort(
       fetch(`${requestContext.apiBase}/api/voice/speak`, {
@@ -405,6 +442,7 @@ async function renderUtterance(
         signal: deadline.signal,
       }),
       deadline.signal,
+      "Voice request aborted.",
     ).catch((error: unknown) => {
       throw deadline.signal.aborted
         ? error
@@ -416,14 +454,14 @@ async function renderUtterance(
         voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not speak that.")),
       );
     }
-    return await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
+    return await readVoiceAudio(res, deadline.signal);
   } finally {
     deadline.dispose();
   }
 }
 
-// --- Hosted (MP3) playback: one HostedSession per speakText call, shared across
-// its utterances, so Pause/Resume/Stop keep working across the gap between them.
+// Hosted playback shares one HostedSession across a speakText call's utterances, so
+// Pause/Resume/Stop keep working across the gap between them.
 
 let hostedSpeechSession = 0;
 
@@ -473,7 +511,15 @@ class HostedSession {
   }
 }
 
-export async function playMpeg(bytes: Uint8Array, session?: HostedSession): Promise<void> {
+/** Hosted voices send MP3; a server that renders speech itself (macOS) sends WAV. */
+export function speechClipType(bytes: Uint8Array): { mimeType: string; extension: string } {
+  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+  return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE"
+    ? { mimeType: "audio/wav", extension: "wav" }
+    : { mimeType: "audio/mpeg", extension: "mp3" };
+}
+
+export async function playSpeechClip(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
   if (typeof AudioCtor === "function") {
     await playWithHtmlAudio(AudioCtor, bytes, session);
@@ -488,7 +534,7 @@ async function playWithHtmlAudio(
   session?: HostedSession,
 ): Promise<void> {
   if (session?.isStopped) return;
-  const blob = new Blob([new Uint8Array(bytes)], { type: "audio/mpeg" });
+  const blob = new Blob([new Uint8Array(bytes)], { type: speechClipType(bytes).mimeType });
   const url = URL.createObjectURL(blob);
   try {
     const audio = new AudioCtor(url);
@@ -535,13 +581,15 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  const { createAudioPlayer, setAudioModeAsync } = await import("expo-audio");
   await setAudioModeAsync({
     playsInSilentMode: true,
     interruptionMode: "mixWithOthers",
     shouldPlayInBackground: playsInBackground,
   });
-  const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
+  const file = new File(
+    Paths.cache,
+    `rakazo-voice-${Date.now()}.${speechClipType(bytes).extension}`,
+  );
   file.create({ overwrite: true });
   file.write(bytesToBase64(bytes), { encoding: "base64" });
   const player = createAudioPlayer({ uri: file.uri });
@@ -629,76 +677,4 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
-}
-
-function requestDeadline(timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(new Error("Voice request timed out.")),
-    timeoutMs,
-  );
-  return {
-    signal: controller.signal,
-    dispose() {
-      clearTimeout(timer);
-    },
-  };
-}
-
-async function readVoiceError(
-  response: Response,
-  signal: AbortSignal,
-): Promise<{ error?: string; code?: string }> {
-  const bytes = await readResponseBytes(response, MAX_VOICE_ERROR_BYTES, signal);
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as { error?: string; code?: string })
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-async function readResponseBytes(
-  response: Response,
-  maxBytes: number,
-  signal: AbortSignal,
-): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    cancelResponse(response);
-    throw new Error("Voice response is too large.");
-  }
-  return readBoundedResponseBytes(response, {
-    maxBytes,
-    tooLargeMessage: "Voice response is too large.",
-    read: (operation) => withAbort(operation(), signal),
-  });
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Voice request aborted."));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Voice request aborted."));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
-function cancelResponse(response: Response): void {
-  try {
-    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
 }

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    "./app": "./src/app.ts"
+  },
   "scripts": {
     "dev": "node ../../scripts/dev-watch.mjs src/index.ts",
     "build": "node ../../scripts/build-server.mjs src/index.ts src/cli/migrate-database.ts src/cli/bootstrap-owner.ts src/cli/shared-storage.ts",
@@ -27,6 +30,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
+    "fflate": "0.8.3",
     "hono": "4.13.14",
     "mermaid": "11.17.2"
   },

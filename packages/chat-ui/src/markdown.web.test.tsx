@@ -12,6 +12,7 @@ import {
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownCopyProvider,
+  MarkdownLinkPromptProvider,
   RemoteImagesContext,
 } from "./markdown.web";
 
@@ -230,6 +231,17 @@ describe("web markdown website links", () => {
     expect(view.container.querySelector("a")?.getAttribute("href")).toBe(
       "https://www.icon-b.example.test/status/123?s=20",
     );
+    await view.cleanup();
+  });
+
+  it("keeps the destination when a bare URL is shortened at an emoji", async () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}%F0%9F%98%80tail`;
+    const view = await renderLinks(`<${href}>`, { load: async () => ({ icon: null }) });
+    expect(view.container.querySelector(".rk-chat-link-label")?.textContent).toBe(
+      `example.com/${prefix}…`,
+    );
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(href);
     await view.cleanup();
   });
 
@@ -550,6 +562,82 @@ describe("web external link confirmation", () => {
     await view.cleanup();
   });
 
+  it("opens the link and trusts its site from the third button", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const trustSite = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const view = await render(
+      <MarkdownLinkPromptProvider trustedSites={[]} trustSite={trustSite}>
+        <ChatMarkdown>{"See [Docs](https://docs.example.test/a)"}</ChatMarkdown>
+      </MarkdownLinkPromptProvider>,
+    );
+    await act(async () => {
+      view.container.querySelector("a")?.click();
+    });
+    expect(open).not.toHaveBeenCalled();
+    await act(async () => {
+      buttonNamed(document, "Always open example.test")?.click();
+    });
+    // A failed save still opens the link.
+    expect(open).toHaveBeenCalledWith(
+      "https://docs.example.test/a",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(trustSite).toHaveBeenCalledWith("https://docs.example.test/a");
+    expect(document.querySelector("[role='alertdialog']")).toBeNull();
+    open.mockRestore();
+    await view.cleanup();
+  });
+
+  it("offers no third button without a way to trust a site", async () => {
+    const view = await render(<ChatMarkdown>{"[Docs](https://example.test/a)"}</ChatMarkdown>);
+    await act(async () => {
+      view.container.querySelector("a")?.click();
+    });
+    const dialog = document.querySelector("[role='alertdialog']");
+    expect([...(dialog?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+      "Cancel",
+      "Open",
+    ]);
+    await act(async () => {
+      buttonNamed(document, "Cancel")?.click();
+    });
+    await view.cleanup();
+  });
+
+  it("opens a link to a trusted site directly", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const view = await render(
+      <MarkdownLinkPromptProvider trustedSites={["example.test"]} trustSite={vi.fn()}>
+        <ChatMarkdown>
+          {"[Docs](https://docs.example.test/a) [Other](https://other.test/a)"}
+        </ChatMarkdown>
+      </MarkdownLinkPromptProvider>,
+    );
+    const [trusted, other] = [...view.container.querySelectorAll("a")];
+    let prevented: boolean | undefined;
+    const record = (event: MouseEvent) => {
+      prevented = event.defaultPrevented;
+      event.preventDefault();
+    };
+    document.addEventListener("click", record);
+    await act(async () => {
+      trusted?.click();
+    });
+    expect(prevented).toBe(false);
+    expect(document.querySelector("[role='alertdialog']")).toBeNull();
+    await act(async () => {
+      other?.click();
+    });
+    expect(prevented).toBe(true);
+    expect(document.querySelector("[role='alertdialog'] strong")?.textContent).toBe("other.test");
+    document.removeEventListener("click", record);
+    open.mockRestore();
+    await view.cleanup();
+  });
+
   it("asks before a link in plain user text", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const view = await render(<LinkifiedText>{"https://example.test/docs"}</LinkifiedText>);
@@ -631,5 +719,31 @@ describe("web markdown mentions", () => {
     expect(html).toContain('<b data-id="bot-1">Planner</b>');
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
+  });
+});
+
+describe("web markdown parser failure", () => {
+  it("shows a message the parser cannot handle as plain text", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const nested = `${">".repeat(20_000)} deep`;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{nested}</ChatMarkdown>);
+    });
+    expect(container.querySelector(".rk-chat-markdown p")?.textContent).toBe(nested);
+
+    await act(async () => {
+      root.render(<ChatMarkdown>{"**fine**"}</ChatMarkdown>);
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("fine");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
   });
 });

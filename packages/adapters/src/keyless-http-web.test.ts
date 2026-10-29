@@ -6,7 +6,13 @@ import {
   KeylessHttpWebProvider,
   parseDuckDuckGoResults,
 } from "./keyless-http-web.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import {
+  clampMaxChars,
+  clampMaxResults,
+  clampOffset,
+  MAX_WEB_FETCH_OFFSET,
+  pageWindow,
+} from "./web-limits.js";
 import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -54,7 +60,7 @@ describe("keyless HTTP web provider", () => {
   });
 
   it("fetches readable page text with truncation", async () => {
-    const long = "word ".repeat(100);
+    const long = Array.from({ length: 100 }, (_, i) => `w${i}`).join(" ");
     const html = `<html><head><title>Doc</title></head><body><article><p>${long}</p></article></body></html>`;
     const fetchMock: typeof fetch = async () =>
       new Response(html, { status: 200, headers: { "content-type": "text/html" } });
@@ -66,8 +72,23 @@ describe("keyless HTTP web provider", () => {
     expect(result.title).toBeTruthy();
     expect(result.url).toBe("https://example.test/doc");
     expect(result.truncated).toBe(true);
-    expect(result.text.endsWith("[Content truncated]")).toBe(true);
-    expect(result.text.length).toBeLessThanOrEqual(120 + "\n\n[Content truncated]".length);
+    expect(result.text).toBe(
+      `${long.slice(0, 120)}\n\n[Content truncated; continue with offset 120]`,
+    );
+
+    const next = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 120 },
+      ctx,
+    );
+    expect(next.text).toBe(
+      `${long.slice(120, 240)}\n\n[Content truncated; continue with offset 240]`,
+    );
+
+    const last = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 360 },
+      ctx,
+    );
+    expect(last).toMatchObject({ text: long.slice(360), truncated: false });
   });
 
   it("falls back to HTML strip when Readability finds nothing", () => {
@@ -133,5 +154,53 @@ describe("web tool clamps", () => {
     expect(clampMaxChars(undefined)).toBe(8_000);
     expect(clampMaxChars(10)).toBe(100);
     expect(clampMaxChars(999_999)).toBe(50_000);
+  });
+
+  it("bounds offset and names the next read in a cut", () => {
+    expect(clampOffset(undefined)).toBe(0);
+    expect(clampOffset(-4)).toBe(0);
+    expect(clampOffset(1.9)).toBe(1);
+    expect(clampOffset(MAX_WEB_FETCH_OFFSET)).toBe(MAX_WEB_FETCH_OFFSET);
+    expect(() => clampOffset(MAX_WEB_FETCH_OFFSET + 1)).toThrow(
+      `web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.`,
+    );
+    expect(pageWindow("cdefgh", 4, 2)).toEqual({
+      text: "cdef\n\n[Content truncated; continue with offset 6]",
+      truncated: true,
+    });
+    expect(pageWindow("ab", 4, 0)).toEqual({ text: "ab", truncated: false });
+    expect(pageWindow("abcdef", 4, MAX_WEB_FETCH_OFFSET - 1)).toEqual({
+      text: "abcd\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
+  });
+
+  it("reads the next fake window and ignores a negative offset", async () => {
+    const fake = new FakeWebProvider();
+    fake.fetchResult = { ...fake.fetchResult, text: "abcdefghij" };
+    await expect(
+      fake.fetch({ url: "https://example.test/1", maxChars: 4, offset: 2 }, ctx),
+    ).resolves.toMatchObject({
+      text: "cdef\n\n[Content truncated; continue with offset 6]",
+      truncated: true,
+    });
+    await expect(
+      fake.fetch({ url: "https://example.test/1", maxChars: 4, offset: -3 }, ctx),
+    ).resolves.toMatchObject({
+      text: "abcd\n\n[Content truncated; continue with offset 4]",
+      truncated: true,
+    });
+    expect(fake.lastFetch?.offset).toBe(-3);
+
+    const rejected = new FakeWebProvider();
+    await expect(
+      webFetchFromTool(rejected, ctx, {
+        url: "https://example.test/1",
+        offset: MAX_WEB_FETCH_OFFSET + 1,
+      }),
+    ).resolves.toEqual({
+      error: `web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.`,
+    });
+    expect(rejected.lastFetch).toBeUndefined();
   });
 });

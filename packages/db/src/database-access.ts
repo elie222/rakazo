@@ -98,9 +98,9 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     )
   ).rows;
   // A login an administrator already created and granted rakazo_app (inheritably, so
-  // it can use the grants without SET ROLE) is used as it
-  // is when this role may not change it: no CREATEROLE (some managed Postgres), or,
-  // on PostgreSQL 16+, CREATEROLE without ADMIN OPTION on that login.
+  // it can use the grants without SET ROLE) is used as it is when this role may not
+  // change it: no CREATEROLE (some managed Postgres), or, on PostgreSQL 16+,
+  // CREATEROLE without ADMIN OPTION on that login.
   const provisioned =
     Boolean(role) &&
     (
@@ -221,7 +221,6 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
   return { enforced: !reason, role: row.role, ...(reason ? { reason } : {}) };
 }
 
-/** The startup warning for a login that bypasses the policies, if any. */
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
   if (status.enforced) return undefined;
   return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host.md#database-roles).`;

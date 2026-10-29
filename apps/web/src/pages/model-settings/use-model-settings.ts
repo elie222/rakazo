@@ -10,26 +10,27 @@ import {
   isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  ModelHeaderRowsSchema,
   modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
-  parseModelContextWindow,
-  parseModelMaxImagesPerPrompt,
-  parseModelMaxTokens,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
+import type { ConnectionFormFields } from "@rakazo/core";
 import {
   COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
+  compatibleConnectionReady,
   compatibleModelRows,
+  connectionFormFields,
+  connectionFormModelId,
+  connectionMaxTokensField,
   createModelProbe,
   initialModelProbeState,
-  pickCatalogModelId,
+  modelConnectRequest,
   popularModelProvidersFirst,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
@@ -43,20 +44,13 @@ import {
   runModelConnectionPreflight,
   unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
-import { fetchFresh, useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
 import { errorText } from "../../lib/user-error";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
 const NO_CREDENTIALS: never[] = [];
-
-function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
-  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
-  }
-  return stored !== undefined ? String(stored) : "";
-}
 
 export type ModelConnectIntent = {
   /** False keeps the current main model; the connection is for a fallback or another role. */
@@ -203,54 +197,41 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       : undefined;
     // A connection removed elsewhere leaves the dialog connecting a new one.
     if (credentialIdRef.current && !nextCredential) setCredentialId(null);
-    const nextModel =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ??
-          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ??
-          "")
-        : (nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === modelId)
-            ?.id ??
-          pickCatalogModelId(
-            nextCatalog,
-            nextProvider,
-            nextCredential?.modelId ??
-              (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
-          ));
+    const nextModel = connectionFormModelId({
+      catalog: nextCatalog,
+      provider: nextProvider,
+      credential: nextCredential,
+      defaults: nextMe,
+      current: modelId,
+    });
     if (selectionRevision === selectionRevisionRef.current) {
       invalidatePreflight();
       resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
       setModelId(nextModel);
-      setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
-      if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-        setBaseUrl(nextCredential?.baseUrl ?? "");
-        setHeaderRows(null);
-        setReasoning(nextCredential?.reasoning ?? false);
-        setThinkingLevel(
-          clampCatalogThinkingLevel(
-            nextCredential?.modelId === nextModel ? nextCredential?.thinkingLevel : null,
-            nextCredential?.reasoning ? COMPATIBLE_THINKING_LEVELS : [],
-          ) as ThinkingLevel | null,
-        );
-        setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
-        setSupportsImages(nextCredential?.supportsImages ?? false);
-        setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
-      } else {
-        // A credential's stored effort is bound to its saved model choice.
-        const nextEntry = nextCatalog.find(
-          (entry) => entry.provider === nextProvider && entry.id === nextModel,
-        );
-        setThinkingLevel(
-          clampCatalogThinkingLevel(
-            nextCredential?.modelId === nextModel ? nextCredential.thinkingLevel : null,
-            nextEntry?.thinkingLevels,
-          ) as ThinkingLevel | null,
-        );
-      }
-      setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
-      setAccountId(nextCredential?.accountId ?? "");
-      setGatewayId(nextCredential?.gatewayId ?? "");
+      setHeaderRows(null);
+      applyFields(
+        connectionFormFields({
+          catalog: nextCatalog,
+          provider: nextProvider,
+          modelId: nextModel,
+          credential: nextCredential,
+        }),
+      );
     }
+  }
+
+  function applyFields(fields: ConnectionFormFields) {
+    setEnabledModelIds(fields.enabledModelIds);
+    setBaseUrl(fields.baseUrl);
+    setReasoning(fields.reasoning);
+    setThinkingLevel(fields.thinkingLevel);
+    setMaxTokens(fields.maxTokens);
+    setContextWindow(fields.contextWindow);
+    setSupportsImages(fields.supportsImages);
+    setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+    setAccountId(fields.accountId);
+    setGatewayId(fields.gatewayId);
   }
 
   useLayoutEffect(() => {
@@ -331,23 +312,15 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     !isOpenAiCompatible && selected
       ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
-  const selectedStoredLevel =
-    !isOpenAiCompatible && credential?.modelId === selected?.id
-      ? (credential?.thinkingLevel ?? null)
-      : null;
-  const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
   const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const effectiveBaseUrl = baseUrl.trim();
-  const openAiCompatibleReady = openAiCompatibleConnectReady({
-    apiKey:
-      apiKey ||
-      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
-        ? "stored"
-        : ""),
-    baseUrl: effectiveBaseUrl,
-    modelId:
-      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+  const openAiCompatibleReady = compatibleConnectionReady({
+    apiKey,
+    baseUrl,
+    modelId,
+    headerRows,
+    credential,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -416,45 +389,25 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       ? credentials.find((entry) => entry.id === targetCredentialId)
       : undefined;
     setCredentialId(nextCredential?.id ?? null);
-    const nextModelId =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ?? "")
-        : pickCatalogModelId(
-            catalog,
-            nextProvider,
-            nextCredential?.modelId ??
-              (nextProvider === me?.defaultProvider ? me.defaultModel : null),
-          );
+    const nextModelId = connectionFormModelId({
+      catalog,
+      provider: nextProvider,
+      credential: nextCredential,
+      defaults: me,
+    });
     setProvider(nextProvider);
-    setReasoning(nextCredential?.reasoning ?? false);
-    const nextEntry = catalog.find(
-      (entry) => entry.provider === nextProvider && entry.id === nextModelId,
-    );
-    setThinkingLevel(
-      clampCatalogThinkingLevel(
-        nextCredential?.modelId === nextModelId ? nextCredential.thinkingLevel : null,
-        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? nextCredential?.reasoning
-            ? COMPATIBLE_THINKING_LEVELS
-            : []
-          : nextEntry?.thinkingLevels,
-      ) as ThinkingLevel | null,
-    );
-    setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
-    setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
-    setSupportsImages(nextCredential?.supportsImages ?? false);
-    setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     setModelId(nextModelId);
-    setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
-    setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
-        : "",
+    applyFields(
+      connectionFormFields({
+        catalog,
+        provider: nextProvider,
+        modelId: nextModelId,
+        credential: nextCredential,
+        presetBaseUrl,
+      }),
     );
     setApiKey("");
     setHeaderRows(null);
-    setAccountId(nextCredential?.accountId ?? "");
-    setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
     setError(null);
@@ -541,6 +494,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       selected.provider,
       () => rpc.models.credentials(),
       selected.id,
+      credentialIdRef.current,
     );
     if (!preflightStillCurrent(revision)) return;
     const result = await runModelConnectionPreflight({
@@ -563,59 +517,40 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     if (!selected) return;
     // Closing the dialog mid-save must not drop the slot this connection is for.
     const intent = intentRef.current;
-    const newKey = settingsOnly ? "" : apiKey.trim();
-    const savingLimitOnly = !isOpenAiCompatible && !newKey;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    const supportedThinking = isOpenAiCompatible
-      ? reasoning
-        ? COMPATIBLE_THINKING_LEVELS
-        : []
-      : selected.thinkingLevels;
-    // The staged effort belongs to the model on screen. Clamp it before connect
-    // or a limit save so a previous model's level cannot stick.
-    const stagedThinking = clampCatalogThinkingLevel(
-      thinkingLevel,
-      supportedThinking,
-    ) as ThinkingLevel | null;
-    const modelChanged = (credential?.modelId ?? null) !== (activeModelId || null);
-    if (isOpenAiCompatible) {
-      if (!effectiveBaseUrl || !modelId.trim()) return;
-    } else if (savingLimitOnly) {
-      if (!credential) return;
-    } else if (newKey.length < 8) {
-      return;
-    }
-    const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
-    if ((isOpenAiCompatible || maxTokens.trim()) && parsedMaxTokens === undefined) {
+    const request = modelConnectRequest({
+      form: {
+        apiKey,
+        modelId,
+        enabledModelIds,
+        baseUrl,
+        headerRows,
+        reasoning,
+        thinkingLevel,
+        maxTokens,
+        contextWindow,
+        supportsImages,
+        maxImagesPerPrompt,
+        accountId,
+        gatewayId,
+      },
+      selected,
+      credential,
+      credentialId: credential?.id ?? null,
+      settingsOnly,
+      ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
+    });
+    if (request.status === "incomplete") return;
+    if (request.status === "invalid") {
       setError(
-        t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
+        request.field === "maxTokens"
+          ? t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`
+          : request.field === "maxImagesPerPrompt"
+            ? t`Enter a whole number from 1 to 1000 for the image limit.`
+            : t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
       );
       return;
     }
-    const parsedMaxImagesPerPrompt = isOpenAiCompatible
-      ? parseModelMaxImagesPerPrompt(maxImagesPerPrompt, supportsImages)
-      : undefined;
-    if (
-      isOpenAiCompatible &&
-      supportsImages &&
-      maxImagesPerPrompt.trim() &&
-      parsedMaxImagesPerPrompt === undefined
-    ) {
-      setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
-      return;
-    }
-    const maxImagesPerPromptInput =
-      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-    const parsedContextWindow = isOpenAiCompatible
-      ? parseModelContextWindow(contextWindow)
-      : undefined;
-    if (isOpenAiCompatible && parsedContextWindow === undefined) {
-      setError(
-        t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
-      );
-      return;
-    }
-    if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
+    const { input, savingLimitOnly, activeModelId } = request;
     setError(null);
     setNotice(null);
     setPending(settingsOnly ? "settings" : "connect");
@@ -624,43 +559,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     const form = formRevisionRef.current;
     const stillSelected = () => form === formRevisionRef.current;
     try {
-      const saved = await rpc.models.connect(
-        isOpenAiCompatible
-          ? {
-              provider: selected.provider,
-              baseUrl: effectiveBaseUrl,
-              headers: modelHeadersInput(headerRows),
-              modelId: modelId.trim(),
-              // The server adds the default itself.
-              enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
-              reasoning,
-              thinkingLevel: stagedThinking,
-              maxTokens: parsedMaxTokens,
-              contextWindow: parsedContextWindow,
-              supportsImages,
-              maxImagesPerPrompt: maxImagesPerPromptInput,
-              ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
-              apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
-              credentialId: credential?.id ?? null,
-            }
-          : {
-              provider: selected.provider,
-              ...(newKey ? { apiKey: newKey } : {}),
-              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
-              modelId: selected.id,
-              // A limits-only save leaves the stored effort alone while the model
-              // stays put. Changing the model sends the clamped level, including
-              // null, so the previous model's effort is not reused.
-              ...(!savingLimitOnly || modelChanged || thinkingDirty
-                ? { thinkingLevel: stagedThinking }
-                : {}),
-              ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
-              maxTokens: parsedMaxTokens ?? null,
-              label: selected.providerName ?? selected.provider,
-              credentialId: credential?.id ?? null,
-            },
-      );
+      const saved = await rpc.models.connect(input);
       if (!stillSelected()) {
         await refresh({ keepForm: true });
         return;

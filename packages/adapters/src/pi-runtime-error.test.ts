@@ -90,6 +90,7 @@ describe("Pi runtime errors", () => {
     "You have no credits remaining. Add credits to continue using the API.",
     'xai API error (400): 400 "Incorrect API key provided."',
     "Your authentication token has expired. Please try refreshing it.",
+    "Encountered invalidated oauth token for user, failing request",
     'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
     "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',
@@ -98,6 +99,9 @@ describe("Pi runtime errors", () => {
     '400: {"message":"`tool calling` is not supported with this model","type":"invalid_request_error"}',
     '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM)."}',
     MODEL_CONTEXT_TOO_SMALL_ERROR,
+    '400: {"code":"400","message":"Unsupported model example-model"}',
+    '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
+    'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
   ])("marks a provider account failure the user can fix: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();

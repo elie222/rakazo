@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchFresh, queryClient, rpcQuery, writeSaved } from "./query";
+import { accountRpcQuery, queryClient, rpcQuery } from "./query";
 
 const scope = vi.hoisted(() => ({
   apiBase: "https://app.example.test",
@@ -52,7 +52,7 @@ describe("rpcQuery keys", () => {
   it("does not cache an answer under the space it was asked for after a switch", async () => {
     const answer = deferred<string>();
     scope.rpc.mockReturnValue(answer.promise);
-    const read = rpcQuery<string>("voice/status");
+    const read = rpcQuery("voice/status");
     const fetching = queryClient.fetchQuery(read);
     await vi.waitFor(() => expect(scope.rpc).toHaveBeenCalled());
     scope.spaceId = "space-b";
@@ -60,36 +60,17 @@ describe("rpcQuery keys", () => {
     await expect(fetching).rejects.toThrow();
     expect(queryClient.getQueryData(read.queryKey)).toBeUndefined();
   });
-});
 
-describe("saves", () => {
-  it("are not overwritten by a read that started before them", async () => {
-    const older = deferred<string>();
-    scope.rpc.mockReturnValueOnce(older.promise);
-    const read = rpcQuery<string>("voice/status");
-    void queryClient.fetchQuery(read).catch(() => undefined);
-    await vi.waitFor(() => expect(scope.rpc).toHaveBeenCalledTimes(1));
-
-    await writeSaved(read.queryKey, () => "saved");
-    older.resolve("before save");
-    await older.promise;
-    await Promise.resolve();
-    expect(queryClient.getQueryData(read.queryKey)).toBe("saved");
-  });
-
-  it("refresh with a request sent after the change, while opening reuses one in flight", async () => {
-    const older = deferred<string>();
-    scope.rpc.mockReturnValueOnce(older.promise).mockResolvedValueOnce("after change");
-    const read = rpcQuery<string>("models/credentials");
-    const opening = fetchFresh(read, { reuse: true });
-    const sharing = fetchFresh(read, { reuse: true });
-    await vi.waitFor(() => expect(scope.rpc).toHaveBeenCalledTimes(1));
-
-    const fresh = await fetchFresh(read);
-    older.resolve("before change");
-    expect(fresh).toBe("after change");
-    expect(scope.rpc).toHaveBeenCalledTimes(2);
-    await Promise.allSettled([opening, sharing]);
-    expect(queryClient.getQueryData(read.queryKey)).toBe("after change");
+  it("keep the user's own reads under one key in every space, per session and server", () => {
+    const key = () => JSON.stringify(accountRpcQuery("trustedLinkSites/list").queryKey);
+    const first = key();
+    scope.spaceId = "space-b";
+    expect(key()).toBe(first);
+    scope.spaceId = null;
+    expect(key()).toBe(first);
+    scope.generation = 2;
+    const otherSession = key();
+    scope.apiBase = "https://other.example.test";
+    expect(new Set([first, otherSession, key()]).size).toBe(3);
   });
 });

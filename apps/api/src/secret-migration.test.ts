@@ -10,6 +10,7 @@ function fixture() {
       kind: i === 0 ? "run-secret:run" : "model",
     })),
     botSecret: [{ id: "bot-row", ciphertext: "fake-bot-ref" }],
+    vaultCredential: [{ id: "vault-row", ciphertext: "fake-vault-ref" }],
     integrationProviderConfig: [{ id: "composio", ciphertext: "fake-config-ref" }],
   };
   const client = Object.fromEntries(
@@ -55,7 +56,7 @@ describe("migration persistence", () => {
     const f = fixture();
     const rows = [];
     for await (const row of f.repository.rows()) rows.push(row);
-    expect(rows).toHaveLength(103);
+    expect(rows).toHaveLength(104);
     expect(rows[0]).toMatchObject({ ephemeral: true, id: "row-000", label: "secret" });
     expect(rows.at(-1)).toMatchObject({
       id: "composio",
@@ -63,6 +64,7 @@ describe("migration persistence", () => {
       ref: "fake-config-ref",
     });
     expect(rows.find((row) => row.id === "bot-row")?.recordId).toBe("bot-row");
+    expect(rows.find((row) => row.id === "vault-row")?.recordId).toBe("vault-row");
   });
   it("compares the original ref so a concurrent update or delete wins", async () => {
     const f = fixture();

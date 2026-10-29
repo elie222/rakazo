@@ -24,6 +24,7 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     hasKey: false,
     label: "Fixture",
     held: null as Promise<void> | null,
+    failMe: false,
   },
 }));
 
@@ -42,6 +43,7 @@ vi.mock("./api", () => ({
   ) => {
     rpcCalls.push([procedure, input, options]);
     if (saved.held) await saved.held;
+    if (saved.failMe && procedure === "me") throw new Error("offline");
     if (procedure === "me")
       return {
         userId: "user-fixture",
@@ -95,6 +97,9 @@ vi.mock("./native", () => ({
   native: new Proxy({}, { get: (_target, name) => String(name) }),
   useResolvedAppearance: () => "light",
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
+}));
+vi.mock("./user-error", () => ({
+  errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("./i18n", () => {
   const t = (text: string) => text;
@@ -428,5 +433,26 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
   } finally {
     saved.held = null;
     saved.label = "Fixture";
+  }
+});
+
+it("offers a retry when the first load fails, then shows the model lists", async () => {
+  queryClient.clear();
+  saved.failMe = true;
+  try {
+    await remount(async () => {
+      await act(async () => root.render(createElement(Models)));
+    });
+    expect(container.textContent).not.toContain("Add fallback");
+    expect(container.textContent).toContain("Could not load model settings");
+    saved.failMe = false;
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    );
+    await act(async () => retry!.click());
+    expect(container.textContent).toContain("Add fallback");
+    expect(container.textContent).not.toContain("Could not load model settings");
+  } finally {
+    saved.failMe = false;
   }
 });

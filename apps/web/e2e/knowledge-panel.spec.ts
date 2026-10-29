@@ -70,7 +70,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     releaseSave();
   }
 
-  // The save persisted: reopen the document and find the marker.
   await memoryRow.click();
   await expect(docEditor).toHaveValue(new RegExp(marker));
   await captureScreenshot(page, testInfo, "84-space-memory-saved");
@@ -138,7 +137,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.getByLabel("Close memory settings").click();
   await expect(page.getByLabel("Close memory settings")).toHaveCount(0);
 
-  // Bot memory is directly available in its settings panel.
   const seededDocs = await rpc<MemoryDocument[]>(page, "memory/list", {
     botId: activeBotId(page),
     scope: "bot",
@@ -178,8 +176,17 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  await settings.getByRole("button", { name: "Advanced", exact: true }).click();
-  const knowledge = settings.getByTestId("bot-knowledge");
+  // Skills belong to the person in this space, so they open from the account menu, not bot settings.
+  await expect(settings.getByTestId("bot-knowledge-skills")).toHaveCount(0);
+  const openSkills = async () => {
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Skills", exact: true }).click();
+  };
+  const skillsDialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  const closeSkills = () =>
+    skillsDialog.getByRole("button", { name: "Close skills", exact: true }).click();
+  await openSkills();
+  const knowledge = skillsDialog.getByTestId("your-skills");
   const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
   await expect(builtinSkill).toBeVisible();
   await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
@@ -207,12 +214,14 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     contentType: "image/png",
     path: listedShot,
   });
+  await closeSkills();
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await composer.fill("/");
   await expect(
     page.getByRole("button", { name: "Skill greet-politely", exact: true }),
   ).toBeVisible();
   await composer.fill("");
+  await openSkills();
 
   // A provider-owned skill uses the same viewer without mutation controls.
   await page.route(
@@ -270,6 +279,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
   await knowledge.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(skillRow).toBeHidden();
+  await closeSkills();
   await composer.fill("/");
   await expect(page.getByRole("button", { name: "Skill greet-politely", exact: true })).toHaveCount(
     0,
@@ -299,7 +309,7 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
       ),
   );
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Edit label" })).toHaveText("Add a label");
+  await expect(settings.getByRole("button", { name: "Edit name" })).toHaveText("Researcher");
   await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
 });

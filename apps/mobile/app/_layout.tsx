@@ -55,6 +55,7 @@ import {
   configureForegroundNotifications,
   resumeLiveNotifications,
 } from "../lib/live-notifications";
+import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
 import { clearQueries } from "../lib/query";
@@ -65,7 +66,11 @@ import {
 } from "../lib/remote-images-preference";
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
-import { registerSessionDiskCache } from "../lib/session";
+import {
+  currentReadySessionGeneration,
+  registerSessionDiskCache,
+  subscribeSessionGeneration,
+} from "../lib/session";
 import { InboxBesideContext } from "../lib/side-insets";
 import {
   chooseInboxWidth,
@@ -81,6 +86,11 @@ import {
   trackMobileStartup,
 } from "../lib/startup";
 import { capTextScaling } from "../lib/text-scale";
+import {
+  loadTrustedLinkSites,
+  trustLinkSite,
+  useTrustedLinkSites,
+} from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
 import { InboxPane } from "./index";
 
@@ -94,9 +104,9 @@ registerSessionDiskCache(() => void clearAppBadge());
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
-// Screens that take the whole window even when it is wide enough for the chat list beside them.
 const DIVIDER_GRAB_WIDTH = 24;
-const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"]);
+// Screens that take the whole window even when it is wide enough for the chat list beside them.
+const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer", "/share"]);
 
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
@@ -214,10 +224,22 @@ function ChatContentProviders({
     () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
     [endpoint],
   );
+  const session = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
+  const trustedSites = useTrustedLinkSites();
+  useEffect(() => {
+    void loadTrustedLinkSites().catch(() => undefined);
+  }, [endpoint, session]);
   return (
     <MarkdownLinkPromptProvider
       appOrigin={endpoint}
-      copy={{ title: t("Open external link?"), cancel: t("Cancel"), open: t("Open") }}
+      copy={{
+        title: t("Open external link?"),
+        cancel: t("Cancel"),
+        open: t("Open"),
+        alwaysOpen: (site) => t("Always open {site}", { site }),
+      }}
+      trustedSites={trustedSites}
+      trustSite={trustLinkSite}
     >
       <RemoteImagesContext.Provider value={loadRemoteImages}>
         <LinkFaviconsContext.Provider value={linkFavicons}>
@@ -232,6 +254,8 @@ function ChatContentProviders({
   );
 }
 
+export const unstable_settings = { anchor: "index" };
+
 function LayoutContent() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
@@ -241,17 +265,15 @@ function LayoutContent() {
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
   const screen = analyticsScreen(usePathname());
+  useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
-    if (!ready || !screen || (Platform.OS !== "ios" && Platform.OS !== "android")) return;
+    const surface = Platform.OS;
+    if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;
     let active = true;
     void loadSessionToken()
       .then((token) => {
         if (active && token)
-          return rpc(
-            "analytics/screen",
-            { screen, surface: Platform.OS },
-            { skipSpaceAuthRecovery: true },
-          );
+          return rpc("analytics/screen", { screen, surface }, { skipSpaceAuthRecovery: true });
       })
       .catch(() => undefined);
     return () => {
@@ -371,7 +393,16 @@ function LayoutContent() {
                         sheetExpandsWhenScrolledToEdge: false,
                       }}
                     />
+                    <Stack.Screen name="share" options={{ headerShown: false }} />
                     <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                    <Stack.Screen
+                      name="paywall"
+                      options={{
+                        headerShown: false,
+                        presentation: "fullScreenModal",
+                        gestureEnabled: false,
+                      }}
+                    />
                     <Stack.Screen
                       name="(settings)"
                       options={{
@@ -439,6 +470,7 @@ function LayoutContent() {
                         ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
                       })}
                     />
+                    <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

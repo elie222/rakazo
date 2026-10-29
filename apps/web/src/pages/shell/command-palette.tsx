@@ -23,19 +23,11 @@ function isApplePlatform() {
 }
 
 function botSearchText(bot: Bot) {
-  return `${bot.name} ${bot.title} ${bot.description} ${bot.preview}`.toLowerCase();
+  return `${bot.name} ${bot.description} ${bot.preview}`.toLowerCase();
 }
 
 function botSubtitle(bot: Bot) {
-  return bot.description.trim() || bot.preview.trim() || bot.title.trim();
-}
-
-function botTitleTag(bot: Bot) {
-  const title = bot.title.trim();
-  if (!title) return null;
-  // Title is already the subtitle when there is no description/preview.
-  if (!(bot.description.trim() || bot.preview.trim())) return null;
-  return title;
+  return bot.description.trim() || bot.preview.trim();
 }
 
 export function CommandPalette({
@@ -109,7 +101,6 @@ export function CommandPalette({
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
-              const titleTag = botTitleTag(bot);
               const shortcut = index < 9 ? `${modKey}${index + 1}` : null;
               return (
                 <CommandItem
@@ -122,20 +113,16 @@ export function CommandPalette({
                   }}
                   className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
                 >
-                  <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
+                  <BotAvatar
+                    avatarSet={bot.avatarSet}
+                    color={bot.color}
+                    identity={bot.id}
+                    size={32}
+                    status={bot.status}
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium text-foreground" dir="auto">
-                        {bot.name}
-                      </span>
-                      {titleTag ? (
-                        <Badge
-                          variant="secondary"
-                          className="max-w-[40%] truncate rounded-full px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
-                        >
-                          {titleTag}
-                        </Badge>
-                      ) : null}
+                    <div className="truncate font-medium text-foreground" dir="auto">
+                      {bot.name}
                     </div>
                     {subtitle ? (
                       <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">

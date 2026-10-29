@@ -38,6 +38,21 @@ describe("browser monitoring", () => {
     consoleError.mockRestore();
   });
 
+  it("reports early errors that carry an error, not bare error events", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    sentry.captureException.mockClear();
+    const target = new EventTarget();
+    fresh.installEarlyErrorReporting(target as unknown as Window);
+    const thrown = new Error("module evaluation failed");
+    target.dispatchEvent(Object.assign(new Event("error"), { error: null }));
+    target.dispatchEvent(Object.assign(new Event("error"), { error: thrown }));
+
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(sentry.captureException).toHaveBeenCalledWith(thrown, expect.any(Object));
+  });
+
   it("does not report failures the recovery reload is about to replace", async () => {
     vi.resetModules();
     const fresh = await import("./monitoring");

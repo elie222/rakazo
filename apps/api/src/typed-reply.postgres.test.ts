@@ -5,6 +5,7 @@ import {
   answerRunInput,
   asSystem,
   createDb,
+  createPendingSteeringRun,
   createThreadMessage,
   provisionMessagingIdentity,
   runAsSystem,
@@ -112,10 +113,23 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       ),
     );
   }
+  it("serializes simultaneous text sends into one run and steering", async () => {
+    const [first, second] = await Promise.all([
+      send(privateTarget(), "First simultaneous message", "parallel-send-first"),
+      send(privateTarget(), "Second simultaneous message", "parallel-send-second"),
+    ]);
+    expect(first.runId).toBe(second.runId);
+    const runs = await system.run.findMany({ where: { threadId, trigger: "user" } });
+    expect(runs).toHaveLength(1);
+    expect(await system.steeringMessage.count({ where: { runId: first.runId } })).toBe(1);
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(2);
+  });
+
   async function waitingCard(
     card: MessageBlock = question,
     targetThreadId = threadId,
     targetBotId = botId,
+    trigger = "user",
   ) {
     const task = await system.task.create({
       data: {
@@ -135,7 +149,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         threadId: targetThreadId,
         taskId: task.id,
         status: "waiting_input",
-        trigger: "user",
+        trigger,
         checkpoint: JSON.stringify({ pending: true }),
       },
     });
@@ -285,6 +299,211 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       await expectPending(peer);
     },
   );
+
+  it("associates a confirmed group reply with a secondary waiting recipient", async () => {
+    // Member order creates the first recipient's new run before the waiting peer.
+    const waiting = await waitingCard(question, groupTarget.threadId, peerBotId);
+    const artifact = await system.artifact.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        groupId: groupTarget.groupId,
+        name: "reply.png",
+        mimeType: "image/png",
+        size: 4,
+        hash: "fixture",
+        storageKey: "fixture",
+      },
+    });
+    const result = await runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        groupTarget,
+        {
+          text: "Paris",
+          mentions: [botId, peerBotId],
+          artifactIds: [artifact.id],
+          imageHandling: "confirm",
+          clientNonce: randomUUID(),
+        },
+      ),
+    );
+    expect(result.runIds).toContain(waiting.run.id);
+    expect(result.runId).not.toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId: groupTarget.threadId, seq: result.seq },
+    });
+    expect(message.runId).toBe(result.runId);
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId: peerBotId, runId: waiting.run.id }),
+    ]);
+    const guarded = await system.message.findMany({
+      where: {
+        threadId: groupTarget.threadId,
+        role: "user",
+        steeringMessages: { some: { runId: waiting.run.id, botId: peerBotId } },
+        blocks: { array_contains: [{ kind: "image" }] },
+      },
+      select: { id: true, blocks: true },
+    });
+    expect(guarded).toEqual([
+      {
+        id: message.id,
+        blocks: expect.arrayContaining([
+          expect.objectContaining({ kind: "image", imageHandling: "confirm" }),
+        ]),
+      },
+    ]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: waiting.run.id } })).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  function privateImage() {
+    return system.artifact.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        name: "reply.png",
+        mimeType: "image/png",
+        size: 4,
+        hash: "fixture",
+        storageKey: "fixture",
+      },
+    });
+  }
+  function sendConfirmedImage(artifactId: string, text: string) {
+    return runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        privateTarget(),
+        { text, artifactIds: [artifactId], imageHandling: "confirm", clientNonce: randomUUID() },
+      ),
+    );
+  }
+
+  it("associates a confirmed private reply with the waiting routine it answers", async () => {
+    const waiting = await waitingCard(question, threadId, botId, "routine");
+    const artifact = await privateImage();
+    const result = await sendConfirmedImage(artifact.id, "Paris");
+    expect(result.runId).toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId, seq: result.seq },
+    });
+    expect(message.runId).toBe(waiting.run.id);
+    // A routine turn reads no thread history, so only this row delivers the image.
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: waiting.run.id, claimedAt: null }),
+    ]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: waiting.run.id } })).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  it.each(["bot", "group"] as const)(
+    "binds a file reply to the waiting routine it answers in a %s thread",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const answeringBotId = kind === "bot" ? botId : peerBotId;
+      const waiting = await waitingCard(question, target.threadId, answeringBotId, "routine");
+      const artifact = await system.artifact.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          ...(kind === "bot" ? { botId } : { groupId: groupTarget.groupId }),
+          name: "reply.png",
+          mimeType: "image/png",
+          size: 4,
+          hash: "fixture",
+          storageKey: "fixture",
+        },
+      });
+      const result = await runAsTenant(actor, () =>
+        sendThreadMessage(
+          { prisma, events: { notify } as never, jobs: { enqueue } as never },
+          actor,
+          target,
+          {
+            text: "Paris",
+            artifactIds: [artifact.id],
+            imageHandling: "file",
+            mentions: kind === "group" ? [botId, peerBotId] : [],
+            clientNonce: randomUUID(),
+          },
+        ),
+      );
+      expect(result.runIds).toContain(waiting.run.id);
+      const message = await system.message.findFirstOrThrow({
+        where: { threadId: target.threadId, seq: result.seq },
+      });
+      // Send as file stores the picture as a file the routine can list and copy.
+      expect(message.blocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "file", artifactId: artifact.id }),
+        ]),
+      );
+      // A routine reads no thread history, so only this row delivers the attachment.
+      expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+        expect.objectContaining({ botId: answeringBotId, runId: waiting.run.id }),
+      ]);
+    },
+  );
+
+  it("adds no steering row for a text-only answer to a waiting routine", async () => {
+    const waiting = await waitingCard(question, threadId, botId, "routine");
+    const result = await send(privateTarget());
+    expect(result.runId).toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({ where: { threadId, seq: result.seq } });
+    expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+  });
+
+  it("leaves a confirmed image sent during a background routine to its continuation", async () => {
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        prompt: "Routine work",
+        status: "running",
+      },
+    });
+    const routine = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "routine",
+      },
+    });
+    const artifact = await privateImage();
+    const result = await sendConfirmedImage(artifact.id, "Look at this");
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId, seq: result.seq },
+    });
+    // The routine only links the message for display; it never receives pending steering.
+    expect(message.runId).toBe(routine.id);
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: null }),
+    ]);
+    await system.run.update({ where: { id: routine.id }, data: { status: "completed" } });
+    const continuationId = await system.$transaction((tx) =>
+      createPendingSteeringRun(tx, { spaceId: actor.spaceId, threadId, botId }),
+    );
+    expect(continuationId).toBeTruthy();
+    expect(await system.run.findUniqueOrThrow({ where: { id: continuationId! } })).toMatchObject({
+      sourceMessageId: message.id,
+    });
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: continuationId }),
+    ]);
+  });
 
   it("still resumes the same run when an option is tapped", async () => {
     const fixture = await waitingCard();

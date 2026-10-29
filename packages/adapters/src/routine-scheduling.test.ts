@@ -1,6 +1,7 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { createRunExecutor, deferFutureRoutine } from "./executor.js";
+import { createRunExecutor } from "./executor.js";
+import { deferFutureRoutine } from "./run-routines.js";
 
 describe("routine scheduling", () => {
   it("never fires a future occurrence early", async () => {

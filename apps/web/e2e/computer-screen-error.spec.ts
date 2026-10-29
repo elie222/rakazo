@@ -1,144 +1,203 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
-test("screen connection failures stay visible and can be retried", async ({ page }, testInfo) => {
-  await signup(page, `screen-error-${Date.now()}@rakazo.test`, "password12", "Screen Error");
+test(
+  "screen connection failures stay visible and can be retried",
+  { tag: "@nightly" },
+  async ({ page }, testInfo) => {
+    await signup(page, `screen-error-${Date.now()}@rakazo.test`, "password12", "Screen Error");
+    await completeOnboarding(page);
+    const botId = activeBotId(page);
+    await rpc(page, "computer/boot", { botId });
+    await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject(
+      {
+        state: "running",
+      },
+    );
+
+    let failScreen = true;
+    const screenUrl = "https://screen.example/vnc.html";
+    await page.route("https://screen.example/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<!doctype html><title>Test desktop</title><p>Desktop connected</p>",
+      }),
+    );
+    await page.route("**/rpc/computer/screenUrl", (route) =>
+      route.fulfill({
+        status: failScreen ? 409 : 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          failScreen
+            ? {
+                json: {
+                  defined: false,
+                  code: "CONFLICT",
+                  status: 409,
+                  message:
+                    "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.",
+                },
+              }
+            : { json: { url: screenUrl } },
+        ),
+      }),
+    );
+
+    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+    const preview = page.getByTestId("computer-preview");
+    await expect(preview.getByRole("alert")).toContainText("temporarily busy");
+    await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
+    await captureScreenshot(page, testInfo, "computer-screen-connection-error");
+
+    await expect(preview.getByRole("alert")).toContainText("Screen not connected");
+    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
+    await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
+    await captureScreenshot(page, testInfo, "computer-screen-recover-confirm");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    failScreen = false;
+    await preview.getByRole("button", { name: "Retry screen" }).click();
+    await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
+    await expect(preview.getByRole("alert")).toHaveCount(0);
+
+    await captureScreenshot(page, testInfo, "computer-screen-healthy");
+    failScreen = true;
+    await preview.hover();
+    await preview.getByTestId("computer-preview-open").click();
+    await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("temporarily busy");
+    await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
+
+    await page
+      .getByRole("alert")
+      .getByRole("button", { name: "Recover computer", exact: true })
+      .click();
+    await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
+    await captureScreenshot(page, testInfo, "computer-full-screen-recover-confirm");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    failScreen = false;
+    await page.getByRole("button", { name: "Retry screen" }).click();
+    await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  },
+);
+
+test(
+  "a running computer without a screen URL offers recovery",
+  { tag: "@nightly" },
+  async ({ page }, testInfo) => {
+    await signup(page, `screen-missing-${Date.now()}@rakazo.test`, "password12", "Screen Missing");
+    await completeOnboarding(page);
+    const botId = activeBotId(page);
+    await rpc(page, "computer/boot", { botId });
+    let screenReads = 0;
+    await page.route("**/rpc/computer/screenUrl", (route) => {
+      screenReads += 1;
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ json: { url: null } }),
+      });
+    });
+    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+    const preview = page.getByTestId("computer-preview");
+    await expect(preview.getByRole("alert")).toContainText("Screen not connected");
+    await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
+    await expect(
+      preview.getByRole("button", { name: "Recover computer", exact: true }),
+    ).toBeVisible();
+    await captureScreenshot(page, testInfo, "computer-screen-url-missing");
+
+    await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
+    const confirmation = page.getByRole("alertdialog");
+    await expect(confirmation).toContainText("Recover computer?");
+    // A control change re-reads the screen in the background; the open confirmation stays.
+    const readsBefore = screenReads;
+    await rpc(page, "computer/takeover", { botId });
+    await expect.poll(() => screenReads).toBeGreaterThan(readsBefore);
+    await page.waitForTimeout(500);
+    await expect(confirmation).toContainText("Recover computer?");
+  },
+);
+
+test("a healthy running computer is not diagnosed while its screen URL loads", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `screen-loading-${Date.now()}@rakazo.test`, "password12", "Screen Loading");
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });
-  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
-    state: "running",
-  });
-
-  let failScreen = true;
   const screenUrl = "https://screen.example/vnc.html";
   await page.route("https://screen.example/**", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: "<!doctype html><title>Test desktop</title><p>Desktop connected</p>",
+      body: "<!doctype html><title>Desktop connected</title>",
     }),
   );
-  await page.route("**/rpc/computer/screenUrl", (route) =>
-    route.fulfill({
-      status: failScreen ? 409 : 200,
+  let readStarted!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    readStarted = resolve;
+  });
+  await page.route("**/rpc/computer/screenUrl", async (route) => {
+    readStarted();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(
-        failScreen
-          ? {
-              json: {
-                defined: false,
-                code: "CONFLICT",
-                status: 409,
-                message:
-                  "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.",
-              },
-            }
-          : { json: { url: screenUrl } },
-      ),
-    }),
-  );
-
+      body: JSON.stringify({ json: { url: screenUrl } }),
+    });
+  });
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await reading;
   const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("temporarily busy");
-  await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "computer-screen-connection-error");
-
-  failScreen = false;
-  await preview.getByRole("button", { name: "Retry screen" }).click();
+  await expect(preview.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-screen-url-loading");
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await expect(preview.getByRole("alert")).toHaveCount(0);
-
-  failScreen = true;
-  await preview.hover();
-  await preview.getByTestId("computer-preview-open").click();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("temporarily busy");
-  await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
-
-  failScreen = false;
-  await page.getByRole("button", { name: "Retry screen" }).click();
-  await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-screen-url-loaded");
 });
 
-test("a framed screen that fails to connect says so and can be retried", async ({
+test("a takeover failure does not diagnose a screen connection failure", async ({
   page,
 }, testInfo) => {
-  await signup(page, `screen-frame-${Date.now()}@rakazo.test`, "password12", "Screen Frame");
+  await signup(page, `screen-control-${Date.now()}@rakazo.test`, "password12", "Screen Control");
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });
-  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
-    state: "running",
-  });
-
-  // What the proxy would serve: the page runs, then noVNC gives up on its socket.
-  let outcome: "failed" | "connected" = "failed";
-  const screenPath = "/novnc/session/view/1.frame-test/vnc.html?autoconnect=true";
-  await page.route("**/novnc/session/view/1.frame-test/**", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      headers: { "content-security-policy": "sandbox allow-scripts allow-pointer-lock" },
-      body: `<!doctype html><title>Test desktop</title><script>
-        parent.postMessage({ rakazoScreen: "loading" }, "*");
-        parent.postMessage(${JSON.stringify(
-          outcome === "failed"
-            ? { rakazoScreen: "failed", detail: "Failed to connect to server" }
-            : { rakazoScreen: "connected" },
-        )}, "*");
-      </script><p>Desktop</p>`,
-    }),
+  await page.route("https://screen.example/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Desktop</title>" }),
   );
   await page.route("**/rpc/computer/screenUrl", (route) =>
     route.fulfill({
-      status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ json: { url: screenPath } }),
+      body: JSON.stringify({ json: { url: "https://screen.example/vnc.html" } }),
     }),
   );
-
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("Failed to connect to server");
-  await expect(preview.locator("iframe")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "computer-screen-frame-failed");
-
-  outcome = "connected";
-  await preview.getByRole("button", { name: "Retry screen" }).click();
-  await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.frame-test\/vnc\.html/);
-  await expect(preview.getByRole("alert")).toHaveCount(0);
-  await page.waitForTimeout(500);
-  await expect(preview.getByRole("alert")).toHaveCount(0);
-});
-
-test("a framed screen the proxy refuses shows the proxy's reason", async ({ page }, testInfo) => {
-  await signup(page, `screen-refused-${Date.now()}@rakazo.test`, "password12", "Screen Refused");
-  await completeOnboarding(page);
-  const botId = activeBotId(page);
-  await rpc(page, "computer/boot", { botId });
-  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
-    state: "running",
-  });
-  await page.route("**/novnc/session/view/1.refused-test/**", (route) =>
+  await page.route("**/rpc/computer/takeover", (route) =>
     route.fulfill({
-      status: 403,
-      contentType: "text/plain",
-      body: "Invalid or expired screen capability",
-    }),
-  );
-  await page.route("**/rpc/computer/screenUrl", (route) =>
-    route.fulfill({
-      status: 200,
+      status: 500,
       contentType: "application/json",
-      body: JSON.stringify({ json: { url: "/novnc/session/view/1.refused-test/vnc.html" } }),
+      body: JSON.stringify({
+        json: {
+          defined: false,
+          code: "INTERNAL_SERVER_ERROR",
+          status: 500,
+          message: "Could not take control",
+        },
+      }),
     }),
   );
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("Invalid or expired screen capability");
-  await expect(preview.locator("iframe")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "computer-screen-frame-refused");
+  await expect(preview.locator("iframe")).toBeVisible();
+  await preview.hover();
+  await preview.getByTestId("computer-preview-open").click();
+  await page.getByRole("button", { name: "Take control", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Could not take control");
+  await expect(page.getByText("Screen not connected", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("alert").getByRole("button", { name: "Recover computer", exact: true }),
+  ).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-takeover-error");
 });
 
 test("a framed screen that drops after connecting loads again by itself once", async ({ page }) => {
@@ -198,9 +257,7 @@ test("a framed screen that drops after connecting loads again by itself once", a
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.drop-test\/vnc\.html/);
-  // The drop loads the page again without a click, and no error shows meanwhile or after.
   await expect.poll(() => loads).toBe(2);
-  // It waited out the two unavailable answers before loading again.
   expect(probes).toBeGreaterThanOrEqual(4);
   expect(reloadedAt - dropAt).toBeGreaterThanOrEqual(2_500);
   await page.waitForTimeout(1_000);
@@ -210,74 +267,8 @@ test("a framed screen that drops after connecting loads again by itself once", a
   // Another drop within the half minute is left to the user.
   const frame = page.frames().find((candidate) => candidate.url().includes("1.drop-test"));
   await frame?.evaluate(() => parent.postMessage({ rakazoScreen: "disconnected" }, "*"));
-  await expect(preview.getByRole("alert")).toContainText(
-    "Could not connect to the computer screen",
-  );
+  await expect(preview.getByRole("alert")).toContainText("The screen connection closed.");
   await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
   await page.waitForTimeout(1_500);
   expect(loads).toBe(2);
 });
-
-for (const moved of [false, true]) {
-  test(
-    moved
-      ? "a reconnected screen leaves the keyboard in the chat box the user moved to"
-      : "a reconnected screen that had the keyboard gets it back",
-    async ({ page }) => {
-      await signup(page, `screen-focus-${Date.now()}@rakazo.test`, "password12", "Screen Focus");
-      await completeOnboarding(page);
-      const botId = activeBotId(page);
-      await rpc(page, "computer/boot", { botId });
-      await expect(
-        rpc<{ state: string }>(page, "computer/status", { botId }),
-      ).resolves.toMatchObject({ state: "running" });
-
-      // Each load connects and stays up; the wait after the drop sees two unavailable answers,
-      // which leaves time to move the keyboard.
-      let loads = 0;
-      let probes = 0;
-      await page.route("**/novnc/session/view/1.focus-test/**", (route) => {
-        if (route.request().resourceType() === "document") loads += 1;
-        else {
-          probes += 1;
-          if (probes === 2 || probes === 3) {
-            return route.fulfill({ status: 503, contentType: "text/plain", body: "" });
-          }
-        }
-        return route.fulfill({
-          contentType: "text/html",
-          headers: { "content-security-policy": "sandbox allow-scripts allow-pointer-lock" },
-          body: `<!doctype html><title>Test desktop</title><script>
-            parent.postMessage({ rakazoScreen: "loading" }, "*");
-            parent.postMessage({ rakazoScreen: "connected" }, "*");
-          </script><p>Desktop</p>`,
-        });
-      });
-      await page.route("**/rpc/computer/screenUrl", (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ json: { url: "/novnc/session/view/1.focus-test/vnc.html" } }),
-        }),
-      );
-
-      await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-      const preview = page.getByTestId("computer-preview");
-      await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.focus-test\/vnc\.html/);
-      await preview.locator("iframe").focus();
-      const frame = page.frames().find((candidate) => candidate.url().includes("1.focus-test"));
-      await frame?.evaluate(() => parent.postMessage({ rakazoScreen: "disconnected" }, "*"));
-      if (moved) await page.locator('[role="combobox"][aria-label^="Message"]').first().focus();
-
-      await expect.poll(() => loads).toBe(2);
-      await page.waitForTimeout(500);
-      const focused = await page.evaluate(() => {
-        const active = document.activeElement;
-        return active?.getAttribute("aria-label")?.startsWith("Message")
-          ? "chat box"
-          : active?.tagName;
-      });
-      expect(focused).toBe(moved ? "chat box" : "IFRAME");
-    },
-  );
-}

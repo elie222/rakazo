@@ -20,8 +20,8 @@ test("opens Artifacts from the account menu and lists created files", async ({
   const settingsItem = page.getByRole("button", { name: "Settings", exact: true });
   await expect(artifactsItem).toBeVisible();
   await expect(settingsItem).toBeVisible();
-  expect((await artifactsItem.boundingBox())?.y).toBeLessThan(
-    (await settingsItem.boundingBox())?.y ?? 0,
+  expect((await settingsItem.boundingBox())?.y).toBeLessThan(
+    (await artifactsItem.boundingBox())?.y ?? 0,
   );
   await captureScreenshot(page, testInfo, "account-menu-artifacts");
 

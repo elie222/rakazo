@@ -800,6 +800,26 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/did not include a models list.*explicit model id/s);
   });
 
+  it.each([
+    { name: "null", body: null },
+    { name: "boolean", body: true },
+    { name: "number", body: 42 },
+    { name: "string", body: "catalog" },
+    { name: "array", body: [] },
+    { name: "null data", body: { data: null } },
+    { name: "non-array data", body: { data: { id: "model" } } },
+  ])("clarifies malformed models list responses ($name) with hand-fill hint", async ({ body }) => {
+    const fetchImpl = async () => Response.json(body);
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "http://127.0.0.1:8000/v1" },
+        fetchImpl,
+        undefined,
+        OWNER,
+      ),
+    ).rejects.toThrow(/did not include a models list.*explicit model id/s);
+  });
+
   it("clarifies invalid JSON probe bodies with hand-fill hint", async () => {
     const fetchImpl = async () => new Response("{not-json", { status: 200 });
     await expect(

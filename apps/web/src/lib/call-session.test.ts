@@ -1,4 +1,5 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type * as CoreModule from "@rakazo/core";
 import {
   callIdFromClientNonce,
   groupVoiceChats,
@@ -19,7 +20,7 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/core")>()),
+  ...(await importOriginal<typeof CoreModule>()),
   runThreadSubscription: vi.fn(async () => undefined),
 }));
 
@@ -870,8 +871,7 @@ describe("call session", () => {
 
     const callId = callIdFromClientNonce(String(send.mock.calls[0]?.[0]?.clientNonce));
     expect(callId).toBeDefined();
-    // The event itself carries the call id, so the bubble groups with no run
-    // registered anywhere — note the event below has no runId at all.
+    // The event carries the call id and no runId, so the bubble groups with no run registered.
     const live = reduceThreadSnapshot(snapshot([]), userMessageEvent(String(callId)));
     expect(live?.messages[0]?.callId).toBe(callId);
     expect(groupVoiceChats(live?.messages ?? [])).toEqual([
@@ -998,7 +998,6 @@ describe("call session", () => {
   });
 });
 
-/** Drives a call to the point where the bot's reply is playing and the mic is open. */
 /** Starts a call and lets it pick up, the state every conversation test begins from. */
 async function answeredCall(call: Parameters<typeof startCall>[0]) {
   startCall(call);

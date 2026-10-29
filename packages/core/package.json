@@ -58,6 +58,11 @@
       "types": "./src/egress.ts",
       "development": "./src/egress.ts",
       "default": "./src/egress.ts"
+    },
+    "./query": {
+      "types": "./src/query.ts",
+      "development": "./src/query.ts",
+      "default": "./src/query.ts"
     }
   },
   "scripts": {
@@ -67,6 +72,7 @@
   "dependencies": {
     "@observablehq/plot": "0.6.17",
     "@rakazo/contracts": "workspace:*",
+    "@tanstack/query-core": "5.104.5",
     "croner": "10.0.1",
     "d3-dsv": "3.0.1",
     "dotenv": "17.4.2",

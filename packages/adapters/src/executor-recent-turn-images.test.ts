@@ -35,6 +35,9 @@ type RunHooks = {
   computerLeaseRenewal?: () => Promise<boolean>;
   /** The model lists the computer's files before answering, which starts the computer. */
   useComputer?: boolean;
+  trigger?: string;
+  /** A reply bound to this run as steering, claimed before any tool runs. */
+  steeringBlocks?: MessageBlock[];
 };
 
 function deferred<T>(): Deferred<T> {
@@ -102,7 +105,7 @@ async function runWithModel(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "user",
+    trigger: hooks?.trigger ?? "user",
     leaseFence: 0,
   };
   const get = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
@@ -112,6 +115,7 @@ async function runWithModel(
   });
   const releaseScreen = vi.fn(async (..._args: unknown[]) => undefined);
   let request: AgentRunRequest | undefined;
+  let steering: Awaited<ReturnType<NonNullable<AgentRunRequest["claimSteering"]>>> = [];
   const runtimeRun = vi.fn(async function* (next: AgentRunRequest) {
     request = next;
     if (hooks?.runtimeGate) {
@@ -126,6 +130,7 @@ async function runWithModel(
       ).onModelChange;
       await onModelChange?.(switchModel.provider, switchModel.modelId);
     }
+    if (hooks?.steeringBlocks) steering = (await next.claimSteering?.([])) ?? [];
     if (hooks?.useComputer) {
       const executeTool = (
         next as AgentRunRequest & {
@@ -183,6 +188,8 @@ async function runWithModel(
         args.where?.threadId ? historyMessages() : [],
       ),
       findUnique: vi.fn(async () => null),
+      // A claimed steering reply looks up the message it quotes; this one quotes nothing.
+      findFirst: vi.fn(async () => null),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
@@ -192,7 +199,7 @@ async function runWithModel(
         async () => null,
       ),
     },
-    secret: { findFirst: vi.fn(async () => null) },
+    secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) => {
@@ -211,8 +218,7 @@ async function runWithModel(
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
-    agentSecret: { findMany: vi.fn(async () => []) },
-    botSecret: { findMany: vi.fn(async () => []) },
+    vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
@@ -222,6 +228,7 @@ async function runWithModel(
     artifact: {
       findMany: vi.fn(async () => [
         { id: "art-1", storageKey: "shot.png", size: 4, mimeType: "image/png", name: "shot.png" },
+        { id: "art-2", storageKey: "reply.png", size: 4, mimeType: "image/png", name: "reply.png" },
       ]),
     },
   };
@@ -249,7 +256,22 @@ async function runWithModel(
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     artifacts: { get },
-    events: { append: vi.fn(async () => undefined), finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      finalizeRun,
+      claimSteering: vi.fn(async ({ seenIds }: { seenIds: string[] }) =>
+        hooks?.steeringBlocks && !seenIds.includes("reply-steering")
+          ? [
+              {
+                id: "reply-steering",
+                messageId: "reply",
+                text: "Here it is",
+                blocks: hooks.steeringBlocks,
+              },
+            ]
+          : [],
+      ),
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     notifications: hooks?.notificationGate ? { send: notificationSend } : undefined,
     secrets: [],
@@ -264,6 +286,7 @@ async function runWithModel(
   if (!request) throw new Error("runtime was not called");
   return {
     request,
+    steering,
     get,
     writeFile,
     exportWorkspace,
@@ -310,6 +333,34 @@ describe("recent turn images follow model vision", () => {
       'Files attached earlier in this conversation are also on your computer:\n- "shot.png" (image/png, 4 bytes): "attachments/art-1.png"',
     );
     expect(exportWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("lists and copies a file reply bound to a resumed routine", async () => {
+    // "Send as file" stores the picture as a file block; a routine reads no thread history.
+    const { request, steering, writeFile } = await runWithModel(
+      TEXT_ONLY_MODEL,
+      undefined,
+      false,
+      false,
+      true,
+      {
+        useComputer: true,
+        trigger: "routine",
+        steeringBlocks: [
+          { kind: "text", text: "Here it is" },
+          { kind: "file", artifactId: "art-2", name: "reply.png", mimeType: "image/png", size: 4 },
+        ],
+      },
+    );
+
+    expect(request.currentRunRequiresImageInput).toBeFalsy();
+    expect(steering).toHaveLength(1);
+    expect(steering[0]?.text).toContain('"attachments/art-2.png"');
+    expect(steering[0]?.images).toBeUndefined();
+    expect(writeFile.mock.calls.map(([, file]) => file)).toContainEqual({
+      path: "attachments/art-2.png",
+      content: new Uint8Array([1, 2, 3, 4]),
+    });
   });
 
   it("attaches an earlier turn's image for a model that can see it", async () => {

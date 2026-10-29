@@ -1,15 +1,21 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { createServer as createHttpServer, type Server } from "node:http";
+import type { Server } from "node:http";
+import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { Duplex } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import { openScreenCapability } from "@rakazo/core/node/screen-capability";
+import {
+  addScreenProxyCapability,
+  openScreenCapability,
+} from "@rakazo/core/node/screen-capability";
 import { screenProbeUrl } from "@rakazo/core/screen-reconnect";
-import { createServer, type Plugin, preview, type ViteDevServer } from "vite";
-import { addScreenProxyCapability } from "../../api/src/screen-proxy";
+import type { Plugin, ViteDevServer } from "vite";
+import { createServer, preview } from "vite";
 
 const scope = {
   botId: "bot",
@@ -69,16 +75,42 @@ async function close(server: Server) {
   );
 }
 
+function sendUpgrade(url: URL) {
+  const client = connect(Number(url.port), url.hostname);
+  client.on("error", () => {});
+  client.write(
+    `GET ${url.pathname}${url.search} HTTP/1.1\r\nHost: ${url.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
+  );
+  return client;
+}
+
+// Resets a raw upgrade once the server has it, and resolves after the server saw the reset.
+async function resetDuringUpgrade(server: Server, url: URL, beforeReset?: Promise<unknown>) {
+  const received = new Promise<Duplex>((resolve) =>
+    server.once("upgrade", (_req, socket) => resolve(socket)),
+  );
+  const client = sendUpgrade(url);
+  const socket = await received;
+  await beforeReset;
+  const closed = new Promise((resolve) => socket.once("close", resolve));
+  client.resetAndDestroy();
+  await closed;
+}
+
 for (const mode of ["development", "preview"] as const) {
   test.describe(`screen response isolation in ${mode}`, () => {
     let origin: string;
     let screenUrl: string;
     let otherPageUrl: string;
     let stop: () => Promise<void>;
+    let httpServer: Server;
 
     let authorized = true;
     let assetAttempts = 0;
     let upstreamRequests = 0;
+    let upstreamUpgraded: ((path: string) => void) | undefined;
+    let authorityReached: (() => void) | undefined;
+    let authorityHold: Promise<void> | undefined;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
@@ -115,6 +147,7 @@ for (const mode of ["development", "preview"] as const) {
         }
       });
       upstream.on("upgrade", (req, socket) => {
+        upstreamUpgraded?.(new URL(req.url ?? "/", "http://upstream").pathname);
         if (req.headers.cookie !== providerHeaders.cookie) {
           socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
           return;
@@ -157,6 +190,8 @@ for (const mode of ["development", "preview"] as const) {
         });
       }
       const authority = createHttpServer(async (req, res) => {
+        authorityReached?.();
+        await authorityHold;
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(Buffer.from(chunk));
         const body = JSON.parse(Buffer.concat(chunks).toString());
@@ -185,8 +220,9 @@ for (const mode of ["development", "preview"] as const) {
         };
         const server = mode === "development" ? await createServer(config) : await preview(config);
         // listen() replaces zero with Vite's default port; bind the HTTP server directly instead.
-        if ("listen" in server) await listen(server.httpServer!);
-        origin = `http://127.0.0.1:${(server.httpServer!.address() as AddressInfo).port}`;
+        httpServer = server.httpServer as Server;
+        if ("listen" in server) await listen(httpServer);
+        origin = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
         // Exercise the same capability issuer used by the production API, with a configured web origin.
         // A loopback upstream serving /vnc.html stands in for E2B, Daytona, Boat and Railway.
         screenUrl = addScreenProxyCapability(
@@ -284,6 +320,56 @@ for (const mode of ["development", "preview"] as const) {
         authorized = true;
       }
       expect(upstreamRequests).toBe(before);
+    });
+
+    test("a client that resets during the access check does not stop the server", async ({
+      request,
+    }) => {
+      // Vite's dev WebSocket server already ignores client socket errors; preview does not.
+      test.skip(mode === "development");
+      let release = () => {};
+      authorityHold = new Promise((resolve) => {
+        release = resolve;
+      });
+      const reached = new Promise<void>((resolve) => {
+        authorityReached = resolve;
+      });
+      const upgrades: string[] = [];
+      const held = new Promise<void>((resolve) => {
+        upstreamUpgraded = (path) => {
+          upgrades.push(path);
+          if (path === "/hold") resolve();
+        };
+      });
+      try {
+        const target = new URL(screenUrl);
+        target.pathname = target.pathname.replace("/vnc.html", "/websockify");
+        try {
+          await resetDuringUpgrade(httpServer, target, reached);
+        } finally {
+          authorityReached = undefined;
+          authorityHold = undefined;
+          release();
+        }
+        // Its access check is answered after the reset one, so once it reaches the computer the
+        // reset connection's check has finished too.
+        target.pathname = target.pathname.replace("/websockify", "/hold");
+        const next = sendUpgrade(target);
+        await held;
+        next.destroy();
+      } finally {
+        upstreamUpgraded = undefined;
+      }
+      expect(upgrades).toEqual(["/hold"]);
+      expect((await request.get(`${origin}/app`)).status()).toBe(200);
+    });
+
+    test("an upgrade to a non-screen path that resets does not stop the server", async ({
+      request,
+    }) => {
+      test.skip(mode === "development");
+      await resetDuringUpgrade(httpServer, new URL(`${origin}/somewhere`));
+      expect((await request.get(`${origin}/app`)).status()).toBe(200);
     });
 
     test("HTML that is not a noVNC page is passed through unchanged", async ({ page }) => {

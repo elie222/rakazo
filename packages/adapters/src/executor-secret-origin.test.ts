@@ -3,7 +3,7 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { prepareRequestSecretArguments } from "./pi-runtime.js";
+import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const COMPUTER: ComputerRef = {
@@ -69,7 +69,7 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
   return prisma;
 }
 
-async function requestSecretWith(origin: string) {
+async function requestSecretWith(origin: string, extra: Record<string, unknown> = {}) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -91,6 +91,7 @@ async function requestSecretWith(origin: string) {
       label: "Sign in",
       purpose: "password",
       credential: { name: "site_login", origin, auth: { type: "login" } },
+      ...extra,
     });
     toolResults.push(await request.executeTool?.("request_secret", args, "exec-1"));
     yield { type: "done" as const, text: "" };
@@ -194,6 +195,7 @@ async function requestSecretWith(origin: string) {
   await executor.continueRun(run.id, "worker-1");
   return {
     toolResults,
+    events,
     everything: JSON.stringify([calls, events, logged, toolResults], (_key, value) =>
       typeof value === "function" && "mock" in value ? value.mock.calls : value,
     ),
@@ -221,5 +223,31 @@ describe("request_secret with a page URL", () => {
     );
     expect(JSON.stringify(toolResults)).toMatch(/Invalid credential destination — origin:/);
     for (const canary of CANARIES) expect(everything).not.toContain(canary);
+  });
+});
+
+describe("request_secret for a login's fields", () => {
+  it("asks for the named fields and never lets the bot choose which are visible", async () => {
+    const { toolResults, events, everything } = await requestSecretWith(
+      "https://bank.example.test",
+      {
+        fields: [{ label: "ID number", hidden: false }, "Phone number"],
+      },
+    );
+    expect(toolResults).toMatchObject([{ details: { secret: "paused" } }]);
+    expect(events.pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [expect.objectContaining({ loginFields: ["ID number", "Phone number"] })],
+      }),
+    );
+    expect(everything).not.toContain('"hidden"');
+  });
+
+  it("turns down fields it can't ask for", async () => {
+    const { toolResults, events } = await requestSecretWith("https://bank.example.test", {
+      fields: ["Code", "code"],
+    });
+    expect(JSON.stringify(toolResults)).toContain("fields must list 1 to 8 different labels");
+    expect(events.pauseRunForInput).not.toHaveBeenCalled();
   });
 });

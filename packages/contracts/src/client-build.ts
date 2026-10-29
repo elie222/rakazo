@@ -76,7 +76,6 @@ export function clientUpdateRequired(
   return (compareBuilds(client.build, minimums[client.kind]) ?? 0) < 0;
 }
 
-/** Whether a failed request was refused because this client build is no longer supported. */
 export function isClientUpdateRequiredError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const { code, status } = error as { code?: unknown; status?: unknown };

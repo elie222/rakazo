@@ -113,6 +113,47 @@ afterEach(() => {
 });
 
 describe("screen-owned mention catalog", () => {
+  it("lazily loads a large roster with one batch and preserves roster and routine order", async () => {
+    const roster = Array.from({ length: 100 }, (_, index) => ({
+      id: `bot-${index}`,
+      name: `Bot ${index}`,
+    }));
+    state.rpc.mockImplementation(async (proc: string, body: { botIds: string[] }) =>
+      proc === "routines/listForMentions"
+        ? [...body.botIds].reverse().map((botId) => ({ botId, routines: [routine(botId)] }))
+        : [],
+    );
+    await render("thread-a", roster);
+    expect(state.rpc).not.toHaveBeenCalled();
+    await activate();
+    expect(state.rpc).toHaveBeenCalledTimes(3);
+    expect(routineRequests()).toHaveLength(0);
+    expect(visible().routines.map((row: RoutineFixture) => row.botId)).toEqual(
+      roster.map((bot) => bot.id),
+    );
+    await activate();
+    expect(state.rpc).toHaveBeenCalledTimes(3);
+  });
+  it.each(["server", "session", "space"])(
+    "starts no queued fallback after a %s change without a screen render",
+    async (identity) => {
+      const pendingBatch = deferred<unknown[]>();
+      const pendingConnections = deferred<unknown[]>();
+      state.rpc.mockImplementation((proc: string) =>
+        proc === "routines/listForMentions" ? pendingBatch.promise : pendingConnections.promise,
+      );
+      await render();
+      await activate();
+      if (identity === "server") state.apiBase = "https://other-api.test";
+      if (identity === "session") state.generation += 1;
+      if (identity === "space") state.spaceId = "space-b";
+      await act(async () => pendingBatch.resolve([]));
+      expect(routineRequests()).toHaveLength(0);
+      await act(async () => pendingConnections.resolve([]));
+      expect(visible()).toEqual({ routines: [], connectors: [] });
+    },
+  );
+
   it("waits for first use, then refreshes with the roster without loading again on repeated use", async () => {
     await render("thread-a", []);
     await render("thread-a", bots.slice(0, 1));
@@ -121,9 +162,9 @@ describe("screen-owned mention catalog", () => {
     await activate();
     expect(routineRequests()).toHaveLength(1);
     expect(state.rpc.mock.calls.map(([proc]) => proc)).toEqual([
-      "routines/list",
       "connections/list",
       "connections/catalog",
+      "routines/list",
     ]);
     await activate();
     expect(state.rpc).toHaveBeenCalledTimes(3);
@@ -227,7 +268,7 @@ describe("screen-owned mention catalog", () => {
     expect(options.every((option) => option.requestContext === options[0]!.requestContext)).toBe(
       true,
     );
-    expect(options.every((option) => option.signal === options[0]!.signal)).toBe(true);
+    expect(options.every((option) => option.signal instanceof AbortSignal)).toBe(true);
   });
 
   it("keeps successful bot lists and preserves connected-first catalog mapping and deduplication", async () => {
@@ -338,20 +379,16 @@ describe("screen-owned mention catalog", () => {
     await render();
     await activate();
     const oldOptions = state.rpc.mock.calls.map((call) => call[2] as RequestOptions);
-    expect(routineRequests()).toHaveLength(4);
+    expect(routineRequests()).toHaveLength(0);
+    expect(
+      state.rpc.mock.calls.filter(([proc]) => proc === "routines/listForMentions"),
+    ).toHaveLength(1);
     await render("thread-a", [bots[8]!]);
     expect(oldOptions.every((option) => option.signal.aborted)).toBe(true);
     state.rpc.mockResolvedValue([]);
     await render("thread-a", [bots[7]!]);
     await act(async () => old.resolve([routine("stale")]));
-    expect(routineRequests().map((call) => call[1].botId)).toEqual([
-      "bot-0",
-      "bot-1",
-      "bot-2",
-      "bot-3",
-      "bot-8",
-      "bot-7",
-    ]);
+    expect(routineRequests().map((call) => call[1].botId)).toEqual(["bot-8", "bot-7"]);
     expect(visible()).toEqual({ routines: [], connectors: [] });
   });
 
@@ -409,7 +446,10 @@ describe("screen-owned mention catalog", () => {
     });
     expect(options.every((option) => option.signal.aborted)).toBe(true);
     await act(async () => pending.resolve([]));
-    expect(routineRequests()).toHaveLength(4);
+    expect(routineRequests()).toHaveLength(0);
+    expect(
+      state.rpc.mock.calls.filter(([proc]) => proc === "routines/listForMentions"),
+    ).toHaveLength(1);
   });
 
   it("does not start requests when context capture crosses a space change", async () => {
@@ -520,6 +560,9 @@ describe("screen-owned mention catalog", () => {
     await act(async () => root.render(null));
     expect(options.every((option) => option.signal.aborted)).toBe(true);
     await act(async () => pending.resolve([]));
-    expect(routineRequests()).toHaveLength(4);
+    expect(routineRequests()).toHaveLength(0);
+    expect(
+      state.rpc.mock.calls.filter(([proc]) => proc === "routines/listForMentions"),
+    ).toHaveLength(1);
   });
 });

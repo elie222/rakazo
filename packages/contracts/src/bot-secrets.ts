@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { Id } from "./ids.js";
+import { isCloudMetadataHost, isPrivateNetworkHost } from "./network-host.js";
+import { settingsScopeInput } from "./settings-scope.js";
 
 // An opaque reference handle: matched exactly by secret_request/forget_secret,
 // displayed in list_secrets. Never interpolated into shells, env, or URLs, so
@@ -33,8 +35,8 @@ export const BotSecretAuth = z.discriminatedUnion("type", [
       .max(200)
       .regex(/^[^:\r\n]+$/),
   }),
-  // A website sign-in. The username and password are both protected; the backend only types
-  // them into pages on the saved origin and never sends them as HTTP credentials.
+  // A website sign-in. Its fields are all protected; the backend only types them into pages on
+  // the saved origin and never sends them as HTTP credentials.
   z.object({ type: z.literal("login") }),
   // A value exported to this bot's shell commands as an environment variable. It has no site.
   z.object({ type: z.literal("command") }),
@@ -146,32 +148,6 @@ function commandVariableNameIssue(credentialName: string): string | undefined {
   return undefined;
 }
 
-/** Hosts inside a deployment's own network (loopback, RFC1918, CGNAT, .local). */
-export function isPrivateNetworkHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host === "::1") return true;
-  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (host.endsWith(".local")) return true;
-  if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  return false;
-}
-
-/** Provider metadata endpoints that must never become credential targets,
- * even though they sit inside otherwise-private ranges (CGNAT / link-local). */
-export function isCloudMetadataHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return (
-    host === "169.254.169.254" ||
-    host === "169.254.170.2" ||
-    host === "100.100.100.200" ||
-    host === "metadata.google.internal" ||
-    host === "metadata.goog"
-  );
-}
-
 function botSecretOriginSchema(allowPrivateHttpOrigin: boolean) {
   return z
     .string()
@@ -198,13 +174,22 @@ function botSecretOriginSchema(allowPrivateHttpOrigin: boolean) {
     );
 }
 
+export const BOT_SECRET_ORIGIN_MISSING_MESSAGE =
+  "Missing. Add the site's address, such as https://www.example.com";
+
 export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: boolean }) {
   const originSchema = botSecretOriginSchema(options?.allowPrivateHttpOrigin === true);
   return z
     .object({
       name: BotSecretName,
       // Empty for a command variable, which has no site. Every other type needs an origin.
-      origin: z.string().max(2048).default(""),
+      origin: z
+        .string()
+        .max(2048)
+        .default("")
+        .describe(
+          "The site's address, such as https://www.example.com. Required unless auth is command.",
+        ),
       auth: BotSecretAuth,
     })
     .superRefine((destination, ctx) => {
@@ -218,6 +203,15 @@ export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: 
         }
         const nameIssue = commandVariableNameIssue(destination.name);
         if (nameIssue) ctx.addIssue({ code: "custom", path: ["name"], message: nameIssue });
+        return;
+      }
+      if (destination.origin === "") {
+        // Say it is missing: "Expected an HTTPS origin" reads as a bad value, and models resend it.
+        ctx.addIssue({
+          code: "custom",
+          path: ["origin"],
+          message: BOT_SECRET_ORIGIN_MISSING_MESSAGE,
+        });
         return;
       }
       const origin = originSchema.safeParse(destination.origin);
@@ -244,27 +238,302 @@ export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: 
 export const BotSecretDestination = botSecretDestinationSchema();
 export type BotSecretDestination = z.infer<typeof BotSecretDestination>;
 
-export const LoginSecretValue = z.object({
+export const BOT_SECRET_VALUE_MAX_LENGTH = 16_384;
+
+export const LOGIN_FIELD_LIMIT = 8;
+export const LoginFieldLabel = z.string().trim().min(1).max(64);
+/** What a login asks for when no field labels are given, and what a saved username/password pair reads as. */
+export const DEFAULT_LOGIN_FIELD_LABELS = ["Username", "Password"] as const;
+
+/**
+ * One value of a website login. A hidden value is typed only into a password field; a visible
+ * one into any text field on the login's site. Only the person chooses which.
+ */
+export const LoginFieldInput = z.object({
+  label: LoginFieldLabel,
+  value: z.string().max(4096),
+  hidden: z.boolean(),
+});
+export type LoginFieldInput = z.infer<typeof LoginFieldInput>;
+export const LoginField = LoginFieldInput.transform((field) =>
+  field.hidden ? field : { ...field, value: field.value.trim() },
+).refine((field) => field.value.length > 0, "Enter a value");
+export type LoginField = z.infer<typeof LoginField>;
+
+export function sameLoginFieldLabel(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+function uniqueLabels(labels: readonly string[]): boolean {
+  return new Set(labels.map((label) => label.trim().toLowerCase())).size === labels.length;
+}
+
+export const LoginFieldLabels = z
+  .array(LoginFieldLabel)
+  .min(1)
+  .max(LOGIN_FIELD_LIMIT)
+  .refine(uniqueLabels, "Give each field a different label");
+
+export const LoginSecretValue = z
+  .object({ fields: z.array(LoginField).min(1).max(LOGIN_FIELD_LIMIT) })
+  .refine(
+    (login) => uniqueLabels(login.fields.map((field) => field.label)),
+    "Give each field a different label",
+  )
+  .refine(
+    (login) => JSON.stringify(login).length <= BOT_SECRET_VALUE_MAX_LENGTH,
+    "This login is too long",
+  );
+export type LoginSecretValue = z.infer<typeof LoginSecretValue>;
+
+// Logins saved before fields existed. Never written again, so a release that predates fields
+// fails to parse a new value instead of misreading it.
+const LegacyLoginSecretValue = z.object({
   username: z.string().min(1).max(512),
   password: z.string().min(1).max(4096),
 });
-export type LoginSecretValue = z.infer<typeof LoginSecretValue>;
 
-export function encodeLoginSecret(value: LoginSecretValue): string {
+export function encodeLoginSecret(value: z.input<typeof LoginSecretValue>): string {
   return JSON.stringify(LoginSecretValue.parse(value));
 }
 
 export function decodeLoginSecret(plaintext: string): LoginSecretValue {
-  return LoginSecretValue.parse(JSON.parse(plaintext));
+  const parsed: unknown = JSON.parse(plaintext);
+  const legacy = LegacyLoginSecretValue.safeParse(parsed);
+  if (!legacy.success) return LoginSecretValue.parse(parsed);
+  const [username, password] = DEFAULT_LOGIN_FIELD_LABELS;
+  return {
+    fields: [
+      { label: username, value: legacy.data.username, hidden: false },
+      { label: password, value: legacy.data.password, hidden: true },
+    ],
+  };
 }
+
+// A field starts visible only when every word of its label is one of these and at least one is
+// an identifier. Any other word, a misspelling or a look-alike letter included, keeps it hidden.
+// English and Hebrew.
+const IDENTIFIER_WORDS = new Set([
+  "id",
+  "user",
+  "username",
+  "login",
+  "email",
+  "mail",
+  "phone",
+  "mobile",
+  "cell",
+  "tel",
+  "telephone",
+  "account",
+  "member",
+  "customer",
+  "זהות",
+  "תז",
+  "טלפון",
+  "נייד",
+  "פלאפון",
+  "סלולרי",
+  "מייל",
+  "אימייל",
+  "דואל",
+  "משתמש",
+  "חשבון",
+  "לקוח",
+  "חבר",
+]);
+const FILLER_WORDS = new Set([
+  "number",
+  "no",
+  "num",
+  "name",
+  "address",
+  "or",
+  "and",
+  "of",
+  "your",
+  "the",
+  "last",
+  "first",
+  "digit",
+  "digits",
+  "national",
+  "tax",
+  "employee",
+  "e",
+  "תעודת",
+  "מספר",
+  "שם",
+  "כתובת",
+  "או",
+  "של",
+  "ו",
+  "אחרונות",
+  "ספרות",
+  "לאומי",
+  "עובד",
+  "מס",
+]);
+
+function labelWords(label: string): string[] {
+  return (
+    label
+      .normalize("NFKC")
+      .normalize("NFD")
+      .replace(/[\p{M}\p{Cf}]/gu, "")
+      .toLowerCase()
+      // Spaces and punctuation separate words; any other symbol or emoji is a word of its own, so a
+      // label with one is not made only of known words.
+      .match(/[\p{L}\p{N}.'"׳״]+|[^\p{L}\p{N}\p{Z}\s\p{P}№]/gu)
+      ?.map((word) => word.replace(/[.'"׳״]/g, ""))
+      .filter(Boolean) ?? []
+  );
+}
+
+function knownWord(word: string, known: ReadonlySet<string>): boolean {
+  // Hebrew attaches "the" to a word: הטלפון.
+  return known.has(word) || (word.startsWith("ה") && known.has(word.slice(1)));
+}
+
+/** Whether a label is made only of identifier and plain filler words, such as "Phone number". */
+export function isIdentifierLabel(label: string): boolean {
+  const words = labelWords(label);
+  return (
+    words.some((word) => knownWord(word, IDENTIFIER_WORDS)) &&
+    words.every(
+      (word) =>
+        /^\p{N}+$/u.test(word) ||
+        knownWord(word, IDENTIFIER_WORDS) ||
+        knownWord(word, FILLER_WORDS),
+    )
+  );
+}
+
+/**
+ * The empty fields a login card starts with. The default Username and Password card starts as
+ * logins always have, Username visible. Fields the bot names start hidden, except those whose
+ * label is made only of identifier words (ID number, phone, email), which a sign-in without a
+ * password field needs typed into a text field. The system decides this from the label alone; the bot
+ * can't preset a field, and the person can switch any of them before saving.
+ */
+export function loginCardFields(requested: readonly string[] | undefined): LoginFieldInput[] {
+  if (!requested) {
+    return DEFAULT_LOGIN_FIELD_LABELS.map((label, index) => ({
+      label,
+      value: "",
+      hidden: index > 0,
+    }));
+  }
+  return requested.map((label) => ({ label, value: "", hidden: !isIdentifierLabel(label) }));
+}
+
+/**
+ * The login a card's answer saves, or undefined unless it answers exactly the requested fields,
+ * in order. An app that predates fields answers a Username and Password card with `username`
+ * and the password as `answer`.
+ */
+export function loginAnswerValue(
+  requested: readonly string[] | undefined,
+  input: { answer: string; username?: string; fields?: readonly LoginFieldInput[] },
+): LoginSecretValue | undefined {
+  const labels = requested ?? DEFAULT_LOGIN_FIELD_LABELS;
+  const [usernameLabel, passwordLabel] = DEFAULT_LOGIN_FIELD_LABELS;
+  const legacy =
+    !input.fields && input.username !== undefined
+      ? [
+          { label: usernameLabel, value: input.username, hidden: false },
+          { label: passwordLabel, value: input.answer, hidden: true },
+        ]
+      : undefined;
+  const fields = input.fields ?? legacy;
+  if (
+    !fields ||
+    (input.fields && (input.answer !== "" || input.username !== undefined)) ||
+    fields.length !== labels.length ||
+    fields.some((field, index) => field.label.trim() !== labels[index])
+  ) {
+    return undefined;
+  }
+  return LoginSecretValue.safeParse({ fields }).data;
+}
+
+export const GENERATED_SECRET_SYMBOLS = "!@#$%^&*-_=+?";
+
+/** Character rules for a password or other value the backend generates and saves for a bot. */
+export const GeneratedSecretRules = z
+  .object({
+    length: z.number().int().min(8).max(128).default(20),
+    lowercase: z.boolean().default(true),
+    uppercase: z.boolean().default(true),
+    digits: z.boolean().default(true),
+    symbols: z.boolean().default(true),
+    // Printable ASCII punctuation only, for sites and tools that accept just a few symbols.
+    allowedSymbols: z
+      .string()
+      .regex(/^[!-/:-@[-`{-~]{1,32}$/, "Use only punctuation characters")
+      .optional(),
+  })
+  .refine(
+    (rules) => rules.lowercase || rules.uppercase || rules.digits || rules.symbols,
+    "Allow at least one kind of character",
+  );
+export type GeneratedSecretRules = z.infer<typeof GeneratedSecretRules>;
+
+/** A login is saved for one site with its username; a command variable reaches shell commands. */
+export const GenerateSecretInput = z
+  .object({
+    name: BotSecretName,
+    type: z.enum(["login", "command"]),
+    origin: z.string().min(1).max(2048).optional(),
+    username: LegacyLoginSecretValue.shape.username.optional(),
+    // A login's password also saved as the command variable `<name>-password`, for a CLI.
+    command: z.boolean().optional(),
+    rules: GeneratedSecretRules.optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.type === "command") {
+      if (input.command !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["command"],
+          message: "Only a login can also be saved as a command variable",
+        });
+      }
+      if (input.origin !== undefined || input.username !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["type"],
+          message: "A command variable has no site or username",
+        });
+      }
+      return;
+    }
+    if (input.origin === undefined) {
+      ctx.addIssue({ code: "custom", path: ["origin"], message: "A login needs its site" });
+    }
+    if (input.username === undefined) {
+      ctx.addIssue({ code: "custom", path: ["username"], message: "A login needs a username" });
+    }
+    if (input.command && !BotSecretName.safeParse(loginCommandName(input.name)).success) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["name"],
+        message: "Use a name of at most 55 characters to also save a command variable",
+      });
+    }
+  });
+
+/** The command variable a generated login's password is also saved as. */
+export function loginCommandName(loginName: string): string {
+  return `${loginName}-password`;
+}
+export type GenerateSecretInput = z.infer<typeof GenerateSecretInput>;
 
 /** Written atomically with the protected value, distinct from action approval. */
 export function botSecretSubmissionSchema(options?: { allowPrivateHttpOrigin?: boolean }) {
   return z.object({ credentialSaved: botSecretDestinationSchema(options) });
 }
 export const BotSecretSubmission = botSecretSubmissionSchema();
-
-export const BOT_SECRET_VALUE_MAX_LENGTH = 16_384;
 
 /**
  * Owner-facing destination input. Structural only: the origin rules depend on the server's
@@ -289,6 +558,24 @@ export const BotSecretPutInput = z.object({
   value: z.string().min(1).max(BOT_SECRET_VALUE_MAX_LENGTH),
 });
 export type BotSecretPutInput = z.infer<typeof BotSecretPutInput>;
+
+/** A credential the owner saves in a vault: the account's or, with scope "space", the Space's. */
+export const VaultPutInput = settingsScopeInput.extend({
+  destination: BotSecretDestinationInput,
+  value: BotSecretPutInput.shape.value,
+});
+export type VaultPutInput = z.infer<typeof VaultPutInput>;
+
+export const VaultRevealInput = settingsScopeInput.extend({ name: StoredBotSecretName });
+
+/** A saved value shown to its owner after they confirm it's them: a login's fields, or the value. */
+export const VaultRevealed = z.union([
+  z.object({
+    fields: z.array(z.object({ label: z.string(), value: z.string(), hidden: z.boolean() })),
+  }),
+  z.object({ value: z.string() }),
+]);
+export type VaultRevealed = z.infer<typeof VaultRevealed>;
 
 /**
  * What the owner can see about a saved credential. It never carries the protected value.

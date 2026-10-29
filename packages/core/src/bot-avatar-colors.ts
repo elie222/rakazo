@@ -133,7 +133,6 @@ export function resolvePersonaColorDef(
     if (foundById) return foundById;
     const foundByHex = BOT_COLOR_LIST.find((c) => c.hex.toLowerCase() === clean);
     if (foundByHex) return foundByHex;
-    // If custom hex, synthesize gradient
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(explicitColor)) {
       const isBright = isColorBright(explicitColor);
       return {

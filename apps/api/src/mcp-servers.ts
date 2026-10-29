@@ -10,7 +10,9 @@ import {
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
 import { mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
+import { itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { assertNameFreeWhereAvailable, userAddedAvailability } from "./availability.js";
 import { dismissMcpServerApprovals } from "./mcp-approval.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import type { RouterDeps } from "./router.js";
@@ -31,6 +33,9 @@ export function mcpServerDto(
     files: unknown;
     headers: unknown;
     secretId: string | null;
+    installId?: string | null;
+    allSpaces?: boolean;
+    availableIn?: Array<{ spaceId: string }>;
     enabled: boolean;
     revision: number;
     healthStatus: string;
@@ -62,12 +67,14 @@ export function mcpServerDto(
     envKeys,
     fileKeys: keysOf(row.files),
     headerKeys,
+    installId: row.installId ?? null,
     hasSecret: row.secretId !== null,
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
     revision: row.revision,
     health: mcpServerHealthDto(row),
+    availability: spaceAvailability({ ...row, allSpaces: row.allSpaces ?? false }),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -191,7 +198,7 @@ export function createMcpServers(
     if (oauth.status === "connected") return false;
     const secret = server.secretId
       ? await deps.prisma.secret.findFirst({
-          where: { id: server.secretId, spaceId: actor.spaceId, userId: actor.userId },
+          where: { id: server.secretId, ...itemSecretIn(actor) },
         })
       : null;
     const material: McpSecretMaterial = secret
@@ -222,9 +229,7 @@ export function createMcpServers(
     }
   };
   /**
-   * After a server is created, reconfigured or its OAuth connected: show `installing` (stdio
-   * may have to download a package) and probe in the background so the settings page turns
-   * ok/error without a click. Returns the row with the health the caller should display.
+   * Shows `installing` (stdio may have to download a package) and probes in the background.
    * Never throws; a probe problem must not fail the save.
    */
   const beginMcpProbe = async (
@@ -259,13 +264,7 @@ export function createMcpServers(
     const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
     await tx.mcpServer.delete({ where: { id: server.id } });
     if (server.secretId) {
-      await tx.secret.deleteMany({
-        where: {
-          id: server.secretId,
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-        },
-      });
+      await tx.secret.deleteMany({ where: { id: server.secretId, ...itemSecretIn(actor) } });
     }
     return painted;
   };
@@ -286,13 +285,23 @@ export function createMcpServers(
     actor: Actor,
     input: McpServerConfigInput,
     stored: Awaited<ReturnType<typeof prepareMcpServer>>,
+    // What the user adds reaches all their spaces; an import stays in its space.
+    options: { everywhere?: boolean } = {},
   ) => {
+    if (options.everywhere)
+      await assertNameFreeWhereAvailable(
+        tx,
+        "mcpServer",
+        actor,
+        input.slug,
+        userAddedAvailability(actor),
+      );
     if (stored) {
       await tx.secret.create({
         data: {
           id: stored.id,
           userId: actor.userId,
-          spaceId: actor.spaceId,
+          spaceId: options.everywhere ? null : actor.spaceId,
           kind: "mcp",
           ciphertext: stored.ciphertext,
         },
@@ -302,6 +311,7 @@ export function createMcpServers(
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
+        allSpaces: options.everywhere ?? false,
         slug: input.slug,
         name: input.name,
         description: input.description,

@@ -79,5 +79,24 @@ test("unavailable computers explain setup and open computer settings", async ({
     "aria-current",
     "page",
   );
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.documentElement.dataset.copiedSandboxEnv = text;
+        },
+      },
+    });
+  });
+  await settings.getByRole("button", { name: "Copy .env example" }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-copied-sandbox-env",
+    /# SANDBOX_PROVIDER=novita/,
+  );
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-copied-sandbox-env",
+    /pnpm sandbox:novita-template/,
+  );
   await captureScreenshot(page, testInfo, "computers-unavailable-settings");
 });

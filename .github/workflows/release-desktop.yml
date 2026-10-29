@@ -23,7 +23,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       sha: ${{ steps.release.outputs.sha }}
       platforms: ${{ steps.platforms.outputs.include }}
-      windows: ${{ steps.platforms.outputs.windows }}
+      windows_signed: ${{ steps.platforms.outputs.windows_signed }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -88,23 +88,25 @@ jobs:
       - name: Choose release platforms
         id: platforms
         env:
-          # Windows builds only when an Authenticode certificate is configured; macOS and Linux always build.
-          WINDOWS_SIGNING: ${{ secrets.DESKTOP_WIN_CSC_LINK != '' }}
+          # Windows ships unsigned until Azure Artifact Signing is configured.
+          WINDOWS_SIGNING: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'
-          if [[ "$WINDOWS_SIGNING" == "true" ]]; then
-            include="$(jq -c '. + [{"os":"windows-2022","artifact":"windows"}]' <<<"$include")"
-          fi
+          include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'
           echo "include=$include" >> "$GITHUB_OUTPUT"
-          echo "windows=$WINDOWS_SIGNING" >> "$GITHUB_OUTPUT"
+          echo "windows_signed=$WINDOWS_SIGNING" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build signed ${{ matrix.artifact }} artifacts
+    name: Build ${{ matrix.artifact }} artifacts
     needs: validate
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # Azure trusts GitHub OIDC tokens only from this environment, so Windows signing needs no stored secret.
+    environment: desktop-release
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -274,26 +276,55 @@ jobs:
           ' "$PWD/$app"
 
       - name: Require Windows signing credentials
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
         shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
+          SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.DESKTOP_WIN_SIGNING_PROFILE }}
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           set -euo pipefail
-          test -n "$WIN_CSC_LINK"
-          test -n "$WIN_CSC_KEY_PASSWORD"
+          test -n "$AZURE_TENANT_ID"
+          test -n "$SIGNING_ENDPOINT"
+          test -n "$SIGNING_ACCOUNT"
+          test -n "$SIGNING_PROFILE"
+          test -n "$SIGNING_PUBLISHER"
+      - name: Log in to Azure for Windows signing
+        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.DESKTOP_WIN_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.DESKTOP_WIN_AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
       - name: Package signed x64 Windows app
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'
+        shell: bash
         env:
-          WIN_CSC_LINK: ${{ secrets.DESKTOP_WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_WIN_CSC_KEY_PASSWORD }}
+          SIGNING_ENDPOINT: ${{ vars.DESKTOP_WIN_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.DESKTOP_WIN_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.DESKTOP_WIN_SIGNING_PROFILE }}
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @rakazo/desktop exec electron-builder \
+            --win --x64 --publish never -c.forceCodeSigning=true \
+            "-c.win.azureSignOptions.endpoint=$SIGNING_ENDPOINT" \
+            "-c.win.azureSignOptions.codeSigningAccountName=$SIGNING_ACCOUNT" \
+            "-c.win.azureSignOptions.certificateProfileName=$SIGNING_PROFILE" \
+            "-c.win.azureSignOptions.publisherName=$SIGNING_PUBLISHER"
+      - name: Package unsigned x64 Windows app
+        if: runner.os == 'Windows' && needs.validate.outputs.windows_signed != 'true'
         run: >-
           pnpm --filter @rakazo/desktop exec electron-builder
-          --win --x64 --publish never -c.forceCodeSigning=true
+          --win --x64 --publish never
       - name: Verify Windows Authenticode signature and publisher-bound update feed
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          SIGNED: ${{ needs.validate.outputs.windows_signed }}
+          SIGNING_PUBLISHER: ${{ vars.DESKTOP_WIN_PUBLISHER }}
         run: |
           $ErrorActionPreference = "Stop"
           $executables = @(
@@ -301,22 +332,31 @@ jobs:
             Get-ChildItem "apps/desktop/out/win-unpacked/*.exe"
           )
           if ($executables.Count -lt 2) { throw "Windows installer or application was not created." }
-          foreach ($executable in $executables) {
-            $signature = Get-AuthenticodeSignature $executable.FullName
-            if ($signature.Status -ne "Valid") {
-              throw "$($executable.Name) signature is $($signature.Status)."
-            }
-          }
           $config = "apps/desktop/out/win-unpacked/resources/app-update.yml"
-          if (-not (Select-String -Path $config -Pattern '^publisherName:' -Quiet)) {
-            throw "Windows update config is not bound to the signing publisher."
-          }
           $feed = Get-Content -Raw $config
           foreach ($expected in @("provider: github", "owner: elie222", "repo: rakazo")) {
             if ($feed -notmatch "(?m)^$([regex]::Escape($expected))\r?$") {
               throw "Windows update config missing '$expected'."
             }
           }
+          if ($env:SIGNED -ne "true") {
+            # Unsigned builds must not name a publisher, or they would reject the first signed update.
+            if ($feed -match "(?m)^publisherName:") { throw "Unsigned Windows update config names a publisher." }
+            exit 0
+          }
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "$($executable.Name) signature is $($signature.Status)."
+            }
+            # Artifact Signing certificates last days; only a timestamp keeps the signature valid after that.
+            if (-not $signature.TimeStamperCertificate) { throw "$($executable.Name) is not timestamped." }
+            if ($signature.SignerCertificate.GetNameInfo("SimpleName", $false) -ne $env:SIGNING_PUBLISHER) {
+              throw "$($executable.Name) is not signed by the configured publisher."
+            }
+          }
+          pnpm exec tsx apps/desktop/scripts/verify-update-publisher.ts $config $env:SIGNING_PUBLISHER
+          if ($LASTEXITCODE -ne 0) { throw "Windows update config is not bound to the signing publisher." }
 
       - name: Package x64 Linux AppImage
         if: runner.os == 'Linux'
@@ -383,7 +423,6 @@ jobs:
           RELEASE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-          WINDOWS_BUILT: ${{ needs.validate.outputs.windows }}
         shell: bash
         run: |
           set -euo pipefail
@@ -398,15 +437,13 @@ jobs:
           compgen -G 'release-artifacts/*.dmg' >/dev/null
           compgen -G 'release-artifacts/*.zip' >/dev/null
           compgen -G 'release-artifacts/*.AppImage' >/dev/null
+          test -f release-artifacts/latest.yml
+          compgen -G 'release-artifacts/*.exe' >/dev/null
           feeds=(
             release-artifacts/latest-mac.yml
             release-artifacts/latest-linux.yml
+            release-artifacts/latest.yml
           )
-          if [[ "$WINDOWS_BUILT" == "true" ]]; then
-            test -f release-artifacts/latest.yml
-            compgen -G 'release-artifacts/*.exe' >/dev/null
-            feeds+=(release-artifacts/latest.yml)
-          fi
           for feed in "${feeds[@]}"; do
             grep -Fqx "version: $RELEASE_VERSION" "$feed"
           done

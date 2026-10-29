@@ -10,10 +10,12 @@ import {
   decisionModelCatalog,
   deploymentModelRole,
   findConnectedModelCredential,
+  hiddenCatalogModel,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
+  offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
   savedCatalogSelections,
@@ -128,8 +130,6 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceRoutine,
-    removeBot,
-    removeMcpServerInTransaction,
   });
   // The scripted fixture only exists to drive the scripted runtime; a real runtime
   // cannot execute it, so it stays out of the user-facing catalog otherwise.
@@ -161,10 +161,23 @@ export function createRouterContext(deps: RouterDeps) {
       ),
     ]);
     const codexMerged = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
-    const selected = providerLive.size
+    let selected = providerLive.size
       ? await savedCatalogSelections(deps.prisma, actor.userId)
-      : new Set<string>();
-    return applyProviderLiveCatalog(codexMerged, auth, providerLive, selected).map((entry) =>
+      : undefined;
+    const merged = applyProviderLiveCatalog(codexMerged, auth, providerLive, selected);
+    // A connected provider's saved choice stays listed after new users stop being offered it.
+    if (
+      !selected &&
+      merged.some(
+        (entry) =>
+          (auth.byProvider[entry.provider] ||
+            auth.byModel[entry.provider] ||
+            entry.provider === auth.managedProvider) &&
+          hiddenCatalogModel(entry),
+      )
+    )
+      selected = await savedCatalogSelections(deps.prisma, actor.userId);
+    return offeredCatalog(merged, selected).map((entry) =>
       entry.provider === auth.managedProvider
         ? {
             ...entry,
