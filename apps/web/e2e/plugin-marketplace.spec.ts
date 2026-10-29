@@ -81,12 +81,12 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByRole("img", { name: "Connected", exact: true })).toHaveCount(0);
   await page.clock.fastForward(1);
   await expect(dialog.getByRole("alert")).toContainText("Sign-in cancelled");
-  await expect(dialog.getByRole("button", { name: "Reconnect", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
   await page.clock.resume();
 
   cancel = false;
   const popupPromise = page.waitForEvent("popup", { timeout: 30_000 });
-  await dialog.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
   const popup = await popupPromise;
   await expect(dialog.getByRole("img", { name: "Connected", exact: true })).toBeVisible();
   await expect.poll(() => popup.isClosed()).toBe(true);
