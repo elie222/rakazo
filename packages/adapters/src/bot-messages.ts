@@ -366,6 +366,16 @@ export async function returnBotMessageOutcome(
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;
   }
+  // messageBot reaches only active bots of this space and user, so an archived or deleted
+  // requester can never take the outcome. Handled: nothing is left to deliver.
+  const requester = await deps.prisma.bot.findFirst({
+    where: { id: source.fromBotId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+    select: { id: true },
+  });
+  if (!requester) {
+    await markBotOutcomeReturned(deps.prisma, run.id);
+    return true;
+  }
   const outcome = await messageBot(
     deps,
     run,

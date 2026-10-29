@@ -25,6 +25,7 @@ function deps(
     senderRunning?: boolean;
     alreadyDelivered?: unknown;
     targetArchived?: boolean;
+    requesterArchived?: boolean;
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
@@ -63,6 +64,7 @@ function deps(
   let transactionAttempts = 0;
   const prisma = {
     bot: {
+      findFirst: vi.fn().mockResolvedValue(options.requesterArchived ? null : { id: "bot-target" }),
       findMany: vi
         .fn()
         .mockResolvedValue(
@@ -741,5 +743,44 @@ describe("automatic outcome return", () => {
     expect(returned).toBe(true);
     expect(harness.enqueue).not.toHaveBeenCalled();
     expect(harness.deps.prisma.run.updateMany).toHaveBeenCalled();
+  });
+
+  it("counts the outcome as returned once the requesting bot is archived", async () => {
+    const harness = deps({
+      requesterArchived: true,
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "research this",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "The answer is 42.",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.deps.prisma.bot.findFirst).toHaveBeenCalledWith({
+      where: { id: "bot-target", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      select: { id: true },
+    });
+    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: run.id,
+        status: { in: ["completed", "failed", "cancelled"] },
+        botOutcomeReturnedAt: null,
+      },
+      data: { botOutcomeReturnedAt: expect.any(Date) },
+    });
   });
 });
