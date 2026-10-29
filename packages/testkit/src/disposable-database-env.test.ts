@@ -4,9 +4,13 @@ import { disposableDatabaseEnv } from "./cli/postgres.js";
 const developerUrl = "postgres://owner:fixture@127.0.0.1:5433/developer_fixture";
 const disposableUrl = "postgres://test:fixture@127.0.0.1:55432/disposable_fixture";
 
+// The Prisma config loads `.env` files into the process; drop whatever they added.
+const keysBefore = new Set(Object.keys(process.env));
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
+  for (const key of Object.keys(process.env)) if (!keysBefore.has(key)) delete process.env[key];
 });
 
 describe("disposable database env", () => {
