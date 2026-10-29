@@ -946,9 +946,13 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     );
     const created = createWindow(targetUrl, target.partition);
     win = created.win;
-    // On launch the web app's error screen stays up so its Refresh can recover;
-    // switching to a server that cannot render keeps the previous one instead.
-    if ((await created.loaded) === "failed" && switching) {
+    // On launch the window stays up: the web app shows its own loading, reconnecting or error
+    // screen and recovers from it. Switching to a server that is not ready keeps the previous one.
+    const state = await created.loaded;
+    if (switching && state === "pending") {
+      throw new ServerUnavailable("The server page did not become ready.");
+    }
+    if (switching && state === "failed") {
       throw new Error("The server page did not become ready.");
     }
     currentTargetUrl = targetUrl;

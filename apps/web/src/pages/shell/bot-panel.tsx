@@ -803,7 +803,10 @@ export function BotSettings({
               <button
                 type="button"
                 className="flex min-h-12 w-full items-center justify-between text-sm"
-                onClick={() => void onExport()}
+                onClick={() => {
+                  setError(null);
+                  onExport().catch((err: unknown) => setError(errorText(err)));
+                }}
               >
                 <Trans>Export</Trans>
                 <Download className="size-4 text-muted-foreground" />

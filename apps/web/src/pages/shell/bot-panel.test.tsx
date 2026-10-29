@@ -160,6 +160,7 @@ let queryClient: QueryClient;
 const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
+const onExport = vi.fn(async () => undefined);
 
 async function render(
   description = "Billing",
@@ -176,7 +177,7 @@ async function render(
           bot={bot(description, overrides)}
           memoryProviderConfigured={memoryProviderConfigured}
           onSave={onSave}
-          onExport={async () => undefined}
+          onExport={onExport}
           onClear={() => undefined}
         />
       </QueryClientProvider>,
@@ -230,6 +231,7 @@ async function clickSave() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   onSave.mockReset().mockResolvedValue(undefined);
+  onExport.mockReset().mockResolvedValue(undefined);
   vi.mocked(rpc.bots.update).mockReset();
   vi.mocked(rpc.bots.get).mockReset();
   container = document.createElement("div");
@@ -427,6 +429,20 @@ describe("BotSettings bot management saves", () => {
       toggle.click();
     });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("shows a failed export instead of leaving it unhandled", async () => {
+    await render();
+    await expandAdvanced();
+    onExport.mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }));
+    const exportButton = [...container.querySelectorAll("button")].find(
+      (node) => node.textContent === "Export",
+    );
+    if (!exportButton) throw new Error("Missing export");
+    await act(async () => {
+      exportButton.click();
+    });
+    expect(container.textContent).toContain("Could not reach the server");
   });
 
   it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
