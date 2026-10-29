@@ -377,6 +377,44 @@ class PageBrowserTest(unittest.TestCase):
                 helper.act(Mock(), "session", [{"kind": "fill", "ref": "first"}])
             ensure.assert_not_called()
 
+    def test_contenteditable_fill_inserts_the_whole_text_once(self):
+        for text in ["hello", "", "שלום 😀\nparagraph " * 1000]:
+            with self.subTest(length=len(text)):
+                client = Mock()
+                with patch.object(helper, "ensure_helpers"), \
+                        patch.object(helper, "snapshot", return_value={"ok": True}), \
+                        patch.object(helper, "wait_for_action", return_value=True), \
+                        patch.object(helper, "eval_json", side_effect=[True, {"insertText": True}]):
+                    result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": text}])
+                self.assertEqual(result["completed"], 1)
+                client.call.assert_any_call("Input.insertText", {"text": text}, session_id="session")
+                self.assertEqual(sum(call.args[0] == "Input.insertText" for call in client.call.call_args_list), 1)
+
+    def test_plain_fill_does_not_insert_into_the_focused_element(self):
+        client = Mock()
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value={"ok": True}), \
+                patch.object(helper, "wait_for_action", return_value=True), \
+                patch.object(helper, "eval_json", side_effect=[True, {}]):
+            result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": "hello"}])
+        self.assertEqual(result["completed"], 1)
+        self.assertFalse(any(call.args[0] == "Input.insertText" for call in client.call.call_args_list))
+
+    def test_contenteditable_fill_is_uncertain_if_insertion_response_is_lost(self):
+        client = Mock()
+        def call(method, *args, **kwargs):
+            if method == "Input.insertText":
+                raise TimeoutError("lost response")
+            return {}
+        client.call.side_effect = call
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value={}), \
+                patch.object(helper, "eval_json", side_effect=[True, {"insertText": True}]):
+            result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": "hello"}])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["completed"], 0)
+        self.assertTrue(result["uncertain"])
+
     def test_binds_saved_login_fill_to_its_origin_in_the_same_evaluation(self):
         with patch.object(helper, "ensure_helpers"), patch.object(helper, "snapshot", return_value={"ok": True}), \
                 patch.object(helper, "eval_json") as evaluate:

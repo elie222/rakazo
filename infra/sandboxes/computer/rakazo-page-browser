@@ -1149,8 +1149,14 @@ EVAL_HELPERS = r"""
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (el.isContentEditable) {
-        el.textContent = String(value);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        // Let Chromium deliver beforeinput and native editing, including editor cancellation.
+        // Select the existing content so one Input.insertText replaces it, even for long text.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return { insertText: true };
       } else {
         throw new Error(`Element is not fillable: ${ref}`);
       }
@@ -1926,6 +1932,8 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             data = eval_json(client, session_id, f"window.__rakazoPageBrowser.fill({arguments})")
             if not isinstance(data, dict):
                 raise RuntimeError("Action response unavailable")
+            if data.get("insertText"):
+                client.call("Input.insertText", {"text": step["text"]}, session_id=session_id)
             completed += 1
             uncertain = False
         ended = time.monotonic()

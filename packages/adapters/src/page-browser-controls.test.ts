@@ -98,6 +98,28 @@ const refOf = (snap: Snapshot, name: string) => {
 const links = (count: number, parent: string) =>
   `<${parent}>${Array.from({ length: count }, (_, i) => `<a href="#p${i}">Page ${i}</a>`).join("")}</${parent}>`;
 
+describe("live page helper contenteditable fill", () => {
+  it("selects all existing content for one native insertion without changing the DOM first", () => {
+    const { browser, win } = installPageHelper(
+      '<div contenteditable="true" role="textbox" aria-label="Editor"><b>Old</b> content</div>',
+    );
+    const editor = win.document.querySelector("div")!;
+    // jsdom does not implement isContentEditable.
+    Object.defineProperty(editor, "isContentEditable", { value: true });
+    const events: string[] = [];
+    for (const name of ["beforeinput", "input"]) {
+      editor.addEventListener(name, () => events.push(name));
+    }
+    const ref = refOf(browser.snapshot(), "Editor");
+    expect(browser.fill(ref, "replacement")).toMatchObject({ insertText: true });
+    expect(win.document.activeElement).toBe(editor);
+    expect(win.getSelection()?.toString()).toBe("Old content");
+    expect(editor.innerHTML).toBe("<b>Old</b> content");
+    expect(events).toEqual([]);
+    win.close();
+  });
+});
+
 describe("live page helper refs", () => {
   it("hands out short refs that no later snapshot reuses", () => {
     const { browser } = installPageHelper(`<button>One</button><button>Two</button>`);
