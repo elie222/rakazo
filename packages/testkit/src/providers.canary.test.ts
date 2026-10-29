@@ -139,8 +139,8 @@ describeBoxd("live boxd canary", () => {
       await run(["bash", "-c", "nohup sleep 600 >/dev/null 2>&1 & echo $! > canary.pid"]);
       expect((await sandbox.observe(computer, ctx)).image.byteLength).toBeGreaterThan(0);
 
-      await sandbox.stop(computer, ctx);
-      expect(await sandbox.isStopped?.(computer, ctx)).toBe(true);
+      await sandbox.stop(computer);
+      expect(await sandbox.isStopped(computer)).toBe(true);
       computer = await sandbox.provision(
         { ...request, providerRef: computer.providerRef, providerKind: computer.kind },
         ctx,
@@ -369,7 +369,7 @@ describePiApp("live OpenRouter product journey", () => {
   }, 120_000);
 });
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type Snap = {
   messages: Array<{ role: string; blocks: unknown[] }>;
   run: { status: string } | null;

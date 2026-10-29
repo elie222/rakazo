@@ -305,7 +305,7 @@ describe("development backup failures", () => {
     const output = path.join(f.checkout, "backups/example");
     expect(readFileSync(path.join(output, "rakazo.sql"), "utf8")).toContain("CREATE TABLE");
     expect(contents(path.join(output, "homes.tgz"))).toContain("data/home.txt");
-    expect(f.commands()[0].includes("--env-file")).toBe(hasEnv);
+    expect(f.commands()[0]!.includes("--env-file")).toBe(hasEnv);
     if (hasEnv) expect(f.commands()[0]).toContain(path.join(f.checkout, ".env"));
   });
 
@@ -781,14 +781,14 @@ describe("production backup deployment and archive behavior", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("file changed as we read it");
     expect(result.stdout).toContain("Verified Rakazo backup");
-    const snapshot = result.stdout.trim().split("written to ")[1];
+    const snapshot = result.stdout.trim().split("written to ")[1]!;
     expect(contents(path.join(snapshot, "appdata.tgz"))).toContain("home.txt");
     expect(existsSync(path.join(snapshot, "SHA256SUMS"))).toBe(true);
     expect(f.commands().some((args) => args[0] === "inspect")).toBe(true);
     expect(f.commands().some((args) => args.includes("tar"))).toBe(false);
   });
 
-  it.each([{ FAIL_TAR: "2" }, { FAIL_DUMP: "1" }, { FAIL_VERIFY: "1" }])(
+  it.each<Record<string, string>>([{ FAIL_TAR: "2" }, { FAIL_DUMP: "1" }, { FAIL_VERIFY: "1" }])(
     "does not report a verified snapshot after failure: %j",
     (failure) => {
       const f = fixture();
@@ -807,7 +807,7 @@ describe("production backup deployment and archive behavior", () => {
     write(path.join(f.snapshots, "notes/keep.txt"), "not a snapshot");
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_KEEP: "2" });
     expect(result.status, result.stderr).toBe(0);
-    const current = path.basename(result.stdout.trim().split("written to ")[1]);
+    const current = path.basename(result.stdout.trim().split("written to ")[1]!);
     expect(snapshotNames(f.snapshots).sort()).toEqual(
       ["20261017T000000Z", current, "notes"].sort(),
     );
@@ -968,7 +968,7 @@ exec /usr/bin/sync "$@"
     const f = fixture();
     const first = f.run("infra/compose/backup-prod.sh");
     expect(first.status, first.stderr).toBe(0);
-    const snapshot = first.stdout.trim().split("written to ")[1];
+    const snapshot = first.stdout.trim().split("written to ")[1]!;
     const manifest = readFileSync(path.join(snapshot, "SHA256SUMS"), "utf8");
     const date = path.join(f.root, "bin/date");
     write(date, `#!/bin/bash\necho '${path.basename(snapshot)}'\n`);
@@ -1017,7 +1017,7 @@ exec /usr/bin/sync "$@"
     const result = f.run("infra/compose/backup-prod.sh");
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("not encrypted");
-    const snapshot = result.stdout.trim().split("written to ")[1];
+    const snapshot = result.stdout.trim().split("written to ")[1]!;
     expect(readdirSync(snapshot).sort()).toEqual([
       "SHA256SUMS",
       "SOURCE_SIZE_KB",
@@ -1031,7 +1031,7 @@ const recipients = "age1fakeprimary age1fakerecovery";
 const identity = "# public key: age1fakerecovery\nAGE-SECRET-KEY-FAKE\n";
 
 function snapshotOf(result: { stdout: string }) {
-  return result.stdout.split("written to ")[1].split("\n")[0];
+  return result.stdout.split("written to ")[1]!.split("\n")[0]!;
 }
 
 describe("encrypted production backups", { timeout: 20_000 }, () => {
@@ -1145,7 +1145,7 @@ describe("encrypted production backups", { timeout: 20_000 }, () => {
     expect(existsSync(path.join(f.snapshots, ".encrypted"))).toBe(false);
   });
 
-  it.each([{ FAIL_VERIFY: "1" }, { FAIL_TAR: "2" }])(
+  it.each<Record<string, string>>([{ FAIL_VERIFY: "1" }, { FAIL_TAR: "2" }])(
     "verifies the plaintext stream without the private key: %j",
     (failure) => {
       const f = fixture();

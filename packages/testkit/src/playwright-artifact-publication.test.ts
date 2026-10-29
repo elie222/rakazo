@@ -21,11 +21,9 @@ const workflow = readFileSync(
   "utf8",
 );
 const temporaryDirectories: string[] = [];
-const screenshot = PNG.sync.write({
-  width: 1,
-  height: 1,
-  data: Buffer.from([23, 45, 67, 255]),
-});
+const screenshotImage = new PNG({ width: 1, height: 1 });
+screenshotImage.data = Buffer.from([23, 45, 67, 255]);
+const screenshot = PNG.sync.write(screenshotImage);
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {

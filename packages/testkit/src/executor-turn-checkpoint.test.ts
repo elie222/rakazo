@@ -274,7 +274,7 @@ function fixture(
     run.status = "waiting_takeover";
     return { continuationRunId: null };
   });
-  const writes = vi.fn(async () => ({ ok: true }));
+  const writes = vi.fn(async (..._args: unknown[]) => ({ ok: true }));
   const reads = vi.fn(async (_computer: unknown, _path: string) =>
     new TextEncoder().encode("unique-executor-evidence"),
   );

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -15,7 +16,7 @@ const origin = "http://127.0.0.1:5173";
 
 describe.skipIf(!enabled)("history retrieval through executor", () => {
   it("preserves saved constraints, redacts history and pages group outcomes", async () => {
-    let historyDb: ReturnType<typeof asSystem>;
+    let historyDb: PrismaClient;
     const fakeSecrets = ['synthetic"quoted-secret', "synthetic\nnewline-secret", "987654321"];
     const proposalCallId = "constraint-proposal";
     const messageId = `synthetic-history-${randomUUID()}`;
