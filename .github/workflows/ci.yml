@@ -324,7 +324,14 @@ jobs:
               if has("errors") or (.data.app.byId | type) != "object" then
                 error("no usable update data")
               else
-                [.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not) and .gitCommitHash != null)][0].gitCommitHash // ""
+                [.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not))][0] as $update
+                | if $update == null then
+                    ""
+                  elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
+                    error("missing published commit")
+                  else
+                    $update.gitCommitHash
+                  end
               end
             ' <<<"$response"
           )" || published="unknown"
