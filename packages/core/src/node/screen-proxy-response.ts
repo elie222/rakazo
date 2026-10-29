@@ -4,7 +4,10 @@ const SENSITIVE_RESPONSE_HEADERS = new Set(["clear-site-data", "set-cookie", "se
 const SCREEN_SANDBOX = "sandbox allow-scripts allow-pointer-lock";
 
 /** Screen listeners are untrusted even when their capability URL is opened outside an iframe. */
-export function safeScreenProxyResponseHeaders(headers: IncomingHttpHeaders) {
+export function safeScreenProxyResponseHeaders(
+  headers: IncomingHttpHeaders,
+  requestOrigin?: string,
+) {
   const safe: IncomingHttpHeaders = {};
   const policies: string[] = [];
   for (const [key, value] of Object.entries(headers)) {
@@ -19,8 +22,16 @@ export function safeScreenProxyResponseHeaders(headers: IncomingHttpHeaders) {
   // Separate CSP policies intersect. An upstream allow-same-origin cannot relax this sandbox,
   // and existing provider restrictions (including frame-ancestors) remain in force.
   safe["content-security-policy"] = [...policies, SCREEN_SANDBOX];
-  // Module imports from the opaque sandbox origin still need access to noVNC assets.
-  safe["access-control-allow-origin"] = "*";
+  // Module imports from the opaque sandbox origin still need access to noVNC assets. The page
+  // imports them with credentials, so an access proxy's cookie in front of Rakazo comes along;
+  // that needs the exact origin, which for the sandbox is "null".
+  if (requestOrigin === "null") {
+    safe["access-control-allow-origin"] = "null";
+    safe["access-control-allow-credentials"] = "true";
+    safe.vary = "Origin";
+  } else {
+    safe["access-control-allow-origin"] = "*";
+  }
   // A CDN in front of the web service must pass the screen through untouched: injected scripts,
   // minification and script loaders break noVNC's module scripts.
   const cacheControl = safe["cache-control"];

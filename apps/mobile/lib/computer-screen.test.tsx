@@ -216,6 +216,7 @@ vi.mock("../components/computer-mode-picker", () => {
 
 const apiBase = vi.hoisted(() => ({ current: "https://api.example.test" }));
 vi.mock("./api", () => ({ currentApiBase: () => apiBase.current, rpc }));
+vi.mock("./server-headers", () => ({ serverHeadersForUrl: () => ({}) }));
 
 vi.mock("./i18n", () => {
   const t = (text: string, values?: Record<string, string>) =>
