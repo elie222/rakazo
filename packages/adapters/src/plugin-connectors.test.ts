@@ -178,6 +178,7 @@ describe("portable plugin parser", () => {
         content: "---\nname: interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
       },
       { path: "commands/INTERROGATE.md", content: "Review the diff" },
+      { path: "commands/ interrogate.md", content: "Review the diff" },
     ]);
     expect(preview.skills.map((s) => s.name)).toEqual(["example-skill"]);
     expect(preview.skipped).toEqual([]);
