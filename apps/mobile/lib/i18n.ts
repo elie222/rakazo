@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
+import { ES_MESSAGES, PEER_MESSAGE_FORMS as ES_PEER_FORMS } from "./locales/es";
 import { JA_MESSAGES, PEER_MESSAGE_FORMS as JA_PEER_FORMS } from "./locales/ja";
 import { NL_MESSAGES, PEER_MESSAGE_FORMS as NL_PEER_FORMS } from "./locales/nl";
 import { RU_MESSAGES, PEER_MESSAGE_FORMS as RU_PEER_FORMS } from "./locales/ru";
@@ -15,6 +16,7 @@ const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   de: DE_MESSAGES,
   nl: NL_MESSAGES,
   ja: JA_MESSAGES,
+  es: ES_MESSAGES,
 };
 
 let activeLocale: UiLocale = "en";
@@ -60,7 +62,7 @@ export function activateUiLocale(locale: UiLocale): UiLocale {
 
 async function applyDirection(locale: UiLocale): Promise<void> {
   try {
-    // Direction follows the active UI locale only (en / zh-CN / zh-TW / ru / de / nl / ja → LTR), never the
+    // Direction follows the active UI locale only (en / zh-CN / zh-TW / ru / de / nl / ja / es → LTR), never the
     // device language. Applying device RTL here would fight this and reload-loop.
     const { applyMobileUiDirection } = await import("./ui-direction");
     applyMobileUiDirection(htmlLangForLocale(locale));
@@ -156,6 +158,7 @@ export function peerExchangeLabel(
     nl: NL_PEER_FORMS,
     ru: RU_PEER_FORMS,
     "zh-CN": ZH_PEER_FORMS,
+    es: ES_PEER_FORMS,
   };
   // Hermes ships without Intl.PluralRules, so pick the category by hand.
   const category = pluralCategory(activeLocale, count);
