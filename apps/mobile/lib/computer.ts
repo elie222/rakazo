@@ -207,11 +207,13 @@ export async function screenPageStatus(
   url: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  headers: Record<string, string> = {},
 ): Promise<number | null> {
   try {
     const response = await fetchImpl(url, {
       cache: "no-store",
       credentials: "omit",
+      headers,
       redirect: "manual",
       signal,
     });

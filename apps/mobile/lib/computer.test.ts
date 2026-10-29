@@ -306,6 +306,7 @@ describe("screen page status", () => {
     expect(fetchImpl).toHaveBeenCalledWith("https://app.example.test/novnc/x", {
       cache: "no-store",
       credentials: "omit",
+      headers: {},
       redirect: "manual",
     });
     await expect(
