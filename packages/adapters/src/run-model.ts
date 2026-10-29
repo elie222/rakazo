@@ -399,18 +399,19 @@ export function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: 
   };
 }
 
-export async function resolveConnectedRunModel(
+/**
+ * A role row's model on its own connection, or on the deployment's for its funded provider.
+ * The connection is returned with the key so a run can record which one served it.
+ */
+export async function resolveConnectedModelKey(
   deps: ExecutorDeps,
   scope: { userId: string; spaceId: string },
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
   requireStoredSecret = false,
-  /** A fallback's own effort from its role list. */
-  thinkingLevel?: string | null,
-  /** The connection a role row is pinned to. */
   credentialId?: string,
-): Promise<AgentRunRequest["model"]> {
+) {
   const hostedProvider = (await modelCreditBillingEnabled(deps))
     ? resolveDeploymentModel().provider
     : undefined;
@@ -431,11 +432,7 @@ export async function resolveConnectedRunModel(
     modelId,
     { credentialId },
   );
-  if (
-    !credential &&
-    !((await modelCreditBillingEnabled(deps)) && provider === resolveDeploymentModel().provider)
-  )
-    throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
+  if (!credential && provider !== hostedProvider) throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
   const resolved = await resolveModelKey(
     deps,
     scope.userId,
@@ -445,6 +442,30 @@ export async function resolveConnectedRunModel(
     modelId,
     registerSecrets,
     { requireStoredSecret },
+  );
+  return { credential, resolved };
+}
+
+export async function resolveConnectedRunModel(
+  deps: ExecutorDeps,
+  scope: { userId: string; spaceId: string },
+  provider: string,
+  modelId: string,
+  registerSecrets?: (values: string[]) => void,
+  requireStoredSecret = false,
+  /** A fallback's own effort from its role list. */
+  thinkingLevel?: string | null,
+  /** The connection a role row is pinned to. */
+  credentialId?: string,
+): Promise<AgentRunRequest["model"]> {
+  const { credential, resolved } = await resolveConnectedModelKey(
+    deps,
+    scope,
+    provider,
+    modelId,
+    registerSecrets,
+    requireStoredSecret,
+    credentialId,
   );
   return {
     provider,

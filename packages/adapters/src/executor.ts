@@ -1,6 +1,7 @@
 import type { AgentRunRequest, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import {
   DEFAULT_CONTEXT_STRATEGY,
+  isModelCredentialRejected,
   runContinueJob,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -147,6 +148,7 @@ import {
   cloudflareRunFields,
   isTerminalModelSetupError,
   modelCreditBillingEnabled,
+  resolveConnectedModelKey,
   resolveConnectedRunModel,
   resolveModelKey,
   resolveRunModel,
@@ -738,9 +740,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : undefined,
           defaults: { settings, deployment: runDeployment },
         });
-        const { credential, thinkingLevel } = selected;
-        const runModelProvider = selected.provider ?? runtimeFallback?.provider;
-        const runModelId = selected.id ?? runtimeFallback?.id;
+        const selectedProvider = selected.provider ?? runtimeFallback?.provider;
+        const selectedModelId = selected.id ?? runtimeFallback?.id;
         // A missing or refused connection of the user's own fails every scheduled run alike.
         const failRunBeforeModel = async (message: string, accountFailure = false) => {
           const failed = await failRunBeforeTurn(
@@ -765,41 +766,115 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await failRunBeforeModel(PINNED_PROVIDER_NOT_CONNECTED, true);
           return;
         }
-        if (!runModelProvider || !runModelId) {
+        const modelAccessDenied = async () =>
+          (await modelCreditBillingEnabled(deps)) &&
+          !(await spaceHasModelAccess(deps.prisma, run.spaceId));
+        const scripted = deps.runtime.describe().capabilities.scripted;
+        let backupChoices: Promise<ModelRoleChoice[]> | undefined;
+        const loadBackups = () =>
+          (backupChoices ??= scripted
+            ? Promise.resolve([])
+            : effectiveModelRole(deps.prisma, run, "main", {
+                settings,
+                deployment: runDeployment,
+              }).then(
+                (role) => role.backups,
+                (error: unknown) => {
+                  getLogger().warn("Backup models could not be loaded", { runId, error });
+                  return [];
+                },
+              ));
+        // Backups that could not start here are not offered again once the model runs.
+        const backupsUnavailable = new Set<ModelRoleChoice>();
+        // A main model with no connection, or whose provider refused its sign-in, runs on the
+        // first backup that starts. A pinned run asked for its model and keeps it.
+        const startOnBackup = async () => {
+          if (run.modelPinned) return undefined;
+          for (const choice of await loadBackups()) {
+            try {
+              const backup = await resolveConnectedModelKey(
+                deps,
+                run,
+                choice.provider,
+                choice.modelId,
+                (values) => runSecrets.push(...values),
+                true,
+                choice.credentialId,
+              );
+              getLogger().warn("model.primary_unavailable.backup_used", {
+                runId,
+                "model.provider": choice.provider,
+                "model.id": choice.modelId,
+              });
+              return {
+                provider: choice.provider,
+                id: choice.modelId,
+                credential: backup.credential,
+                thinkingLevel: (choice.thinkingLevel ??
+                  null) as AgentRunRequest["model"]["thinkingLevel"],
+                resolved: backup.resolved,
+              };
+            } catch {
+              // Resolver errors can carry credential details, so only the outcome is kept.
+              backupsUnavailable.add(choice);
+            }
+          }
+          return undefined;
+        };
+        let start: Awaited<ReturnType<typeof startOnBackup>>;
+        let primaryFailure = { message: MISSING_MODEL_RUN_ERROR, accountFailure: true };
+        let retryPrimary: unknown;
+        if (selectedProvider && selectedModelId) {
+          if (await modelAccessDenied()) {
+            await failRunBeforeModel(MODEL_ACCESS_REQUIRED_RUN_ERROR, true);
+            return;
+          }
+          try {
+            start = {
+              provider: selectedProvider,
+              id: selectedModelId,
+              credential: selected.credential,
+              thinkingLevel: selected.thinkingLevel,
+              resolved: await resolveModelKey(
+                deps,
+                run.userId,
+                run.spaceId,
+                selected.credential,
+                selectedProvider,
+                selectedModelId,
+                (values) => runSecrets.push(...values),
+              ),
+            };
+          } catch (error) {
+            // An incompatible saved model or a dead (already retired) credential is a
+            // configuration error: record it on the run rather than retrying setup.
+            const terminal = isTerminalModelSetupError(error);
+            if (!terminal && !isModelCredentialRejected(error)) throw error;
+            primaryFailure = {
+              message: error instanceof Error ? error.message : "Connect the provider again.",
+              accountFailure:
+                error instanceof HostedModelCreditsRequiredError ||
+                isRetiredModelCredentialError(error),
+            };
+            if (!terminal) retryPrimary = error;
+          }
+        } else if (await modelAccessDenied()) {
           await failRunBeforeModel(MISSING_MODEL_RUN_ERROR, true);
           return;
         }
-        if (
-          (await modelCreditBillingEnabled(deps)) &&
-          !(await spaceHasModelAccess(deps.prisma, run.spaceId))
-        ) {
-          await failRunBeforeModel(MODEL_ACCESS_REQUIRED_RUN_ERROR, true);
+        start ??= await startOnBackup();
+        if (!start) {
+          if (retryPrimary) throw retryPrimary;
+          await failRunBeforeModel(primaryFailure.message, primaryFailure.accountFailure);
           return;
         }
-        // An incompatible saved model is a configuration error. Record it on the run.
-        // Leaving it for the setup catch would retry and replace the message.
-        let resolved: Awaited<ReturnType<typeof resolveModelKey>>;
-        try {
-          resolved = await resolveModelKey(
-            deps,
-            run.userId,
-            run.spaceId,
-            credential,
-            runModelProvider,
-            runModelId,
-            (values) => runSecrets.push(...values),
-          );
-        } catch (error) {
-          // A dead or account-switched credential is already deleted. Retrying
-          // setup would requeue the run and might fall back to another model.
-          if (!isTerminalModelSetupError(error)) throw error;
-          await failRunBeforeModel(
-            error instanceof Error ? error.message : "Connect the provider again.",
-            error instanceof HostedModelCreditsRequiredError ||
-              isRetiredModelCredentialError(error),
-          );
-          return;
-        }
+        const {
+          provider: runModelProvider,
+          id: runModelId,
+          credential,
+          thinkingLevel,
+          resolved,
+        } = start;
         runSecrets.push(...resolved.redact);
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.
@@ -1105,7 +1180,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
 
         const reply = await createReplyState(deps, run, runSecrets);
-        const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
         const state: RunState = {
           lease,
@@ -1366,25 +1440,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return;
         }
 
-        let fallbackModels: ModelRoleChoice[] = [];
-        if (!scripted) {
-          try {
-            fallbackModels = (
-              await effectiveModelRole(deps.prisma, run, "main", {
-                settings,
-                deployment: runDeployment,
-              })
-            ).backups;
-          } catch (error) {
-            getLogger().warn("Backup models could not be loaded", { runId, error });
-          }
-        }
         // The running model is not its own backup, unless another account serves it.
-        fallbackModels = fallbackModels.filter(
+        const fallbackModels = (await loadBackups()).filter(
           (candidate) =>
-            candidate.provider !== runModelProvider ||
-            candidate.modelId !== runModelId ||
-            (candidate.credentialId !== undefined && candidate.credentialId !== credential?.id),
+            !backupsUnavailable.has(candidate) &&
+            (candidate.provider !== runModelProvider ||
+              candidate.modelId !== runModelId ||
+              (candidate.credentialId !== undefined && candidate.credentialId !== credential?.id)),
         );
         const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
           JSON.stringify([provider, modelId, credentialId ?? null]);

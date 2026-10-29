@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isRetryableProviderUnavailable, isTransientModelError } from "./model-errors.js";
+import {
+  isModelCredentialRejected,
+  isRetryableProviderUnavailable,
+  isTransientModelError,
+} from "./model-errors.js";
 
 describe("transient model errors", () => {
   it.each([
@@ -402,5 +406,28 @@ describe("provider availability classification", () => {
     ["transient server failure", { status: 503, message: "service unavailable" }, true],
   ])("classifies %s", (_label, error, expected) => {
     expect(isRetryableProviderUnavailable(error)).toBe(expected);
+  });
+});
+
+describe("rejected model credentials", () => {
+  it.each([
+    '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
+    'Token refresh failed. status=400; body={"error":"invalid_grant","error_description":"Refresh token not found or invalid"}',
+    "401 Incorrect API key provided",
+    "invalid_api_key",
+    "Your authentication token has been invalidated.",
+  ])("rejects %s without a retry", (message) => {
+    expect(isModelCredentialRejected(new Error(message))).toBe(true);
+    expect(isTransientModelError(new Error(message))).toBe(false);
+  });
+
+  it.each([
+    "503 overloaded",
+    "429 rate limit",
+    "context_length_exceeded",
+    "400 bad request",
+    "403 permission_error: model not allowed",
+  ])("does not reject %s", (message) => {
+    expect(isModelCredentialRejected(new Error(message))).toBe(false);
   });
 });

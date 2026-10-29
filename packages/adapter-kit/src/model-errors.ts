@@ -90,6 +90,18 @@ function isAccountExhaustion(text: string, statuses: ReadonlySet<number>): boole
   return EXHAUSTION_SIGNAL.test(text) && !NOT_EXHAUSTION.test(text);
 }
 
+/**
+ * The provider refused the connection's own credential: a bad key, or a sign-in that was
+ * revoked or expired. Retrying that connection cannot help; another connection can.
+ */
+export function isModelCredentialRejected(error: unknown): boolean {
+  const { text, statuses } = errorFacts(error);
+  if (statuses.has(401)) return true;
+  return /authentication_error|invalid_api_key|invalid_grant|invalid (?:api[ -]key|credential|x-api-key)|incorrect api key|(?:expired|revoked) (?:api )?(?:key|credential|token)|(?:api )?key (?:expired|revoked)|token (?:has been |was |is )?(?:revoked|expired|invalidated)|authentication (?:failed|failure|expired|invalid)/.test(
+    text,
+  );
+}
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
