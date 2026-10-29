@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
@@ -41,6 +42,11 @@ export function computerHomeKey(input: ComputerKeyInput) {
   }
   if (!input.botId) throw new Error("Dedicated computers require a bot id");
   return input.botId;
+}
+
+/** The home of a space's one Team Computer from before each person got their own. */
+export function legacyTeamHomeKey(spaceId: string) {
+  return `team-${spaceId}`;
 }
 
 type ComputerDb = Pick<PrismaClient, "computer">;
@@ -85,18 +91,26 @@ export class ComputerLimitError extends Error {
  * intermediate reference must not count against the final live set.
  */
 async function countInUseComputersForUser(
-  prisma: ComputerDb,
+  prisma: ComputerDb & Partial<Pick<PrismaClient, "$queryRaw">>,
   userId: string,
   excludeBotId?: string,
 ): Promise<number> {
-  return prisma.computer.count({
-    where: {
-      userId,
-      bots: {
-        some: excludeBotId ? { archivedAt: null, id: { not: excludeBotId } } : { archivedAt: null },
+  const count = () =>
+    prisma.computer.count({
+      where: {
+        userId,
+        bots: {
+          some: excludeBotId
+            ? { archivedAt: null, id: { not: excludeBotId } }
+            : { archivedAt: null },
+        },
       },
-    },
-  });
+    });
+  // The quota is per person, so it counts the computers of all their Spaces.
+  const reason = "computer quota across the user's Spaces";
+  return prisma.$queryRaw
+    ? runAsSystemInTransaction(prisma as Pick<PrismaClient, "$queryRaw">, reason, count)
+    : runAsSystem(reason, count);
 }
 
 /**
@@ -113,12 +127,9 @@ async function lockUserForComputerQuota(
 }
 
 /**
- * Refuse a restore that would push a user past the cap.
- *
  * A restore re-links the bot to its Computer row, which reactivates the quota
  * if that row was only referenced by archived bots (the dedicated case; a team
- * row shared with live bots keeps counting). Throws ComputerLimitError when the
- * restore would exceed the configured SANDBOX_MAX_COMPUTERS_PER_USER.
+ * row shared with live bots keeps counting).
  */
 export async function assertComputerQuotaForRestore(
   prisma: ComputerDb,
@@ -230,14 +241,10 @@ async function ensureComputerRecordWithQuota(
     select: { id: true },
   });
   if (!existing) {
-    // The bot being linked to this new computer is part of this same
-    // transaction; its old or intermediate reference is leaving the live set
-    // when this link commits. Exclude this bot's current reference so a
-    // transaction that ends with exactly one active computer is not refused
-    // at cap 1 (createBot links the team computer first, then re-links the
-    // bot to the new dedicated one; setBotComputer switches the same way).
-    // References from other active bots still count: a team computer another
-    // live bot keeps using stays in-use after the re-link.
+    // This bot's current reference leaves the live set when this link commits
+    // (createBot links the team computer first, then re-links the bot to the new
+    // dedicated one; setBotComputer switches the same way), so exclude it or a
+    // transaction ending with exactly one active computer is refused at cap 1.
     const inUse = await countInUseComputersForUser(tx, input.userId, input.botId);
     // The new row itself will be referenced by this bot after the link, so
     // the post-transaction set is one more than the remaining live set.

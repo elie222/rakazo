@@ -1,4 +1,3 @@
-import type { Space } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
@@ -7,9 +6,11 @@ import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewSpace() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
@@ -23,7 +24,7 @@ export default function NewSpace() {
     setPending(true);
     setError(null);
     try {
-      const space = await rpc<Space>("spaces/create", { name: trimmed });
+      const space = await rpc("spaces/create", { name: trimmed });
       if (!(await selectSpace(space.id))) {
         Alert.alert(t("Space created"), t("It could not be opened. Try again from the sidebar."));
         router.dismissAll();
@@ -43,7 +44,7 @@ export default function NewSpace() {
       <Stack.Screen options={cancelHeaderOptions(t("Cancel"), () => router.back())} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        style={{ flex: 1, backgroundColor: tokens.background }}
+        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentContainerStyle={{ padding: 24 }}
         keyboardShouldPersistTaps="handled"
       >

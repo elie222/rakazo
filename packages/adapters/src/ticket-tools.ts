@@ -22,6 +22,17 @@ type TicketToolDeps = {
   ticketBoardEnabled?: boolean;
   onTicketChange?: TicketChangeNotifier;
 };
+
+function ticketInputError(error: { issues: Array<{ path: PropertyKey[]; message: string }> }) {
+  return error.issues
+    .map(({ path, message }) => {
+      const field =
+        path[0] === "assigneeBotId" ? "ownerBotId" : path[0] === "ticketId" ? "id" : path.join(".");
+      return field ? `${field}: ${message}` : message;
+    })
+    .join("; ");
+}
+
 const STATUS_ERROR = `status must be one of ${TicketStatusSchema.options.join(", ")}.`;
 function coerceInputStatus(value: string) {
   const parsed = TicketStatusSchema.safeParse(value);
@@ -166,7 +177,7 @@ export async function createTicket(
     ...input,
     assigneeBotId: input.ownerBotId ?? input.botId,
   });
-  if (!parsed.success) return { error: "Invalid ticket." };
+  if (!parsed.success) return { error: ticketInputError(parsed.error) };
   const data = parsed.data;
   if (!(await ownBotInSpace(deps, input, data.assigneeBotId))) return { error: "Unknown bot." };
   const board = await ensureBoard(deps.prisma, input.spaceId);
@@ -212,7 +223,7 @@ export async function updateTicket(
 ) {
   if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
-  if (!parsed.success) return { error: "Invalid ticket." };
+  if (!parsed.success) return { error: ticketInputError(parsed.error) };
   const data = parsed.data;
   if (data.assigneeBotId && !(await ownBotInSpace(deps, input, data.assigneeBotId)))
     return { error: "Unknown bot." };
@@ -268,7 +279,7 @@ export async function commentTicket(
 ) {
   if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = CommentTicketInput.safeParse({ ticketId: input.id, body: input.body });
-  if (!parsed.success) return { error: "Invalid comment." };
+  if (!parsed.success) return { error: ticketInputError(parsed.error) };
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const ticket = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!ticket) return { error: "Ticket not found." };

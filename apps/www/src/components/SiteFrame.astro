@@ -1,7 +1,7 @@
 ---
 import type { FaqItem } from "../alternatives";
 import { faqPageSchema } from "../alternatives";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import Footer from "./Footer.astro";
 import Header from "./Header.astro";
@@ -14,6 +14,8 @@ type Props = {
   ogImage?: string;
   ogType?: string;
   index?: boolean;
+  wide?: boolean;
+  markdownAlternate?: string;
 };
 
 const {
@@ -24,9 +26,10 @@ const {
   ogImage,
   ogType,
   index = true,
+  wide = false,
+  markdownAlternate,
 } = Astro.props;
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 const structuredData =
   structuredDataProp ?? (faq && faq.length > 0 ? faqPageSchema(faq) : undefined);
 ---
@@ -39,10 +42,11 @@ const structuredData =
   ogImage={ogImage}
   ogType={ogType}
   index={index}
+  markdownAlternate={markdownAlternate}
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
-    <main id="main" class="alt-page">
+    <main id="main" class:list={[wide ? "wide-page" : "alt-page"]}>
       <slot />
     </main>
     <Footer />

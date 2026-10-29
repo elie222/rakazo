@@ -4,16 +4,57 @@ import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  cloudflareGatewayProviderEnv,
-  withCloudflareGatewayAuth,
-} from "./cloudflare-ai-gateway.js";
+import { cloudflareProviderEnv, withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import { parseModelSecret } from "./pi-oauth.js";
 
 const ACCOUNT_ID = "acct1234";
 const GATEWAY_ID = "gateway-1";
 const API_KEY = "cf-test-key-value";
+
+describe("Cloudflare Workers AI auth", () => {
+  it("routes with the saved account and sends the key without a gateway", async () => {
+    const modelConfig = { provider: "cloudflare-workers-ai", accountId: ACCOUNT_ID };
+    const options = withCloudflareAuth(modelConfig, { apiKey: API_KEY, maxRetries: 0 });
+    expect(options?.env).toEqual({ CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID });
+    const models = builtinModels();
+    const model = models.getProvider(modelConfig.provider)?.getModels()[0];
+    expect(model).toBeDefined();
+    if (!model) return;
+    expect((await models.getAuth(model, options))?.auth.apiKey).toBe(API_KEY);
+    let requestedUrl = "";
+    let authorization: string | null = null;
+    const result = await models
+      .streamSimple(
+        model,
+        {
+          messages: [{ role: "user", content: "fixture", timestamp: 1 }],
+        },
+        {
+          ...options,
+          fetch: async (input, init) => {
+            requestedUrl = input instanceof Request ? input.url : String(input);
+            authorization = new Headers(init?.headers).get("authorization");
+            return new Response("unauthorized", { status: 401 });
+          },
+        },
+      )
+      .result();
+    expect(result.stopReason).toBe("error");
+    expect(requestedUrl).toContain(`/accounts/${ACCOUNT_ID}/ai/`);
+    expect(requestedUrl).not.toContain("{CLOUDFLARE_");
+    expect(authorization).toBe(`Bearer ${API_KEY}`);
+  });
+
+  it.each([undefined, "", "../other-account"])(
+    "rejects missing or unsafe account routing",
+    (accountId) => {
+      expect(() => cloudflareProviderEnv({ provider: "cloudflare-workers-ai", accountId })).toThrow(
+        "Cloudflare Workers AI needs an account ID.",
+      );
+    },
+  );
+});
 
 describe("Cloudflare AI Gateway auth", () => {
   it("resolves a saved credential into gateway auth and a routed base URL", async () => {
@@ -32,8 +73,8 @@ describe("Cloudflare AI Gateway auth", () => {
       accountId: secret.accountId,
       gatewayId: secret.gatewayId,
     };
-    const env = cloudflareGatewayProviderEnv(modelConfig);
-    expect(withCloudflareGatewayAuth(modelConfig, { apiKey: API_KEY })?.env).toEqual(env);
+    const env = cloudflareProviderEnv(modelConfig);
+    expect(withCloudflareAuth(modelConfig, { apiKey: API_KEY })?.env).toEqual(env);
 
     const models = builtinModels();
     const provider = models.getProvider(CLOUDFLARE_AI_GATEWAY_PROVIDER_ID);
@@ -71,11 +112,11 @@ describe("Cloudflare AI Gateway auth", () => {
   });
 
   it("classifies a gateway credential that cannot be routed", async () => {
+    expect(() => cloudflareProviderEnv({ provider: CLOUDFLARE_AI_GATEWAY_PROVIDER_ID })).toThrow(
+      CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+    );
     expect(() =>
-      cloudflareGatewayProviderEnv({ provider: CLOUDFLARE_AI_GATEWAY_PROVIDER_ID }),
-    ).toThrow(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE);
-    expect(() =>
-      cloudflareGatewayProviderEnv({
+      cloudflareProviderEnv({
         provider: CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
         accountId: "acct/secret",
         gatewayId: GATEWAY_ID,
@@ -97,7 +138,7 @@ describe("Cloudflare AI Gateway auth", () => {
       gatewayId: GATEWAY_ID,
     };
     expect(
-      withCloudflareGatewayAuth(model, {
+      withCloudflareAuth(model, {
         env: {
           CLOUDFLARE_ACCOUNT_ID: "other-account",
           CLOUDFLARE_GATEWAY_ID: "other-gateway",
@@ -113,6 +154,6 @@ describe("Cloudflare AI Gateway auth", () => {
 
   it("leaves other providers unchanged", () => {
     const options = { apiKey: "sk-test-key-123" };
-    expect(withCloudflareGatewayAuth({ provider: "openai" }, options)).toBe(options);
+    expect(withCloudflareAuth({ provider: "openai" }, options)).toBe(options);
   });
 });

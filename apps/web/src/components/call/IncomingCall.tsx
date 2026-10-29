@@ -141,6 +141,7 @@ export function IncomingCall({
         botId: bot.id,
         botName: bot.name,
         botColor: bot.color,
+        botAvatarSet: bot.avatarSet,
         transcribe,
         answered: { callId: call.callId, opening: answered.opening },
       });
@@ -170,10 +171,10 @@ export function IncomingCall({
             style={{ borderColor: defaultBotAvatarValue(bot.color) }}
           />
           <span className="md:hidden">
-            <BotAvatar color={bot.color} identity={bot.id} size={120} />
+            <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.id} size={120} />
           </span>
           <span className="hidden md:block">
-            <BotAvatar color={bot.color} identity={bot.id} size={52} />
+            <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.id} size={52} />
           </span>
         </span>
         <span className="flex flex-col items-center gap-1 md:items-start">
@@ -196,7 +197,7 @@ export function IncomingCall({
       <div className="grid w-full max-w-80 grid-cols-2 gap-3 md:max-w-none">
         <Button
           variant="destructive"
-          className="h-14 rounded-full text-sm md:h-11"
+          className="h-14 text-sm md:h-11"
           disabled={busy}
           onClick={() => void settle()}
         >
@@ -205,7 +206,7 @@ export function IncomingCall({
         </Button>
         <Button
           disabled={busy}
-          className="h-14 rounded-full bg-success text-sm text-background hover:bg-success/90 md:h-11"
+          className="h-14 bg-success text-sm text-background hover:bg-success/90 md:h-11"
           onClick={() => void answer()}
         >
           <Phone className="size-5" aria-hidden="true" />

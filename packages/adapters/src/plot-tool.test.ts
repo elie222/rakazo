@@ -1,11 +1,11 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import type { PlotSpec } from "./plot-tool.js";
 import {
   buildPlotParts,
   CHART_CATALOG,
-  PLOT_TOOL_GUIDE,
-  type PlotSpec,
   parsePlotData,
+  plotSvgToPng,
   renderPlotSpecToSvg,
   searchChartCatalog,
   supportedPlotNames,
@@ -22,6 +22,42 @@ const penguinish = [
 ];
 
 describe("render_plot", () => {
+  it.each(["axisX", "axisY", "gridX", "gridY"])(
+    "rejects excessive generated ticks in a %s mark without input rows",
+    (type) => {
+      expect(() =>
+        renderPlotSpecToSvg(
+          {
+            x: { domain: [0, 1] },
+            y: { domain: [0, 1] },
+            marks: [{ type, options: { ticks: 10_000 } }],
+          },
+          undefined,
+          dom(),
+        ),
+      ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+    },
+  );
+
+  it.each(["x", "y", "fx", "fy"])("rejects excessive ticks in the %s scale", (scale) => {
+    expect(() =>
+      renderPlotSpecToSvg(
+        { [scale]: { domain: [0, 1], ticks: 10_000 }, marks: [{ type: "frame" }] },
+        undefined,
+        dom(),
+      ),
+    ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+  });
+
+  it("renders a bounded custom tick count", () => {
+    const { plotted } = buildPlotParts(
+      { x: { domain: [0, 10] }, marks: [{ type: "axisX", options: { ticks: 10 } }] },
+      undefined,
+      dom(),
+    );
+    expect(plotted.querySelectorAll("text")).toHaveLength(11);
+  });
+
   it("renders a titled scatterplot with a categorical legend into standalone SVG", () => {
     const svg = renderPlotSpecToSvg(
       {
@@ -46,6 +82,141 @@ describe("render_plot", () => {
 
     expect(() => renderPlotSpecToSvg(spec, penguinish, dom())).not.toThrow();
     expect(color.legend).toBe(true);
+  });
+
+  function exportedCategories(labels: string[], width = 640, title?: string) {
+    const spec: PlotSpec = {
+      width,
+      height: 200,
+      title,
+      marks: [{ type: "dot", options: { x: "x", y: "y", fill: "category" } }],
+    };
+    const data = labels.map((category, x) => ({ category, x, y: x + 1 }));
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    return new JSDOM(svg, { contentType: "image/svg+xml" }).window.document.documentElement;
+  }
+
+  it.each([undefined, "Categories"])("wraps ten exported legend entries with title %j", (title) => {
+    const labels = Array.from({ length: 10 }, (_, i) => `Category ${i + 1}`);
+    const svg = exportedCategories(labels, 640, title);
+    const swatches = Array.from(svg.children).filter((element) => element.tagName === "rect");
+    const rows = new Set(swatches.map((swatch) => swatch.getAttribute("y")));
+    expect(swatches).toHaveLength(10);
+    expect(rows.size).toBe(2);
+    const headerHeight = (title ? 28 : 0) + 48;
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe(String(headerHeight));
+    expect(svg.getAttribute("height")).toBe(String(200 + headerHeight));
+    expect(svg.getAttribute("viewBox")).toBe(`0 0 640 ${200 + headerHeight}`);
+    for (const label of labels) expect(svg.textContent).toContain(label);
+  });
+
+  it.each([64, 160, 320])("keeps long exported legend labels within a %ipx canvas", (width) => {
+    const labels = [
+      "A very long category label without losing any text",
+      "W".repeat(80),
+      "类别😀".repeat(16),
+    ];
+    const svg = exportedCategories(labels, width);
+    const text = Array.from(svg.children).filter((element) => element.tagName === "text");
+    expect(text).toHaveLength(labels.length);
+    for (const label of labels) expect(text.map((element) => element.textContent)).toContain(label);
+    for (const element of text) {
+      const lines = Array.from(element.querySelectorAll("tspan"));
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines) {
+        expect(Number(line.getAttribute("x"))).toBeLessThan(width - 8);
+      }
+    }
+    const plotY = Number(svg.querySelector("svg")?.getAttribute("y"));
+    const lastText = text.at(-1)!;
+    const lastBaseline = Number(lastText.getAttribute("y")) + (lastText.children.length - 1) * 16;
+    expect(plotY).toBeGreaterThan(lastBaseline);
+    expect(Number(svg.getAttribute("height"))).toBe(200 + plotY);
+  });
+
+  it("preserves single-row and legend-free export heights", () => {
+    const singleRow = exportedCategories(["Adelie", "Chinstrap", "Gentoo"], 640, "Species");
+    expect(singleRow.getAttribute("height")).toBe("252");
+    expect(singleRow.querySelector("svg")?.getAttribute("y")).toBe("52");
+    const noLegend = renderPlotSpecToSvg(
+      { height: 200, marks: [{ type: "frame" }] },
+      undefined,
+      dom(),
+    );
+    const svg = new JSDOM(noLegend, { contentType: "image/svg+xml" }).window.document
+      .documentElement;
+    expect(svg.getAttribute("height")).toBe("200");
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe("0");
+  });
+
+  it.each(["👨‍👩‍👧‍👦", "🇨🇦", "👍🏽", "1️⃣", "é"])(
+    "keeps the natural size of the grapheme %j when it fits",
+    (label) => {
+      const svg = exportedCategories([label], 160);
+      const line = svg.querySelector("text > tspan")!;
+      expect(line.textContent).toBe(label);
+      expect(line.parentElement?.children).toHaveLength(1);
+      expect(line.hasAttribute("textLength")).toBe(false);
+      expect(line.hasAttribute("lengthAdjust")).toBe(false);
+      expect(line.hasAttribute("font-size")).toBe(false);
+    },
+  );
+
+  it("wraps repeated joined emoji without splitting or enlarging their graphemes", () => {
+    const grapheme = "👨‍👩‍👧‍👦";
+    const svg = exportedCategories([grapheme.repeat(20)], 160);
+    const text = svg.querySelector("text")!;
+    const lines = Array.from(text.children);
+    expect(text.textContent).toBe(grapheme.repeat(20));
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      const segments = Array.from(
+        new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(line.textContent!),
+        ({ segment }) => segment,
+      );
+      expect(segments.length).toBeGreaterThan(1);
+      expect(segments.every((segment) => segment === grapheme)).toBe(true);
+      expect(line.hasAttribute("textLength")).toBe(false);
+      expect(line.hasAttribute("font-size")).toBe(false);
+    }
+  });
+
+  it("keeps joined emoji out of the PNG legend's right gutter with fallback fonts", async () => {
+    const svg = exportedCategories(["👨‍👩‍👧‍👦".repeat(20)], 160);
+    const png = await plotSvgToPng(svg.outerHTML);
+    const sharp = (await import("sharp")).default;
+    const metadata = await sharp(png).metadata();
+    const scale = metadata.width! / 160;
+    const plotY = Number(svg.querySelector("svg")?.getAttribute("y"));
+    const gutter = await sharp(png)
+      .removeAlpha()
+      .extract({ left: 152 * scale, top: 0, width: 8 * scale, height: plotY * scale })
+      .raw()
+      .toBuffer();
+    expect(gutter.every((channel) => channel === 255)).toBe(true);
+  });
+
+  it("does not charge a combining mark as another glyph on a narrow canvas", () => {
+    const svg = exportedCategories(["é"], 40);
+    const line = svg.querySelector("text > tspan")!;
+    expect(line.textContent).toBe("é");
+    expect(line.hasAttribute("font-size")).toBe(false);
+    expect(line.hasAttribute("textLength")).toBe(false);
+  });
+
+  it("shrinks an oversized grapheme without splitting it or adding an empty row", () => {
+    const label = "👨‍👩‍👧‍👦";
+    const svg = exportedCategories([label], 40);
+    const swatch = Array.from(svg.children).find((element) => element.tagName === "rect");
+    const line = svg.querySelector("text > tspan")!;
+    expect(swatch?.getAttribute("y")).toBe("5");
+    expect(line.textContent).toBe(label);
+    expect(line.parentElement?.children).toHaveLength(1);
+    expect(line.hasAttribute("textLength")).toBe(false);
+    expect(line.hasAttribute("lengthAdjust")).toBe(false);
+    expect(Number(line.getAttribute("font-size"))).toBeGreaterThan(0);
+    expect(Number(line.getAttribute("font-size"))).toBeLessThan(12);
+    expect(svg.querySelector("svg")?.getAttribute("y")).toBe("24");
   });
 
   const xlink = "http://www.w3.org/1999/xlink";
@@ -334,12 +505,5 @@ describe("render_plot", () => {
     const meta = await sharp(png).metadata();
     const alpha = stats.channels[3];
     expect(meta.channels === 3 || (alpha && alpha.min === 255)).toBe(true);
-  });
-
-  it("ships a guide that teaches the agent how to call the tool", () => {
-    expect(PLOT_TOOL_GUIDE).toContain("How to use the tool");
-    expect(PLOT_TOOL_GUIDE).toContain("data_path");
-    expect(PLOT_TOOL_GUIDE).toContain("Chart catalog");
-    expect(PLOT_TOOL_GUIDE).toContain('{"help": true}');
   });
 });

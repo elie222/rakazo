@@ -33,7 +33,7 @@ async function render(
   image?: string,
   onIntegrations = vi.fn(),
   onBoard?: () => void,
-  logos?: Array<{ name: string; logo: string }>,
+  logos?: Array<{ name: string; logo?: string }>,
 ) {
   const email = "account@rakazo.test";
   await act(async () =>
@@ -53,6 +53,7 @@ async function render(
           open
           onOpenChange={() => {}}
           onIntegrations={onIntegrations}
+          onSkills={vi.fn()}
           onBoard={onBoard}
           onArtifacts={() => {}}
           onSettings={() => {}}
@@ -140,12 +141,13 @@ it("opens integrations and keeps the existing account actions and links", async 
   expect(onIntegrations).toHaveBeenCalledOnce();
   const menu = document.querySelector('[data-slot="popover-content"]')!;
   expect([...menu.querySelectorAll("button, a")].map((row) => row.textContent)).toEqual([
+    "Settings",
+    "Skills",
+    "Artifacts",
+    "Board",
     "Usage",
     "Get the mobile app",
     "Docs",
-    "Board",
-    "Artifacts",
-    "Settings",
     "Log out",
   ]);
   expect(host.querySelector('[data-testid="user-menu-trigger"]')?.getAttribute("aria-label")).toBe(
@@ -224,11 +226,24 @@ it.each([
   [0, 0],
   [25, 0],
   [26, 1],
-  [43, 1],
-  [44, 2],
-  [61, 2],
-  [62, 3],
+  [47, 1],
+  [48, 2],
+  [69, 2],
+  [70, 3],
   [200, 3],
 ])("fits marks into %ipx without consuming label or padding space", (width, count) => {
   expect(sidebarMarkCount(width)).toBe(count);
+});
+
+it("keeps at most three marks with the same tile and a missing-logo fallback", async () => {
+  await render("Demo User", undefined, undefined, undefined, [
+    { name: "Gmail", logo: "https://example.test/gmail.svg" },
+    { name: "Notion" },
+    { name: "GitHub", logo: "https://example.test/github.svg" },
+    { name: "Slack" },
+  ]);
+  const tiles = [...host.querySelectorAll('span[aria-hidden="true"] > span')];
+  expect(tiles).toHaveLength(3);
+  expect(new Set(tiles.map((tile) => tile.className)).size).toBe(1);
+  expect(tiles[1]!.textContent).toBe("N");
 });

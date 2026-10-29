@@ -3,9 +3,13 @@ import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   answerRunInput,
+  asSystem,
   createDb,
+  createPendingSteeringRun,
   createThreadMessage,
   provisionMessagingIdentity,
+  runAsSystem,
+  runAsTenant,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
@@ -16,6 +20,7 @@ const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
 
 describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   let prisma: PrismaClient;
+  let system: PrismaClient;
   let close: () => Promise<void>;
   let actor: Actor;
   let botId: string;
@@ -38,6 +43,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   beforeAll(() => {
     const db = createDb(databaseUrl!);
     prisma = db.prisma;
+    system = asSystem(prisma);
     close = async () => {
       await prisma.$disconnect();
       await db.pool.end();
@@ -45,14 +51,16 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   });
   beforeEach(async () => {
     vi.clearAllMocks();
-    const identity = await provisionMessagingIdentity(
-      prisma,
-      { provider: "test", address: `typed-reply-${randomUUID()}` },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
+    const identity = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider: "test", address: `typed-reply-${randomUUID()}` },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
     );
     ({ botId, threadId } = identity);
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
-    const peer = await prisma.bot.create({
+    const peer = await system.bot.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -64,7 +72,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     });
     peerBotId = peer.id;
     peerThreadId = peer.thread!.id;
-    const group = await prisma.chatGroup.create({
+    const group = await system.chatGroup.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -85,9 +93,9 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   });
   afterEach(async () => {
     if (!actor) return;
-    await prisma.messagingIdentity.deleteMany({ where: { userId: actor.userId } });
-    await prisma.organization.deleteMany({ where: { id: actor.spaceId } });
-    await prisma.user.deleteMany({ where: { id: actor.userId } });
+    await system.messagingIdentity.deleteMany({ where: { userId: actor.userId } });
+    await system.organization.deleteMany({ where: { id: actor.spaceId } });
+    await system.user.deleteMany({ where: { id: actor.userId } });
   });
   afterAll(async () => {
     await close?.();
@@ -96,19 +104,34 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   const privateTarget = () =>
     ({ kind: "bot", botId, threadId, bot: { computer: null } }) as ThreadTarget;
   function send(target: ThreadTarget, text = "Paris", clientNonce = randomUUID()) {
-    return sendThreadMessage(
-      { prisma, events: { notify } as never, jobs: { enqueue } as never },
-      actor,
-      target,
-      { text, mentions: target.kind === "group" ? [botId] : [], clientNonce },
+    return runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        target,
+        { text, mentions: target.kind === "group" ? [botId] : [], clientNonce },
+      ),
     );
   }
+  it("serializes simultaneous text sends into one run and steering", async () => {
+    const [first, second] = await Promise.all([
+      send(privateTarget(), "First simultaneous message", "parallel-send-first"),
+      send(privateTarget(), "Second simultaneous message", "parallel-send-second"),
+    ]);
+    expect(first.runId).toBe(second.runId);
+    const runs = await system.run.findMany({ where: { threadId, trigger: "user" } });
+    expect(runs).toHaveLength(1);
+    expect(await system.steeringMessage.count({ where: { runId: first.runId } })).toBe(1);
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(2);
+  });
+
   async function waitingCard(
     card: MessageBlock = question,
     targetThreadId = threadId,
     targetBotId = botId,
+    trigger = "user",
   ) {
-    const task = await prisma.task.create({
+    const task = await system.task.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -118,7 +141,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         status: "waiting_input",
       },
     });
-    const run = await prisma.run.create({
+    const run = await system.run.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -126,14 +149,14 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         threadId: targetThreadId,
         taskId: task.id,
         status: "waiting_input",
-        trigger: "user",
+        trigger,
         checkpoint: JSON.stringify({ pending: true }),
       },
     });
-    const attempt = await prisma.attempt.create({
+    const attempt = await system.attempt.create({
       data: { runId: run.id, fence: 1, status: "waiting_input" },
     });
-    const message = await createThreadMessage(prisma, {
+    const message = await createThreadMessage(system, {
       threadId: targetThreadId,
       botId: targetBotId,
       runId: run.id,
@@ -143,12 +166,12 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     return { run, task, message, attempt };
   }
   async function expectPending(fixture: Awaited<ReturnType<typeof waitingCard>>) {
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "waiting_input",
       completedAt: null,
     });
     expect(
-      await prisma.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
+      await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
     ).toMatchObject({ blocks: fixture.message.blocks });
   }
 
@@ -158,7 +181,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const target = kind === "bot" ? privateTarget() : groupTarget;
       const old = await waitingCard(question, target.threadId);
       // An unrelated newer message used to prevent composer answers from finding the old ask.
-      await createThreadMessage(prisma, {
+      await createThreadMessage(system, {
         threadId: target.threadId,
         role: "bot",
         botId,
@@ -174,27 +197,27 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const result = await send(target, "Paris", nonce);
       expect(result.runIds).toEqual([result.runId]);
       expect([old.run.id, latest.run.id]).not.toContain(result.runId);
-      expect(await prisma.run.findUniqueOrThrow({ where: { id: result.runId! } })).toMatchObject({
+      expect(await system.run.findUniqueOrThrow({ where: { id: result.runId! } })).toMatchObject({
         status: "queued",
         trigger: "user",
       });
       for (const fixture of [old, latest]) {
-        expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject(
+        expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject(
           { status: "cancelled", error: null, completedAt: expect.any(Date), checkpoint: null },
         );
         expect(
-          await prisma.task.findUniqueOrThrow({ where: { id: fixture.task.id } }),
+          await system.task.findUniqueOrThrow({ where: { id: fixture.task.id } }),
         ).toMatchObject({ status: "cancelled" });
         expect(
-          await prisma.attempt.findUniqueOrThrow({ where: { id: fixture.attempt.id } }),
+          await system.attempt.findUniqueOrThrow({ where: { id: fixture.attempt.id } }),
         ).toMatchObject({ status: "cancelled", finishedAt: expect.any(Date) });
-        const updated = await prisma.message.findUniqueOrThrow({
+        const updated = await system.message.findUniqueOrThrow({
           where: { id: fixture.message.id },
         });
         expect(updated.blocks).toEqual([
           expect.objectContaining({ status: "answered", answer: "Paris" }),
         ]);
-        const events = await prisma.event.findMany({
+        const events = await system.event.findMany({
           where: { runId: fixture.run.id },
           orderBy: { seq: "asc" },
         });
@@ -203,24 +226,26 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
           "run.cancelled",
         ]);
         expect(
-          await answerRunInput(prisma, {
-            spaceId: actor.spaceId,
-            threadId: target.threadId,
-            runId: fixture.run.id,
-            messageId: fixture.message.id,
-            answeredByUserId: actor.userId,
-            answer: "choice-1",
-          }),
+          await runAsTenant(actor, () =>
+            answerRunInput(prisma, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              runId: fixture.run.id,
+              messageId: fixture.message.id,
+              answeredByUserId: actor.userId,
+              answer: "choice-1",
+            }),
+          ),
         ).toBe(false);
       }
       await expectPending(peer);
       await expectPending(otherThread);
-      const count = await prisma.event.count({ where: { threadId: target.threadId } });
+      const count = await system.event.count({ where: { threadId: target.threadId } });
       expect(await send(target, "Paris", nonce)).toMatchObject({
         runId: result.runId,
         runIds: result.runIds,
       });
-      expect(await prisma.event.count({ where: { threadId: target.threadId } })).toBe(count);
+      expect(await system.event.count({ where: { threadId: target.threadId } })).toBe(count);
       expect(enqueue.mock.calls.every(([job]) => job.payload.runId === result.runId)).toBe(true);
     },
   );
@@ -234,31 +259,31 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const latest = await waitingCard(question, target.threadId);
       const result = await send(target);
       expect(result).toMatchObject({ runId: latest.run.id, runIds: [latest.run.id] });
-      expect(await prisma.run.findUniqueOrThrow({ where: { id: latest.run.id } })).toMatchObject({
+      expect(await system.run.findUniqueOrThrow({ where: { id: latest.run.id } })).toMatchObject({
         status: "queued",
         completedAt: null,
       });
       expect(
-        await prisma.message.findFirstOrThrow({
+        await system.message.findFirstOrThrow({
           where: { threadId: target.threadId, seq: result.seq },
         }),
       ).toMatchObject({
         runId: latest.run.id,
       });
       expect(
-        await prisma.message.findUniqueOrThrow({ where: { id: latest.message.id } }),
+        await system.message.findUniqueOrThrow({ where: { id: latest.message.id } }),
       ).toMatchObject({
         blocks: [expect.objectContaining({ status: "answered", answer: "choice-2" })],
       });
-      expect(await prisma.run.findUniqueOrThrow({ where: { id: old.run.id } })).toMatchObject({
+      expect(await system.run.findUniqueOrThrow({ where: { id: old.run.id } })).toMatchObject({
         status: "cancelled",
       });
       expect(
-        await prisma.message.findUniqueOrThrow({ where: { id: old.message.id } }),
+        await system.message.findUniqueOrThrow({ where: { id: old.message.id } }),
       ).toMatchObject({
         blocks: [expect.objectContaining({ status: "answered", answer: "Paris" })],
       });
-      const events = await prisma.event.findMany({
+      const events = await system.event.findMany({
         where: { runId: latest.run.id },
         orderBy: { seq: "asc" },
       });
@@ -275,28 +300,235 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     },
   );
 
+  it("associates a confirmed group reply with a secondary waiting recipient", async () => {
+    // Member order creates the first recipient's new run before the waiting peer.
+    const waiting = await waitingCard(question, groupTarget.threadId, peerBotId);
+    const artifact = await system.artifact.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        groupId: groupTarget.groupId,
+        name: "reply.png",
+        mimeType: "image/png",
+        size: 4,
+        hash: "fixture",
+        storageKey: "fixture",
+      },
+    });
+    const result = await runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        groupTarget,
+        {
+          text: "Paris",
+          mentions: [botId, peerBotId],
+          artifactIds: [artifact.id],
+          imageHandling: "confirm",
+          clientNonce: randomUUID(),
+        },
+      ),
+    );
+    expect(result.runIds).toContain(waiting.run.id);
+    expect(result.runId).not.toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId: groupTarget.threadId, seq: result.seq },
+    });
+    expect(message.runId).toBe(result.runId);
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId: peerBotId, runId: waiting.run.id }),
+    ]);
+    const guarded = await system.message.findMany({
+      where: {
+        threadId: groupTarget.threadId,
+        role: "user",
+        steeringMessages: { some: { runId: waiting.run.id, botId: peerBotId } },
+        blocks: { array_contains: [{ kind: "image" }] },
+      },
+      select: { id: true, blocks: true },
+    });
+    expect(guarded).toEqual([
+      {
+        id: message.id,
+        blocks: expect.arrayContaining([
+          expect.objectContaining({ kind: "image", imageHandling: "confirm" }),
+        ]),
+      },
+    ]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: waiting.run.id } })).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  function privateImage() {
+    return system.artifact.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        name: "reply.png",
+        mimeType: "image/png",
+        size: 4,
+        hash: "fixture",
+        storageKey: "fixture",
+      },
+    });
+  }
+  function sendConfirmedImage(artifactId: string, text: string) {
+    return runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        privateTarget(),
+        { text, artifactIds: [artifactId], imageHandling: "confirm", clientNonce: randomUUID() },
+      ),
+    );
+  }
+
+  it("associates a confirmed private reply with the waiting routine it answers", async () => {
+    const waiting = await waitingCard(question, threadId, botId, "routine");
+    const artifact = await privateImage();
+    const result = await sendConfirmedImage(artifact.id, "Paris");
+    expect(result.runId).toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId, seq: result.seq },
+    });
+    expect(message.runId).toBe(waiting.run.id);
+    // A routine turn reads no thread history, so only this row delivers the image.
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: waiting.run.id, claimedAt: null }),
+    ]);
+    expect(await system.run.findUniqueOrThrow({ where: { id: waiting.run.id } })).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  it.each(["bot", "group"] as const)(
+    "binds a file reply to the waiting routine it answers in a %s thread",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const answeringBotId = kind === "bot" ? botId : peerBotId;
+      const waiting = await waitingCard(question, target.threadId, answeringBotId, "routine");
+      const artifact = await system.artifact.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          ...(kind === "bot" ? { botId } : { groupId: groupTarget.groupId }),
+          name: "reply.png",
+          mimeType: "image/png",
+          size: 4,
+          hash: "fixture",
+          storageKey: "fixture",
+        },
+      });
+      const result = await runAsTenant(actor, () =>
+        sendThreadMessage(
+          { prisma, events: { notify } as never, jobs: { enqueue } as never },
+          actor,
+          target,
+          {
+            text: "Paris",
+            artifactIds: [artifact.id],
+            imageHandling: "file",
+            mentions: kind === "group" ? [botId, peerBotId] : [],
+            clientNonce: randomUUID(),
+          },
+        ),
+      );
+      expect(result.runIds).toContain(waiting.run.id);
+      const message = await system.message.findFirstOrThrow({
+        where: { threadId: target.threadId, seq: result.seq },
+      });
+      // Send as file stores the picture as a file the routine can list and copy.
+      expect(message.blocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "file", artifactId: artifact.id }),
+        ]),
+      );
+      // A routine reads no thread history, so only this row delivers the attachment.
+      expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+        expect.objectContaining({ botId: answeringBotId, runId: waiting.run.id }),
+      ]);
+    },
+  );
+
+  it("adds no steering row for a text-only answer to a waiting routine", async () => {
+    const waiting = await waitingCard(question, threadId, botId, "routine");
+    const result = await send(privateTarget());
+    expect(result.runId).toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({ where: { threadId, seq: result.seq } });
+    expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+  });
+
+  it("leaves a confirmed image sent during a background routine to its continuation", async () => {
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        prompt: "Routine work",
+        status: "running",
+      },
+    });
+    const routine = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "routine",
+      },
+    });
+    const artifact = await privateImage();
+    const result = await sendConfirmedImage(artifact.id, "Look at this");
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId, seq: result.seq },
+    });
+    // The routine only links the message for display; it never receives pending steering.
+    expect(message.runId).toBe(routine.id);
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: null }),
+    ]);
+    await system.run.update({ where: { id: routine.id }, data: { status: "completed" } });
+    const continuationId = await system.$transaction((tx) =>
+      createPendingSteeringRun(tx, { spaceId: actor.spaceId, threadId, botId }),
+    );
+    expect(continuationId).toBeTruthy();
+    expect(await system.run.findUniqueOrThrow({ where: { id: continuationId! } })).toMatchObject({
+      sourceMessageId: message.id,
+    });
+    expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+      expect.objectContaining({ botId, runId: continuationId }),
+    ]);
+  });
+
   it("still resumes the same run when an option is tapped", async () => {
     const fixture = await waitingCard();
     expect(
-      await answerRunInput(prisma, {
-        spaceId: actor.spaceId,
-        threadId,
-        runId: fixture.run.id,
-        messageId: fixture.message.id,
-        answeredByUserId: actor.userId,
-        answer: "choice-2",
-      }),
+      await runAsTenant(actor, () =>
+        answerRunInput(prisma, {
+          spaceId: actor.spaceId,
+          threadId,
+          runId: fixture.run.id,
+          messageId: fixture.message.id,
+          answeredByUserId: actor.userId,
+          answer: "choice-2",
+        }),
+      ),
     ).toBe(true);
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "queued",
       checkpoint: null,
     });
     expect(
-      await prisma.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
+      await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
     ).toMatchObject({
       blocks: [expect.objectContaining({ status: "answered", answer: "choice-2" })],
     });
-    expect(await prisma.task.findUniqueOrThrow({ where: { id: fixture.task.id } })).toMatchObject({
+    expect(await system.task.findUniqueOrThrow({ where: { id: fixture.task.id } })).toMatchObject({
       prompt: "Selected choice choice-2: Paris",
     });
   });
@@ -331,19 +563,19 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const result = await send(privateTarget());
       expect(result.runId).not.toBe(fixture.run.id);
       await expectPending(fixture);
-      expect(await prisma.event.count({ where: { runId: fixture.run.id } })).toBe(0);
+      expect(await system.event.count({ where: { runId: fixture.run.id } })).toBe(0);
     },
   );
 
   it("retires a question while steering live work for the same bot", async () => {
     const fixture = await waitingCard();
-    await createThreadMessage(prisma, {
+    await createThreadMessage(system, {
       threadId,
       botId,
       role: "bot",
       blocks: [{ kind: "text", text: "Current update" }],
     });
-    const liveTask = await prisma.task.create({
+    const liveTask = await system.task.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -353,7 +585,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         status: "running",
       },
     });
-    const liveRun = await prisma.run.create({
+    const liveRun = await system.run.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -366,19 +598,19 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     });
     const result = await send(privateTarget());
     expect(result.runId).toBe(liveRun.id);
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: liveRun.id } })).toMatchObject({
+    expect(await system.run.findUniqueOrThrow({ where: { id: liveRun.id } })).toMatchObject({
       status: "running",
     });
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "cancelled",
     });
-    expect(await prisma.steeringMessage.count({ where: { runId: liveRun.id } })).toBe(1);
+    expect(await system.steeringMessage.count({ where: { runId: liveRun.id } })).toBe(1);
     expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("rolls back retirement if accepting the new run fails", async () => {
     const fixture = await waitingCard();
-    await createThreadMessage(prisma, {
+    await createThreadMessage(system, {
       threadId,
       botId,
       role: "bot",
@@ -394,20 +626,22 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       },
     });
     await expect(
-      sendThreadMessage(
-        {
-          prisma: failing as PrismaClient,
-          events: { notify } as never,
-          jobs: { enqueue } as never,
-        },
-        actor,
-        privateTarget(),
-        { text: "Paris" },
+      runAsTenant(actor, () =>
+        sendThreadMessage(
+          {
+            prisma: failing as PrismaClient,
+            events: { notify } as never,
+            jobs: { enqueue } as never,
+          },
+          actor,
+          privateTarget(),
+          { text: "Paris" },
+        ),
       ),
     ).rejects.toThrow("synthetic send failure");
     await expectPending(fixture);
-    expect(await prisma.message.count({ where: { threadId, role: "user" } })).toBe(0);
-    expect(await prisma.event.count({ where: { runId: fixture.run.id } })).toBe(0);
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(0);
+    expect(await system.event.count({ where: { runId: fixture.run.id } })).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
   });
 });

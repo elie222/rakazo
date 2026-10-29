@@ -58,7 +58,7 @@ describe("queued save", () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
-  it("discards queued edits on failure and restores the last successful save", async () => {
+  it("restores the last successful save when the latest edit fails", async () => {
     const first = deferred();
     const second = deferred();
     const save = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -69,7 +69,6 @@ describe("queued save", () => {
     queue.update(2);
     first.resolve();
     await settle();
-    queue.update(3);
     const error = new Error("offline");
     second.reject(error);
     await settle();
@@ -134,11 +133,22 @@ describe("queued save", () => {
     queue.update({ ...initial });
     expect(save).not.toHaveBeenCalled();
     queue.update({ ...initial, messages: true });
-    queue.update({ messages: true, scheduledTasks: false });
     request.reject(new Error("offline"));
     await settle();
     expect(onChange).toHaveBeenLastCalledWith(initial);
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed flush until a subsequent edit succeeds", async () => {
+    const error = new Error("offline");
+    const save = vi.fn().mockRejectedValueOnce(error).mockResolvedValue(undefined);
+    const queue = createQueuedSave<boolean>(false, { save, onChange: vi.fn(), onError: vi.fn() });
+    queue.update(true);
+    await expect(queue.flush()).rejects.toBe(error);
+    await expect(queue.flush()).rejects.toBe(error);
+    queue.update(true);
+    await expect(queue.flush()).resolves.toBeUndefined();
+    expect(save.mock.calls).toEqual([[true], [true]]);
   });
 
   it("accepts a new confirmed baseline after a reload", async () => {
@@ -153,4 +163,25 @@ describe("queued save", () => {
     await settle();
     expect(onChange).toHaveBeenLastCalledWith(true);
   });
+});
+
+it("retains a newer edit after an older failure, then rolls back only the latest failure", async () => {
+  const first = deferred();
+  const latest = deferred();
+  const save = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
+  const onChange = vi.fn();
+  const onError = vi.fn();
+  const queue = createQueuedSave<number>(0, { save, onChange, onError });
+  queue.update(1);
+  queue.update(2);
+  first.reject(new Error("older failure"));
+  await settle();
+  expect(save.mock.calls).toEqual([[1], [2]]);
+  expect(onChange).toHaveBeenLastCalledWith(2);
+  expect(onError).not.toHaveBeenCalled();
+  const error = new Error("latest failure");
+  latest.reject(error);
+  await expect(queue.flush()).rejects.toBe(error);
+  expect(onChange).toHaveBeenLastCalledWith(0);
+  expect(onError).toHaveBeenCalledExactlyOnceWith(error);
 });

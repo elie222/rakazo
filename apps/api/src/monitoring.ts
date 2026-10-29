@@ -1,6 +1,8 @@
 import { getLogger, monitoringUserId } from "@rakazo/logging";
+import type { MonitoringConfig } from "@rakazo/logging/monitoring";
 import { Hono } from "hono";
 import type { AppEnv } from "./env.js";
+import { sanitizeNativeEnvelope } from "./native-monitoring.js";
 import { requestBodyLimit } from "./request-body-limit.js";
 
 /**
@@ -13,16 +15,7 @@ export const MAX_MONITORING_ENVELOPE_BYTES = 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 10_000;
 const FORWARDED_RESPONSE_HEADERS = ["retry-after", "x-sentry-rate-limits"];
 
-export type MonitoringConfigResponse =
-  | {
-      dsn: string;
-      environment: string | null;
-      release: string | null;
-      tunnel: string;
-      /** The signed-in user's pseudonymous id; the browser cannot derive it without the secret. */
-      userId: string | null;
-    }
-  | { dsn: null };
+export type MonitoringConfigResponse = MonitoringConfig;
 
 interface DsnTarget {
   publicKey: string;
@@ -78,29 +71,61 @@ export function monitoringRoutes(
     // Only envelopes addressed to the configured project are forwarded, so the tunnel is not an
     // open relay to arbitrary collectors.
     if (!addressedTo(envelope, target)) return c.json({ error: "Unknown DSN." }, 403);
-    let upstream: Response;
-    try {
-      // GlitchTip authenticates by the key in the URL, not the envelope header Sentry also accepts.
-      upstream = await fetchImpl(`${target.envelopeUrl}?sentry_key=${target.publicKey}`, {
-        method: "POST",
-        headers: { "content-type": "application/x-sentry-envelope" },
-        body: envelope,
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      });
-    } catch {
-      getLogger().warn("browser error report forwarding failed");
-      return c.body(null, 502);
-    }
+    return forwardEnvelope(target, envelope, fetchImpl);
+  });
+
+  app.post(
+    "/api/monitoring/native/:surface/api/0/envelope/",
+    requestBodyLimit(MAX_MONITORING_ENVELOPE_BYTES),
+    async (c) => {
+      const surface = c.req.param("surface");
+      if (!target || !config || (surface !== "mobile" && surface !== "desktop"))
+        return c.notFound();
+      let envelope: Uint8Array;
+      try {
+        envelope = await sanitizeNativeEnvelope(
+          new Uint8Array(await c.req.arrayBuffer()),
+          c.req.header("content-encoding"),
+          surface,
+          config,
+        );
+      } catch {
+        return c.body(null, 400);
+      }
+      return forwardEnvelope(target, envelope, fetchImpl);
+    },
+  );
+
+  return app;
+}
+
+async function forwardEnvelope(
+  target: DsnTarget,
+  envelope: Uint8Array,
+  fetchImpl: typeof fetch,
+): Promise<Response> {
+  try {
+    const upstream = await fetchImpl(`${target.envelopeUrl}?sentry_key=${target.publicKey}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-sentry-envelope" },
+      body: new Uint8Array(envelope),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
     await upstream.body?.cancel();
     const headers = new Headers();
     for (const name of FORWARDED_RESPONSE_HEADERS) {
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);
     }
+    if (!upstream.ok)
+      getLogger().warn("client error report forwarding rejected", {
+        "http.status": upstream.status,
+      });
     return new Response(null, { status: upstream.status, headers });
-  });
-
-  return app;
+  } catch {
+    getLogger().warn("client error report forwarding failed");
+    return new Response(null, { status: 502 });
+  }
 }
 
 function addressedTo(envelope: Uint8Array, target: DsnTarget): boolean {

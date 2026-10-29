@@ -31,5 +31,5 @@ export function modelPreflightTestingLabel(
   kind: "api-key" | "sign-in",
 ): ReactNode {
   if (testing) return <Trans>Testing…</Trans>;
-  return kind === "api-key" ? <Trans>Test API key</Trans> : <Trans>Test sign-in</Trans>;
+  return kind === "api-key" ? <Trans>Test API key</Trans> : <Trans>Test connection</Trans>;
 }

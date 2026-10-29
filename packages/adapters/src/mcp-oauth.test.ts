@@ -1,8 +1,10 @@
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
   McpOAuthBroker,
+  McpOAuthClientRequiredError,
   McpReauthorizationRequiredError,
   oauthMaterialSecrets,
   StoredMcpOAuthProvider,
@@ -85,7 +87,7 @@ function chunkedBody(totalBytes: number, chunkBytes: number): ReadableStream<Uin
 }
 
 async function rejectedOAuthBegin(
-  register: () => Response | Promise<Response>,
+  register: (() => Response | Promise<Response>) | null,
   secret?: string,
 ): Promise<Error> {
   vi.stubGlobal(
@@ -114,13 +116,13 @@ async function rejectedOAuthBegin(
           issuer: "https://auth.example.test",
           authorization_endpoint: "https://auth.example.test/authorize",
           token_endpoint: "https://auth.example.test/token",
-          registration_endpoint: "https://auth.example.test/register",
+          ...(register ? { registration_endpoint: "https://auth.example.test/register" } : {}),
           response_types_supported: ["code"],
           grant_types_supported: ["authorization_code", "refresh_token"],
           code_challenge_methods_supported: ["S256"],
         });
       }
-      if (url === "https://auth.example.test/register" && request.method === "POST") {
+      if (register && url === "https://auth.example.test/register" && request.method === "POST") {
         return register();
       }
       throw new Error(`Unexpected request: ${request.method} ${url}`);
@@ -312,12 +314,14 @@ describe("MCP OAuth", () => {
     };
     const context = { spaceId: "workspace-1", userId: "user-1" };
     /** A process of its own: a broker with nothing in memory but the database. */
-    const startProcess = async (network: typeof fetch) => {
+    const startProcess = async (network: typeof fetch, allowPrivateEndpoint = false) => {
       await ready;
-      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
-        fetch: network,
-        resolveHostname: TEST_NETWORK.resolveHostname,
-      });
+      const broker = new McpOAuthBroker(
+        prisma as never,
+        secrets as never,
+        { fetch: network, resolveHostname: TEST_NETWORK.resolveHostname },
+        allowPrivateEndpoint,
+      );
       const provider = await broker.providerFor(server, context);
       if (!(provider instanceof StoredMcpOAuthProvider)) throw new Error("expected a provider");
       return { broker, provider };
@@ -328,7 +332,7 @@ describe("MCP OAuth", () => {
       rows.push(record);
       server.secretId = record.id;
     };
-    return { startProcess, stored, replaceStored, server, context, lockSettings };
+    return { startProcess, stored, replaceStored, server, context, lockSettings, tables };
   }
 
   /** A public-client authorization server: each refresh token works once. */
@@ -382,6 +386,19 @@ describe("MCP OAuth", () => {
     expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
     // Waiting for another process's refresh must not eat the budget for this one's write.
     expect(shared.lockSettings[0]).toContain("lock_timeout");
+  });
+
+  it("keeps a private-network HTTP resource through the broker and refresh when the instance opts in", async () => {
+    const resource = "http://192.0.2.10:8123/mcp";
+    const material = expiringMaterial(EXPIRED());
+    material.oauth.discoveryState.resourceMetadata.resource = resource;
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(material, resource);
+    const { provider } = await shared.startProcess(server.fetch, true);
+
+    expect(await provider.validateResourceURL(resource, resource)).toEqual(new URL(resource));
+    await provider.tokens();
+    expect(server.requests[0]?.get("resource")).toBe(resource);
   });
 
   it.each([
@@ -619,6 +636,180 @@ describe("MCP OAuth", () => {
     expect(await shared.stored()).toEqual(before);
   });
 
+  it("stores a rotated grant when the first commit after the refresh fails", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let failures = 1;
+    shared.tables.mcpServer.update = async (args) => {
+      if (failures-- > 0) throw new Error("connection terminated unexpectedly");
+      return update(args);
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+  });
+
+  it("keeps a rotated grant for this run when every commit fails", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    shared.tables.mcpServer.update = async () => {
+      throw new Error("connection terminated unexpectedly");
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+  });
+
+  it("lets a disconnect that lands during a failed refresh commit win", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider, broker } = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let failures = 1;
+    shared.tables.mcpServer.update = async (args) => {
+      if (failures-- > 0) {
+        await shared.replaceStored({ headers: { "X-Team": "blue" } });
+        throw new Error("connection terminated unexpectedly");
+      }
+      return update(args);
+    };
+
+    expect(await provider.tokens()).toBeUndefined();
+
+    expect(await shared.stored()).toEqual({ headers: { "X-Team": "blue" } });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it.each(["disconnect", "client changed", "server mismatch", "server gone", "endpoint changed"])(
+    "refuses a rotated grant after a failed commit when %s",
+    async (change) => {
+      const server = rotatingAuthServer();
+      const material = {
+        ...expiringMaterial(EXPIRED()),
+        oauthClient: { client_id: "client-1" },
+      };
+      const shared = sharedCredentials(material);
+      const { provider } = await shared.startProcess(server.fetch);
+      const replacement: OAuthMaterial =
+        change === "client changed"
+          ? { oauthClient: { client_id: "replacement-client" } }
+          : change === "server mismatch"
+            ? {
+                oauthClient: {
+                  client_id: "client-1",
+                  authorization_server: "https://other.example.test/",
+                },
+              }
+            : { headers: { "X-Team": "blue" } };
+      shared.tables.mcpServer.update = async () => {
+        await shared.replaceStored(replacement);
+        if (change === "server gone") shared.tables.mcpServer.findFirst = async () => null as never;
+        if (change === "endpoint changed")
+          shared.server.endpoint = "https://other.example.test/mcp";
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toBeUndefined();
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(replacement);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps an observed disconnect when the fallback commit also fails (pre-registered: %s)",
+    async (preRegistered) => {
+      const server = rotatingAuthServer();
+      const shared = sharedCredentials({
+        ...expiringMaterial(EXPIRED()),
+        ...(preRegistered ? { oauthClient: { client_id: "client-1" } } : {}),
+      });
+      const { provider } = await shared.startProcess(server.fetch);
+      let first = true;
+      const replacement = { headers: { "X-Team": "blue" } };
+      shared.tables.mcpServer.update = async () => {
+        if (first) {
+          first = false;
+          await shared.replaceStored(replacement);
+        }
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toBeUndefined();
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(replacement);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps the available grant when both commits fail transiently (newer stored grant: %s)",
+    async (newerStoredGrant) => {
+      const server = rotatingAuthServer();
+      const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+      const { provider } = await shared.startProcess(server.fetch);
+      const replacement = expiringMaterial(Date.now());
+      replacement.oauth.tokens.access_token = "newer-access";
+      replacement.oauth.tokens.refresh_token = "newer-refresh";
+      let commits = 0;
+      shared.tables.mcpServer.update = async () => {
+        if (commits++ === 0 && newerStoredGrant) await shared.replaceStored(replacement);
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toMatchObject({
+        access_token: newerStoredGrant ? "newer-access" : "access-1",
+      });
+      expect(commits).toBe(2);
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(
+        newerStoredGrant
+          ? replacement
+          : expect.objectContaining({
+              oauth: expect.objectContaining({
+                tokens: expect.objectContaining({ refresh_token: "old-refresh" }),
+              }),
+            }),
+      );
+    },
+  );
+
+  it("keeps a rotated grant over the clear a queued process stores after a failed commit", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const api = await shared.startProcess(server.fetch);
+    const worker = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let queued: Promise<unknown> | undefined;
+    shared.tables.mcpServer.update = async (args) => {
+      if (!queued) {
+        queued = worker.provider.tokens();
+        await vi.waitFor(() =>
+          expect(shared.lockSettings.filter((sql) => sql.includes("advisory"))).toHaveLength(2),
+        );
+        throw new Error("connection terminated unexpectedly");
+      }
+      return update(args);
+    };
+
+    expect(await api.provider.tokens()).toMatchObject({ access_token: "access-1" });
+    await queued;
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+      "old-refresh",
+      "old-refresh",
+    ]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+    expect(await api.broker.statusFor(shared.server, shared.context)).toBe("connected");
+  });
+
   it("does not renew a token that is still inside its lifetime", async () => {
     const server = rotatingAuthServer();
     const shared = sharedCredentials(expiringMaterial(Date.now() - 10 * 60 * 1000));
@@ -644,6 +835,36 @@ describe("MCP OAuth", () => {
     expect(provider.authorizationUrl).toBeUndefined();
     expect(onAuthorization).not.toHaveBeenCalled();
     expect(await provider.tokens()).toMatchObject({ access_token: "working" });
+  });
+
+  it("allows private-network HTTP authorization URLs only when the instance opts in", async () => {
+    const url = new URL("http://192.0.2.10:8123/auth/authorize");
+    const allowed = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization: vi.fn(),
+      allowPrivateEndpoint: true,
+    });
+    await allowed.redirectToAuthorization(url);
+    expect(allowed.authorizationUrl).toEqual(url);
+
+    const denied = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization: vi.fn(),
+    });
+    await expect(denied.redirectToAuthorization(url)).rejects.toThrow(/HTTPS/i);
+  });
+
+  it("binds a private-network HTTP resource only when the instance opts in", async () => {
+    const resource = "http://192.0.2.10:8123/mcp";
+    const allowed = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      allowPrivateEndpoint: true,
+    });
+    const denied = new StoredMcpOAuthProvider("server-1", {}, async () => undefined);
+
+    expect(await allowed.validateResourceURL("http://192.0.2.10:8123/mcp", resource)).toEqual(
+      new URL(resource),
+    );
+    expect(
+      await denied.validateResourceURL("http://192.0.2.10:8123/mcp", resource),
+    ).toBeUndefined();
   });
 
   it("allows localhost HTTP browser authorization URLs", async () => {
@@ -836,7 +1057,7 @@ describe("MCP OAuth", () => {
         deploymentSettings: deploymentOwner("user-1"),
         $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       };
-      const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
+      const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
 
       const started = await broker.begin({
         serverId: "server-1",
@@ -1185,6 +1406,13 @@ describe("MCP OAuth", () => {
     expect(error.message).toBe("Could not start MCP OAuth");
   });
 
+  it("asks for a pre-registered client when the server cannot register one", async () => {
+    const error = await rejectedOAuthBegin(null);
+
+    expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
+    expect(error).toMatchObject({ code: MCP_OAUTH_CLIENT_REQUIRED });
+  });
+
   describe("with a pre-registered client", () => {
     const oauthClient = { client_id: "registered-client", client_secret: "registered-secret" };
     const AUTH_SERVER = "https://auth.example.test/";
@@ -1199,7 +1427,16 @@ describe("MCP OAuth", () => {
       {
         challenge = true,
         metadataReads = Number.POSITIVE_INFINITY,
-      }: { challenge?: boolean; metadataReads?: number } = {},
+        resourceScopes,
+        serverScopes,
+      }: {
+        challenge?: boolean;
+        metadataReads?: number;
+        /** `scopes_supported` the resource publishes (RFC 9728). */
+        resourceScopes?: string[];
+        /** `scopes_supported` the authorization server publishes (RFC 8414). */
+        serverScopes?: string[];
+      } = {},
     ) {
       let metadataServed = 0;
       const requested: string[] = [];
@@ -1238,6 +1475,7 @@ describe("MCP OAuth", () => {
             return Response.json({
               resource: "https://mcp.example.test/mcp",
               authorization_servers: ["https://auth.example.test"],
+              ...(resourceScopes ? { scopes_supported: resourceScopes } : {}),
             });
           }
           if (url === "https://auth.example.test/.well-known/oauth-authorization-server") {
@@ -1247,6 +1485,7 @@ describe("MCP OAuth", () => {
               token_endpoint: "https://auth.example.test/token",
               response_types_supported: ["code"],
               code_challenge_methods_supported: ["S256"],
+              ...(serverScopes ? { scopes_supported: serverScopes } : {}),
             });
           }
           if (url === "https://auth.example.test/token" && request.method === "POST") {
@@ -1717,6 +1956,104 @@ describe("MCP OAuth", () => {
       });
 
       expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read mail.send");
+    });
+
+    describe("offline_access", () => {
+      const begin = {
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      };
+
+      it("asks for it with the published scopes when the authorization server offers it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          resourceScopes: ["mail.read"],
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        const url = authorizationUrlOf(started);
+        expect(url.searchParams.get("scope")).toBe("mail.read offline_access");
+        expect(url.searchParams.has("prompt")).toBe(false);
+      });
+
+      it("asks for it at the issuer of a stdio server", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "mail.send", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial(
+          {
+            oauthClient: {
+              ...oauthClient,
+              authorization_server: AUTH_SERVER,
+              scope: "mail.read mail.send",
+            },
+          },
+          { transport: "stdio", endpoint: null },
+        );
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "mail.read mail.send offline_access",
+        );
+      });
+
+      it("asks for it with the configured scope when the authorization server offers it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "mail.send", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({
+          oauthClient: { ...oauthClient, scope: "mail.read mail.send" },
+        });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "mail.read mail.send offline_access",
+        );
+      });
+
+      it("does not repeat it when the configured scope already asks for it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({
+          oauthClient: { ...oauthClient, scope: "offline_access mail.read" },
+        });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "offline_access mail.read",
+        );
+      });
+
+      it("leaves the published scopes alone when the authorization server does not offer it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          resourceScopes: ["mail.read"],
+          serverScopes: ["mail.read"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read");
+      });
+
+      it("requests no scope when neither the resource nor the client names one", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.has("scope")).toBe(false);
+      });
     });
 
     describe("for a stdio server", () => {
@@ -2441,7 +2778,7 @@ describe("MCP OAuth", () => {
       mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
 
     await expect(
       broker.begin({
@@ -2493,10 +2830,15 @@ describe("MCP setup with an existing access token", () => {
         load: vi.fn(() => JSON.stringify({ secret: "fake-executor-token" })),
         put: vi.fn(),
       };
-      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
-        ...TEST_NETWORK,
-        fetch,
-      });
+      const broker = new McpOAuthBroker(
+        prisma as never,
+        secrets as never,
+        {
+          ...TEST_NETWORK,
+          fetch,
+        },
+        true,
+      );
       await expect(
         broker.begin({
           serverId: "server",

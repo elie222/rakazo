@@ -13,7 +13,8 @@ import type {
   PageBrowserResult,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
+import type { FakeBrowserProviderOptions } from "./fake-browser.js";
+import { FakeBrowserProvider } from "./fake-browser.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 
@@ -131,6 +132,22 @@ export class ComputerBrowserProvider implements BrowserProvider {
       { command: "act", actions: request.actions },
       context,
     );
+    const elements = Array.isArray(live?.elements) ? live.elements : undefined;
+    // The helper refused a step before changing the page: settled, and fixable without desktop tools.
+    if (live?.ok === false && live.uncertain === false && live.fallback === undefined) {
+      // A page snapshot sent with the refusal is kept, so the bot can pick the right field.
+      const tree =
+        typeof live.tree === "string" ? live.tree : elements ? formatTree(elements) : undefined;
+      return {
+        ok: false,
+        completed: typeof live.completed === "number" ? live.completed : 0,
+        uncertain: false,
+        url: typeof live.url === "string" ? live.url : "",
+        title: typeof live.title === "string" ? live.title : "",
+        ...(tree !== undefined ? { tree, elements } : {}),
+        error: live.error || DETACHED_MESSAGE,
+      };
+    }
     if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         ok: false,
@@ -138,11 +155,14 @@ export class ComputerBrowserProvider implements BrowserProvider {
         uncertain: live?.uncertain ?? true,
         url: typeof live?.url === "string" ? live.url : "",
         title: typeof live?.title === "string" ? live.title : "",
+        // A step that stopped partway, such as typing, still shows the page as it was left.
+        ...(elements
+          ? { tree: typeof live?.tree === "string" ? live.tree : formatTree(elements), elements }
+          : {}),
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
       };
     }
-    const elements = Array.isArray(live.elements) ? live.elements : undefined;
     return {
       ok: true,
       completed: typeof live.completed === "number" ? live.completed : request.actions.length,
@@ -213,7 +233,7 @@ function formatTree(elements: BrowserSnapshotNode[]): string {
     .map((el) => {
       const value =
         el.value !== undefined && el.value !== "" ? ` value=${JSON.stringify(el.value)}` : "";
-      return `- ${el.role} "${el.name}" [${el.ref}]${value}`;
+      return `- ${el.role} ${JSON.stringify(el.name)} [${el.ref}]${value}`;
     })
     .join("\n");
 }

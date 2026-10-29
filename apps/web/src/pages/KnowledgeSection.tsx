@@ -1,21 +1,26 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
-import { isDeletableMemoryDocument } from "@rakazo/contracts";
-import {
-  Badge,
-  Button,
-  Skeleton,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Textarea,
-} from "@rakazo/ui-web";
-import { Download } from "lucide-react";
+import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { Badge, Button, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  AvailabilityControl,
+  AvailabilityLabel,
+  reachesOtherSpaces,
+  useOwnSpaces,
+} from "../components/integrations/space-availability";
+import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
+
+const NO_DOCS: MemoryDocument[] = [];
+const NO_SKILLS: AgentSkillCatalogEntry[] = [];
 
 const fieldClass = "mt-2 w-full font-mono text-[13px] leading-relaxed";
 
@@ -24,110 +29,75 @@ function rowClass(open: boolean): string {
 }
 
 /**
- * Bot memory and the current user's skills in this space.
- * User-scoped memory shared across bots lives in the Memory settings overlay.
+ * Bot memory. Skills belong to the person in a space, not to one bot, so they live in
+ * the Skills dialog; memory shared across bots lives in the Memory settings overlay.
  */
-export function KnowledgeSection({
-  botId,
-  onSkillsChange,
-}: {
-  botId: string;
-  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
-}) {
-  const rpc = useSpaceRpc();
-  const { t } = useLingui();
+export function KnowledgeSection({ botId }: { botId: string }) {
   return (
-    <section className="mt-6" data-testid="bot-knowledge">
-      <Tabs defaultValue="memory">
-        <TabsList aria-label={t`Knowledge`}>
-          <TabsTrigger value="memory">
-            <Trans>Memory</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="skills">
-            <Trans>Shared skills</Trans>
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="memory">
-          <MemoryDocumentList
-            key={botId}
-            load={() => rpc.memory.list({ botId, scope: "bot" })}
-            exportFilename="memory.md"
-            testId="bot-knowledge-memory"
-          />
-        </TabsContent>
-        <TabsContent value="skills">
-          <AgentSkills onSkillsChange={onSkillsChange} />
-        </TabsContent>
-      </Tabs>
-    </section>
+    <MemoryDocumentList
+      key={botId}
+      input={{ botId, scope: "bot" }}
+      testId="bot-knowledge-memory"
+      compact
+    />
   );
 }
 
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
-  const rpc = useSpaceRpc();
   return (
     <section
       className="rounded-xl border border-border px-4 py-4"
       data-testid="space-memory-documents"
     >
-      <h3 className="text-[15px] font-medium text-foreground">
-        <Trans>Shared documents</Trans>
-      </h3>
+      <SettingsSectionHeading className="mb-0">
+        <Trans>Shared memory</Trans>
+      </SettingsSectionHeading>
+      <p className="mt-1 text-[13px] text-muted-foreground">
+        <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
+      </p>
       <div className="mt-3">
-        <MemoryDocumentList
-          load={() => rpc.memory.list({ scope: "user" })}
-          exportFilename="space-memory.md"
-          testId="space-memory-list"
-        />
+        <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
       </div>
     </section>
   );
 }
 
 function MemoryDocumentList({
-  load,
-  exportFilename,
+  input,
   testId,
+  compact = false,
 }: {
-  load: () => Promise<MemoryDocument[]>;
-  exportFilename: string;
+  input: { botId?: string; scope: "bot" | "user" };
   testId: string;
+  compact?: boolean;
 }) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
-  const [loading, setLoading] = useState(true);
-  const [docs, setDocs] = useState<MemoryDocument[]>([]);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const list = queries.memory.list.queryOptions({ input });
+  // Bots write memory as they run, so every open refreshes behind the cached list.
+  const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  const docs = listQuery.data ?? NO_DOCS;
+  const loading = listQuery.isPending;
+  const [showAll, setShowAll] = useState(false);
+  // Once shown, memory stays visible while the panel is open, even if emptied.
+  const [memoryShown, setMemoryShown] = useState(false);
+  const memoryVisible = memoryShown || docs.some((doc) => !isEmptyBotMemory(doc));
+  if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
   const [conflicted, setConflicted] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const generation = useRef(0);
-  const loadRef = useRef(load);
-  loadRef.current = load;
 
-  useEffect(() => {
-    const current = ++generation.current;
-    void loadRef
-      .current()
-      .then((list) => {
-        if (current !== generation.current) return;
-        setDocs(list);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (current !== generation.current) return;
-        setDocs([]);
-        setLoading(false);
-        setError(t`Could not load`);
-      });
-    return () => {
-      generation.current += 1;
-    };
-  }, [t]);
+  function setDocs(update: (current: MemoryDocument[]) => MemoryDocument[]) {
+    return writeSaved(queryClient, list.queryKey, (current) => update(current ?? []));
+  }
 
   function openDoc(doc: MemoryDocument) {
     setLoadedRevision(doc.revision);
@@ -154,7 +124,7 @@ function MemoryDocumentList({
     setError(null);
     try {
       await rpc.memory.remove({ documentId: doc.id });
-      setDocs((current) => current.filter((entry) => entry.id !== doc.id));
+      await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
       closeDoc();
     } catch {
       setError(t`Could not remove`);
@@ -173,13 +143,15 @@ function MemoryDocumentList({
         content: draft,
         expectedRevision: loadedRevision,
       });
-      setDocs((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      await setDocs((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
       closeDoc();
     } catch (err) {
       if (err instanceof ORPCError && err.code === "CONFLICT") {
         setConflicted(true);
         try {
-          setDocs(await loadRef.current());
+          await fetchFresh(queryClient, list);
         } catch {
           // Keep the draft and conflict state even if refreshing fails.
         }
@@ -191,18 +163,18 @@ function MemoryDocumentList({
     }
   }
 
-  async function exportMarkdown() {
+  async function downloadDocument(doc: MemoryDocument) {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      // Re-fetch through the section's own loader so the file is current,
-      // then sync the list so the export matches what is displayed.
-      const fresh = await loadRef.current();
-      generation.current += 1;
-      setDocs(fresh);
-      const markdown = fresh.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
-      downloadArtifactBytes(exportFilename, "text/markdown", new TextEncoder().encode(markdown));
+      const latest = (await fetchFresh(queryClient, list)).find((entry) => entry.id === doc.id);
+      if (!latest) throw new Error("Document unavailable");
+      downloadArtifactBytes(
+        latest.path.split("/").at(-1) ?? latest.path,
+        "text/markdown",
+        new TextEncoder().encode(latest.content),
+      );
     } catch {
       setError(t`Could not load`);
     } finally {
@@ -210,104 +182,119 @@ function MemoryDocumentList({
     }
   }
 
+  if (compact && !memoryVisible && !error) return null;
   return (
-    <div data-testid={testId}>
-      {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
-      {conflicted ? (
-        <div className="pb-2 text-[13px] text-destructive">
-          <Trans>Document changed. Reopen to edit the latest version.</Trans>
-        </div>
+    <section className={compact ? "mt-6" : undefined}>
+      {compact ? (
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+          <Trans>Memory</Trans>
+        </h3>
       ) : null}
-      {loading ? <Skeleton className="h-10 w-full" /> : null}
-      {!loading && docs.length === 0 && !error ? (
-        <div className="py-1 text-[13px] text-muted-foreground">
-          <Trans>Nothing remembered yet</Trans>
-        </div>
-      ) : null}
-      <div>
-        {docs.map((doc) => (
-          <div key={doc.id} className="border-b border-border last:border-0">
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={busy}
-              onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
-              className="-mx-2 h-auto w-[calc(100%+1rem)] justify-start whitespace-normal px-2 py-2.5 text-start"
-            >
-              <span className="flex w-full items-baseline justify-between gap-3">
-                <span
-                  className="min-w-0 truncate text-[14px] font-normal text-foreground"
-                  dir="auto"
-                >
-                  {doc.path}
-                </span>
-                <span className="shrink-0 text-[13px] font-normal text-muted-foreground tabular-nums">
-                  <Trans>rev {doc.revision}</Trans>
-                </span>
-              </span>
-            </Button>
-            {openId === doc.id ? (
-              <div className="pb-2">
-                <Textarea
-                  aria-label={doc.path}
+      <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
+        {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
+        {conflicted ? (
+          <div className="pb-2 text-[13px] text-destructive">
+            <Trans>Document changed. Reopen to edit the latest version.</Trans>
+          </div>
+        ) : null}
+        {loading ? <Skeleton className="h-10 w-full" /> : null}
+        {!compact && !loading && docs.length === 0 && !error ? (
+          <div className="py-1 text-[13px] text-muted-foreground">
+            <Trans>Nothing remembered yet</Trans>
+          </div>
+        ) : null}
+        <div>
+          {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+            <div key={doc.id} className="border-b border-border last:border-0">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  type="button"
                   disabled={busy}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                  className={fieldClass}
-                  dir="auto"
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    disabled={busy || conflicted || draft === doc.content}
-                    onClick={() => void save(doc)}
-                    className="rounded-full"
+                  onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
+                  className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
+                >
+                  <span
+                    className="min-w-0 truncate text-[14px] font-normal text-foreground"
+                    dir="auto"
                   >
-                    <Trans>Save</Trans>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    type="button"
+                    {doc.path}
+                  </span>
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<Button variant="ghost" size="icon-sm" />}
+                    aria-label={t`Download`}
                     disabled={busy}
-                    onClick={closeDoc}
-                    size="sm"
+                    onClick={() => downloadDocument(doc)}
                   >
-                    <Trans>Cancel</Trans>
-                  </Button>
-                  {isDeletableMemoryDocument(doc.path) ? (
+                    <Download className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <Trans>Download</Trans>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              {openId === doc.id ? (
+                <div className="pb-2">
+                  <Textarea
+                    aria-label={doc.path}
+                    disabled={busy}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
+                    className={fieldClass}
+                    dir="auto"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      disabled={busy || conflicted || draft === doc.content}
+                      onClick={() => void save(doc)}
+                    >
+                      <Trans>Save</Trans>
+                    </Button>
                     <Button
                       variant="ghost"
                       type="button"
                       disabled={busy}
-                      onClick={() => void remove(doc)}
+                      onClick={closeDoc}
                       size="sm"
-                      className="ml-auto text-destructive"
                     >
-                      {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                      <Trans>Cancel</Trans>
                     </Button>
-                  ) : null}
+                    {isDeletableMemoryDocument(doc.path) ? (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void remove(doc)}
+                        size="sm"
+                        className="ml-auto text-destructive"
+                      >
+                        {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
-        ))}
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {compact && docs.length > 5 && !showAll ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground"
+            onClick={() => setShowAll(true)}
+          >
+            <Trans>Show more</Trans>
+          </Button>
+        ) : null}
       </div>
-      {docs.length ? (
-        <Button
-          variant="outline"
-          type="button"
-          disabled={busy}
-          onClick={() => void exportMarkdown()}
-          className="mt-3 rounded-full"
-        >
-          <Download data-icon="inline-start" />
-          <Trans>Download as markdown</Trans>
-        </Button>
-      ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -331,52 +318,37 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-function AgentSkills({
-  onSkillsChange,
-}: {
-  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
-}) {
+/** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
+export function AgentSkills() {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
-  const [loading, setLoading] = useState(true);
-  const [skills, setSkills] = useState<AgentSkillCatalogEntry[]>([]);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  // The same list the composer offers as skill mentions, so a change here shows there at once.
+  const list = queries.agentSkills.list.queryOptions();
+  const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  const skills = (listQuery.data ?? NO_SKILLS).filter((skill) => skill.source !== "plugin");
+  const loading = listQuery.isPending;
   const [open, setOpen] = useState<AgentSkill | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const generation = useRef(0);
   const selection = useRef(0);
+  const spaceCount = useOwnSpaces().length;
 
   async function refresh() {
-    const current = ++generation.current;
-    const list = await rpc.agentSkills.list();
-    if (current !== generation.current) return;
-    setSkills(list);
-    onSkillsChange(list);
+    return fetchFresh(queryClient, list);
   }
 
-  useEffect(() => {
-    const current = ++generation.current;
-    void rpc.agentSkills
-      .list()
-      .then((list) => {
-        if (current !== generation.current) return;
-        setSkills(list);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (current !== generation.current) return;
-        setSkills([]);
-        setLoading(false);
-        setError(t`Could not load`);
-      });
-    return () => {
-      generation.current += 1;
+  useEffect(
+    () => () => {
       selection.current += 1;
-    };
-  }, [t]);
+    },
+    [],
+  );
 
   async function openSkill(entry: AgentSkillCatalogEntry) {
     if (busy) return;
@@ -466,13 +438,19 @@ function AgentSkills({
               type="button"
               disabled={busy}
               onClick={() => void openSkill(entry)}
-              className={`${rowClass(false)} block`}
+              className={`${rowClass(false)} -mx-2.5 w-[calc(100%+1.25rem)] block`}
             >
               <span className="flex w-full items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
+                <span
+                  className="min-w-0 truncate text-[14px] font-normal text-foreground"
+                  dir="auto"
+                >
                   {entry.name}
                 </span>
-                <SkillSourceBadge source={entry.source} />
+                <span className="flex shrink-0 items-center gap-2">
+                  <AvailabilityLabel availability={entry.availability} />
+                  <SkillSourceBadge source={entry.source} />
+                </span>
               </span>
               <span
                 className="mt-0.5 block truncate text-[12.5px] text-muted-foreground"
@@ -484,13 +462,36 @@ function AgentSkills({
           ))
         : null}
       {editorOpen ? (
-        <div className="px-2.5 pb-2">
+        <div className="pb-2">
           {open ? (
-            <div className="flex items-center gap-2 pb-1">
-              <div className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
+            <div className="flex min-h-7 items-center gap-2">
+              <div className="min-w-0 truncate text-[14px] font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
               <SkillSourceBadge source={open.source} />
+              {open.source === "user" ? (
+                <div className="ms-auto">
+                  <AvailabilityControl
+                    kind="skill"
+                    id={open.id}
+                    availability={open.availability}
+                    onChanged={async () => {
+                      // Another skill may have been opened while this was saving; leave it alone.
+                      const opened = selection.current;
+                      // Narrowed away from this space, the skill can no longer be read here.
+                      const here = (await refresh()).some((entry) => entry.id === open.id);
+                      if (selection.current !== opened) return;
+                      if (!here) {
+                        selection.current += 1;
+                        setOpen(null);
+                        return;
+                      }
+                      const fresh = await rpc.agentSkills.get({ skillId: open.id });
+                      if (selection.current === opened) setOpen(fresh);
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
           <Textarea
@@ -510,7 +511,7 @@ function AgentSkills({
                 type="button"
                 disabled={busy || !draft.trim() || (!creating && draft === open?.content)}
                 onClick={() => void save()}
-                className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
+                className="bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
               >
                 <Trans>Save</Trans>
               </Button>
@@ -525,7 +526,7 @@ function AgentSkills({
                 setCreating(false);
                 setConfirmingDelete(false);
               }}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
+              className="px-3 py-1.5 text-[13px] text-muted-foreground"
             >
               {open?.readOnly ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
             </Button>
@@ -535,11 +536,19 @@ function AgentSkills({
                 type="button"
                 disabled={busy}
                 onClick={() => void remove(open)}
-                className={`ms-auto rounded-lg px-3 py-1.5 text-[13px] ${
+                className={`ms-auto px-3 py-1.5 text-[13px] ${
                   confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >
-                {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                {confirmingDelete ? (
+                  reachesOtherSpaces(open.availability, spaceCount) ? (
+                    <Trans>Remove from every space?</Trans>
+                  ) : (
+                    <Trans>Confirm delete</Trans>
+                  )
+                ) : (
+                  <Trans>Delete</Trans>
+                )}
               </Button>
             ) : null}
           </div>
@@ -557,9 +566,10 @@ function AgentSkills({
             setDraft(NEW_SKILL_TEMPLATE);
             setError(null);
           }}
-          className="mt-2 px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
+          className="-mx-2.5 mt-2 h-auto min-h-11 w-[calc(100%+1.25rem)] justify-between px-2.5 py-2.5 text-sm font-normal text-foreground"
         >
           <Trans>New skill</Trans>
+          <Plus aria-hidden="true" className="size-4 text-muted-foreground" />
         </Button>
       )}
     </div>

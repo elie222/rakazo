@@ -11,29 +11,16 @@ function newId(): string {
   return randomBytes(16).toString("hex");
 }
 
-/** Prisma unique-constraint violation; anything else must still throw. */
 function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
 }
 
-/**
- * Everything a brand-new user needs around their account row: a personal
- * organization, its default space, owner memberships for both boundaries,
- * deployment-owner claim, user memory, and notification preferences. Shared by
- * the Better Auth `session.create.before` hook and phone-identity provisioning so
- * both paths stay in lockstep.
- *
- * `claimDeploymentOwner: false` is for identities that did not sign up
- * through the app (phone provisioning): a first texter must never become
- * the deployment owner.
- */
+/** Provision a personal workspace. Signup never grants deployment administration. */
 export async function bootstrapUserSpace(
   prisma: PrismaClient,
   user: { id: string },
   env: SignupPolicyEnv,
-  options: { claimDeploymentOwner?: boolean } = {},
 ): Promise<{ spaceId: string }> {
-  const claimDeploymentOwner = options.claimDeploymentOwner ?? true;
   // Concurrent bootstraps for the same user (e.g. overlapping first phone
   // inbounds) race on every unique key below; each step either wins or
   // joins the winner's state instead of failing.
@@ -93,20 +80,13 @@ export async function bootstrapUserSpace(
     where: { id: "default" },
     create: {
       id: "default",
-      ownerUserId: claimDeploymentOwner ? user.id : null,
+      ownerUserId: null,
       signupsEnabled: policy.enabled,
       signupAllowlist: policy.allowlist.join(","),
       signupPolicyInitialized: true,
     },
     update: {},
   });
-  if (claimDeploymentOwner) {
-    // Conditional claim: only the first concurrent claimant wins the seat.
-    await prisma.deploymentSettings.updateMany({
-      where: { id: "default", ownerUserId: null },
-      data: { ownerUserId: user.id },
-    });
-  }
   const hasMemory = await prisma.memoryDocument.findFirst({
     where: { spaceId: orgId, userId: user.id, scope: "user", path: "MEMORY.md" },
   });

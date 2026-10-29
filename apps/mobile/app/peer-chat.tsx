@@ -1,275 +1,238 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import type { ThreadMessage } from "@rakazo/contracts";
-import {
-  formatTimeSeparator,
-  loadPeerHistory,
-  needsTimeSeparator,
-  peerConversations,
-} from "@rakazo/core";
+import type { PeerConversation } from "@rakazo/core";
+import { displayName, loadPeerHistory, peerConversations } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useHeaderHeight } from "expo-router/react-navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BotAvatar } from "../components/bot-avatar";
+import { glassHeaderOptions } from "../components/glass-title";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { NativeActionButton } from "../components/native-action-button";
-import { NativeSymbol } from "../components/native-symbol";
 import { rpc } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
-import { dateLocaleForUi, useI18n } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
+/** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {
-  const {
-    botId,
-    botName,
-    peerBotId,
-    peerBotName: initialName,
-    botColor,
-    peerBotColor,
-  } = useLocalSearchParams<{
-    botId: string;
-    botName: string;
-    peerBotId: string;
-    peerBotName: string;
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const sideInsets = useSideInsets();
+  const { t } = useI18n();
+  const styles = useThemedStyles(createStyles);
+  const colorScheme = useResolvedAppearance();
+  const tokens = mobileTokens();
+  const params = useLocalSearchParams<{
+    botId?: string;
+    botName?: string;
+    peerBotId?: string;
+    peerBotName?: string;
     botColor?: string;
     peerBotColor?: string;
   }>();
-  const router = useRouter();
-  const { t, locale } = useI18n();
-  const tokens = useMobileTokens();
-  const colorScheme = useResolvedAppearance();
-  const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
-  const [messages, setMessages] = useState<ThreadMessage[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [retry, setRetry] = useState(0);
+  const botId = params.botId ?? "";
+  const peerBotId = params.peerBotId ?? "";
+  const botName = displayName(params.botName, t("Bot"));
+  const [state, setState] = useState<
+    { kind: "loading" } | { kind: "failed" } | { kind: "ready"; chat: PeerConversation | null }
+  >({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const scrollRef = useRef<ScrollView>(null);
+  const userScrolled = useRef(false);
+
   useEffect(() => {
+    if (!botId || !peerBotId) return;
     const abort = new AbortController();
-    setStatus("loading");
-    setMessages([]);
+    setState({ kind: "loading" });
     void loadPeerHistory({
       signal: abort.signal,
       loadPage: (before, signal) =>
         rpc("threads/messages", { botId, before, includePeerRuns: true }, { signal }),
     })
-      .then((loaded) => {
+      .then((messages) => {
         if (abort.signal.aborted) return;
-        setMessages(loaded);
-        setStatus("ready");
+        const sources = messages.map((message) => ({
+          ...message,
+          createdAt: message.createdAt ?? "",
+        }));
+        const chat = peerConversations(sources).find((entry) => entry.peerBotId === peerBotId);
+        setState({ kind: "ready", chat: chat ?? null });
       })
       .catch(() => {
-        if (!abort.signal.aborted) setStatus("error");
+        if (!abort.signal.aborted) setState({ kind: "failed" });
       });
     return () => abort.abort();
-  }, [botId, retry]);
-  const conversation = useMemo(
-    () => peerConversations(messages).find((entry) => entry.peerBotId === peerBotId),
-    [messages, peerBotId],
-  );
-  const peerBotName = conversation?.peerBotName ?? initialName;
-  const currentColor = botColor ?? tokens.mutedForeground;
-  const peerColor = peerBotColor ?? tokens.mutedForeground;
+  }, [botId, peerBotId, attempt]);
+
+  const chat = state.kind === "ready" ? state.chat : null;
+  const peerName = displayName(chat?.peerBotName ?? params.peerBotName, t("Bot"));
   return (
-    <View testID="peer-conversation-view" style={{ flex: 1, backgroundColor: tokens.background }}>
+    <View style={[styles.screen, sideInsets]}>
       <Stack.Screen
         options={{
-          headerTransparent: true,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerStyle: { backgroundColor: "transparent" },
+          ...glassHeaderOptions(""),
           headerTitle: () => (
-            <View
-              accessible
-              accessibilityLabel={`${botName}, ${peerBotName}`}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                borderRadius: 999,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                backgroundColor: tokens.muted,
-                maxWidth: 330,
-              }}
-            >
-              <BotAvatar identity={botId} color={currentColor} size={20} />
+            <View style={styles.pill}>
               <Text
                 numberOfLines={1}
-                style={{ color: tokens.foreground, fontSize: 13, fontWeight: "500", flexShrink: 1 }}
+                style={[styles.name, { color: params.botColor ?? tokens.foreground }]}
               >
                 {botName}
               </Text>
-              <NativeSymbol
-                ios="arrow.left.arrow.right"
-                android="swap-horizontal"
-                size={14}
-                color={tokens.mutedForeground}
-              />
-              <BotAvatar identity={peerBotId} color={peerColor} size={20} />
+              <Text style={styles.muted}>⇄</Text>
               <Text
                 numberOfLines={1}
-                style={{ color: tokens.foreground, fontSize: 13, fontWeight: "500", flexShrink: 1 }}
+                style={[styles.name, { color: params.peerBotColor ?? tokens.foreground }]}
               >
-                {peerBotName}
+                {peerName}
               </Text>
             </View>
           ),
-          headerTitleAlign: "center",
         }}
       />
       <ScrollView
-        testID="peer-conversation-transcript"
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: Platform.OS === "android" ? headerHeight + 20 : 20,
-          paddingBottom: insets.bottom + 88,
-          flexGrow: 1,
+        ref={scrollRef}
+        // Opens at the latest message like a chat; older ones are above.
+        onContentSizeChange={() => {
+          if (!userScrolled.current) scrollRef.current?.scrollToEnd({ animated: false });
         }}
+        onScrollBeginDrag={() => {
+          userScrolled.current = true;
+        }}
+        style={styles.screen}
+        contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
       >
-        {status === "loading" ? (
-          <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
-            {t("Loading…")}
-          </Text>
-        ) : status === "error" ? (
-          <View style={{ alignItems: "center", gap: 12 }}>
-            <Text style={{ color: tokens.mutedForeground }}>{t("Could not load this chat.")}</Text>
-            <NativeActionButton
-              label={t("Retry now")}
-              prominence="secondary"
-              onPress={() => setRetry((value) => value + 1)}
-            />
+        {state.kind === "loading" ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={tokens.mutedForeground} />
           </View>
-        ) : !conversation?.messages.length ? (
-          <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
-            {t("No messages with {peerBotName} yet.", { peerBotName })}
-          </Text>
+        ) : state.kind === "failed" ? (
+          <View style={styles.center}>
+            <Text style={styles.muted}>{t("Could not load this chat.")}</Text>
+            <Pressable accessibilityRole="button" onPress={retry} hitSlop={8}>
+              <Text style={styles.retry}>{t("Try again")}</Text>
+            </Pressable>
+          </View>
+        ) : !chat?.messages.length ? (
+          <View style={styles.center}>
+            <Text style={styles.muted}>{t("No messages yet")}</Text>
+          </View>
         ) : (
-          conversation.messages.map((message, index) => {
-            const sent = message.direction === "sent";
-            const color = sent ? currentColor : peerColor;
+          chat.messages.map((item, index) => {
+            const sent = item.direction === "sent";
             return (
-              <View key={`${message.messageId}-${index}`} style={{ marginBottom: 12 }}>
-                {needsTimeSeparator(
-                  message.createdAt,
-                  conversation.messages[index - 1]?.createdAt,
-                ) ? (
-                  <Text
-                    style={{
-                      textAlign: "center",
-                      color: tokens.mutedForeground,
-                      fontSize: 12,
-                      marginVertical: 12,
-                    }}
-                  >
-                    {formatTimeSeparator(message.createdAt, dateLocaleForUi(locale), {
-                      today: t("Today"),
-                      yesterday: t("Yesterday"),
-                    })}
-                  </Text>
-                ) : null}
-                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8 }}>
-                  <BotAvatar identity={sent ? botId : peerBotId} color={color} size={20} />
-                  <View style={{ maxWidth: "88%", flexShrink: 1 }}>
-                    <Text
-                      style={{
-                        color,
-                        fontWeight: "500",
-                        fontSize: 12,
-                        marginBottom: 4,
-                        // Line the name up with the bubble text, not its edge.
-                        marginHorizontal: 16,
-                      }}
-                    >
-                      {sent ? botName : peerBotName}
-                    </Text>
-                    <View
-                      style={{
-                        backgroundColor: tokens.muted,
-                        borderRadius: 20,
-                        paddingHorizontal: 16,
-                        paddingVertical: 12,
-                      }}
-                    >
-                      <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
-                        {message.text}
-                      </ChatMarkdown>
-                      {message.blocks?.map((block, i) => {
-                        if (block.kind !== "image" && block.kind !== "file") return null;
-                        const key = `${block.artifactId}-${i}`;
-                        if (block.kind === "image" && isInlineImageMimeType(block.mimeType))
-                          return (
-                            <InlineImageAttachment
-                              key={key}
-                              labelColor={tokens.foreground}
-                              threadTarget={{ botId }}
-                              artifactId={block.artifactId}
-                              name={block.name}
-                              mimeType={block.mimeType}
-                              onOpen={() =>
-                                router.push({
-                                  pathname: "/image",
-                                  params: {
-                                    botId,
-                                    artifactId: block.artifactId,
-                                    name: block.name,
-                                    mimeType: block.mimeType,
-                                  },
-                                })
-                              }
-                            />
-                          );
-                        return (
-                          <Pressable
-                            key={key}
-                            accessibilityRole="button"
-                            onPress={() =>
-                              void openMobileArtifact(
-                                { botId },
-                                block.artifactId,
-                                block.name,
-                                block.mimeType,
-                              ).catch((error) =>
-                                Alert.alert(
-                                  t("Could not open file"),
-                                  errorText(error, t("Try again.")),
-                                ),
-                              )
-                            }
-                          >
-                            <Text style={{ color: tokens.foreground }}>{block.name}</Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-                </View>
+              <View
+                key={`${item.messageId}-${index}`}
+                style={[styles.bubble, sent ? styles.sent : styles.received]}
+              >
+                <Text
+                  style={[
+                    styles.speaker,
+                    { color: (sent ? params.botColor : params.peerBotColor) ?? tokens.foreground },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {sent ? botName : peerName}
+                </Text>
+                <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+                  {item.text}
+                </ChatMarkdown>
+                {item.blocks?.map((block, index) => {
+                  if (block.kind !== "file" && block.kind !== "image") return null;
+                  if (block.kind === "image" && isInlineImageMimeType(block.mimeType))
+                    return (
+                      <InlineImageAttachment
+                        key={index}
+                        threadTarget={{ botId }}
+                        artifactId={block.artifactId}
+                        name={block.name}
+                        mimeType={block.mimeType}
+                        labelColor={tokens.foreground}
+                        onOpen={() =>
+                          router.push({
+                            pathname: "/image",
+                            params: {
+                              botId,
+                              artifactId: block.artifactId,
+                              name: block.name,
+                              mimeType: block.mimeType,
+                            },
+                          })
+                        }
+                      />
+                    );
+                  return (
+                    <NativeActionButton
+                      key={index}
+                      label={block.name}
+                      prominence="plain"
+                      onPress={() =>
+                        void openMobileArtifact(
+                          { botId },
+                          block.artifactId,
+                          block.name,
+                          block.mimeType,
+                        ).catch((error) =>
+                          Alert.alert(t("Could not open file"), errorText(error, t("Try again."))),
+                        )
+                      }
+                    />
+                  );
+                })}
               </View>
             );
           })
         )}
       </ScrollView>
-      <View
-        pointerEvents="box-none"
-        style={{
-          position: "absolute",
-          bottom: insets.bottom + 12,
-          left: 0,
-          right: 0,
-          alignItems: "center",
-        }}
-      >
+      <View style={[styles.close, { paddingBottom: Math.max(16, insets.bottom) }]}>
         <NativeActionButton
           label={t("Close Chat")}
-          prominence="secondary"
           onPress={() => router.back()}
-          style={{ borderRadius: 999, minHeight: 44, alignSelf: "center" }}
+          prominence="quiet"
         />
       </View>
     </View>
   );
+}
+
+function createStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    pill: {
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderRadius: 24,
+      backgroundColor: tokens.muted,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    name: { ...typeScale.footnote, fontWeight: "600", flexShrink: 1 },
+    close: { alignItems: "center", paddingTop: 16 },
+    screen: { flex: 1, backgroundColor: native.page },
+    content: { flexGrow: 1, paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+    muted: { color: tokens.mutedForeground, ...typeScale.body, textAlign: "center" },
+    retry: { color: tokens.link, ...typeScale.body },
+    bubble: { maxWidth: "85%", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
+    sent: { alignSelf: "flex-end", backgroundColor: tokens.accent },
+    received: { alignSelf: "flex-start", backgroundColor: tokens.muted },
+    speaker: { color: tokens.mutedForeground, ...typeScale.footnote, marginBottom: 4 },
+  });
 }

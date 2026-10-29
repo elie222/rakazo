@@ -49,7 +49,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "off");
   await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
   await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);
-  await expect(aside.getByText("Loading activity…")).toHaveCount(0);
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toHaveCount(0);
   await expect(aside.locator("[data-sidebar-group]").getByText("Chief").first()).toBeVisible();
   await captureActivitySidebar(page, testInfo, "57-activity-mode-off");
 
@@ -71,7 +71,9 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(aside.getByText("Now", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
@@ -117,6 +119,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.emulateMedia({ colorScheme: "light" });
   await runSearch.fill("Chief");
   await activityToggle.click();
+  await aside.getByTestId("sidebar-search-trigger").click();
   const normalSearch = aside.getByRole("textbox", { name: "Search", exact: true });
   await expect(normalSearch).toHaveValue("");
   await normalSearch.fill("Chief");
@@ -132,7 +135,9 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "on");
-  await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(aside.getByText("Recent", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/Cancelled|keep working/i);
@@ -173,10 +178,11 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(activityRow(page, "Chief")).toHaveCount(0);
 });
 
-test("activity filters keep retry when a refresh fails", async ({ page }) => {
+test("activity filters keep retry when a refresh fails", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `activity-retry-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
+  const now = new Date();
 
   type Phase = "ok" | "empty" | "fail" | "hang";
   let phase: Phase = "ok";
@@ -195,7 +201,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
     notificationsEnabled: false,
     agentMessage: null,
     promptSnippet: "filter me",
-    updatedAt: new Date().toISOString(),
+    updatedAt: new Date(now.getTime() - 45_000).toISOString(),
   };
 
   const agentRun = {
@@ -236,12 +242,15 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
   await activityToggle.click();
   // The list refreshes every 15s; drive that poll with a controlled clock.
   await page.clock.install();
+  await page.clock.setFixedTime(now);
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityRow(page, "Chief")).toBeVisible({ timeout: 20_000 });
 
   await expect(activityRow(page, "Chief")).toContainText("filter me");
+  await expect(activityRow(page, "Chief").getByText("just now", { exact: true })).toBeVisible();
   await expect(activityRow(page, "Helper")).toContainText("Update from Scout: filter me");
+  await captureActivitySidebar(page, testInfo, "61a-activity-first-minute");
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
   await activitySearch.fill("Update from Scout");
   await expect(activityRow(page, "Helper")).toBeVisible();
@@ -263,11 +272,13 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
 
   phase = "hang";
   await retry.click();
-  await expect(aside.getByText("Loading activity…")).toBeVisible();
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect.poll(() => releaseHang !== null).toBe(true);
   releaseHang?.();
-  await expect(aside.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(aside.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   await expect(retry).toHaveCount(0);
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");

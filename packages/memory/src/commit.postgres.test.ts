@@ -1,6 +1,6 @@
 import type { AdapterContext, MemoryCommitRequest } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { createDb, runAsSystem } from "@rakazo/db";
+import { asSystem, createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MarkdownMemoryStore } from "./index.js";
 
@@ -30,7 +30,7 @@ describePostgres("memory commits (PostgreSQL)", () => {
       await prisma.$disconnect();
       await db.pool.end();
     };
-    await prisma.organization.create({
+    await asSystem(prisma).organization.create({
       data: {
         id: context.spaceId,
         name: "Memory Test Organization",
@@ -57,7 +57,7 @@ describePostgres("memory commits (PostgreSQL)", () => {
   afterAll(async () => {
     if (!prisma) return;
     try {
-      await prisma.organization.deleteMany({ where: { id: context.spaceId } });
+      await asSystem(prisma).organization.deleteMany({ where: { id: context.spaceId } });
     } finally {
       await close();
     }

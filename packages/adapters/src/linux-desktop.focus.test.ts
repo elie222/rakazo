@@ -161,6 +161,28 @@ describe("provider focus command", () => {
     }
   });
 
+  it("launches an app with no window without waiting for it to exit", async () => {
+    const sleeper = path.join(bin, "sleeper");
+    writeExecutable(
+      sleeper,
+      ["#!/bin/sh", 'echo $$ > "$FOCUS_RECORDED"', "exec sleep 30", ""].join("\n"),
+    );
+    writeFileSync(windows, "");
+    const started = Date.now();
+    const result = runFocus(await focusCommand({ kind: "focus", application: sleeper }));
+    expect(result.status, result.stderr).toBe(0);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    let pid = 0;
+    await vi.waitFor(
+      () => {
+        pid = Number(readFileSync(recorded, "utf8").trim());
+        expect(pid).toBeGreaterThan(0);
+      },
+      { timeout: 5_000, interval: 20 },
+    );
+    process.kill(pid, "SIGTERM");
+  });
+
   it("resolves a workspace-relative program when no window matches", async () => {
     writeExecutable(
       path.join(workspace, "tool"),
@@ -225,7 +247,7 @@ describe("provider focus command", () => {
     });
     expect(command).toContain("nohup /tmp/rakazo/browser-launch-1 'https://example.test'");
     expect(command).toContain(
-      "in chromium|chromium-browser|google-chrome|google-chrome-stable|chrome)",
+      "in chromium|chromium-browser|google-chrome|google-chrome-stable|chrome|brave-browser)",
     );
     expect(command).not.toContain("in firefox)");
     expect(command).not.toContain(`\ncd '${workspace}'\n`);

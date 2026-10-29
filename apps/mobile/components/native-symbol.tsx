@@ -1,4 +1,5 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
+import type { SymbolWeight } from "expo-symbols";
 import { SymbolView } from "expo-symbols";
 import type { ComponentProps } from "react";
 import type { ColorValue } from "react-native";
@@ -9,10 +10,12 @@ export function NativeSymbol({
   android,
   size = 18,
   color,
+  weight = "medium",
 }: {
   ios: string;
   android: ComponentProps<typeof Ionicons>["name"];
   size?: number;
+  weight?: SymbolWeight;
   color?: ColorValue;
 }) {
   const tokens = useMobileTokens();
@@ -22,7 +25,7 @@ export function NativeSymbol({
       name={ios as never}
       size={size}
       tintColor={tint}
-      weight="medium"
+      weight={weight}
       resizeMode="scaleAspectFit"
       fallback={<Ionicons name={android} size={size} color={tint} />}
     />

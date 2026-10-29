@@ -1,13 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
-import type { RPCHandler } from "@orpc/server/fetch";
-import type { Actor } from "@rakazo/contracts";
-import {
-  isLocalSettingsProcedure,
-  LOCAL_SETTINGS_RPC,
-  LOCAL_SETTINGS_TOKEN_HEADER,
-} from "@rakazo/contracts";
-import { type PrismaClient, requireMembership } from "@rakazo/db";
+import { LOCAL_COMPUTER_HOST_PATH, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
+import { readBoundedBody } from "./http-body.js";
 
 export function validLocalSettingsToken(
   expected: string | undefined,
@@ -22,38 +18,43 @@ export function validLocalSettingsToken(
   );
 }
 
-/** Separate, allowlisted RPC surface; ordinary session authentication is unchanged. */
-export function mountLocalSettings(
+/** Native host choice uses a local OS capability, never an app account. */
+export function mountLocalComputerHost(
   app: Hono,
   deps: {
     token?: string;
+    sandboxProvider?: string;
     prisma: PrismaClient;
-    rpc: RPCHandler<{ actor: Actor | null; signal?: AbortSignal }>;
   },
 ) {
-  app.use(`${LOCAL_SETTINGS_RPC}/*`, async (c) => {
+  // Only the native main process holds this token. Public sessions never authorize this route.
+  app.post(LOCAL_COMPUTER_HOST_PATH, async (c) => {
     c.header("cache-control", "no-store");
     if (!validLocalSettingsToken(deps.token, c.req.header(LOCAL_SETTINGS_TOKEN_HEADER))) {
       return c.json({ error: "Local settings are unavailable" }, 401);
     }
-    if (c.req.method !== "POST" || !isLocalSettingsProcedure(new URL(c.req.url).pathname)) {
-      return c.json({ error: "Not available in local settings" }, 403);
+    if (deps.sandboxProvider !== "docker") return c.json({ error: "Unavailable" }, 403);
+    const body = await readBoundedBody(c.req.raw, 1024);
+    if (body === null) return c.json({ error: "Request too large" }, 413);
+    let computerHost: unknown;
+    try {
+      computerHost = JSON.parse(body).computerHost;
+    } catch {
+      /* invalid JSON */
     }
-    const owner = await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-    const actor = owner?.ownerUserId
-      ? await requireMembership(deps.prisma, owner.ownerUserId).catch(() => null)
-      : null;
-    if (!actor?.isDeploymentOwner) {
-      return c.json(
-        { error: "Create the server owner account before configuring local settings" },
-        409,
-      );
+    if (computerHost !== "docker" && computerHost !== "this-mac") {
+      return c.json({ error: "Invalid computer host" }, 400);
     }
-    const { matched, response } = await deps.rpc.handle(c.req.raw, {
-      prefix: LOCAL_SETTINGS_RPC,
-      context: { actor, signal: c.req.raw.signal },
-    });
-    if (!matched) return c.notFound();
-    return c.newResponse(response.body, response);
+    const selected = computerHost;
+    await runAsSystem("locally authorized computer host choice", () =>
+      deps.prisma.deploymentSettings.upsert({
+        where: { id: "default" },
+        create: { id: "default", computerHost: selected },
+        update: { computerHost: selected },
+      }),
+    );
+    return c.json({ ok: true });
   });
+  // Old native clients must fail closed rather than select a profile implicitly.
+  app.all("/api/desktop-settings/rpc/*", (c) => c.json({ error: "Unavailable" }, 403));
 }

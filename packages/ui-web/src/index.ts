@@ -1,16 +1,17 @@
-export { type AvatarStyle, AvatarStyleProvider, useAvatarStyle } from "./avatar-style.js";
+export { AppMarkStack } from "./app-mark-stack.js";
 export {
+  BOT_AVATAR_COLORS,
+  BOT_MASCOT_SHAPES,
   BotAvatar,
-  DEFAULT_GROK_BOT_COLOR,
+  BotShapePreview,
+  DEFAULT_BOT_AVATAR_COLOR,
   defaultBotAvatarValue,
-  GROK_BOT_COLORS,
-  GROK_MASCOT_SHAPES,
-  GrokShapePreview,
   parseBotAvatar,
   resolvePersonaColorDef,
-  resolvePersonaShape,
   Wordmark,
 } from "./bot-avatar.js";
+export type { BotAvatarActivitySource } from "./bot-avatar-activity.js";
+export { BotAvatarActivityProvider } from "./bot-avatar-activity.js";
 export * from "./components/ui/alert-dialog.js";
 export * from "./components/ui/badge.js";
 export * from "./components/ui/button.js";
@@ -30,11 +31,14 @@ export * from "./components/ui/input-otp.js";
 export * from "./components/ui/kbd.js";
 export * from "./components/ui/label.js";
 export * from "./components/ui/native-select.js";
+export * from "./components/ui/option-select.js";
 export * from "./components/ui/popover.js";
 export * from "./components/ui/radio-group.js";
 export * from "./components/ui/scroll-area.js";
 export * from "./components/ui/select.js";
 export * from "./components/ui/separator.js";
+export * from "./components/ui/sheet.js";
+export * from "./components/ui/sidebar.js";
 export * from "./components/ui/skeleton.js";
 export * from "./components/ui/sonner.js";
 export * from "./components/ui/spinner.js";
@@ -47,4 +51,5 @@ export * from "./components/ui/toggle-group.js";
 export * from "./components/ui/tooltip.js";
 export { GroupAvatar, type GroupAvatarMember, type GroupAvatarProps } from "./group-avatar.js";
 export { cn } from "./lib/utils.js";
+export { LogoAvatar } from "./logo-avatar.js";
 export { ModelThinkingOptions } from "./model-thinking-options.js";

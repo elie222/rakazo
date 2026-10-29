@@ -14,49 +14,26 @@ export function modelCredentialProviderFilter(provider: string): string | { in: 
   return ids.length === 1 ? provider : { in: ids };
 }
 
-type ModelCredentialScope = { userId: string; spaceId: string };
+type ModelCredentialScope = { userId: string };
 
-export async function selectSpaceModelPreference(
-  prisma: Pick<PrismaClient, "spaceModelPreference">,
+/** Stores a connection's own model choice, which it keeps in every Space; roles hold the rest. */
+export function saveModelPreference(
+  prisma: Pick<PrismaClient, "userModelPreference">,
   scope: ModelCredentialScope,
   credentialId: string,
   modelId: string | null | undefined,
   thinkingLevel?: string | null,
 ) {
   const persistedModelId = usableModelId(modelId);
-  await prisma.spaceModelPreference.updateMany({
-    where: {
-      spaceId: scope.spaceId,
-      userId: scope.userId,
-      isDefault: true,
-      credentialId: { not: credentialId },
-    },
-    data: { isDefault: false },
-  });
-  return prisma.spaceModelPreference.upsert({
-    where: {
-      spaceId_userId_credentialId: {
-        spaceId: scope.spaceId,
-        userId: scope.userId,
-        credentialId,
-      },
-    },
+  return prisma.userModelPreference.upsert({
+    where: { userId_credentialId: { userId: scope.userId, credentialId } },
     create: {
-      spaceId: scope.spaceId,
       userId: scope.userId,
       credentialId,
       modelId: persistedModelId,
       thinkingLevel: thinkingLevel ?? null,
-      isDefault: true,
     },
-    // The level belongs to the stored modelId, so callers resolve it
-    // themselves: pass the existing level to keep it, null to clear it. An
-    // omitted level never survives a model change on this write.
-    update: {
-      modelId: persistedModelId,
-      isDefault: true,
-      thinkingLevel: thinkingLevel ?? null,
-    },
+    update: { modelId: persistedModelId, thinkingLevel: thinkingLevel ?? null },
   });
 }
 
@@ -71,33 +48,19 @@ function withModelPreference<
       createdAt: Date;
       updatedAt: Date;
     };
-    isDefault: boolean;
     modelId: string | null;
     thinkingLevel: string | null;
   },
 >(preference: T) {
   return {
     ...preference.credential,
-    isDefault: preference.isDefault,
     defaultModel: usableModelId(preference.modelId),
     thinkingLevel: preference.thinkingLevel,
   };
 }
 
-export async function findDefaultModelCredential(
-  prisma: PrismaClient,
-  scope: ModelCredentialScope,
-) {
-  const preference = await prisma.spaceModelPreference.findFirst({
-    where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
-    include: { credential: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-  });
-  return preference ? withModelPreference(preference) : null;
-}
-
 export function findNewestUserModelCredential(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "userModelCredential">,
   userId: string,
   provider: string,
 ) {
@@ -115,10 +78,8 @@ type OrderedCredential = {
 };
 
 type OrderedPreference<C extends OrderedCredential> = {
-  id: string;
   modelId: string | null;
   thinkingLevel: string | null;
-  isDefault: boolean;
   updatedAt: Date;
   credential: C;
 };
@@ -128,14 +89,24 @@ function compareDescendingId(left: string, right: string) {
   return left < right ? 1 : -1;
 }
 
+/** Most recently saved first. */
 export function comparePreferenceOrder(
-  left: Pick<OrderedPreference<OrderedCredential>, "id" | "isDefault" | "updatedAt">,
-  right: Pick<OrderedPreference<OrderedCredential>, "id" | "isDefault" | "updatedAt">,
+  left: { credentialId: string; updatedAt: Date },
+  right: { credentialId: string; updatedAt: Date },
 ) {
-  if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
   const updated = right.updatedAt.getTime() - left.updatedAt.getTime();
   if (updated !== 0) return updated;
-  return compareDescendingId(left.id, right.id);
+  return compareDescendingId(left.credentialId, right.credentialId);
+}
+
+function compareOrderedPreference(
+  left: OrderedPreference<OrderedCredential>,
+  right: OrderedPreference<OrderedCredential>,
+) {
+  return comparePreferenceOrder(
+    { credentialId: left.credential.id, updatedAt: left.updatedAt },
+    { credentialId: right.credential.id, updatedAt: right.updatedAt },
+  );
 }
 
 function compareCredentialOrder(left: OrderedCredential, right: OrderedCredential) {
@@ -148,8 +119,8 @@ function compareCredentialOrder(left: OrderedCredential, right: OrderedCredentia
 
 /**
  * Credential a save or run would use for this provider and model.
- * A preference whose model id matches wins, then the space's provider preference
- * (default first), then the newest account credential. Unreadable secrets are not skipped.
+ * A preference whose model id matches wins, then the provider preference
+ * (most recently saved first), then the newest account credential. Unreadable secrets are not skipped.
  */
 export function chooseModelCredential<C extends OrderedCredential>(input: {
   provider: string;
@@ -167,7 +138,7 @@ export function chooseModelCredential<C extends OrderedCredential>(input: {
         canonicalPiProviderId(preference.credential.provider) ===
         canonicalPiProviderId(input.provider),
     )
-    .sort(comparePreferenceOrder);
+    .sort(compareOrderedPreference);
   if (requestedModelId) {
     const matching = preferences.find((preference) => preference.modelId === requestedModelId);
     if (matching) return { source: "preference", preference: matching };
@@ -193,9 +164,9 @@ function appendCredential<C extends OrderedCredential>(
 }
 
 /**
- * Credentials to try when saving a space default, best first.
+ * Credentials to try when saving a main model, best first.
  * The preference that already owns the model is the only candidate.
- * Otherwise the space preference comes first, ahead of a newer unused account.
+ * Otherwise the latest preference comes first, ahead of a newer unused account.
  */
 export function defaultModelCredentialCandidates<C extends OrderedCredential>(input: {
   provider: string;
@@ -210,7 +181,7 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
         canonicalPiProviderId(preference.credential.provider) ===
         canonicalPiProviderId(input.provider),
     )
-    .sort(comparePreferenceOrder);
+    .sort(compareOrderedPreference);
   const credentials = input.credentials
     .filter(
       (credential) =>
@@ -228,7 +199,7 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
     if (owners.length > 0) return owners;
   }
 
-  const spacePreference = preferences[0]?.credential;
+  const latestPreference = preferences[0]?.credential;
   const preferenceByCredentialId = new Map(
     preferences.map((preference) => [preference.credential.id, preference]),
   );
@@ -240,7 +211,7 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
   const open: C[] = [];
   const replacing: C[] = [];
   const add = (credential: C) => {
-    if (spacePreference && credential.id === spacePreference.id) return;
+    if (latestPreference && credential.id === latestPreference.id) return;
     appendCredential(replacesSavedModel(credential.id) ? replacing : open, seen, credential);
   };
   for (const preference of preferences) add(preference.credential);
@@ -248,7 +219,7 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
 
   const ordered: C[] = [];
   const picked = new Set<string>();
-  if (spacePreference) appendCredential(ordered, picked, spacePreference);
+  if (latestPreference) appendCredential(ordered, picked, latestPreference);
   for (const credential of open) appendCredential(ordered, picked, credential);
   for (const credential of replacing) appendCredential(ordered, picked, credential);
   return ordered;
@@ -263,23 +234,22 @@ function credentialFromChoice<
 >(choice: ReturnType<typeof chooseModelCredential<C>>) {
   if (!choice) return null;
   if (choice.source === "preference") return withModelPreference(choice.preference);
-  return { ...choice.credential, isDefault: false, defaultModel: null, thinkingLevel: null };
+  return { ...choice.credential, defaultModel: null, thinkingLevel: null };
 }
 
 export async function findModelCredential(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "userModelPreference" | "userModelCredential">,
   scope: ModelCredentialScope,
   provider: string,
   modelId?: string | null,
 ) {
   if (
-    typeof prisma.spaceModelPreference.findMany === "function" &&
+    typeof prisma.userModelPreference.findMany === "function" &&
     typeof prisma.userModelCredential.findMany === "function"
   ) {
     const [preferences, credentials] = await Promise.all([
-      prisma.spaceModelPreference.findMany({
+      prisma.userModelPreference.findMany({
         where: {
-          spaceId: scope.spaceId,
           userId: scope.userId,
           credential: { provider: modelCredentialProviderFilter(provider) },
         },
@@ -298,15 +268,14 @@ export async function findModelCredential(
   // When a helper or bot selects a free-form model, prefer the preference that owns
   // that modelId so runtime uses the same credential the picker advertised.
   if (requestedModelId) {
-    const matching = await prisma.spaceModelPreference.findFirst({
+    const matching = await prisma.userModelPreference.findFirst({
       where: {
-        spaceId: scope.spaceId,
         userId: scope.userId,
         modelId: requestedModelId,
         credential: { provider: modelCredentialProviderFilter(provider) },
       },
       include: { credential: true },
-      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ updatedAt: "desc" }, { credentialId: "desc" }],
     });
     if (matching) {
       return credentialFromChoice(
@@ -314,14 +283,13 @@ export async function findModelCredential(
       );
     }
   }
-  const preference = await prisma.spaceModelPreference.findFirst({
+  const preference = await prisma.userModelPreference.findFirst({
     where: {
-      spaceId: scope.spaceId,
       userId: scope.userId,
       credential: { provider: modelCredentialProviderFilter(provider) },
     },
     include: { credential: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+    orderBy: [{ updatedAt: "desc" }, { credentialId: "desc" }],
   });
   if (preference) {
     return credentialFromChoice(
@@ -337,4 +305,27 @@ export async function findModelCredential(
       credentials: credential ? [credential] : [],
     }),
   );
+}
+
+/** One connection by id, with its own model; null when it is gone. */
+export async function findModelCredentialById(
+  prisma: Pick<PrismaClient, "userModelCredential">,
+  scope: ModelCredentialScope,
+  credentialId: string,
+  provider?: string,
+) {
+  const credential = await prisma.userModelCredential.findFirst({
+    where: {
+      id: credentialId,
+      userId: scope.userId,
+      ...(provider ? { provider: modelCredentialProviderFilter(provider) } : {}),
+    },
+    include: { userPreferences: { where: { userId: scope.userId } } },
+  });
+  if (!credential) return null;
+  const { userPreferences, ...row } = credential;
+  const preference = userPreferences[0];
+  return preference
+    ? withModelPreference({ ...preference, credential: row })
+    : { ...row, defaultModel: null, thinkingLevel: null };
 }

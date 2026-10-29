@@ -1,7 +1,123 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { createLogger } from "./logger.js";
 import { redactBindings, redactSensitiveText } from "./redaction.js";
+import { createTestSink } from "./test-sink.js";
 
 describe("redaction", () => {
+  it.each([
+    'Headers.append: "fake pasted snippet\nPGPASSWORD=fake-value" is an invalid header value.',
+    'Headers.append: "fake pasted snippet\nPGPASSWORD=fake-value',
+    'Headers.append: "fake "quoted" snippet" is an invalid header value.',
+  ])("redacts echoed header values throughout log events: %s", (message) => {
+    const fixed = 'Headers.append: "[Redacted]" is an invalid header value.';
+    expect(redactSensitiveText(message)).toBe(fixed);
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    const error = new TypeError(message);
+    error.stack = `TypeError: ${message}\n    at fetch (example.js:1:1)`;
+    logger.error(message, error, { reason: message });
+    expect(sink.events[0]).toMatchObject({
+      message: fixed,
+      reason: fixed,
+      error: {
+        message: fixed,
+        stack: message.endsWith("value.")
+          ? `TypeError: ${fixed}\n    at fetch (example.js:1:1)`
+          : `TypeError: ${fixed}`,
+      },
+    });
+    expect(JSON.stringify(sink.events)).not.toContain("fake");
+  });
+
+  it("redacts echoed headers in serialized structured provider failures", () => {
+    const message = 'Headers.append: "fake pasted snippet" is an invalid header value.';
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    logger.warn("run.failed", { error: { diagnostic: message }, reason: message });
+    expect(sink.events[0]).toMatchObject({
+      reason: 'Headers.append: "[Redacted]" is an invalid header value.',
+      error: {
+        message: JSON.stringify({
+          diagnostic: 'Headers.append: "[Redacted]" is an invalid header value.',
+        }),
+      },
+    });
+    expect(JSON.stringify(sink.events)).not.toContain("fake pasted snippet");
+  });
+
+  it("preserves non-header messages in plain-object failures", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    const error = { message: "fixture failure" };
+    logger.warn("run.failed", { error });
+    expect(sink.events[0]).toMatchObject({
+      error: { message: JSON.stringify(error) },
+    });
+  });
+
+  it("preserves numeric request budgets without exposing token values or content", () => {
+    expect(
+      redactBindings({
+        requestedMaxTokens: 2048,
+        nested: { effective_max_tokens: 512 },
+        items: [{ effectiveMaxTokens: 0, accessToken: 1234 }],
+        token: 1234,
+        prompt: "fixture content",
+      }),
+    ).toEqual({
+      requestedMaxTokens: 2048,
+      nested: { effective_max_tokens: 512 },
+      items: [{ effectiveMaxTokens: 0, accessToken: "[Redacted]" }],
+      token: "[Redacted]",
+      prompt: "[Redacted]",
+    });
+  });
+
+  it.each([
+    "fixture-secret",
+    { apiKey: "fixture-secret" },
+    ["fixture-secret"],
+    null,
+    -1,
+    0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])("redacts non-count values in budget fields: %j", (value) => {
+    expect(redactBindings({ requestedMaxTokens: value, effectiveMaxTokens: value })).toEqual({
+      requestedMaxTokens: "[Redacted]",
+      effectiveMaxTokens: "[Redacted]",
+    });
+  });
+
+  it("handles a full-envelope-sized failed email candidate without blocking", () => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    // A child deadline also catches synchronous regex stalls that block the test runner's timers.
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = "a.".repeat(512 * 1024);
+         process.stdout.write(String(redactSensitiveText(text) === text));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
+
+  it("keeps non-email candidates and redacts adjacent and punctuated email addresses", () => {
+    expect(
+      redactSensitiveText(
+        "a.b.c a-b-c (first.last+tag@example.com), next@example.net+other@example.org",
+      ),
+    ).toBe("a.b.c a-b-c ([Redacted]), [Redacted][Redacted]");
+  });
+
   it("redacts secrets, credentials, and message bodies", () => {
     const redacted = redactBindings({
       "user.id": "user-1",
@@ -158,5 +274,57 @@ describe("redaction", () => {
     expect(redacted).toContain('"password":"[Redacted]"');
     expect(redacted).toContain('"token":"[Redacted]"');
     expect(redacted).toContain('"authorization":"[Redacted]"');
+  });
+
+  it.each([
+    "Authorization: Basic ZmFrZTpmaXh0dXJl",
+    "Authorization: token fixture-credential",
+    "proxy-authorization=Digest fixture-credential",
+    "x-api-key: fixture-credential",
+    "X-API-KEY=fixture-credential",
+  ])("redacts header credentials in free text: %s", (header) => {
+    const redacted = redactSensitiveText(`request failed with ${header} attached`);
+    expect(redacted).toContain("=[Redacted] attached");
+    expect(redacted).not.toMatch(/ZmFrZTpmaXh0dXJl|fixture-credential/);
+  });
+
+  it("redacts quoted JSON fields whose names contain a secret name", () => {
+    expect(
+      redactSensitiveText(
+        'Raw body: {"access_token":"fixture-a","refresh_token":"fixture-r","client_secret":"fixture-s","x-api-key":"fixture-k","client_id":"public-id"}',
+      ),
+    ).toBe(
+      'Raw body: {"access_token":"[Redacted]","refresh_token":"[Redacted]","client_secret":"[Redacted]","x-api-key":"[Redacted]","client_id":"public-id"}',
+    );
+  });
+
+  it("handles a long word made of secret names without blocking", () => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = "token".repeat(200 * 1024) + ' "' + "secret".repeat(100 * 1024);
+         process.stdout.write(String(redactSensitiveText(text) === text));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
+
+  it("redacts user profile paths in free text", () => {
+    expect(redactSensitiveText("cannot open /home/example-user/app.db")).toBe(
+      "cannot open /[user]/app.db",
+    );
+    expect(redactSensitiveText("cannot open /Users/example-user/app.db")).toBe(
+      "cannot open /[user]/app.db",
+    );
+    expect(redactSensitiveText("cannot open C:\\Users\\example-user\\app.db")).toBe(
+      "cannot open [user]\\app.db",
+    );
   });
 });

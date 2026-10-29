@@ -23,3 +23,28 @@ playwright-report
 test-results
 verify-report
 *.log
+
+# Credentials, dumps and agent scratch never belong in an image. CI builds from a clean checkout;
+# these keep an untracked file out of a fallback build on a host checkout. infra/compose/
+# check-image.sh fails the publish if one still gets in.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
+**/*.csv
+**/*.dump
+**/*.sqlite
+.context
+.claude
+.deepsec
+.tmp
+.playwright-cli
+.deploy.lock
+.last-deployed-revision

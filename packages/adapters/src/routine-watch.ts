@@ -4,25 +4,30 @@ import type {
   AdapterContext,
   AgentHomeStore,
   ConnectorProvider,
+  ConnectorTool,
   JobPublisher,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
-import { connectorKindFromToolName, watchToolRefusal } from "@rakazo/core";
+import { connectorKindFromToolName, redactSecrets, watchToolRefusal } from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  listApprovalRules,
   parseComputerMode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { shellCommandEnvironment } from "./bot-secrets.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
+import { nativeShellCommandArgv } from "./native-shell.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -52,6 +57,8 @@ export type RoutineWatchDeps = {
   connector?: ConnectorProvider;
   /** The shell tool's desktop-protection guard: why a command is refused on a graphical computer. */
   commandRefusal?: (command: string) => string | undefined;
+  /** Decrypts Vault command credentials. Absent, a command watch runs without them. */
+  secretStore?: SecretStore;
 };
 
 export type RoutineWatchTarget = {
@@ -87,7 +94,6 @@ export function parseRoutineWatchState(value: unknown): RoutineWatchState | null
   return parsed.success ? parsed.data : null;
 }
 
-/** When the next check is due. */
 export function nextRoutineWatchAt(watch: RoutineWatch, from: Date): Date {
   return new Date(from.getTime() + watch.everyMinutes * 60_000);
 }
@@ -204,7 +210,11 @@ function itemFields(signature: string | undefined): string | undefined {
  * anywhere in the result that carries the first field is an item; that field
  * is its identity, and the rest decide whether it was updated.
  */
-export function readItems(data: unknown, track: readonly string[]): Reading {
+export function readItems(
+  data: unknown,
+  track: readonly string[],
+  secrets: readonly string[] = [],
+): Reading {
   const [identity, ...fields] = track;
   const items = new Map<string, { fields: string[]; titles: string[] }>();
   let count = 0;
@@ -227,7 +237,7 @@ export function readItems(data: unknown, track: readonly string[]): Reading {
     }
     for (const child of Object.values(record)) visit(child);
   };
-  visit(resultJson(data));
+  visit(redactJsonStrings(resultJson(data), secrets));
   // IDs can repeat in nested results. Preserve every object's values, independent of order.
   const entries = Object.fromEntries(
     [...items].map(([id, item]) => [
@@ -249,6 +259,20 @@ export function readItems(data: unknown, track: readonly string[]): Reading {
 
 /** A result as JSON: the parsed text of an MCP or text result, or the data itself. */
 function resultJson(data: unknown): unknown {
+  if (isMcpEnvelope(data)) {
+    const structured = (data as { structuredContent?: unknown }).structuredContent;
+    if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+      return structured;
+    }
+    const texts = toolResultTextParts(data);
+    if (texts.length > 1) {
+      try {
+        return texts.map((text) => JSON.parse(text));
+      } catch {
+        // Some servers split one JSON document across text blocks instead.
+      }
+    }
+  }
   const text = typeof data === "string" || isMcpEnvelope(data) ? toolResultText(data) : null;
   if (text === null) return data;
   try {
@@ -256,6 +280,20 @@ function resultJson(data: unknown): unknown {
   } catch {
     throw new RoutineWatchError("The result is not JSON, so its tracked fields cannot be read.");
   }
+}
+
+function redactJsonStrings(value: unknown, secrets: readonly string[]): unknown {
+  if (!secrets.length) return value;
+  if (typeof value === "string") return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactJsonStrings(item, secrets));
+  if (value && typeof value === "object") {
+    const redacted: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      redacted[redactSecrets(key, secrets)] = redactJsonStrings(child, secrets);
+    }
+    return redacted;
+  }
+  return value;
 }
 
 function isMcpEnvelope(data: unknown): boolean {
@@ -396,14 +434,46 @@ async function readComputer(
   if (watch.kind === "command") {
     // Runs this shell command on the bot's computer every interval, in its folder,
     // without a model or per-run approval: equivalent to the bot running it itself.
-    const result = await run(deps, computer, ctx, ["sh", "-lc", watch.command ?? ""], cwd);
+    const secrets = new Set<string>();
+    const secretStore = deps.secretStore;
+    const commandEnvironment = secretStore
+      ? await shellCommandEnvironment({
+          prisma: deps.prisma,
+          secretStore,
+          scope: { spaceId: routine.spaceId, userId: routine.userId },
+          registerRedactions: (values) => {
+            for (const value of values) secrets.add(value);
+          },
+        })
+      : undefined;
+    const shellEnvironment =
+      bot.computer.kind === "desktop" ? await deps.sandbox.environment?.(computer, ctx) : undefined;
+    const argv = shellEnvironment
+      ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
+      : ["sh", "-lc", watch.command ?? ""];
+    const result = await run(
+      deps,
+      computer,
+      ctx,
+      argv,
+      cwd,
+      commandEnvironment && {
+        env: Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
+        unsetEnv: commandEnvironment.unsetEnv,
+      },
+    );
+    const revealed = [...secrets];
+    const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {
       throw new RoutineWatchError(
-        `The check command exited with ${result.code}${result.stderr ? `: ${clip(result.stderr)}` : "."}`,
+        `The check command exited with ${result.code}${stderr ? `: ${clip(stderr)}` : "."}`,
       );
     }
-    if (watch.track) return readItems(result.stdout, watch.track);
-    return { fingerprint: sha256(result.stdout), detail: clip(result.stdout) || null };
+    // Pass the raw JSON. Parsing it here makes a `content` array look like an MCP envelope
+    // on the second parse, and the watch pauses.
+    if (watch.track) return readItems(result.stdout, watch.track, revealed);
+    const stdout = redactSecrets(result.stdout, revealed);
+    return { fingerprint: sha256(stdout), detail: clip(stdout) || null };
   }
 
   const paths = (watch.paths ?? []).map((path) => {
@@ -453,6 +523,7 @@ async function run(
   ctx: AdapterContext,
   argv: string[],
   cwd: string | undefined,
+  launch?: { env?: Record<string, string>; unsetEnv: string[] },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   let stdout = "";
   let stderr = "";
@@ -460,7 +531,13 @@ async function run(
   try {
     for await (const event of deps.sandbox.execute(
       computer,
-      { argv, cwd, timeoutMs: CHECK_TIMEOUT_MS },
+      {
+        argv,
+        cwd,
+        timeoutMs: CHECK_TIMEOUT_MS,
+        ...(launch?.env ? { env: launch.env } : {}),
+        ...(launch ? { unsetEnv: launch.unsetEnv } : {}),
+      },
       ctx,
     )) {
       if (event.type === "stdout") stdout += event.data;
@@ -488,6 +565,8 @@ async function readTool(
   } catch (error) {
     throw new RoutineWatchError(`Could not list the integration's tools: ${errorText(error)}`);
   }
+  // Discovery waits on every provider; the tool call gets its own full budget.
+  ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
   const call = { tool: toolName, args: watch.args ?? {}, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool
@@ -502,10 +581,10 @@ async function readTool(
       resolved.tool.name,
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
-    readOnly: resolved.tool.readOnly,
-    rules: (await deps.prisma.actionApprovalRule.findMany({
-      where: { spaceId: routine.spaceId, createdByUserId: routine.userId },
-      select: { effect: true, matchKind: true, matchValue: true },
+    readOnly: declaredRead(resolved.tool),
+    rules: (await listApprovalRules(deps.prisma, {
+      userId: routine.userId,
+      spaceId: routine.spaceId,
     })) as ActionApprovalRule[],
   });
   if (refusal) throw new RoutineWatchError(refusal);
@@ -539,18 +618,23 @@ async function readTool(
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
+  const texts = toolResultTextParts(data);
+  if (texts.length) return texts.join("\n");
+  return stableStringify(data ?? null);
+}
+
+function toolResultTextParts(data: unknown): string[] {
   const content = (data as { content?: unknown } | null)?.content;
   if (Array.isArray(content)) {
-    const texts = content
+    return content
       .filter(
         (part): part is { type: "text"; text: string } =>
           (part as { type?: unknown })?.type === "text" &&
           typeof (part as { text?: unknown }).text === "string",
       )
       .map((part) => part.text);
-    if (texts.length) return texts.join("\n");
   }
-  return stableStringify(data ?? null);
+  return [];
 }
 
 function errorText(error: unknown): string {
@@ -734,5 +818,10 @@ export async function validateRoutineWatch(
       )
     )?.tool;
   if (!tool) throw new RoutineWatchError(`No connected integration has a tool named ${name}.`);
-  assertWatchToolReadOnly(name, tool.readOnly);
+  assertWatchToolReadOnly(name, declaredRead(tool));
+}
+
+/** A batch runs whatever actions its arguments name, so it is never a declared read. */
+function declaredRead(tool: ConnectorTool): boolean | undefined {
+  return tool.batch ? undefined : tool.readOnly;
 }

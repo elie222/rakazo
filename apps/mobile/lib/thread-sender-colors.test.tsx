@@ -1,45 +1,85 @@
-import { readFileSync } from "node:fs";
-import { resolvePersonaColorDef } from "@rakazo/core";
-import { botColors, darkTokens, fontWeight, typeScale } from "@rakazo/ui-tokens";
-import React, { useState } from "react";
+import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
+import { botColors, darkTokens } from "@rakazo/ui-tokens";
+import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
-import { expect, it } from "vitest";
-import { messagePresentationSegments } from "./message-presentation";
+import { expect, it, vi } from "vitest";
+import type { MobileBot, MobileSnapshot } from "./api";
 
-const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-const helpers = source.slice(
-  source.indexOf("function memberName("),
-  source.indexOf("type MessageActionProps"),
-);
-const cards = source.slice(
-  source.indexOf("const MessageBubble = memo(function MessageBubble({"),
-  source.indexOf("function AgentEventLabel("),
-);
-const scope = {
-  React,
-  useState,
-  memo: <T,>(component: T) => component,
-  useResolvedAppearance: () => "dark",
-  mobileTokens: () => darkTokens,
-  useI18n: () => ({ t: (text: string) => text }),
-  resolvePersonaColorDef,
-  messagePresentationSegments,
-  blockText: () => "Hello",
-  MessageCaption: () => null,
-  formatFileSize: () => undefined,
-  View: "div",
-  Text: "span",
+vi.mock("react-native", () => ({
+  Alert: { alert: vi.fn() },
+  Appearance: { getColorScheme: () => "dark", addChangeListener: () => ({ remove() {} }) },
+  Linking: { openURL: vi.fn() },
+  Platform: { OS: "ios", select: (options: { ios?: unknown }) => options.ios },
   Pressable: "button",
-  typeScale,
-  fontWeight,
-};
-const MessageBubble = new Function(
-  ...Object.keys(scope),
-  ts.transpileModule(`${helpers}\n${cards}\nreturn MessageBubble;`, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText,
-)(...Object.values(scope));
+  StyleSheet: { create: <T,>(styles: T) => styles },
+  Text: "span",
+  TextInput: "input",
+  View: "div",
+}));
+
+vi.mock("react-native-reanimated", () => ({
+  default: { View: "div" },
+  useAnimatedStyle: (style: () => unknown) => style(),
+  useReducedMotion: () => true,
+  useSharedValue: (value: number) => ({ value }),
+  withTiming: (value: number) => value,
+}));
+
+vi.mock("expo-secure-store", () => ({}));
+vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
+vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
+vi.mock("./native", () => ({ native: {}, useResolvedAppearance: () => "dark" }));
+
+vi.mock("@rakazo/chat-ui/native", () => ({
+  ChatMarkdown: () => null,
+  withBlockMentions: <T,>(blocks: T) => blocks,
+}));
+
+vi.mock("../components/message-caption", () => ({
+  MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
+}));
+vi.mock("../components/ComputerCard", () => ({
+  ComputerCard: ({ onOpen }: { onOpen: () => void }) => {
+    onOpen();
+    return null;
+  },
+}));
+// Cards this file doesn't exercise; each has its own tests.
+vi.mock("../components/thread/ask-block", () => ({ AskBlock: () => null }));
+vi.mock("../components/AskActions", () => ({ AskActions: () => null }));
+vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
+vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
+vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
+vi.mock("../components/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+
+import { MessageBubble } from "../components/thread/message-bubble";
+
+type BubbleProps = ComponentProps<typeof MessageBubble>;
+
+function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
+  return (
+    <MessageBubble
+      botId="bot-1"
+      bots={[]}
+      showBotSenderName={false}
+      canAnswer={false}
+      canDismiss={false}
+      onAnswer={async () => undefined}
+      onOpenBot={() => undefined}
+      onOpenComputer={() => undefined}
+      onPreviewMarkdown={() => undefined}
+      onPreviewImage={() => undefined}
+      onOpenPeerChat={() => undefined}
+      actionProps={{}}
+      {...props}
+    />
+  );
+}
 
 function contrastRatio(text: string, surface: string): number {
   const luminance = (hex: string) =>
@@ -57,16 +97,21 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
   for (const [index, color] of botColors.entries()) {
     const id = `bot-${index}`;
     const html = renderToStaticMarkup(
-      <MessageBubble
+      <Bubble
         botId={id}
         groupId="group"
-        bots={[{ id, color }]}
-        members={[{ botId: id, name: "Sender" }]}
+        showBotSenderName={true}
+        bots={[{ id, color } as MobileBot]}
+        members={[{ botId: id, name: "Sender" }] as MobileSnapshot["members"]}
         message={{
           id: "message",
           role: "bot",
           botId: id,
-          blocks: [kind === "text" ? { kind, text: "Hello" } : { kind, name: "Picture" }],
+          blocks: [
+            kind === "text"
+              ? { kind, text: "Hello" }
+              : { kind, name: "Picture", artifactId: "artifact-1", mimeType: "image/png" },
+          ],
         }}
         actionProps={{}}
       />,
@@ -78,4 +123,60 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
     }
     expect(html).toContain(">Sender</span>");
   }
+});
+
+it.each(["text", "image"] as const)(
+  "shows %s sender labels only when speakers need distinguishing",
+  (kind) => {
+    for (const { isGroup, speakerBotIds, expected } of [
+      { isGroup: false, speakerBotIds: ["bot-a", "bot-a"], expected: false },
+      { isGroup: true, speakerBotIds: ["bot-a"], expected: true },
+      { isGroup: false, speakerBotIds: ["bot-a", "bot-b"], expected: true },
+    ]) {
+      const html = renderToStaticMarkup(
+        <Bubble
+          botId="bot-a"
+          botName="Sender"
+          bots={[]}
+          groupId={isGroup ? "group" : undefined}
+          showBotSenderName={shouldShowBotSenderName({ isGroup, speakerBotIds })}
+          members={[{ botId: "bot-a", name: "Sender" }] as MobileSnapshot["members"]}
+          message={{
+            id: "message",
+            role: "bot",
+            botId: "bot-a",
+            blocks: [
+              kind === "text"
+                ? { kind, text: "Hello" }
+                : { kind, name: "Picture", artifactId: "artifact-1", mimeType: "image/png" },
+            ],
+          }}
+          actionProps={{}}
+        />,
+      );
+      expect(html.includes(">Sender</span>")).toBe(expected);
+      if (!expected) expect(html).not.toContain("margin-bottom:4px");
+    }
+  },
+);
+
+it("keeps the bot name when opening a computer without a sender label", () => {
+  const opened: string[][] = [];
+  renderToStaticMarkup(
+    <Bubble
+      botId="bot-a"
+      botName="Sender"
+      bots={[]}
+      showBotSenderName={false}
+      message={{
+        id: "message",
+        role: "bot",
+        botId: "bot-a",
+        blocks: [{ kind: "computer", state: "ready", text: "" }],
+      }}
+      onOpenComputer={(...args) => opened.push(args)}
+      actionProps={{}}
+    />,
+  );
+  expect(opened).toEqual([["bot-a", "Sender"]]);
 });

@@ -1,7 +1,7 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.3.1",
+  "version": "0.3.6",
   "author": {
     "name": "Rakazo"
   },
@@ -10,7 +10,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "pnpm build && electron .",
-    "build": "pnpm check && node scripts/build.mjs && node scripts/copy-static.mjs",
+    "build": "node scripts/build.mjs && node scripts/copy-static.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
     "check": "tsc --noEmit -p tsconfig.json",
@@ -20,18 +20,21 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
-    "electron-updater": "6.8.9",
-    "koffi": "3.3.3"
+    "@rakazo/logging": "workspace:*",
+    "@sentry/electron": "8.3.0",
+    "electron-updater": "6.8.11",
+    "koffi": "3.3.4"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "44.9.1",
+    "electron": "45.0.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "yaml": "2.9.1"
   },
   "build": {
     "appId": "dev.rakazo.desktop",
@@ -64,7 +67,7 @@
     "mac": {
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "category": "public.app-category.productivity",
-      "x64ArchFiles": "**/node_modules/@koromix/koffi-darwin-*/darwin_*/koffi.node",
+      "x64ArchFiles": "{**/node_modules/@koromix/koffi-darwin-*/darwin_*/koffi.node,**/node_modules/@oxc-parser/binding-darwin-*/parser.darwin-*.node}",
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "extendInfo": {

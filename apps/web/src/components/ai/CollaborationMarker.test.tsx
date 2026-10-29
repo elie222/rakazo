@@ -16,19 +16,20 @@ describe("collaboration transcript markers", () => {
 
     expect(html).toContain('data-testid="peer-receipt-chip"');
     expect(html).toContain('aria-label="Message from Research"');
-    expect(html).toContain('class="flex justify-center py-1"');
+    expect(html).toContain('class="flex min-w-0 max-w-full justify-center py-1"');
     expect(html).toContain('class="inline-flex max-w-full');
     expect(html).toContain("truncate font-medium");
     expect(html).toContain("rakazo-organic-avatar");
     expect(html).toContain("Message from Research");
     expect(html).not.toContain("{peer}");
+    expect(html).not.toContain("peer-replies-toggle");
   });
 
   it("animates the active bot glyph from its run status", () => {
     const html = renderToString(
       <ActiveBotGlyph
         bots={[{ botId: "research", color: "#14B8A6", status: "running" }]}
-        label="Research is working"
+        label="Searching the web: injury news"
       />,
     );
 

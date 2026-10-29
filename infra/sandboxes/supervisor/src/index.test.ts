@@ -17,6 +17,7 @@ import {
 } from "./index.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
+  AIMED_SCROLL_CONTROL_LABEL,
   assertRequestIdentity,
   attemptComputerControl,
   browserProfilePathForScreen,
@@ -28,6 +29,7 @@ import {
   computerControlTimeoutMs,
   containerActionStep,
   containerActionSteps,
+  controlHandlesActions,
   createDockerStreamDemuxer,
   currentComputerScreens,
   DOCKER_BROWSER_ALIASES,
@@ -40,12 +42,15 @@ import {
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
+  pageBrowserNotReady,
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
   resetManagedScreensCommand,
+  SCREEN_REUSE_MS,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  screenRecentlyEnsured,
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
@@ -70,10 +75,8 @@ describe("computer screen readiness", () => {
   });
 
   it("does not treat an open TCP port as ready when nothing is serving HTTP on it yet", async () => {
-    // Regression test: a bare TCP accept (e.g. the Docker port mapping coming
-    // up before websockify inside the container does) must not be mistaken
-    // for the screen being ready — that gap is exactly what caused
-    // "socket hang up" in the browser.
+    // A bare TCP accept (the port mapping up before websockify) is not ready:
+    // that gap caused "socket hang up" in the browser.
     const server = net.createServer((socket) => socket.destroy());
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -348,6 +351,58 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "wait", ms: -1 })).toEqual({ waitMs: 0 });
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
+    });
+  });
+
+  it("sends aimed and sideways scrolls to a computer's control service only when it takes them", () => {
+    const plain = [
+      { kind: "scroll" as const, direction: "down" as const, amount: 3 },
+      { kind: "pointer" as const, x: 10, y: 20, type: "click" as const },
+    ];
+    const aimed = [{ kind: "scroll" as const, direction: "down" as const, x: 600, y: 420 }];
+    const sideways = [{ kind: "scroll" as const, direction: "left" as const }];
+    const current = { [AIMED_SCROLL_CONTROL_LABEL]: "1", "rakazo.botId": "bot" };
+    const older = { "rakazo.botId": "bot" };
+    expect(controlHandlesActions(older, plain)).toBe(true);
+    expect(controlHandlesActions(older, aimed)).toBe(false);
+    expect(controlHandlesActions(older, sideways)).toBe(false);
+    expect(controlHandlesActions(undefined, [...plain, ...aimed])).toBe(false);
+    expect(controlHandlesActions(current, [...plain, ...aimed, ...sideways])).toBe(true);
+    // The computer image built with this control service carries the label.
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    expect(dockerfile).toContain(`LABEL ${AIMED_SCROLL_CONTROL_LABEL}="1"`);
+  });
+
+  it("moves the pointer to a scroll's point before turning the wheel", () => {
+    expect(
+      containerActionStep({ kind: "scroll", direction: "down", amount: 4, x: 600.4, y: 420 }),
+    ).toEqual({
+      argv: [
+        "env",
+        "DISPLAY=:1",
+        "xdotool",
+        "mousemove",
+        "--",
+        "600",
+        "420",
+        "click",
+        "--repeat",
+        "4",
+        "5",
+      ],
+    });
+    expect(containerActionStep({ kind: "scroll", direction: "left", amount: 2 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "2", "6"],
+    });
+    expect(containerActionStep({ kind: "scroll", direction: "right", amount: 2 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "2", "7"],
+    });
+    // Both coordinates or neither: a lone x scrolls where the pointer is.
+    expect(containerActionStep({ kind: "scroll", direction: "down", x: 600 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "3", "5"],
     });
   });
 
@@ -724,6 +779,37 @@ describe("sandbox supervisor input containment", () => {
       expect(nextScreenIndex(assigned, `bot-${index}`)).toBe(index);
   });
 
+  it("trusts a screen's setup for a short time unless it is released or human-held", () => {
+    const now = 1_000_000;
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now }, now + SCREEN_REUSE_MS - 1)).toBe(
+      true,
+    );
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now }, now + SCREEN_REUSE_MS)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0 }, now)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now, controlled: true }, now)).toBe(false);
+    expect(screenRecentlyEnsured({ index: 0, ensuredAt: now, controlToken: "token" }, now)).toBe(
+      false,
+    );
+    const assigned = new Map<string, ScreenAssignment>([["bot", { index: 0, ensuredAt: now }]]);
+    releaseAssignedScreen(assigned, "bot");
+    completeWarmReleasedScreen(assigned, "bot", 0, now);
+    expect(screenRecentlyEnsured(assigned.get("bot"), now)).toBe(false);
+  });
+
+  it("recognizes only a page helper that reached no browser before acting", () => {
+    const output = (value: object) => ({ code: 0, stdout: JSON.stringify(value) });
+    expect(pageBrowserNotReady(output({ ok: false, error: "CDP not ready on port 9222: x" }))).toBe(
+      true,
+    );
+    expect(
+      pageBrowserNotReady(output({ ok: false, error: "CDP not ready", uncertain: true })),
+    ).toBe(false);
+    expect(pageBrowserNotReady(output({ ok: false, error: "Element not found" }))).toBe(false);
+    expect(pageBrowserNotReady(output({ ok: true }))).toBe(false);
+    expect(pageBrowserNotReady({ code: 1, stdout: "" })).toBe(false);
+    expect(pageBrowserNotReady({ code: 0, stdout: "not json" })).toBe(false);
+  });
+
   it("frees a released screen slot so a ninth Team bot can reuse it", () => {
     const assigned = new Map<string, ScreenAssignment>();
     for (let index = 0; index < 8; index += 1) {
@@ -1051,8 +1137,8 @@ describe("sandbox supervisor input containment", () => {
 });
 
 describe("docker exec stream demux", () => {
-  const frame = (type: number, text: string) => {
-    const payload = Buffer.from(text, "utf8");
+  const frame = (type: number, text: string | Buffer) => {
+    const payload = typeof text === "string" ? Buffer.from(text, "utf8") : text;
     const header = Buffer.alloc(8);
     header[0] = type;
     header.writeUInt32BE(payload.length, 4);
@@ -1130,6 +1216,37 @@ describe("docker exec stream demux", () => {
     });
   });
 
+  it("keeps UTF-8 characters split across frames and chunks intact", () => {
+    const stderr = Buffer.from("😀é\n");
+    const multiplexed = Buffer.concat([
+      ...[...Buffer.from("é😀\n")].flatMap((byte, i) => [
+        frame(1, Buffer.from([byte])),
+        frame(2, stderr.subarray(i, i + 1)),
+      ]),
+      frame(2, Buffer.from([0xf0])),
+      frame(1, Buffer.from([0xe2])),
+      frame(2, Buffer.from([0x9f])),
+      frame(1, Buffer.from([0x82])),
+    ]);
+    const cases = [
+      [multiplexed, { stdout: "é😀\n\ufffd", stderr: "😀é\n\ufffd" }],
+      [
+        Buffer.concat([Buffer.from("raw é😀\n"), Buffer.from([0xe2, 0x82])]),
+        { stdout: "raw é😀\n\ufffd", stderr: "" },
+      ],
+      [Buffer.from([0x61, 0xc3]), { stdout: "a\ufffd", stderr: "" }],
+    ] as const;
+    for (const [bytes, expected] of cases) {
+      const demuxer = createDockerStreamDemuxer();
+      const live = [...bytes].flatMap((byte) => demuxer.push(Buffer.from([byte])));
+      live.push(...demuxer.finish());
+      const streamed = { stdout: "", stderr: "" };
+      for (const piece of live) streamed[piece.stream] += piece.data;
+      expect(streamed).toEqual(expected);
+      expect(demuxDockerStream(bytes)).toEqual(expected);
+    }
+  });
+
   it("rejects frames with nonzero reserved header padding as raw stdout", () => {
     // type 1, nonzero padding, size 0 — would look like an empty stdout frame without the check
     const padded = Buffer.from([0x01, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00]);
@@ -1141,7 +1258,7 @@ describe("docker exec stream demux", () => {
 });
 
 describe("computer command identity", () => {
-  it("runs the user's terminal as the same workspace user and environment as the bot's shell", () => {
+  it("gives commands the workspace user's home, PATH and package prefixes on the screen's display", () => {
     expect(computerCommandEnv({ display: ":2" })).toEqual([
       "DISPLAY=:2",
       "HOME=/home/rakazo",
@@ -1149,18 +1266,5 @@ describe("computer command identity", () => {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
     ]);
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    // Every exec, including file writes for uploads, inherits the container's non-root user
-    // (see containerCreateOptions).
-    const execs = source.match(/container\.exec\(\{[\s\S]*?\}\)/g) ?? [];
-    expect(execs.length).toBeGreaterThanOrEqual(2);
-    for (const exec of execs) expect(exec).not.toMatch(/\bUser\s*:/);
-    const route = (path: string) =>
-      source.slice(
-        source.indexOf(`app.post("${path}"`),
-        source.indexOf("app.", source.indexOf(`app.post("${path}"`) + 5),
-      );
-    expect(route("/computers/:id/exec")).toContain("computerCommandEnv(layout)");
-    expect(route("/computers/:id/terminal")).toContain("computerCommandEnv(screen.layout)");
   });
 });

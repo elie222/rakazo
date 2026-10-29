@@ -1477,7 +1477,7 @@ describe("native website links", () => {
         ?.querySelector("rn-view[data-background-color]")
         ?.getAttribute("data-background-color"),
     ).toBe(darkTokens.faviconPlate);
-    // Body colour, not the old blue; the underline sits on the label, not the tile.
+    // The underline sits on the label, not the tile.
     expect(link?.getAttribute("data-color")).toBe(darkTokens.foreground);
     expect(link?.getAttribute("data-text-decoration-line")).toBe("none");
     expect(load).toHaveBeenCalledWith("https://native-a.example.test");
@@ -1754,6 +1754,62 @@ describe("native external link confirmation", () => {
       expect(linking.openURL).toHaveBeenCalledWith("https://app.example.test/threads/1");
     });
     await view.cleanup();
+  });
+});
+
+describe("native trusted link sites", () => {
+  async function renderTrusted(markdown: string, trustedSites: string[], trustSite = vi.fn()) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    alert.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MarkdownLinkPromptProvider trustedSites={trustedSites} trustSite={trustSite}>
+          <ChatMarkdown>{markdown}</ChatMarkdown>
+        </MarkdownLinkPromptProvider>,
+      );
+    });
+    const link = () => container.querySelector<HTMLElement>("[data-accessibility-role='link']");
+    return { link, unmount: () => act(async () => root.unmount()) };
+  }
+
+  it("opens the link and trusts its site from the third button", async () => {
+    const trustSite = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const view = await renderTrusted("[Docs](https://docs.example.test/a)", [], trustSite);
+    await act(async () => {
+      view.link()?.click();
+    });
+    const buttons = alert.mock.calls.at(-1)![2] as Array<{ text: string; onPress?: () => void }>;
+    expect(buttons.map((button) => button.text)).toEqual([
+      "Cancel",
+      "Always open example.test",
+      "Open",
+    ]);
+    await act(async () => {
+      buttons[1]!.onPress?.();
+    });
+    // A failed save still opens the link.
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://docs.example.test/a");
+    });
+    expect(trustSite).toHaveBeenCalledWith("https://docs.example.test/a");
+    await view.unmount();
+  });
+
+  it("opens a link to a trusted site directly", async () => {
+    const view = await renderTrusted("[Docs](https://docs.example.test/a)", ["example.test"]);
+    await act(async () => {
+      view.link()?.click();
+    });
+    expect(alert).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://docs.example.test/a");
+    });
+    await view.unmount();
   });
 });
 

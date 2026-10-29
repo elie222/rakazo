@@ -1,11 +1,12 @@
 import type { SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import { dedupeSearchHits, searchHitListKey } from "@rakazo/core";
 import type { MobileBot, MobileGroup } from "./api";
 import { t } from "./i18n";
 import { filterBots } from "./inbox";
 import type { InboxSpace } from "./inbox-spaces";
 import { previewSnippet } from "./preview";
 import { mobileSearchDestination } from "./search-destination";
-import { dedupeSearchHits, searchHitListKey, searchHitRowPreview } from "./search-list";
+import { searchHitRowPreview } from "./search-list";
 
 export type SearchSheetRow = {
   key: string;
@@ -39,7 +40,10 @@ export function searchSheetRows(
   query: string,
   hits: readonly SearchHit[],
 ): SearchSheetRow[] {
-  const bots = spaces.flatMap((space) => space.bots);
+  // An archived bot is in the roster only while its read-only chat opens; search skips it.
+  const bots = spaces
+    .flatMap((space) => space.bots)
+    .filter((bot) => !("archivedAt" in bot && bot.archivedAt));
   const groups = spaces.flatMap((space) => space.groups);
   const needle = query.trim().toLowerCase();
   const rows: SearchSheetRow[] = [
@@ -47,7 +51,7 @@ export function searchSheetRows(
       (bot): SearchSheetRow => ({
         key: `bot-${bot.id}`,
         title: bot.name,
-        preview: previewSnippet(bot.preview, 40) || bot.title || t("No messages yet"),
+        preview: previewSnippet(bot.preview, 40) || t("No messages yet"),
         label: t("Bot"),
         bot,
         kind: "conversation",

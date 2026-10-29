@@ -1,54 +1,169 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
-import { selectSpaceVoicePreference } from "./voice-credentials.js";
+import type { VoiceTarget } from "./voice-credentials.js";
+import {
+  findDefaultVoiceCredential,
+  findVoiceCredential,
+  selectVoicePreference,
+} from "./voice-credentials.js";
 
 const scope = { userId: "user", spaceId: "space" };
+const account: VoiceTarget = { ...scope, scope: "account" };
+const space: VoiceTarget = { ...scope, scope: "space" };
+const credential = {
+  id: "credential",
+  userId: "user",
+  provider: "elevenlabs",
+  secretId: "secret",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+};
 
-function preferenceClient() {
-  const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-  const upsert = vi.fn().mockResolvedValue({ id: "preference" });
-  const prisma = { spaceVoicePreference: { updateMany, upsert } } as unknown as PrismaClient;
-  return { prisma, upsert };
+function preferenceClient({ overridden = false } = {}) {
+  const table = () => ({
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    upsert: vi.fn().mockResolvedValue({ id: "preference" }),
+    findFirst: vi.fn().mockResolvedValue(null),
+  });
+  const userVoicePreference = table();
+  const spaceVoicePreference = table();
+  const prisma = {
+    userVoicePreference,
+    spaceVoicePreference,
+    spaceSettingOverride: {
+      findUnique: vi.fn().mockResolvedValue(overridden ? { setting: "voice" } : null),
+    },
+    userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(null) },
+  } as unknown as PrismaClient;
+  return { prisma, userVoicePreference, spaceVoicePreference };
 }
 
-describe("selectSpaceVoicePreference", () => {
+describe("selectVoicePreference", () => {
+  it("makes the account's connection the default without touching any Space", async () => {
+    const { prisma, userVoicePreference, spaceVoicePreference } = preferenceClient();
+
+    await selectVoicePreference(prisma, account, "credential", "voice");
+
+    expect(userVoicePreference.updateMany).toHaveBeenCalledWith({
+      where: { isDefault: true, credentialId: { not: "credential" }, userId: "user" },
+      data: { isDefault: false },
+    });
+    expect(userVoicePreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId_credentialId: { userId: "user", credentialId: "credential" } },
+        create: expect.objectContaining({ userId: "user", voiceId: "voice", isDefault: true }),
+      }),
+    );
+    expect(spaceVoicePreference.upsert).not.toHaveBeenCalled();
+  });
+
+  it("writes a Space's own copy when the target is the Space", async () => {
+    const { prisma, userVoicePreference, spaceVoicePreference } = preferenceClient();
+
+    await selectVoicePreference(prisma, space, "credential", "voice");
+
+    expect(spaceVoicePreference.updateMany).toHaveBeenCalledWith({
+      where: {
+        isDefault: true,
+        credentialId: { not: "credential" },
+        userId: "user",
+        spaceId: "space",
+      },
+      data: { isDefault: false },
+    });
+    expect(spaceVoicePreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          spaceId_userId_credentialId: {
+            spaceId: "space",
+            userId: "user",
+            credentialId: "credential",
+          },
+        },
+      }),
+    );
+    expect(userVoicePreference.upsert).not.toHaveBeenCalled();
+  });
+
   it("leaves the speech model unchanged when the caller omits it", async () => {
-    const { prisma, upsert } = preferenceClient();
+    const { prisma, userVoicePreference } = preferenceClient();
 
-    await selectSpaceVoicePreference(prisma, scope, "credential", "voice");
+    await selectVoicePreference(prisma, account, "credential", "voice");
 
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ voiceId: "voice", isDefault: true }),
-        update: { voiceId: "voice", isDefault: true },
-      }),
-    );
-    const call = upsert.mock.calls[0]?.[0] as { create: Record<string, unknown> };
-    expect(call.create).not.toHaveProperty("speechModel");
+    const call = userVoicePreference.upsert.mock.calls[0]?.[0] as {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    };
+    expect(call.create.speechModel).toBeUndefined();
+    expect(call.update.speechModel).toBeUndefined();
   });
 
-  it("stores a speech model override with the voice preference", async () => {
-    const { prisma, upsert } = preferenceClient();
+  it("stores or clears a speech model override with the voice", async () => {
+    const { prisma, userVoicePreference } = preferenceClient();
 
-    await selectSpaceVoicePreference(prisma, scope, "credential", "voice", "s1");
+    await selectVoicePreference(prisma, account, "credential", "voice", "s1");
+    await selectVoicePreference(prisma, account, "credential", "voice", null);
 
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ speechModel: "s1" }),
-        update: { voiceId: "voice", isDefault: true, speechModel: "s1" },
-      }),
-    );
+    expect(userVoicePreference.upsert.mock.calls.map(([call]) => call.update)).toEqual([
+      { voiceId: "voice", isDefault: true, speechModel: "s1" },
+      { voiceId: "voice", isDefault: true, speechModel: null },
+    ]);
+  });
+});
+
+describe("voice that applies", () => {
+  it("reads the account's default when the Space follows the account", async () => {
+    const { prisma, userVoicePreference, spaceVoicePreference } = preferenceClient();
+    userVoicePreference.findFirst.mockResolvedValue({
+      credential,
+      isDefault: true,
+      voiceId: "account-voice",
+      speechModel: null,
+    });
+
+    await expect(findDefaultVoiceCredential(prisma, scope)).resolves.toMatchObject({
+      id: "credential",
+      voiceId: "account-voice",
+      speechModel: "",
+    });
+    expect(spaceVoicePreference.findFirst).not.toHaveBeenCalled();
   });
 
-  it("clears a speech model override", async () => {
-    const { prisma, upsert } = preferenceClient();
+  it("reads the Space's own default when it overrides voice, and ignores it otherwise", async () => {
+    const { prisma, userVoicePreference, spaceVoicePreference } = preferenceClient({
+      overridden: true,
+    });
+    spaceVoicePreference.findFirst.mockResolvedValue({
+      credential,
+      isDefault: true,
+      voiceId: "space-voice",
+      speechModel: "s1",
+    });
 
-    await selectSpaceVoicePreference(prisma, scope, "credential", "voice", null);
-
-    expect(upsert).toHaveBeenCalledWith(
+    await expect(findDefaultVoiceCredential(prisma, scope)).resolves.toMatchObject({
+      voiceId: "space-voice",
+      speechModel: "s1",
+    });
+    expect(spaceVoicePreference.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: { voiceId: "voice", isDefault: true, speechModel: null },
+        where: { isDefault: true, userId: "user", spaceId: "space" },
       }),
     );
+    expect(userVoicePreference.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("reads the account's copy when asked for it, even in an overriding Space", async () => {
+    const { prisma, userVoicePreference, spaceVoicePreference } = preferenceClient({
+      overridden: true,
+    });
+
+    await findVoiceCredential(prisma, scope, "elevenlabs", "account");
+
+    expect(userVoicePreference.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { credential: { provider: "elevenlabs" }, userId: "user" },
+      }),
+    );
+    expect(spaceVoicePreference.findFirst).not.toHaveBeenCalled();
   });
 });

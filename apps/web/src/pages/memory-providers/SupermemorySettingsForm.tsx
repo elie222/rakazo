@@ -5,13 +5,11 @@ import type { ConnectionMode } from "./ConnectionModeFields";
 import { ConnectionModeFields } from "./ConnectionModeFields";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
-const DEFAULT_LOCAL_BASE_URL = "http://localhost:6767";
-
 export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
   const apiKeyId = useId();
   const [mode, setMode] = useState<ConnectionMode>("cloud");
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
+  const [baseUrl, setBaseUrl] = useState("");
 
   async function connect() {
     if (!apiKey.trim()) return;
@@ -33,7 +31,6 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
         onModeChange={setMode}
         baseUrl={baseUrl}
         onBaseUrlChange={setBaseUrl}
-        baseUrlPlaceholder={DEFAULT_LOCAL_BASE_URL}
       />
 
       <Field className="mt-4">
@@ -54,7 +51,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
       <Button
         type="button"
         variant="secondary"
-        className="mt-5 rounded-full"
+        className="mt-5"
         disabled={busy || apiKey.trim().length < 8 || (mode === "local" && !baseUrl.trim())}
         onClick={() => void connect()}
       >

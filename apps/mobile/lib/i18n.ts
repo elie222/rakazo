@@ -1,20 +1,20 @@
 import { useSyncExternalStore } from "react";
 import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
+import { JA_MESSAGES, PEER_MESSAGE_FORMS as JA_PEER_FORMS } from "./locales/ja";
 import { NL_MESSAGES, PEER_MESSAGE_FORMS as NL_PEER_FORMS } from "./locales/nl";
 import { RU_MESSAGES, PEER_MESSAGE_FORMS as RU_PEER_FORMS } from "./locales/ru";
 import { ZH_MESSAGES, PEER_MESSAGE_FORMS as ZH_PEER_FORMS } from "./locales/zh";
-import {
-  htmlLangForLocale,
-  resolveUiLocale,
-  UI_LOCALE_STORAGE_KEY,
-  type UiLocale,
-} from "./ui-locale";
+import { ZH_TW_MESSAGES, PEER_MESSAGE_FORMS as ZH_TW_PEER_FORMS } from "./locales/zh-TW";
+import type { UiLocale } from "./ui-locale";
+import { htmlLangForLocale, resolveUiLocale, UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
 const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   "zh-CN": ZH_MESSAGES,
+  "zh-TW": ZH_TW_MESSAGES,
   ru: RU_MESSAGES,
   de: DE_MESSAGES,
   nl: NL_MESSAGES,
+  ja: JA_MESSAGES,
 };
 
 let activeLocale: UiLocale = "en";
@@ -69,7 +69,7 @@ export function activateUiLocale(locale: UiLocale): UiLocale {
 
 async function applyDirection(locale: UiLocale): Promise<void> {
   try {
-    // Direction follows the active UI locale only (en / zh-CN / ru / de / nl → LTR), never the
+    // Direction follows the active UI locale only (en / zh-CN / zh-TW / ru / de / nl / ja → LTR), never the
     // device language. Applying device RTL here would fight this and reload-loop.
     const { applyMobileUiDirection } = await import("./ui-direction");
     applyMobileUiDirection(htmlLangForLocale(locale));
@@ -81,6 +81,7 @@ async function applyDirection(locale: UiLocale): Promise<void> {
 export async function bootstrapI18n(): Promise<UiLocale> {
   let stored: string | null = null;
   let deviceLanguage: string | null = readDeviceLanguage();
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
   try {
     const SecureStore = await import("expo-secure-store");
     stored = await SecureStore.getItemAsync(UI_LOCALE_STORAGE_KEY);
@@ -148,6 +149,8 @@ export function peerExchangeLabel(
       ? t("Messaged {peer}", { peer })
       : t("Message from {peer}", { peer });
   const forms: Partial<Record<UiLocale, Partial<Record<Intl.LDMLPluralRule, string>>>> = {
+    ja: JA_PEER_FORMS,
+    "zh-TW": ZH_TW_PEER_FORMS,
     de: DE_PEER_FORMS,
     nl: NL_PEER_FORMS,
     ru: RU_PEER_FORMS,

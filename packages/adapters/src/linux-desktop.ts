@@ -9,11 +9,11 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
   BROWSER_APPLICATIONS,
   browserLauncherPath,
   browserProfilePathForScreen,
-  type DesktopEnvironment,
   desktopControlCommand,
   desktopTerminalCommand,
   desktopUrl,
@@ -42,7 +42,7 @@ import {
 } from "./extra-displays.js";
 
 export interface LinuxDesktopHost {
-  environment(computer: ComputerRef): Promise<DesktopEnvironment>;
+  environment(computer: ComputerRef, context: AdapterContext): Promise<DesktopEnvironment>;
   run(
     computer: ComputerRef,
     command: string,
@@ -64,7 +64,7 @@ export class LinuxDesktop {
   }
 
   private async ensure(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
     const key = screenSessionKey(context);
     const output = await this.run(
       computer,
@@ -138,7 +138,7 @@ export class LinuxDesktop {
     }
     const env = interactive
       ? (await this.ensure(computer, context)).env
-      : await this.host.environment(computer);
+      : await this.host.environment(computer, context);
     await this.run(
       computer,
       desktopControlCommand(
@@ -199,18 +199,28 @@ export class LinuxDesktop {
   }
 
   async stopBrowsers(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
     await this.run(computer, stopAllDesktopBrowsersCommand(env), context);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
+    const key = screenSessionKey(context);
+    if (context.keepScreenWarm && !context.cancelRunWork && !context.signal.aborted) {
+      // Revoke the run's control and keep the display and browser for this bot's next run.
+      // A stale fence (75) is already someone else's screen. If revocation is uncertain,
+      // fall through to full teardown rather than retaining control.
+      const control = await this.host
+        .run(computer, desktopControlCommand(key, context.screenLeaseId, env, false), context)
+        .catch(() => undefined);
+      if (control?.code === 0 || control?.code === 75) return;
+    }
     // A stale release is a successful no-op. A failed stop must retain the slot
     // for retry. Once the browser has stopped, a later slot-cleanup error must
     // not look like Chromium is still running.
     const result = await this.host.run(
       computer,
-      releaseDesktopCommand(screenSessionKey(context), context.screenLeaseId, env),
+      releaseDesktopCommand(key, context.screenLeaseId, env),
       context,
     );
     if (result.stdout.includes("RAKAZO_DESKTOP_RELEASED=")) {
@@ -248,7 +258,8 @@ function browserActionCommand(
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
-const CHROME_WM_CLASSES = "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome";
+const CHROME_WM_CLASSES =
+  "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome|brave-browser";
 
 // Launch maps every BROWSER_APPLICATIONS name, including firefox, onto the
 // Chromium launcher. Focus must use that same set or it cannot raise the window launch opened.
@@ -258,8 +269,8 @@ function isChromiumBrowser(application: string) {
 
 // Same 0.2s quick-failure window as rakazo-focus-or-launch. A GUI that stays
 // up is success; an immediate non-zero exit fails the focus before the old
-// window is raised.
-const FOCUS_URI_PROBE = [
+// window is raised or a new one is awaited.
+const FOCUS_LAUNCH_PROBE = [
   "import subprocess,sys",
   "try:",
   " code=subprocess.Popen(sys.argv[1:],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).wait(timeout=0.2)",
@@ -282,15 +293,12 @@ function focusOrLaunchActionCommand(
   const binary = (action.application.split("/").pop() ?? "").replaceAll(/[^A-Za-z0-9_-]/g, "");
   const quotedApp = shellQuote(action.application);
   const quotedArg = action.uri === undefined ? "" : ` ${shellQuote(action.uri)}`;
-  const foreground = browser
+  // Like rakazo-focus-or-launch, the launch never adopts the app's lifetime: a GUI that stays
+  // up must not hold the command open, and one that exits at once with an error still fails.
+  const launch = browser
     ? `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(action.uri ?? "about:blank")} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`
-    : `DISPLAY=${layout.display} ${quotedApp}${quotedArg}`;
-  // A GUI that stays in the foreground must not delay wmctrl -ia. A non-browser
-  // URI still has to surface a launcher that exits immediately.
-  const background = browser
-    ? foreground
-    : `DISPLAY=${layout.display} python3 -c ${shellQuote(FOCUS_URI_PROBE)} ${quotedApp}${quotedArg} || exit $?`;
-  if (!browser && !binary) return foreground;
+    : `DISPLAY=${layout.display} python3 -c ${shellQuote(FOCUS_LAUNCH_PROBE)} ${quotedApp}${quotedArg} || exit $?`;
+  if (!browser && !binary) return launch;
   const classCase = browser ? CHROME_WM_CLASSES : binary.toLowerCase();
   return [
     "wid=",
@@ -332,24 +340,92 @@ function focusOrLaunchActionCommand(
     "RAKAZO_WINDOWS",
     'if [ -z "$wid" ] && [ "$saw_profile" -eq 0 ]; then wid=$fallback; fi',
     'if [ -n "$wid" ]; then',
-    ...(action.uri !== undefined ? [`  ${background}`] : []),
+    ...(action.uri !== undefined ? [`  ${launch}`] : []),
     `  DISPLAY=${layout.display} wmctrl -ia "$wid"`,
     "else",
-    `  ${foreground}`,
+    `  ${launch}`,
     "fi",
   ].join("\n");
 }
 
 /** Install the same X11 tools in minimal Ubuntu sandboxes, only if their image lacks them. */
-export const PREPARE_LINUX_DESKTOP = [
-  "set -eu",
+const FIND_MISSING_DESKTOP_TOOLS = [
   'missing=""',
   // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
   'for pair in python3:python3 flock:util-linux Xvfb:xvfb xdpyinfo:x11-utils x11vnc:x11vnc fluxbox:fluxbox xdotool:xdotool wmctrl:wmctrl scrot:scrot xterm:xterm; do command -v "${pair%%:*}" >/dev/null 2>&1 || missing="$missing ${pair#*:}"; done',
   'if ! command -v websockify >/dev/null 2>&1 && [ ! -x /opt/noVNC/utils/websockify/run ]; then missing="$missing websockify"; fi',
   'if [ ! -d /usr/share/novnc ] && [ ! -d /opt/noVNC ]; then missing="$missing novnc"; fi',
+];
+
+/**
+ * Same as infra/sandboxes/computer/browser-policy.json. Rakazo keeps credentials itself, so
+ * the browser's save-password, address, and card prompts only cover the page.
+ */
+export const BROWSER_POLICY = JSON.stringify({
+  PasswordManagerEnabled: false,
+  AutofillAddressEnabled: false,
+  AutofillCreditCardEnabled: false,
+});
+
+/** Managed policy directories for Chromium, Ubuntu's Chromium, Google Chrome, and Brave. */
+const BROWSER_POLICY_DIRS = [
+  "/etc/chromium/policies/managed",
+  "/etc/chromium-browser/policies/managed",
+  "/etc/opt/chrome/policies/managed",
+  "/etc/brave/policies/managed",
+];
+
+export const PREPARE_LINUX_DESKTOP = [
+  "set -eu",
+  ...FIND_MISSING_DESKTOP_TOOLS,
+  'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
   'if [ -n "$missing" ]; then',
-  '  if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
-  "  $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $missing",
+  // Separate commands: set -e ignores a failure on the left of &&.
+  "  $root apt-get update -qq",
+  "  if ! $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing; then",
+  // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
+  // solve those without specifying the desktop packages, and never remove existing tools.
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --fix-broken --no-remove",
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing",
+  "  fi",
   "fi",
+  // Bots read pages visually; without a color emoji font every emoji is an empty box. The
+  // desktop works without it, so an image whose package manager is broken still runs.
+  "if [ ! -e /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf ]; then",
+  '  { $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2',
+  "fi",
+  `policy=${shellQuote(BROWSER_POLICY)}`,
+  `for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
+  '  [ "$(cat "$dir/rakazo-browser.json" 2>/dev/null)" = "$policy" ] && continue',
+  // A sandbox without root keeps working; its browser just shows the prompts.
+  '  printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-browser.json"\' sh "$dir" || echo "could not set browser policy in $dir" >&2',
+  "done",
+].join("\n");
+
+/** Installs Google Chrome on images that ship without a browser. */
+export const INSTALL_LINUX_BROWSER = [
+  "if ! command -v google-chrome >/dev/null && ! command -v chromium >/dev/null; then",
+  '  if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
+  "  package=$(mktemp /tmp/rakazo-chrome-XXXXXX.deb)",
+  "  trap 'rm -f \"$package\"' EXIT",
+  '  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "$package"',
+  '  $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package"',
+  "fi",
+].join("\n");
+
+/** Fails unless every desktop tool is installed and a virtual display answers. */
+export const VERIFY_LINUX_DESKTOP = [
+  "set -eu",
+  ...FIND_MISSING_DESKTOP_TOOLS,
+  'if [ -n "$missing" ]; then echo "missing desktop tools:$missing" >&2; exit 1; fi',
+  "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/dev/null 2>&1 &",
+  "xvfb=$!",
+  "ready=0",
+  "for _ in $(seq 50); do",
+  "  if xdpyinfo -display :99 >/dev/null 2>&1; then ready=1; break; fi",
+  "  sleep 0.1",
+  "done",
+  'kill "$xvfb" 2>/dev/null || true',
+  'wait "$xvfb" 2>/dev/null || true',
+  'if [ "$ready" -ne 1 ]; then echo "Xvfb did not start" >&2; exit 1; fi',
 ].join("\n");

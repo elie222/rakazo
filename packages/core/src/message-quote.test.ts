@@ -133,6 +133,16 @@ describe("deriveMessageQuote", () => {
     expect(deriveMessageQuote(blocks, "chart", "markdown")).toBe("chart");
   });
 
+  it.each([
+    '<img alt="Chart" data-alt="Decorative">',
+    '<img title="1 > 0" alt="Chart">',
+    '<img alt="Chart" title="alt=Decorative">',
+  ])("derives table quotes from the real image description: %s", (html) => {
+    const blocks = textBlock(`| Description |\n| --- |\n| ${html} |`);
+    expect(deriveMessageQuote(blocks, "Chart", "markdown")).toBe("Chart");
+    expect(deriveMessageQuote(blocks, "Decorative", "markdown")).toBeUndefined();
+  });
+
   it("truncates a whitespace-heavy excerpt to the cap instead of dropping it", () => {
     // 1000 single-char tokens survive the normalized hint, but their source
     // slice keeps the blank lines and cleans to more than the cap.
@@ -317,4 +327,19 @@ it("keeps a filename in file-only previews for older clients", () => {
   };
   expect(messageReplyPreview([file], "user").text).toBe("notes.txt");
   expect(messageReplyPreview([file, ...textBlock("Caption")], "user").text).toBe("Caption");
+});
+
+describe("a retired import checklist", () => {
+  it("gives no reply excerpt", () => {
+    const item = { kind: "routine" as const, routineId: "routine-1", name: "morning" };
+    for (const block of [
+      { kind: "import_setup", items: [], undone: true },
+      { kind: "import_setup", items: [item], undone: true },
+    ] satisfies MessageBlock[]) {
+      expect(messageReplyExcerpt([block], "bot")).toBe("");
+      expect(messageReplyPreview([block], "bot").text).toBe("");
+    }
+    // A live one is still quoted by its items.
+    expect(messageReplyExcerpt([{ kind: "import_setup", items: [item] }], "bot")).toBe("morning");
+  });
 });

@@ -1,19 +1,19 @@
-import {
-  type Actor,
-  GROUP_MEMBER_MAX,
-  GROUP_MEMBER_MIN,
-  type Group,
-  type GroupMember,
-  type SpaceGroup,
-} from "@rakazo/contracts";
+import type { Actor, Group, GroupMember, SpaceGroup } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, resolveBotAvatarSet } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./computers.js";
+import { transientRunEventsWhere } from "./events.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  activeRunStatuses,
+  previewFromBlocks,
+  primaryActiveRun,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -36,6 +36,7 @@ type GroupRecord = {
       id: string;
       name: string;
       color: string;
+      avatarSet?: string;
       runs: Array<{ status: string }>;
     };
   }>;
@@ -56,7 +57,8 @@ function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
-    status: member.bot.runs[0]?.status ?? "idle",
+    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
+    status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
   }));
 }
 
@@ -116,14 +118,19 @@ async function assertOwnedBots(
       userId: actor.userId,
       archivedAt: null,
     },
-    select: { id: true, name: true, color: true },
+    select: { id: true, name: true, color: true, avatarSet: true },
   });
   if (bots.length !== unique.length) throw new IsolationError();
   const botsById = new Map(bots.map((bot) => [bot.id, bot]));
   return unique.map((botId) => {
     const bot = botsById.get(botId);
     if (!bot) throw new IsolationError();
-    return { botId: bot.id, name: bot.name, color: bot.color };
+    return {
+      botId: bot.id,
+      name: bot.name,
+      color: bot.color,
+      avatarSet: resolveBotAvatarSet(bot.avatarSet),
+    };
   });
 }
 
@@ -153,6 +160,7 @@ const groupInclude = {
           id: true,
           name: true,
           color: true,
+          avatarSet: true,
           runs: activeRunSelection,
         },
       },
@@ -182,6 +190,7 @@ const groupTargetInclude = {
           id: true,
           name: true,
           color: true,
+          avatarSet: true,
           runs: activeRunSelection,
         },
       },
@@ -498,7 +507,7 @@ export function createGroupRepos(prisma: PrismaClient) {
                   in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
                 },
               },
-              select: { id: true, taskId: true },
+              select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
         if (activeRuns.length) {
@@ -563,7 +572,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             threadId: current.thread.id,
             status: { in: activeRunStatuses },
           },
-          select: { id: true, taskId: true },
+          select: { id: true, taskId: true, userId: true, spaceId: true },
         });
         const runIds = activeRuns.map((run) => run.id);
         const now = new Date();
@@ -574,7 +583,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         if (runIds.length) {
           await cancelRunsInTransaction(tx, activeRuns, now);
           await tx.event.deleteMany({
-            where: { type: "thread.progress", runId: { in: runIds } },
+            where: { ...transientRunEventsWhere(), runId: { in: runIds } },
           });
         }
 

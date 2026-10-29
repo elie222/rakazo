@@ -24,6 +24,20 @@ export function isDevSecretAllowed(env: NodeJS.ProcessEnv = process.env): boolea
   return nodeEnv === "development" || nodeEnv === "test";
 }
 
+/**
+ * `CONTENT_ENCRYPTION=on|off`: whether new content is encrypted at rest. Reads
+ * decrypt existing ciphertext either way, so switching off never strands data.
+ * Unset, it is on, except in local development (`NODE_ENV=development` or
+ * `RAKAZO_ALLOW_DEV_SECRETS=1`). Tests keep the server default.
+ */
+export function resolveContentEncryption(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.CONTENT_ENCRYPTION?.trim().toLowerCase();
+  if (value === "on") return true;
+  if (value === "off") return false;
+  if (value) throw new Error('CONTENT_ENCRYPTION must be "on" or "off".');
+  return env.NODE_ENV !== "development" && env.RAKAZO_ALLOW_DEV_SECRETS !== "1";
+}
+
 export function resolveAuthSecret(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.BETTER_AUTH_SECRET;
   if (value === undefined || !value.trim()) {
@@ -137,11 +151,9 @@ export function timingSafeStringEqual(supplied: string | undefined, expected: st
  * Constant-time bearer comparison, shared by every privileged sidecar.
  *
  * Deliberately not `node:crypto`'s `timingSafeEqual`: this module is reachable from the web bundle
- * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build with
- * `"timingSafeEqual" is not exported by "__vite-browser-external"`, which takes the whole
- * application image down with it. The XOR accumulation below inspects every byte no matter where
- * the first difference falls, which is the property that mattered. Length is compared first, as it
- * was before — a length mismatch is already observable from the response.
+ * through `@rakazo/core`, and importing `node:crypto` here fails the production Vite build. The XOR
+ * accumulation inspects every byte no matter where the first difference falls. Length is compared
+ * first because a length mismatch is already observable from the response.
  */
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
   const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";

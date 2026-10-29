@@ -1,4 +1,4 @@
-import { Cron } from "croner";
+import { Cron, CronDate } from "croner";
 
 const WEEKDAYS = "1-5";
 const WEEKDAY_NAMES = [
@@ -19,9 +19,6 @@ export function isOneShotRoutineCron(cron: string): boolean {
   return cron.trim() === ONCE_ROUTINE_CRON;
 }
 
-// A routine is one-shot only when it has exactly one schedule and that
-// schedule is @once — a mix of @once plus recurring schedules doesn't make
-// sense (the one-shot slot would never get a "next run" to compute).
 export function isOneShotRoutineCrons(crons: string[]): boolean {
   return crons.length === 1 && isOneShotRoutineCron(crons[0] ?? "");
 }
@@ -159,58 +156,166 @@ export function presetFromCron(cron: string): CronPreset {
   return { ...base, freq: "Advanced", cron: trimmed };
 }
 
-export function describeCronPreset(preset: CronPreset): { lead: string; detail: string } {
-  if (preset.freq === "Interval") {
-    return { lead: "Every", detail: `${preset.n} ${preset.unit}` };
-  }
-  if (preset.freq === "Every hour") {
-    return { lead: "Every hour", detail: "" };
-  }
-  if (preset.freq === "Advanced") {
-    return { lead: "Cron", detail: preset.cron || "*/3 * * * *" };
-  }
-  if (preset.freq === "Weekdays") {
-    return { lead: "Weekdays", detail: `at ${preset.time}` };
-  }
-  if (preset.freq === "Every week") {
-    return { lead: "Every Monday", detail: `at ${preset.time}` };
-  }
-  if (preset.freq === "Every month") {
-    return { lead: "Monthly", detail: `on the 1st at ${preset.time}` };
-  }
-  return { lead: "Every day", detail: `at ${preset.time}` };
+const CRON_UNIT_SINGULAR: Record<CronUnit, string> = {
+  minutes: "minute",
+  hours: "hour",
+  days: "day",
+};
+
+// The words formatCron puts on screen, so translated surfaces can supply
+// their own (web via Lingui, mobile via its catalog). Functions own the
+// language-specific grammar — plural forms, ordinals, word order — while the
+// schedule parsing stays here.
+export type CronLabels = {
+  oneTime: string;
+  everyHour: string;
+  cron: string;
+  everyDay: string;
+  weekdays: string;
+  weekends: string;
+  everyMonday: string;
+  monthly: string;
+  /** Seven names, index 0 = Sunday. */
+  weekdayNames: readonly string[];
+  interval(n: number, unit: CronUnit): { lead: string; detail: string };
+  atTime(time: string): string;
+  /** The monthly preset always runs on the 1st, so it gets its own phrase. */
+  onThe1stAt(time: string): string;
+  onDayAt(day: number, time: string): string;
+  hourAtMinute(minute: number): string;
+  /** Every few hours at a fixed minute; without it such schedules keep the cron fallback. */
+  hoursAtMinute?(hours: number, minute: number): string;
+  daySpan(fromName: string, toName: string): string;
+  everyDays(names: string[]): string;
+};
+
+export const ENGLISH_CRON_LABELS: CronLabels = {
+  oneTime: "One-time",
+  everyHour: "Every hour",
+  cron: "Cron",
+  everyDay: "Every day",
+  weekdays: "Weekdays",
+  weekends: "Weekends",
+  everyMonday: "Every Monday",
+  monthly: "Monthly",
+  weekdayNames: WEEKDAY_NAMES,
+  interval: (n, unit) => ({
+    lead: "Every",
+    detail: `${n} ${n === 1 ? CRON_UNIT_SINGULAR[unit] : unit}`,
+  }),
+  atTime: (time) => `at ${time}`,
+  onThe1stAt: (time) => `on the 1st at ${time}`,
+  onDayAt: (day, time) => `on the ${ordinal(day)} at ${time}`,
+  hourAtMinute: (minute) => `Every hour at :${String(minute).padStart(2, "0")}`,
+  hoursAtMinute: (hours, minute) => `Every ${hours} hours at :${String(minute).padStart(2, "0")}`,
+  daySpan: (fromName, toName) => `${fromName} to ${toName}`,
+  everyDays: (names) =>
+    names.length === 1
+      ? `Every ${names[0]}`
+      : `Every ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`,
+};
+
+// Russian nouns after an amount take one of three case forms; the lead word
+// also agrees with the unit's gender. Shared so web and mobile agree.
+export function russianPluralForm(value: number, one: string, few: string, many: string): string {
+  const absolute = Math.abs(value);
+  const mod10 = absolute % 10;
+  const mod100 = absolute % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
 }
 
-export function formatSchedule(preset: CronPreset): string {
-  const { lead, detail } = describeCronPreset(preset);
+export function russianIntervalUnit(value: number, unit: CronUnit): string {
+  switch (unit) {
+    case "minutes":
+      return russianPluralForm(value, "минуту", "минуты", "минут");
+    case "hours":
+      return russianPluralForm(value, "час", "часа", "часов");
+    case "days":
+      return russianPluralForm(value, "день", "дня", "дней");
+    default:
+      return unit;
+  }
+}
+
+export function russianInterval(value: number, unit: CronUnit): { lead: string; detail: string } {
+  const lead = value === 1 ? (unit === "minutes" ? "Каждую" : "Каждый") : "Каждые";
+  return {
+    lead,
+    detail:
+      value === 1
+        ? russianIntervalUnit(value, unit)
+        : `${value} ${russianIntervalUnit(value, unit)}`,
+  };
+}
+
+export function describeCronPreset(
+  preset: CronPreset,
+  labels: CronLabels = ENGLISH_CRON_LABELS,
+): { lead: string; detail: string } {
+  if (preset.freq === "Interval") {
+    return labels.interval(preset.n, preset.unit);
+  }
+  if (preset.freq === "Every hour") {
+    return { lead: labels.everyHour, detail: "" };
+  }
+  if (preset.freq === "Advanced") {
+    return { lead: labels.cron, detail: preset.cron || "*/3 * * * *" };
+  }
+  if (preset.freq === "Weekdays") {
+    return { lead: labels.weekdays, detail: labels.atTime(preset.time) };
+  }
+  if (preset.freq === "Every week") {
+    return { lead: labels.everyMonday, detail: labels.atTime(preset.time) };
+  }
+  if (preset.freq === "Every month") {
+    return { lead: labels.monthly, detail: labels.onThe1stAt(preset.time) };
+  }
+  return { lead: labels.everyDay, detail: labels.atTime(preset.time) };
+}
+
+export function formatSchedule(
+  preset: CronPreset,
+  labels: CronLabels = ENGLISH_CRON_LABELS,
+): string {
+  const { lead, detail } = describeCronPreset(preset, labels);
   return [lead, detail].filter(Boolean).join(" ");
 }
 
-export function formatCron(cron: string): string {
-  if (isOneShotRoutineCron(cron)) return "One-time";
-  return describeCronFields(cron) ?? formatSchedule(presetFromCron(cron));
+export function formatCron(cron: string, labels: CronLabels = ENGLISH_CRON_LABELS): string {
+  if (isOneShotRoutineCron(cron)) return labels.oneTime;
+  return describeCronFields(cron, labels) ?? formatSchedule(presetFromCron(cron), labels);
 }
 
 // Shapes the editor presets can't represent (they open as "Advanced"), so
 // lists and pickers still read as a sentence. Anything else returns null and
 // keeps the "Cron …" fallback.
-function describeCronFields(cron: string): string | null {
+function describeCronFields(cron: string, labels: CronLabels): string | null {
   const [minute = "", hour = "", day = "", month = "", dow = "", ...rest] = cron
     .trim()
     .split(/\s+/);
   if (rest.length > 0 || month !== "*") return null;
   if (hour === "*" && day === "*" && dow === "*" && isInt(minute)) {
     const m = Number(minute);
-    return m >= 1 && m <= 59 ? `Every hour at :${String(m).padStart(2, "0")}` : null;
+    return m >= 1 && m <= 59 ? labels.hourAtMinute(m) : null;
+  }
+  // Only steps that divide the day repeat evenly; "*/5" restarts at midnight after four hours.
+  const hours = stepValue(hour);
+  if (hours && day === "*" && dow === "*" && isInt(minute)) {
+    const m = Number(minute);
+    return labels.hoursAtMinute && hours >= 2 && hours < 24 && 24 % hours === 0 && m >= 1 && m <= 59
+      ? labels.hoursAtMinute(hours, m)
+      : null;
   }
   if (!isCronClock(minute, hour)) return null;
   const time = formatClock(Number(hour), Number(minute));
   if (day === "*" && dow !== "*") {
     const days = cronWeekdays(dow);
-    return days ? `${describeWeekdays(days)} at ${time}` : null;
+    return days ? `${describeWeekdays(days, labels)} ${labels.atTime(time)}` : null;
   }
   if (dow === "*" && isInt(day) && Number(day) >= 1 && Number(day) <= 31) {
-    return `Monthly on the ${ordinal(Number(day))} at ${time}`;
+    return `${labels.monthly} ${labels.onDayAt(Number(day), time)}`;
   }
   return null;
 }
@@ -230,18 +335,17 @@ function cronWeekdays(field: string): Set<number> | null {
   return days;
 }
 
-function describeWeekdays(days: Set<number>): string {
-  if (days.size === 7) return "Every day";
-  if (days.size === 5 && !days.has(0) && !days.has(6)) return "Weekdays";
-  if (days.size === 2 && days.has(0) && days.has(6)) return "Weekends";
+function describeWeekdays(days: Set<number>, labels: CronLabels): string {
+  if (days.size === 7) return labels.everyDay;
+  if (days.size === 5 && !days.has(0) && !days.has(6)) return labels.weekdays;
+  if (days.size === 2 && days.has(0) && days.has(6)) return labels.weekends;
   const ordered = WEEK_ORDER.filter((d) => days.has(d));
-  const names = ordered.map((d) => WEEKDAY_NAMES[d]);
+  const names = ordered.map((d) => labels.weekdayNames[d] ?? WEEKDAY_NAMES[d] ?? "");
   const span = WEEK_ORDER.indexOf(ordered.at(-1) ?? 0) - WEEK_ORDER.indexOf(ordered[0] ?? 0);
   if (names.length >= 3 && span === names.length - 1) {
-    return `${names[0]} to ${names.at(-1)}`;
+    return labels.daySpan(names[0] ?? "", names.at(-1) ?? "");
   }
-  if (names.length === 1) return `Every ${names[0]}`;
-  return `Every ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return labels.everyDays(names);
 }
 
 function ordinal(n: number): string {
@@ -275,12 +379,88 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   return next;
 }
 
-// Nearest next run across every recurring schedule on a routine. Ignores
-// @once slots (they don't recur) and any schedule that fails to parse. Only
-// the wakeup path (packages/adapters/src/executor.ts) should use this —
-// legacy or hand-edited records may carry a stale cron, and skipping it
-// there is safer than crashing the wakeup job. Anything that persists a
-// routine's crons must reject malformed input instead — see
+/** The preset of an interval step that recurs from the scheduled fire, or undefined. */
+export function unevenInterval(cron: string): CronPreset | undefined {
+  const preset = presetFromCron(cron);
+  if (
+    cron.trim().split(/\s+/).length !== 5 ||
+    preset.freq !== "Interval" ||
+    preset.n > CRON_INTERVAL_MAX[preset.unit] ||
+    (preset.unit === "minutes" && 60 % preset.n === 0) ||
+    (preset.unit === "hours" && 24 % preset.n === 0) ||
+    (preset.unit === "days" && preset.n === 1)
+  ) {
+    return undefined;
+  }
+  return preset;
+}
+
+// Uneven interval steps recur from the scheduled fire instead of resetting at
+// cron field boundaries. Even steps keep cron's local wall-clock positions.
+// Creation/editing still uses nextCronDate for the initial anchor.
+export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const preset = unevenInterval(cron);
+  if (!preset) return nextCronDate(cron, from, timezone);
+  if (preset.unit !== "days") {
+    const gap = preset.n * (preset.unit === "hours" ? 3_600_000 : 60_000);
+    const steps = Math.floor((from.getTime() - anchor.getTime()) / gap) + 1;
+    return new Date(anchor.getTime() + steps * gap);
+  }
+
+  const zone = validTimezoneOrUtc(timezone);
+  const localAnchor = new CronDate(anchor, zone);
+  const localNow = new CronDate(from, zone);
+  // CronDate stores months zero-based, like Date.
+  const anchorDay = Date.UTC(localAnchor.year, localAnchor.month, localAnchor.day);
+  const nowDay = Date.UTC(localNow.year, localNow.month, localNow.day);
+  let steps = Math.max(1, Math.floor((nowDay - anchorDay) / (preset.n * 86_400_000)));
+  let next: Date;
+  do {
+    const day = new Date(anchorDay + steps * preset.n * 86_400_000);
+    // Normalize the calendar date before letting Croner resolve its wall-clock
+    // time in the routine zone (including daylight saving transitions).
+    const candidate = new CronDate(localAnchor, zone);
+    candidate.year = day.getUTCFullYear();
+    candidate.month = day.getUTCMonth();
+    candidate.day = day.getUTCDate();
+    next = new Date(candidate.getDate().getTime() + localAnchor.ms);
+    steps++;
+  } while (next <= from);
+  return next;
+}
+
+// The shared anchor belongs to an interval only with one recurring schedule.
+// Multiple schedules keep cron matches because their individual anchors are
+// unknown. Skip one-shot and malformed schedules as nextCronDateAcross does.
+export function nextRoutineRunDateAcross(
+  crons: string[],
+  anchor: Date,
+  now: Date,
+  timezone = "UTC",
+): Date | null {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const recurring: string[] = [];
+  let earliest: Date | null = null;
+  for (const cron of crons) {
+    if (isOneShotRoutineCron(cron)) continue;
+    let next: Date;
+    try {
+      next = nextCronDate(cron, from, timezone);
+    } catch {
+      continue;
+    }
+    recurring.push(cron);
+    if (!earliest || next < earliest) earliest = next;
+  }
+  const onlyCron = recurring.length === 1 ? recurring[0] : undefined;
+  if (onlyCron) return nextRoutineRunDate(onlyCron, anchor, now, timezone);
+  return earliest;
+}
+
+// Nearest next calendar match, ignoring one-shot and malformed schedules.
+// Routine wakeups use nextRoutineRunDateAcross to preserve single-interval phase.
+// Anything persisting crons must reject malformed input instead — see
 // nextCronDateAcrossStrict.
 export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"): Date | null {
   let earliest: Date | null = null;
@@ -297,10 +477,8 @@ export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"
   return earliest;
 }
 
-// Same as nextCronDateAcross, but throws on the first malformed recurring
-// cron instead of silently skipping it. Use this before persisting a
-// routine's crons — a partially-invalid array should be rejected outright,
-// not saved with the bad entry quietly never firing.
+// Throws on the first malformed recurring cron instead of skipping it, so a persisted
+// routine never keeps a bad entry that silently never fires.
 export function nextCronDateAcrossStrict(
   crons: string[],
   from: Date,
@@ -313,6 +491,59 @@ export function nextCronDateAcrossStrict(
     if (!earliest || next < earliest) earliest = next;
   }
   return earliest;
+}
+
+const ISO_DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
+
+/**
+ * An ISO date or datetime as an instant. One with an offset (or Z) is taken as written; a date
+ * or wall-clock time without one is read in `timezone`, so "2026-11-02T10:00" is 10:00 there.
+ * A time skipped by a daylight-saving change moves forward by the gap. Null when invalid.
+ */
+export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
+  const text = value.trim();
+  const wall = ISO_DATE_TIME.exec(text);
+  if (!wall) return null;
+  const [year, month, day, hour, minute, second] = wall
+    .slice(1, 7)
+    .map((part) => (part === undefined ? 0 : Number(part)));
+  const ms = wall[7] ? Math.floor(Number(`0.${wall[7]}`) * 1000) : 0;
+  const check = new Date(0);
+  check.setUTCFullYear(year ?? 0, (month ?? 1) - 1, day ?? 1);
+  check.setUTCHours(hour ?? 0, minute ?? 0, second ?? 0);
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== (month ?? 1) - 1 ||
+    check.getUTCDate() !== day ||
+    check.getUTCHours() !== hour ||
+    check.getUTCMinutes() !== minute ||
+    check.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+  if (wall[8]) {
+    // Date only parses an offset with minutes; ISO 8601 also allows hours alone (+05).
+    const instant = new Date(/^[+-]\d{2}$/.test(wall[8]) ? `${text}:00` : text);
+    return Number.isFinite(instant.getTime()) ? instant : null;
+  }
+  const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
+  local.year = check.getUTCFullYear();
+  local.month = check.getUTCMonth();
+  local.day = check.getUTCDate();
+  local.hour = check.getUTCHours();
+  local.minute = check.getUTCMinutes();
+  local.second = check.getUTCSeconds();
+  local.ms = 0;
+  // Keep any fraction so a time just after an occurrence does not include it.
+  return new Date(local.getDate().getTime() + ms);
+}
+
+/** The local date and time of `instant` in `timezone`, as zonedDateTime reads it back. */
+export function wallClock(instant: Date, timezone = "UTC"): string {
+  const local = new CronDate(instant, validTimezoneOrUtc(timezone));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${local.year}-${pad(local.month + 1)}-${pad(local.day)}T${pad(local.hour)}:${pad(local.minute)}:${pad(local.second)}`;
 }
 
 function validTimezoneOrUtc(timezone: string): string {

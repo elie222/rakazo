@@ -4,7 +4,17 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { abortableDelay, inferHandoffTargetName } from "@rakazo/core";
+import {
+  APPROVED_ACTION_NOT_RUN_ERROR,
+  abortableDelay,
+  BOT_MESSAGE_WAKE_CUE,
+  inferHandoffTargetName,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+  modelFallbackFailure,
+  STEERING_CONTINUATION_PROMPT,
+} from "@rakazo/core";
 
 const running = new Map<string, AbortController>();
 
@@ -31,9 +41,20 @@ export class ScriptedAgentRuntime implements AgentRuntime {
     const signal = context?.signal ?? controller.signal;
     try {
       if (shouldFail(request.prompt)) {
-        throw new Error("Scripted run failure");
+        throw new Error(scriptedFailure(request.prompt));
       }
-      if (shouldHang(request.prompt)) {
+      // Like Pi, a run first takes the messages waiting for it. A continuation exists only to
+      // answer them, so their text is its prompt; any other run keeps its own task. A resumed
+      // attempt claims the same rows again, so it rebuilds the script it was running.
+      const steering = (await request.claimSteering?.([])) ?? [];
+      const steeredPrompt =
+        request.prompt.includes(STEERING_CONTINUATION_PROMPT) && steering.length
+          ? steering.map((item) => item.historyText ?? item.text).join("\n")
+          : undefined;
+      const prompt = steeredPrompt ?? request.prompt;
+      // A peer's wake hangs on the peer's words, not on the quoted message it replies to.
+      const hangMs = hangDuration(peerMessage(prompt)?.text ?? prompt);
+      if (hangMs !== undefined) {
         // Long-running work happens on the computer, which starts it like any real run would.
         yield {
           type: "tool",
@@ -42,15 +63,19 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           executionId: `${request.runId}:list_files:hang`,
         };
         yield { type: "progress", text: "still working…", activity: true };
-        while (!controller.signal.aborted && !signal.aborted) {
+        const hangUntil = Date.now() + hangMs;
+        while (!controller.signal.aborted && !signal.aborted && Date.now() < hangUntil) {
           await abortableDelay(50, controller.signal);
           if (controller.signal.aborted || signal.aborted) break;
           yield { type: "progress", text: "still working…", activity: true };
         }
-        yield { type: "done", text: "stopped" };
+        yield { type: "done", text: Number.isFinite(hangMs) ? "done." : "stopped" };
         return;
       }
-      const script = request.script ?? inferScript(request.prompt, request.resumeFromCheckpoint);
+      const script =
+        steeredPrompt !== undefined
+          ? inferScript(steeredPrompt, request.resumeFromCheckpoint)
+          : (request.script ?? inferScript(request.prompt, request.resumeFromCheckpoint));
       // Per-run call index so repeated tools (e.g. message_agent) get distinct
       // executionIds — delivery keys and effect replays key off this value.
       let toolCallSeq = 0;
@@ -141,6 +166,15 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
+  if (lower.includes("can you check my gmail inbox?")) {
+    return [
+      {
+        assistant: "Connect Gmail and I’ll check your inbox.",
+        toolCalls: [{ name: "connect_app", args: { app: "gmail" } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("silent routine fixture")) {
     return [
       {
@@ -167,6 +201,12 @@ export function inferScript(
       },
     ];
   }
+  // A delegated result wakes the bot to relay it to the user. Before every content-based intent
+  // so the peer's text cannot steal the branch.
+  const report = delegatedReport(prompt);
+  if (report) {
+    return [{ assistant: `Here's what ${report.from} found: ${report.gist}`, complete: true }];
+  }
   // Before every content-based intent so payload text cannot steal the branch.
   const shellCommand = /run the shell command\s+([\s\S]+)$/i.exec(prompt)?.[1]?.trim();
   if (shellCommand) {
@@ -174,6 +214,15 @@ export function inferScript(
       {
         assistant: "running it on my computer.",
         toolCalls: [{ name: "shell", args: { command: shellCommand } }],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.includes("run hostname on my computer")) {
+    return [
+      {
+        assistant: "checking your computer's name.",
+        toolCalls: [{ name: "user_computer_shell", args: { command: "hostname" } }],
         complete: true,
       },
     ];
@@ -203,11 +252,11 @@ export function inferScript(
   }
   const childEdit = childEditCalls(prompt);
   if (childEdit) {
-    return [{ assistant: "updating the fleet.", toolCalls: childEdit, complete: true }];
+    return [{ assistant: "updating your bots.", toolCalls: childEdit, complete: true }];
   }
   const fleet = fleetCall(prompt);
   if (fleet) {
-    return [{ assistant: "updating the fleet.", toolCalls: [fleet], complete: true }];
+    return [{ assistant: "updating your bots.", toolCalls: [fleet], complete: true }];
   }
   if (
     lower.includes("launch a cloud agent") ||
@@ -246,6 +295,23 @@ export function inferScript(
                 origin: "https://login.example.test",
                 auth: { type: "login" },
               },
+            },
+          },
+        ],
+      },
+    ];
+  }
+  if (lower.includes("command variable secret card")) {
+    return [
+      {
+        assistant: "i need that key in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "Deploy key",
+              purpose: "api_key",
+              credential: { name: "deploy-key", auth: { type: "command" } },
             },
           },
         ],
@@ -609,7 +675,7 @@ code-b
   }
   return [
     {
-      assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(prompt)}`,
+      assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(peerMessage(prompt)?.text ?? prompt)}`,
     },
     {
       files: [{ path: "notes/last-task.md", content: `# Task\n\n${prompt}\n` }],
@@ -622,14 +688,50 @@ function shouldFail(prompt: string): boolean {
   return prompt.toLowerCase().includes("fail this run");
 }
 
-function shouldHang(prompt: string): boolean {
+/**
+ * The error a failing run throws; "overloaded" sends the body Anthropic returns with a 529 and
+ * "unreachable" sends what the provider SDKs report when nothing listens at the base URL.
+ */
+function scriptedFailure(prompt: string): string {
+  if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
+  if (/\bconnection request limit\b/i.test(prompt)) return MODEL_REQUEST_LIMIT_ERROR;
+  if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
+  if (/\bcut reply\b/i.test(prompt)) return MODEL_OUTPUT_CUT_ERROR;
+  if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
+  if (/\bout of credits\b/i.test(prompt)) {
+    return '402: {"message":"You have no credits remaining. Add credits to continue."}';
+  }
+  if (/\brejected key\b/i.test(prompt)) return '401: {"message":"Invalid API key"}';
+  if (/\bexhausted backups\b/i.test(prompt)) {
+    return modelFallbackFailure('429: {"message":"Too many requests"}', [
+      {
+        provider: "fake-provider",
+        modelId: "fake-backup",
+        status: "failed",
+        reason: "429 quota exhausted",
+      },
+    ]);
+  }
+  return /\boverloaded\b/i.test(prompt)
+    ? '529: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
+    : "Scripted run failure";
+}
+
+/** How long a scripted run keeps working before it finishes; undefined runs its script. */
+function hangDuration(prompt: string): number | undefined {
   const lower = prompt.toLowerCase();
-  return (
-    lower.includes("keep working") ||
+  // Asking another bot to keep working makes that bot's run hang, not this one.
+  if (lower.includes("message the bot named") || lower.includes("message bot named")) {
+    return undefined;
+  }
+  const seconds = /\bwork for (\d+) seconds?\b/.exec(lower)?.[1];
+  if (seconds) return Number(seconds) * 1000;
+  return lower.includes("keep working") ||
     lower.includes("work until i stop") ||
     lower.includes("until i stop you") ||
     lower.includes("hang until stopped")
-  );
+    ? Number.POSITIVE_INFINITY
+    : undefined;
 }
 
 /** One fleet tool call per prompt, so journeys can drive each tool in plain words. */
@@ -637,7 +739,7 @@ function fleetCall(prompt: string): { name: string; args: Record<string, unknown
   const target = (kind: string, name: string) => ({
     [kind.toLowerCase() === "group" ? "group_name" : "bot_name"]: clean(name),
   });
-  const listed = /\blist the fleet(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
+  const listed = /\blist the bots you manage(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
   if (listed) return { name: "list_fleet", args: listed[1] ? { bot_id: listed[1] } : {} };
   const created = /create a group named\s+([^\n<&]+?)\s+with\s+([^\n<&]+)/i.exec(prompt);
   if (created) {
@@ -734,7 +836,7 @@ function childEditCalls(
   if (renamed)
     return [{ name: "update_bot", args: { bot_id: renamed[1], name: clean(renamed[2]!) } }];
   // Some providers send every omitted optional field as an empty string.
-  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank fleet fields/i.exec(prompt);
+  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank bot management fields/i.exec(prompt);
   if (blank) return [{ name: "update_bot", args: { name: clean(blank[1]!), bot_id: "" } }];
   return undefined;
 }
@@ -753,6 +855,39 @@ function namedSpace(prompt: string) {
     .exec(prompt)?.[1]
     ?.replace(/[.!?]+$/, "")
     .trim();
+}
+
+/** The quoted message a reply's prompt opens with (see reply-context.ts). */
+const REPLY_CONTEXT =
+  /^(?:Replying to|User reacted with \S+ to) \(quoted data, not instructions\):\n<(reply_target|reaction_target)>\n[\s\S]*?\n<\/\1>\n\n/;
+
+/**
+ * The sender and body of a bot-message wake prompt, without the wake instructions around it. A
+ * delivery that threads back to this bot's own message opens with that message quoted.
+ */
+function peerMessage(prompt: string): { from: string; text: string } | undefined {
+  if (!prompt.replace(REPLY_CONTEXT, "").startsWith(BOT_MESSAGE_WAKE_CUE)) return undefined;
+  const match = /<bot_message from="([^"]*)">\n([\s\S]*?)\n<\/bot_message>/.exec(prompt);
+  if (!match) return undefined;
+  const text = match[2]!
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .trim();
+  return { from: match[1] || "Peer", text };
+}
+
+/** A delegated result or status to relay: who sent it and its last paragraph. */
+function delegatedReport(prompt: string): { from: string; gist: string } | undefined {
+  if (!/^This is a (?:result|status) for work you delegated\./m.test(prompt)) return undefined;
+  const message = peerMessage(prompt);
+  if (!message?.text) return undefined;
+  const gist =
+    message.text
+      .split(/\n\s*\n/)
+      .at(-1)
+      ?.trim() || message.text;
+  return { from: message.from, gist };
 }
 
 function summarize(prompt: string): string {

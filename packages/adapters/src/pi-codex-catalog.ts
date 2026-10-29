@@ -3,7 +3,9 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
+import { LiveCatalogCache, liveModelCatalogEnabled } from "./pi-live-cache.js";
+import type { CatalogSpaceAuth } from "./pi-live-catalog.js";
+import { liveCatalogEntry, overlayLiveCatalog } from "./pi-live-catalog.js";
 import type { PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
@@ -11,9 +13,8 @@ import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId, parseModelSecret } fr
 
 /**
  * The ChatGPT backend reports which Codex models a subscription account can call.
- * fx resolves `client_version` from npm `@openai/codex@latest`; we pin a recent
- * CLI release (0.159.3 includes GPT-6.1 Sol) so reads stay deterministic — bump
- * the constant to ask the backend for a newer compatibility view.
+ * `client_version` is pinned so reads stay deterministic; bump it to ask the
+ * backend for a newer compatibility view.
  */
 export const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
 const CODEX_CLIENT_VERSION = "0.159.3";
@@ -30,9 +31,8 @@ const CATALOG_FAILURE_TTL_MS = 60_000;
 const CATALOG_READ_WAIT_MS = 1_500;
 /**
  * How long a last-good catalog may keep answering after its TTL while refreshes
- * keep failing. Beyond this window the account's list is distrusted entirely —
- * a model the backend removed must not stay selectable forever — and reads fall
- * back to the static catalog until a refresh finally succeeds.
+ * keep failing; beyond it reads fall back to the static catalog so a removed
+ * model does not stay selectable forever.
  */
 const CATALOG_STALE_MAX_AGE_MS = 4 * 60 * 60_000;
 
@@ -40,7 +40,8 @@ export type CodexCatalogModel = {
   slug: string;
   reasoningEfforts: string[];
   contextWindow?: number;
-  supportsImages: boolean;
+  /** Absent when the account list omits `input_modalities`. */
+  supportsImages?: boolean;
   supportsFastTier: boolean;
 };
 
@@ -51,12 +52,9 @@ export type CodexCatalogResult =
   | { status: "error"; reason: CodexCatalogFailureReason; httpStatus?: number };
 
 /**
- * Account-scoped handle for one catalog read. `accessToken` returns the bearer
- * the credential already holds, or null once it expires — the catalog path
- * never refreshes or writes credentials; the runtime's locked refresh owns all
- * token writes. When the caller supplies `onExpiredToken` (see
- * `CodexLiveReadOptions`) an expired bearer fires it so a detached refresh can
- * warm the next read; this read still gets null.
+ * `accessToken` returns the held bearer, or null once it expires: the catalog
+ * path never refreshes or writes credentials; the runtime's locked refresh owns
+ * all token writes.
  */
 export type CodexCatalogAccount = {
   accountId: string;
@@ -172,7 +170,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
     if (typeof entry.slug !== "string" || !isValidSlug(entry.slug)) return undefined;
     const reasoningEfforts = parseReasoningEfforts(entry.supported_reasoning_levels);
     const contextWindow = parseContextWindow(entry.context_window);
-    const supportsImages = stringListContains(entry.input_modalities, "image");
+    const supportsImages = parseSupportsImages(entry.input_modalities);
     const supportsFastTier = stringListContains(entry.additional_speed_tiers, "fast");
     if (
       reasoningEfforts === INVALID ||
@@ -186,7 +184,7 @@ export function parseCodexCatalog(payload: unknown): CodexCatalogModel[] | undef
       slug: entry.slug,
       reasoningEfforts,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
-      supportsImages,
+      ...(supportsImages !== undefined ? { supportsImages } : {}),
       supportsFastTier,
     });
   }
@@ -219,6 +217,12 @@ function parseContextWindow(value: unknown): number | undefined | typeof INVALID
   return value;
 }
 
+/** Omitted or null modalities are unknown. A present list is an explicit yes or no. */
+function parseSupportsImages(value: unknown): boolean | undefined | typeof INVALID {
+  if (value === undefined || value === null) return undefined;
+  return stringListContains(value, "image");
+}
+
 function stringListContains(value: unknown, expected: string): boolean | typeof INVALID {
   if (value === undefined || value === null) return false;
   if (!Array.isArray(value) || value.length > MAX_CODEX_LIST_ITEMS) return INVALID;
@@ -230,174 +234,62 @@ function stringListContains(value: unknown, expected: string): boolean | typeof 
   return found;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-type CodexCatalogCacheEntry =
-  | { ok: true; models: CodexCatalogModel[]; expiresAt: number; fetchedAt: number }
-  | { ok: false; expiresAt: number };
-
-/**
- * A refresh that never reached the network — no usable bearer, expired token —
- * is not a fetch failure: it must not negative-cache, or a credential that gets
- * refreshed a moment later would stay hidden behind the failure TTL.
- */
-type CodexCatalogFetch =
-  | { attempted: true; models: CodexCatalogModel[] | undefined }
-  | { attempted: false };
-
-/**
- * In-memory per (userId, accountId) catalog with a single in-flight refresh per key.
- * Reads never block past `waitMs`: a fresh hit returns immediately, a stale hit serves
- * the last good list while a background refresh runs, and a cold miss waits a short
- * bounded time before giving up. A failed refresh keeps the last good catalog — the
- * stale entry stays servable and only re-arms a retry after the failure TTL, so a
- * transient outage cannot hide live-listed models — but only within
- * `staleMaxAgeMs` of the last successful fetch, so an account that lost access
- * eventually falls back to the static catalog instead of pinning removed models
- * forever. Process-lifetime only — restart loses the catalog until the next fetch.
- */
+/** Per-account Codex policy over the shared bounded SWR cache. */
 export class CodexCatalogCache implements CodexLiveCatalog {
-  private readonly entries = new Map<string, CodexCatalogCacheEntry>();
-  private readonly inflight = new Map<string, Promise<CodexCatalogModel[] | undefined>>();
+  private readonly cache: LiveCatalogCache<CodexCatalogModel>;
   private readonly fetchImpl: typeof fetch;
-  private readonly now: () => number;
-  private readonly ttlMs: number;
-  private readonly failureTtlMs: number;
-  private readonly waitMs: number;
-  private readonly deadlineMs: number;
-  private readonly staleMaxAgeMs: number;
-
+  private readonly enabledOverride: boolean | undefined;
   constructor(
     opts: {
+      enabled?: boolean;
       fetch?: typeof fetch;
       now?: () => number;
       ttlMs?: number;
       failureTtlMs?: number;
       waitMs?: number;
-      /** Bound on the shared refresh itself, so a signal-ignoring fetch cannot pin a key. */
       deadlineMs?: number;
-      /** Max age of a last-good catalog that failures may keep serving. */
       staleMaxAgeMs?: number;
     } = {},
   ) {
+    this.enabledOverride = opts.enabled;
     this.fetchImpl = opts.fetch ?? fetch;
-    this.now = opts.now ?? Date.now;
-    this.ttlMs = opts.ttlMs ?? CATALOG_TTL_MS;
-    this.failureTtlMs = opts.failureTtlMs ?? CATALOG_FAILURE_TTL_MS;
-    this.waitMs = opts.waitMs ?? CATALOG_READ_WAIT_MS;
-    this.deadlineMs = opts.deadlineMs ?? CODEX_CATALOG_HARD_DEADLINE_MS;
-    this.staleMaxAgeMs = opts.staleMaxAgeMs ?? CATALOG_STALE_MAX_AGE_MS;
+    this.cache = new LiveCatalogCache({
+      now: opts.now,
+      ttlMs: opts.ttlMs ?? CATALOG_TTL_MS,
+      failureTtlMs: opts.failureTtlMs ?? CATALOG_FAILURE_TTL_MS,
+      waitMs: opts.waitMs ?? CATALOG_READ_WAIT_MS,
+      deadlineMs: opts.deadlineMs ?? CODEX_CATALOG_HARD_DEADLINE_MS,
+      staleMaxAgeMs: opts.staleMaxAgeMs ?? CATALOG_STALE_MAX_AGE_MS,
+      maxEntries: MAX_CATALOG_CACHE_ENTRIES,
+    });
   }
-
-  async read(
+  read(
     userId: string,
     account: CodexCatalogAccount,
     opts?: { waitMs?: number },
   ): Promise<CodexCatalogModel[] | undefined> {
-    const key = `${userId}:${account.accountId}`;
-    const entry = this.entries.get(key);
-    if (entry && entry.expiresAt > this.now()) {
-      return entry.ok ? this.trusted(entry) : undefined;
-    }
-    if (entry) {
-      if (!this.inflight.has(key)) void this.revalidate(key, account);
-      return entry.ok ? this.trusted(entry) : undefined;
-    }
-    const pending = this.inflight.get(key) ?? this.revalidate(key, account);
-    return Promise.race([pending, sleep(opts?.waitMs ?? this.waitMs).then(() => undefined)]);
-  }
-
-  /** A last-good catalog is servable only within the staleness bound. */
-  private trusted(entry: { models: CodexCatalogModel[]; fetchedAt: number }) {
-    return entry.fetchedAt + this.staleMaxAgeMs > this.now() ? entry.models : undefined;
-  }
-
-  private revalidate(
-    key: string,
-    account: CodexCatalogAccount,
-  ): Promise<CodexCatalogModel[] | undefined> {
-    // A fetch that ignores its abort signal must not pin the key in-flight
-    // forever, so the tracked promise has its own hard deadline.
-    const work = Promise.race([
-      this.fetchModels(account),
-      sleep(this.deadlineMs).then(
-        (): CodexCatalogFetch => ({ attempted: true, models: undefined }),
-      ),
-    ]);
-    const tracked = work.then((outcome) => {
-      if (this.inflight.get(key) === tracked) this.inflight.delete(key);
-      // Only an attempted fetch records a result. A missing or expired bearer
-      // stores nothing, so the next read retries the credential instead of
-      // serving a failure entry while a detached refresh is still landing.
-      if (outcome.attempted) this.store(key, this.nextEntry(key, outcome.models));
-      const models = outcome.attempted ? outcome.models : undefined;
-      return models && models.length > 0 ? models : undefined;
-    });
-    this.inflight.set(key, tracked);
-    return tracked;
-  }
-
-  private nextEntry(key: string, models: CodexCatalogModel[] | undefined): CodexCatalogCacheEntry {
-    if (models && models.length > 0) {
-      return { ok: true, models, expiresAt: this.now() + this.ttlMs, fetchedAt: this.now() };
-    }
-    const prior = this.entries.get(key);
-    // Keep serving the last good catalog only within the staleness bound — the
-    // failure TTL paces the retry, but a list too old to trust drops to the
-    // static catalog so removed models stop being selectable.
-    if (prior?.ok && prior.fetchedAt + this.staleMaxAgeMs > this.now()) {
-      return { ...prior, expiresAt: this.now() + this.failureTtlMs };
-    }
-    return { ok: false, expiresAt: this.now() + this.failureTtlMs };
-  }
-
-  private async fetchModels(account: CodexCatalogAccount): Promise<CodexCatalogFetch> {
-    let accessToken: string | null;
-    try {
-      accessToken = await account.accessToken();
-    } catch {
-      return { attempted: false };
-    }
-    if (!accessToken) return { attempted: false };
-    try {
-      const result = await fetchCodexCatalog(accessToken, account.accountId, this.fetchImpl);
-      return { attempted: true, models: result.status === "ok" ? result.models : undefined };
-    } catch {
-      return { attempted: true, models: undefined };
-    }
-  }
-
-  private store(key: string, entry: CodexCatalogCacheEntry): void {
-    if (!this.entries.has(key) && this.entries.size >= MAX_CATALOG_CACHE_ENTRIES) {
-      const oldest = this.entries.keys().next().value;
-      if (oldest) this.entries.delete(oldest);
-    }
-    this.entries.set(key, entry);
+    if (!(this.enabledOverride ?? liveModelCatalogEnabled())) return Promise.resolve(undefined);
+    return this.cache.read(
+      `${userId}:${account.accountId}`,
+      async () => {
+        let accessToken: string | null;
+        try {
+          accessToken = await account.accessToken();
+        } catch {
+          return { attempted: false };
+        }
+        if (!accessToken) return { attempted: false };
+        const result = await fetchCodexCatalog(accessToken, account.accountId, this.fetchImpl);
+        return { attempted: true, models: result.status === "ok" ? result.models : undefined };
+      },
+      opts?.waitMs,
+    );
   }
 }
 
-export type CodexCatalogSpaceAuth = {
-  byProvider: Partial<Record<string, ModelCredentialAuthKind>>;
-  byModel: Partial<
-    Record<string, Partial<Record<string, ModelCredentialAuthKind | "disconnected">>>
-  >;
-  /**
-   * Secret id of the credential governing each provider/model slot, as resolved by
-   * `modelCredentialAuthKindsForSpace`. Missing ids keep that slot on the static
-   * catalog — the live overlay is only as per-credential as this mapping.
-   */
-  secretIdByProvider?: Partial<Record<string, string>>;
-  secretIdByModel?: Partial<Record<string, Partial<Record<string, string>>>>;
-};
+export type CodexCatalogSpaceAuth = CatalogSpaceAuth;
 
-/**
- * Account handle over a stored ChatGPT OAuth credential; null without an
- * account id. An expired bearer yields null — and fires `onExpiredToken` when
- * given so the caller can kick a detached refresh through the runtime's locked
- * credential path; this read still gets no catalog.
- */
+/** Null without an account id. */
 function codexAccountHandle(
   credential: OAuthCredential,
   onExpiredToken?: () => void,
@@ -415,10 +307,25 @@ function codexAccountHandle(
 }
 
 /**
- * Whether the live catalog for the account this credential signs into lists
- * `modelId` — the selection/run-time half of the models.list overlay, consulted
- * only when the static auth gate already rejected a catalog model.
+ * The account's own row for this slug, when the catalog can be read.
+ * Missing, unreadable, and failed catalogs return undefined so callers keep
+ * the static answer instead of inventing one.
  */
+export async function codexLiveModel(
+  catalog: CodexLiveCatalog | undefined,
+  userId: string,
+  secret: StoredModelSecret,
+  modelId: string,
+  opts?: CodexLiveReadOptions,
+): Promise<CodexCatalogModel | undefined> {
+  if (!catalog || secret.kind !== "oauth" || secret.reconnectRequired) return undefined;
+  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
+  if (!account) return undefined;
+  const models = await catalog.read(userId, account, opts).catch(() => undefined);
+  return models?.find((model) => model.slug === modelId);
+}
+
+/** Consulted only when the static auth gate already rejected a catalog model. */
 export async function codexLiveListsModel(
   catalog: CodexLiveCatalog | undefined,
   userId: string,
@@ -426,21 +333,13 @@ export async function codexLiveListsModel(
   modelId: string,
   opts?: CodexLiveReadOptions,
 ): Promise<boolean> {
-  if (!catalog || secret.kind !== "oauth") return false;
-  const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
-  if (!account) return false;
-  const models = await catalog.read(userId, account, opts).catch(() => undefined);
-  return Boolean(models?.some((model) => model.slug === modelId));
+  return Boolean(await codexLiveModel(catalog, userId, secret, modelId, opts));
 }
 
 /**
- * The live per-account catalog for every ChatGPT OAuth credential governing a
- * codex slot in this space, keyed by credential secret id. Credentials that are
- * unreadable, non-OAuth, or lack an account id — and reads that fail — map to no
- * entry, so their models keep the static availability (which hides Codex Spark).
- * No token refresh or credential write happens here: an expired bearer only
- * fires `opts.onExpiredToken` so the caller can kick the runtime's locked
- * refresh path, and this read still gets no catalog.
+ * Keyed by credential secret id. Unreadable, non-OAuth, or account-less
+ * credentials, and failed reads, map to no entry so their models keep the
+ * static availability (which hides Codex Spark).
  */
 export async function codexLiveCatalogsForSpace(
   prisma: PrismaClient,
@@ -462,7 +361,8 @@ export async function codexLiveCatalogsForSpace(
     let credential: OAuthCredential | undefined;
     try {
       const parsed = parseModelSecret(await secretStore.load(secret.ciphertext, secret.id));
-      credential = parsed.kind === "oauth" ? parsed.credential : undefined;
+      credential =
+        parsed.kind === "oauth" && !parsed.reconnectRequired ? parsed.credential : undefined;
     } catch {
       // Unreadable secrets keep static behavior.
     }
@@ -480,7 +380,6 @@ export async function codexLiveCatalogsForSpace(
   return live;
 }
 
-/** Distinct secret ids of credentials governing an OAuth-kind codex slot. */
 function oauthCodexSecretIds(auth: CodexCatalogSpaceAuth): string[] {
   const ids = new Set<string>();
   if (auth.byProvider[CHATGPT_OAUTH_PROVIDER] === "oauth") {
@@ -497,16 +396,10 @@ function oauthCodexSecretIds(auth: CodexCatalogSpaceAuth): string[] {
 }
 
 /**
- * Overlay the live catalogs on the static-filtered list. A codex entry governed
- * by a ChatGPT OAuth credential is available exactly when that credential's own
- * catalog lists it — which can restore statically excluded models like Codex
- * Spark. Entries governed by an API key, by an unreadable (per-model
- * "disconnected") credential, or by a credential whose catalog could not be
- * read keep their static behavior. Only slugs the pi registry knows are
- * overlayable — a live-only model cannot resolve to a runtime Model, so unknown
- * slugs are ignored rather than listed as broken picks. The pi catalog supplies
- * every field the endpoint lacks; a catalog sharing no known static slug is
- * ignored as untrusted.
+ * A codex entry governed by a ChatGPT OAuth credential is available exactly when
+ * that credential's own catalog lists it, which can restore statically excluded
+ * models like Codex Spark. Other entries keep their static behavior. A catalog
+ * sharing no known static slug is ignored as untrusted.
  */
 export function applyCodexLiveCatalog(
   base: readonly PiCatalogEntry[],
@@ -524,13 +417,8 @@ export function applyCodexLiveCatalog(
     trusted.set(secretId, new Map(models.map((model) => [model.slug, model])));
   }
   if (trusted.size === 0) return [...base];
-  const baseSet = new Set(base);
-  const out: PiCatalogEntry[] = [];
-  for (const entry of listPiCatalog()) {
-    if (entry.provider !== CHATGPT_OAUTH_PROVIDER) {
-      if (baseSet.has(entry)) out.push(entry);
-      continue;
-    }
+  const resolve = (entry: PiCatalogEntry) => {
+    if (entry.provider !== CHATGPT_OAUTH_PROVIDER) return undefined;
     const modelKind = auth.byModel[entry.provider]?.[entry.id];
     const kind = modelKind ?? auth.byProvider[entry.provider] ?? "disconnected";
     const secretId =
@@ -538,21 +426,41 @@ export function applyCodexLiveCatalog(
         ? auth.secretIdByProvider?.[entry.provider]
         : auth.secretIdByModel?.[entry.provider]?.[entry.id];
     const live = kind === "oauth" && secretId ? trusted.get(secretId) : undefined;
-    if (!live) {
-      if (baseSet.has(entry)) out.push(entry);
-      continue;
-    }
-    const liveModel = live.get(entry.id);
-    if (liveModel) out.push(withLiveFields(entry, liveModel));
+    return live;
+  };
+  const retained = base.filter((entry) => {
+    const live = resolve(entry);
+    return !live || live.has(entry.id);
+  });
+  const additions: PiCatalogEntry[] = [];
+  const candidateIds = new Set(
+    oauthCodexSecretIds(auth).flatMap((secretId) => [...(trusted.get(secretId)?.keys() ?? [])]),
+  );
+  for (const id of candidateIds) {
+    if (knownSlugs.has(id)) continue;
+    const entry = liveCatalogEntry(CHATGPT_OAUTH_PROVIDER, id);
+    const model = entry && resolve(entry)?.get(id);
+    if (entry && model) additions.push(withLiveFields(entry, model));
   }
-  return out;
+  return overlayLiveCatalog(
+    retained,
+    listPiCatalog(),
+    (entry) => {
+      const model = resolve(entry)?.get(entry.id);
+      return model ? withLiveFields(entry, model) : undefined;
+    },
+    additions,
+  );
 }
 
 function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCatalogEntry {
   const thinkingLevels = liveThinkingLevels(model);
+  // An explicit account answer decides image input. An omitted list keeps the entry's own.
+  const withImages =
+    model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
   return thinkingLevels
-    ? { ...entry, reasoning: true, thinkingLevels }
-    : { ...entry, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withImages, reasoning: true, thinkingLevels }
+    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

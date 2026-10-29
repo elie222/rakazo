@@ -1,6 +1,7 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
+import { modelFallbackFailure, parseModelFallbackFailure } from "./run-error.js";
 
 export function projectMessages(
   events: Array<{
@@ -13,6 +14,7 @@ export function projectMessages(
     threadId: string;
     botId?: string | null;
   }>,
+  runs?: readonly { id: string; status: string }[],
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   type LiveProjection = {
@@ -52,6 +54,13 @@ export function projectMessages(
     else liveById.clear();
   };
   for (const event of events) {
+    if (stopsRunHelpers(event)) {
+      const settled = settleRunSubagents([...liveSubagents.values()], event.runId);
+      for (const message of settled) {
+        const block = message.blocks[0];
+        if (block?.kind === "subagent") liveSubagents.set(block.agentId, message);
+      }
+    }
     const payload = asRecord(event.payload);
     const createdAt =
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
@@ -142,7 +151,14 @@ export function projectMessages(
       clearLive(event);
     }
   }
-  for (const live of liveSubagents.values()) messages.push(live);
+  let helpers = [...liveSubagents.values()];
+  if (runs) {
+    const running = new Set(runs.filter((run) => run.status === "running").map((run) => run.id));
+    for (const runId of new Set(helpers.map((message) => message.runId))) {
+      if (runId && !running.has(runId)) helpers = settleRunSubagents(helpers, runId);
+    }
+  }
+  for (const live of helpers) messages.push(live);
   for (const live of liveById.values()) {
     if (live.blocks.length > 0) {
       messages.push({
@@ -158,6 +174,37 @@ export function projectMessages(
     }
   }
   return messages;
+}
+
+/** A pause ends the current helper execution, even when the run later resumes. */
+export function stopsRunHelpers(event: { type: string }): boolean {
+  return (
+    isRunTerminalEvent(event) ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  );
+}
+
+export function settleRunSubagents<T extends { runId?: string; blocks: readonly unknown[] }>(
+  messages: T[],
+  runId: string | null | undefined,
+): T[] {
+  if (!runId) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.runId !== runId) return message;
+    let settled = false;
+    const blocks = message.blocks.map((value) => {
+      const block = asRecord(value);
+      if (block.kind !== "subagent" || block.status !== "running") return value;
+      settled = true;
+      return { ...block, status: "failed", result: "stopped" };
+    });
+    if (!settled) return message;
+    changed = true;
+    return { ...message, blocks };
+  });
+  return changed ? next : messages;
 }
 
 export function progressMessageId(event: { runId?: string | null; id?: string }): string {
@@ -230,8 +277,20 @@ export function runFailureError(event: {
   const error = event.payload?.error;
   if (typeof error !== "string" || !error.trim()) return null;
   const message = error.trim();
-  // A provider can fail with a stack or a whole response body; the run record keeps the full
-  // text while the UI shows a bounded first line.
+  // Clamp each model's diagnostic so a fallback summary stays parseable for display.
+  const fallback = parseModelFallbackFailure(message);
+  if (fallback) {
+    return modelFallbackFailure(
+      clampRunFailure(fallback.primaryError),
+      fallback.backups.map((item) => ({ ...item, reason: clampRunFailure(item.reason) })),
+    );
+  }
+  return clampRunFailure(message);
+}
+
+// A provider can fail with a stack or a whole response body; the run record keeps the full
+// text while the UI shows a bounded first line.
+function clampRunFailure(message: string): string {
   return message.length > RUN_FAILURE_ERROR_MAX
     ? `${message.slice(0, RUN_FAILURE_ERROR_MAX)}…`
     : message;
@@ -242,9 +301,19 @@ export type LiveMessageUpdate =
   | { type: "tool"; name: string };
 
 export function reduceLiveMessageBlocks(
-  blocks: readonly MessageBlock[],
+  current: readonly MessageBlock[],
   update: LiveMessageUpdate,
 ): MessageBlock[] {
+  // A reset drops the text streamed so far (it will not be in the reply) and keeps the steps,
+  // including tools still waiting on that text to finish its sentence.
+  let blocks = current;
+  if (update.type === "progress" && update.payload?.reset === true) {
+    const waiting = current.at(-1)?.kind === "progress" ? current.at(-1) : undefined;
+    blocks = current.filter((block) => block.kind !== "text" && block.kind !== "progress");
+    for (const name of waiting?.kind === "progress" ? (waiting.pendingToolNames ?? []) : []) {
+      blocks = appendToolCallSegment(blocks, name);
+    }
+  }
   const tail = blocks.at(-1);
   const segments = tail?.kind === "progress" ? blocks.slice(0, -1) : blocks;
   const priorText = liveMessageText(blocks);
@@ -289,15 +358,75 @@ function liveMessageText(blocks: readonly MessageBlock[]): string {
     .join("");
 }
 
-export type ToolStep = { label: string; count: number };
+/**
+ * Whether a live message is writing reply text right now: its newest block is the bot's
+ * own narration, with no tool waiting to run. Tool status lines don't count.
+ */
+export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
+  const tail = blocks.at(-1);
+  return (
+    tail?.kind === "progress" &&
+    !tail.activity &&
+    !tail.pendingToolNames?.length &&
+    tail.text.trim().length > 0
+  );
+}
+
+/** The tool status line the newest live message is showing ("Searching the web: …"), if any. */
+export function liveActivityLine(
+  messages: readonly { id: string; blocks: readonly MessageBlock[] }[],
+): string | undefined {
+  const live = messages.findLast((message) => message.id.startsWith("progress:"));
+  const tail = live?.blocks.at(-1);
+  return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
+}
+
+export type ToolStep = { label: string; count: number; note?: string };
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {
   const label = humanizeToolName(toolName);
   const last = steps.at(-1);
   if (last && last.label === label) {
-    return [...steps.slice(0, -1), { label, count: last.count + 1 }];
+    return [...steps.slice(0, -1), { ...last, count: last.count + 1 }];
   }
   return [...steps, { label, count: 1 }];
+}
+
+/** Puts a note on the newest step, splitting it off a run of the same step so it stays in order. */
+export function noteLastToolStep(segments: readonly MessageBlock[], note: string): MessageBlock[] {
+  const index = segments.findLastIndex((block) => block.kind === "steps");
+  const block = segments[index];
+  const last = block?.kind === "steps" ? block.steps.at(-1) : undefined;
+  if (block?.kind !== "steps" || !last) return [...segments];
+  const steps = block.steps.slice(0, -1);
+  if (last.count > 1)
+    steps.push({ ...last, count: last.count - 1 }, { label: last.label, count: 1, note });
+  else steps.push({ ...last, note: last.note ? `${last.note}\n\n${note}` : note });
+  const next = [...segments];
+  next[index] = { ...block, steps };
+  return next;
+}
+
+/** Removes the newest `count` notes from the steps. */
+export function withoutLastToolStepNotes(
+  segments: readonly MessageBlock[],
+  count: number,
+): MessageBlock[] {
+  let left = count;
+  const next = [...segments];
+  for (let index = next.length - 1; index >= 0 && left > 0; index -= 1) {
+    const block = next[index];
+    if (block?.kind !== "steps") continue;
+    const steps = [...block.steps];
+    for (let step = steps.length - 1; step >= 0 && left > 0; step -= 1) {
+      const { note, ...rest } = steps[step]!;
+      if (note === undefined) continue;
+      steps[step] = rest;
+      left -= 1;
+    }
+    next[index] = { ...block, steps };
+  }
+  return next;
 }
 
 export type ToolCallStreak = { key: string | undefined; count: number };
@@ -381,15 +510,87 @@ export function subagentBlockFromPayload(
   );
 }
 
-export function redactSecrets(value: string, secrets: string[]): string {
-  return secrets.reduce((acc, secret) => {
-    if (!secret) return acc;
-    return acc.split(secret).join("[redacted]");
-  }, value);
+/** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
+const MIN_SECRET_LINE_LENGTH = 16;
+
+/**
+ * The values to hide for `secrets`: each value, and each long unspaced line of a multi-line value
+ * such as a private key's body, since output that prints only some lines or joins them with
+ * spaces (an unquoted `echo $KEY`) never contains the whole value.
+ */
+function protectedValues(secrets: Iterable<string>): string[] {
+  const values = new Set<string>();
+  for (const secret of secrets) {
+    if (!secret) continue;
+    values.add(secret);
+    if (!/[\r\n]/.test(secret)) continue;
+    for (const line of secret.split(/\r\n?|\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.length >= MIN_SECRET_LINE_LENGTH && !/\s/.test(trimmed)) values.add(trimmed);
+    }
+  }
+  return [...values];
+}
+
+/**
+ * The stretches protected values cover in `value`, in order, as [start, end). Matches that
+ * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
+ * leave the rest readable; matches that only touch stay separate.
+ */
+function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
+  // Count matches starting and ending at each offset rather than listing every match, so a value
+  // that repeats or overlaps itself across a long text costs no more than two counters per offset.
+  let starts: Int32Array | undefined;
+  let ends: Int32Array | undefined;
+  for (const secret of protectedValues(secrets)) {
+    for (let at = value.indexOf(secret); at !== -1; at = value.indexOf(secret, at + 1)) {
+      starts ??= new Int32Array(value.length + 1);
+      ends ??= new Int32Array(value.length + 1);
+      starts[at] = starts[at]! + 1;
+      ends[at + secret.length] = ends[at + secret.length]! + 1;
+    }
+  }
+  if (!starts || !ends) return [];
+  const ranges: Array<[number, number]> = [];
+  let open = 0;
+  let start = 0;
+  for (let offset = 0; offset <= value.length; offset += 1) {
+    const ending = ends[offset]!;
+    const starting = starts[offset]!;
+    if (ending === 0 && starting === 0) continue;
+    open -= ending;
+    if (ending > 0 && open === 0) ranges.push([start, offset]);
+    if (starting > 0 && open === 0) start = offset;
+    open += starting;
+  }
+  return ranges;
+}
+
+export function redactSecrets(value: string, secrets: readonly string[]): string {
+  let output = "";
+  let offset = 0;
+  for (const [start, end] of redactedRanges(value, secrets)) {
+    output += `${value.slice(offset, start)}[redacted]`;
+    offset = end;
+  }
+  return output + value.slice(offset);
+}
+
+/** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
+export function redactSecretsAfter(before: string, text: string, secrets: string[]): string {
+  const value = before + text;
+  let output = "";
+  let offset = before.length;
+  for (const [start, end] of redactedRanges(value, secrets)) {
+    if (end <= offset) continue;
+    output += `${value.slice(offset, Math.max(start, offset))}[redacted]`;
+    offset = end;
+  }
+  return output + value.slice(offset);
 }
 
 export function containsSecret(value: unknown, secrets: string[]): boolean {
-  const active = secrets.filter((secret) => secret.length > 0);
+  const active = protectedValues(secrets);
   if (active.length === 0) return false;
   const serialized = JSON.stringify(value);
   if (serialized === undefined) return false;
@@ -422,15 +623,9 @@ export function containsSecret(value: unknown, secrets: string[]): boolean {
 /** UTF-16 high surrogates (0xD800–0xDBFF) must be paired with a low surrogate for valid JSON. */
 const HIGH_SURROGATE_START = 0xd800;
 const HIGH_SURROGATE_END = 0xdbff;
-const LOW_SURROGATE_START = 0xdc00;
-const LOW_SURROGATE_END = 0xdfff;
 
 function isHighSurrogate(code: number): boolean {
   return code >= HIGH_SURROGATE_START && code <= HIGH_SURROGATE_END;
-}
-
-function isLowSurrogate(code: number): boolean {
-  return code >= LOW_SURROGATE_START && code <= LOW_SURROGATE_END;
 }
 
 function endsWithHighSurrogate(value: string): boolean {
@@ -438,30 +633,17 @@ function endsWithHighSurrogate(value: string): boolean {
 }
 
 /**
- * Replace unpaired UTF-16 surrogates so the string is safe for JSON (Postgres rejects them).
+ * Replace unpaired UTF-16 surrogates and NUL characters, which Postgres rejects
+ * in json and text columns (command output and binary-ish tool results carry both).
  */
 export function sanitizeUtf16ForJson(value: string): string {
-  let result = "";
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (isHighSurrogate(code)) {
-      const next = i + 1 < value.length ? value.charCodeAt(i + 1) : -1;
-      if (isLowSurrogate(next)) {
-        result += value[i]! + value[i + 1]!;
-        i += 1;
-      } else {
-        result += "\uFFFD";
-      }
-    } else if (isLowSurrogate(code)) {
-      result += "\uFFFD";
-    } else {
-      result += value[i]!;
-    }
-  }
-  return result;
+  return value.replace(UNSAFE_UTF16, "\uFFFD");
 }
 
-/** Deep-sanitize string leaves so event payloads never carry unpaired surrogates into JSON. */
+/** NUL, a high surrogate with no low after it, or a low surrogate with no high before it. */
+const UNSAFE_UTF16 = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Deep-sanitize string leaves and keys so event payloads always persist in Postgres. */
 export function sanitizeJsonValue<T>(value: T): T {
   if (typeof value === "string") return sanitizeUtf16ForJson(value) as T;
   if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item)) as T;
@@ -474,7 +656,13 @@ export function sanitizeJsonValue<T>(value: T): T {
       used.set(safeKey, seen + 1);
       // Deterministic collision handling when sanitizing collapses distinct keys.
       if (seen > 0) safeKey = `${safeKey}#${seen + 1}`;
-      out[safeKey] = sanitizeJsonValue(nested);
+      // An own property, so a parsed "__proto__" key stays data instead of setting the prototype.
+      Object.defineProperty(out, safeKey, {
+        value: sanitizeJsonValue(nested),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return out as T;
   }
@@ -482,9 +670,10 @@ export function sanitizeJsonValue<T>(value: T): T {
 }
 
 export function createStreamingRedactor(secrets: string[]) {
-  const values = [...new Set(secrets.filter(Boolean))].sort((a, b) => b.length - a.length);
-  const maxLength = values[0]?.length ?? 0;
+  const values = protectedValues(secrets);
+  const maxLength = Math.max(0, ...values.map((value) => value.length));
   let buffer = "";
+  let covered = 0;
 
   const drain = (final: boolean) => {
     let output: string;
@@ -492,33 +681,20 @@ export function createStreamingRedactor(secrets: string[]) {
       output = buffer;
       buffer = "";
     } else {
-      const safeStartLimit = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
-      let offset = 0;
+      // A match a later chunk completes starts in the last maxLength - 1 units, so text before
+      // that is final. A stretch reaching past it is shown now and its rest kept as `covered`: a
+      // later match starting inside it extends the same placeholder, so nothing is held for long.
+      const cut = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
+      let offset = covered;
       output = "";
-      while (offset < safeStartLimit) {
-        const secret = values.find((value) => buffer.startsWith(value, offset));
-        if (secret) {
-          output += "[redacted]";
-          offset += secret.length;
-          continue;
-        }
-        const code = buffer.charCodeAt(offset);
-        if (isHighSurrogate(code)) {
-          const hasNext = offset + 1 < buffer.length;
-          const next = hasNext ? buffer.charCodeAt(offset + 1) : -1;
-          if (hasNext && isLowSurrogate(next)) {
-            // Keep the pair together; hold both if the low unit is outside this drain window.
-            if (!final && offset + 1 >= safeStartLimit) break;
-            output += buffer[offset]! + buffer[offset + 1]!;
-            offset += 2;
-            continue;
-          }
-          if (!final && !hasNext) break; // trailing high surrogate — wait for the next chunk
-        }
-        output += buffer[offset];
-        offset += 1;
+      for (const [start, end] of redactedRanges(buffer, values)) {
+        if (start >= cut) break;
+        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
+        offset = Math.max(offset, end);
       }
-      buffer = buffer.slice(offset);
+      output += buffer.slice(Math.min(offset, cut), cut);
+      covered = Math.max(0, offset - cut);
+      buffer = buffer.slice(cut);
     }
     // No-secret path emits the whole buffer; hold a trailing high until the next chunk.
     if (!final && endsWithHighSurrogate(output)) {
@@ -535,6 +711,13 @@ export function createStreamingRedactor(secrets: string[]) {
     },
     finish() {
       return drain(true);
+    },
+    /**
+     * Drops what is held back without showing it, but keeps matching against it, so a value
+     * split between the dropped text and the next chunk is still hidden.
+     */
+    skip() {
+      covered = buffer.length;
     },
   };
 }

@@ -10,6 +10,7 @@ import {
   Toggle,
 } from "@expo/ui/swift-ui";
 import {
+  contentShape,
   labelStyle,
   listRowBackground,
   listRowInsets,
@@ -17,6 +18,7 @@ import {
   listStyle,
   scrollContentBackground,
   scrollDisabled,
+  shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { useState } from "react";
@@ -64,14 +66,18 @@ export function InboxSwipeRow({
         key={action}
         label={t(label)}
         systemImage={systemImage}
-        role={action === "archive" ? "destructive" : undefined}
+        // A swipe button is never given the destructive role, which makes SwiftUI remove the
+        // row at the tap even when the request then fails; Archive is red by its tint instead.
+        role={!swipe && action === "delete" ? "destructive" : undefined}
         modifiers={
           swipe
             ? [
                 labelStyle("iconOnly"),
                 ...(action === "read" || action === "unread"
                   ? [tint(PlatformColor("systemBlue"))]
-                  : []),
+                  : action === "archive"
+                    ? [tint(PlatformColor("systemRed"))]
+                    : []),
               ]
             : undefined
         }
@@ -102,7 +108,7 @@ export function InboxSwipeRow({
               listRowBackground(native.page),
             ]}
           >
-            <ContextMenu>
+            <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
               <ContextMenu.Trigger>
                 <RNHostView matchContents>
                   <View
@@ -161,6 +167,7 @@ export function InboxSwipeRow({
                   ) : null}
                 </Menu>
                 {button("archive", false)}
+                {button("delete", false)}
               </ContextMenu.Items>
             </ContextMenu>
             <SwipeActions.Actions edge="leading">{button(actions.leading)}</SwipeActions.Actions>

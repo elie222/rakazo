@@ -1,5 +1,6 @@
 import type { AttachmentMimeType } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
+import { newClientId } from "@rakazo/core";
 
 export type PickedAttachment = {
   id: string;
@@ -11,6 +12,33 @@ export type PickedAttachment = {
 
 export type PickSkip = { name: string; reason: string };
 
+export function attachmentCountSkipReason(maxCount = ATTACHMENT_MAX_COUNT): string {
+  return `max ${maxCount} attachments`;
+}
+
+export function attachmentSizeSkipReason(maxBytes: number): string {
+  return `over ${attachmentSizeLabel(maxBytes)}`;
+}
+
+/**
+ * Why a candidate cannot become an attachment, or null when it can. Callers can
+ * ask before reading the content, so a rejected file is never loaded.
+ */
+export function attachmentSkipReason(
+  candidate: { name: string; size: number; mimeType: string | null },
+  existingCount: number,
+  acceptedCount: number,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+  maxCount = ATTACHMENT_MAX_COUNT,
+): string | null {
+  if (existingCount + acceptedCount >= maxCount) {
+    return attachmentCountSkipReason(maxCount);
+  }
+  if (candidate.size > maxBytes) return attachmentSizeSkipReason(maxBytes);
+  if (!candidate.mimeType) return "unsupported type";
+  return null;
+}
+
 export function filterPickedAttachments(
   existingCount: number,
   candidates: Array<{
@@ -21,29 +49,35 @@ export function filterPickedAttachments(
     previewUri?: string;
   }>,
   maxBytes = ATTACHMENT_MAX_BYTES,
+  maxCount = ATTACHMENT_MAX_COUNT,
 ): { attachments: PickedAttachment[]; skipped: PickSkip[] } {
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const candidate of candidates) {
-    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
-      skipped.push({ name: candidate.name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` });
+    const reason = attachmentSkipReason(
+      candidate,
+      existingCount,
+      attachments.length,
+      maxBytes,
+      maxCount,
+    );
+    if (reason) {
+      skipped.push({ name: candidate.name, reason });
       continue;
     }
-    if (candidate.size > maxBytes) {
-      skipped.push({ name: candidate.name, reason: `over ${attachmentSizeLabel(maxBytes)}` });
-      continue;
-    }
-    if (!candidate.mimeType) {
-      skipped.push({ name: candidate.name, reason: "unsupported type" });
-      continue;
-    }
-    attachments.push({
-      id: `${candidate.name}-${candidate.size}-${existingCount + attachments.length}`,
-      name: candidate.name,
-      mimeType: candidate.mimeType as AttachmentMimeType,
-      contentBase64: candidate.contentBase64,
-      previewUri: candidate.previewUri,
-    });
+    attachments.push(pickedAttachment(candidate));
   }
   return { attachments, skipped };
+}
+
+export function pickedAttachment(
+  candidate: Parameters<typeof filterPickedAttachments>[1][number],
+): PickedAttachment {
+  return {
+    id: newClientId(),
+    name: candidate.name,
+    mimeType: candidate.mimeType as AttachmentMimeType,
+    contentBase64: candidate.contentBase64,
+    previewUri: candidate.previewUri,
+  };
 }

@@ -1,10 +1,56 @@
-import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import {
+  FLEET_TOOL_NAMES,
+  TICKET_COMMENT_MAX_LENGTH,
+  TICKET_DESCRIPTION_MAX_LENGTH,
+  TICKET_TITLE_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
+import {
+  jsonSchemaParameters,
+  parametersFor,
+  prepareFleetArguments,
+} from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("keeps the history query either/or guidance on the provider wire without a root union", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const field of ["query", "queries"]) {
+      expect(wire.properties[field].description).toContain("never both; one is required");
+    }
+    expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
+    expect(wire).not.toHaveProperty("oneOf");
+    // Root combinators cannot be sent to every provider; original-schema validation remains authoritative.
+    expect(() => parseConnectorToolArgs(tool.inputSchema, {})).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
+    ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
+      queries: ["a"],
+    });
+  });
+
+  it.each([
+    ["ticket_create", "title", TICKET_TITLE_MAX_LENGTH, { title: "Ship" }],
+    ["ticket_create", "description", TICKET_DESCRIPTION_MAX_LENGTH, { title: "Ship" }],
+    ["ticket_update", "title", TICKET_TITLE_MAX_LENGTH, { id: "t1" }],
+    ["ticket_update", "description", TICKET_DESCRIPTION_MAX_LENGTH, { id: "t1" }],
+    ["ticket_comment", "body", TICKET_COMMENT_MAX_LENGTH, { id: "t1", body: "Ready" }],
+  ] as const)("preserves the %s %s length limit on the model wire", (name, field, limit, base) => {
+    const tool = builtinAgentTools.find((entry) => entry.name === name)!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const schema of [tool.inputSchema, wire]) {
+      expect(schema).toMatchObject({ properties: { [field]: { maxLength: limit } } });
+      const input = { ...base, [field]: "x".repeat(limit) };
+      expect(parseConnectorToolArgs(schema, input)).toEqual(input);
+      expect(() =>
+        parseConnectorToolArgs(schema, { ...base, [field]: "x".repeat(limit + 1) }),
+      ).toThrow();
+    }
+  });
+
   it("exposes fields from a locally referenced allOf branch", () => {
     const tool = {
       name: "catalog_search",
@@ -281,7 +327,7 @@ describe("update_bot parameters", () => {
   });
 });
 
-describe("fleet tool parameters", () => {
+describe("bot management tool parameters", () => {
   const wireFor = (name: string) => {
     const tool = builtinAgentTools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`missing ${name}`);
@@ -314,10 +360,10 @@ describe("fleet tool parameters", () => {
     );
   });
 
-  it("update_bot carries bot_id for a child and never instructions", () => {
+  it("update_bot carries bot_id for a child and first instructions, never a version", () => {
     const props = Object.keys(wireFor("update_bot").properties as object);
     expect(props).toContain("bot_id");
-    expect(props).not.toContain("instructions");
+    expect(props).toContain("instructions");
     expect(props).not.toContain("expected_version");
     expect(Object.keys(wireFor("set_child_instructions").properties as object).sort()).toEqual([
       "bot_id",

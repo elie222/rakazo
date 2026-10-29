@@ -5,11 +5,18 @@ import type {
   Context,
   CredentialStore,
   Model,
+  ModelThinkingLevel,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
+import {
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
+  normalizeRunError,
+} from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -57,9 +64,11 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 
 const primary = model("provider-a", "primary", 32_768);
@@ -215,6 +224,100 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Pi runtime transient model retries", () => {
+  it("recovers one empty idle stream after the header retry budget expires", async () => {
+    vi.useFakeTimers();
+    providerState.delay.mockImplementation(async (delay) => {
+      vi.setSystemTime(Date.now() + delay);
+    });
+    providerState.stream
+      .mockImplementationOnce(() => {
+        vi.setSystemTime(Date.now() + MODEL_STREAM_IDLE_TIMEOUT_MS);
+        return stream(primary, message(primary, [], "error", MODEL_STREAM_IDLE_TIMEOUT_MESSAGE));
+      })
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Recovered." }], "stop")),
+      );
+    expect(await run(request())).toContainEqual({ type: "text", text: "Recovered." });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000]);
+    expect(providerState.stream.mock.calls[1]?.[2].timeoutMs).toBe(MODEL_STREAM_TIMEOUT_MS - 2_000);
+  });
+
+  it("caps idle recovery at one retry even when failures arrive before the idle bound", async () => {
+    providerState.stream.mockImplementation(() =>
+      stream(primary, message(primary, [], "error", MODEL_STREAM_IDLE_TIMEOUT_MESSAGE)),
+    );
+    await expect(run(request())).rejects.toThrow(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000]);
+  });
+
+  it("recovers idle after a completed tool without replaying the effect", async () => {
+    vi.useFakeTimers();
+    const input = request();
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          primary,
+          message(
+            primary,
+            [
+              {
+                type: "toolCall",
+                id: "effect-once",
+                name: "write_effect",
+                arguments: { value: "once" },
+              },
+            ],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementationOnce(() => {
+        vi.setSystemTime(Date.now() + MODEL_STREAM_IDLE_TIMEOUT_MS);
+        return stream(primary, message(primary, [], "error", MODEL_STREAM_IDLE_TIMEOUT_MESSAGE));
+      })
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Complete." }], "stop")),
+      );
+    expect(await run(input)).toContainEqual({ type: "text", text: "Complete." });
+    expect(input.executeTool).toHaveBeenCalledOnce();
+    expect(providerState.stream).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify(providerState.stream.mock.calls[2]?.[1].messages)).toContain(
+      "effect-once",
+    );
+  });
+
+  it("does not renew the idle recovery budget again for an ordinary timeout", async () => {
+    vi.useFakeTimers();
+    providerState.stream.mockImplementation((_target, _context, options) => {
+      vi.setSystemTime(
+        Date.now() +
+          (providerState.stream.mock.calls.length === 1
+            ? MODEL_STREAM_IDLE_TIMEOUT_MS
+            : options.timeoutMs),
+      );
+      const error =
+        providerState.stream.mock.calls.length === 1
+          ? MODEL_STREAM_IDLE_TIMEOUT_MESSAGE
+          : "Request timed out.";
+      return stream(primary, message(primary, [], "error", error));
+    });
+    await expect(run(request())).rejects.toThrow(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay).toHaveBeenCalledOnce();
+  });
+
+  it("does not recover idle after partial text", async () => {
+    const content: AssistantMessage["content"] = [{ type: "text", text: "partial" }];
+    providerState.stream.mockImplementation(() =>
+      stream(primary, message(primary, content, "error", MODEL_STREAM_IDLE_TIMEOUT_MESSAGE)),
+    );
+    await expect(run(request())).rejects.toThrow(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
   it.each([
     "terminated",
     "Stream ended without finish_reason",
@@ -260,8 +363,8 @@ describe("Pi runtime transient model retries", () => {
   );
 
   it.each([
-    "HTTP 401; servers are overloaded",
-    "invalid api key; terminated",
+    "HTTP 403; servers are overloaded",
+    "permission denied; terminated",
     "context_length_exceeded; 503 overloaded",
     "bad request; terminated",
   ])("does not retry or switch on %s", async (error) => {
@@ -379,6 +482,7 @@ describe("Pi runtime transient model retries", () => {
     "Stream ended without finish_reason",
     "Request timed out.",
     "Connection error.",
+    MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
   ])("does not retry after a tool call starts even if %s omits it", async (error) => {
     const failure = message(primary, [], "error", error);
     providerState.stream.mockImplementation(() => {
@@ -472,6 +576,8 @@ describe("Pi runtime transient model retries", () => {
     { source: "turn", error: "429 rate limit" },
     { source: "run", error: "Request timed out." },
     { source: "turn", error: "Request timed out." },
+    { source: "run", error: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE },
+    { source: "turn", error: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE },
   ])(
     "stops promptly when the $source signal aborts during $error backoff",
     async ({ source, error }) => {
@@ -749,6 +855,91 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.delay).not.toHaveBeenCalled();
   });
 
+  it("uses the configured backup for an explicit insufficient-balance error", async () => {
+    const balanceError =
+      '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}';
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", balanceError))
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+    const events = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+    );
+    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "400 insufficient credits",
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have insufficient credits to make this request. Please purchase more credits to continue using the service."}}',
+    ],
+    ["403 quota exceeded", "403 Quota exceeded for this account."],
+  ])("moves to the configured backup on an exhausted account: %s", async (_label, error) => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", error))
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+    const events = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+    );
+    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
+    "401 You have insufficient credits to make this request.",
+    "invalid_api_key: Incorrect API key provided",
+  ])(
+    "moves to the configured backup without a retry on a rejected credential: %s",
+    async (error) => {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        target.provider === primary.provider
+          ? stream(target, message(target, [], "error", error))
+          : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+      );
+      const events = await run(
+        request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+      );
+      expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
+      expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+        primary.provider,
+        backupA.provider,
+      ]);
+      expect(providerState.delay).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fails on a rejected credential without retrying when no backup is configured", async () => {
+    const error = "401 OAuth access token has been revoked.";
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", error)),
+    );
+    await expect(run(request())).rejects.toThrow(error);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
+  it.each(["400 invalid_request_error: Invalid parameter: credits must be a positive integer."])(
+    "does not switch to the backup on a non-exhaustion 4xx: %s",
+    async (error) => {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", error)),
+      );
+      await expect(
+        run(request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }])),
+      ).rejects.toThrow();
+      expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+        primary.provider,
+      ]);
+    },
+  );
+
   it("retries a short usage window on the same model without a backup", async () => {
     providerState.stream
       .mockImplementationOnce(() =>
@@ -779,6 +970,8 @@ describe("Pi runtime ordered model fallback", () => {
     "You have hit your ChatGPT usage limit (plus plan). Try again in ~158 min.",
     '403 {"error":{"type":"permission_error","message":"You\'ve reached your 5-hour usage limit."}}',
     "402 provider quota exhausted",
+    '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}',
+    "400 You have insufficient credits to make this request.",
   ])(
     "does not retry the same model on an exhausted usage window without a backup: %s",
     async (error) => {
@@ -791,53 +984,66 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
-  it("switches after a Codex idle timeout before output", async () => {
-    vi.useFakeTimers();
-    try {
-      const codex = {
-        ...primary,
-        provider: "openai-codex",
-        api: "openai-codex-responses" as const,
-      };
-      providerState.models.set(`${codex.provider}/${codex.id}`, codex);
-      providerState.stream.mockImplementation(
-        (
-          target: Model<"openai-completions">,
-          _ctx: unknown,
-          options: {
-            signal: AbortSignal;
-            onResponse: (response: Response, model: Model<"openai-completions">) => void;
+  it.each(
+    ["openai-codex", "openrouter", "openai-compatible"].flatMap((provider) =>
+      [true, false].map((backup) => ({ provider, backup })),
+    ),
+  )(
+    "recovers after a $provider stream goes silent before output (backup=$backup)",
+    async ({ provider, backup }) => {
+      vi.useFakeTimers();
+      try {
+        const targetModel = {
+          ...primary,
+          provider,
+          api: provider === "openai-codex" ? ("openai-codex-responses" as const) : primary.api,
+        };
+        providerState.models.set(`${targetModel.provider}/${targetModel.id}`, targetModel);
+        let primaryCalls = 0;
+        providerState.stream.mockImplementation(
+          (
+            target: Model<"openai-completions">,
+            _ctx: unknown,
+            options: {
+              signal: AbortSignal;
+              onResponse?: (response: Response, model: Model<"openai-completions">) => void;
+            },
+          ) => {
+            if (target.provider !== targetModel.provider || primaryCalls++ > 0)
+              return stream(target, message(target, [{ type: "text", text: "recovered" }], "stop"));
+            const result = new AssistantMessageEventStream();
+            options.onResponse?.(new Response(null, { status: 200 }), target);
+            options.signal.addEventListener("abort", () => {
+              const failure = message(target, [], "aborted", "aborted");
+              result.push({ type: "error", reason: "aborted", error: failure });
+              result.end(failure);
+            });
+            return result;
           },
-        ) => {
-          if (target.provider !== codex.provider)
-            return stream(target, message(target, [{ type: "text", text: "recovered" }], "stop"));
-          const result = new AssistantMessageEventStream();
-          options.onResponse(new Response(null, { status: 200 }), target);
-          options.signal.addEventListener("abort", () => {
-            const failure = message(target, [], "aborted", "aborted");
-            result.push({ type: "error", reason: "aborted", error: failure });
-            result.end(failure);
-          });
-          return result;
-        },
-      );
-      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-      input.model.provider = codex.provider;
-      const pending = run(input);
-      await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
-      expect(await pending).toContainEqual({ type: "text", text: "recovered" });
-      expect(providerState.stream).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+        );
+        const input = request(
+          backup ? [{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }] : [],
+        );
+        input.model.provider = targetModel.provider;
+        const pending = run(input);
+        await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
+        expect(providerState.stream).toHaveBeenCalledTimes(2);
+        expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual(
+          backup ? [] : [2_000],
+        );
+        expect(await pending).toContainEqual({ type: "text", text: "recovered" });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("records streamed content when the provider iterator throws after output", async () => {
     const failure = message(
       primary,
       [{ type: "text", text: "keep this text" }],
       "error",
-      "503 timeout",
+      "429 insufficient_quota",
     );
     providerState.stream.mockImplementation(() => {
       class ThrowingStream extends AssistantMessageEventStream {
@@ -849,7 +1055,7 @@ describe("Pi runtime ordered model fallback", () => {
             delta: "keep this text",
             partial: failure,
           };
-          throw new Error("503 timeout");
+          throw new Error("429 insufficient_quota");
         }
       }
       return new ThrowingStream();
@@ -863,7 +1069,7 @@ describe("Pi runtime ordered model fallback", () => {
         events,
         new PiAgentRuntime({ sessionRoot: "fixture-sessions" }),
       ),
-    ).rejects.toThrow(/503 timeout/);
+    ).rejects.toThrow(/429 insufficient_quota/);
     expect(providerState.stream).toHaveBeenCalledTimes(1);
     expect(appendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ role: "assistant", content: failure.content }),
@@ -1129,12 +1335,7 @@ describe("Pi runtime ordered model fallback", () => {
     const events = await run(input);
 
     expect(input.onModelChange).toHaveBeenCalledExactlyOnceWith(backupA.provider, backupA.id);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "progress",
-        text: expect.stringContaining(backupA.id),
-      }),
-    );
+    expect(events.filter((event) => event.type === "progress")).toEqual([]);
   });
 
   it("prunes new screenshots using the active backup image limit", async () => {
@@ -1222,7 +1423,7 @@ describe("Pi runtime ordered model fallback", () => {
         primary,
         [{ type: "text", text: "partial plus terminal suffix" }],
         "error",
-        "429 rate_limit_error",
+        "429 insufficient_quota",
       );
       providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
         if (target.provider === primary.provider) {
@@ -1253,7 +1454,7 @@ describe("Pi runtime ordered model fallback", () => {
           events,
           new PiAgentRuntime({ sessionRoot: "fixture-sessions" }),
         ),
-      ).rejects.toThrow(/429 rate_limit_error/);
+      ).rejects.toThrow(/429 insufficient_quota/);
 
       expect(providerState.stream).toHaveBeenCalledTimes(1);
       expect(appendMessage).toHaveBeenCalledWith(
@@ -1418,10 +1619,6 @@ describe("Pi runtime ordered model fallback", () => {
 
   it.each([
     {
-      label: "thinking",
-      content: [{ type: "thinking" as const, thinking: "terminal reasoning" }],
-    },
-    {
       label: "tool call",
       content: [
         {
@@ -1506,6 +1703,189 @@ describe("Pi runtime ordered model fallback", () => {
     ).toEqual([primary.provider, primary.provider]);
   });
 
+  it.each(["failed", "skipped", "mixed"] as const)(
+    "reports %s backups only when the run fails after exhausting the chain",
+    async (outcome) => {
+      const input = request([
+        { provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" },
+        { provider: backupB.provider, id: backupB.id, apiKey: "fake-backup-b" },
+      ]);
+      input.resolveFallbackModel = async (provider, id) => ({
+        provider,
+        id,
+        apiKey:
+          outcome === "skipped" || (outcome === "mixed" && provider === backupA.provider)
+            ? undefined
+            : "fake-backup-key",
+      });
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", "429 quota exhausted")),
+      );
+      const error = await run(input).then(
+        () => undefined,
+        (error: Error) => error,
+      );
+      expect(error).toBeInstanceOf(Error);
+      const diagnostic = JSON.parse(error!.message);
+      expect(diagnostic).toMatchObject({
+        modelFallbackVersion: 1,
+        primaryError: "429 quota exhausted",
+      });
+      expect(diagnostic.backups.map((backup: { status: string }) => backup.status)).toEqual(
+        outcome === "mixed" ? ["skipped", "failed"] : [outcome, outcome],
+      );
+      expect(normalizeRunError(error!.message).summary).not.toBe(
+        normalizeRunError(diagnostic.primaryError).summary,
+      );
+      expect(providerState.stream).toHaveBeenCalledTimes(
+        outcome === "skipped" ? 1 : outcome === "mixed" ? 2 : 3,
+      );
+    },
+  );
+
+  it("records why backups were skipped without exposing credential-resolution errors", async () => {
+    providerState.models.set(`${primary.provider}/${primary.id}`, { ...primary, reasoning: true });
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, { ...backupA, reasoning: false });
+    const input = request([
+      { provider: backupA.provider, id: backupA.id },
+      { provider: backupB.provider, id: backupB.id },
+    ]);
+    input.resolveFallbackModel = async (provider, id) => {
+      if (provider === backupB.provider) throw new Error("fake-private-credential-diagnostic");
+      return { provider, id, apiKey: "fake-backup-key", thinkingLevel: "low" };
+    };
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", "429 quota exhausted")),
+    );
+    const error = await run(input).catch((error: Error) => error);
+    expect((error as Error).message).not.toContain("fake-private-credential-diagnostic");
+    expect(JSON.parse((error as Error).message).backups).toEqual([
+      {
+        provider: backupA.provider,
+        modelId: backupA.id,
+        status: "skipped",
+        reason: "The backup model does not support the requested thinking level.",
+      },
+      {
+        provider: backupB.provider,
+        modelId: backupB.id,
+        status: "skipped",
+        reason: "The backup connection or request could not be prepared.",
+      },
+    ]);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["primary", "backup"] as const)(
+    "does not reuse a recovered %s call's error on a later failed call",
+    async (recovered) => {
+      const input = request([{ provider: backupA.provider, id: backupA.id }]);
+      input.resolveFallbackModel = async (provider, id) => ({
+        provider,
+        id,
+        apiKey: recovered === "backup" ? "fake-backup-key" : undefined,
+      });
+      let calls = 0;
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+        calls += 1;
+        if (calls === 1)
+          return stream(target, message(target, [], "error", "503 Service unavailable"));
+        if (calls === 2)
+          return stream(
+            target,
+            message(
+              target,
+              [
+                {
+                  type: "toolCall",
+                  id: "recovered-tool",
+                  name: "write_effect",
+                  arguments: { value: "write once" },
+                },
+              ],
+              "toolUse",
+            ),
+          );
+        return stream(target, message(target, [], "error", "400 Invalid request"));
+      });
+      await expect(run(input)).rejects.toThrow(/^400 Invalid request$/);
+      expect(calls).toBe(3);
+      expect(input.executeTool).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("explains a backup skipped because user images exceed its limit", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id }]);
+    input.resolveFallbackModel = async (provider, id) => ({
+      provider,
+      id,
+      apiKey: "fake-one-image-key",
+      maxImagesPerPrompt: 1,
+    });
+    input.currentTurnImages = [
+      { name: "first.png", mimeType: "image/png", data: new Uint8Array([1]) },
+      { name: "second.png", mimeType: "image/png", data: new Uint8Array([2]) },
+    ];
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", "429 quota exhausted")),
+    );
+    const error = await run(input).catch((error: Error) => error);
+    expect(JSON.parse((error as Error).message).backups).toEqual([
+      {
+        provider: backupA.provider,
+        modelId: backupA.id,
+        status: "skipped",
+        reason: "The request exceeds the backup model's image limit.",
+      },
+    ]);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the primary failure when a backup fails for a different reason", async () => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(
+        target,
+        message(
+          target,
+          [],
+          "error",
+          target.provider === primary.provider ? "429 quota exhausted" : "400 Invalid request",
+        ),
+      ),
+    );
+    const error = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "fake-backup" }]),
+    ).catch((error: Error) => error);
+    const diagnostic = JSON.parse((error as Error).message);
+    expect(diagnostic.primaryError).toBe("429 quota exhausted");
+    expect(diagnostic.backups[0]).toMatchObject({
+      status: "failed",
+      reason: "400 Invalid request",
+    });
+  });
+
+  it("does not claim exhaustion when an error leaves an untried backup", async () => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(
+        target,
+        message(
+          target,
+          [],
+          "error",
+          target.provider === primary.provider ? "429 quota exhausted" : "400 Invalid request",
+        ),
+      ),
+    );
+    const error = await run(
+      request([
+        { provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" },
+        { provider: backupB.provider, id: backupB.id, apiKey: "fake-backup-b" },
+      ]),
+    ).catch((error: Error) => error);
+    expect((error as Error).message).toBe("400 Invalid request");
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+  });
+
   it("tries each backup once in order, then retries the last before surfacing exhaustion", async () => {
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       stream(target, message(target, [], "error", "529 overloaded_error")),
@@ -1534,7 +1914,7 @@ describe("Pi runtime ordered model fallback", () => {
       { provider: backupA.provider, id: backupA.id, apiKey: "small...key" },
       { provider: backupB.provider, id: backupB.id, apiKey: "fitti...key" },
     ]);
-    input.prompt = "x".repeat(8_000);
+    input.prompt = "x".repeat(24_000);
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       target.provider === primary.provider
         ? stream(target, message(target, [], "error", "429 rate_limit_error"))
@@ -1579,23 +1959,20 @@ describe("Pi runtime ordered model fallback", () => {
     ).toEqual([primary.provider, smallContextBackup.provider]);
   });
 
-  it("skips backups without the primary turn's reasoning capability", async () => {
+  it("runs a backup without reasoning with thinking off when the primary thinks", async () => {
     const reasoningPrimary = { ...primary, reasoning: true };
     const textOnlyBackup = { ...backupA, reasoning: false };
-    const reasoningBackup = { ...backupB, reasoning: true };
     providerState.models.set(`${primary.provider}/${primary.id}`, reasoningPrimary);
     providerState.models.set(`${backupA.provider}/${backupA.id}`, textOnlyBackup);
-    providerState.models.set(`${backupB.provider}/${backupB.id}`, reasoningBackup);
     const input = request([
       { provider: backupA.provider, id: backupA.id, apiKey: "text-only-key" },
-      { provider: backupB.provider, id: backupB.id, apiKey: "reasoning-key" },
     ]);
     input.model.reasoning = true;
     input.model.thinkingLevel = "high";
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       target.provider === primary.provider
         ? stream(target, message(target, [], "error", "429 rate_limit_error"))
-        : stream(target, message(target, [{ type: "text", text: "reasoned" }], "stop")),
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
     );
 
     await run(input);
@@ -1604,7 +1981,8 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([primary.provider, backupB.provider]);
+    ).toEqual([primary.provider, backupA.provider]);
+    expect(providerState.stream.mock.calls[1]?.[2]).toMatchObject({ reasoning: undefined });
   });
 
   it.each([...IMAGE_RETURNING_COMPUTER_TOOLS, "write_effect"])(
@@ -1891,10 +2269,57 @@ describe("Pi runtime ordered model fallback", () => {
 
     const events = await run(input);
 
-    expect(resolveFallbackModel).toHaveBeenNthCalledWith(1, backupA.provider, backupA.id);
-    expect(resolveFallbackModel).toHaveBeenNthCalledWith(2, backupB.provider, backupB.id);
+    expect(resolveFallbackModel).toHaveBeenNthCalledWith(
+      1,
+      backupA.provider,
+      backupA.id,
+      undefined,
+    );
+    expect(resolveFallbackModel).toHaveBeenNthCalledWith(
+      2,
+      backupB.provider,
+      backupB.id,
+      undefined,
+    );
     expect(requestKeys).toEqual(["backup-only-key"]);
     expect(JSON.stringify(events)).not.toContain("backup-only-key");
+  });
+
+  it("falls back to the same model on another account's connection", async () => {
+    const input = request([
+      // The running connection is never its own backup.
+      { provider: primary.provider, id: primary.id, connectionId: "personal" },
+      { provider: primary.provider, id: primary.id, connectionId: "work" },
+    ]);
+    input.model = { ...input.model, connectionId: "personal" };
+    const resolveFallbackModel = vi.fn(
+      async (provider: string, id: string, connectionId?: string) => ({
+        provider,
+        id,
+        connectionId,
+        apiKey: "fake-work-key",
+      }),
+    );
+    input.resolveFallbackModel = resolveFallbackModel;
+    const requestKeys: Array<string | undefined> = [];
+    providerState.stream.mockImplementation(
+      (target: Model<"openai-completions">, _context: unknown, options?: { apiKey?: string }) => {
+        requestKeys.push(options?.apiKey);
+        return options?.apiKey === "fake-primary-key"
+          ? stream(target, message(target, [], "error", "429 usage limit reached"))
+          : stream(target, message(target, [{ type: "text", text: "from work" }], "stop"));
+      },
+    );
+
+    const events = await run(input);
+
+    expect(resolveFallbackModel).toHaveBeenCalledExactlyOnceWith(
+      primary.provider,
+      primary.id,
+      "work",
+    );
+    expect(requestKeys.at(-1)).toBe("fake-work-key");
+    expect(JSON.stringify(events)).toContain("from work");
   });
 });
 
@@ -2088,4 +2513,462 @@ describe("Pi runtime thinking blocks bound to a different conversation", () => {
     expect(thinkingParts(contexts[3]!)).toEqual([]);
     expect(providerState.delay).not.toHaveBeenCalled();
   });
+});
+
+describe("Pi runtime output reservation recovery", () => {
+  const limited = model("openrouter", "fixture-limited", 32_768);
+  const budgetError =
+    '402: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 1024.","metadata":{"limit_source":"openrouter_credits"}}';
+
+  function limitedRequest() {
+    providerState.models.set(
+      `${limited.provider}/${limited.id}`,
+      limited as unknown as Record<string, unknown>,
+    );
+    return {
+      ...request(),
+      model: { provider: limited.provider, id: limited.id, apiKey: "fixture-key" },
+    };
+  }
+
+  it("lowers the rejected reservation once and retains it through subsequent tool turns", async () => {
+    const input = limitedRequest();
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      caps.push(options.maxTokens);
+      if (caps.length === 1) return stream(target, message(target, [], "error", budgetError));
+      if (caps.length === 2)
+        return stream(
+          target,
+          message(
+            target,
+            [
+              {
+                type: "toolCall",
+                id: "fixture-call",
+                name: "write_effect",
+                arguments: { value: "fixture" },
+              },
+            ],
+            "toolUse",
+          ),
+        );
+      return stream(target, message(target, [{ type: "text", text: "Ready" }], "stop"));
+    });
+    const events = await run(input);
+    expect(caps).toEqual([4096, 1024, 1024]);
+    expect(input.executeTool).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  it("never loops when the reduced request is rejected too", async () => {
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [], "error", budgetError)),
+    );
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(input.executeTool).not.toHaveBeenCalled();
+  });
+
+  it.each(["text", "toolCall"] as const)(
+    "does not retry a response with a partial %s block",
+    async (part) => {
+      const input = limitedRequest();
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          message(
+            target,
+            part === "text"
+              ? [{ type: "text", text: "Partial" }]
+              : [
+                  {
+                    type: "toolCall",
+                    id: "fixture-call",
+                    name: "write_effect",
+                    arguments: { value: "fixture" },
+                  },
+                ],
+            "error",
+            budgetError,
+          ),
+        ),
+      );
+      await expect(run(input)).rejects.toThrow("This request requires more credits");
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      expect(input.executeTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not treat a local reservation failure as a provider rejection", async () => {
+    const input = limitedRequest();
+    const beforeCall = vi.fn<ModelCallObserver["beforeCall"]>(async () => {
+      throw new Error(budgetError);
+    });
+    await expect(
+      run(
+        input,
+        [],
+        new PiAgentRuntime({ modelCallObserver: { beforeCall, afterCall: async () => undefined } }),
+      ),
+    ).rejects.toThrow("This request requires more credits");
+    expect(beforeCall).toHaveBeenCalledOnce();
+    expect(providerState.stream).not.toHaveBeenCalled();
+  });
+
+  it("does not retry after the original request deadline", async () => {
+    vi.useFakeTimers();
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) => {
+      vi.setSystemTime(Date.now() + MODEL_STREAM_TIMEOUT_MS + 1);
+      return stream(target, message(target, [], "error", budgetError));
+    });
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Pi runtime account request ceilings", () => {
+  it.each([false, true])(
+    "handles a provider budget below mandatory context without retrying it (backup: %s)",
+    async (withBackup) => {
+      const targetModel = model("groq", "fixture-small-account", 32_768);
+      providerState.models.set(
+        `${targetModel.provider}/${targetModel.id}`,
+        targetModel as unknown as Record<string, unknown>,
+      );
+      const input = {
+        ...request(
+          withBackup ? [{ provider: backupA.provider, id: backupA.id, apiKey: "fixture-key" }] : [],
+        ),
+        model: { provider: targetModel.provider, id: targetModel.id, apiKey: "fixture-key" },
+        instructions: "Synthetic required instructions. ".repeat(200),
+      };
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          target.provider === "groq"
+            ? message(
+                target,
+                [],
+                "error",
+                '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large on tokens per minute (TPM): Limit 2000, Requested 3000, reduce your message size."}',
+              )
+            : message(target, [{ type: "text", text: "Ready" }], "stop"),
+        ),
+      );
+      if (withBackup) {
+        await expect(run(input)).resolves.toContainEqual(
+          expect.objectContaining({ type: "done", text: "Ready" }),
+        );
+        expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+          "groq",
+          backupA.provider,
+        ]);
+      } else {
+        await expect(run(input)).rejects.toMatchObject({
+          name: "ModelAccountError",
+          message: MODEL_REQUEST_LIMIT_ERROR,
+        });
+        expect(providerState.stream).toHaveBeenCalledOnce();
+      }
+      expect(providerState.delay).not.toHaveBeenCalled();
+      expect(input.executeTool).not.toHaveBeenCalled();
+      expect(input.model).not.toHaveProperty("contextWindow");
+    },
+  );
+
+  it("rebuilds a rejected Groq context once without changing saved/requested settings", async () => {
+    const targetModel = model("groq", "fixture-limited", 32_768);
+    providerState.models.set(
+      `${targetModel.provider}/${targetModel.id}`,
+      targetModel as unknown as Record<string, unknown>,
+    );
+    const input = {
+      ...request(),
+      model: { provider: targetModel.provider, id: targetModel.id, apiKey: "fixture-key" },
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    const windows: number[] = [];
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      windows.push(target.contextWindow);
+      caps.push(options.maxTokens);
+      if (windows.length > 1) {
+        expect(estimateModelContextTokens(_context)).toBeLessThan(
+          target.contextWindow - options.maxTokens,
+        );
+      }
+      return stream(
+        target,
+        windows.length === 1
+          ? message(
+              target,
+              [],
+              "error",
+              '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large on tokens per minute (TPM): Limit 6000, Requested 7000, please reduce your message size."}',
+            )
+          : message(target, [{ type: "text", text: "Ready" }], "stop"),
+      );
+    });
+    const events = await run(input);
+    expect(windows).toEqual([32768, 5100]);
+    expect(caps).toEqual([4096, 1275]);
+    expect(input.model).not.toHaveProperty("contextWindow");
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  const llamaCppOverflow = (contextSize: number) =>
+    `400: ${JSON.stringify({ code: 400, message: `request (19563 tokens) exceeds the available context size (${contextSize} tokens), try increasing it`, type: "exceed_context_size_error", n_prompt_tokens: 19563, n_ctx: contextSize })}`;
+  const compatibleModel = () => {
+    const targetModel = model("openai-compatible", "fixture-local", 262_144);
+    providerState.models.set(
+      `${targetModel.provider}/${targetModel.id}`,
+      targetModel as unknown as Record<string, unknown>,
+    );
+    return {
+      provider: targetModel.provider,
+      id: targetModel.id,
+      baseUrl: "http://127.0.0.1:8080/v1",
+      apiKey: "fixture-key",
+    };
+  };
+
+  it("rebuilds an OpenAI-compatible context once at the window the server reports", async () => {
+    const input = {
+      ...request(),
+      model: compatibleModel(),
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    const windows: number[] = [];
+    providerState.stream.mockImplementation((target, context, options) => {
+      windows.push(target.contextWindow);
+      if (windows.length > 1) {
+        expect(estimateModelContextTokens(context)).toBeLessThan(
+          target.contextWindow - options.maxTokens,
+        );
+      }
+      return stream(
+        target,
+        windows.length === 1
+          ? message(target, [], "error", llamaCppOverflow(6000))
+          : message(target, [{ type: "text", text: "Ready" }], "stop"),
+      );
+    });
+    const events = await run(input);
+    expect(windows).toEqual([262_144, 5100]);
+    expect(input.model).not.toHaveProperty("contextWindow");
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  it("rebuilds only once and reports a context failure when the server rejects the rebuild", async () => {
+    const input = {
+      ...request(),
+      model: compatibleModel(),
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [], "error", llamaCppOverflow(6000))),
+    );
+    const failure = await run(input).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(normalizeRunError((failure as Error).message)).toMatchObject({ kind: "context" });
+  });
+
+  it.each([false, true])(
+    "reports a too-small OpenAI-compatible window without retrying it (backup: %s)",
+    async (withBackup) => {
+      const input = {
+        ...request(
+          withBackup ? [{ provider: backupA.provider, id: backupA.id, apiKey: "fixture-key" }] : [],
+        ),
+        model: compatibleModel(),
+        instructions: "Synthetic required instructions. ".repeat(200),
+      };
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          target.provider === "openai-compatible"
+            ? message(target, [], "error", llamaCppOverflow(2000))
+            : message(target, [{ type: "text", text: "Ready" }], "stop"),
+        ),
+      );
+      if (withBackup) {
+        await expect(run(input)).resolves.toContainEqual(
+          expect.objectContaining({ type: "done", text: "Ready" }),
+        );
+        expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+          "openai-compatible",
+          backupA.provider,
+        ]);
+      } else {
+        await expect(run(input)).rejects.toMatchObject({
+          name: "ModelAccountError",
+          message: MODEL_CONTEXT_TOO_SMALL_ERROR,
+        });
+        expect(providerState.stream).toHaveBeenCalledOnce();
+      }
+      expect(providerState.delay).not.toHaveBeenCalled();
+      expect(input.executeTool).not.toHaveBeenCalled();
+      expect(input.model).not.toHaveProperty("contextWindow");
+    },
+  );
+});
+
+describe("Pi runtime fallback error classes and mid-run switches", () => {
+  const providers = (): string[] =>
+    providerState.stream.mock.calls.map(
+      ([target]) => (target as Model<"openai-completions">).provider,
+    );
+  const backups = () => [{ provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" }];
+
+  it.each([
+    ["429 rate limit", "429 rate_limit_error: Number of request tokens has exceeded your limit"],
+    ["500 server error", "500 Internal server error"],
+    ["503 unavailable", "503 service unavailable"],
+    ["529 overloaded", "529 overloaded_error: Overloaded"],
+    ["timeout", "Request timed out."],
+  ])("switches to the backup on %s", async (_name, error) => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", error))
+        : stream(target, message(target, [{ type: "text", text: "from backup" }], "stop")),
+    );
+
+    const events = await run(request(backups()));
+
+    expect(providers()).toEqual([primary.provider, backupA.provider]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "text", text: "from backup" }));
+  });
+
+  it("leaves retries to the backup instead of the provider SDK", async () => {
+    vi.stubEnv("MODEL_STREAM_MAX_RETRIES", "1");
+    try {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [{ type: "text", text: "Ready" }], "stop")),
+      );
+
+      await run(request(backups()));
+      await run(request());
+
+      // A hung primary would otherwise wait out its timeout twice before the switch.
+      expect(providerState.stream.mock.calls.map(([, , options]) => options.maxRetries)).toEqual([
+        0, 1,
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([["403 forbidden", "403 Forbidden"]])(
+    "does not switch to the backup on %s",
+    async (_name, error) => {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", error)),
+      );
+
+      await expect(run(request(backups()))).rejects.toThrow();
+
+      expect(providers()).toEqual([primary.provider]);
+    },
+  );
+
+  it("runs the backup's own tool call after a primary tool call, never replaying the first", async () => {
+    const input = request(backups());
+    const executeTool = vi.mocked(input.executeTool!);
+    const call = (id: string, value: string) => ({
+      type: "toolCall" as const,
+      id,
+      name: "write_effect",
+      arguments: { value },
+    });
+    let primaryCalls = 0;
+    let backupCalls = 0;
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+      if (target.provider === primary.provider) {
+        primaryCalls += 1;
+        return primaryCalls === 1
+          ? stream(target, message(target, [call("first", "one")], "toolUse"))
+          : stream(target, message(target, [], "error", "529 overloaded_error"));
+      }
+      backupCalls += 1;
+      return backupCalls === 1
+        ? stream(target, message(target, [call("second", "two")], "toolUse"))
+        : stream(target, message(target, [{ type: "text", text: "done" }], "stop"));
+    });
+
+    await run(input);
+
+    expect(executeTool.mock.calls.map(([, args]) => args)).toEqual([
+      { value: "one" },
+      { value: "two" },
+    ]);
+    expect(providers()).toEqual([
+      primary.provider,
+      primary.provider,
+      backupA.provider,
+      backupA.provider,
+    ]);
+  });
+});
+
+describe("Pi runtime reasoning efforts an endpoint refuses", () => {
+  const refused =
+    '400: {"message":"reasoning_effort must be one of: low, medium, high, max","type":"invalid_request_error","param":"","code":null}';
+
+  it.each([
+    ["minimal", ["minimal", "low", "low"]],
+    ["off", ["off", "off", "off"]],
+  ] as const)(
+    "retries a refused %s effort with one the endpoint accepts for the rest of the run",
+    async (thinkingLevel, sentLevels) => {
+      providerState.models.set(`${primary.provider}/${primary.id}`, {
+        ...primary,
+        reasoning: true,
+        thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" },
+      });
+      const input = request();
+      input.model.thinkingLevel = thinkingLevel;
+      providerState.stream
+        .mockImplementationOnce((target: Model<"openai-completions">) =>
+          stream(target, message(target, [], "error", refused)),
+        )
+        .mockImplementationOnce((target: Model<"openai-completions">) =>
+          stream(
+            target,
+            message(
+              target,
+              [{ type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } }],
+              "toolUse",
+            ),
+          ),
+        )
+        .mockImplementation((target: Model<"openai-completions">) =>
+          stream(target, message(target, [{ type: "text", text: "Done." }], "stop")),
+        );
+
+      const events = await run(input);
+
+      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      const calls = providerState.stream.mock.calls as [
+        Model<"openai-completions">,
+        unknown,
+        { reasoning?: ModelThinkingLevel } | undefined,
+      ][];
+      expect(
+        calls.map(([target, , options]) => clampThinkingLevel(target, options?.reasoning ?? "off")),
+      ).toEqual(sentLevels);
+      expect(calls.slice(1).map(([target]) => target.thinkingLevelMap?.off)).toEqual([
+        undefined,
+        undefined,
+      ]);
+    },
+  );
 });

@@ -10,10 +10,11 @@ function resolverFor(
   options: {
     provider?: string;
     mode?: "cloud" | "local";
-    ownerUserId?: string | null;
+    allowPrivateEndpoint?: boolean;
     baseUrl?: string;
   } = {},
 ) {
+  vi.stubEnv("MCP_ALLOW_PRIVATE_ENDPOINT", options.allowPrivateEndpoint ? "true" : "false");
   const prisma = {
     spaceMemoryConfig: {
       findUnique: vi.fn(async () => ({
@@ -27,9 +28,6 @@ function resolverFor(
         secret: { ciphertext: "encrypted" },
       })),
     },
-    deploymentSettings: {
-      findUnique: vi.fn(async () => ({ ownerUserId: options.ownerUserId ?? null })),
-    },
   };
   const secrets = { load: vi.fn(() => plaintext) };
   return {
@@ -41,6 +39,7 @@ function resolverFor(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.resetAllMocks();
 });
 
@@ -53,7 +52,7 @@ describe("SpaceMemoryProviderResolver", () => {
         provider,
         mode: "local",
         baseUrl: "http://memory.example.test:8000",
-        ownerUserId: "config-author",
+        allowPrivateEndpoint: true,
       });
 
       await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
@@ -70,7 +69,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const notOwner = resolverFor("honcho-admin-token", {
       ...local,
       baseUrl: "http://10.0.0.8:8000",
-      ownerUserId: "another-user",
+      allowPrivateEndpoint: false,
     });
     await expect(notOwner.resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(notOwner.secrets.load).not.toHaveBeenCalled();
@@ -78,7 +77,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const publicHost = resolverFor("honcho-admin-token", {
       ...local,
       baseUrl: "http://203.0.113.10:8000",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     await expect(publicHost.resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(publicHost.secrets.load).not.toHaveBeenCalled();
@@ -86,7 +85,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const missingUrl = resolverFor("honcho-admin-token", {
       ...local,
       baseUrl: "",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     await expect(missingUrl.resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(missingUrl.secrets.load).not.toHaveBeenCalled();
@@ -94,22 +93,22 @@ describe("SpaceMemoryProviderResolver", () => {
     const owned = resolverFor(JSON.stringify({ apiKey: "honcho-admin-token" }), {
       ...local,
       baseUrl: "http://10.0.0.8:8000",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     const configured = await owned.resolver.resolve("workspace-1");
     expect(configured?.provider.describe().id).toBe("honcho");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it.each([null, "another-user"])(
-    "disables saved local configurations without current deployment-owner authorization: %s",
-    async (ownerUserId) => {
+  it.each([false, undefined])(
+    "disables saved local configurations without explicit operator authorization: %s",
+    async (allowPrivateEndpoint) => {
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
       const { resolver, secrets } = resolverFor("sm_fake_key", {
         mode: "local",
         baseUrl: "http://127.0.0.1:8123/internal-action#",
-        ownerUserId,
+        allowPrivateEndpoint,
       });
 
       await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
@@ -124,7 +123,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const { resolver } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://localhost:6767/memory/",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     const configured = await resolver.resolve("workspace-1");
     await configured!.provider.recall(
@@ -146,20 +145,19 @@ describe("SpaceMemoryProviderResolver", () => {
     const { resolver } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://127.0.0.1:8123/internal-action#",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("loads generic JSON credential payloads", async () => {
-    const { resolver, prisma } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
+    const { resolver } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
 
     const configured = await resolver.resolve("workspace-1");
 
     expect(configured?.provider.describe().id).toBe("supermemory");
     expect(configured?.defaultScope).toBe("shared");
-    expect(prisma.deploymentSettings.findUnique).not.toHaveBeenCalled();
   });
 
   it("keeps legacy raw Supermemory credentials usable after the schema migration", async () => {
@@ -174,7 +172,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const { resolver, secrets } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://203.0.113.10:6767",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(secrets.load).not.toHaveBeenCalled();
@@ -226,5 +224,6 @@ describe("SpaceMemoryProviderResolver", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.supermemory.ai/v4/search");
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });

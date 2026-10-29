@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button } from "@rakazo/ui-web";
+import { Button, Spinner } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAvailabilityPhase } from "../lib/computer-sandbox";
 import {
@@ -101,9 +101,7 @@ export function ComputersUnavailableHint({
       role={phase === "failure" ? "alert" : undefined}
     >
       {phase === "loading" ? (
-        <p className="text-[13px] text-muted-foreground" role="status">
-          <Trans>Checking computer setup…</Trans>
-        </p>
+        <Spinner className="text-muted-foreground" aria-label={t`Checking computer setup…`} />
       ) : null}
 
       {phase === "recovered" ? (
@@ -118,30 +116,17 @@ export function ComputersUnavailableHint({
             type="button"
             variant="secondary"
             size="sm"
-            className="rounded-full"
             disabled={phase === "loading"}
             onClick={() => void handleCheckAgain()}
           >
             {phase === "loading" ? <Trans>Checking…</Trans> : <Trans>Check again</Trans>}
           </Button>
           {onOpenComputerSettings ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              onClick={onOpenComputerSettings}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={onOpenComputerSettings}>
               <Trans>Open computer settings</Trans>
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="rounded-full"
-            onClick={() => void handleCopyGuidance()}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={() => void handleCopyGuidance()}>
             {copied ? <Trans>Copied</Trans> : <Trans>Copy .env example</Trans>}
           </Button>
         </div>
@@ -182,7 +167,7 @@ function UnavailableCopy({
     <p className="text-[13px] leading-relaxed text-muted-foreground">
       <Trans>
         Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set
-        SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after
+        SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after
         changing .env.
       </Trans>
     </p>

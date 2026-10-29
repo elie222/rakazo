@@ -1,12 +1,17 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { useEffect, useState } from "react";
-import { Alert, Modal, SafeAreaView, ScrollView, Text, View } from "react-native";
-import { mobileTokens } from "../lib/appearance";
 import {
-  type MobileArtifactTarget,
-  openMobileArtifact,
-  readMobileArtifactText,
-} from "../lib/artifact-open";
+  ActivityIndicator,
+  Alert,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
+import { mobileTokens } from "../lib/appearance";
+import type { MobileArtifactTarget } from "../lib/artifact-open";
+import { openMobileArtifact, readMobileArtifactText } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -104,9 +109,10 @@ export function MarkdownArtifactPreview({
         </View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 28 }}>
           {state.status === "loading" ? (
-            <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-              {t("Loading preview…")}
-            </Text>
+            <ActivityIndicator
+              color={tokens.mutedForeground}
+              accessibilityLabel={t("Loading preview…")}
+            />
           ) : state.status === "error" ? (
             <View
               style={{

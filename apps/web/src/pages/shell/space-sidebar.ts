@@ -3,11 +3,9 @@ import { groupBotsForSidebar } from "@rakazo/core";
 type SidebarChat = {
   id: string;
   name: string;
-  title?: string | null;
   preview?: string | null;
   pinned: boolean;
   sectionId: string | null;
-  parentBotId?: string | null;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -48,7 +46,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
   const showSpaceNames = spaces.length > 1;
   return spaces.flatMap((space) => {
     const visibleBots = space.bots.filter((bot) =>
-      `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
+      `${bot.name} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
     );
     const visibleGroups = space.groups.filter((group) =>
       `${group.name} ${group.preview ?? ""}`.toLowerCase().includes(needle),
@@ -60,7 +58,6 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ].map((item) => ({
         ...item,
         id: item.chat.id,
-        parentBotId: item.kind === "bot" ? (item.chat.parentBotId ?? null) : null,
         pinned: item.chat.pinned,
         sectionId: item.chat.sectionId,
       })),
@@ -91,13 +88,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
       // A header holding the space menu is never blank, even for the only space.
-      title: showSpaceNames
-        ? group.title
-          ? `${space.name} · ${group.title}`
-          : space.name
-        : index === 0 && !group.title
-          ? space.name
-          : group.title,
+      title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
+      subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
@@ -113,7 +105,8 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ? []
       : space.botSections.map((section) => ({
           key: showSpaceNames ? `space:${space.id}:section:${section.id}` : `section:${section.id}`,
-          title: showSpaceNames ? `${space.name} · ${section.name}` : section.name,
+          title: showSpaceNames ? space.name : section.name,
+          subtitle: showSpaceNames ? section.name : undefined,
           bots: [] as (typeof sections)[number]["bots"],
           sectionId: section.id as string | null,
           showLock: showSpaceNames,
@@ -131,6 +124,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       {
         key: showSpaceNames ? `space:${space.id}:empty` : `space:${space.id}:actions`,
         title: space.name,
+        subtitle: undefined,
         bots: [],
         sectionId: null,
         showLock: showSpaceNames,

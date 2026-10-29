@@ -3,7 +3,7 @@ import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import { isIndexedPath } from "./src/blog/indexability.ts";
-import { LOCALE_HREFLANG } from "./src/i18n/locales.ts";
+import { LOCALE_HREFLANG, LOCALES } from "./src/i18n/locales.ts";
 import { resolveWwwPort } from "./www-port.mjs";
 
 const wwwPort = resolveWwwPort();
@@ -13,7 +13,7 @@ export default defineConfig({
   output: "static",
   i18n: {
     defaultLocale: "en",
-    locales: ["en", "de", "ko", "zh"],
+    locales: [...LOCALES],
     routing: {
       prefixDefaultLocale: false,
     },

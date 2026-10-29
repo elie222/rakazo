@@ -9,13 +9,13 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { listSpaceBackupModels, replaceSpaceBackupModels, runAsSystem } from "@rakazo/db";
+import type { createApp } from "@rakazo/api/app";
+import { appliedModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type Actor = { spaceId: string; userId: string };
 
@@ -38,7 +38,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-connections-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     fake = new FakeComposioClient();
     composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
@@ -88,13 +88,14 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       { provider: "provider-b", modelId: "second" },
       { provider: "provider-c", modelId: "third" },
     ];
-    await replaceSpaceBackupModels(handles.prisma, other, first);
-    await Promise.all([
-      replaceSpaceBackupModels(handles.prisma, owner, first),
-      replaceSpaceBackupModels(handles.prisma, owner, second),
-    ]);
-    expect([first, second]).toContainEqual(await listSpaceBackupModels(handles.prisma, owner));
-    expect(await listSpaceBackupModels(handles.prisma, other)).toEqual(first);
+    const replace = (actor: Actor, backups: typeof first) =>
+      runAsTenant(actor, () => updateModelRole(handles.prisma, actor, "main", { backups }));
+    const backups = async (actor: Actor) =>
+      (await runAsTenant(actor, () => appliedModelRole(handles.prisma, actor, "main"))).backups;
+    await replace(other, first);
+    await Promise.all([replace(owner, first), replace(owner, second)]);
+    expect([first, second]).toContainEqual(await backups(owner));
+    expect(await backups(other)).toEqual(first);
   });
 
   it("reconciles one scoped row per provider under concurrent catalog fetches", async () => {
@@ -198,8 +199,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       ]),
     );
 
-    // Uninstall the remaining account: catalog must flip off Added (slug-only
-    // emulator refs used to skip remote revoke and leave Gmail stuck connected).
+    // Uninstall the remaining account: catalog must flip off Added.
     await rpc(app, cookie, "connections/revoke", { connectionId: second.connectionId });
     await expect(
       rpc<Array<{ slug: string; connected: boolean }>>(app, cookie, "connections/catalog", {
@@ -220,7 +220,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       provider: "GMAIL",
       displayName: "Personal",
     });
-    const row = await handles.prisma.connection.findUniqueOrThrow({
+    const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: work.connectionId },
     });
     fake.setStatus(row.providerRef!, "EXPIRED");
@@ -241,7 +241,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     // Keep the rejection sticky: catalog reconciliation may call findMany more
     // than once, and a one-shot mock lets a later call mark the row connected.
     const failure = vi
-      .spyOn(handles.prisma.connection, "findMany")
+      .spyOn(asSystem(handles.prisma).connection, "findMany")
       .mockRejectedValue(new Error("simulated reconciliation failure"));
 
     // Scope to composio so a parallel managed provider cannot consume the one-shot findMany reject.
@@ -656,7 +656,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   });
 
   async function createConnection(owner: Actor, provider: string) {
-    return handles.prisma.connection.create({
+    return asSystem(handles.prisma).connection.create({
       data: {
         spaceId: owner.spaceId,
         userId: owner.userId,
@@ -669,7 +669,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   }
 
   async function statuses(ids: string[]) {
-    return handles.prisma.connection.findMany({
+    return asSystem(handles.prisma).connection.findMany({
       where: { id: { in: ids } },
       select: { id: true, status: true },
       orderBy: { createdAt: "asc" },

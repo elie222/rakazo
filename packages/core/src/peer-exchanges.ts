@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { clampBotMessage } from "./bot-messages.js";
 import type { FoldedTranscript } from "./message-visibility.js";
 
 export type PeerExchange = {
@@ -36,20 +37,30 @@ export function unreturnedPeerReplies<T extends Message>(
   transcript: FoldedTranscript<T>,
 ): Map<string, T[]> {
   const result = new Map<string, T[]>();
+  const receipts = new Map<string, Map<string, Map<string, number>>>();
+  for (const message of transcript.messages) {
+    if (!message.runId) continue;
+    for (const block of message.blocks) {
+      if (block.kind !== "bot_message_sent") continue;
+      let peers = receipts.get(message.runId);
+      if (!peers) {
+        peers = new Map();
+        receipts.set(message.runId, peers);
+      }
+      let counts = peers.get(block.toBotId);
+      if (!counts) {
+        counts = new Map();
+        peers.set(block.toBotId, counts);
+      }
+      const text = clampBotMessage(block.text);
+      counts.set(text, (counts.get(text) ?? 0) + 1);
+    }
+  }
   for (const marker of transcript.messages) {
     const peer = peerReceipt(marker.blocks);
     const replies = transcript.folded.get(marker.id);
     if (!peer || !replies) continue;
-    const echoes = new Map<string, number>();
-    for (const message of transcript.messages) {
-      if (!marker.runId || message.runId !== marker.runId) continue;
-      for (const block of message.blocks) {
-        if (block.kind !== "bot_message_sent" || block.toBotId !== peer.peerBotId) continue;
-        // The auto-return trims the reply (clampBotMessage), so compare trimmed text.
-        const echo = block.text.trim();
-        echoes.set(echo, (echoes.get(echo) ?? 0) + 1);
-      }
-    }
+    const echoes = marker.runId ? receipts.get(marker.runId)?.get(peer.peerBotId) : undefined;
     result.set(
       marker.id,
       replies.filter((reply) => {
@@ -60,13 +71,12 @@ export function unreturnedPeerReplies<T extends Message>(
         if (!content.length) return false;
         // Attachments are not represented by a text echo.
         if (content.some((b) => b.kind !== "text")) return true;
-        const text = content
-          .map((b) => (b.kind === "text" ? b.text : ""))
-          .join("\n")
-          .trim();
-        const count = echoes.get(text) ?? 0;
+        const text = clampBotMessage(
+          content.map((b) => (b.kind === "text" ? b.text : "")).join("\n"),
+        );
+        const count = echoes?.get(text) ?? 0;
         if (!count) return true;
-        echoes.set(text, count - 1);
+        echoes?.set(text, count - 1);
         return false;
       }),
     );

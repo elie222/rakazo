@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
   DEFAULT_IMAGE_TAG,
@@ -108,8 +109,8 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
 }
 
 /**
- * Reads one assignment out of a `.env` file the way Compose does: later assignments win, comments
- * and blank lines are ignored, and one layer of quoting is removed.
+ * Reads one assignment out of a `.env` file: later assignments win, Compose-style comments and
+ * blank lines are ignored, and one layer of quoting is removed.
  */
 export function readEnvAssignment(contents: string, key: string): string | null {
   let found: string | null = null;
@@ -118,10 +119,28 @@ export function readEnvAssignment(contents: string, key: string): string | null 
     if (line === "" || line.startsWith("#")) continue;
     const separator = line.indexOf("=");
     if (separator <= 0 || line.slice(0, separator).trim() !== key) continue;
-    const value = line.slice(separator + 1).trim();
-    found = value.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+    const value = line.slice(separator + 1);
+    const quoted =
+      value.trim().match(/^"((?:\\.|[^"\\])*)"\s*(?:#.*)?$/) ??
+      value.trim().match(/^'((?:\\.|[^'\\])*)'\s*(?:#.*)?$/);
+    // Preserve hashes inside quotes or without separating whitespace. Keep the leading space
+    // until comments are removed so `KEY= # comment` is correctly read as an empty value.
+    found = quoted ? (quoted[1] ?? "") : value.replace(/\s+#.*$/, "").trim();
   }
   return found;
+}
+
+/**
+ * Secrets a newer Compose file requires that an older `.env` never had. An update writes the
+ * missing ones so its recreate does not stop at `Set POSTGRES_APP_PASSWORD in .env`; values
+ * already present, however they are set, are never replaced.
+ */
+export function missingSecretAssignments(
+  envContents: string,
+  generate: () => string = () => randomBytes(16).toString("hex"),
+): Record<string, string> {
+  const value = readEnvAssignment(envContents, "POSTGRES_APP_PASSWORD");
+  return value === null || value === "" ? { POSTGRES_APP_PASSWORD: generate() } : {};
 }
 
 export interface TagState {

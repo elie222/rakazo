@@ -75,10 +75,6 @@ tags:
 - tapOn:
     id: "search-sheet-close"
 
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "07-new-bot"
-
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"
 - takeScreenshot: "08-new-group"
@@ -96,20 +92,17 @@ tags:
 - assertVisible: "Current password"
 - takeScreenshot: "10b-change-password"
 - back
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "10c-account-notifications"
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Main model"
     timeout: 10000
-- scrollUntilVisible:
-    element: "Show more"
-    direction: DOWN
+- assertVisible: "Approval model"
 - takeScreenshot: "11-models"
-- tapOn: "Show more"
-- scrollUntilVisible:
-    element: "Show less"
-    direction: DOWN
-- takeScreenshot: "11b-all-providers"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
@@ -122,12 +115,11 @@ tags:
     visible: "Search apps"
     timeout: 10000
 - takeScreenshot: "13-integrations"
-- tapOn:
-    id: "integrations-advanced"
-- scrollUntilVisible:
-    element: "Add MCP server"
-    direction: DOWN
-- assertVisible: "Add MCP server"
+- tapOn: "Add custom"
+- tapOn: "MCP server"
+- extendedWaitUntil:
+    visible: "Remote MCP server"
+    timeout: 10000
 - takeScreenshot: "14-integrations-advanced"
 
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
@@ -174,6 +166,9 @@ tags:
 - assertVisible: "Speak message"
 - takeScreenshot: "15b-message-actions"
 - back
+# Settle the keyboard inset before measuring the next message target.
+- hideKeyboard
+- waitForAnimationToEnd
 # User messages omit Speak.
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"
@@ -245,10 +240,10 @@ tags:
     timeout: 10000
 - tapOn: "Dark"
 - takeScreenshot: "22-account-dark"
-
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "23-new-bot-dark"
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "22b-account-notifications-dark"
 
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"

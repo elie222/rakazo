@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -37,7 +39,7 @@ export function embeddableScreenUrl(url: string | null): string | null {
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
       return null;
@@ -73,4 +75,122 @@ export async function bootComputerOnce<T>(
   } finally {
     if (inFlight.get(botId) === token) inFlight.delete(botId);
   }
+}
+
+/** Only pages the web proxy serves carry the shim that reports their state to the app. */
+export function isProxiedScreenUrl(url: string | null): url is string {
+  return screenIframeSandbox(url) !== undefined;
+}
+
+/** How long a framed screen may stay silent before the app treats it as not loaded. */
+export const SCREEN_FRAME_LOAD_TIMEOUT_MS = 15_000;
+
+export type ScreenFrameState = "loading" | "connecting" | "connected" | "failed" | "disconnected";
+
+export interface ScreenFrameMessage {
+  rakazoScreen: ScreenFrameState;
+  detail?: string;
+}
+
+const SCREEN_FRAME_STATES: ReadonlySet<string> = new Set<ScreenFrameState>([
+  "loading",
+  "connecting",
+  "connected",
+  "failed",
+  "disconnected",
+]);
+
+/** A state report posted by a framed screen page, or null for any other message. */
+export function screenFrameMessage(data: unknown): ScreenFrameMessage | null {
+  if (!data || typeof data !== "object") return null;
+  const { rakazoScreen, detail } = data as Record<string, unknown>;
+  if (typeof rakazoScreen !== "string" || !SCREEN_FRAME_STATES.has(rakazoScreen)) return null;
+  const text = typeof detail === "string" ? detail.trim().slice(0, 200) : "";
+  return { rakazoScreen: rakazoScreen as ScreenFrameState, ...(text ? { detail: text } : {}) };
+}
+
+/** Whether a report shows the page got past loading; a page stalled there is still silent. */
+export function screenFrameStarted(message: ScreenFrameMessage): boolean {
+  return message.rakazoScreen !== "loading";
+}
+
+/** The error a frame report means for the screen, or null while it is fine. */
+export function screenFrameError(message: ScreenFrameMessage, fallback: string): string | null {
+  if (message.rakazoScreen !== "failed" && message.rakazoScreen !== "disconnected") return null;
+  return message.rakazoScreen === "disconnected" ? t`The screen connection closed.` : fallback;
+}
+
+/**
+ * Ask the proxy for the page before framing it. A frame cannot say why it failed to load, so a
+ * refused or unreachable screen would otherwise stay blank.
+ */
+export async function probeScreen(
+  url: string,
+  fallback: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+    });
+    if (response.ok) return null;
+    // The proxy couldn't reach the API to check the screen: that's a connection problem.
+    if (response.type === "opaqueredirect" || response.status === 503) return fallback;
+    if (response.status === 403) return t`The screen link expired.`;
+    const body = await response.text().catch(() => "");
+    if (response.status === 502 && body.trim() === "Screen unavailable (upstream_timeout)") {
+      return t`The screen did not respond.`;
+    }
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * The screen page's status through the proxy's access check, or null if it couldn't be asked.
+ * Only the status is read; the body is dropped unread.
+ */
+export async function probeScreenStatus(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  try {
+    const response = await fetchImpl(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+      signal,
+    });
+    void response.body?.cancel().catch(() => undefined);
+    return response.type === "opaqueredirect" ? 0 : response.status;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a reconnected screen takes the keyboard back: only a screen that had it when it
+ * dropped, and only if the user hasn't moved on. Focus anywhere else in the app, or the screen
+ * failing, forgets it, and it happens at most once per drop.
+ */
+export function createScreenRefocus() {
+  let pending = false;
+  return {
+    dropped(hadFocus: boolean) {
+      pending = hadFocus;
+    },
+    forget() {
+      pending = false;
+    },
+    /** On a reconnected screen's "connected": whether to give it the keyboard now. */
+    connected(active: Element | null, frame: Element, body: Element | null): boolean {
+      if (!pending) return false;
+      pending = false;
+      return !active || active === body || active === frame;
+    },
+  };
 }

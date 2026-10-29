@@ -7,6 +7,8 @@ import {
   createOwnedArtifact,
   deleteArtifactFamily,
   listSpaceArtifacts,
+  resolveGroupSendAttachments,
+  resolveSendAttachments,
   storeInboundAttachment,
 } from "./artifacts.js";
 
@@ -448,9 +450,17 @@ describe("storeInboundAttachment", () => {
       artifacts: { put } as unknown as ArtifactStore,
       maxUploadSizeBytes: 8,
     };
-    const store = (attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"]) =>
-      storeInboundAttachment(deps, actor, { botId: "bot-1", attachment, clientNonce: "nonce-1" });
-    return { put, store };
+    const store = (
+      attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"],
+      downloadDeadline?: number,
+    ) =>
+      storeInboundAttachment(deps, actor, {
+        botId: "bot-1",
+        attachment,
+        clientNonce: "nonce-1",
+        downloadDeadline,
+      });
+    return { put, store, findFirst };
   }
 
   it("bounds a stalled download and does not store its late result", async () => {
@@ -472,6 +482,16 @@ describe("storeInboundAttachment", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not start another download after the shared deadline", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(3));
+    await expect(
+      store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1),
+    ).rejects.toThrow("Attachment download timed out");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("skips the download when the platform reports an oversize file", async () => {
@@ -499,7 +519,7 @@ describe("storeInboundAttachment", () => {
   });
 
   it("reuses the artifact an earlier delivery of the same file stored", async () => {
-    const { put, store } = setup({
+    const { put, store, findFirst } = setup({
       id: "artifact-1",
       botId: "bot-1",
       groupId: null,
@@ -512,10 +532,47 @@ describe("storeInboundAttachment", () => {
       createdAt: new Date("2026-10-01T00:00:00.000Z"),
     });
     const fetch = vi.fn(async () => new Uint8Array(3));
-    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).resolves.toMatchObject({
+    await expect(
+      store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1),
+    ).resolves.toMatchObject({
       id: "artifact-1",
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { spaceId: actor.spaceId, userId: actor.userId, clientNonce: "nonce-1" },
     });
     expect(fetch).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
+  });
+});
+
+describe("send attachment count", () => {
+  it.each(["bot", "group"])("enforces the deployment limit for %s attachments", async (target) => {
+    const findMany = vi.fn().mockImplementation(async ({ where }) =>
+      where.id.in.map((id: string) => ({
+        id,
+        name: `${id}.txt`,
+        mimeType: "text/plain",
+        size: 1,
+        storageKey: id,
+      })),
+    );
+    const prisma = { artifact: { findMany } } as unknown as PrismaClient;
+    const send = (maxAttachmentsPerMessage: number | undefined, count: number) => {
+      const deps = { prisma, maxAttachmentsPerMessage };
+      const ids = Array.from({ length: count }, (_, i) => `artifact-${i}`);
+      return target === "bot"
+        ? resolveSendAttachments(deps, actor, "bot-1", ids)
+        : resolveGroupSendAttachments(deps, actor, "group-1", ["bot-1"], ids);
+    };
+    for (const limit of [undefined, 1, 8, 100]) {
+      findMany.mockClear();
+      const effective = limit ?? 4;
+      await expect(send(limit, effective + 1)).rejects.toThrow(
+        `At most ${effective} attachments per message`,
+      );
+      expect(findMany).not.toHaveBeenCalled();
+      await expect(send(limit, effective)).resolves.toMatchObject({ blocks: expect.any(Array) });
+      expect(findMany).toHaveBeenCalledOnce();
+    }
   });
 });

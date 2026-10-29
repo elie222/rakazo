@@ -1,19 +1,18 @@
 import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useBotsSidebarWidth } from "./shell/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 384;
 const ABSOLUTE_MAX = 1000;
-/** Desktop bots sidebar width (`md:w-[316px]` in Shell). */
-const BOTS_SIDEBAR_WIDTH = 316;
 const MIN_CHAT_WIDTH = 320;
 
-function maximumWidth(reservedLeadingPx: number) {
+function maximumWidth(reservedLeadingPx: number, viewportWidth = window.innerWidth) {
   return Math.max(
     MIN_WIDTH,
-    Math.min(ABSOLUTE_MAX, window.innerWidth - reservedLeadingPx - MIN_CHAT_WIDTH),
+    Math.min(ABSOLUTE_MAX, viewportWidth - reservedLeadingPx - MIN_CHAT_WIDTH),
   );
 }
 
@@ -30,17 +29,17 @@ function readPreferredWidth() {
 export function ResizableSidePanel({
   open,
   panel,
-  botsSidebarCollapsed = false,
   children,
 }: {
   open: boolean;
   panel: string;
-  botsSidebarCollapsed?: boolean;
   children: ReactNode;
 }) {
-  const reservedLeadingPx = botsSidebarCollapsed ? 0 : BOTS_SIDEBAR_WIDTH;
+  const reservedLeadingPx = useBotsSidebarWidth();
   const [preferredWidth, setPreferredWidth] = useState(readPreferredWidth);
-  const [maxWidth, setMaxWidth] = useState(() => maximumWidth(reservedLeadingPx));
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const maxWidth = maximumWidth(reservedLeadingPx, viewportWidth);
+  const overlay = viewportWidth - reservedLeadingPx < MIN_CHAT_WIDTH + MIN_WIDTH;
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ x: number; width: number; direction: number } | null>(null);
   const width = Math.max(MIN_WIDTH, Math.min(maxWidth, preferredWidth));
@@ -55,12 +54,12 @@ export function ResizableSidePanel({
 
   useEffect(() => {
     function syncMax() {
-      setMaxWidth(maximumWidth(reservedLeadingPx));
+      setViewportWidth(window.innerWidth);
     }
     syncMax();
     window.addEventListener("resize", syncMax);
     return () => window.removeEventListener("resize", syncMax);
-  }, [reservedLeadingPx]);
+  }, []);
 
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
     drag.current = null;
@@ -77,8 +76,9 @@ export function ResizableSidePanel({
     <aside
       data-testid="side-panel"
       data-panel={panel}
+      data-overlay={overlay || undefined}
       style={{ "--panel-width": `${width}px` } as CSSProperties}
-      className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-background md:relative ${dragging ? "" : "transition-[width] duration-150 ease-out"} ${open ? "w-full max-w-[384px] border-s border-sidebar-border md:w-(--panel-width) md:max-w-none" : "pointer-events-none w-0"}`}
+      className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-background ${overlay ? "md:absolute" : "md:relative"} ${dragging ? "" : "transition-[width] duration-150 ease-out"} ${open ? "w-full max-w-[384px] border-s border-sidebar-border md:w-(--panel-width) md:max-w-none" : "pointer-events-none w-0"}`}
     >
       {open ? (
         <hr
@@ -88,7 +88,7 @@ export function ResizableSidePanel({
           aria-valuemin={MIN_WIDTH}
           aria-valuemax={maxWidth}
           aria-valuenow={Math.round(width)}
-          className="absolute inset-y-0 start-0 z-30 m-0 hidden h-full w-2 touch-none cursor-col-resize border-0 bg-transparent hover:bg-border focus-visible:bg-border focus-visible:outline-none md:block"
+          className={`absolute inset-y-0 start-0 z-30 m-0 hidden h-full w-2 touch-none cursor-col-resize border-0 bg-transparent hover:bg-border focus-visible:bg-border focus-visible:outline-none ${overlay ? "" : "md:block"}`}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();

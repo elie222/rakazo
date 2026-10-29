@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpeechRecognizer } from "./dictation";
 import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictation";
+import { reportMobileError } from "./monitoring";
+
+vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
 
 type Listener = (payload: never) => void;
 
@@ -47,6 +50,7 @@ let fake: ReturnType<typeof fakeRecognizer>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.mocked(reportMobileError).mockClear();
   fake = fakeRecognizer();
   setSpeechRecognizer(fake.recognizer);
 });
@@ -110,6 +114,142 @@ describe("mobile dictation", () => {
     expect(onFinal).toHaveBeenCalledWith("half a sentence");
   });
 
+  it("notifies the caller when empty restarts give up", async () => {
+    const onFinal = vi.fn();
+    const onGiveUp = vi.fn();
+    await listen({ onFinal, onGiveUp });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+    }
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("idle");
+    expect(reportMobileError).not.toHaveBeenCalled();
+    expect(onFinal).not.toHaveBeenCalled();
+    expect(fake.abort).toHaveBeenCalled();
+    fake.end();
+    expect(onGiveUp).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "not-allowed",
+    "service-not-allowed",
+    "audio-capture",
+    "language-not-supported",
+    "bad-grammar",
+  ])("notifies the caller when recognition fails with %s", async (error) => {
+    const onFinal = vi.fn();
+    const onGiveUp = vi.fn();
+    await listen({ onFinal, onGiveUp });
+    fake.fail(error);
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("failed");
+    expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(
+      new Error(`Speech recognition stopped: ${error}`),
+      "voice.microphone",
+      { source: "dictation" },
+    );
+    expect(onFinal).not.toHaveBeenCalled();
+    fake.end();
+    vi.advanceTimersByTime(RESTART_CAP_MS);
+    expect(fake.start).toHaveBeenCalledOnce();
+  });
+
+  it.each(["no-speech", "speech-timeout", "interrupted", "aborted"])(
+    "restarts after routine %s without disabling recognition",
+    async (error) => {
+      const onGiveUp = vi.fn();
+      await listen({ onFinal: vi.fn(), onGiveUp });
+      fake.fail(error);
+      fake.end();
+      vi.advanceTimersByTime(250);
+      expect(fake.start).toHaveBeenCalledTimes(2);
+      expect(onGiveUp).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["client", "busy", "network", "unknown", "too-many-requests"])(
+    "delivers a turn after a transient %s error and restart",
+    async (error) => {
+      const onFinal = vi.fn();
+      const onGiveUp = vi.fn();
+      await listen({ onFinal, onGiveUp });
+      fake.fail(error);
+      fake.end();
+      vi.advanceTimersByTime(250);
+      expect(fake.start).toHaveBeenCalledTimes(2);
+      fake.hear("status please");
+      vi.advanceTimersByTime(ENDPOINT_SILENCE_MS);
+      expect(onFinal).toHaveBeenCalledExactlyOnceWith("status please");
+      expect(onGiveUp).not.toHaveBeenCalled();
+      expect(reportMobileError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["network", "client", "busy", "unknown", "too-many-requests"])(
+    "fails after empty restarts ending in transient %s errors",
+    async (error) => {
+      const onFinal = vi.fn();
+      const onGiveUp = vi.fn();
+      await listen({ onFinal, onGiveUp });
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        fake.fail(error);
+        expect(onGiveUp).not.toHaveBeenCalled();
+        fake.end();
+        vi.advanceTimersByTime(RESTART_CAP_MS);
+      }
+      expect(fake.start).toHaveBeenCalledTimes(6);
+      expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("failed");
+      expect(onFinal).not.toHaveBeenCalled();
+      expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(
+        new Error("Speech recognition stopped: transient-restarts"),
+        "voice.microphone",
+        { source: "dictation" },
+      );
+    },
+  );
+
+  it.each(["no-speech", "speech-timeout"])(
+    "stays idle after empty %s restarts even after an earlier transient error",
+    async (error) => {
+      const onGiveUp = vi.fn();
+      await listen({ onFinal: vi.fn(), onGiveUp });
+      fake.fail("network");
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        fake.fail(error);
+        fake.end();
+        vi.advanceTimersByTime(RESTART_CAP_MS);
+      }
+      expect(fake.start).toHaveBeenCalledTimes(6);
+      expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("idle");
+      expect(reportMobileError).not.toHaveBeenCalled();
+    },
+  );
+
+  it("notifies the caller when start throws on restart", async () => {
+    const onFinal = vi.fn();
+    const onGiveUp = vi.fn();
+    await listen({ onFinal, onGiveUp });
+    fake.start.mockImplementationOnce(() => {
+      throw new Error("recognizer unavailable");
+    });
+    fake.end();
+    vi.advanceTimersByTime(RESTART_CAP_MS);
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("failed");
+    expect(onFinal).not.toHaveBeenCalled();
+  });
+
+  it("never starts the recognizer when the signal aborts during loading", async () => {
+    const onFinal = vi.fn();
+    const controller = new AbortController();
+    const listening = listen({ onFinal, signal: controller.signal });
+    controller.abort();
+    await listening;
+
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(onFinal).not.toHaveBeenCalled();
+  });
+
   it("never finalizes an aborted session", async () => {
     const onFinal = vi.fn();
     const controller = new AbortController();
@@ -131,5 +271,10 @@ describe("mobile dictation", () => {
     fake.hear("open the door");
     fake.fail("not-allowed");
     expect(onFinal).toHaveBeenCalledWith("open the door");
+    expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(
+      new Error("Speech recognition stopped: not-allowed"),
+      "voice.microphone",
+      { source: "dictation" },
+    );
   });
 });

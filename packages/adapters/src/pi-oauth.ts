@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type {
   AuthInteraction,
   Credential,
@@ -15,6 +15,7 @@ import type {
   ModelContextLimits,
   ModelOAuthBegin,
   ModelOAuthSignInMode,
+  SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -22,9 +23,11 @@ import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelContextLimitsSchema,
+  parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { retireModelCredential, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
@@ -44,7 +47,7 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
 > = {
   [CHATGPT_OAUTH_PROVIDER]: {
     mode: "device-code",
-    loginLabel: "Sign in with ChatGPT Plus/Pro",
+    loginLabel: "Sign in with ChatGPT",
     hint: "ChatGPT Plus/Pro",
     billing:
       "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
@@ -63,7 +66,7 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
   },
   [ANTHROPIC_OAUTH_PROVIDER]: {
     mode: "auth-url",
-    loginLabel: "Sign in with Claude Pro/Max",
+    loginLabel: "Sign in with Claude",
     hint: "Claude Pro/Max / key",
     // Button + "Or paste an API key" already explain the choices; no extra paragraph.
     billing: "",
@@ -72,6 +75,8 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
 
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
+/** How long a sign-in that hands back a code stays open, on any API process. */
+const PASTED_CODE_TTL_SECONDS = 15 * 60;
 /** Bound on a detached credential refresh so it cannot pin the shared lock. */
 const REFRESH_KICK_TIMEOUT_MS = 30_000;
 const CORRUPT_MODEL_SECRET_MESSAGE =
@@ -100,12 +105,8 @@ const TERMINAL_REFRESH_ERROR_PATTERNS = TERMINAL_REFRESH_ERROR_MARKERS.map(
     [marker, new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(marker)}([^A-Za-z0-9_]|$)`)] as const,
 );
 
-// pi embeds the token endpoint's HTTP status inside refresh error messages —
-// `failed (400):` for OpenAI Codex, `(HTTP 400)` for xAI, `(status 401)` for
-// Kimi Code, `status=400` inside Anthropic's flattened details, and
-// `401 Unauthorized:` at the start for GitHub Copilot — so extract only those
-// anchored shapes. A loose `\d{3}` would also match unrelated numbers quoted
-// in response bodies.
+// pi embeds the token endpoint's HTTP status in provider-specific shapes; match only
+// those anchored shapes, since a loose `\d{3}` would match numbers quoted in bodies.
 const REFRESH_ERROR_STATUS_PATTERNS = [
   /\bHTTP (\d{3})\b/gi,
   /\bstatus[= ](\d{3})\b/gi,
@@ -145,15 +146,10 @@ const MAX_REFRESH_ERROR_CHAIN_DEPTH = 10;
 
 /**
  * The matched terminal marker when a refresh failure permanently kills the
- * stored credential, `undefined` for transient failures (timeouts, network
- * errors, 5xx, malformed or unknown responses) that must not retire it. pi
- * wraps provider errors in `ModelsError("oauth", "OAuth refresh failed for
- * <provider>", { cause })`, and the provider-level message embeds the token
- * endpoint's HTTP status and body, so inspect the whole `cause` chain: a
- * marker retires only when a terminal 4xx status accompanies it — and a 5xx
- * reported as ANY layer's own status vetoes it, since a gateway failure can
- * wrap a quoted marker without the token endpoint having judged the
- * credential at all.
+ * stored credential, `undefined` for transient failures that must not retire it.
+ * Inspects the whole `cause` chain: a marker retires only alongside a terminal
+ * 4xx, and a 5xx at any layer vetoes it, since a gateway failure can wrap a
+ * quoted marker without the token endpoint having judged the credential.
  */
 export function terminalOAuthRefreshErrorMarker(error: unknown): string | undefined {
   let marker: string | undefined;
@@ -196,25 +192,21 @@ function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
   }
 }
 
-/**
- * Readable failure surfaced when a refresh comes back for a different ChatGPT
- * account than the one that was connected.
- */
 export const OAUTH_ACCOUNT_CHANGED_ERROR =
   "The ChatGPT account changed during sign-in refresh. Connect the provider again.";
 
-/** A string with non-whitespace content, or `undefined` for every other value. */
+/** Worded so `isModelCredentialRejected` moves a run to its backup model. */
+export const OAUTH_RECONNECT_REQUIRED_ERROR =
+  "The sign-in token expired or was revoked. Connect that model provider again.";
+
 function nonBlankString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 /**
- * Account identity asserted by an OAuth credential: a non-blank `accountId`
- * (pi's Codex refresh always sets it), else `chatgpt_account_id` from the
- * access JWT. The `https://api.openai.com/auth` claim is used only when it is
- * a non-blank string; otherwise a non-blank top-level claim is used. Never
- * throws: an undecodable token yields `undefined`, which conservatively
- * disables the account-change comparison instead of breaking refresh.
+ * `accountId`, else `chatgpt_account_id` from the access JWT. Never throws: an
+ * undecodable token yields `undefined`, which disables the account-change
+ * comparison instead of breaking refresh.
  */
 export function oauthCredentialAccountId(credential: OAuthCredential): string | undefined {
   const direct = nonBlankString(credential.accountId);
@@ -227,6 +219,23 @@ export function oauthCredentialAccountId(credential: OAuthCredential): string | 
       ? (namespaced as Record<string, unknown>)
       : undefined;
   return nonBlankString(claims?.chatgpt_account_id) ?? nonBlankString(payload.chatgpt_account_id);
+}
+
+/**
+ * The email an OAuth credential's access token names, for telling two signed-in accounts
+ * apart. Read from the stored token only; never logged.
+ */
+export function oauthCredentialEmail(credential: OAuthCredential): string | undefined {
+  const payload = decodeJwtPayload(credential.access);
+  if (!payload) return undefined;
+  const profile = payload["https://api.openai.com/profile"];
+  const email =
+    nonBlankString(
+      profile && typeof profile === "object"
+        ? (profile as Record<string, unknown>).email
+        : undefined,
+    ) ?? nonBlankString(payload.email);
+  return email?.includes("@") ? email.trim() : undefined;
 }
 
 const retiredCredentialErrors = new WeakSet<object>();
@@ -273,10 +282,12 @@ export type StoredModelSecret =
       accountId?: string;
       gatewayId?: string;
     } & StoredModelLimits)
-  | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
+  | { kind: "oauth"; reconnectRequired: true; maxTokens?: number }
+  | { kind: "oauth"; reconnectRequired?: false; credential: OAuthCredential; maxTokens?: number }
   | ({
       kind: "openai_compatible";
       baseUrl: string;
+      headers?: Record<string, string>;
       apiKey?: string;
       reasoning?: boolean;
       thinkingLevel?: ThinkingLevel | null;
@@ -291,8 +302,13 @@ export type PiOAuthConnected = {
   status: "connected";
   credential: OAuthCredential;
   provider: string;
+  /** The connection this sign-in renews; null adds one; undefined is an older app's sign-in. */
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: string | null;
+  makeDefault?: boolean;
+  /** Which copy of the member's models makeDefault sets; omitted means the one that applies. */
+  settingsScope?: SettingsScope;
   label?: string;
   signal: AbortSignal;
 };
@@ -300,7 +316,8 @@ export type PiOAuthConnected = {
 export type PiOAuthComplete =
   | { status: "pending" }
   | PiOAuthConnected
-  | { status: "error"; error: string };
+  /** The provider is known once a session existed, so the failure can be attributed. */
+  | { status: "error"; error: string; provider?: string };
 
 export type PiOAuthFinish<T> =
   | { status: "pending" }
@@ -316,7 +333,41 @@ type LoginFn = (
   providerId: string,
   type: "oauth",
   interaction: AuthInteraction,
+  options?: { codePage?: boolean; verifier?: string },
 ) => Promise<Credential>;
+
+/** A pasted-code sign-in the user has to correct or start again. */
+export class ModelSignInError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelSignInError";
+  }
+}
+
+type SignInActor = { userId: string; spaceId: string };
+
+type BeginInput = SignInActor & {
+  provider: string;
+  credentialId?: string | null;
+  modelId?: string;
+  thinkingLevel?: string | null;
+  makeDefault?: boolean;
+  settingsScope?: SettingsScope;
+  label?: string;
+  /** The client has no loopback listener, so the provider shows the code to paste. */
+  codePage?: boolean;
+  signal?: AbortSignal;
+};
+
+/** What another API process needs to finish a sign-in that hands back a code. */
+type HandedOffSignIn = Omit<BeginInput, "userId" | "spaceId" | "signal"> & { verifier: string };
+
+/** Where sign-ins that hand back a code are kept, encrypted, so a deploy or another API
+ *  process receiving the code does not lose them. Without it they live in this process only. */
+export type PiOAuthHandoffStore = {
+  prisma: Pick<PrismaClient, "modelOAuthSession">;
+  secrets: Pick<SecretStore, "put" | "load">;
+};
 
 type SessionState = "pending" | "ready" | "finalizing" | "consumed";
 
@@ -326,8 +377,11 @@ type Session = {
   userId: string;
   spaceId: string;
   provider: string;
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: string | null;
+  makeDefault?: boolean;
+  settingsScope?: SettingsScope;
   label?: string;
   abort: AbortController;
   state: SessionState;
@@ -337,6 +391,8 @@ type Session = {
   // auth-url flows: resolves the runtime's "paste the redirect URL" prompt.
   submitCode?: (input: string) => void;
   codeSubmitted?: boolean;
+  /** A stored hand-off row may exist for this sign-in. */
+  handedOff?: boolean;
   expiresTimer?: ReturnType<typeof setTimeout>;
   /** The expiry timer fired while finish() was still persisting. */
   expired?: boolean;
@@ -397,6 +453,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     if (typeof parsed.baseUrl !== "string" || !parsed.baseUrl.trim()) {
       throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
     }
+    const headers = parsed.headers === undefined ? undefined : parseModelHeaders(parsed.headers);
     const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
     const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
     const thinkingLevel = parsedThinkingLevel.success ? parsedThinkingLevel.data : undefined;
@@ -420,6 +477,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     return {
       kind: "openai_compatible",
       baseUrl: parsed.baseUrl.trim(),
+      ...(headers !== undefined ? { headers } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
@@ -448,9 +506,16 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     };
   }
   if (parsed.kind === "oauth") {
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    if (parsed.reconnectRequired === true) {
+      return {
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      };
+    }
     const credential = readOAuthCredential(parsed.credential);
     if (!credential) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
-    const maxTokens = parsedMaxTokens(parsed.maxTokens);
     return {
       kind: "oauth",
       credential,
@@ -468,6 +533,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "oauth") {
+    if (secret.reconnectRequired) return JSON.stringify(secret);
     if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
     return JSON.stringify({
       kind: "oauth",
@@ -480,6 +546,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       kind: "openai_compatible",
       ...modelLimits(secret as unknown as Record<string, unknown>),
       baseUrl: secret.baseUrl,
+      ...(secret.headers !== undefined ? { headers: parseModelHeaders(secret.headers) } : {}),
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
       ...(secret.reasoning !== undefined ? { reasoning: secret.reasoning } : {}),
       ...(secret.thinkingLevel !== undefined ? { thinkingLevel: secret.thinkingLevel } : {}),
@@ -511,21 +578,26 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
   });
 }
 
+const MIN_REDACTED_HEADER_VALUE_LENGTH = 8;
+
 export function secretValuesToRedact(secret: StoredModelSecret): string[] {
   if (secret.kind === "api_key") return secret.key ? [secret.key] : [];
-  if (secret.kind === "openai_compatible") return secret.apiKey ? [secret.apiKey] : [];
+  if (secret.kind === "openai_compatible")
+    return [
+      secret.apiKey,
+      ...Object.values(secret.headers ?? {}).filter(
+        (value) => value.length >= MIN_REDACTED_HEADER_VALUE_LENGTH,
+      ),
+    ].filter((value): value is string => Boolean(value));
+  if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
 }
 
 /**
- * Build the stale-failure fence `retireModelCredential` applies inside its
- * transaction. The predicate reports whether the credential's current secret
- * row still decrypts to the exact OAuth material whose refresh failed — same
- * access token, refresh token, and expiry — so a row rewritten by a concurrent
- * successful refresh or reconnect skips the delete instead of losing the newer
- * tokens. Anything that cannot be verified (unreadable ciphertext, non-OAuth
- * material) reports false so the delete is skipped rather than destroying a
- * credential it cannot prove stale.
+ * Stale-failure fence for `retireModelCredential`: true only while the secret row
+ * still decrypts to the exact OAuth material whose refresh failed, so a row
+ * rewritten by a concurrent refresh or reconnect is not deleted. Anything
+ * unverifiable reports false.
  */
 export function matchesFailedOAuthSecret(
   load: (ciphertext: string, secretId: string) => string | Promise<string>,
@@ -536,6 +608,7 @@ export function matchesFailedOAuthSecret(
       const stored = parseModelSecret(await load(secret.ciphertext, secret.id));
       return (
         stored.kind === "oauth" &&
+        !stored.reconnectRequired &&
         stored.credential.access === failed.access &&
         stored.credential.refresh === failed.refresh &&
         stored.credential.expires === failed.expires
@@ -547,9 +620,8 @@ export function matchesFailedOAuthSecret(
 }
 
 /**
- * Reads the Codex access token's compute-residency claim. The raw value is
- * forwarded unvalidated so future regions work without a client update; it
- * never throws — a malformed token fails later in pi's own claim extraction.
+ * Forwarded unvalidated so future regions work without a client update. Never
+ * throws: a malformed token fails later in pi's own claim extraction.
  */
 export function codexComputeResidency(accessToken: string | undefined): string | undefined {
   const record = accessToken ? decodeJwtPayload(accessToken) : undefined;
@@ -594,11 +666,14 @@ export async function resolveModelAuth(
   plaintext: string,
   provider: string,
   opts?: ResolveModelOpts,
-): Promise<{ secret: StoredModelSecret; apiKey: string }> {
+): Promise<{ secret: Exclude<StoredModelSecret, { reconnectRequired: true }>; apiKey: string }> {
   const parsed = parseModelSecret(plaintext);
   if (parsed.kind === "api_key") return { secret: parsed, apiKey: parsed.key };
   if (parsed.kind === "openai_compatible") {
     return { secret: parsed, apiKey: parsed.apiKey ?? "" };
+  }
+  if (parsed.reconnectRequired) {
+    throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
   }
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
@@ -615,35 +690,31 @@ export async function resolveModelAuth(
       if (marker && opts?.retire) {
         let deleted = false;
         try {
-          // `credential` is still the stored material the failed refresh was
-          // attempted on — retirement fences on it so a concurrently persisted
+          // Retirement fences on the stored material so a concurrently persisted
           // newer credential survives the delete.
           deleted = (await opts.retire("terminal-refresh-failure", marker, credential)) === true;
         } catch (retireError) {
-          // A retirement failure must never mask the refresh error the caller sees.
           // Leave the error unmarked so setup can retry after a database outage.
           getLogger().error("model credential retirement failed", retireError);
           throw error;
         }
-        // Mark only a credential this call actually deleted. A skipped delete
-        // means a newer credential won the race and a retry may succeed.
-        if (deleted) markRetiredModelCredentialError(error);
+        // A skipped replacement means a newer credential won the race and a retry may succeed.
+        // The provider error can quote response text, so a confirmed failure is reported
+        // with a fixed message that contains no token material.
+        if (deleted) throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
       }
       throw error;
     }
-    // A refresh that comes back for a different ChatGPT account must never be
-    // persisted or used: compare before persist so the new token is dropped
-    // with the credential, then fail with a readable error. Either side
-    // without an account id disables the comparison — no false positives.
+    // Compare before persist so a token for a different account is never stored.
+    // Either side without an account id disables the comparison.
     const storedAccountId = oauthCredentialAccountId(parsed.credential);
     const refreshedAccountId = oauthCredentialAccountId(credential);
     if (storedAccountId && refreshedAccountId && storedAccountId !== refreshedAccountId) {
       let deleted = false;
       if (opts?.retire) {
         try {
-          // `parsed.credential` is still the stored material whose refresh
-          // produced the foreign account — retirement fences on it so a
-          // concurrently persisted newer credential survives the delete.
+          // Retirement fences on the stored material so a concurrently persisted
+          // newer credential survives the delete.
           deleted =
             (await opts.retire(
               "account-changed",
@@ -651,14 +722,11 @@ export async function resolveModelAuth(
               parsed.credential,
             )) === true;
         } catch (retireError) {
-          // A retirement failure must never mask the account-change error.
           // Leave it unmarked so setup can retry after a database outage.
           getLogger().error("model credential retirement failed", retireError);
         }
       }
-      // The foreign token is never persisted. Fail the run permanently only
-      // when this call deleted the stored credential; a skipped delete means
-      // a newer credential survived and a retry may succeed.
+      // A skipped delete means a newer credential survived and a retry may succeed.
       if (deleted) throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
       throw new Error(OAUTH_ACCOUNT_CHANGED_ERROR);
     }
@@ -695,11 +763,7 @@ export async function resolveModelApiKey(
 
 const modelCredentialLocks = new Map<string, Promise<void>>();
 
-/**
- * Serialize every load-resolve-persist cycle for one stored credential so
- * concurrent runs — or a detached refresh kick — cannot double-refresh or
- * clobber each other's token write.
- */
+/** Concurrent runs and refresh kicks must not double-refresh or clobber each other's token write. */
 export async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const previous = modelCredentialLocks.get(key) ?? Promise.resolve();
   let release!: () => void;
@@ -720,11 +784,68 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
 }
 
 /**
- * The persist half of `resolveModelAuth(plaintext, provider, { persist })` for a
- * stored credential — encrypts through the secret store and updates the secret
- * row. Shared by the run path and the detached refresh kick so every token
- * write goes through the same code.
+ * Retire callback for `resolveModelAuth`. `retireModelCredential` fences against
+ * newer material; a confirmed failure swaps the rejected tokens for a reconnect
+ * marker that keeps the connection's settings. Whichever stored copy ends up
+ * unreferenced is deleted.
  */
+export function retireToReconnectMarker(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "put" | "load" | "delete">,
+  scope: { userId: string; spaceId: string },
+  credential: { id: string; secretId: string },
+  maxTokens: number | undefined,
+) {
+  return async (
+    _reason: ModelCredentialRetireReason,
+    _detail: string | undefined,
+    failed?: ModelCredentialFailedState,
+  ): Promise<boolean> => {
+    const previous = (
+      await prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+        select: { ciphertext: true },
+      })
+    )?.ciphertext;
+    const replacement = await secretStore.put(
+      serializeModelSecret({
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      }),
+      {
+        operationId: "cred",
+        traceId: "cred-reconnect",
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        signal: new AbortController().signal,
+      },
+      { recordId: credential.secretId },
+    );
+    let replaced = false;
+    try {
+      const retired = await retireModelCredential(prisma, {
+        userId: scope.userId,
+        credentialId: credential.id,
+        secretId: credential.secretId,
+        replacementCiphertext: replacement.ciphertext,
+        matchesFailedSecret: failed
+          ? matchesFailedOAuthSecret(
+              (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
+              failed,
+            )
+          : undefined,
+      });
+      replaced = retired && previous !== undefined;
+      return retired;
+    } finally {
+      const unused = replaced ? previous : replacement.ciphertext;
+      if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+    }
+  };
+}
+
+/** The only token writer, shared by the run path and the detached refresh kick. */
 export function persistStoredModelSecret(
   prisma: Pick<PrismaClient, "secret">,
   secretStore: Pick<SecretStore, "put">,
@@ -751,11 +872,8 @@ export function persistStoredModelSecret(
 }
 
 /**
- * Re-run the runtime's locked resolve-and-refresh for a stored credential whose
- * bearer expired, e.g. when a detached catalog read finds no usable token.
  * `resolveModelAuth` refreshes only a near-expiry credential, so a kick queued
- * behind a run's own refresh degrades to a no-op once the stored token is fresh.
- * The catalog itself never writes credentials — this is the run path's writer.
+ * behind a run's own refresh is a no-op once the stored token is fresh.
  */
 export async function refreshExpiredModelCredential(
   prisma: Pick<PrismaClient, "secret">,
@@ -774,7 +892,8 @@ export async function refreshExpiredModelCredential(
     let plaintext: string;
     try {
       plaintext = await secretStore.load(row.ciphertext, row.id);
-      if (parseModelSecret(plaintext).kind !== "oauth") return;
+      const parsed = parseModelSecret(plaintext);
+      if (parsed.kind !== "oauth" || parsed.reconnectRequired) return;
     } catch {
       return;
     }
@@ -787,12 +906,7 @@ export async function refreshExpiredModelCredential(
 
 const credentialRefreshKicks = new Map<string, Promise<void>>();
 
-/**
- * Fire-and-forget `refreshExpiredModelCredential` for callers that must not
- * wait on a token refresh (catalog reads serve the static answer this round).
- * Concurrent kicks for one credential collapse into a single refresh; a settled
- * kick frees the slot so the next expired read can retry.
- */
+/** Concurrent kicks for one credential collapse into a single refresh. */
 export function kickModelCredentialRefresh(
   prisma: Pick<PrismaClient, "secret">,
   secretStore: Pick<SecretStore, "load" | "put">,
@@ -821,17 +935,30 @@ export class PiOAuthLogins {
   private readonly activeByScope = new Map<string, Session>();
   private readonly replacementTails = new Map<string, Promise<void>>();
 
-  constructor(private readonly loginFn: LoginFn = defaultLogin) {}
+  constructor(
+    private readonly loginFn: LoginFn = defaultLogin,
+    private readonly handoff?: PiOAuthHandoffStore,
+  ) {}
 
-  async begin(input: {
-    userId: string;
-    spaceId: string;
-    provider: string;
-    modelId?: string;
-    thinkingLevel?: string | null;
-    label?: string;
-    signal?: AbortSignal;
-  }): Promise<PiOAuthBegin> {
+  async begin(input: BeginInput): Promise<PiOAuthBegin> {
+    // The pasted code can reach another API process (a deploy replaces this one), which
+    // then needs this verifier to exchange it.
+    const verifier =
+      this.handoff && SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]?.mode === "auth-url"
+        ? randomBytes(32).toString("base64url")
+        : undefined;
+    const started = await this.start(input, randomUUID(), verifier);
+    if (verifier && started.mode === "auth-url") {
+      await this.handOff(started.loginId, input, verifier);
+    }
+    return started;
+  }
+
+  private async start(
+    input: BeginInput,
+    loginId: string,
+    verifier: string | undefined,
+  ): Promise<PiOAuthBegin> {
     if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
       throw new Error(
         "In-app subscription sign-in is only available for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and SuperGrok.",
@@ -841,7 +968,7 @@ export class PiOAuthLogins {
       throw input.signal.reason ?? new Error("Sign-in cancelled.");
     }
 
-    const scope = oauthScopeKey(input.userId, input.spaceId, input.provider);
+    const scope = oauthScopeKey(input.userId, input.spaceId, input.provider, input.credentialId);
     const lockKey = oauthProviderKey(input.userId, input.provider);
     const prepared = await this.withReplacementLock(lockKey, input.signal, async () => {
       await this.retireActiveSession(scope, input.signal);
@@ -849,84 +976,92 @@ export class PiOAuthLogins {
 
       const abort = new AbortController();
       const abortFromRequest = () => abort.abort(input.signal?.reason);
-      const loginId = randomUUID();
       const session: Session = {
         id: loginId,
         scope,
         userId: input.userId,
         spaceId: input.spaceId,
         provider: input.provider,
+        credentialId: input.credentialId,
         modelId: input.modelId,
         thinkingLevel: input.thinkingLevel,
+        makeDefault: input.makeDefault,
+        settingsScope: input.settingsScope,
         label: input.label,
         abort,
         state: "pending",
+        handedOff: verifier !== undefined,
       };
 
       const signInStarted = deferred<PiOAuthStarted>();
 
-      const done = this.loginFn(input.provider, "oauth", {
-        signal: abort.signal,
-        async prompt(prompt) {
-          if (prompt.type === "select") {
-            const option = prompt.options.find((entry) => entry.id === "device_code");
-            if (!option) {
-              throw new Error("Device-code sign-in is not available for this provider.");
-            }
-            return option.id;
-          }
-          if (prompt.type === "manual_code") {
-            return new Promise<string>((resolve, reject) => {
-              const signals = [abort.signal, prompt.signal].filter(
-                (signal): signal is AbortSignal => signal !== undefined,
-              );
-              const removeAbortListeners = () => {
-                for (const signal of signals) signal.removeEventListener("abort", onAbort);
-              };
-              const onAbort = (event: Event) => {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                const signal = event.currentTarget as AbortSignal;
-                reject(signal.reason ?? new Error("Sign-in cancelled."));
-              };
-              session.submitCode = (code) => {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                resolve(code);
-              };
-              const aborted = signals.find((signal) => signal.aborted);
-              if (aborted) {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                reject(aborted.reason ?? new Error("Sign-in cancelled."));
-              } else {
-                for (const signal of signals)
-                  signal.addEventListener("abort", onAbort, { once: true });
+      const done = this.loginFn(
+        input.provider,
+        "oauth",
+        {
+          signal: abort.signal,
+          async prompt(prompt) {
+            if (prompt.type === "select") {
+              const option = prompt.options.find((entry) => entry.id === "device_code");
+              if (!option) {
+                throw new Error("Device-code sign-in is not available for this provider.");
               }
-            });
-          }
-          // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
-          if (prompt.type === "text") return "";
-          throw new Error("Unexpected subscription login prompt.");
+              return option.id;
+            }
+            if (prompt.type === "manual_code") {
+              return new Promise<string>((resolve, reject) => {
+                const signals = [abort.signal, prompt.signal].filter(
+                  (signal): signal is AbortSignal => signal !== undefined,
+                );
+                const removeAbortListeners = () => {
+                  for (const signal of signals) signal.removeEventListener("abort", onAbort);
+                };
+                const onAbort = (event: Event) => {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  const signal = event.currentTarget as AbortSignal;
+                  reject(signal.reason ?? new Error("Sign-in cancelled."));
+                };
+                session.submitCode = (code) => {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  resolve(code);
+                };
+                const aborted = signals.find((signal) => signal.aborted);
+                if (aborted) {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  reject(aborted.reason ?? new Error("Sign-in cancelled."));
+                } else {
+                  for (const signal of signals)
+                    signal.addEventListener("abort", onAbort, { once: true });
+                }
+              });
+            }
+            // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
+            if (prompt.type === "text") return "";
+            throw new Error("Unexpected subscription login prompt.");
+          },
+          notify(event) {
+            if (event.type === "device_code") {
+              signInStarted.resolve({
+                mode: "device-code",
+                userCode: event.userCode,
+                verificationUri: httpsAuthorizationUrl(event.verificationUri),
+                expiresInSeconds: event.expiresInSeconds ?? 15 * 60,
+              });
+            }
+            if (event.type === "auth_url") {
+              signInStarted.resolve({
+                mode: "auth-url",
+                verificationUri: httpsAuthorizationUrl(event.url),
+                expiresInSeconds: PASTED_CODE_TTL_SECONDS,
+              });
+            }
+          },
         },
-        notify(event) {
-          if (event.type === "device_code") {
-            signInStarted.resolve({
-              mode: "device-code",
-              userCode: event.userCode,
-              verificationUri: httpsAuthorizationUrl(event.verificationUri),
-              expiresInSeconds: event.expiresInSeconds ?? 15 * 60,
-            });
-          }
-          if (event.type === "auth_url") {
-            signInStarted.resolve({
-              mode: "auth-url",
-              verificationUri: httpsAuthorizationUrl(event.url),
-              expiresInSeconds: 15 * 60,
-            });
-          }
-        },
-      })
+        { codePage: input.codePage, verifier },
+      )
         .then((credential) => {
           if (!isOAuthCredential(credential)) {
             throw new Error("Subscription sign-in did not return an OAuth credential.");
@@ -953,12 +1088,11 @@ export class PiOAuthLogins {
         abort,
         abortFromRequest,
         signInStarted: signInStarted.promise,
-        loginId,
         session,
       };
     });
 
-    const { abort, abortFromRequest, signInStarted, loginId, session } = prepared;
+    const { abort, abortFromRequest, signInStarted, session } = prepared;
 
     try {
       const started = await Promise.race([
@@ -970,10 +1104,9 @@ export class PiOAuthLogins {
       input.signal?.removeEventListener("abort", abortFromRequest);
       if (abort.signal.aborted) throw abort.signal.reason ?? new Error("Sign-in cancelled.");
       session.expiresTimer = setTimeout(() => {
-        // Leave a finalizing session in place. Removing it would free the scope
-        // for a replacement login whose credential the in-flight persist can
-        // then overwrite. Remember that expiry already fired so a failed save
-        // is dropped instead of coming back as a ready session with no timer.
+        // Removing a finalizing session would free the scope for a replacement login
+        // whose credential the in-flight persist could overwrite. Remember the expiry
+        // so a failed save is dropped instead of becoming a ready session with no timer.
         if (session.state === "finalizing") {
           session.expired = true;
           return;
@@ -995,22 +1128,137 @@ export class PiOAuthLogins {
     }
   }
 
-  submit(loginId: string, actor: { userId: string; spaceId: string }, code: string): { ok: true } {
-    const session = this.pending.get(loginId);
-    if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
-      throw new Error("Sign-in session not found. Start sign-in again.");
-    }
-    if (session.error) throw new Error(session.error);
+  async submit(loginId: string, actor: SignInActor, code: string): Promise<{ ok: true }> {
     const normalizedCode = code.trim();
-    if (!normalizedCode) throw new Error("Paste an authorization code or callback URL.");
+    let session = this.pending.get(loginId);
+    if (session && (session.userId !== actor.userId || session.spaceId !== actor.spaceId)) {
+      session = undefined;
+    }
+    if (!session && normalizedCode) session = await this.resume(loginId, actor);
+    if (!session) throw new ModelSignInError("Sign-in session not found. Start sign-in again.");
+    if (session.error) throw new ModelSignInError(session.error);
+    if (!normalizedCode) throw new ModelSignInError("Paste an authorization code or callback URL.");
     const resolve = session.submitCode;
     if (session.codeSubmitted) return { ok: true };
     if (!resolve) {
-      throw new Error("This sign-in is not waiting for a pasted code.");
+      throw new ModelSignInError("This sign-in is not waiting for a pasted code.");
     }
     session.codeSubmitted = true;
+    // The code is in: no other process may resume this sign-in with the stored verifier.
+    if (session.handedOff) await this.forgetHandoff(session);
     resolve(normalizedCode);
     return { ok: true };
+  }
+
+  /** Persist a sign-in waiting for its code, encrypted and bound to the member. */
+  private async handOff(loginId: string, input: BeginInput, verifier: string): Promise<void> {
+    const handoff = this.handoff;
+    if (!handoff) return;
+    const actor = { userId: input.userId, spaceId: input.spaceId };
+    const stored: HandedOffSignIn = {
+      provider: input.provider,
+      credentialId: input.credentialId,
+      modelId: input.modelId,
+      thinkingLevel: input.thinkingLevel,
+      makeDefault: input.makeDefault,
+      settingsScope: input.settingsScope,
+      label: input.label,
+      codePage: input.codePage,
+      verifier,
+    };
+    try {
+      await runAsSystem("expire abandoned model sign-ins in every Space", () =>
+        handoff.prisma.modelOAuthSession.deleteMany({
+          where: { createdAt: { lt: new Date(Date.now() - PASTED_CODE_TTL_SECONDS * 1000) } },
+        }),
+      );
+      const sealed = await handoff.secrets.put(
+        JSON.stringify(stored),
+        {
+          operationId: "model.oauth.session",
+          traceId: "model.oauth.session",
+          ...actor,
+          signal: new AbortController().signal,
+        },
+        { recordId: loginId, ephemeral: true },
+      );
+      const scope = oauthScopeKey(input.userId, input.spaceId, input.provider, input.credentialId);
+      await runAsTenant(actor, async () => {
+        const created = await handoff.prisma.modelOAuthSession.create({
+          data: {
+            id: loginId,
+            ...actor,
+            provider: input.provider,
+            scope,
+            ciphertext: sealed.ciphertext,
+          },
+          select: { createdAt: true },
+        });
+        // This sign-in replaces older ones for the same connection left open elsewhere, so
+        // an older code cannot come back and retire it. A newer one is never touched.
+        await handoff.prisma.modelOAuthSession.deleteMany({
+          where: { ...actor, scope, createdAt: { lt: created.createdAt } },
+        });
+      });
+    } catch (error) {
+      // This process can still finish the sign-in; only another process could not.
+      getLogger().error("model sign-in hand-off failed", error);
+    }
+    // Cancelled, replaced or disconnected while saving: no process may resume it.
+    if (this.pending.get(loginId)?.state !== "pending") {
+      await this.forgetHandoff({ id: loginId, ...actor });
+    }
+  }
+
+  /** Take over a sign-in another API process started, once, within its lifetime. */
+  private async resume(
+    loginId: string,
+    { userId, spaceId }: SignInActor,
+  ): Promise<Session | undefined> {
+    const handoff = this.handoff;
+    if (!handoff) return undefined;
+    const actor = { userId, spaceId };
+    const row = await runAsTenant(actor, () =>
+      handoff.prisma.modelOAuthSession.findFirst({
+        where: {
+          id: loginId,
+          ...actor,
+          createdAt: { gte: new Date(Date.now() - PASTED_CODE_TTL_SECONDS * 1000) },
+        },
+        select: { ciphertext: true },
+      }),
+    );
+    if (!row) return undefined;
+    if ((await this.forgetHandoff({ id: loginId, ...actor })) !== 1) return undefined;
+    let stored: HandedOffSignIn;
+    try {
+      stored = JSON.parse(await handoff.secrets.load(row.ciphertext, loginId)) as HandedOffSignIn;
+    } catch (error) {
+      getLogger().error("model sign-in hand-off unreadable", error);
+      return undefined;
+    }
+    if (typeof stored.verifier !== "string" || typeof stored.provider !== "string") {
+      return undefined;
+    }
+    const { verifier, ...input } = stored;
+    await this.start({ ...input, ...actor }, loginId, verifier);
+    return this.pending.get(loginId);
+  }
+
+  /** Delete a stored hand-off; resolves to how many rows went, 0 when it could not. */
+  private async forgetHandoff(session: Pick<Session, "id" | "userId" | "spaceId">) {
+    const handoff = this.handoff;
+    if (!handoff) return 0;
+    const actor = { userId: session.userId, spaceId: session.spaceId };
+    try {
+      const deleted = await runAsTenant(actor, () =>
+        handoff.prisma.modelOAuthSession.deleteMany({ where: { id: session.id, ...actor } }),
+      );
+      return deleted.count;
+    } catch (error) {
+      getLogger().error("model sign-in hand-off not deleted", error);
+      return 0;
+    }
   }
 
   complete(loginId: string, actor: { userId: string; spaceId: string }): PiOAuthComplete {
@@ -1023,7 +1271,7 @@ export class PiOAuthLogins {
     }
     if (session.error) {
       this.removeSession(session);
-      return { status: "error", error: session.error };
+      return { status: "error", error: session.error, provider: session.provider };
     }
     if (session.state === "finalizing") return { status: "pending" };
     if (session.credential) {
@@ -1031,8 +1279,11 @@ export class PiOAuthLogins {
         status: "connected",
         credential: session.credential,
         provider: session.provider,
+        credentialId: session.credentialId,
         modelId: session.modelId,
         thinkingLevel: session.thinkingLevel,
+        makeDefault: session.makeDefault,
+        settingsScope: session.settingsScope,
         label: session.label,
         signal: session.abort.signal,
       };
@@ -1056,11 +1307,9 @@ export class PiOAuthLogins {
     const result = this.complete(loginId, actor);
     if (result.status !== "connected") return result;
 
-    // The state transition is synchronous, so cancel either wins before this claim or waits for
-    // the finalization to settle. Cancel waits on `finishing` instead of aborting the write.
-    // The expiry timer also leaves a finalizing session in place, so this persist cannot be
-    // dropped for a replacement login that would then lose to the late write. Teardown aborts
-    // the session signal only after the write settles.
+    // The state transition is synchronous, so cancel either wins before this claim or waits
+    // on `finishing` instead of aborting the write. Teardown aborts the session signal only
+    // after the write settles.
     const finishing = deferred<void>();
     session.finishing = finishing.promise;
     session.state = "finalizing";
@@ -1090,6 +1339,8 @@ export class PiOAuthLogins {
     while (true) {
       const session = this.pending.get(loginId);
       if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
+        // Another process may have started it: no process may resume it now.
+        await this.forgetHandoff({ id: loginId, ...actor });
         return;
       }
       if (session.state === "finalizing") {
@@ -1149,8 +1400,14 @@ export class PiOAuthLogins {
 
   /** Retire every sign-in this user started for one provider, in any space —
    *  disconnect removes the account credential, so no space's session may
-   *  finish afterward. The shared provider lock orders this against begin. */
-  async cancelProvider(input: { userId: string; provider: string }): Promise<void> {
+   *  finish afterward. With `credentialId`, only sign-ins that may renew that
+   *  connection are retired; a sign-in adding another account carries on. The shared provider
+   *  lock orders this against begin. */
+  async cancelProvider(input: {
+    userId: string;
+    provider: string;
+    credentialId?: string;
+  }): Promise<void> {
     await this.withReplacementLock(
       oauthProviderKey(input.userId, input.provider),
       undefined,
@@ -1159,7 +1416,13 @@ export class PiOAuthLogins {
           ...new Set(
             [...this.pending.values()]
               .filter(
-                (session) => session.userId === input.userId && session.provider === input.provider,
+                (session) =>
+                  session.userId === input.userId &&
+                  session.provider === input.provider &&
+                  (!input.credentialId ||
+                    session.credentialId === input.credentialId ||
+                    // A sign-in that never named its connection may renew this one.
+                    session.credentialId === undefined),
               )
               .map((session) => session.scope),
           ),
@@ -1167,11 +1430,25 @@ export class PiOAuthLogins {
         for (const scope of scopes) {
           await this.retireActiveSession(scope, undefined);
         }
+        // A hand-off's connection is sealed in its ciphertext, so retire all of the provider's.
+        const handoff = this.handoff;
+        if (handoff) {
+          await runAsSystem("retire a disconnected provider's sign-ins in every Space", () =>
+            handoff.prisma.modelOAuthSession.deleteMany({
+              where: { userId: input.userId, provider: input.provider },
+            }),
+          );
+        }
       },
     );
   }
 
   private removeSession(session: Session): void {
+    this.detachSession(session);
+    if (session.handedOff) void this.forgetHandoff(session);
+  }
+
+  private detachSession(session: Session): void {
     if (session.expiresTimer) clearTimeout(session.expiresTimer);
     session.expiresTimer = undefined;
     if (this.pending.get(session.id) === session) this.pending.delete(session.id);
@@ -1180,9 +1457,10 @@ export class PiOAuthLogins {
     }
   }
 
+  /** Shutdown: stored hand-offs stay so the next API process can finish them. */
   abortAll(): void {
     for (const session of [...this.pending.values()]) {
-      this.removeSession(session);
+      this.detachSession(session);
       session.abort.abort();
     }
     this.pending.clear();
@@ -1194,9 +1472,14 @@ function defaultLogin(
   providerId: string,
   type: "oauth",
   interaction: AuthInteraction,
+  options: { codePage?: boolean; verifier?: string } = {},
 ): Promise<Credential> {
   if (providerId === ANTHROPIC_OAUTH_PROVIDER) {
-    return createManualAnthropicOAuthLogin()(interaction);
+    const { verifier } = options;
+    return createManualAnthropicOAuthLogin({
+      codePage: options.codePage,
+      ...(verifier ? { createVerifier: () => verifier } : {}),
+    })(interaction);
   }
   return builtinModels().login(providerId, type, interaction);
 }
@@ -1215,8 +1498,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function oauthScopeKey(userId: string, spaceId: string, provider: string): string {
-  return JSON.stringify([userId, spaceId, provider]);
+/** A new sign-in replaces a pending one for the same connection, or for a new connection. */
+function oauthScopeKey(
+  userId: string,
+  spaceId: string,
+  provider: string,
+  credentialId?: string | null,
+): string {
+  return JSON.stringify([userId, spaceId, provider, credentialId ?? null]);
 }
 
 // Begins and disconnect cancellation share one lock per user+provider so a

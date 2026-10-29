@@ -50,3 +50,25 @@ describe("call route gates", () => {
     await expect(client.threads.endCall(input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 });
+
+describe("voice catalog", () => {
+  it.each([false, true])(
+    "advertises self-hosted speech only with custom endpoint access (%s)",
+    async (mcpAllowPrivateEndpoint) => {
+      vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
+      try {
+        const client = createRouterClient(
+          createRouter({ env: { mcpAllowPrivateEndpoint } } as unknown as RouterDeps),
+          { context: { actor } },
+        );
+        const catalog = await client.voice.catalog();
+        expect(catalog.some((entry) => entry.id === "openai-compatible")).toBe(
+          mcpAllowPrivateEndpoint,
+        );
+        expect(catalog.some((entry) => entry.id === "elevenlabs")).toBe(true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+});

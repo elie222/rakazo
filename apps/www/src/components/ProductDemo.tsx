@@ -1,24 +1,11 @@
-import { Button } from "@rakazo/ui-web";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type DemoBot,
-  type DemoMessage,
-  type DemoRoutine,
-  type DemoRoutineRun,
-  type DemoScreen,
-} from "../demo";
-import { demoText, getDemoBots } from "../i18n/demo";
-import type { Locale } from "../i18n/locales";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { DemoBot, DemoMessage, DemoRoutine, DemoRoutineRun, DemoScreen } from "../demo";
+import type { DemoMessages } from "../i18n/demo-text";
+import { fillDemoText } from "../i18n/demo-text";
 import { LandingBotAvatar } from "./LandingBotAvatar";
-import {
-  type DemoTrigger,
-  defaultTrigger,
-  describeTrigger,
-  displayRoutineWhen,
-  parseWhen,
-  resolveRoutineWhen,
-} from "./product-demo-when";
+import type { DemoTrigger } from "./product-demo-when";
+import { defaultTrigger, describeTrigger, displayRoutineWhen, parseWhen, resolveRoutineWhen } from "./product-demo-when";
 
 type DemoTranslator = (source: string, values?: Record<string, string | number>) => string;
 
@@ -445,7 +432,7 @@ function OnboardThread({
         if (answer !== undefined) {
           const letter = String.fromCharCode(65 + Math.max(0, step.opts.indexOf(answer)));
           return (
-            <div key={step.q}>
+            <Fragment key={step.q}>
               <div className="product-demo__choice product-demo__choice--done">
                 <div className="product-demo__choice-q">{text(step.q)}</div>
                 <div className="product-demo__choice-picked">
@@ -459,7 +446,7 @@ function OnboardThread({
                   {text(step.ack, { answer: text(answer) })}
                 </div>
               </div>
-            </div>
+            </Fragment>
           );
         }
         if (answers.length !== index) {
@@ -496,9 +483,9 @@ function OnboardThread({
   );
 }
 
-export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
-  const text: DemoTranslator = (source, values) => demoText(locale, source, values);
-  const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(getDemoBots(locale)));
+export function ProductDemo({ bots: initialBots, strings }: { bots: DemoBot[]; strings: DemoMessages }) {
+  const text: DemoTranslator = (source, values) => fillDemoText(strings, source, values);
+  const [bots, setBots] = useState<LiveBot[]>(() => cloneBots(initialBots));
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1081,19 +1068,14 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                   <ComputerDesktop screen={active.screen} desk={desk} text={text} />
                 </button>
                 <div className="product-demo__screen-meta">
-                  <span>
-                    {hasControl
-                      ? text("You have control")
-                      : text("{name}’s screen", { name: active.name })}
-                  </span>
-                  <Button
+                  {hasControl ? <span>{text("You have control")}</span> : null}
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
+                    className="product-demo__text-btn"
                     onClick={() => (hasControl ? releaseControl() : takeControl())}
                   >
                     {hasControl ? text("Release") : text("Take control")}
-                  </Button>
+                  </button>
                 </div>
                 <div className="product-demo__panel-label">{text("Routines")}</div>
                 {active.routines.length === 0 ? (
@@ -1383,9 +1365,13 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                   </span>
                 </div>
                 <div className="product-demo__takeover-actions">
-                  <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
+                  <button
+                    type="button"
+                    className="product-demo__outline-btn"
+                    onClick={releaseControl}
+                  >
                     {text("Release")}
-                  </Button>
+                  </button>
                   <button
                     type="button"
                     className="product-demo__takeover-close"

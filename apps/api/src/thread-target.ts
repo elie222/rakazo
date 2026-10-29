@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
 import type {
@@ -10,31 +10,41 @@ import type {
   ReplyPreview,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
+import {
+  GROUP_MEMBER_MIN,
+  MessageBlock as MessageBlockSchema,
+  resolveBotAvatarSet,
+} from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   isConversationalRun,
+  messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
   QUEUE_HOLDING_RUN_STATUSES,
   resolveGroupTargetBotIds,
   runFailureError,
+  runReadsThreadHistory,
 } from "@rakazo/core";
 import { deriveMessageQuote, messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
+  clearEndedRunState,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  eligibleWaitingTextAnswer,
   expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
+  primaryActiveRun,
   retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
+  transientRunEventsWhere,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -45,6 +55,8 @@ import {
 } from "./artifacts.js";
 import { resolveBusyBotName, toComputerStatus } from "./computer-status.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import type { ImageAdmissionRun } from "./thread-image-admission.js";
+import { assertThreadImageInput } from "./thread-image-admission.js";
 import { loadMessagePage } from "./thread-message-pages.js";
 
 export type ThreadTarget =
@@ -67,6 +79,21 @@ const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
+/**
+ * An answer steers the waiting run it resumes when the model must see its image, or when the run
+ * reads no thread history and would otherwise never get the attachment.
+ */
+function answerSteersRun(
+  run: { trigger?: string | null },
+  attachments: MessageBlock[],
+  imageHandling: "confirm" | "file" | undefined,
+) {
+  return (
+    (imageHandling === "confirm" && attachments.some((block) => block.kind === "image")) ||
+    (attachments.length > 0 && !runReadsThreadHistory(run.trigger))
+  );
+}
+
 /** Background work holds pending steering; paused cards never hold the queue. */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
@@ -244,6 +271,10 @@ export async function cancelSupersededQueuedRuns(
     where: { id: { in: superseded.map((run) => run.id) } },
     data: { status: "cancelled", completedAt: now },
   });
+  await clearEndedRunState(
+    tx,
+    superseded.map((run) => run.id),
+  );
   await tx.task.updateMany({
     where: { id: { in: superseded.map((run) => run.taskId) } },
     data: { status: "cancelled" },
@@ -267,7 +298,7 @@ async function lockAndLoadGroupMembers(
     include: {
       members: {
         where: { bot: { archivedAt: null } },
-        include: { bot: { select: { id: true, name: true, color: true } } },
+        include: { bot: { select: { id: true, name: true, color: true, avatarSet: true } } },
         orderBy: [{ createdAt: "asc" }, { botId: "asc" }],
       },
     },
@@ -277,6 +308,7 @@ async function lockAndLoadGroupMembers(
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
+    avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
   }));
 }
 
@@ -305,7 +337,8 @@ export async function resolveThreadTarget(
       botId: member.bot.id,
       name: member.bot.name,
       color: member.bot.color,
-      status: member.bot.runs[0]?.status ?? "idle",
+      avatarSet: resolveBotAvatarSet(member.bot.avatarSet),
+      status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
     }));
     return {
       kind: "group",
@@ -359,7 +392,7 @@ export async function threadSnapshot(
                 threadId: target.threadId,
                 status: { in: [...ACTIVE_RUN_STATUSES] },
                 OR: [
-                  { trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] } },
+                  { trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] } },
                   { status: { in: ["waiting_input", "waiting_takeover"] } },
                 ],
               },
@@ -369,8 +402,8 @@ export async function threadSnapshot(
               where: {
                 botId: target.botId,
                 threadId: target.threadId,
-                // Hide peer bot_message and background ticket busy/failed noise; waiting is handled above.
-                trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                // Background ticket work stays silent; waiting is handled above.
+                trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                 status: { in: [...ACTIVE_RUN_STATUSES, "failed"] },
               },
               // The id tiebreak keeps ordering deterministic under equal
@@ -379,20 +412,17 @@ export async function threadSnapshot(
             }),
           ]);
           const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
-          // A failed run is only the thread's word while it is still the newest
-          // terminal run; otherwise a stale failure would resurface in the
-          // composer error strip on every load, forever. Instead of comparing
-          // timestamps (equal createdAt values reverse under gt/gte), ask for
-          // the newest terminal run under the same deterministic ordering and
-          // check whether it is this failure.
+          // A failure only surfaces while it is still the newest terminal run, or a stale
+          // failure would reappear on every load. Compare by ordering, not timestamps:
+          // equal createdAt values reverse under gt/gte.
           const newestTerminal =
             run?.status === "failed"
               ? await tx.run.findFirst({
                   where: {
                     botId: target.botId,
                     threadId: target.threadId,
-                    // Peer bot_message and background failures must not bury a user-visible failure.
-                    trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] },
+                    // Background failures must not bury a user-visible failure.
+                    trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },
                     status: { in: ["failed", "completed", "cancelled"] },
                   },
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -400,16 +430,19 @@ export async function threadSnapshot(
                 })
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
+          const liveRuns = activeRuns.filter((run) => run.trigger !== "bot_message");
           const liveEvents =
-            activeRuns.length > 0
+            liveRuns.length > 0
               ? await tx.event.findMany({
                   where: {
                     threadId: target.threadId,
-                    runId: { in: activeRuns.map((run) => run.id) },
+                    runId: { in: liveRuns.map((run) => run.id) },
                     type: {
                       in: [
                         "thread.progress",
                         "thread.subagent",
+                        "run.waiting_input",
+                        "computer.takeover.requested",
                         "agent.tool.called",
                         "agent.tool.completed",
                       ],
@@ -427,7 +460,7 @@ export async function threadSnapshot(
       botId: target.botId,
       threadId: target.threadId,
       cursor: core.last?.seq ?? -1,
-      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+      messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
       activeRuns: core.activeRuns.map(mapRun),
@@ -480,6 +513,8 @@ export async function threadSnapshot(
                   in: [
                     "thread.progress",
                     "thread.subagent",
+                    "run.waiting_input",
+                    "computer.takeover.requested",
                     "agent.tool.called",
                     "agent.tool.completed",
                   ],
@@ -505,7 +540,7 @@ export async function threadSnapshot(
     members: target.members,
     threadId: target.threadId,
     cursor: core.last?.seq ?? -1,
-    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
+    messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents, core.activeRuns),
     olderCursor: core.messagePage.olderCursor,
     // Match the live reducer: a failed latest terminal stays in run even while siblings are
     // still active or start late. A newer completed/cancelled terminal clears it.
@@ -533,12 +568,12 @@ function pickPrimaryPrivateActiveRun<T extends { status: string }>(
 ): T | undefined {
   return (
     runs.find((run) => run.status === "waiting_takeover") ??
-    runs.find((run) => QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status)) ??
+    runs.find((run) => run.status === "running") ??
+    runs.find((run) => run.status === "leased") ??
     runs[0]
   );
 }
 
-/** Latest terminal by end time (completedAt, else createdAt), then createdAt, then id. */
 function pickLatestTerminalRun<T extends { id: string; createdAt: Date; completedAt: Date | null }>(
   runs: T[],
 ): T | null {
@@ -557,8 +592,9 @@ function pickLatestTerminalRun<T extends { id: string; createdAt: Date; complete
 function messagesWithLiveEvents(
   persisted: ThreadSnapshot["messages"],
   liveEvents: Parameters<typeof projectMessages>[0],
+  runs: NonNullable<Parameters<typeof projectMessages>[1]>,
 ) {
-  const live = projectMessages(liveEvents).filter((message) => {
+  const live = projectMessages(liveEvents, runs).filter((message) => {
     if (message.blocks.some((block) => block.kind === "progress" || block.kind === "steps")) {
       return true;
     }
@@ -610,17 +646,82 @@ function mapRun(run: {
   };
 }
 
+/**
+ * Admit a confirmed image against the model each recipient run will use: the waiting runs this
+ * text answers, otherwise the run that would take it as steering, otherwise the bot's default.
+ */
+async function assertImageRecipients(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  target: { threadId: string },
+  text: string | undefined,
+  attachmentBlocks: MessageBlock[],
+  recipient: {
+    botId: string;
+    runs: Array<ImageAdmissionRun & { id: string }>;
+    imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+  },
+) {
+  if (!attachmentBlocks.some((block) => block.kind === "image")) return;
+  const { botId, runs } = recipient;
+  const answered = [];
+  for (const run of runs.filter((run) => run.status === "waiting_input")) {
+    const eligible = await eligibleWaitingTextAnswer(tx, {
+      spaceId: actor.spaceId,
+      threadId: target.threadId,
+      runId: run.id,
+      answeredByUserId: actor.userId,
+      answer: text ?? "",
+    });
+    if (eligible) answered.push(run);
+  }
+  const current =
+    runs.find(steersUserMessage) ?? runs.find((run) => STEERABLE_RUN_STATUSES.has(run.status));
+  for (const run of answered.length ? answered : [current]) {
+    await assertThreadImageInput(
+      tx as unknown as PrismaClient,
+      actor,
+      botId,
+      attachmentBlocks,
+      run && (isConversationalRun(run.trigger) || run.status === "waiting_input") ? run : undefined,
+      recipient.imageAdmission,
+    );
+  }
+}
+
+/** Intent changes the message representation, never the owned artifact. */
+function sendAttachmentBlocks(
+  blocks: Extract<MessageBlock, { kind: "image" | "file" }>[],
+  artifacts: Array<{ id: string; size: number }>,
+  handling: "confirm" | "file" | undefined,
+): Extract<MessageBlock, { kind: "image" | "file" }>[] {
+  return blocks.map((block) => {
+    if (block.kind !== "image") return block;
+    if (handling === "file")
+      return {
+        ...block,
+        kind: "file",
+        size: artifacts.find((artifact) => artifact.id === block.artifactId)!.size,
+      };
+    return handling === "confirm" ? { ...block, imageHandling: "confirm" } : block;
+  });
+}
+
 export async function sendThreadMessage(
   deps: {
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
+    maxAttachmentsPerMessage?: number;
+    analytics?: ProductAnalytics;
   },
   actor: Actor,
   target: ThreadTarget,
   input: {
     text?: string;
     artifactIds?: string[];
+    imageHandling?: "confirm" | "file";
     mentions?: MentionTargetInput[];
     replyToMessageId?: string;
     replyQuote?: string;
@@ -694,7 +795,7 @@ export async function sendThreadMessage(
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
         const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
-          { prisma: tx },
+          { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
           actor,
           target.botId,
           input.artifactIds,
@@ -704,7 +805,36 @@ export async function sendThreadMessage(
           actor,
           mentionTargets.connectorMentionIds,
         );
-        const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
+        // Match message counter locking before inspecting runs, without changing counters on rejection.
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        const activeRuns = await tx.run.findMany({
+          where: {
+            threadId: target.threadId,
+            botId: target.botId,
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+          },
+          select: {
+            id: true,
+            taskId: true,
+            status: true,
+            trigger: true,
+            modelProvider: true,
+            modelId: true,
+            modelPinned: true,
+            thinkingLevel: true,
+          },
+        });
+        if (input.imageHandling === "confirm") {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
+            botId: target.botId,
+            runs: activeRuns,
+            imageAdmission: deps.imageAdmission,
+          });
+        }
+        const blocks = buildUserMessageBlocks(
+          input.text,
+          sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+        );
         const message = await createThreadMessageInTransaction(tx, {
           threadId: target.threadId,
           role: "user",
@@ -712,14 +842,6 @@ export async function sendThreadMessage(
           replyToMessageId,
           replyQuote,
           clientNonce: input.clientNonce,
-        });
-        const activeRuns = await tx.run.findMany({
-          where: {
-            threadId: target.threadId,
-            botId: target.botId,
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-          },
-          select: { id: true, taskId: true, status: true, trigger: true },
         });
         const answered: typeof activeRuns = [];
         for (const run of activeRuns.filter((run) => run.status === "waiting_input")) {
@@ -747,6 +869,19 @@ export async function sendThreadMessage(
           const primary = answered[0];
           if (!primary) throw new IsolationError();
           await tx.message.update({ where: { id: message.id }, data: { runId: primary.id } });
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: {
+                messageId: message.id,
+                botId: target.botId,
+                userId: actor.userId,
+                runId: run.id,
+              },
+            });
+          }
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
@@ -767,8 +902,10 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        const holdingRuns = activeRuns.filter((run) =>
-          QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+        const holdingRuns = activeRuns.filter(
+          (run) =>
+            QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
+            !messageBypassesTakeoverWait(run),
         );
         const active = holdingRuns.find(steersUserMessage) ?? holdingRuns[0];
         if (active) {
@@ -859,7 +996,7 @@ export async function sendThreadMessage(
         explicitMentions: mentionTargets.botMentionIds,
       });
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
-        { prisma: tx },
+        { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
         target.groupId,
         memberBotIds,
@@ -870,7 +1007,39 @@ export async function sendThreadMessage(
         actor,
         mentionTargets.connectorMentionIds,
       );
-      const blocks = buildUserMessageBlocks(input.text, attachmentBlocks);
+      // Group ownership is locked first, then the thread, as in the normal write path.
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      const activeRuns = await tx.run.findMany({
+        where: {
+          threadId: target.threadId,
+          botId: { in: targetBotIds },
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: {
+          id: true,
+          taskId: true,
+          botId: true,
+          status: true,
+          trigger: true,
+          modelProvider: true,
+          modelId: true,
+          modelPinned: true,
+          thinkingLevel: true,
+        },
+      });
+      if (input.imageHandling === "confirm") {
+        for (const botId of targetBotIds) {
+          await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
+            botId,
+            runs: activeRuns.filter((run) => run.botId === botId),
+            imageAdmission: deps.imageAdmission,
+          });
+        }
+      }
+      const blocks = buildUserMessageBlocks(
+        input.text,
+        sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
+      );
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
         role: "user",
@@ -878,14 +1047,6 @@ export async function sendThreadMessage(
         replyToMessageId,
         replyQuote,
         clientNonce: input.clientNonce,
-      });
-      const activeRuns = await tx.run.findMany({
-        where: {
-          threadId: target.threadId,
-          botId: { in: targetBotIds },
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: { id: true, taskId: true, botId: true, status: true, trigger: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
@@ -914,7 +1075,7 @@ export async function sendThreadMessage(
           }
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status)) continue;
+        if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
         const current = activeByBotId.get(run.botId);
         if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
           activeByBotId.set(run.botId, run);
@@ -924,6 +1085,14 @@ export async function sendThreadMessage(
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: { messageId: message.id, botId, userId: actor.userId, runId: run.id },
+            });
+          }
           runs.push(...answered);
           continue;
         }
@@ -1014,6 +1183,11 @@ export async function sendThreadMessage(
     throw error;
   });
   if ("replay" in committed) return committed.replay;
+  deps.analytics?.capture(
+    actor.userId,
+    { name: "message_sent", trigger: "user" },
+    { id: committed.message.id, at: committed.message.createdAt },
+  );
   await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
@@ -1266,9 +1440,10 @@ export async function stopThreadRuns(
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
       data: { status: "cancelled", completedAt: new Date() },
-      select: { id: true, botId: true },
+      select: { id: true, botId: true, userId: true, spaceId: true },
     });
     const ids = cancelled.map((run) => run.id);
+    await clearEndedRunState(tx, ids);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },
@@ -1324,7 +1499,7 @@ export async function stopThreadRuns(
     if (ids.length) {
       await tx.event.deleteMany({
         where: {
-          type: "thread.progress",
+          ...transientRunEventsWhere(),
           runId: { in: ids },
         },
       });
@@ -1406,6 +1581,80 @@ export async function stopThreadRuns(
       executionLeaseExpiresAt: null,
     },
   });
+}
+
+/**
+ * Marks the thread read up to its latest message. Returns the seq the user had read up
+ * to before, or null when the chat wasn't unread or nothing new arrived; the first
+ * answer of a visit places the "New" divider. A message landing mid-update makes the
+ * conditional write miss, so it retries rather than marking that message read; a chat
+ * that stays that busy is read under the thread's row lock instead.
+ */
+export async function markThreadRead(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+): Promise<number | null> {
+  const where = { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const thread = await prisma.thread.findFirst({
+      where,
+      select: { unread: true, lastReadSeq: true, nextMessageSeq: true },
+    });
+    if (!thread) return null;
+    const latestSeq = thread.nextMessageSeq - 1;
+    if (!thread.unread && thread.lastReadSeq >= latestSeq) return null;
+    const result = await prisma.thread.updateMany({
+      where: { ...where, lastReadSeq: thread.lastReadSeq, nextMessageSeq: thread.nextMessageSeq },
+      data: { unread: false, lastReadSeq: latestSeq },
+    });
+    if (result.count > 1) throw new IsolationError();
+    if (result.count === 1) return dividerSeq(thread, latestSeq);
+  }
+  // New messages take the same row lock, so none can land between this read and write.
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+    const thread = await tx.thread.findFirst({
+      where,
+      select: { unread: true, lastReadSeq: true, nextMessageSeq: true },
+    });
+    if (!thread) return null;
+    const latestSeq = thread.nextMessageSeq - 1;
+    if (!thread.unread && thread.lastReadSeq >= latestSeq) return null;
+    const result = await tx.thread.updateMany({
+      where,
+      data: { unread: false, lastReadSeq: latestSeq },
+    });
+    if (result.count > 1) throw new IsolationError();
+    return dividerSeq(thread, latestSeq);
+  });
+}
+
+/** A chat only gets a divider when its unread dot was on, so replies seen live never do. */
+function dividerSeq(thread: { unread: boolean; lastReadSeq: number }, latestSeq: number) {
+  return thread.unread && thread.lastReadSeq < latestSeq ? thread.lastReadSeq : null;
+}
+
+/**
+ * Marks the thread unread from one of its messages: the read cursor moves to just before it,
+ * so the next open puts the New divider above that message.
+ */
+export async function markThreadUnreadFrom(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  messageId: string,
+) {
+  const message = await prisma.message.findFirst({
+    where: { id: messageId, threadId: target.threadId },
+    select: { seq: true },
+  });
+  if (!message) throw new ORPCError("NOT_FOUND");
+  const result = await prisma.thread.updateMany({
+    where: { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId },
+    data: { unread: true, lastReadSeq: message.seq - 1 },
+  });
+  if (result.count > 1) throw new IsolationError();
 }
 
 export async function setThreadUnreadState(

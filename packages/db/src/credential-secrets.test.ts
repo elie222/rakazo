@@ -74,8 +74,13 @@ function retirePrisma(state: {
       ),
       delete: vi.fn(async (args: { where: { id: string } }) => {
         const index = state.credentials.findIndex((row) => row.id === args.where.id);
-        if (index >= 0) return state.credentials.splice(index, 1)[0];
-        return null;
+        if (index < 0) return null;
+        const [removed] = state.credentials.splice(index, 1);
+        // The foreign key removes the connection's own model with it.
+        state.preferences = state.preferences.filter(
+          (row) => !(row.userId === removed!.userId && row.credentialId === removed!.id),
+        );
+        return removed;
       }),
       count: vi.fn(
         async (args: { where: { secretId: string; id?: { not: string } } }) =>
@@ -91,16 +96,6 @@ function retirePrisma(state: {
             .length,
       ),
     },
-    spaceModelPreference: {
-      deleteMany: vi.fn(async (args: { where: { userId: string; credentialId: string } }) => {
-        const before = state.preferences.length;
-        state.preferences = state.preferences.filter(
-          (row) =>
-            !(row.userId === args.where.userId && row.credentialId === args.where.credentialId),
-        );
-        return { count: before - state.preferences.length };
-      }),
-    },
     secret: {
       findFirst: vi.fn(
         async (args: { where: { id: string }; select?: Record<string, boolean> }) =>
@@ -111,6 +106,12 @@ function retirePrisma(state: {
         state.secrets = state.secrets.filter((row) => row.id !== args.where.id);
         return { count: before - state.secrets.length };
       }),
+      update: vi.fn(async (args: { where: { id: string }; data: { ciphertext: string } }) => {
+        const row = state.secrets.find((secret) => secret.id === args.where.id);
+        if (!row) throw new Error("missing secret");
+        row.ciphertext = args.data.ciphertext;
+        return row;
+      }),
     },
   };
   const prisma = {
@@ -118,6 +119,8 @@ function retirePrisma(state: {
   } as unknown as PrismaClient;
   return { prisma, tx };
 }
+
+const RECONNECT_MARKER = "reconnect-marker";
 
 function codexCredential(overrides: Partial<StoredCredentialRow> = {}): StoredCredentialRow {
   return {
@@ -140,7 +143,7 @@ function codexPreference(overrides: Partial<StoredPreferenceRow> = {}): StoredPr
 }
 
 describe("retireModelCredential", () => {
-  it("deletes the credential, its space preferences, and the orphaned secret", async () => {
+  it("keeps the credential, its space preferences, and its secret on a dead refresh", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [
@@ -156,15 +159,15 @@ describe("retireModelCredential", () => {
         userId: "user-1",
         credentialId: "cred-codex",
         secretId: "secret-codex",
+        replacementCiphertext: RECONNECT_MARKER,
       }),
     ).resolves.toBe(true);
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
-    expect(state.secrets).toEqual([]);
-    expect(tx.userModelCredential.delete).toHaveBeenCalledWith({
-      where: { id: "cred-codex" },
-    });
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(2);
+    expect(state.secrets).toEqual([{ id: "secret-codex", ciphertext: RECONNECT_MARKER }]);
+    expect(tx.userModelCredential.delete).not.toHaveBeenCalled();
+    expect(tx.secret.deleteMany).not.toHaveBeenCalled();
   });
 
   it("keeps a secret still referenced by another credential", async () => {
@@ -179,10 +182,11 @@ describe("retireModelCredential", () => {
       userId: "user-1",
       credentialId: "cred-codex",
       secretId: "secret-codex",
+      replacementCiphertext: RECONNECT_MARKER,
     });
 
-    expect(state.credentials).toEqual([codexCredential({ id: "cred-voice-shared" })]);
-    expect(state.secrets).toEqual([{ id: "secret-codex" }]);
+    expect(state.credentials).toHaveLength(2);
+    expect(state.secrets).toEqual([{ id: "secret-codex", ciphertext: RECONNECT_MARKER }]);
   });
 
   it("skips deletion when the stored secret no longer matches the failed state", async () => {
@@ -201,6 +205,7 @@ describe("retireModelCredential", () => {
         credentialId: "cred-codex",
         secretId: "secret-codex",
         matchesFailedSecret: (row) => row.ciphertext === "cipher-failed",
+        replacementCiphertext: RECONNECT_MARKER,
       }),
     ).resolves.toBe(false);
 
@@ -209,12 +214,13 @@ describe("retireModelCredential", () => {
       select: { id: true, ciphertext: true },
     });
     expect(tx.userModelCredential.delete).not.toHaveBeenCalled();
+    expect(tx.secret.update).not.toHaveBeenCalled();
     expect(state.credentials).toHaveLength(1);
     expect(state.preferences).toHaveLength(1);
-    expect(state.secrets).toHaveLength(1);
+    expect(state.secrets).toEqual([{ id: "secret-codex", ciphertext: "cipher-rotated" }]);
   });
 
-  it("deletes the credential when the stored secret still matches the failed state", async () => {
+  it("reports retirement but keeps the credential when the stored secret matches the failed state", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [codexPreference()],
@@ -227,14 +233,15 @@ describe("retireModelCredential", () => {
       credentialId: "cred-codex",
       secretId: "secret-codex",
       matchesFailedSecret: (row) => row.ciphertext === "cipher-failed",
+      replacementCiphertext: RECONNECT_MARKER,
     });
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
-    expect(state.secrets).toEqual([]);
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(1);
+    expect(state.secrets).toEqual([{ id: "secret-codex", ciphertext: RECONNECT_MARKER }]);
   });
 
-  it("still deletes when the secret row is already gone", async () => {
+  it("keeps the credential even when the secret row is already gone", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [codexPreference()],
@@ -247,10 +254,12 @@ describe("retireModelCredential", () => {
       credentialId: "cred-codex",
       secretId: "secret-codex",
       matchesFailedSecret: () => false,
+      replacementCiphertext: RECONNECT_MARKER,
     });
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(1);
+    expect(state.secrets).toEqual([]);
   });
 
   it("leaves a credential alone when it already moved to a new secret", async () => {
@@ -265,12 +274,14 @@ describe("retireModelCredential", () => {
       userId: "user-1",
       credentialId: "cred-codex",
       secretId: "secret-codex",
+      replacementCiphertext: RECONNECT_MARKER,
     });
 
     expect(state.credentials).toHaveLength(1);
     expect(state.preferences).toHaveLength(1);
-    expect(state.secrets).toHaveLength(1);
+    expect(state.secrets).toEqual([{ id: "secret-reconnected" }]);
     expect(tx.userModelCredential.delete).not.toHaveBeenCalled();
+    expect(tx.secret.update).not.toHaveBeenCalled();
   });
 
   it("does not delete another user's credential", async () => {
@@ -279,17 +290,19 @@ describe("retireModelCredential", () => {
       preferences: [codexPreference({ userId: "user-2" })],
       secrets: [{ id: "secret-codex" }],
     };
-    const { prisma } = retirePrisma(state);
+    const { prisma, tx } = retirePrisma(state);
 
     await retireModelCredential(prisma, {
       userId: "user-1",
       credentialId: "cred-codex",
       secretId: "secret-codex",
+      replacementCiphertext: RECONNECT_MARKER,
     });
 
     expect(state.credentials).toHaveLength(1);
     expect(state.preferences).toHaveLength(1);
-    expect(state.secrets).toHaveLength(1);
+    expect(state.secrets).toEqual([{ id: "secret-codex" }]);
+    expect(tx.secret.update).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
@@ -324,6 +337,7 @@ describe("retireModelCredential", () => {
         userId: "user-1",
         credentialId: "cred-codex",
         secretId: "secret-codex",
+        replacementCiphertext: RECONNECT_MARKER,
         matchesFailedSecret: async () => {
           expect(active).toBe(false);
           clock += 15000;
@@ -332,7 +346,8 @@ describe("retireModelCredential", () => {
         },
       });
       expect(retired).toBe(!rotate);
-      expect(state.credentials).toHaveLength(rotate ? 1 : 0);
+      expect(state.credentials).toHaveLength(1);
+      expect(state.secrets[0]?.ciphertext).toBe(rotate ? "fresh" : RECONNECT_MARKER);
     },
   );
 

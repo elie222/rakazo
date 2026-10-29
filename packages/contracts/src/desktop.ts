@@ -36,21 +36,40 @@ export interface RakazoDesktopOAuthCallback {
   state?: string;
 }
 
+export interface RakazoDesktopDevice {
+  /** Null until paired. */
+  deviceId: string | null;
+  name: string;
+  allowed: boolean;
+}
+
 export interface RakazoDesktop {
   /** Optional for compatibility with older desktop releases. */
   badge?: {
     set: (count: number) => Promise<boolean>;
   };
   computer?: {
+    /** Native main persists host choice through its local capability, never a user session. */
+    managesHostChoice?: boolean;
     requestAccess: () => Promise<boolean>;
     revokeAccess: () => Promise<void>;
     onConfigure: (listener: () => void) => () => void;
   };
-  /** Only the isolated local settings window is authorized to call this bridge. */
-  localSettings?: {
-    request: (pathname: string, body: string) => Promise<{ status: number; body: string }>;
+  /** Optional for compatibility with older desktop releases. */
+  device?: {
+    /** Null when the app shows its own local server. */
+    state: () => Promise<RakazoDesktopDevice | null>;
+    /** Turning it on asks with a native prompt the page cannot answer. */
+    setAllowed: (allowed: boolean) => Promise<RakazoDesktopDevice | null>;
+  };
+  /** Optional for compatibility with older desktop releases. */
+  passkeys?: {
+    /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
+    rpIds: () => Promise<string[]>;
   };
   platform: string;
+  /** Absent on older frameless releases, which still need in-app controls. */
+  nativeWindowFrame?: boolean;
   window: {
     close: () => Promise<void>;
     minimize: () => Promise<void>;
@@ -82,6 +101,8 @@ export type DesktopInstanceMode = "new" | "existing";
 export interface DesktopSetup {
   mode: DesktopInstanceMode;
   serverUrl: string;
+  /** Sent with every request to an existing server, such as an access proxy's credentials. */
+  headers?: Record<string, string>;
 }
 
 export interface DesktopSetupState {
@@ -146,7 +167,7 @@ export interface RakazoSetup {
   /** Used only to reserve space for native window controls in the local setup UI. */
   platform: string;
   state: () => Promise<DesktopSetupState>;
-  test: (url: string) => Promise<DesktopReachability>;
+  test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
   /** Opens one of the Docker install pages in the system browser. */

@@ -4,6 +4,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { createRepos } from "./repos.js";
+import { runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -19,7 +20,7 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
   const actor = () => ({
     userId: owner.userId,
     spaceId: owner.spaceId,
-    email: "fleet@example.com",
+    email: "bot-manager@example.com",
     isDeploymentOwner: false,
   });
   const botInput = (name: string, parentBotId?: string) => ({
@@ -38,57 +39,80 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
       await db.prisma.$disconnect();
       await db.pool.end();
     };
-    owner = await provisionMessagingIdentity(
-      prisma,
-      { provider, address },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
+    owner = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider, address },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
     );
   });
 
   afterAll(async () => {
     if (owner) {
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address } });
-      await prisma.organization.deleteMany({ where: { id: owner.spaceId } });
-      await prisma.user.deleteMany({ where: { id: owner.userId } });
+      await runAsSystem("test fixture cleanup", async () => {
+        await prisma.messagingIdentity.deleteMany({ where: { provider, address } });
+        await prisma.organization.deleteMany({ where: { id: owner.spaceId } });
+        await prisma.user.deleteMany({ where: { id: owner.userId } });
+      });
     }
     await close?.();
   });
 
-  it("createBot returns fleetManagement false", async () => {
-    const bot = await createRepos(prisma).createBot(actor(), botInput("Plain"));
-    expect(bot.fleetManagement).toBe(false);
-  });
-  it.each(["modelProvider", "modelId", "thinkingLevel"] as const)(
-    "preserves an intervening owner edit to %s",
-    async (field) => {
+  it.each([undefined, "parent"])("createBot enables management by default (parent: %s)", (parent) =>
+    runAsTenant(owner, async () => {
       const bot = await createRepos(prisma).createBot(
         actor(),
-        botInput("Model child", owner.botId),
+        botInput("Plain", parent ? owner.botId : undefined),
       );
-      const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
-      const baseline = { modelProvider: null, modelId: null, thinkingLevel: null };
-      await prisma.bot.update({
-        where: { id: bot.id },
-        data: { [field]: field === "thinkingLevel" ? "high" : "owner-choice" },
+      expect(bot.fleetManagement).toBe(true);
+    }),
+  );
+  it.each([false, true])("preserves explicit management choice %s", (fleetManagement) =>
+    runAsTenant(owner, async () => {
+      const bot = await createRepos(prisma).createBot(actor(), {
+        ...botInput("Explicit"),
+        fleetManagement,
       });
-      await expect(
-        commitBotUpdate({
-          prisma,
-          notify: async () => undefined,
-          spaceId: owner.spaceId,
-          threadId: thread.id,
-          botId: bot.id,
-          expectedModel: baseline,
-          data: { modelProvider: "scripted", modelId: "scripted", thinkingLevel: null },
-          emitBotUpdated: true,
-        }),
-      ).rejects.toMatchObject({ code: "P2025" });
-      expect((await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } }))[field]).toBe(
-        field === "thinkingLevel" ? "high" : "owner-choice",
+      expect(bot.fleetManagement).toBe(fleetManagement);
+      expect((await createRepos(prisma).getBot(actor(), bot.id)).fleetManagement).toBe(
+        fleetManagement,
       );
-      expect(
-        await prisma.event.count({ where: { threadId: thread.id, type: "bot.updated" } }),
-      ).toBe(0);
-    },
+    }),
+  );
+
+  it.each(["modelProvider", "modelId", "thinkingLevel"] as const)(
+    "preserves an intervening owner edit to %s",
+    (field) =>
+      runAsTenant(owner, async () => {
+        const bot = await createRepos(prisma).createBot(
+          actor(),
+          botInput("Model child", owner.botId),
+        );
+        const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+        const baseline = { modelProvider: null, modelId: null, thinkingLevel: null };
+        await prisma.bot.update({
+          where: { id: bot.id },
+          data: { [field]: field === "thinkingLevel" ? "high" : "owner-choice" },
+        });
+        await expect(
+          commitBotUpdate({
+            prisma,
+            notify: async () => undefined,
+            spaceId: owner.spaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            expectedModel: baseline,
+            data: { modelProvider: "scripted", modelId: "scripted", thinkingLevel: null },
+            emitBotUpdated: true,
+          }),
+        ).rejects.toMatchObject({ code: "P2025" });
+        expect((await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } }))[field]).toBe(
+          field === "thinkingLevel" ? "high" : "owner-choice",
+        );
+        expect(
+          await prisma.event.count({ where: { threadId: thread.id, type: "bot.updated" } }),
+        ).toBe(0);
+      }),
   );
 });

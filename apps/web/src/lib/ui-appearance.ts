@@ -1,10 +1,9 @@
+import type { AppearancePreference, ResolvedAppearance } from "@rakazo/ui-tokens";
 import {
-  type AppearancePreference,
   persistAppearancePreference,
-  type ResolvedAppearance,
   resolveAppearance,
   resolveAppearancePreference,
-  tokensForAppearance,
+  webTokensForAppearance,
 } from "@rakazo/ui-tokens";
 
 export type { AppearancePreference, ResolvedAppearance };
@@ -29,7 +28,7 @@ export function applyResolvedAppearance(
   if (typeof document === "undefined") return;
   const meta = document.querySelector(THEME_COLOR_META);
   if (meta) {
-    meta.setAttribute("content", tokensForAppearance(appearance).background);
+    meta.setAttribute("content", webTokensForAppearance(appearance).background);
   }
 }
 

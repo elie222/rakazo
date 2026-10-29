@@ -1,4 +1,3 @@
-/** Catalog id for the Cloudflare AI Gateway provider shipped by the model runtime. */
 export const CLOUDFLARE_AI_GATEWAY_PROVIDER_ID = "cloudflare-ai-gateway";
 
 /**
@@ -28,4 +27,28 @@ export function cloudflareGatewayRouting(input: {
   const gatewayId = cloudflareGatewayRoutingId(input.gatewayId);
   if (!accountId || !gatewayId) return undefined;
   return { accountId, gatewayId };
+}
+
+/** Workers AI routes directly to an account rather than through an AI Gateway. */
+export const CLOUDFLARE_WORKERS_AI_PROVIDER_ID = "cloudflare-workers-ai";
+
+export function isCloudflareModelProvider(provider: string): boolean {
+  return isCloudflareAiGatewayProvider(provider) || provider === CLOUDFLARE_WORKERS_AI_PROVIDER_ID;
+}
+
+export function cloudflareModelConfigMessage(provider: string): string {
+  return provider === CLOUDFLARE_WORKERS_AI_PROVIDER_ID
+    ? "Cloudflare Workers AI needs an account ID."
+    : CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE;
+}
+
+export function cloudflareModelRouting(input: {
+  provider: string;
+  accountId?: string | null;
+  gatewayId?: string | null;
+}): { accountId: string; gatewayId?: string } | undefined {
+  if (isCloudflareAiGatewayProvider(input.provider)) return cloudflareGatewayRouting(input);
+  if (input.provider !== CLOUDFLARE_WORKERS_AI_PROVIDER_ID) return undefined;
+  const accountId = cloudflareGatewayRoutingId(input.accountId);
+  return accountId ? { accountId } : undefined;
 }

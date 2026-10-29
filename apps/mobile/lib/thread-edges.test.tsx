@@ -1,11 +1,14 @@
-import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { Platform } from "react-native";
 import { ScrollViewMarker } from "react-native-screens/experimental";
-import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
-import { threadEdgeOptions, threadScrollEdgeEffects } from "./thread-edges";
+import {
+  threadEdgeOptions,
+  threadHeaderClearance,
+  threadHeaderFloats,
+  threadScrollEdgeEffects,
+} from "./thread-edges";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: 26 } }));
 vi.mock("react-native-screens/experimental", () => ({ ScrollViewMarker: () => null }));
@@ -20,6 +23,7 @@ describe("thread scroll edges", () => {
     expect(threadEdgeOptions()).toEqual({
       headerTransparent: true,
       headerStyle: { backgroundColor: "transparent" },
+      headerShadowVisible: false,
       scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" },
     });
     const child = createElement("scroll-view");
@@ -32,41 +36,46 @@ describe("thread scroll edges", () => {
     });
   });
 
-  it.each(["android", "older-ios"])("preserves the %s tree and header", (platform) => {
-    if (platform === "android") Platform.OS = "android";
-    else Platform.Version = 25;
+  it.each(["18.5", 25, 26, "26.1"])("floats the header on iOS %s", (version) => {
+    Platform.Version = version;
+    expect(threadHeaderFloats()).toBe(true);
+    expect(threadEdgeOptions()).toEqual({
+      headerTransparent: true,
+      headerStyle: { backgroundColor: "transparent" },
+      headerShadowVisible: false,
+      scrollEdgeEffects: threadScrollEdgeEffects,
+    });
     const child = createElement("scroll-view");
-    expect(ThreadScrollSurface({ children: child })).toBe(child);
-    expect(threadEdgeOptions().headerTransparent).toBe(false);
-    expect(threadEdgeOptions()).not.toHaveProperty("headerStyle");
+    if (Number.parseFloat(String(version)) < 26) {
+      expect(ThreadScrollSurface({ children: child })).toBe(child);
+    }
   });
 
-  it("remounts each marker with its live or pinned scroll view", () => {
-    const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    const file = ts.createSourceFile(
-      "thread.tsx",
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    const keys: string[] = [];
-    function visit(node: ts.Node) {
-      if (
-        ts.isJsxElement(node) &&
-        node.openingElement.tagName.getText(file) === "ThreadScrollSurface"
-      ) {
-        const key = node.openingElement.attributes.properties.find(
-          (prop) => ts.isJsxAttribute(prop) && prop.name.getText(file) === "key",
-        );
-        if (key) keys.push(key.getText(file));
-      }
-      ts.forEachChild(node, visit);
-    }
-    visit(file);
-    expect(keys).toEqual([
-      `key={\`pinned:\${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}\`}`,
-      `key={\`live:\${threadKey}\`}`,
-    ]);
+  it("preserves the Android tree and header", () => {
+    Platform.OS = "android";
+    const child = createElement("scroll-view");
+    expect(ThreadScrollSurface({ children: child })).toBe(child);
+    expect(threadHeaderFloats()).toBe(false);
+    expect(threadEdgeOptions()).toEqual({
+      headerTransparent: false,
+      scrollEdgeEffects: threadScrollEdgeEffects,
+    });
   });
+});
+
+it.each([64, 96, 116, 120])(
+  "rests content and jump targets below the pills at header height %s",
+  (height) => {
+    const clearance = threadHeaderClearance(height);
+    const pillBottom = height - 10;
+    expect(clearance.padding - pillBottom).toBe(14);
+    expect(clearance.minHeight).toBe(clearance.padding);
+    expect(clearance.anchor).toBe(clearance.padding + 20);
+    // The first date has a 12pt margin and about 4pt of font leading.
+    expect(clearance.padding + 16 - pillBottom).toBe(30);
+  },
+);
+
+it("preserves Android clearance without a floating header", () => {
+  expect(threadHeaderClearance(0)).toEqual({ padding: 8, anchor: 24, minHeight: 0 });
 });

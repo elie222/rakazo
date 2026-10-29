@@ -7,6 +7,24 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("defaults the attachment count to four and accepts configured bounds", () => {
+    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
+    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);
+    for (const count of [1, 8, 100]) {
+      expect(
+        loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: ` ${count} ` }).maxAttachmentsPerMessage,
+      ).toBe(count);
+    }
+  });
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "1e2", "0x10", "101", "9007199254740991"])(
+    "rejects invalid attachment count %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: value })).toThrow(
+        "MAX_ATTACHMENTS_PER_MESSAGE",
+      );
+    },
+  );
+
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
     for (const value of ["false", "1", ""]) {
@@ -41,6 +59,25 @@ describe("loadEnv", () => {
     for (const value of ["false", "1", ""])
       expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
     expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+  });
+  it("loads operator menu links and refuses to start on a bad value", () => {
+    expect(loadEnv(base).navLinks).toEqual([]);
+    expect(
+      loadEnv({
+        ...base,
+        RAKAZO_NAV_LINKS: '[{"id":"clients","label":"Clients","path":"/ext/clients/"}]',
+      }).navLinks,
+    ).toEqual([{ id: "clients", label: "Clients", path: "/ext/clients/", trusted: false }]);
+    expect(() =>
+      loadEnv({ ...base, RAKAZO_NAV_LINKS: '[{"id":"x","label":"X","path":"/api/me"}]' }),
+    ).toThrow("RAKAZO_NAV_LINKS");
+  });
+  it("keeps Crisp chat off unless a valid website ID is set", () => {
+    expect(loadEnv(base).crispWebsiteId).toBeNull();
+    expect(
+      loadEnv({ ...base, CRISP_WEBSITE_ID: "c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec" }).crispWebsiteId,
+    ).toBe("c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec");
+    expect(() => loadEnv({ ...base, CRISP_WEBSITE_ID: "nope" })).toThrow("CRISP_WEBSITE_ID");
   });
   it("defaults the product path to Pi, Docker, and Graphile Worker", () => {
     const env = loadEnv(base);
@@ -121,6 +158,24 @@ describe("loadEnv", () => {
     });
   });
 
+  it("loads Novita credentials and the shared sandbox template", () => {
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "novita",
+        NOVITA_API_KEY: "test-novita-key",
+        SANDBOX_TEMPLATE: "custom-desktop",
+      }),
+    ).toMatchObject({
+      sandboxProvider: "novita",
+      novitaApiKey: "test-novita-key",
+      sandboxTemplate: "custom-desktop",
+    });
+    expect(
+      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
+    ).toBe("none");
+  });
+
   it("loads provider-specific Boat configuration", () => {
     const env = loadEnv({
       ...base,
@@ -174,6 +229,25 @@ describe("loadEnv", () => {
     expect(env.apiHost).toBe("0.0.0.0");
   });
 
+  it("encrypts content on servers by default and fails startup on an invalid switch", () => {
+    const production = {
+      DATABASE_URL: base.DATABASE_URL,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+      ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "e2b",
+    };
+    expect(loadEnv(production).contentEncryption).toBe(true);
+    expect(loadEnv({ ...production, CONTENT_ENCRYPTION: "off" }).contentEncryption).toBe(false);
+    expect(
+      loadEnv({ DATABASE_URL: base.DATABASE_URL, NODE_ENV: "development" }).contentEncryption,
+    ).toBe(false);
+    expect(() => loadEnv({ ...production, CONTENT_ENCRYPTION: "maybe" })).toThrow(
+      /CONTENT_ENCRYPTION must be "on" or "off"/,
+    );
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     const env = loadEnv({
       DATABASE_URL: base.DATABASE_URL,
@@ -207,16 +281,14 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 
-  it("loads optional updater sidecar wiring without requiring the token at boot", () => {
-    expect(loadEnv(base).updaterUrl).toBeUndefined();
-    expect(loadEnv(base).updaterToken).toBeUndefined();
-    const env = loadEnv({
-      ...base,
-      RAKAZO_UPDATER_URL: " http://updater:7092 ",
-      RAKAZO_UPDATER_TOKEN: " fake-review-updater-token-000000000000 ",
-    });
-    expect(env.updaterUrl).toBe("http://updater:7092");
-    expect(env.updaterToken).toBe("fake-review-updater-token-000000000000");
+  it("loads per-client minimum builds and refuses a malformed one", () => {
+    expect(loadEnv(base).minimumClientBuilds).toEqual({});
+    expect(
+      loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "web=20261022093015" }).minimumClientBuilds,
+    ).toEqual({ web: "20261022093015" });
+    expect(() => loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "latest" })).toThrow(
+      /RAKAZO_MIN_CLIENT_BUILD/,
+    );
   });
 
   it("loads an optional Expo access token", () => {
@@ -251,6 +323,17 @@ describe("loadEnv", () => {
       }).emailEmulator,
     ).toBe(false);
     expect(loadEnv({ ...base, NODE_ENV: "development" }).nodeEnv).toBe("development");
+  });
+
+  it("loads generic email API connection settings", () => {
+    expect(
+      loadEnv({ ...base, EMAIL_PROVIDER: " resend ", EMAIL_API_KEY: " fake-key " }),
+    ).toMatchObject({
+      emailProvider: "resend",
+      emailApiKey: "fake-key",
+    });
+    expect(loadEnv(base).emailProvider).toBeUndefined();
+    expect(loadEnv(base).emailApiKey).toBeUndefined();
   });
 
   it("defaults the remote MCP private-endpoint escape to off", () => {

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { SettingsScopeSchema } from "./settings-scope.js";
 
 export const AI_DISCLOSURE_VERSION = "2026-09-14";
 export const AI_PRIVACY_URL = "https://rakazo.com/privacy/";
@@ -18,6 +19,8 @@ export const AiConsentQuerySchema = z
     groupId: z.string().optional(),
     routineId: z.string().optional(),
     uses: z.array(AiDataUseSchema).optional(),
+    /** Which copy of the member's settings names the recipients; omitted means the one that applies. */
+    settingsScope: SettingsScopeSchema.optional(),
   })
   .default({});
 export type AiConsentQuery = z.infer<typeof AiConsentQuerySchema>;

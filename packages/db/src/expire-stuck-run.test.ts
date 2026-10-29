@@ -10,6 +10,7 @@ function tx(options?: {
   cancelled?: number;
   sibling?: boolean;
   steering?: boolean;
+  openCardEffectId?: string;
   status?: "queued" | "waiting_input" | "waiting_takeover";
 }) {
   let reads = 0;
@@ -17,6 +18,10 @@ function tx(options?: {
   const events: Array<Record<string, unknown>> = [];
   const client = {
     $queryRaw: vi.fn(async () => []),
+    externalEffect: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
     run: {
       updateMany: vi.fn(async () => ({ count: options?.cancelled ?? 1 })),
       findUnique: vi.fn(async () => {
@@ -32,6 +37,7 @@ function tx(options?: {
         botId: "bot-1",
         taskId: "task-1",
       })),
+      findMany: vi.fn(async () => [{ id: "run-1", userId: "user-1", spaceId: "space-1" }]),
       findFirst: vi.fn(async (args: { where?: { taskId?: string } }) =>
         args.where?.taskId && options?.sibling ? { id: "run-sibling" } : null,
       ),
@@ -45,6 +51,26 @@ function tx(options?: {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 9 })) },
     message: {
       findFirst: vi.fn(async () => null),
+      findMany: vi.fn(async () =>
+        options?.openCardEffectId
+          ? [
+              {
+                blocks: [
+                  {
+                    kind: "ask",
+                    approvalEffectId: options.openCardEffectId,
+                    text: "Review before sending",
+                    status: "pending",
+                    actions: [
+                      { id: "allow", label: "Allow once" },
+                      { id: "deny", label: "Deny" },
+                    ],
+                  },
+                ],
+              },
+            ]
+          : [],
+      ),
       create: vi.fn(async (args: { data: Record<string, unknown> }) => {
         const row = { id: "message-expired", ...args.data };
         messages.push(row);
@@ -60,6 +86,7 @@ function tx(options?: {
     },
     computerExecutionLease: { updateMany: vi.fn(async () => ({ count: 1 })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     steeringMessage: {
       updateMany: vi.fn(async () => ({ count: 1 })),
       findMany: vi.fn(async () =>
@@ -144,6 +171,29 @@ describe("expireStuckRun", () => {
       where: { id: "task-1" },
       data: { status: "cancelled" },
     });
+    expect(client.secret.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "space-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
+    });
+  });
+
+  it("denies the effect behind an unanswered approval card", async () => {
+    const client = tx({ status: "waiting_input", openCardEffectId: "effect-1" });
+    await expireStuckRun(client as unknown as Prisma.TransactionClient, {
+      runId: "run-1",
+      threadId: "thread-1",
+      status: "waiting_input",
+      updatedAt,
+      now,
+    });
+    expect(client.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["effect-1"] }, runId: { in: ["run-1"] }, status: "intended" },
+      data: { status: "denied" },
+    });
   });
 
   it("does nothing when the run already moved on", async () => {
@@ -157,6 +207,7 @@ describe("expireStuckRun", () => {
     });
     expect(result).toBeNull();
     expect(client.message.create).not.toHaveBeenCalled();
+    expect(client.secret.deleteMany).not.toHaveBeenCalled();
   });
 
   it("leaves the task running when a sibling attempt is still active", async () => {

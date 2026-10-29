@@ -4,7 +4,11 @@ import vm from "node:vm";
 import type { RakazoDesktop, RakazoSetup } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: unknown } = {}) {
+function runPreload(
+  file: string,
+  ipc: { invoke?: unknown; on?: unknown; off?: unknown } = {},
+  platform = "linux",
+) {
   const invoke =
     (ipc.invoke as ReturnType<typeof vi.fn>) ?? vi.fn(async (channel: string) => ({ channel }));
   const on = (ipc.on as ReturnType<typeof vi.fn>) ?? vi.fn();
@@ -13,7 +17,7 @@ function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: u
   const source = readFileSync(path.join(import.meta.dirname, file), "utf8");
 
   vm.runInNewContext(source, {
-    process: { platform: "linux" },
+    process: { platform },
     require(moduleName: string) {
       if (moduleName !== "electron") throw new Error(`Unexpected preload import: ${moduleName}`);
       return { contextBridge: { exposeInMainWorld }, ipcRenderer: { invoke, on, off } };
@@ -24,6 +28,15 @@ function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: u
 }
 
 describe("desktop preload bridge", () => {
+  it.each(["win32", "darwin", "linux"])(
+    "advertises native framing only on Windows (%s)",
+    (platform) => {
+      const { exposeInMainWorld } = runPreload("preload.cjs", {}, platform);
+      const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+      expect(bridge.nativeWindowFrame).toBe(platform === "win32");
+    },
+  );
+
   it("exposes the scoped desktop bridges", async () => {
     const { invoke, exposeInMainWorld } = runPreload("preload.cjs");
 
@@ -34,8 +47,10 @@ describe("desktop preload bridge", () => {
     expect(Object.keys(bridge).sort()).toEqual([
       "badge",
       "computer",
-      "localSettings",
+      "device",
+      "nativeWindowFrame",
       "oauth",
+      "passkeys",
       "platform",
       "update",
       "window",
@@ -52,8 +67,12 @@ describe("desktop preload bridge", () => {
     await bridge.badge!.set(7);
     expect(invoke).toHaveBeenCalledWith("desktop.badge.set", 7);
 
+    await bridge.device?.state();
+    await bridge.device?.setAllowed(true);
+    expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
     await bridge.oauth.open?.("https://provider.example.com/authorize");
     await bridge.oauth.cancel?.("https://provider.example.com/authorize");
+    await bridge.passkeys?.rpIds();
     await bridge.window.close();
     await bridge.window.minimize();
     await bridge.window.toggleMaximize();
@@ -64,8 +83,11 @@ describe("desktop preload bridge", () => {
     await bridge.update.install();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.badge.set",
+      "desktop.device.state",
+      "desktop.device.setAllowed",
       "desktop.oauth.open",
       "desktop.oauth.cancel",
+      "desktop.passkeys.rpIds",
       "desktop.window.close",
       "desktop.window.minimize",
       "desktop.window.toggleMaximize",

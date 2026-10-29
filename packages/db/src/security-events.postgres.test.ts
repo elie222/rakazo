@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
+import { asSystem } from "./row-security.js";
 import { pruneSecurityEvents } from "./security-events.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -14,9 +15,12 @@ describePostgres("security events (PostgreSQL)", () => {
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
-    prisma = db.prisma;
+    // Pruning runs in the reconciler, as system; so do the fixtures.
+    prisma = asSystem(db.prisma);
     close = async () => {
-      await prisma.securityEvent.deleteMany({ where: { userId: { startsWith: suffix } } });
+      await prisma.securityEvent.deleteMany({
+        where: { userId: { startsWith: suffix } },
+      });
       await db.prisma.$disconnect();
       await db.pool.end();
     };
@@ -29,8 +33,12 @@ describePostgres("security events (PostgreSQL)", () => {
       data: { type: "auth.sign_in", userId: `${suffix}-a`, ip: "203.0.113.5" },
     });
     await expect(
-      prisma.securityEvent.update({ where: { id: row.id }, data: { ip: "192.0.2.1" } }),
-    ).rejects.toThrow(/append-only/);
+      prisma.securityEvent.update({
+        where: { id: row.id },
+        data: { ip: "192.0.2.1" },
+      }),
+      // The runtime login has no UPDATE grant; an owner connection hits the trigger.
+    ).rejects.toThrow(/permission denied|append-only/);
   });
 
   it("prunes past the retention window and keeps recent events", async () => {

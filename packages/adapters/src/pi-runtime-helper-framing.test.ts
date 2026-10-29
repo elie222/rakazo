@@ -67,8 +67,8 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { isSubagentToolExecution } from "./executor.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { isSubagentToolExecution } from "./run-effects.js";
 
 describe("helpers know who they are talking to", () => {
   beforeEach(async () => {
@@ -117,12 +117,12 @@ describe("helpers know who they are talking to", () => {
     );
   });
 
-  it("never lets the helper inherit any fleet tool", () => {
+  it("never lets the helper inherit any bot management tool", () => {
     expect(seen.helperToolNames.length).toBeGreaterThan(0);
     for (const name of FLEET_TOOL_NAMES) expect(seen.helperToolNames).not.toContain(name);
   });
 
-  it("marks helper calls so the executor refuses update_bot's fleet form from them", () => {
+  it("marks helper calls so the executor refuses update_bot's bot management form from them", () => {
     expect(isSubagentToolExecution(seen.toolExecutionIds.get("update_bot")!)).toBe(true);
     const mainCall = seen.toolExecutionIds.get("list_fleet");
     expect(mainCall).toBeDefined();

@@ -9,6 +9,7 @@ import {
   resolveMobileAppearance,
   subscribeAppearance,
 } from "./appearance";
+import { translucentColor } from "./color";
 
 function systemColor(iosName: string, fallback: string): ColorValue {
   // PlatformColor follows the OS scheme, not an explicit app Light/Dark choice.
@@ -51,6 +52,10 @@ export const native = {
   },
   get tertiaryLabel() {
     return mobileTokens().faintForeground;
+  },
+  /** iOS's own tertiary label, which follows Increase Contrast; else the label grey at 30%. */
+  get systemTertiaryLabel() {
+    return systemColor("tertiaryLabel", translucentColor(mobileTokens().mutedForeground, 0.3));
   },
   // Grouped colours always come from the tokens: settings sit on the page colour with
   // grey cells in both themes, and in dark iOS lifts the system ones inside sheets and with

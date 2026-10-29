@@ -1,10 +1,20 @@
 import { CLIENT_IP_HEADER } from "@rakazo/auth";
-import { getLogContext, runWithLogContext } from "@rakazo/logging";
+import { recordSecurityEvent } from "@rakazo/db";
+import {
+  createLogger,
+  createTestSink,
+  getLogContext,
+  getLogger,
+  installLogger,
+  runWithLogContext,
+} from "@rakazo/logging";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
   clientIpMiddleware,
   createClientIpResolver,
+  defaultTrustedProxies,
+  LOCAL_NETWORKS,
   requestClientIp,
   withClientIp,
 } from "./client-ip.js";
@@ -84,6 +94,64 @@ describe("createClientIpResolver", () => {
     expect(await resolve({ peer: "172.20.0.9", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
   });
 
+  it("refreshes hostnames that still resolve when one lookup fails", async () => {
+    let now = 0;
+    const lookup = vi.fn(async (hostname: string) => {
+      if (hostname === "edge" && now >= 31_000) throw new Error("EAI_AGAIN");
+      if (hostname === "caddy") return now >= 31_000 ? ["172.20.0.4"] : ["172.20.0.9"];
+      return ["172.20.0.8"];
+    });
+    const resolve = createClientIpResolver(
+      { trustedProxies: ["caddy", "edge"], header },
+      { resolve: lookup, now: () => now },
+    );
+
+    expect(await resolve({ peer: "172.20.0.9", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(await resolve({ peer: "172.20.0.8", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(lookup).toHaveBeenCalledTimes(2);
+
+    now = 31_000;
+    expect(await resolve({ peer: "172.20.0.4", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(await resolve({ peer: "172.20.0.8", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(lookup).toHaveBeenCalledTimes(4);
+
+    now = 50_000;
+    expect(await resolve({ peer: "172.20.0.4", forwarded: "198.51.100.7" })).toBe("198.51.100.7");
+    expect(lookup).toHaveBeenCalledTimes(4);
+  });
+
+  it("trusts the stack's own networks for local-networks, so a host proxy is believed", async () => {
+    // The API's view inside Compose: loopback, the app network and the internal data network.
+    const interfaces = () => ({
+      lo: [{ cidr: "127.0.0.1/8" }, { cidr: "::1/128" }],
+      eth0: [{ cidr: "192.168.172.3/24" }],
+      eth1: [{ cidr: "172.31.0.4/24" }, { cidr: "fe80::1%eth1/64" }],
+    });
+    const resolve = createClientIpResolver(
+      { trustedProxies: [LOCAL_NETWORKS], header },
+      { interfaces: interfaces as never },
+    );
+    // Host proxy -> network gateway -> web container -> API.
+    expect(await resolve({ peer: "192.168.172.4", forwarded: "203.0.113.5, 192.168.172.1" })).toBe(
+      "203.0.113.5",
+    );
+    // A bot computer reaching the web proxy from its own network cannot pick an address.
+    expect(await resolve({ peer: "192.168.172.4", forwarded: "198.51.100.1, 192.168.181.2" })).toBe(
+      "192.168.181.2",
+    );
+    expect(await resolve({ peer: "203.0.113.9", forwarded: "198.51.100.1" })).toBe("203.0.113.9");
+  });
+
+  it("defaults to local networks only in a container, so a host's LAN is never trusted", () => {
+    expect(defaultTrustedProxies(true)).toEqual([LOCAL_NETWORKS]);
+    expect(defaultTrustedProxies(false)).toEqual(["127.0.0.1", "::1"]);
+  });
+
+  it("trusts no proxy for none", async () => {
+    const resolve = createClientIpResolver({ trustedProxies: ["none"], header });
+    expect(await resolve({ peer: "127.0.0.1", forwarded: "203.0.113.5" })).toBe("127.0.0.1");
+  });
+
   it("returns nothing without a socket peer, whatever the header says", async () => {
     const resolve = createClientIpResolver({ trustedProxies: ["0.0.0.0/0"], header });
     expect(await resolve({ forwarded: "203.0.113.5" })).toBeUndefined();
@@ -103,7 +171,11 @@ describe("clientIpMiddleware", () => {
   function app(trustedProxies: string[]) {
     const hono = new Hono();
     hono.use("*", clientIpMiddleware(createClientIpResolver({ trustedProxies, header }), header));
-    hono.get("/", (c) => c.json({ ip: requestClientIp(c) ?? null, context: getLogContext() }));
+    hono.get("/", async (c) => {
+      getLogger().info("http.request.completed");
+      await recordSecurityEvent({ type: "auth.sign_out" });
+      return c.json({ ip: requestClientIp(c) ?? null, context: getLogContext() });
+    });
     return hono;
   }
   const fromSocket = (hono: Hono, remoteAddress: string, headers: Record<string, string>) =>
@@ -114,13 +186,21 @@ describe("clientIpMiddleware", () => {
       return (await response.json()) as { ip: string | null; context: Record<string, unknown> };
     });
 
-  it("stamps the resolved address and user agent on the log context", async () => {
-    const body = await fromSocket(app(["172.20.0.3"]), "172.20.0.3", {
+  it("keeps caller details on security events only", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const body = await fromSocket(app(["192.0.2.3"]), "192.0.2.3", {
       [header]: "203.0.113.5",
       "user-agent": "curl/8.5.0",
     });
     expect(body.ip).toBe("203.0.113.5");
-    expect(body.context).toMatchObject({
+    expect(body.context).not.toHaveProperty("client.ip");
+    expect(body.context).not.toHaveProperty("user_agent.original");
+    const requestLog = sink.events.find((event) => event.message === "http.request.completed");
+    expect(requestLog).toMatchObject({ message: "http.request.completed" });
+    expect(requestLog).not.toHaveProperty("client.ip");
+    expect(requestLog).not.toHaveProperty("user_agent.original");
+    expect(sink.events.find((event) => event.message === "security.event")).toMatchObject({
       "client.ip": "203.0.113.5",
       "user_agent.original": "curl/8.5.0",
     });

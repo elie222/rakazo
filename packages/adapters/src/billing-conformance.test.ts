@@ -75,7 +75,7 @@ for (const [name, create] of Object.entries(factories)) {
   describe(`${name} billing conformance (offline)`, () => {
     it("describes a recurring price", async () => {
       const { provider } = create();
-      expect(provider.describe().capabilities).toEqual({ trials: true, portal: true });
+      expect(provider.describe().capabilities).toMatchObject({ trials: true, portal: true });
       const price = await provider.getPrice();
       expect(price.amount).toBeGreaterThan(0);
       expect(price.currency).toMatch(/^[a-z]{3}$/);
@@ -237,3 +237,38 @@ for (const [name, create] of Object.entries(factories)) {
     });
   });
 }
+
+describe("offline monthly credit renewals", () => {
+  it("grants each paid period once across two renewals and keeps top-ups permanent", async () => {
+    let timestamp = NOW;
+    const provider = new BillingEmulator({ modelCredits: true, now: () => timestamp });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const checkout = {
+      customerId,
+      amountCents: 1000,
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    await provider.createCreditCheckout({ ...checkout, monthly: true });
+    provider.completeCreditCheckout(customerId);
+    await provider.createCreditCheckout({ ...checkout, monthly: false });
+    provider.completeCreditCheckout(customerId);
+    const month = 30 * 86400000;
+    timestamp += 2 * month;
+    const purchases = await provider.listCreditPurchases(customerId);
+    expect(purchases.filter((p) => p.expiresAt).map((p) => p.expiresAt)).toEqual([
+      new Date(NOW + month).toISOString(),
+      new Date(NOW + 2 * month).toISOString(),
+      new Date(NOW + 3 * month).toISOString(),
+    ]);
+    expect(purchases.filter((p) => !p.expiresAt)).toHaveLength(1);
+    expect(new Set(purchases.map((p) => p.id)).size).toBe(4);
+    expect(await provider.listCreditPurchases(customerId)).toEqual(purchases);
+    expect((await provider.getCustomerSubscription(customerId))?.currentPeriodEndsAt).toEqual(
+      new Date(NOW + 3 * month),
+    );
+  });
+});

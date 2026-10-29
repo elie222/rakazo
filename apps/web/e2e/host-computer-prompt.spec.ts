@@ -16,6 +16,7 @@ for (const platform of ["darwin", "linux"]) {
         value: {
           platform,
           computer: {
+            managesHostChoice: true,
             requestAccess: async () => false,
             revokeAccess: async () => {},
             onConfigure: (listener: () => void) => {
@@ -70,11 +71,10 @@ for (const platform of ["darwin", "linux"]) {
       ),
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Docker", exact: true })).toBeVisible();
-    await expect(dialog.getByText(/recommended/i)).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: `Use ${host}` })).toBeVisible();
     await captureScreenshot(page, testInfo, `host-computer-choice-${platform}`);
     let updates = 0;
-    await page.route(/\/rpc\/deployment\/update$/, async (route) => {
+    await page.route("**/__test/native-host", async (route) => {
       updates++;
       chosen = "this-mac";
       await route.fulfill({ json: { json: {} } });
@@ -83,7 +83,10 @@ for (const platform of ["darwin", "linux"]) {
     await expect(dialog).toBeVisible();
     expect(updates).toBe(0);
     await page.evaluate(() => {
-      window.rakazoDesktop!.computer!.requestAccess = async () => true;
+      window.rakazoDesktop!.computer!.requestAccess = async () => {
+        await fetch("/__test/native-host", { method: "POST" });
+        return true;
+      };
     });
     await dialog.getByRole("button", { name: `Use ${host}` }).click();
     await expect(dialog).toBeHidden();
@@ -103,6 +106,14 @@ test("a saved host choice closes when refreshing the profile fails", async ({ pa
     Object.defineProperty(window, "rakazoDesktop", {
       value: {
         platform: "darwin",
+        computer: {
+          managesHostChoice: true,
+          requestAccess: async () => false,
+          revokeAccess: async () => {
+            await fetch("/__test/native-host", { method: "POST" });
+          },
+          onConfigure: () => () => {},
+        },
         window: {
           close: async () => {},
           minimize: async () => {},
@@ -117,29 +128,12 @@ test("a saved host choice closes when refreshing the profile fails", async ({ pa
     });
   });
   let failMe = false;
-  await page.route(/\/rpc\/(me|bootstrap|deployment\/update)$/, async (route) => {
+  await page.route("**/__test/native-host", async (route) => {
+    failMe = true;
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.route(/\/rpc\/(me|bootstrap)$/, async (route) => {
     const url = route.request().url();
-    if (url.endsWith("/deployment/update")) {
-      failMe = true;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          json: {
-            ownerUserId: null,
-            signupsEnabled: true,
-            signupAllowlist: [],
-            hasDeploymentModelCredential: false,
-            defaultProvider: null,
-            defaultModel: null,
-            computerHost: "docker",
-            canChooseHostComputer: false,
-            sandboxProvider: "fake",
-          },
-        }),
-      });
-      return;
-    }
     if (url.endsWith("/me") && failMe) {
       await route.fulfill({
         status: 500,

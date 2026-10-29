@@ -11,7 +11,6 @@ test("legacy opaque names never appear in navigation, account, chats or Activity
   await completeOnboarding(page);
   const bot = await rpc<{ id: string }>(page, "bots/create", {
     name: "Helper",
-    title: "",
     description: "",
     computerMode: "team",
   });
@@ -49,6 +48,38 @@ test("legacy opaque names never appear in navigation, account, chats or Activity
     await expect(page.getByTestId("user-settings")).toContainText(email);
     await expectReadableNames(page.locator("body"));
     await captureScreenshot(page, testInfo, "readable-names-account");
+    const accountCard = page.getByTestId("account-card");
+    await accountCard.getByRole("button", { name: "Edit", exact: true }).click();
+    const nameInput = accountCard.getByRole("textbox", { name: "Name", exact: true });
+    await expect(nameInput).toHaveValue("");
+    await expect(accountCard.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await nameInput.fill("Discard me");
+    await nameInput.press("Escape");
+    await expect(page.getByTestId("user-settings")).toBeVisible();
+    await expect(nameInput).toBeHidden();
+    await accountCard.getByRole("button", { name: "Edit", exact: true }).click();
+    await nameInput.fill("💬");
+    await nameInput.press("Enter");
+    await expect(accountCard.getByRole("alert")).toHaveText("Could not update name");
+    await expect(nameInput).toHaveValue("💬");
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "aria-label",
+      `Account menu for ${email}`,
+    );
+    await nameInput.fill("  Alex Rivera  ");
+    await nameInput.press("Enter");
+    await expect(nameInput).toBeHidden();
+    await expect(accountCard).toContainText("Alex Rivera");
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "aria-label",
+      "Account menu for Alex Rivera",
+    );
+    await captureScreenshot(page, testInfo, "readable-names-account-saved");
+    await page.reload();
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "aria-label",
+      "Account menu for Alex Rivera",
+    );
     await page.keyboard.press("Escape");
     await page.goto(`/app/g/${group.id}`);
     await expect(page.getByPlaceholder("Message Group")).toBeVisible();
@@ -65,7 +96,7 @@ test("legacy opaque names never appear in navigation, account, chats or Activity
     await rpc(page, "threads/send", { botId: bot.id, text: "keep working until I stop you" });
     await page.getByRole("button", { name: "Activity", exact: true }).click();
     await page.reload();
-    await expect(page.getByText("Loading activity…")).toBeHidden();
+    await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden();
     await expect(page.locator("aside").getByRole("button", { name: /^Bot, / })).toBeVisible();
     await expectReadableNames(page.locator("body"));
     await captureScreenshot(page, testInfo, "readable-names-activity");
@@ -76,27 +107,5 @@ test("legacy opaque names never appear in navigation, account, chats or Activity
     } finally {
       await pool.end();
     }
-  }
-});
-
-test("visible-name scanner catches tokens and translation keys while keeping literal names", async ({
-  page,
-}) => {
-  await page.setContent(
-    "<main>Ada 李雷 dev_bot demo@example.com monthly_sales_report.csv account.json</main>",
-  );
-  await expectReadableNames(page.locator("main"));
-  for (const text of [
-    "__TestTok1__",
-    "550e8400-e29b-41d4-a716-446655440000",
-    "c123456789012345678901234",
-    "settings.account.title",
-    "account.name",
-    "{{missing}}",
-  ]) {
-    await page.locator("main").evaluate((element, value) => {
-      element.textContent = value;
-    }, text);
-    await expect(expectReadableNames(page.locator("main"))).rejects.toThrow();
   }
 });

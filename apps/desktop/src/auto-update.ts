@@ -1,4 +1,5 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
+import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
 export const LAUNCH_CHECK_DELAY_MS = 8_000;
@@ -55,6 +56,8 @@ const OFFLINE = [
   "enetunreach",
   "net::err_",
   "getaddrinfo",
+  // GitHub's release CDN refusing a signed download link that lapsed in transit.
+  "jwt:expired",
 ];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
@@ -268,6 +271,11 @@ export class DesktopUpdateController {
   }
 
   private push(event: UpdaterEvent) {
+    if (event.type === "failed") {
+      const failure = classifyUpdaterFailure(event.error);
+      if (failure.kind === "signature" || failure.kind === "other")
+        reportDesktopError(event.error, "desktop.update", { "update.failure": failure.kind });
+    }
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;
@@ -329,22 +337,25 @@ export class DesktopUpdateController {
   }
 
   check(userInitiated: boolean) {
-    if (userInitiated) this.checkWasRequested = true;
-    if (this.checkPromise !== null) return this.checkPromise;
-    const checking = this.runCheck().finally(() => {
+    if (this.checkPromise !== null) {
+      if (userInitiated) this.checkWasRequested = true;
+      return this.checkPromise;
+    }
+    const checking = this.runCheck(userInitiated).finally(() => {
       if (this.checkPromise === checking) this.checkPromise = null;
     });
     this.checkPromise = checking;
     return checking;
   }
 
-  private async runCheck() {
+  private async runCheck(userInitiated: boolean) {
     const checkOptions = {
-      userInitiated: this.checkWasRequested,
+      userInitiated,
       environmentSupportsUpdates: updaterSupport(this.environment).supported,
     };
     let now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
+    this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
       this.current = {

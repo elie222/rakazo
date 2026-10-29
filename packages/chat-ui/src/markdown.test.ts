@@ -7,10 +7,15 @@ import {
   linkifyExplicitUrls,
   linkLabel,
   markdownLinkDisplayParts,
+  markdownLinkNeedsPrompt,
   markdownLinkRequiresConfirmation,
+  markdownLinkSite,
+  markdownMentionId,
   plainTextLinkParts,
   sanitizeMarkdownImageUrl,
   sanitizeMarkdownUrl,
+  withBlockMentions,
+  withMentions,
 } from "./markdown";
 
 type Token = { type: string; attrGet(name: string): string | null; children: Token[] | null };
@@ -178,6 +183,46 @@ describe("markdownLinkRequiresConfirmation", () => {
   });
 });
 
+describe("markdownLinkNeedsPrompt", () => {
+  const origin = "https://app.example.test";
+
+  it("opens a trusted site and its subdomains without asking", () => {
+    const trusted = ["example.com"];
+    expect(markdownLinkNeedsPrompt("https://example.com/a", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("https://docs.example.com/a?b=1", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("http://WWW.Example.com.", origin, trusted)).toBe(false);
+  });
+
+  it("still asks for any other site", () => {
+    const trusted = ["example.com"];
+    expect(markdownLinkNeedsPrompt("https://example.org/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com.evil.test/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com@evil.test/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com/a", origin)).toBe(true);
+  });
+
+  it("keeps each tenant of a shared host its own site", () => {
+    const trusted = ["alice.github.io"];
+    expect(markdownLinkNeedsPrompt("https://alice.github.io/a", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("https://bob.github.io/a", origin, trusted)).toBe(true);
+  });
+
+  it("leaves links that never ask unchanged", () => {
+    expect(markdownLinkNeedsPrompt("https://app.example.test/threads/1", origin, [])).toBe(false);
+    expect(markdownLinkNeedsPrompt("mailto:hello@example.test", origin, [])).toBe(false);
+    expect(markdownLinkNeedsPrompt("/threads/1", origin, [])).toBe(false);
+  });
+});
+
+describe("markdownLinkSite", () => {
+  it("names the registrable domain, or the tenant on a shared host", () => {
+    expect(markdownLinkSite("https://docs.example.co.uk/a")).toBe("example.co.uk");
+    expect(markdownLinkSite("https://alice.github.io/")).toBe("alice.github.io");
+    expect(markdownLinkSite("http://192.0.2.1:8080/a")).toBe("192.0.2.1");
+    expect(markdownLinkSite("mailto:hello@example.test")).toBeUndefined();
+  });
+});
+
 describe("markdownLinkDisplayParts", () => {
   it("emphasizes the host, including a port, and leaves userinfo outside it", () => {
     expect(markdownLinkDisplayParts("https://evil.example:8443/a?b=1#c")).toEqual({
@@ -288,6 +333,17 @@ describe("link labels", () => {
     ).toBe("example.com/txt.exe");
   });
 
+  it("does not split a surrogate pair at the path truncation boundary", () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}\u{1F600}tail`;
+    expect(linkLabel(href, href)).toBe(`example.com/${prefix}…`);
+
+    const fits = `https://example.com/${"a".repeat(25)}\u{1F600}tail`;
+    expect(linkLabel(fits, fits)).toBe(`example.com/${"a".repeat(25)}\u{1F600}…`);
+    const short = "https://example.com/\u{1F600}";
+    expect(linkLabel(short, short)).toBe("example.com/\u{1F600}");
+  });
+
   it("never cuts the host, however long, and trims only the path", () => {
     const host = "www.paypal.com.account-verify-login-secure-update.example.com";
     expect(linkLabel(`https://${host}/x`, `https://${host}/x`)).toBe(
@@ -342,5 +398,62 @@ it("highlights the destination host after userinfo containing the same host text
     before: "https://docs.example:docs.example@",
     host: "docs.example",
     after: "/a",
+  });
+});
+
+describe("withMentions", () => {
+  const planner = { id: "bot-1", name: "Planner" };
+  const link = "[Planner](rakazo-mention:bot-1)";
+
+  it("links the first appearance of the name across the message", () => {
+    expect(
+      withMentions(["Working.", "Planner is ready. Ask Planner.", "Planner again."], [planner]),
+    ).toEqual(["Working.", `${link} is ready. Ask Planner.`, "Planner again."]);
+  });
+
+  it("puts the mention once at the start when the message does not name it", () => {
+    expect(withMentions(["Ready when you are.", "Done."], [planner])).toEqual([
+      `${link} Ready when you are.`,
+      "Done.",
+    ]);
+    expect(withMentions(["- first step"], [planner])).toEqual([`${link}\n\n- first step`]);
+  });
+
+  it("leaves code, links, and longer words alone", () => {
+    const text =
+      "`Planner` [Planner](https://example.test) Planners\n\n```\nPlanner\n```\n\n    Planner\n\nPlanner is ready.";
+    expect(withMentions([text], [planner])).toEqual([
+      text.replace("Planner is ready.", `${link} is ready.`),
+    ]);
+  });
+
+  it("keeps a mention link already in the text as its name", () => {
+    expect(withMentions(["[Planner](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
+      `${link} is ready.`,
+    ]);
+    const code = "`[Planner](rakazo-mention:bot-1)`\n\n```\n[Planner](rakazo-mention:bot-1)\n```";
+    expect(withMentions([code], [planner])).toEqual([`${link} ${code}`]);
+  });
+
+  it("escapes markdown in the name and encodes the id", () => {
+    expect(withMentions(["hi"], [{ id: "a/b", name: "[x]_y" }])).toEqual([
+      "[\\[x\\]\\_y](rakazo-mention:a%2Fb) hi",
+    ]);
+    expect(markdownMentionId("rakazo-mention:a%2Fb")).toBe("a/b");
+    expect(markdownMentionId("https://example.test")).toBeUndefined();
+  });
+
+  it("rewrites only prose blocks", () => {
+    const blocks = withBlockMentions(
+      [
+        { kind: "progress", text: "Planner tool", activity: true },
+        { kind: "text", text: "Planner is ready." },
+      ],
+      [planner],
+    );
+    expect(blocks).toEqual([
+      { kind: "progress", text: "Planner tool", activity: true },
+      { kind: "text", text: `${link} is ready.` },
+    ]);
   });
 });

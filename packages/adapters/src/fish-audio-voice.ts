@@ -9,6 +9,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import {
   readVoiceAudio,
@@ -16,13 +17,14 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
-  voiceHttpError,
+  voiceRequestError,
 } from "./voice-http.js";
 
 const API = "https://api.fish.audio";
 const MODEL_PAGE_SIZE = 100;
 /** Top-scored public voices for the picker — not a full catalog crawl. */
 const PUBLIC_MODEL_PAGES = 5;
+const PUBLIC_MODEL_CONCURRENCY = 2;
 /** User-owned libraries are smaller; still hard-capped. */
 const OWN_MODEL_PAGES = 20;
 const LIST_VOICES_DEADLINE_MS = 20_000;
@@ -41,7 +43,6 @@ const ASR_LANGUAGE_PATTERN = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
 let invalidAsrModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
-  /** Advertise Fish Audio's model catalog, speech synthesis, and transcription support. */
   describe(): AdapterDescriptor<VoiceCapabilities> {
     return {
       id: "fish-audio",
@@ -51,7 +52,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     };
   }
 
-  /** Verify the user's Fish Audio API key against the model catalog endpoint. */
   async verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult> {
     return verifyVoiceHttpGet({
       url: `${API}/model?page_size=1&page_number=1`,
@@ -63,21 +63,31 @@ export class FishAudioVoiceProvider implements VoiceProvider {
 
   /** Return user-owned then bounded public Fish Audio voices as Rakazo choices. */
   async listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]> {
-    const signal = voiceDeadline(context.signal, LIST_VOICES_DEADLINE_MS);
+    const controller = new AbortController();
+    const signal = voiceDeadline(
+      AbortSignal.any([context.signal, controller.signal]),
+      LIST_VOICES_DEADLINE_MS,
+    );
     const listContext = { ...context, signal };
-    const [publicModels, ownModels] = await Promise.all([
-      fetchModels(apiKey, listContext, false),
-      fetchModels(apiKey, listContext, true),
-    ]);
-    const seen = new Set<string>();
-    return [...ownModels, ...publicModels].map(modelToVoice).filter((voice): voice is VoiceInfo => {
-      if (!voice || seen.has(voice.id)) return false;
-      seen.add(voice.id);
-      return true;
-    });
+    try {
+      const [publicModels, ownModels] = await Promise.all([
+        fetchModels(apiKey, listContext, false),
+        fetchModels(apiKey, listContext, true),
+      ]);
+      const seen = new Set<string>();
+      return [...ownModels, ...publicModels]
+        .map(modelToVoice)
+        .filter((voice): voice is VoiceInfo => {
+          if (!voice || seen.has(voice.id)) return false;
+          seen.add(voice.id);
+          return true;
+        });
+    } finally {
+      // Stop sibling or speculative requests when the listing finishes or fails.
+      controller.abort();
+    }
   }
 
-  /** Synthesize one Rakazo utterance as bounded MP3 audio. */
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
     const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
     const model = resolveFishSpeechModel(request.model);
@@ -105,7 +115,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
     return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
   }
 
-  /** Transcribe a browser recording through Fish Audio's multipart ASR endpoint. */
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
@@ -134,7 +143,6 @@ export class FishAudioVoiceProvider implements VoiceProvider {
   }
 }
 
-/** Fetch public or user-owned Fish Audio voice models within a page budget. */
 async function fetchModels(
   apiKey: string,
   context: AdapterContext,
@@ -142,27 +150,60 @@ async function fetchModels(
 ): Promise<Array<Record<string, unknown>>> {
   const maxPages = own ? OWN_MODEL_PAGES : PUBLIC_MODEL_PAGES;
   const models: Array<Record<string, unknown>> = [];
-  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
-    const params = new URLSearchParams({
-      page_size: String(MODEL_PAGE_SIZE),
-      page_number: String(pageNumber),
-      sort_by: "score",
-    });
-    if (own) params.set("self", "true");
-    const res = await fetch(`${API}/model?${params}`, {
-      headers: fishAudioHeaders(apiKey),
-      signal: context.signal,
-    });
-    const body = await readFishResponse(res);
-    if (!res.ok) rejectFish(res.status, "listing voices", body, apiKey);
-    const items = modelsFrom(body);
-    models.push(...items);
-    if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) break;
+  let pageNumber = 1;
+  let batchSize = 1;
+  while (pageNumber <= maxPages) {
+    // Only prefetch public pages backed by a known total, within the existing cap.
+    const pending = Array.from({ length: Math.min(batchSize, maxPages - pageNumber + 1) }, (_, i) =>
+      fetchModelPage(apiKey, context, own, pageNumber + i).then(
+        (page) => ({ page }),
+        (error: unknown) => ({ error }),
+      ),
+    );
+    for (const request of pending) {
+      const result = await request;
+      context.signal.throwIfAborted();
+      if ("error" in result) throw result.error;
+      const { body, ok, status } = result.page;
+      if (!ok) rejectFish(status, "listing voices", body, apiKey);
+      const items = modelsFrom(body);
+      models.push(...items);
+      if (items.length === 0 || !modelPageHasMore(body, pageNumber, items.length)) return models;
+      pageNumber++;
+      const total = (body as { total?: unknown } | null)?.total;
+      batchSize =
+        !own && typeof total === "number" && Number.isFinite(total)
+          ? Math.min(
+              PUBLIC_MODEL_CONCURRENCY,
+              Math.max(1, Math.ceil(total / MODEL_PAGE_SIZE) - pageNumber + 1),
+            )
+          : 1;
+    }
   }
   return models;
 }
 
-/** Decide whether another Fish Audio model page should be requested. */
+/** Read one page; classify HTTP errors only if the ordered walk still needs it. */
+async function fetchModelPage(
+  apiKey: string,
+  context: AdapterContext,
+  own: boolean,
+  pageNumber: number,
+) {
+  context.signal.throwIfAborted();
+  const params = new URLSearchParams({
+    page_size: String(MODEL_PAGE_SIZE),
+    page_number: String(pageNumber),
+    sort_by: "score",
+  });
+  if (own) params.set("self", "true");
+  const res = await fetch(`${API}/model?${params}`, {
+    headers: fishAudioHeaders(apiKey),
+    signal: context.signal,
+  });
+  return { body: await readFishResponse(res), ok: res.ok, status: res.status };
+}
+
 function modelPageHasMore(body: unknown, pageNumber: number, itemCount: number): boolean {
   if (!body || typeof body !== "object") return false;
   const meta = body as { has_more?: unknown; total?: unknown };
@@ -173,12 +214,10 @@ function modelPageHasMore(body: unknown, pageNumber: number, itemCount: number):
   return itemCount === MODEL_PAGE_SIZE;
 }
 
-/** Build the authorization header shared by Fish Audio requests. */
 function fishAudioHeaders(apiKey: string): Record<string, string> {
   return { authorization: `Bearer ${apiKey}` };
 }
 
-/** True when `value` can be sent as the Fish `model` header. */
 export function isFishSpeechModelId(value: string): boolean {
   return TTS_MODEL_PATTERN.test(value);
 }
@@ -259,7 +298,6 @@ function fishUnreadBody(error: unknown): { message: string } {
   return { message: "response body could not be read" };
 }
 
-/** Log the upstream Fish status and message, then raise the user-facing error. */
 function rejectFish(
   status: number,
   what: string,
@@ -268,21 +306,21 @@ function rejectFish(
   model?: string,
 ): never {
   const detail = fishErrorDetail(body, apiKey);
-  getLogger().error("Fish Audio request failed", {
+  const error = voiceRequestError(
+    status,
+    "Fish Audio",
+    what,
+    typeof body === "string" || !detail ? null : { message: detail },
+  );
+  // Spent credit or a rejected key is the user's account to fix, not a server fault.
+  getLogger()[error instanceof VoiceAccountError ? "warn" : "error"]("Fish Audio request failed", {
     provider: "fish-audio",
     operation: what,
     "http.status": status,
     ...(model ? { "fish.model": model } : {}),
     ...(detail ? { "error.detail": detail } : {}),
   });
-  throw new Error(
-    voiceHttpError(
-      status,
-      "Fish Audio",
-      what,
-      typeof body === "string" || !detail ? null : { message: detail },
-    ),
-  );
+  throw error;
 }
 
 /** Upstream message, or a short raw body when Fish did not return JSON. */
@@ -324,7 +362,6 @@ function scrubSecret(text: string, apiKey: string): string {
   return text.split(secret).join("[Redacted]");
 }
 
-/** Extract object-shaped model entries from a Fish Audio list response. */
 function modelsFrom(body: unknown): Array<Record<string, unknown>> {
   if (!body || typeof body !== "object") return [];
   const items = (body as { items?: unknown }).items;
@@ -335,7 +372,6 @@ function modelsFrom(body: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
-/** Convert a Fish Audio model into the provider-neutral voice shape. */
 function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   if (model.dmca_taken_down === true || model.state === "failed") return null;
   const id = asText(model._id) || asText(model.id);
@@ -347,12 +383,10 @@ function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   return { id, label, description };
 }
 
-/** Read a trimmed string field from an untyped provider response. */
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** Format the model language list for the voice picker description. */
 function languageLabel(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value

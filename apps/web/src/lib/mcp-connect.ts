@@ -48,9 +48,10 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       channel.close();
       resolve(result);
     };
+    // COOP makes an open popup read as closed, but it keeps focus until the
+    // user really closes it.
     pollTimer = window.setInterval(() => {
-      if (!popup.closed) return;
-      finish("cancelled");
+      if (popup.closed && document.hasFocus()) finish("cancelled");
     }, 500);
     timeoutTimer = window.setTimeout(() => {
       popup.close();

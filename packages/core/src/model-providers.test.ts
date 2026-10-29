@@ -6,12 +6,13 @@ import {
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
+  connectionMaxTokensField,
   credentialForModel,
-  featuredModelProviders,
   filterModelCatalog,
   filterModelChoices,
   groupModelChoices,
   pickCatalogModelId,
+  popularModelProvidersFirst,
   resolveSelectableModelId,
   savedCompatibleModelIds,
   selectedProviderOutsideSearchResults,
@@ -28,62 +29,16 @@ function provider(provider: string): ModelCatalogEntry {
   };
 }
 
-describe("featuredModelProviders", () => {
-  it("shows popular providers in a stable order", () => {
-    const providers = [
-      provider("azure"),
-      provider("vercel-ai-gateway"),
-      provider("google"),
-      provider("openai"),
-      provider("anthropic"),
-      provider("openai-codex"),
-      provider("openrouter"),
-    ];
-
-    expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "openai",
+describe("popularModelProvidersFirst", () => {
+  it("lists subscriptions and the common API providers first", () => {
+    const ids = ["azure", "google", "openai", "anthropic", "openai-codex", "openrouter"];
+    expect(popularModelProvidersFirst(ids, (id) => id)).toEqual([
       "openai-codex",
       "anthropic",
+      "openai",
+      "openrouter",
       "google",
-      "openrouter",
-      "vercel-ai-gateway",
-    ]);
-  });
-
-  it("fills missing popular slots from the catalog", () => {
-    const providers = [
-      provider("azure"),
-      provider("openrouter"),
-      provider("bedrock"),
-      provider("anthropic"),
-    ];
-
-    expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "anthropic",
-      "openrouter",
       "azure",
-      "bedrock",
-    ]);
-  });
-
-  it("keeps a non-featured selected provider visible", () => {
-    const providers = [
-      provider("openrouter"),
-      provider("openai-codex"),
-      provider("anthropic"),
-      provider("openai"),
-      provider("google"),
-      provider("vercel-ai-gateway"),
-      provider("local"),
-    ];
-
-    expect(featuredModelProviders(providers, "local").map((entry) => entry.provider)).toEqual([
-      "openai",
-      "openai-codex",
-      "anthropic",
-      "google",
-      "openrouter",
-      "local",
     ]);
   });
 });
@@ -99,6 +54,25 @@ describe("pickCatalogModelId", () => {
   it("returns the provider's first entry without a preferred id", () => {
     expect(pickCatalogModelId(catalog, "openai-codex", null)).toBe("gpt-5.3-codex-spark");
     expect(pickCatalogModelId(catalog, "openai-codex")).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("uses a recommendation before catalog order, but preserves a saved choice", () => {
+    const recommendedCatalog = [
+      { provider: "provider-a", id: "first" },
+      { provider: "provider-a", id: "recommended", recommended: true },
+      { provider: "provider-b", id: "other", recommended: true },
+    ];
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a")).toBe("recommended");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "first")).toBe("first");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "vendor/first")).toBe("first");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "unavailable")).toBe("recommended");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-c")).toBe("");
+    expect(
+      pickCatalogModelId(
+        recommendedCatalog.filter((entry) => !entry.recommended),
+        "provider-a",
+      ),
+    ).toBe("first");
   });
 
   it("prefers an exact preferred id within the provider", () => {
@@ -197,8 +171,46 @@ describe("connected model choices", () => {
       expect(choice.modelId).not.toMatch(/DeepSeek/);
     }
     expect(choices.map((choice) => choice.label)).toEqual([
-      "DeepSeek · DeepSeek V4.1 Flash",
-      "DeepSeek · DeepSeek V4 Pro",
+      "DeepSeek V4.1 Flash (DeepSeek)",
+      "DeepSeek V4 Pro (DeepSeek)",
+    ]);
+  });
+
+  it("carries whether a catalog model reads images, and leaves custom ids unknown", () => {
+    const catalog = [
+      { provider: "openrouter", id: "text-only", label: "Text Only", images: false },
+      { provider: "openrouter", id: "sees", label: "Sees", images: true },
+      { provider: "openrouter", id: "unknown", label: "Unknown" },
+      { provider: "other", id: "custom", label: "Other provider", images: false },
+      {
+        provider: "openrouter",
+        id: "placeholder",
+        label: "Placeholder",
+        placeholder: true,
+        images: false,
+      },
+    ];
+    const choices = connectedModelChoices(
+      [{ provider: "openrouter", label: "OpenRouter" }],
+      catalog,
+    );
+    expect(choices.map((choice) => choice.images)).toEqual([false, true, undefined]);
+    const enabled = connectedModelChoices(
+      [
+        {
+          provider: "openrouter",
+          label: "OpenRouter",
+          enabledModelIds: ["text-only", "sees", "unknown", "custom", "placeholder"],
+        },
+      ],
+      catalog,
+    );
+    expect(enabled.map((choice) => choice.images)).toEqual([
+      false,
+      true,
+      undefined,
+      undefined,
+      undefined,
     ]);
   });
 
@@ -229,7 +241,7 @@ describe("connected model choices", () => {
         key: "deepseek::my-finetune",
         provider: "deepseek",
         modelId: "my-finetune",
-        label: "DeepSeek · my-finetune",
+        label: "my-finetune (DeepSeek)",
         providerLabel: "DeepSeek",
         modelLabel: "my-finetune",
       },
@@ -253,7 +265,7 @@ describe("connected model choices", () => {
         key: `openai-compatible::${id}`,
         provider: "openai-compatible",
         modelId: id,
-        label: `Local server · ${id}`,
+        label: `${id} (Local server)`,
         providerLabel: "Local server",
         modelLabel: id,
       })),
@@ -390,13 +402,13 @@ describe("chat model choices", () => {
       key: "openrouter::anthropic/claude-sonnet",
       provider: "openrouter",
       modelId: "anthropic/claude-sonnet",
-      label: "OpenRouter · Claude Sonnet",
+      label: "Claude Sonnet (OpenRouter)",
     },
     {
       key: "openrouter::openai/gpt-mini",
       provider: "openrouter",
       modelId: "openai/gpt-mini",
-      label: "OpenRouter · GPT Mini",
+      label: "GPT Mini (OpenRouter)",
     },
   ];
 
@@ -417,6 +429,15 @@ describe("chat model choices", () => {
     ]);
   });
 
+  it("marks the space default with its model's image support", () => {
+    expect(chatModelChoices(connected, "", "Space default", false)[0]).toEqual({
+      key: "",
+      label: "Space default",
+      images: false,
+    });
+    expect(chatModelChoices(connected, "", "Space default")[0]?.images).toBeUndefined();
+  });
+
   it("matches the label, model id, or provider, ignoring case", () => {
     const choices = chatModelChoices(connected, "", "Space default (Claude Sonnet)");
     expect(filterModelChoices(choices, "  SONNET ").map((choice) => choice.key)).toEqual([
@@ -429,6 +450,25 @@ describe("chat model choices", () => {
     expect(
       filterModelChoices([{ key: "openrouter::x", label: "X", provider: "openrouter" }], "router"),
     ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [
+          {
+            key: "cloudflare-ai-gateway::x",
+            label: "X",
+            provider: "cloudflare-ai-gateway",
+            providerLabel: "Cloudflare AI Gateway",
+          },
+        ],
+        "AI Gateway",
+      ),
+    ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [{ key: "google", label: "Google", providerLabel: "All providers" }],
+        "all",
+      ),
+    ).toEqual([]);
     expect(filterModelChoices(choices, "gemini")).toEqual([]);
     expect(filterModelChoices(choices, " ")).toBe(choices);
   });
@@ -516,15 +556,15 @@ describe("groupModelChoices", () => {
     const sections = groupModelChoices(choices, "");
     expect(sections.map((section) => section.heading)).toEqual([
       undefined,
-      "OpenRouter · Anthropic",
-      "OpenRouter · Google",
+      "Anthropic (OpenRouter)",
+      "Google (OpenRouter)",
     ]);
     expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["", "retired::saved"]);
     expect(sections[1]?.data.map((choice) => choice.title)).toEqual([
       "Claude Opus",
       "Claude Sonnet",
     ]);
-    expect(sections[1]?.data[0]?.label).toBe("OpenRouter · Anthropic: Claude Opus");
+    expect(sections[1]?.data[0]?.label).toBe("Anthropic: Claude Opus (OpenRouter)");
   });
 
   it("matches the original full labels and ids and removes empty sections", () => {
@@ -536,7 +576,29 @@ describe("groupModelChoices", () => {
       ).toEqual(filterModelChoices(choices, query).map((choice) => choice.key));
     }
     expect(groupModelChoices(choices, "Sonnet").map((section) => section.heading)).toEqual([
-      "OpenRouter · Anthropic",
+      "Anthropic (OpenRouter)",
     ]);
+  });
+});
+
+it("offers managed models without a personal key and hides unconnected providers", () => {
+  const catalog = [
+    { provider: "hosted", id: "small", label: "Small", managed: true },
+    { provider: "hosted", id: "large", label: "Large", managed: true },
+    { provider: "other", id: "unconnected", label: "Unconnected" },
+  ];
+  expect(connectedModelChoices([], catalog).map((choice) => choice.key)).toEqual([
+    "hosted::small",
+    "hosted::large",
+  ]);
+  expect(connectedModelChoices([{ provider: "hosted", label: "Hosted" }], catalog)).toHaveLength(2);
+});
+
+describe("connectionMaxTokensField", () => {
+  it("shows the saved limit, or the default an OpenAI-compatible endpoint would send", () => {
+    expect(connectionMaxTokensField("openai-compatible", undefined)).toBe("4096");
+    expect(connectionMaxTokensField("openai-compatible", 8_000)).toBe("8000");
+    expect(connectionMaxTokensField("anthropic", undefined)).toBe("");
+    expect(connectionMaxTokensField("anthropic", 2_000)).toBe("2000");
   });
 });

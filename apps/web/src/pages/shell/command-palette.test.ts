@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCommandPaletteHotkey } from "./command-palette-hotkey";
+import { isCommandPaletteHotkey, isCreateMenuHotkey } from "./command-palette-hotkey";
 
 function keyEvent(partial: Partial<KeyboardEvent> & Pick<KeyboardEvent, "key">): KeyboardEvent {
   return {
@@ -26,5 +26,14 @@ describe("isCommandPaletteHotkey", () => {
     expect(isCommandPaletteHotkey(keyEvent({ key: "k", metaKey: true, altKey: true }))).toBe(false);
     expect(isCommandPaletteHotkey(keyEvent({ key: "k", metaKey: true, repeat: true }))).toBe(false);
     expect(isCommandPaletteHotkey(keyEvent({ key: "j", metaKey: true }))).toBe(false);
+  });
+});
+
+describe("isCreateMenuHotkey", () => {
+  it("matches Cmd/Ctrl-N only", () => {
+    expect(isCreateMenuHotkey(keyEvent({ key: "n", metaKey: true }))).toBe(true);
+    expect(isCreateMenuHotkey(keyEvent({ key: "N", ctrlKey: true }))).toBe(true);
+    expect(isCreateMenuHotkey(keyEvent({ key: "n", metaKey: true, shiftKey: true }))).toBe(false);
+    expect(isCreateMenuHotkey(keyEvent({ key: "k", metaKey: true }))).toBe(false);
   });
 });

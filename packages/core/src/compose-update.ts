@@ -59,7 +59,6 @@ export function isValidImageTag(tag: string): boolean {
   return IMAGE_TAG.test(tag);
 }
 
-/** A registry reference the updater is willing to hand to `docker compose` as one env value. */
 export function isValidImageName(name: string): boolean {
   if (name.length === 0 || name.length > 200) return false;
   const segments = name.split("/");
@@ -158,7 +157,6 @@ export function compareReleaseTags(a: ReleaseTag, b: ReleaseTag): number {
   return a.prerelease < b.prerelease ? -1 : 1;
 }
 
-/** Reads `git ls-remote --tags <url>`, which is the tag list without cloning anything. */
 export function parseLsRemoteTags(stdout: string): string[] {
   const tags = new Set<string>();
   for (const line of stdout.split("\n")) {
@@ -213,7 +211,6 @@ export function selectLatestReleaseTag(tags: readonly string[]): string | null {
   return best?.tag ?? null;
 }
 
-/** Selects the newest stable release together with the commit-tagged image CI published for it. */
 export function selectLatestRelease(releases: readonly RemoteRelease[]): RemoteRelease | null {
   let best: { release: ReleaseTag; commit: string } | null = null;
   for (const candidate of releases) {
@@ -278,114 +275,6 @@ export function resolveExecutionMode(input: {
     reason:
       "This deployment has neither an updater sidecar nor a git checkout, so it cannot update itself. Add the `updater` service from infra/compose/docker-compose.prod.yml.",
   };
-}
-
-/**
- * What the deployment-owner Settings UI should show. Distinct from {@link resolveExecutionMode}:
- * Compose without the opt-in sidecar is still a Compose install, and source checkouts must never
- * look like they can one-click apply from the API process (no `.git` in the app image; no Docker
- * socket either).
- */
-export type InstallKind = "sidecar" | "compose" | "source";
-
-export interface InstallKindDecision {
-  kind: InstallKind;
-  /** Maps onto ServerUpdateMode for contracts that already use that enum. */
-  mode: ExecutionMode;
-  reason: string | null;
-}
-
-/**
- * `updaterUrlConfigured` means the API was given `RAKAZO_UPDATER_URL` (Compose prod always sets
- * this). Reachability requires both URL and token and a live sidecar. A source checkout is only
- * claimed when there is no Compose updater wiring and `.git` is present on disk.
- */
-export function resolveInstallKind(input: {
-  updaterUrlConfigured?: boolean;
-  updaterReachable?: boolean;
-  hasCheckout?: boolean;
-  disabled?: boolean;
-}): InstallKindDecision {
-  if (input.disabled === true) {
-    return {
-      kind:
-        input.updaterUrlConfigured === true
-          ? "compose"
-          : input.hasCheckout === true
-            ? "source"
-            : "compose",
-      mode: "unavailable",
-      reason: "Self-update is switched off for this deployment.",
-    };
-  }
-  if (input.updaterReachable === true) {
-    return { kind: "sidecar", mode: "sidecar", reason: null };
-  }
-  if (input.updaterUrlConfigured === true) {
-    return {
-      kind: "compose",
-      mode: "unavailable",
-      reason:
-        "The updater sidecar is not reachable. Start the opt-in `updater` profile, or upgrade from the host with the Compose commands below.",
-    };
-  }
-  if (input.hasCheckout === true) {
-    return {
-      kind: "source",
-      mode: "checkout",
-      reason: "This is a source checkout. Upgrade from a terminal; Settings cannot apply it.",
-    };
-  }
-  return {
-    kind: "compose",
-    mode: "unavailable",
-    reason:
-      "This deployment has no updater sidecar. Upgrade from the host with the Compose commands below, or enable the `updater` profile.",
-  };
-}
-
-/** Exact host commands from docs/self-host.md for Compose on a published release tag. */
-export const COMPOSE_PULL_UPGRADE_COMMANDS = [
-  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml pull api worker web",
-  "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never api worker web",
-] as const;
-
-/** Exact host commands from docs/self-host.md for Compose on the default `local` tag. */
-export const COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS = [
-  "git pull",
-  "GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --wait --pull never --build api worker web",
-] as const;
-
-/** @deprecated Prefer {@link COMPOSE_PULL_UPGRADE_COMMANDS}; kept for call-site clarity in tests. */
-export const COMPOSE_MANUAL_UPGRADE_COMMANDS = COMPOSE_PULL_UPGRADE_COMMANDS;
-
-/** Exact host commands from docs/self-host.md for source / `pnpm dev` installs. */
-export const SOURCE_MANUAL_UPGRADE_COMMANDS = [
-  "git pull",
-  "pnpm --filter @rakazo/db migrate",
-  "# Restart the API and worker processes",
-] as const;
-
-/**
- * Host commands Settings should show when the sidecar cannot apply.
- * Compose picks pull vs rebuild from the current image tag when known; otherwise both documented
- * paths from self-host.md so a `local` install is not told to `pull` a tag the registry never serves.
- */
-export function manualUpgradeCommands(
-  kind: InstallKind,
-  options: { imageTag?: string | null } = {},
-): readonly string[] {
-  if (kind === "source") return SOURCE_MANUAL_UPGRADE_COMMANDS;
-  if (kind !== "compose") return [];
-  const tag = options.imageTag?.trim() ?? "";
-  if (tag !== "" && isLocalImageTag(tag)) return COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS;
-  if (tag !== "" && !isLocalImageTag(tag)) return COMPOSE_PULL_UPGRADE_COMMANDS;
-  return [
-    "# Published release tag",
-    ...COMPOSE_PULL_UPGRADE_COMMANDS,
-    "# Local tag (rebuild from checkout)",
-    ...COMPOSE_LOCAL_BUILD_UPGRADE_COMMANDS,
-  ];
 }
 
 export interface ComposeInvocation {
@@ -573,11 +462,11 @@ export interface ComposeUpdatePlanInput {
 /**
  * Ordered work for one Compose update.
  *
- * Migrations are absent on purpose. The `api` service runs `prisma migrate deploy` as the first
- * thing in its own start command, so a recreate already orders them correctly: Compose stops the
- * old container, the new one migrates with the new code, then serves. Running migrations from here
- * would instead apply the new schema while the old process is still answering requests, which is
- * the window this ordering exists to close.
+ * Migrations are absent on purpose. The `api` service depends on the one-shot `migrate` service,
+ * so a recreate already orders them correctly: Compose stops the old API, `migrate` applies the
+ * new code's migrations, then the new API serves. Running migrations from here would instead apply
+ * the new schema while the old process is still answering requests, which is the window this
+ * ordering exists to close.
  */
 export function composeUpdatePlan(input: ComposeUpdatePlanInput): ComposeUpdateStep[] {
   const steps: ComposeUpdateStep[] = [];
@@ -670,15 +559,19 @@ export function upsertEnvAssignments(
     if (!ENV_VALUE.test(value)) throw new Error(`Refusing to write the value of ${key}.`);
   }
   const newline = contents.includes("\r\n") ? "\r\n" : "\n";
-  const lines = contents.split(/\r?\n/);
   const pending = new Map(Object.entries(assignments));
-  const next = lines.map((line) => {
-    const key = line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1];
-    if (key === undefined || !Object.hasOwn(assignments, key)) return line;
-    const value = assignments[key] as string;
-    pending.delete(key);
-    return `${key}=${value}`;
-  });
+  // Match whole assignments so quoted multiline values cannot expose apparent managed keys.
+  const next = contents
+    .replace(
+      /^(\uFEFF?)[^\S\r\n]*(?:export[^\S\r\n]+)?([\w.-]+)[^\S\r\n]*(?:=[^\S\r\n]*|:[^\S\r\n]+)(?:'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*"|`(?:\\[\s\S]|[^`\\])*`|[^\r\n]*)[^\r\n]*/gm,
+      (line, bom: string, key: string) => {
+        if (!Object.hasOwn(assignments, key)) return line;
+        const value = assignments[key] as string;
+        pending.delete(key);
+        return `${bom}${key}=${value}`;
+      },
+    )
+    .split(/\r?\n/);
   if (pending.size > 0) {
     while (next.length > 0 && next[next.length - 1] === "") next.pop();
     if (next.length > 0) next.push("");

@@ -14,7 +14,7 @@ import {
   requireOk,
   verifyVoiceHttpGet,
   voiceDeadline,
-  voiceHttpError,
+  voiceRequestError,
 } from "./voice-http.js";
 
 const API = "https://api.cartesia.ai";
@@ -59,7 +59,7 @@ export class CartesiaVoiceProvider implements VoiceProvider {
         signal,
       });
       const body = await readVoiceJson(res, { requireValid: res.ok });
-      if (!res.ok) throw new Error(voiceHttpError(res.status, "Cartesia", "listing voices", body));
+      if (!res.ok) throw voiceRequestError(res.status, "Cartesia", "listing voices", body);
       const items = voicesFrom(body);
       voices.push(...items);
       const next = nextVoicePage(body, items);

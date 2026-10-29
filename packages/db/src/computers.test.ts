@@ -307,7 +307,8 @@ describe("ensureComputerRecord", () => {
       ComputerLimitError,
     );
     expect(prisma.computer.upsert).not.toHaveBeenCalled();
-    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+    // The quota lock, then the system bypass on and off around the cross-Space count.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
   });
 
   it("does not count archived-bot computers against the cap", async () => {

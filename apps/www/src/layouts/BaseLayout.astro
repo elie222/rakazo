@@ -8,6 +8,7 @@ import {
   LOCALE_HTML_LANG,
   LOCALE_OG,
   isLocale,
+  RTL_LOCALES,
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
@@ -27,6 +28,8 @@ type Props = {
   ogType?: string;
   /** False on the not-found page: noindex, and no canonical URL. */
   index?: boolean;
+  /** For prerendered pages the edge middleware does not know about. */
+  markdownAlternate?: string;
 };
 
 const {
@@ -52,7 +55,8 @@ const socialImage = new URL(ogImage, SITE_URL).toString();
 const structuredDataJson = structuredData
   ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
   : null;
-const markdownAlternate = getMarkdownAlternate(Astro.url.pathname);
+const markdownAlternate =
+  Astro.props.markdownAlternate ?? getMarkdownAlternate(Astro.url.pathname);
 const htmlLang = LOCALE_HTML_LANG[locale];
 const ogLocale = LOCALE_OG[locale];
 const homeUrls = Object.fromEntries(
@@ -61,7 +65,7 @@ const homeUrls = Object.fromEntries(
 ---
 
 <!doctype html>
-<html lang={htmlLang}>
+<html lang={htmlLang} dir={RTL_LOCALES.has(locale) ? "rtl" : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -106,6 +110,8 @@ const homeUrls = Object.fromEntries(
     )}
     <link rel="alternate" type="application/rss+xml" title="Rakazo blog" href="/blog/rss.xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="describedby" type="text/plain" href="/llms.txt" />
+    <link rel="ai-catalog" type="application/ai-catalog+json" href="/.well-known/ai-catalog.json" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.png" type="image/png" sizes="128x128" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

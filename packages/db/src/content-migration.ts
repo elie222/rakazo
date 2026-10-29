@@ -294,7 +294,8 @@ export async function contentEncryptionStatus(
   prisma: PrismaClient,
 ): Promise<{ tables: ContentEncryptionStatus[]; masterKeys: Record<string, number> }> {
   const tables = await prisma.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
-    SELECT 'messages' AS table, count(*) AS rows, count(*) FILTER (WHERE "searchTokens" IS NULL) AS plaintext FROM messages
+    SELECT 'messages' AS table, count(*) AS rows, count(*) FILTER (WHERE "searchTokens" IS NULL
+      OR (cardinality("searchTokens") = 0 AND blocks <> '[]'::jsonb)) AS plaintext FROM messages
     UNION ALL
     SELECT 'events', count(*), count(*) FILTER (WHERE NOT CASE jsonb_typeof(payload)
       WHEN 'object' THEN jsonb_exists(payload, '$sealed')

@@ -124,6 +124,14 @@ function contextColumns(spec: ModelSpec): string[] {
   return ["id", ownerOf(spec), ...("column" in spec.space ? [spec.space.column] : [])];
 }
 
+/**
+ * Messages carrying blind-index tokens, for queries aliasing messages as `m`.
+ * NULL (never encrypted) and an empty list (rewritten with encryption off) both
+ * mean the blocks are searched as plaintext.
+ */
+export const INDEXED_MESSAGE = Prisma.sql`COALESCE(cardinality(m."searchTokens"), 0) > 0`;
+export const UNINDEXED_MESSAGE = Prisma.sql`COALESCE(cardinality(m."searchTokens"), 0) = 0`;
+
 export interface ContentEncryption {
   ring: ContentKeyRing;
   /**
@@ -131,7 +139,10 @@ export interface ContentEncryption {
    * (`threadId` for messages and events, `documentId` for revisions, `userId` otherwise).
    */
   openRows<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, rows: T[]): Promise<T[]>;
-  /** One token list per key version of the space; a match must contain every token of one list. */
+  /**
+   * One token list per key version of the space; a match must contain every token
+   * of one list. Empty when the space has no keys, so it has no encrypted rows.
+   */
   messageSearchTokens(
     spaceId: string,
     query: string,
@@ -174,7 +185,8 @@ const NO_ROWS = new Set([
 
 /**
  * Encrypts user content at the data-access layer. Writes to the columns in
- * ENCRYPTED_MODELS are sealed with the owning space's current key; reads decrypt
+ * ENCRYPTED_MODELS are sealed with the owning space's current key (unless the
+ * ring has `encryptWrites` off, which stores them in plaintext); reads decrypt
  * anywhere the rows appear, including nested `include`/`select`. Plaintext rows
  * from before the migration read unchanged. Nested writes into encrypted models
  * are rejected rather than silently stored in plaintext. Raw SQL is the one
@@ -409,6 +421,21 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     return seal(spec, row, row.id, await createContext(spec, row));
   }
 
+  /**
+   * Encryption off: content is stored as given. A message rewritten in plaintext
+   * drops its blind-index tokens (an empty list, since Prisma cannot write NULL to
+   * a list), so search matches its text instead of tokens of what it used to say.
+   */
+  function plainWrite(spec: ModelSpec, operation: string, args: RecordValue): RecordValue {
+    if (
+      spec.searchTokens &&
+      ["update", "updateMany", "updateManyAndReturn"].includes(operation) &&
+      touches(spec, args.data)
+    )
+      return { ...args, data: { ...(args.data as RecordValue), searchTokens: { set: [] } } };
+    return args;
+  }
+
   async function sealWrites(
     model: string,
     operation: string,
@@ -433,17 +460,18 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     }
     const spec = ENCRYPTED_MODELS[model];
     if (!spec) return args;
+    if (operation === "upsert") {
+      if (touches(spec, args.create) || touches(spec, args.update))
+        throw new Error(`Upserts of encrypted ${model} content are not supported`);
+      return args;
+    }
+    if (!ring.encryptWrites) return plainWrite(spec, operation, args);
     if (operation === "create") return { ...args, data: await sealCreate(spec, args.data) };
     if (operation === "createMany" || operation === "createManyAndReturn") {
       const data = Array.isArray(args.data)
         ? await Promise.all(args.data.map((row) => sealCreate(spec, row)))
         : await sealCreate(spec, args.data);
       return { ...args, data };
-    }
-    if (operation === "upsert") {
-      if (touches(spec, args.create) || touches(spec, args.update))
-        throw new Error(`Upserts of encrypted ${model} content are not supported`);
-      return args;
     }
     if (
       ["update", "updateMany", "updateManyAndReturn"].includes(operation) &&

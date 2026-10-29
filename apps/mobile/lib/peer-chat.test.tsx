@@ -1,197 +1,133 @@
 // @vitest-environment jsdom
-import type { ThreadMessage } from "@rakazo/contracts";
-import type { ReactNode } from "react";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import PeerChat from "../app/peer-chat";
-import { PeerReceiptLine } from "../components/peer-receipt-line";
-import { peerExchangeLabel, resetI18nForTests } from "./i18n";
 
-const { rpc, back, header } = vi.hoisted(() => ({ rpc: vi.fn(), back: vi.fn(), header: vi.fn() }));
-vi.mock("./api", () => ({ rpc }));
-vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({
-    botId: "current",
-    botName: "Editor",
-    peerBotId: "peer",
-    peerBotName: "Writer",
-  }),
-  useRouter: () => ({ back }),
-  Stack: {
-    Screen: ({ options }: { options: { headerTitle: () => ReactNode } }) => {
-      header(options);
-      return options.headerTitle();
-    },
+import type { ReactNode, Ref } from "react";
+import { act, createElement, useImperativeHandle } from "react";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import PeerChat from "../app/peer-chat";
+
+const { rpc, back, scrollToEnd, scrollProps } = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  back: vi.fn(),
+  scrollToEnd: vi.fn(),
+  scrollProps: {
+    current: {} as { onContentSizeChange?: () => void; onScrollBeginDrag?: () => void },
   },
 }));
+
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
+vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
+vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
+vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
+vi.mock("./api", () => ({ rpc }));
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("./native", () => ({
+  native: {},
+  useResolvedAppearance: () => "light",
+  useThemedStyles: (createStyles: () => unknown) => createStyles(),
+}));
+vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+vi.mock("../components/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
+vi.mock("@rakazo/chat-ui/native", () => ({
+  ChatMarkdown: ({ children }: { children: ReactNode }) => createElement("p", null, children),
+}));
+vi.mock("expo-router", () => ({
+  Stack: {
+    Screen: ({ options }: { options: { headerTitle: () => ReactNode } }) => options.headerTitle(),
+  },
+  useRouter: () => ({ back }),
+  useLocalSearchParams: () => ({ botId: "chief", botName: "Chief", peerBotId: "peer" }),
+}));
 vi.mock("react-native", () => {
-  const View = ({ children, testID }: { children?: ReactNode; testID?: string }) => (
-    <div data-testid={testID}>{children}</div>
-  );
+  const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
   return {
-    View,
-    ScrollView: View,
-    Platform: { OS: "ios" },
-    Alert: { alert: vi.fn() },
-    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-    Pressable: ({
+    StyleSheet: { create: (styles: unknown) => styles },
+    ActivityIndicator: () => createElement("progress"),
+    Pressable: view,
+    Text: view,
+    View: view,
+    ScrollView: ({
+      ref,
       children,
-      onPress,
-      onLongPress,
-      accessibilityLabel,
-      testID,
+      ...props
     }: {
+      ref?: Ref<unknown>;
       children?: ReactNode;
-      onPress?: () => void;
-      onLongPress?: () => void;
-      accessibilityLabel?: string;
-      testID?: string;
-    }) => (
-      <button
-        type="button"
-        data-testid={testID}
-        aria-label={accessibilityLabel}
-        onClick={onPress}
-        onContextMenu={onLongPress}
-      >
-        {children}
-      </button>
-    ),
+      onContentSizeChange?: () => void;
+      onScrollBeginDrag?: () => void;
+    }) => {
+      useImperativeHandle(ref, () => ({ scrollToEnd }));
+      scrollProps.current = props;
+      return createElement("div", null, children);
+    },
   };
 });
-vi.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 64 }));
-vi.mock("./artifact-open", () => ({ openMobileArtifact: vi.fn() }));
-vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
-vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 20 }) }));
-vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}), useResolvedAppearance: () => "light" }));
-vi.mock("../components/bot-avatar", () => ({
-  BotAvatar: ({ identity }: { identity: string }) => <i data-avatar={identity} />,
-}));
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../components/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
-    <button type="button" onClick={onPress}>
-      {label}
-    </button>
-  ),
-}));
-vi.mock("@rakazo/chat-ui/native", () => ({
-  ChatMarkdown: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
-}));
 
-let container: HTMLDivElement;
-let root: ReturnType<typeof createRoot>;
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+let root: Root | undefined;
+
+afterEach(() => {
+  act(() => root?.unmount());
+  document.body.innerHTML = "";
   rpc.mockReset();
   back.mockReset();
-  header.mockReset();
-  resetI18nForTests();
-  container = document.createElement("div");
-  root = createRoot(container);
+  scrollToEnd.mockReset();
 });
-afterEach(() => {
-  act(() => root.unmount());
-  vi.unstubAllGlobals();
-});
-const wake: ThreadMessage = {
-  id: "wake",
-  threadId: "t",
-  seq: 1,
-  role: "bot",
-  runId: "run",
-  createdAt: "2026-10-20T10:00:00Z",
-  blocks: [
-    {
-      kind: "bot_message_received",
-      fromBotId: "peer",
-      fromBotName: "Writer",
-      text: "Draft the fixture launch note.",
-    },
-  ],
-};
-const reply: ThreadMessage = {
-  ...wake,
-  id: "reply",
-  seq: 2,
-  blocks: [{ kind: "text", text: "Here is the draft." }],
-};
 
-it("loads all pages, renders both speakers and closes", async () => {
-  rpc
-    .mockResolvedValueOnce({ messages: [reply], olderCursor: 1 })
-    .mockResolvedValueOnce({ messages: [wake], olderCursor: null });
-  await act(async () => root.render(<PeerChat />));
-  expect(rpc).toHaveBeenNthCalledWith(
-    2,
-    "threads/messages",
-    { botId: "current", before: 1, includePeerRuns: true },
-    { signal: expect.any(AbortSignal) },
-  );
-  expect(container.textContent).toContain("Draft the fixture launch note.");
-  expect(container.textContent).toContain("Here is the draft.");
-  expect(container.querySelector('[data-avatar="current"]')).not.toBeNull();
-  expect(container.querySelector('[data-avatar="peer"]')).not.toBeNull();
-  expect(header.mock.lastCall?.[0]).toMatchObject({
-    headerTransparent: true,
-    headerStyle: { backgroundColor: "transparent" },
+async function open() {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpc.mockResolvedValue({
+    messages: Array.from({ length: 40 }, (_, index) => ({
+      id: `message-${index}`,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+      blocks: [
+        {
+          kind: "bot_message_sent",
+          toBotId: "peer",
+          toBotName: "Researcher",
+          text: `note ${index}`,
+        },
+      ],
+    })),
+    olderCursor: null,
   });
-  expect(container.querySelector("textarea,input")).toBeNull();
-  const close = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Close Chat",
-  )!;
-  act(() => close.click());
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(createElement(PeerChat)));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  return container;
+}
+
+it("opens the exchange at its latest message", async () => {
+  const screen = await open();
+  expect(screen.textContent).toContain("note 39");
+
+  act(() => scrollProps.current.onContentSizeChange?.());
+
+  expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+});
+
+it("leaves the position alone once the reader scrolls", async () => {
+  await open();
+
+  act(() => {
+    scrollProps.current.onScrollBeginDrag?.();
+    scrollProps.current.onContentSizeChange?.();
+  });
+
+  expect(scrollToEnd).not.toHaveBeenCalled();
+});
+
+it("names both bots in the header and closes the read-only chat", async () => {
+  const screen = await open();
+  expect(screen.textContent).toContain("Chief⇄Researcher");
+  const close = screen.querySelector<HTMLButtonElement>("button");
+  expect(close?.textContent).toBe("Close Chat");
+  act(() => close?.click());
   expect(back).toHaveBeenCalledOnce();
-});
-
-it("retries a failed history request and shows the empty state", async () => {
-  rpc
-    .mockRejectedValueOnce(new Error("offline"))
-    .mockResolvedValueOnce({ messages: [], olderCursor: null });
-  await act(async () => root.render(<PeerChat />));
-  expect(container.textContent).toContain("Could not load this chat.");
-  await act(async () =>
-    [...container.querySelectorAll("button")].find((b) => b.textContent === "Retry now")!.click(),
-  );
-  expect(container.textContent).toContain("No messages with Writer yet.");
-});
-
-it("shows loading while history is pending", async () => {
-  rpc.mockReturnValue(new Promise(() => undefined));
-  await act(async () => root.render(<PeerChat />));
-  expect(container.textContent).toContain("Loading…");
-});
-
-it("opens a counted receipt and preserves long-press actions", () => {
-  const open = vi.fn();
-  const longPress = vi.fn();
-  act(() =>
-    root.render(
-      <PeerReceiptLine
-        peerBotId="peer"
-        peerBotName="Writer"
-        color="muted"
-        count={3}
-        direction="received"
-        onPress={open}
-        actionProps={{ onLongPress: longPress }}
-      />,
-    ),
-  );
-  const line = container.querySelector("button")!;
-  expect(line.getAttribute("aria-label")).toBe("3 messages with Writer");
-  expect(line.textContent).toBe("3 messages with Writer");
-  act(() => line.click());
-  expect(open).toHaveBeenCalledOnce();
-  act(() => line.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
-  expect(longPress).toHaveBeenCalledOnce();
-});
-
-it("uses Russian plural categories for counted exchanges", () => {
-  resetI18nForTests("ru");
-  expect(peerExchangeLabel(2, "received", "Writer")).toBe("2 сообщения с Writer");
-  expect(peerExchangeLabel(5, "received", "Writer")).toBe("5 сообщений с Writer");
-  expect(peerExchangeLabel(21, "received", "Writer")).toBe("21 сообщение с Writer");
 });

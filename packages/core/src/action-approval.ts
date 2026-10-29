@@ -17,13 +17,17 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "remember",
   "request_takeover",
   "request_secret",
+  "generate_secret",
   "run_subagent",
   "spawn_bot",
   "schedule_create",
   "schedule_list",
+  "schedule_update",
   "schedule_cancel",
   "list_fleet",
   "organize_bot",
+  // The wallet owner approves every purchase in the wallet itself; a card here would ask twice.
+  "request_purchase",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -37,8 +41,10 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_launch",
   "cloud_agent_reply",
   "cloud_agent_cancel",
+  "user_computer_shell",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  "respond_agent_connection",
   "create_space",
   "propose_instructions_update",
   "create_group",
@@ -55,6 +61,7 @@ const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "list_files",
   "list_fleet",
   "list_secrets",
+  "purchase_status",
   "read_file",
   "recall_memory",
   "request_takeover",
@@ -114,14 +121,14 @@ export function watchToolRefusal(input: {
   if (readOnly !== true) {
     return `${toolName} can change data, so a change trigger can't run it. Pick a read-only tool.`;
   }
-  if (
-    resolveActionApprovalDetail({
-      toolName,
-      connectorKind: input.connectorKind,
-      readOnly,
-      rules: input.rules,
-    }).decision === "ask"
-  ) {
+  const decision = resolveActionApprovalDetail({
+    toolName,
+    connectorKind: input.connectorKind,
+    readOnly,
+    rules: input.rules,
+  }).decision;
+  if (decision === "deny") return `${toolName} is blocked, so a change trigger can't run it.`;
+  if (decision === "ask") {
     return `${toolName} needs approval under this space's rules, and a change check cannot ask.`;
   }
   return null;
@@ -137,6 +144,32 @@ export function toolRequiresApproval(
   if (APPROVAL_REQUIRED_BUILTIN_TOOLS.has(toolName)) return true;
   if (viaConnector) return connectorToolRequiresApproval(toolName, readOnly);
   return false;
+}
+
+/**
+ * Whether this call repeats one of `denied`, the requests a person denied for this tool earlier in
+ * the run. A Composio multi-execute repeats only when it shares an inner tool slug. Telling the
+ * model not to retry did not stop it.
+ */
+export function repeatsDeniedAction(input: {
+  toolName: string;
+  args: unknown;
+  denied: unknown[];
+}): boolean {
+  return input.denied.some((request) => {
+    if (input.toolName !== "COMPOSIO_MULTI_EXECUTE_TOOL") return true;
+    const before = innerToolSlugs(request);
+    return innerToolSlugs(input.args).some((slug) => before.includes(slug));
+  });
+}
+
+function innerToolSlugs(args: unknown): string[] {
+  const tools = (args as { tools?: unknown } | null)?.tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.flatMap((item) => {
+    const slug = (item as { tool_slug?: unknown } | null)?.tool_slug;
+    return typeof slug === "string" && slug.trim() ? [slug.trim().toUpperCase()] : [];
+  });
 }
 
 /** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
@@ -175,8 +208,10 @@ export function unattendedTriggerToolRequiresApproval(
  */
 const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
+  "connect_app",
   "attach_file",
   "end_call",
+  "generate_secret",
   "list_fleet",
   "list_secrets",
   "message_user",
@@ -190,6 +225,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "schedule_cancel",
   "schedule_create",
   "schedule_list",
+  "schedule_update",
   "scratchpad_add",
   "scratchpad_complete",
   "scratchpad_list",
@@ -273,6 +309,12 @@ function categoryMatches(
   return false;
 }
 
+/**
+ * These run code inside Composio that can call any action, so a block scoped to one action could
+ * be routed around through them. Any block that is not for a site matches them.
+ */
+const COMPOSIO_CODE_TOOLS = new Set(["composio_remote_workbench", "composio_remote_bash_tool"]);
+
 function ruleMatches(
   rule: ActionApprovalRule,
   toolName: string,
@@ -280,6 +322,13 @@ function ruleMatches(
   readOnly: boolean | undefined,
   site: string | undefined,
 ): boolean {
+  if (
+    rule.effect === "deny" &&
+    rule.matchKind !== "site" &&
+    COMPOSIO_CODE_TOOLS.has(toolName.toLowerCase())
+  ) {
+    return true;
+  }
   const value = rule.matchValue.toLowerCase();
   switch (rule.matchKind) {
     case "site":
@@ -310,17 +359,31 @@ function ruleSpecificity(rule: ActionApprovalRule): number {
   }
 }
 
-export type ActionApprovalSource = "require_approval" | "always_allow" | "default";
+export type ActionApprovalSource = "require_approval" | "always_allow" | "deny" | "default";
 
 export type ActionApprovalResolved = {
-  decision: "ask" | "allow";
+  decision: "ask" | "allow" | "deny";
   source: ActionApprovalSource;
   matchingRules: ActionApprovalRule[];
+  /** The rules that produced this decision; broader matches remain in `matchingRules`. */
+  decisiveRules: ActionApprovalRule[];
 };
 
 /**
- * Deterministic rule resolution. Always-allow and require-approval both beat the default.
- * `site` is the destination of an outbound fetch; a rule for that site beats a rule for the tool.
+ * The saved rules responsible for an ask or block. Broader rules that also matched
+ * are omitted so a refusal points at the decisive rule instead of every candidate.
+ */
+export function decisiveActionApprovalRules(
+  resolved: ActionApprovalResolved,
+): ActionApprovalRule[] {
+  if (resolved.source !== "require_approval" && resolved.source !== "deny") return [];
+  return resolved.decisiveRules.filter((rule) => rule.effect === resolved.source);
+}
+
+/**
+ * Deterministic rule resolution. A block always wins, so a narrower allow cannot punch through it.
+ * Otherwise the most specific rule decides, and `site`, the destination of an outbound fetch,
+ * beats a rule for the tool.
  */
 export function resolveActionApprovalDetail(input: {
   toolName: string;
@@ -334,15 +397,31 @@ export function resolveActionApprovalDetail(input: {
     ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
   );
   if (matchingRules.length === 0) {
-    return { decision: "allow", source: "default", matchingRules };
+    return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
+  }
+  const denyingRules = matchingRules.filter((rule) => rule.effect === "deny");
+  if (denyingRules.length > 0) {
+    const highestSpecificity = Math.max(...denyingRules.map(ruleSpecificity));
+    return {
+      decision: "deny",
+      source: "deny",
+      matchingRules,
+      decisiveRules: denyingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity),
+    };
   }
 
   const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
   const winners = matchingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity);
-  if (winners.some((rule) => rule.effect === "require_approval")) {
-    return { decision: "ask", source: "require_approval", matchingRules };
+  const askingRules = winners.filter((rule) => rule.effect === "require_approval");
+  if (askingRules.length > 0) {
+    return {
+      decision: "ask",
+      source: "require_approval",
+      matchingRules,
+      decisiveRules: askingRules,
+    };
   }
-  return { decision: "allow", source: "always_allow", matchingRules };
+  return { decision: "allow", source: "always_allow", matchingRules, decisiveRules: [] };
 }
 
 export function resolveActionApproval(input: {
@@ -350,43 +429,166 @@ export function resolveActionApproval(input: {
   connectorKind?: string;
   readOnly?: boolean;
   rules: ActionApprovalRule[];
-}): "ask" | "allow" {
+}): "ask" | "allow" | "deny" {
   return resolveActionApprovalDetail(input).decision;
+}
+
+/**
+ * The actions a batch call runs, where `shape` says the call names each one at
+ * `args[items][i][action]`. `complete` is false when an entry names no action, or the call lists
+ * none: nothing can show what it does, so the call must ask.
+ */
+export function batchActions(
+  shape: { items: string; action: string },
+  args: unknown,
+): { actions: string[]; complete: boolean } {
+  const items =
+    args && typeof args === "object" ? (args as Record<string, unknown>)[shape.items] : undefined;
+  if (!Array.isArray(items)) return { actions: [], complete: false };
+  const actions = new Set<string>();
+  let complete = items.length > 0;
+  for (const item of items) {
+    const action =
+      item && typeof item === "object"
+        ? (item as Record<string, unknown>)[shape.action]
+        : undefined;
+    if (typeof action === "string" && action.trim()) actions.add(action.trim());
+    else complete = false;
+  }
+  return { actions: [...actions], complete };
+}
+
+/**
+ * Rules for every action one call runs. The strictest action decides, so one allowed action never
+ * carries the rest of a batch, and the batch is allowed by rule only when each action is. `wrapper`
+ * can only block: a block on the batch tool itself or its connector still stops every batch.
+ */
+export function resolveActionApprovalForTools(input: {
+  tools: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
+  wrapper?: { name: string; connectorKind?: string };
+  site?: string;
+  rules: ActionApprovalRule[];
+}): ActionApprovalResolved {
+  const resolve = (tool: { name: string; connectorKind?: string; readOnly?: boolean }) =>
+    resolveActionApprovalDetail({
+      toolName: tool.name,
+      connectorKind: tool.connectorKind,
+      readOnly: tool.readOnly,
+      site: input.site,
+      rules: input.rules,
+    });
+  const parts = input.tools.map(resolve);
+  const wrapper = input.wrapper ? resolve(input.wrapper) : undefined;
+  if (wrapper?.decision === "deny") parts.push(wrapper);
+  const matchingRules = [...new Set(parts.flatMap((part) => part.matchingRules))];
+  const strictest =
+    parts.find((part) => part.decision === "deny") ?? parts.find((part) => part.decision === "ask");
+  if (strictest) return { ...strictest, matchingRules };
+  const allAllowed = parts.length > 0 && parts.every((part) => part.source === "always_allow");
+  return {
+    decision: "allow",
+    source: allAllowed ? "always_allow" : "default",
+    matchingRules,
+    decisiveRules: [],
+  };
+}
+
+/** Only rule matching, not runtime authorization or an approval-model prediction. */
+export function previewActionApprovalRule(
+  rules: ActionApprovalRule[],
+  rule: ActionApprovalRule,
+  effect: "always_allow" | "deny" | "remove",
+  sample: Omit<Parameters<typeof resolveActionApprovalForTools>[0], "rules">,
+) {
+  const connectorKinds = rules
+    .filter((entry) => entry.matchKind === "connector")
+    .map((entry) => entry.matchValue);
+  const context = {
+    ...sample,
+    tools: sample.tools.map((tool) => ({
+      ...tool,
+      connectorKind: tool.connectorKind ?? connectorKindFromToolName(tool.name, connectorKinds),
+    })),
+  };
+  const remaining = rules.filter(
+    (other) =>
+      other.matchKind !== rule.matchKind ||
+      other.matchValue.toLowerCase() !== rule.matchValue.toLowerCase(),
+  );
+  const next =
+    effect === "remove"
+      ? rules.filter((other) => other !== rule)
+      : [...remaining, { ...rule, effect }];
+  return {
+    before: resolveActionApprovalForTools({ ...context, rules }).source,
+    after: resolveActionApprovalForTools({ ...context, rules: next }).source,
+  };
+}
+
+/**
+ * How much a space asks before acting. `never` runs everything without waiting, `auto` lets the approval model pass what
+ * fits the owner's request, and `ask` asks before anything that changes something.
+ */
+export type ApprovalMode = "never" | "auto" | "ask";
+
+/** The mode a stored preference means. Skipping approvals is Never ask, an enabled review is Auto. */
+export function approvalModeFromPreference(preference: {
+  enabled: boolean;
+  skipApprovals: boolean;
+}): ApprovalMode {
+  if (preference.skipApprovals) return "never";
+  return preference.enabled ? "auto" : "ask";
+}
+
+export function approvalPreferenceFromMode(mode: ApprovalMode): {
+  enabled: boolean;
+  skipApprovals: boolean;
+} {
+  return { enabled: mode === "auto", skipApprovals: mode === "never" };
 }
 
 export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
- * Pure combiner for Auto Review after rule resolution.
- * Rules win: require_approval asks, always_allow runs. Only the default path may call a judge.
- * The judge only escalates to ask; it never silent-denies.
+ * The gate after rule resolution. A block refuses in every mode. An approval a person must give
+ * asks, except in Never ask, which never waits: there it runs when the owner started the run and no
+ * outside content entered it, and is refused otherwise, since outside text could have asked for
+ * it. Otherwise Never ask runs it, an ask rule asks, and anything that would ask goes to the approval
+ * model in Auto, falling back to asking when no model is set up.
  */
 export function planActionGate(input: {
   resolved: ActionApprovalResolved;
+  mode: ApprovalMode;
+  /** Needs a person whatever the rules say (see toolRequiresExplicitApproval). */
+  mandatory?: boolean;
+  /** The owner did not start this run, or outside content entered it. */
+  steerable?: boolean;
   consequential: boolean;
-  autoReviewEnabled: boolean;
+  /**
+   * A read whose arguments outside content may have chosen (see connectorReadRequiresApproval).
+   * It goes to a connection the owner set up, so only the approval model checks it.
+   */
+  reviewOnly?: boolean;
   checkerConfigured: boolean;
   /** A fetch to a site the run was not given (see outboundSiteGate). */
   newDestination?: boolean;
-}): "ask" | "allow" | "judge" {
+}): "ask" | "allow" | "judge" | "deny" {
+  if (input.resolved.decision === "deny") return "deny";
+  if (input.mandatory) {
+    if (input.mode !== "never") return "ask";
+    return input.steerable ? "deny" : "allow";
+  }
+  if (input.mode === "never") return "allow";
   if (input.resolved.decision === "ask") return "ask";
+  const review = input.mode === "auto" && input.checkerConfigured ? "judge" : "ask";
   // A rule for the whole tool is not a choice of sites, so it never allows a new one; only a site
-  // rule does, and that makes the site no longer new. Auto Review may pass one, judging only the
+  // rule does, and that makes the site no longer new. The approval model judges a new site on the
   // owner's own words and the full URL: it never sees tool results or inbound messages, so text
-  // injected there cannot argue for the site. Without Auto Review a person decides.
-  if (input.newDestination) {
-    return input.autoReviewEnabled && input.checkerConfigured ? "judge" : "ask";
-  }
+  // injected there cannot argue for the site.
+  if (input.newDestination) return review;
   if (input.resolved.source === "always_allow") return "allow";
-  if (
-    input.consequential &&
-    input.autoReviewEnabled &&
-    input.checkerConfigured &&
-    input.resolved.source === "default"
-  ) {
-    return "judge";
-  }
-  return "allow";
+  if (input.consequential) return review;
+  return input.reviewOnly && review === "judge" ? "judge" : "allow";
 }
 
 /** Map a judge outcome onto ask/allow. Errors fail closed on consequential tools. */

@@ -1,10 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { waitForConnection } from "@rakazo/core";
+import { appConnectedInput, waitForConnection } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../components/ai/primitives";
+import { OptionRow } from "../../components/OptionRow";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
@@ -57,7 +58,7 @@ export function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="relative w-[420px] max-w-full rounded-[20px] bg-card px-[18px] py-[14px]">
+      <BuiCard className="relative w-[420px] max-w-full px-[18px] py-[14px]">
         {!block.answerId ? (
           <Button
             variant="ghost"
@@ -76,44 +77,34 @@ export function ChoiceCard({
         {block.subtitle ? (
           <div className="mt-0.5 text-[13px] text-foreground/75">{block.subtitle}</div>
         ) : null}
-        <div className="mt-3 space-y-2.5">
-          {block.options
-            .filter((option) => !block.answerId || option.id === block.answerId)
-            .map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                disabled={Boolean(block.answerId) || pending}
-                onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-xl border border-input px-3.5 py-3.5 text-start text-foreground disabled:opacity-60 ${block.answerId ? "bg-accent" : "bg-secondary hover:bg-accent"}`}
-              >
-                <span className="grid h-[24px] w-[24px] shrink-0 place-items-center rounded-[7px] bg-background text-[12.5px] leading-none font-medium text-foreground/75">
-                  {option.letter}
-                </span>
-                <span
-                  className={`flex-1 text-[15px] leading-[1.35] ${block.answerId ? "text-foreground/75" : "text-foreground"}`}
-                >
-                  <OnboardingFocusOptionLabel
-                    id={option.id}
-                    label={option.label}
-                    question={block.question}
-                  />
-                </span>
-                {block.answerId === option.id ? (
-                  <span className="text-foreground/75">✓</span>
-                ) : null}
-              </button>
-            ))}
+        <div className="mt-2.5 space-y-0.5">
+          {block.options.map((option) => (
+            <OptionRow
+              key={option.id}
+              letter={option.letter}
+              selected={block.answerId === option.id}
+              disabled={Boolean(block.answerId) || pending}
+              onClick={() => void choose(option.id)}
+            >
+              <OnboardingFocusOptionLabel
+                id={option.id}
+                label={option.label}
+                question={block.question}
+              />
+            </OptionRow>
+          ))}
         </div>
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-      </div>
+      </BuiCard>
     </div>
   );
 }
 
+const FOCUS_QUESTION = "What do you want me on first?";
+
 /** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
 function OnboardingFocusQuestion({ question }: { question: string }) {
-  if (question === "What do you want me on first?") {
+  if (question === FOCUS_QUESTION) {
     return <Trans>What do you want me on first?</Trans>;
   }
   return question;
@@ -128,7 +119,7 @@ function OnboardingFocusOptionLabel({
   label: string;
   question: string;
 }) {
-  if (question !== "What do you want me on first?") return label;
+  if (question !== FOCUS_QUESTION) return label;
   switch (id) {
     case "day":
       return <Trans>Day-to-day work</Trans>;
@@ -145,9 +136,13 @@ function OnboardingFocusOptionLabel({
 
 export function AppConnectCard({
   botId,
+  threadId,
+  messageId,
   block,
 }: {
   botId: string;
+  threadId: string;
+  messageId?: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
 }) {
   const { t } = useLingui();
@@ -182,7 +177,7 @@ export function AppConnectCard({
       if (result.status === "connected") {
         setLocalStatus("connected");
         await rpc.onboarding
-          .appConnected({ botId, provider: block.provider, connectorId: block.connectorId })
+          .appConnected(appConnectedInput(botId, threadId, block, messageId))
           .catch(() => undefined);
         return;
       }
@@ -202,14 +197,14 @@ export function AppConnectCard({
     <BuiCard
       role="group"
       aria-label={t`${block.name} connection`}
-      className="w-[min(420px,80%)] px-4 py-3.5"
+      className="w-full max-w-[440px] px-4 py-3.5"
     >
       <div className="flex items-center gap-3.5">
         {block.logo ? (
           <img
             src={block.logo}
             alt=""
-            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
+            className="h-10 w-10 rounded-[10px] bg-favicon-plate object-contain p-1"
           />
         ) : (
           <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-muted text-[15px] text-foreground">
@@ -225,12 +220,7 @@ export function AppConnectCard({
         {status === "connected" ? (
           <SuccessPop label={t`Connected`} />
         ) : (
-          <Button
-            variant="secondary"
-            className="rounded-full hover:border-border hover:bg-accent hover:text-foreground"
-            disabled={busy}
-            onClick={() => void authorize()}
-          >
+          <Button disabled={busy} onClick={() => void authorize()}>
             {busy ? t`Waiting…` : t`Authorize`}
           </Button>
         )}
@@ -399,7 +389,7 @@ export function McpApprovalCard({
     }
   }
 
-  const summary = endpoint ?? `stdio · ${transport}`;
+  const summary = endpoint ?? `stdio (${transport})`;
   return (
     <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
       <div className="flex items-center gap-2">
@@ -420,16 +410,11 @@ export function McpApprovalCard({
           </p>
           {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              className="rounded-full"
-              disabled={state !== "pending" || busy}
-              onClick={() => void authorize()}
-            >
+            <Button disabled={state !== "pending" || busy} onClick={() => void authorize()}>
               {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
             </Button>
             <Button
               variant="secondary"
-              className="rounded-full"
               disabled={state !== "pending" || busy}
               onClick={() => void dismiss()}
             >
@@ -440,7 +425,7 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected`} />
         </div>
       ) : null}
       {state === "dismissed" ? (
@@ -477,7 +462,7 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-muted p-4">
+      <div className="group relative w-[552px] max-w-full rounded-[20px] bg-muted p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
@@ -561,7 +546,7 @@ export function ArtifactImage({
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-border bg-muted px-4 py-3 text-[14px] text-muted-foreground">
+        <div className="rounded-[20px] bg-muted px-4 py-3 text-[14px] text-muted-foreground">
           {name}
         </div>
       )}

@@ -33,7 +33,7 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("actions/attest-build-provenance@");
     expect(workflow).not.toContain("--publish always");
     expect(workflow).toContain("DESKTOP_MAC_CSC_LINK");
-    expect(workflow).toContain("DESKTOP_WIN_CSC_LINK");
+    expect(workflow).not.toContain("DESKTOP_WIN_CSC");
     expect(workflow).not.toMatch(/secrets\.DESKTOP_CSC_(?:LINK|KEY_PASSWORD)/);
     expect(workflow).not.toContain("cache: pnpm");
     expect(workflow).toContain("apps/desktop/out/latest*.yml");
@@ -55,23 +55,40 @@ describe("desktop release workflow", () => {
     );
   });
 
-  it("builds Windows only when an Authenticode certificate is configured", () => {
+  it("always builds Windows and signs it once Azure Artifact Signing is configured", () => {
     expect(workflow).toContain(
-      `WINDOWS_SIGNING: ${expression("secrets.DESKTOP_WIN_CSC_LINK != ''")}`,
+      `WINDOWS_SIGNING: ${expression("secrets.DESKTOP_WIN_AZURE_CLIENT_ID != ''")}`,
     );
+    expect(workflow).not.toContain("AZURE_CLIENT_SECRET");
+    expect(workflow).toContain("environment: desktop-release");
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("azure/login@");
+    expect(workflow).toContain("TimeStamperCertificate");
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows' && needs.validate.outputs.windows_signed == 'true'",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows' && needs.validate.outputs.windows_signed != 'true'",
+    );
+    expect(workflow).toContain("Unsigned Windows update config names a publisher.");
+    for (const option of [
+      "endpoint",
+      "codeSigningAccountName",
+      "certificateProfileName",
+      "publisherName",
+    ]) {
+      expect(workflow).toContain(`"-c.win.azureSignOptions.${option}=$`);
+    }
+    expect(workflow).toContain("is not signed by the configured publisher");
     expect(workflow).toContain(
       `include: ${expression("fromJSON(needs.validate.outputs.platforms)")}`,
     );
     expect(workflow).toContain(
-      `include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"}]'`,
-    );
-    expect(workflow).toMatch(
-      /if \[\[ "\$WINDOWS_SIGNING" == "true" \]\]; then\n\s+include=.*\{"os":"windows-2022","artifact":"windows"\}/,
+      `include='[{"os":"macos-26","artifact":"macos"},{"os":"ubuntu-24.04","artifact":"linux"},{"os":"windows-2022","artifact":"windows"}]'`,
     );
     expect(workflow.split("windows-2022")).toHaveLength(2);
-    expect(workflow).toContain(`WINDOWS_BUILT: ${expression("needs.validate.outputs.windows")}`);
-    expect(workflow).toContain('if [[ "$WINDOWS_BUILT" == "true" ]]; then');
-    expect(workflow).toContain("feeds+=(release-artifacts/latest.yml)");
+    expect(workflow).toContain("test -f release-artifacts/latest.yml");
+    expect(workflow).toContain("compgen -G 'release-artifacts/*.exe' >/dev/null");
   });
 
   it("pins every platform update feed to the official GitHub owner and repo", () => {
@@ -82,6 +99,22 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("Windows update config missing");
     expect(workflow).toContain("RELEASE_VERSION:");
     expect(workflow).toContain('grep -Fqx "version: $RELEASE_VERSION"');
+  });
+
+  it("adds the system passkey association only when a provisioning profile is configured", () => {
+    expect(workflow).toContain(
+      `PROVISIONING_PROFILE: ${expression("secrets.DESKTOP_MAC_PROVISIONING_PROFILE")}`,
+    );
+    expect(workflow).toMatch(/if \[\[ -z "\$PROVISIONING_PROFILE" \]\]; then\n.*\n\s+exit 0/);
+    expect(workflow).toContain("pnpm exec tsx apps/desktop/scripts/passkey-entitlements.ts");
+    expect(workflow).toContain('if [[ "$app_id" != "$APPLE_TEAM_ID.$bundle_id" ]]; then');
+    // Helpers keep entitlementsInherit; only the main app is associated.
+    expect(workflow).toContain(
+      '"-c.mac.entitlements=$PASSKEY_ENTITLEMENTS" "-c.mac.provisioningProfile=$PASSKEY_PROFILE"',
+    );
+    expect(workflow).not.toContain("entitlementsInherit=");
+    expect(workflow).toContain('test -f "$app/Contents/embedded.provisionprofile"');
+    expect(workflow).not.toMatch(/secrets\.APPLE_TEAM_ID/);
   });
 
   it("publishes only a complete stable, upgrade-only feed", () => {

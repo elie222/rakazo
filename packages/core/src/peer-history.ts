@@ -1,27 +1,25 @@
-import type { ThreadMessage } from "@rakazo/contracts";
-
 const PEER_HISTORY_PAGE_TIMEOUT_MS = 15_000;
 const PEER_HISTORY_TOTAL_TIMEOUT_MS = 60_000;
 
-type PeerHistoryPage = {
-  messages: ThreadMessage[];
+type PeerHistoryPage<T> = {
+  messages: readonly T[];
   olderCursor: number | null;
 };
 
 /** Load every page, with bounded requests and cancellation on web and native runtimes. */
-export async function loadPeerHistory({
+export async function loadPeerHistory<T>({
   signal,
   loadPage,
   pageTimeoutMs = PEER_HISTORY_PAGE_TIMEOUT_MS,
   totalTimeoutMs = PEER_HISTORY_TOTAL_TIMEOUT_MS,
 }: {
   signal: AbortSignal;
-  loadPage: (before: number | undefined, signal: AbortSignal) => Promise<PeerHistoryPage>;
+  loadPage: (before: number | undefined, signal: AbortSignal) => Promise<PeerHistoryPage<T>>;
   pageTimeoutMs?: number;
   totalTimeoutMs?: number;
-}): Promise<ThreadMessage[]> {
+}): Promise<T[]> {
   const deadline = Date.now() + totalTimeoutMs;
-  const collected: ThreadMessage[][] = [];
+  const collected: (readonly T[])[] = [];
   let before: number | undefined;
   do {
     if (signal.aborted) throw signal.reason ?? namedError("AbortError");

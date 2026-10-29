@@ -16,7 +16,7 @@ export type RecentChange = { title: string; pr: string | null; url: string; date
 // Housekeeping commits say nothing about the product.
 const QUIET_COMMIT = /^(chore|test|ci|build|docs|style|refactor)(\(.*?\))?!?:|^Merge /i;
 
-export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number | null> {
+async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number | null> {
   const payload = await fetchGithubJson<{ stargazers_count?: unknown }>(
     GITHUB_API_REPO,
     MAX_GITHUB_STARS_RESPONSE_BYTES,
@@ -25,7 +25,16 @@ export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise
   return typeof payload?.stargazers_count === "number" ? payload.stargazers_count : null;
 }
 
-/** Installer URLs from the latest desktop release; empty when GitHub is unavailable. */
+// Last known count, shown when the build cannot reach GitHub.
+const GITHUB_STARS_FALLBACK = 6_000;
+let githubStars: Promise<number> | undefined;
+
+/** One lookup per build: anonymous requests share a 60/hour limit, and every page shows the count. */
+export async function githubStarsLabel(): Promise<string> {
+  githubStars ??= fetchGithubStars().then((count) => count ?? GITHUB_STARS_FALLBACK);
+  return formatStarCount(await githubStars);
+}
+
 /** Desktop platforms to offer: macOS always, Windows and Linux once a release ships them. */
 export function availableDesktopPlatforms(downloads: DesktopDownloads) {
   return (["mac", "windows", "linux"] as const).filter(

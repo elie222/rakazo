@@ -1,6 +1,7 @@
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  MODEL_KEY_FORMAT_ERROR,
   ModelConnectInputSchema,
 } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
@@ -74,6 +75,28 @@ describe("built-in provider output limits", () => {
       authKind: "api_key",
     });
     expect(JSON.stringify(modelCredentialDto(row, plaintext))).not.toContain("sk-test-key");
+  });
+
+  it.each([
+    ["non-Latin text", "sk-fixture-你好-key"],
+    ["a pasted sentence", "my key is sk-fixture-key"],
+    ["a line break", "sk-fixture\nkey-part"],
+  ])("refuses a key with %s before saving it", (_, apiKey) => {
+    expect(() => connectAsOwner({ provider: "deepseek", apiKey })).toThrow(MODEL_KEY_FORMAT_ERROR);
+    expect(() =>
+      connectAsOwner({
+        provider: "openai-compatible",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        modelId: "fixture-model",
+        apiKey,
+      }),
+    ).toThrow(MODEL_KEY_FORMAT_ERROR);
+  });
+
+  it("trims the whitespace around a pasted key", () => {
+    expect(connectAsOwner({ provider: "deepseek", apiKey: "  sk-fixture-key\n" })).toBe(
+      "sk-fixture-key",
+    );
   });
 
   it("keeps a raw API key when no limit is configured", () => {
@@ -174,6 +197,17 @@ describe("built-in provider output limits", () => {
     ).toBe("oauth");
   });
 
+  it("keeps an output limit saved while the connection needs sign-in again", () => {
+    const previous = serializeModelSecret({
+      kind: "oauth",
+      reconnectRequired: true,
+      maxTokens: 4096,
+    });
+    expect(
+      parseModelSecret(connectAsOwner({ provider: "openai-codex", maxTokens: 8192 }, previous)),
+    ).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 8192 });
+  });
+
   it("rejects a limit update when no credential exists", () => {
     expect(() => connectAsOwner({ provider: "anthropic", maxTokens: 8192 })).toThrow(/API key/);
   });
@@ -235,6 +269,30 @@ describe("openai-codex API key guard", () => {
         gatewayId: "gateway-1",
       }),
     ).toBe("sk-test-key-123");
+  });
+
+  it("stores Workers AI account routing and preserves it without a replacement key", () => {
+    const provider = "cloudflare-workers-ai";
+    const plaintext = connectAsOwner({
+      provider,
+      apiKey: "cf-test-key-value",
+      accountId: "account-fixture",
+    });
+    const saved = { kind: "api_key", key: "cf-test-key-value", accountId: "account-fixture" };
+    expect(parseModelSecret(plaintext)).toEqual(saved);
+    expect(parseModelSecret(connectAsOwner({ provider, maxTokens: 2048 }, plaintext))).toEqual({
+      ...saved,
+      maxTokens: 2048,
+    });
+    expect(
+      parseModelSecret(connectAsOwner({ provider, accountId: "account-updated" }, plaintext)),
+    ).toEqual({ ...saved, accountId: "account-updated" });
+    expect(() => connectAsOwner({ provider, apiKey: "cf-test-key-value" })).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
+    expect(() => connectAsOwner({ provider, accountId: "../account" }, plaintext)).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
   });
 
   it("stores Cloudflare AI Gateway routing with the key and keeps it on a limit update", () => {
@@ -502,6 +560,21 @@ describe("modelCredentialDto", () => {
     });
     expect(modelCredentialDto({ ...row, provider: "openai-codex" }, oauth).hasKey).toBe(false);
     expect(modelCredentialDto(row).hasKey).toBe(false);
+
+    const rejected = serializeModelSecret({
+      kind: "oauth",
+      reconnectRequired: true,
+      maxTokens: 4096,
+    });
+    const rejectedDto = modelCredentialDto({ ...row, provider: "openai-codex" }, rejected);
+    expect(rejectedDto).toMatchObject({
+      authKind: "oauth",
+      reconnectRequired: true,
+      maxTokens: 4096,
+      hasKey: false,
+    });
+    expect(JSON.stringify(rejectedDto)).not.toContain("access");
+    expect(JSON.stringify(rejectedDto)).not.toContain("refresh");
   });
 
   it("exposes defaultModel as modelId for provider credentials", () => {
@@ -807,4 +880,70 @@ describe("compatible model selection limit", () => {
       ).toBe(true);
     }
   });
+});
+
+describe("compatible connection header secrets", () => {
+  const input = {
+    provider: "openai-compatible",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "test",
+  };
+  it("stores headers without returning their values and preserves only at the same endpoint", () => {
+    const plaintext = connectAsOwner({ ...input, headers: { "x-session": "private-value" } });
+    expect(parseModelSecret(plaintext)).toHaveProperty("headers", { "x-session": "private-value" });
+    const dto = modelCredentialDto(
+      { id: "credential", provider: input.provider, label: "Test", isDefault: false },
+      plaintext,
+    );
+    expect(dto).toHaveProperty("headerNames", ["x-session"]);
+    expect(JSON.stringify(dto)).not.toContain("private-value");
+    expect(parseModelSecret(connectAsOwner(input, plaintext))).toHaveProperty("headers", {
+      "x-session": "private-value",
+    });
+    expect(parseModelSecret(connectAsOwner({ ...input, headers: {} }, plaintext))).toHaveProperty(
+      "headers",
+      {},
+    );
+    expect(
+      parseModelSecret(
+        connectAsOwner({ ...input, baseUrl: "http://127.0.0.2:8000/v1" }, plaintext),
+      ),
+    ).not.toHaveProperty("headers");
+  });
+});
+
+it("returns only header names in a compatible credential DTO", () => {
+  const plaintext = JSON.stringify({
+    kind: "openai_compatible",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    headers: { "x-session": "fake-session-secret" },
+  });
+  const dto = modelCredentialDto(
+    { id: "credential", provider: "openai-compatible", label: "Test", isDefault: false },
+    plaintext,
+  );
+  expect(dto).toHaveProperty("headerNames", ["x-session"]);
+  expect(JSON.stringify(dto)).not.toContain("fake-session-secret");
+});
+
+it("requires HTTPS when saving new or inherited headers on public HTTP", () => {
+  vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+  try {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://models.example/v1",
+      modelId: "test",
+    };
+    const headers = { "x-session": "long-session-secret" };
+    expect(() => buildModelConnectPlaintext({ ...input, headers })).toThrow(
+      /API key or custom headers must use HTTPS/,
+    );
+    const previous = JSON.stringify({ kind: "openai_compatible", baseUrl: input.baseUrl, headers });
+    expect(() => buildModelConnectPlaintext(input, previous)).toThrow(
+      /API key or custom headers must use HTTPS/,
+    );
+    expect(() => buildModelConnectPlaintext({ ...input, headers: {} }, previous)).not.toThrow();
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

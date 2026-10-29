@@ -14,7 +14,7 @@ import {
   verifyMcpInstall,
 } from "./installed-connectors.js";
 import { parseConnectorToolArgs, SELECTED_SCHEMA_MAX_BYTES } from "./lazy-tool-catalog.js";
-import { parametersFor } from "./pi-runtime.js";
+import { parametersFor } from "./pi-runtime-tool-parameters.js";
 
 describe("OpenAPI connector import", () => {
   it("uses the bounded catalog for a real large installed OpenAPI source", async () => {
@@ -1537,7 +1537,7 @@ describe("private installed connectors", () => {
     ).resolves.toMatchObject({ source: LOCAL_API, operationCount: 1 });
   });
 
-  it("checks the install owner's current standing on every call", async () => {
+  it("requires operator configuration on every call regardless of stored owner", async () => {
     const install = {
       id: "api-local",
       kind: "api",
@@ -1575,9 +1575,7 @@ describe("private installed connectors", () => {
       return events;
     };
 
-    await expect(execute("owner-1")).resolves.toEqual([
-      { type: "result", data: { status: 200, data: { items: [] } } },
-    ]);
+    await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
     await expect(execute("member-1")).resolves.toEqual([
       { type: "error", message: "Connector URL must use HTTPS" },
     ]);
@@ -1585,6 +1583,98 @@ describe("private installed connectors", () => {
     // Installed while this user owned the deployment: no longer reachable after the change.
     deployment.ownerUserId = "member-1";
     await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("declared JSON request bodies", () => {
+  it.each([
+    ["DELETE", true, { body: { ids: ["item-1"] } }, '{"ids":["item-1"]}', "?dryRun=true"],
+    ["DELETE", true, { body: null }, "null", "?dryRun=true"],
+    ["POST", true, { body: null }, "null", "?dryRun=true"],
+    ["DELETE", "query", { body: "legacy" }, undefined, "?dryRun=true&body=legacy"],
+    ["DELETE", "header", { body: "legacy" }, undefined, "?dryRun=true"],
+    ["DELETE", false, { body: { ids: ["item-1"] } }, undefined, "?dryRun=true"],
+    ["POST", "query", { body: null }, "{}", "?dryRun=true"],
+    ["DELETE", true, {}, undefined, "?dryRun=true"],
+    ["POST", true, { title: "legacy" }, '{"title":"legacy"}', "?dryRun=true"],
+  ] as const)(
+    "preserves %s bodies (declared: %s, args: %j)",
+    async (method, declared, supplied, body, query) => {
+      const imported = importOpenApiDocument({
+        openapi: "3.1.0",
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        paths: {
+          "/items/{itemId}": {
+            [method.toLowerCase()]: {
+              operationId: "changeItems",
+              parameters: [
+                { name: "itemId", in: "path", required: true, schema: { type: "string" } },
+                { name: "dryRun", in: "query", schema: { type: "boolean" } },
+                { name: "If-Match", in: "header", schema: { type: "string" } },
+                ...(typeof declared === "string"
+                  ? [{ name: "body", in: declared, schema: { type: ["string", "null"] } }]
+                  : []),
+              ],
+              ...(declared === true
+                ? {
+                    requestBody: {
+                      content: {
+                        "application/json": {
+                          schema: {
+                            type: ["object", "null"],
+                            properties: { ids: { type: "array", items: { type: "string" } } },
+                          },
+                        },
+                      },
+                    },
+                  }
+                : {}),
+            },
+          },
+        },
+      });
+      const args = parseConnectorToolArgs(imported.operations[0]!.inputSchema, {
+        itemId: "item/1",
+        dryRun: true,
+        "If-Match": "v2",
+        ...supplied,
+      });
+      const install = {
+        id: "json-body",
+        kind: "api",
+        source: imported.baseUrl,
+        secretId: null,
+        config: { auth: { type: "none" }, operations: imported.operations },
+      };
+      const fetch = vi.fn(async () => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(
+        { capabilityInstall: { findFirst: vi.fn(async () => install) } } as never,
+        {} as never,
+        { fetch },
+      );
+      const events = [];
+      for await (const event of provider.execute(
+        {
+          tool: "changeItems",
+          args,
+          executionId: "test",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "changeItems" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5000) } as never,
+      ))
+        events.push(event);
+      expect(events).toMatchObject([{ type: "result" }]);
+      expect(fetch).toHaveBeenCalledOnce();
+      const [url, init] = fetch.mock.lastCall as unknown as [URL, RequestInit];
+      expect(String(url)).toBe(`https://93.184.216.34/v1/items/item%2F1${query}`);
+      expect(init.method).toBe(method);
+      expect(new Headers(init.headers).get("if-match")).toBe("v2");
+      expect(new Headers(init.headers).get("content-type")).toBe(
+        body === undefined ? null : "application/json",
+      );
+      expect(init.body).toBe(body);
+      if (declared === "header") expect(new Headers(init.headers).get("body")).toBe("legacy");
+    },
+  );
 });

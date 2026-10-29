@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useRef, useState } from "react";
+import { Component, createContext, memo, useCallback, useContext, useRef, useState } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,7 +26,9 @@ import {
   linkFaviconOrigin,
   linkLabel,
   markdownLinkDisplayParts,
-  markdownLinkRequiresConfirmation,
+  markdownLinkNeedsPrompt,
+  markdownLinkSite,
+  markdownMentionId,
   markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
@@ -35,7 +37,8 @@ import {
   sanitizeMarkdownUrl,
   useLinkFavicon,
 } from "./markdown";
-import { useMarkdownLinkCopy } from "./markdown-link-prompt";
+import { useMarkdownCopy } from "./markdown-copy";
+import { useMarkdownLinkCopy, useMarkdownLinkTrust } from "./markdown-link-prompt";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
@@ -59,6 +62,7 @@ function preserveSkippedTableText() {
 }
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
+  const copy = useMarkdownCopy();
   const resetTimerRef = useRef<number | undefined>(undefined);
   const [copied, setCopied] = useState(false);
 
@@ -79,7 +83,7 @@ function CopyButton({ read, label }: { read: () => string; label: string }) {
       type="button"
       className="rk-chat-markdown-copy"
       onClick={handleCopy}
-      aria-label={copied ? "Copied" : label}
+      aria-label={copied ? copy.copied : label}
     >
       {copied ? <CheckIcon /> : <CopyIcon />}
     </button>
@@ -90,6 +94,7 @@ function CodeBlock({
   copyable,
   ...props
 }: React.ComponentPropsWithoutRef<"pre"> & { copyable: boolean }) {
+  const copy = useMarkdownCopy();
   const preRef = useRef<HTMLPreElement>(null);
   // The parser ends a fence's code with a newline the author didn't write.
   const readCode = useCallback(() => (preRef.current?.textContent ?? "").replace(/\n$/, ""), []);
@@ -97,7 +102,7 @@ function CodeBlock({
   return (
     <div className="rk-chat-markdown-pre-wrap">
       <pre {...props} ref={preRef} />
-      {copyable ? <CopyButton read={readCode} label="Copy code" /> : null}
+      {copyable ? <CopyButton read={readCode} label={copy.copyCode} /> : null}
     </div>
   );
 }
@@ -128,6 +133,7 @@ function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined 
 }
 
 function MermaidDiagram({ source, fallback }: { source: string; fallback: ReactNode }) {
+  const copy = useMarkdownCopy();
   const svg = useMermaidSvg(source);
   const readSource = useCallback(() => source, [source]);
   const image = svg ? mermaidSvgImage(svg) : undefined;
@@ -145,7 +151,7 @@ function MermaidDiagram({ source, fallback }: { source: string; fallback: ReactN
           style={{ "--rk-diagram-width": `${image.width}px` } as CSSProperties}
         />
       </figure>
-      <CopyButton read={readSource} label="Copy diagram source" />
+      <CopyButton read={readSource} label={copy.copyDiagramSource} />
     </div>
   );
 }
@@ -193,10 +199,14 @@ function pageOrigin() {
   return origin && origin !== "null" ? origin : null;
 }
 
-function holdExternalLink(event: MouseEvent<HTMLAnchorElement>, request: (url: string) => void) {
+function holdExternalLink(
+  event: MouseEvent<HTMLAnchorElement>,
+  request: (url: string) => void,
+  trustedSites: readonly string[],
+) {
   if (event.button !== 0 && event.button !== 1) return;
   const destination = event.currentTarget.href;
-  if (!destination || !markdownLinkRequiresConfirmation(destination, pageOrigin())) return;
+  if (!destination || !markdownLinkNeedsPrompt(destination, pageOrigin(), trustedSites)) return;
   event.preventDefault();
   request(destination);
 }
@@ -213,8 +223,14 @@ function ExternalLinkUrl({ url }: { url: string }) {
   );
 }
 
+function openExternalLink(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function ExternalLinkAlert({ url, onDismiss }: { url: string; onDismiss: () => void }) {
   const copy = useMarkdownLinkCopy();
+  const { trust } = useMarkdownLinkTrust();
+  const site = trust ? markdownLinkSite(url) : undefined;
   return (
     <AlertDialog
       open
@@ -231,9 +247,22 @@ function ExternalLinkAlert({ url, onDismiss }: { url: string; onDismiss: () => v
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
+          {trust && site ? (
+            <AlertDialogAction
+              variant="outline"
+              className="h-auto min-h-8 shrink whitespace-normal break-all"
+              onClick={() => {
+                openExternalLink(url);
+                trust(url);
+                onDismiss();
+              }}
+            >
+              {copy.alwaysOpen(site)}
+            </AlertDialogAction>
+          ) : null}
           <AlertDialogAction
             onClick={() => {
-              window.open(url, "_blank", "noopener,noreferrer");
+              openExternalLink(url);
               onDismiss();
             }}
           >
@@ -256,14 +285,15 @@ function useExternalLinkConfirm() {
 
 function ConfirmableAnchor({ href, ...props }: React.ComponentPropsWithoutRef<"a">) {
   const request = useContext(ConfirmLinkContext);
+  const { sites } = useMarkdownLinkTrust();
   return (
     <a
       {...props}
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      onClick={(event) => holdExternalLink(event, request)}
-      onAuxClick={(event) => holdExternalLink(event, request)}
+      onClick={(event) => holdExternalLink(event, request, sites)}
+      onAuxClick={(event) => holdExternalLink(event, request, sites)}
     />
   );
 }
@@ -473,7 +503,13 @@ function MarkdownAnchor({
   ...props
 }: React.ComponentPropsWithoutRef<"a"> & { node?: MarkdownHast }) {
   const loadRemote = useContext(RemoteImagesContext);
+  const renderMention = useContext(MentionContext);
   const href = typeof props.href === "string" ? props.href : "";
+  const mentionId = markdownMentionId(href);
+  if (mentionId) {
+    const name = hastText(node) ?? "";
+    return renderMention?.(mentionId, name) ?? <span>{props.children}</span>;
+  }
   const image = href ? soleRemoteImage(node) : undefined;
   if (image && !remoteImageRenders(image.href, loadRemote, false)) {
     return <LinkedRemoteImage href={href} image={image} alt={image.alt} title={image.title} />;
@@ -498,6 +534,8 @@ function MarkdownAnchor({
   );
 }
 
+const MentionContext = createContext<ChatMarkdownProps["renderMention"]>(undefined);
+
 const components: Components = {
   a: MarkdownAnchor,
   img({ node: _node, src, alt, title }) {
@@ -514,6 +552,29 @@ const components: Components = {
     );
   },
 };
+
+type PlainTextState = { text: string; failed: boolean };
+
+/** The parser recurses, so a pathological message can exhaust the stack; show it as plain text. */
+class PlainTextOnFailure extends Component<{ text: string; children: ReactNode }, PlainTextState> {
+  override state = { text: this.props.text, failed: false };
+
+  static getDerivedStateFromProps(props: { text: string }, state: PlainTextState) {
+    return props.text === state.text ? null : { text: props.text, failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override render() {
+    return this.state.failed ? (
+      <p className="whitespace-pre-wrap">{this.props.text}</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
 
 export function LinkifiedText({ children }: { children: string }) {
   const { request, dialog } = useExternalLinkConfirm();
@@ -540,41 +601,54 @@ export function LinkifiedText({ children }: { children: string }) {
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
+  renderMention,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   const source = streaming ? closeUnterminatedFence(children) : children;
 
   return (
     <ConfirmLinkContext.Provider value={request}>
-      <div
-        className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
-      >
-        <LinkFaviconsPausedContext.Provider value={streaming}>
-          <StreamingSourceContext.Provider value={streaming ? children : undefined}>
-            <MarkdownTableSourceContext.Provider value={source}>
-              <ReactMarkdown
-                components={components}
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[preserveSkippedTableText]}
-                skipHtml
-                // MarkdownImage decides what an image source may do, so it receives the source as written.
-                urlTransform={(url, key) =>
-                  key === "src" ? url : (sanitizeMarkdownUrl(url, true) ?? "")
-                }
-              >
-                {source}
-              </ReactMarkdown>
-            </MarkdownTableSourceContext.Provider>
-          </StreamingSourceContext.Provider>
-        </LinkFaviconsPausedContext.Provider>
-        {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
-      </div>
+      <MentionContext.Provider value={renderMention}>
+        <div
+          className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
+        >
+          <LinkFaviconsPausedContext.Provider value={streaming}>
+            <StreamingSourceContext.Provider value={streaming ? children : undefined}>
+              <MarkdownTableSourceContext.Provider value={source}>
+                <PlainTextOnFailure text={children}>
+                  <ReactMarkdown
+                    components={components}
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[preserveSkippedTableText]}
+                    skipHtml
+                    // MarkdownImage decides what an image source may do, so it receives the source as written.
+                    urlTransform={(url, key) =>
+                      key === "src" || markdownMentionId(url)
+                        ? url
+                        : (sanitizeMarkdownUrl(url, true) ?? "")
+                    }
+                  >
+                    {source}
+                  </ReactMarkdown>
+                </PlainTextOnFailure>
+              </MarkdownTableSourceContext.Provider>
+            </StreamingSourceContext.Provider>
+          </LinkFaviconsPausedContext.Provider>
+          {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
+        </div>
+      </MentionContext.Provider>
       {dialog}
     </ConfirmLinkContext.Provider>
   );
 });
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
-export { LinkFaviconsContext, RemoteImagesContext } from "./markdown";
-
+export {
+  LinkFaviconsContext,
+  RemoteImagesContext,
+  useLinkFavicon,
+  withBlockMentions,
+} from "./markdown";
+export type { MarkdownCopy } from "./markdown-copy";
+export { defaultMarkdownCopy, MarkdownCopyProvider } from "./markdown-copy";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

@@ -1,4 +1,3 @@
-import type { Routine } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -17,20 +16,20 @@ import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
-import { deviceTimeZone, routineRowDetail, sortRoutinesByNextRun } from "../lib/routine";
+import { useBotRoutines } from "../lib/routine-store";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function BotProfile() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const { botId = "", name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const [bot, setBot] = useState<MobileBot | null>(null);
-  const [routines, setRoutines] = useState<Routine[] | null>(null);
-  const [routinesError, setRoutinesError] = useState<string | null>(null);
   const name = displayName(bot?.name ?? nameParam, t("Bot"));
-  const timeZone = deviceTimeZone();
+  const { routines } = useBotRoutines(botId);
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
   const notifySaves = useRef(0);
   const notifyQueue = useRef<ReturnType<typeof createQueuedSave<boolean>> | null>(null);
@@ -41,7 +40,7 @@ export default function BotProfile() {
       if (!botId) return;
       let current = true;
       const saves = notifySaves.current;
-      void rpc<MobileBot>("bots/get", { botId })
+      void rpc("bots/get", { botId })
         .then((next) => {
           if (!current) return;
           // A read that overlapped a save may predate it; keep the switch as the user left it.
@@ -57,28 +56,6 @@ export default function BotProfile() {
       };
     }, [botId]),
   );
-
-  // Only the latest load (on focus or retry) may set state; leaving the screen drops them all.
-  const routinesRequest = useRef(0);
-  const loadRoutines = useCallback(() => {
-    if (!botId) return;
-    const request = ++routinesRequest.current;
-    void rpc<Routine[]>("routines/list", { botId })
-      .then((next) => {
-        if (request !== routinesRequest.current) return;
-        setRoutines(sortRoutinesByNextRun(next));
-        setRoutinesError(null);
-      })
-      .catch((error) => {
-        if (request === routinesRequest.current) {
-          setRoutinesError(errorText(error, t("Could not load routines")));
-        }
-      });
-    return () => {
-      routinesRequest.current += 1;
-    };
-  }, [botId, t]);
-  useFocusEffect(loadRoutines);
 
   // The chat list's Silence notifications saves the same setting. The switch moves
   // first and moves back if the save fails.
@@ -112,7 +89,7 @@ export default function BotProfile() {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, sideInsets]}
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >
@@ -125,14 +102,19 @@ export default function BotProfile() {
       />
       <View style={styles.identity}>
         {bot ? (
-          <BotAvatar color={bot.color} identity={bot.id} size={96} status={bot.status} />
+          <BotAvatar
+            color={bot.color}
+            avatarSet={bot.avatarSet}
+            identity={bot.id}
+            size={96}
+            status={bot.status}
+          />
         ) : (
           <View style={styles.avatarSpace} />
         )}
         <Text accessibilityRole="header" style={styles.name}>
           {name}
         </Text>
-        {bot?.title ? <Text style={styles.title}>{bot.title}</Text> : null}
       </View>
       <SettingsGroup>
         <SettingsRow
@@ -141,6 +123,19 @@ export default function BotProfile() {
           chevron="right"
           title={t("Chat settings")}
           onPress={() => router.push({ pathname: "/bot-settings", params: { botId } })}
+        />
+        <SettingsRow
+          key="routines"
+          accessibilityRole="button"
+          chevron="right"
+          title={t("Routines")}
+          // Counts the routines that are switched on; nothing until the first read lands.
+          value={
+            routines
+              ? t("{count} on", { count: routines.filter((routine) => routine.active).length })
+              : undefined
+          }
+          onPress={() => router.push({ pathname: "/routines", params: { botId, name } })}
         />
         <SettingsRow
           key="artifacts"
@@ -156,34 +151,6 @@ export default function BotProfile() {
           title={t("Computer")}
           onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
         />
-      </SettingsGroup>
-      {/* Routines show only once there is something to list, or a load to retry. */}
-      <SettingsGroup label={t("Routines")}>
-        {routinesError ? (
-          <SettingsRow
-            key="error"
-            accessibilityRole="button"
-            title={routinesError}
-            detail={t("Try again.")}
-            onPress={() => void loadRoutines()}
-          />
-        ) : (
-          routines?.map((routine) => (
-            <SettingsRow
-              key={routine.id}
-              accessibilityRole="button"
-              chevron="right"
-              title={routine.name}
-              detail={routineRowDetail(routine, timeZone)}
-              onPress={() =>
-                router.push({
-                  pathname: "/routine",
-                  params: { botId, botName: name, routineId: routine.id, origin: "profile" },
-                })
-              }
-            />
-          ))
-        )}
       </SettingsGroup>
       {bot ? (
         <SettingsGroup footer={t("Get notified when this Bot finishes or needs input")}>
@@ -207,6 +174,5 @@ function createStyles() {
     identity: { alignItems: "center", gap: 8 },
     avatarSpace: { width: 96, height: 96 },
     name: { color: native.label, fontSize: 22, fontWeight: "600", textAlign: "center" },
-    title: { color: native.secondaryLabel, fontSize: 15, textAlign: "center" },
   });
 }

@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bootComputerOnce,
+  createScreenRefocus,
   embeddableScreenUrl,
+  isProxiedScreenUrl,
   loadComputerScreen,
+  probeScreen,
+  probeScreenStatus,
+  screenFrameError,
+  screenFrameMessage,
+  screenFrameStarted,
   screenIframeSandbox,
 } from "./computer-screen";
 
@@ -191,5 +198,191 @@ describe("computer boot ownership", () => {
     a.resolve();
     await first;
     expect(inFlight.get("a")).toBe(replacement);
+  });
+});
+
+describe("screen frame reports", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("accepts only known states and bounds the detail", () => {
+    expect(screenFrameMessage({ rakazoScreen: "connected" })).toEqual({
+      rakazoScreen: "connected",
+    });
+    expect(screenFrameMessage({ rakazoScreen: "failed", detail: "  Failed to connect  " })).toEqual(
+      { rakazoScreen: "failed", detail: "Failed to connect" },
+    );
+    expect(
+      screenFrameMessage({ rakazoScreen: "failed", detail: "x".repeat(300) })?.detail,
+    ).toHaveLength(200);
+    expect(screenFrameMessage({ rakazoScreen: "failed", detail: 5 })).toEqual({
+      rakazoScreen: "failed",
+    });
+    expect(screenFrameMessage({ rakazoScreen: "exploded" })).toBeNull();
+    expect(screenFrameMessage("connected")).toBeNull();
+    expect(screenFrameMessage(null)).toBeNull();
+  });
+
+  it("counts only reports past loading as a started page", () => {
+    expect(screenFrameStarted({ rakazoScreen: "loading" })).toBe(false);
+    expect(screenFrameStarted({ rakazoScreen: "connecting" })).toBe(true);
+    expect(screenFrameStarted({ rakazoScreen: "connected" })).toBe(true);
+    expect(screenFrameStarted({ rakazoScreen: "failed" })).toBe(true);
+  });
+
+  it("turns failures into the error to show and keeps progress silent", () => {
+    expect(screenFrameError({ rakazoScreen: "loading" }, "fallback")).toBeNull();
+    expect(screenFrameError({ rakazoScreen: "connecting" }, "fallback")).toBeNull();
+    expect(screenFrameError({ rakazoScreen: "connected" }, "fallback")).toBeNull();
+    expect(screenFrameError({ rakazoScreen: "failed", detail: "Refused" }, "fallback")).toBe(
+      "fallback",
+    );
+    expect(screenFrameError({ rakazoScreen: "failed" }, "fallback")).toBe("fallback");
+    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe(
+      "The screen connection closed.",
+    );
+  });
+
+  it("only treats the proxy's own pages as reporting frames", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
+    expect(isProxiedScreenUrl("http://127.0.0.1:5173/novnc/session/view/1.t/vnc.html")).toBe(true);
+    expect(isProxiedScreenUrl("https://screen.example/vnc.html")).toBe(false);
+    expect(isProxiedScreenUrl(null)).toBe(false);
+  });
+});
+
+describe("probeScreen", () => {
+  const url = "http://127.0.0.1:5173/novnc/session/view/1.t/vnc.html";
+  const response = (status: number, body = "", type = "basic") =>
+    ({ ok: status >= 200 && status < 300, status, type, text: async () => body }) as Response;
+
+  it("is silent for a page the proxy serves", async () => {
+    const fetchImpl = vi.fn(async () => response(200, "<html>"));
+    await expect(probeScreen(url, "fallback", fetchImpl)).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledWith(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+    });
+  });
+
+  it("reports the proxy's reason for a refused or failed page", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () =>
+        response(403, "Invalid or expired screen capability"),
+      ),
+    ).resolves.toBe("The screen link expired.");
+    await expect(
+      probeScreen(url, "fallback", async () =>
+        response(502, "Screen unavailable (upstream_timeout)"),
+      ),
+    ).resolves.toBe("The screen did not respond.");
+  });
+
+  it("reads an access check that couldn't reach the API as a connection problem", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(503, "Screen unavailable")),
+    ).resolves.toBe("fallback");
+    await expect(probeScreen(url, "fallback", async () => response(503))).resolves.toBe("fallback");
+  });
+
+  it("never shows untrusted plain text", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(500, "private token")),
+    ).resolves.toBe("fallback");
+  });
+
+  it("never shows an upstream HTML error page as the reason", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () =>
+        response(502, "<!DOCTYPE html><html><body><h1>Bad gateway</h1></body></html>"),
+      ),
+    ).resolves.toBe("fallback");
+    const html = {
+      ...response(500, "Bad gateway"),
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+    } as Response;
+    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe("fallback");
+  });
+
+  it("falls back when the page cannot be fetched or would leave the app", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    ).resolves.toBe("fallback");
+    await expect(
+      probeScreen(url, "fallback", async () => response(0, "", "opaqueredirect")),
+    ).resolves.toBe("fallback");
+  });
+});
+
+describe("probeScreenStatus", () => {
+  const url = "http://127.0.0.1:5173/novnc/session/control/1.t/vnc.html";
+
+  it("returns only the status and drops the body unread", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const text = vi.fn(async () => "Invalid or expired screen capability");
+    const fetchImpl = vi.fn(
+      async () => ({ status: 403, type: "basic", body: { cancel }, text }) as unknown as Response,
+    );
+    await expect(probeScreenStatus(url, fetchImpl)).resolves.toBe(403);
+    expect(text).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledWith(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+    });
+  });
+
+  it("gives the request the wait's abort signal, so a stalled probe can be dropped", async () => {
+    const stop = new AbortController();
+    const fetchImpl = vi.fn(async () => ({ status: 204, type: "basic" }) as unknown as Response);
+    await probeScreenStatus(url, fetchImpl, stop.signal);
+    expect(fetchImpl).toHaveBeenCalledWith(url, expect.objectContaining({ signal: stop.signal }));
+  });
+
+  it("says when the page couldn't be asked or would leave the app", async () => {
+    await expect(
+      probeScreenStatus(url, async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      probeScreenStatus(url, async () => ({ status: 0, type: "opaqueredirect" }) as Response),
+    ).resolves.toBe(0);
+  });
+});
+
+describe("giving a reconnected screen the keyboard back", () => {
+  const frame = { name: "frame" } as unknown as Element;
+  const body = { name: "body" } as unknown as Element;
+  const chatBox = { name: "chat box" } as unknown as Element;
+
+  it("refocuses once, when the screen had the keyboard and nothing else took it", () => {
+    const refocus = createScreenRefocus();
+    refocus.dropped(true);
+    expect(refocus.connected(body, frame, body)).toBe(true);
+    expect(refocus.connected(body, frame, body)).toBe(false);
+    refocus.dropped(true);
+    expect(refocus.connected(null, frame, body)).toBe(true);
+  });
+
+  it("leaves the keyboard where the user put it during the wait", () => {
+    const refocus = createScreenRefocus();
+    refocus.dropped(true);
+    expect(refocus.connected(chatBox, frame, body)).toBe(false);
+    refocus.dropped(true);
+    refocus.forget();
+    expect(refocus.connected(body, frame, body)).toBe(false);
+  });
+
+  it("doesn't refocus a screen that didn't have the keyboard, or that a page says connected", () => {
+    const refocus = createScreenRefocus();
+    expect(refocus.connected(body, frame, body)).toBe(false);
+    refocus.dropped(false);
+    expect(refocus.connected(body, frame, body)).toBe(false);
   });
 });

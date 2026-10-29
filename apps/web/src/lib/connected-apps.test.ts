@@ -39,6 +39,27 @@ it("uses artwork-first catalog suggestions without changing the fetched order", 
   expect(catalog[0]!.name).toBe("Alpha");
 });
 
+it("uses familiar app artwork before arbitrary catalog suggestions", () => {
+  const items = ["Gmail", "Obscure App", "GitHub", "Notion"].map((name) => ({
+    ...catalog[0]!,
+    slug: name.toLowerCase().replaceAll(" ", "-"),
+    name,
+    logo: `https://example.test/${name.toLowerCase().replaceAll(" ", "-")}.svg`,
+  }));
+  expect(connectedAppMarks(items, []).map((app) => app.name)).toEqual([
+    "Gmail",
+    "GitHub",
+    "Notion",
+  ]);
+  expect(items[1]!.name).toBe("Obscure App");
+  expect(
+    connectedAppMarks(
+      items.map((item) => ({ ...item, connected: item.slug === "obscure-app" })),
+      [],
+    ).map((app) => app.name),
+  ).toEqual(["Obscure App"]);
+});
+
 it("shows connected apps instead of suggestions and returns suggestions after disconnect", () => {
   expect(
     connectedAppMarks(

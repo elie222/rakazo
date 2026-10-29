@@ -61,7 +61,9 @@ describe("Stripe billing HTTP boundary", () => {
 
     await provider.createCheckout({ customerId, seats: 4, ...urls });
     const plain = wire.requests.at(-1)!;
+    expect(STRIPE_API_VERSION).toBe("2026-09-30.endive");
     expect(plain.headers.get("stripe-version")).toBe(STRIPE_API_VERSION);
+    expect(plain.form["subscription_data[billing_mode][type]"]).toBe("classic");
     expect(plain.headers.get("content-type")).toBe("application/x-www-form-urlencoded");
     expect(plain.form).toMatchObject({
       mode: "subscription",
@@ -267,6 +269,32 @@ describe("Stripe billing HTTP boundary", () => {
       expect(mapStripeSubscriptionStatus(status)).toBe("canceled");
   });
 
+  it("reads the subscription's card fingerprint and credits the customer balance", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, trialDays: 7, ...urls });
+    wire.completeCheckout(customerId, undefined, "fp_card_1");
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "trialing",
+      cardFingerprint: "fp_card_1",
+    });
+    await provider.grantBalanceCredit(customerId, 1000, "referral_1");
+    await provider.grantBalanceCredit(customerId, 1000, "referral_1");
+    expect(wire.balances.get(customerId)).toBe(-1000);
+    // A credit Stripe made whose response was lost, retried after the idempotency key expired.
+    wire.balanceTransactions.push({
+      id: "cbtxn_lost",
+      customer: customerId,
+      amount: -1000,
+      metadata: { rakazo_reference: "referral_2" },
+    });
+    await provider.grantBalanceCredit(customerId, 1000, "referral_2");
+    expect(wire.balances.get(customerId)).toBe(-1000);
+    await expect(provider.grantBalanceCredit(customerId, 0, "referral_3")).rejects.toThrow(
+      /Invalid/,
+    );
+  });
+
   it("treats a scheduled cancellation as cancel at period end", async () => {
     const { wire, provider } = setup();
     const { customerId } = await provider.createCustomer(owner);
@@ -454,9 +482,18 @@ describe("stripeBillingConfigFromEnv", () => {
     ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake", priceId: "price_fake" });
   });
 
+  it("supports model credits without a legacy seat price", () => {
+    expect(
+      stripeBillingConfigFromEnv({
+        stripeSecretKey: "sk_test_fake",
+        stripeWebhookSecret: "whsec_fake",
+      }),
+    ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake" });
+  });
+
   it("names the missing variables when partially configured", () => {
     expect(() => stripeBillingConfigFromEnv({ stripeSecretKey: "sk_test_fake" })).toThrow(
-      "STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID",
+      "STRIPE_WEBHOOK_SECRET",
     );
   });
 });

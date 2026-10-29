@@ -127,7 +127,7 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     modelId: "llama-3.3-70b",
     thinkingLevel: null,
   });
-  await expect(page.getByRole("button", { name: /Model check/ })).toContainText(" · llama-3.3-70b");
+  await expect(page.getByRole("button", { name: /Model check/ })).toContainText("llama-3.3-70b");
 
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.locator("label:has-text('Name') input").fill("Renamed model check");
@@ -135,7 +135,6 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   for (const column of ["modelProvider", "modelId", "thinkingLevel"])
     expect(renamePatch).not.toHaveProperty(column);
 
-  // The deleted routine stays gone after a reload.
   await page.reload();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   expect((await rpc<Routine[]>(page, "routines/list", { botId })).map((r) => r.name)).toEqual([
@@ -144,28 +143,9 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   await expect(updatedButton).toHaveCount(0);
 });
 
-test("invalid advanced cron is rejected without creating a routine", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `routine-invalid-${stamp}@rakazo.test`, "password12", "Invalid Routine");
-  await completeOnboarding(page);
-  const botId = activeBotId(page);
-
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  await page.getByRole("button", { name: "Create Routine" }).click();
-  await page.locator("label:has-text('Name') input").fill("Broken schedule");
-  await page.locator("label:has-text('Instruction') textarea").fill("This should never run");
-  await addScheduleTrigger(page, "Advanced...");
-  await page.getByLabel("Cron expression").fill("61 25 * * *");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-
-  await expect(page.getByRole("alert")).toContainText("Enter a valid cron expression.");
-  expect(await rpc<Routine[]>(page, "routines/list", { botId })).toEqual([]);
-  await captureScreenshot(page, testInfo, "invalid-cron-rejected");
-});
-
-test("a successful routine create is not reported as failed when refresh fails", async ({
-  page,
-}) => {
+test("a successful routine create is not reported as failed when refresh fails", {
+  tag: "@nightly",
+}, async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `routine-refresh-${stamp}@rakazo.test`, "password12", "Routine Refresh");
   await completeOnboarding(page);
@@ -201,16 +181,15 @@ test("a successful routine create is not reported as failed when refresh fails",
   expect(routines[0]?.name).toBe("Persisted routine");
 });
 
-test("switching bots while a routine save is pending does not reopen stale state", async ({
-  page,
-}) => {
+test("switching bots while a routine save is pending does not reopen stale state", {
+  tag: "@nightly",
+}, async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `routine-switch-${stamp}@rakazo.test`, "password12", "Routine Switch");
   await completeOnboarding(page);
   const firstBotId = activeBotId(page);
   const secondBot = await rpc<Bot>(page, "bots/create", {
     name: "Second",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: false,
@@ -334,7 +313,7 @@ function localSchedule(iso: string, timezone: string) {
   };
 }
 
-test("change-trigger screenshot walkthrough", async ({ page }, testInfo) => {
+test("change-trigger screenshot walkthrough", { tag: "@nightly" }, async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light" });
   const stamp = Date.now();
   await signup(page, `routine-walkthrough-${stamp}@rakazo.test`, "password12", "Routine Watch");

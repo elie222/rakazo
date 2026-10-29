@@ -1,11 +1,19 @@
 import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
+import type {
+  BotSecretDestination,
+  LoginFieldInput,
+  MessageBlock,
+  ProductEvent,
+} from "@rakazo/contracts";
 import {
   AnalyticsTrigger,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_SECRET_VALUE_MAX_LENGTH,
   encodeLoginSecret,
-  LoginSecretValue,
+  hasThinkingActivityMarker,
+  loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  ThreadActivityPayloadSchema,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -15,27 +23,47 @@ import {
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  messageBypassesTakeoverWait,
   messageReaction,
   messagingChannelId,
+  normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
+  STEERING_CONTINUATION_PROMPT,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
+import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import {
+  CrossSpaceCommunicationBlockedError,
+  crossSpaceCommunicationAllowed,
+} from "./cross-space-communication.js";
+import {
   assertRunCanWriteHistory,
   assertRunIsCancelled,
   createThreadMessageInTransaction,
+  partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import { deleteRunSecretsInTransaction } from "./run-secrets.js";
+import { isRunResponse, readRunTimingFields } from "./run-timing.js";
+import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
+
+/** A one-time answer longer than a saved value may be. Nothing is stored or echoed. */
+export class AnswerTooLongError extends Error {
+  constructor() {
+    super("This answer is too long.");
+    this.name = "AnswerTooLongError";
+  }
+}
 
 const EVENT_BATCH_SIZE = 200;
 const PUSH_CATCH_UP_MS = 30_000;
@@ -50,6 +78,19 @@ export interface AppendEventInput {
   runId?: string;
   /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
   allowCancelledRun?: boolean;
+  /** Internal attempt fence for transient activity; never serialized to clients. */
+  activityLease?: { owner: string; fence: number };
+}
+
+/** Exact transient lifecycle payloads only: unrelated thread metadata must survive. */
+export function transientRunEventsWhere(): Prisma.EventWhereInput {
+  return {
+    OR: [
+      { type: "thread.progress" },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: true } } } },
+      { type: "thread.meta", payload: { equals: { activity: { thinking: false } } } },
+    ],
+  };
 }
 
 export interface ThreadEvents {
@@ -61,9 +102,9 @@ export interface ThreadEvents {
     input: FinalizeComputerControlReleaseInput,
   ): Promise<FinalizeComputerControlReleaseResult | false>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
-  notify(threadId: string, seq: number): Promise<void>;
+  notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
-  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
+  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
@@ -110,6 +151,11 @@ export interface ClaimedSteeringMessage {
   messageId: string;
   text: string;
   blocks: MessageBlock[];
+  /**
+   * Who sent it: the run's own person (in the app or a connected chat), another member of the
+   * chat, someone else in a connected chat, or a webhook.
+   */
+  origin: "user" | "member" | "messaging" | "webhook";
 }
 
 export interface FinalizeRunResult {
@@ -134,7 +180,12 @@ export type FinalizeRunInput = FinalizeRunBase &
         blocks: MessageBlock[];
         markUnread?: boolean;
       }
-    | { outcome: "failed"; error: string }
+    | {
+        outcome: "failed";
+        error: string;
+        /** Reply text the user saw streaming before the failure, kept as a bot message. */
+        partialReply?: MessageBlock[];
+      }
   );
 
 export interface PauseRunForInput {
@@ -219,8 +270,12 @@ export interface AnswerRunInput {
   answer: string;
   /** Identifies a spoken answer as part of a live voice call. */
   clientNonce?: string;
-  /** Only for a login card; `answer` carries its password. */
+  /** A login card's answer, one per requested field. */
+  fields?: LoginFieldInput[];
+  /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
   username?: string;
+  /** Only for a login card: false uses the login for this run only instead of saving it. */
+  remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
 }
@@ -239,6 +294,8 @@ export interface SendUserMessageInput {
   trigger: "user" | "follow_up" | "webhook" | "messaging";
   clientNonce?: string;
   linkMessageToRun?: boolean;
+  /** Internal bot sender: enforce both bots' cross-space policy in the write transaction. */
+  crossSpaceSenderBotId?: string;
   /** When false, persist the user message without starting a run (team-chat transcript). */
   createRun?: boolean;
   /** When true, start a new run even if the bot is already busy (team-chat delivery). */
@@ -267,6 +324,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** False for a login card answered with "Save to Vault" off. */
+    remember: boolean;
     runId: string;
     userId: string;
     spaceId: string;
@@ -292,7 +351,8 @@ export function createThreadEvents(
     finalizeComputerControlRelease: (input) =>
       finalizeComputerControlRelease(prisma, input, realtime),
     finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
-    notify: (threadId, seq) => notifyRealtime(realtime, threadId, seq),
+    notify: (threadId, seq, firstResponseRunId) =>
+      notifyCommittedEvent(prisma, realtime, threadId, seq, firstResponseRunId),
     pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
     pauseRunForTakeover: (input) => pauseRunForTakeover(prisma, input, realtime),
     sendUserMessage: (input) => sendUserMessage(prisma, input, realtime, options.analytics),
@@ -323,7 +383,7 @@ export async function clearThread(
         ...(input.groupId ? {} : { botId: input.botId }),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
-      select: { id: true, taskId: true },
+      select: { id: true, taskId: true, userId: true, spaceId: true },
     });
     const now = new Date();
     const runIds = activeRuns.map((run) => run.id);
@@ -403,10 +463,12 @@ export async function sendUserMessage(
           clientNonce: input.clientNonce,
         },
       },
-      include: { sourceRuns: { orderBy: { createdAt: "asc" }, take: 1 } },
     });
     if (!message) return null;
-    const created = message.sourceRuns[0];
+    const created = await prisma.run.findFirst({
+      where: { sourceMessageId: message.id },
+      orderBy: { createdAt: "asc" },
+    });
     const run =
       created ??
       (message.runId ? await prisma.run.findUnique({ where: { id: message.runId } }) : null);
@@ -433,6 +495,12 @@ export async function sendUserMessage(
         blocks: input.blocks,
         clientNonce: input.clientNonce,
       });
+      if (
+        input.crossSpaceSenderBotId &&
+        !(await crossSpaceCommunicationAllowed(tx, input.crossSpaceSenderBotId, input.botId))
+      ) {
+        throw new CrossSpaceCommunicationBlockedError();
+      }
       const createRun = input.createRun !== false;
       // Include the creation intro. It has no tools, so it must not absorb the message, and a
       // second run would overlap it on a dedicated computer. Pending steering waits for the
@@ -447,12 +515,15 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true },
+              select: { id: true, taskId: true, trigger: true, status: true },
             })
           : [];
+      const holdingRuns = activeRuns.filter(
+        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+      );
       // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
-        activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
+        holdingRuns.find((run) => isConversationalRun(run.trigger)) ?? holdingRuns[0] ?? null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -571,6 +642,7 @@ export async function claimSteering(
       select: {
         id: true,
         spaceId: true,
+        userId: true,
         trigger: true,
         sourceMessage: { select: { blocks: true } },
       },
@@ -628,11 +700,48 @@ export async function claimSteering(
       type: "run.steering.claimed",
       payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
     });
+    // In a group chat the row's user is the bot's owner, not the sender, so the sender is
+    // matched by the address it wrote from.
+    const groupSenders = steering.flatMap((item) =>
+      (item.message.blocks as MessageBlock[]).filter((block) => block.kind === "channel_message"),
+    );
+    const ownAddresses = new Set(
+      groupSenders.length === 0
+        ? []
+        : (
+            await tx.messagingIdentity.findMany({
+              where: {
+                userId: run.userId,
+                OR: groupSenders.map((block) => ({
+                  provider: block.provider,
+                  address: block.fromAddress,
+                })),
+              },
+              select: { provider: true, address: true },
+            })
+          ).map((identity) => `${identity.provider}:${identity.address}`),
+    );
+    const sentByRunPerson = (item: (typeof steering)[number]) => {
+      const group = (item.message.blocks as MessageBlock[]).find(
+        (block) => block.kind === "channel_message",
+      );
+      return group
+        ? ownAddresses.has(`${group.provider}:${group.fromAddress}`)
+        : item.userId === run.userId;
+    };
     return steering.map((item) => ({
       id: item.id,
       messageId: item.messageId,
       text: blocksToAgentHistoryText(item.message.blocks as MessageBlock[]),
       blocks: item.message.blocks as MessageBlock[],
+      origin:
+        item.originTrigger === "webhook"
+          ? ("webhook" as const)
+          : sentByRunPerson(item)
+            ? ("user" as const)
+            : item.originTrigger === "messaging"
+              ? ("messaging" as const)
+              : ("member" as const),
     }));
   });
 }
@@ -726,13 +835,18 @@ async function commitAnswerRunInput(
   if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
-  // A username belongs only to a login card, which cannot be saved without one.
-  if (loginAsk !== Boolean(input.username?.trim())) return null;
-  const login = loginAsk
-    ? LoginSecretValue.safeParse({ username: input.username!.trim(), password: input.answer })
-    : undefined;
-  if (login && !login.success) return null;
-  let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
+  const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
+  // Login fields belong only to a login card, which cannot be saved without them.
+  if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
+  if (input.remember !== undefined && !loginAsk) return null;
+  if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
+    throw new AnswerTooLongError();
+  let approvalEffect: {
+    id: string;
+    kind: string;
+    request: Prisma.JsonValue;
+    batchActions: Prisma.JsonValue;
+  } | null = null;
   let editedInstructions: string | undefined;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
@@ -778,6 +892,10 @@ async function commitAnswerRunInput(
     }
   }
 
+  // Answering the creation intro's question tells the bot what it is for, so it resumes as
+  // the user's turn: with the conversation and every tool, to get going on that answer.
+  const resumedTrigger =
+    run.trigger === "created" && !approvalAsk && !secretAsk ? "user" : run.trigger;
   const queued = await tx.run.updateMany({
     where: {
       id: input.runId,
@@ -787,6 +905,7 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
+      ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
     },
   });
@@ -847,21 +966,19 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    // "Always" on a fetch card allows that site, never every site the tool can reach.
+    // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
+    // batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
+    const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
-      const rule = {
-        spaceId: input.spaceId,
-        createdByUserId: approvalUserId!,
-        effect: "always_allow",
-        matchKind: site ? "site" : "tool",
-        matchValue: site ?? approvalEffect!.kind,
-      };
-      await tx.actionApprovalRule.upsert({
-        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
-        create: rule,
-        update: {},
-      });
+      // Saved where the member's confirmations apply in this Space: the account or its override.
+      for (const tool of site ? [site] : tools) {
+        await saveApprovalRule(
+          tx,
+          { userId: approvalUserId!, spaceId: input.spaceId },
+          { effect: "always_allow", matchKind: site ? "site" : "tool", matchValue: tool },
+        );
+      }
     }
   } else if (dismissed) {
     // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed
@@ -879,10 +996,11 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
-      plaintext: login?.success ? encodeLoginSecret(login.data) : input.answer,
+      plaintext: login ? encodeLoginSecret(login) : input.answer,
       tx,
     });
     await tx.externalEffect.updateMany({
@@ -905,7 +1023,7 @@ async function commitAnswerRunInput(
       where: { runs: { some: { id: input.runId } } },
       data: {
         prompt: resumePrompt(
-          run,
+          { ...run, trigger: resumedTrigger },
           pendingAsk.text,
           selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
         ),
@@ -921,6 +1039,7 @@ async function commitAnswerRunInput(
           status: "answered" as const,
           answer: recordedAnswer,
           ...(dismissed ? { dismissed: true as const } : {}),
+          ...(input.remember === false ? { remembered: false as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
@@ -999,7 +1118,7 @@ export async function retireWaitingQuestionInTransaction(
     botId: input.botId,
     status: "waiting_input",
   };
-  const run = await tx.run.findFirst({ where, select: { taskId: true } });
+  const run = await tx.run.findFirst({ where, select: { taskId: true, userId: true } });
   if (!run) return false;
   const messages = await tx.message.findMany({
     where: { threadId: input.threadId, runId: input.runId, role: "bot" },
@@ -1041,6 +1160,12 @@ export async function retireWaitingQuestionInTransaction(
     },
   });
   if (retired.count !== 1) return false;
+  await tx.externalEffect.deleteMany({
+    where: { runId: input.runId, kind: RUN_TURN_CHECKPOINT_KIND, status: RUN_TURN_CHECKPOINT_KIND },
+  });
+  await deleteRunSecretsInTransaction(tx, [
+    { id: input.runId, userId: run.userId, spaceId: input.spaceId },
+  ]);
   await tx.attempt.updateMany({
     where: { runId: input.runId, status: "waiting_input" },
     data: { status: "cancelled", finishedAt: now },
@@ -1062,8 +1187,8 @@ export async function retireWaitingQuestionInTransaction(
   return true;
 }
 
-/** Answer a waiting question ask with composer free-text. Approval and secret cards stay on the card path. */
-export async function answerWaitingRunWithTextInTransaction(
+/** Read-only eligibility shared by image admission and composer free-text answers. */
+export async function eligibleWaitingTextAnswer(
   tx: Prisma.TransactionClient,
   input: {
     spaceId: string;
@@ -1075,7 +1200,7 @@ export async function answerWaitingRunWithTextInTransaction(
     /** Explicit reaction target; composer replies must pass the latest-message check. */
     messageId?: string;
   },
-): Promise<{ threadId: string; seq: number } | null> {
+): Promise<string | null> {
   const answer = input.answer.trim();
   if (!answer) return null;
   const found = await findPendingAsk(tx, input);
@@ -1103,7 +1228,18 @@ export async function answerWaitingRunWithTextInTransaction(
       beforeSeq = latest.seq;
     }
   }
-  return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
+  return found.messageId;
+}
+
+/** Commit only answers that pass the same read-only composer eligibility check. */
+export async function answerWaitingRunWithTextInTransaction(
+  tx: Prisma.TransactionClient,
+  input: Parameters<typeof eligibleWaitingTextAnswer>[1],
+): Promise<{ threadId: string; seq: number } | null> {
+  const messageId = await eligibleWaitingTextAnswer(tx, input);
+  return messageId
+    ? commitAnswerRunInput(tx, { ...input, messageId, answer: input.answer.trim() })
+    : null;
 }
 
 export async function pauseRunForInput(
@@ -1155,7 +1291,7 @@ export async function pauseRunForInput(
       botId: input.botId,
       runId: input.runId,
     });
-    await appendEventInTransaction(tx, {
+    const response = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
@@ -1163,21 +1299,38 @@ export async function pauseRunForInput(
       runId: input.runId,
       payload: { messageId: message.id, role: "bot", blocks: input.blocks },
     });
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { userId: true },
+    });
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
       type: "run.waiting_input",
       runId: input.runId,
-      payload: {},
+      payload: run?.userId ? { userId: run.userId } : {},
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
     const continuationRunId = await createPendingSteeringRun(tx, input);
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId };
+    return {
+      threadId: waitingEvent.threadId,
+      seq: waitingEvent.seq,
+      continuationRunId,
+      firstResponseRunId: response.firstResponse ? input.runId : undefined,
+    };
   });
 
   if (!committed) return false;
-  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  await notifyCommittedEvent(
+    prisma,
+    realtime,
+    committed.threadId,
+    committed.seq,
+    committed.firstResponseRunId,
+  );
   return { continuationRunId: committed.continuationRunId };
 }
 
@@ -1185,9 +1338,17 @@ export async function pauseRunForTakeover(
   prisma: PrismaClient,
   input: PauseRunForTakeover,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<boolean | { continuationRunId: string }> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Release and pause both lock computer, then thread, then run.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { checkpoint: true },
+    });
+    const released = run?.checkpoint === "takeover" || run?.checkpoint === "takeover-skipped";
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -1199,10 +1360,10 @@ export async function pauseRunForTakeover(
         leaseFence: input.leaseFence,
       },
       data: {
-        status: "waiting_takeover",
+        status: released ? "queued" : "waiting_takeover",
         leaseOwner: null,
         leaseExpiresAt: null,
-        checkpoint: null,
+        checkpoint: released ? run.checkpoint : null,
       },
     });
     if (paused.count !== 1) return null;
@@ -1214,14 +1375,21 @@ export async function pauseRunForTakeover(
         fence: input.leaseFence,
         status: "running",
       },
-      data: { status: "waiting_takeover", finishedAt: new Date() },
+      data: { status: released ? "interrupted" : "waiting_takeover", finishedAt: new Date() },
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    // A release can finish while the runtime is still preparing its pause. Keep its
+    // checkpoint and continue instead of recreating a wait with no control lease.
+    if (released) {
+      const seq = await settleReleasedTakeoverCardsInTransaction(tx, {
+        ...input,
+        reason: run.checkpoint === "takeover-skipped" ? "skipped" : "done",
+      });
+      return { threadId: input.threadId, seq, continuationRunId: input.runId };
+    }
+
     const now = new Date();
-    // Serialize with concurrent computer/takeover grants that mutate the same row.
-    await tx.$queryRaw`
-      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     const computer = await tx.computer.findFirst({
       where: { id: input.computerId, spaceId: input.spaceId },
       select: {
@@ -1275,13 +1443,17 @@ export async function pauseRunForTakeover(
         retainedControl: retainControl,
       },
     });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId: null };
   });
 
   if (!committed) return false;
-  await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return true;
+  if (committed.seq !== null) {
+    await notifyRealtime(realtime, committed.threadId, committed.seq);
+  }
+  return committed.continuationRunId ? { continuationRunId: committed.continuationRunId } : true;
 }
 
 export async function finalizeComputerControlRelease(
@@ -1291,6 +1463,29 @@ export async function finalizeComputerControlRelease(
 ): Promise<FinalizeComputerControlReleaseResult | false> {
   if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    // The same lease can acquire a run binding while provider revocation is in flight.
+    // Fence by lease identity, then finalize the current binding under the row lock.
+    const computer = await tx.computer.findFirst({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      select: { controlRunId: true },
+    });
+    const controlRunId = input.leaseId ? (computer?.controlRunId ?? null) : input.runId;
+    let waiting = controlRunId
+      ? await tx.run.findUnique({
+          where: { id: controlRunId },
+          select: { threadId: true, status: true },
+        })
+      : null;
+    const runThreadId = waiting?.threadId ?? null;
+    if (runThreadId) {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
+      waiting = await tx.run.findUnique({
+        where: { id: controlRunId! },
+        select: { threadId: true, status: true },
+      });
+    }
     const cleared = await tx.computer.updateMany({
       where: input.leaseId
         ? {
@@ -1298,7 +1493,7 @@ export async function finalizeComputerControlRelease(
             spaceId: input.spaceId,
             controlBotId: input.botId,
             controlLeaseId: input.leaseId,
-            controlRunId: input.runId,
+            controlRunId,
           }
         : {
             id: input.computerId,
@@ -1306,7 +1501,7 @@ export async function finalizeComputerControlRelease(
             controlHolder: "none",
             controlBotId: null,
             controlLeaseId: null,
-            controlRunId: input.runId,
+            controlRunId,
           },
       data: {
         controlHolder: input.holder,
@@ -1320,10 +1515,10 @@ export async function finalizeComputerControlRelease(
 
     const checkpoint =
       input.reason === "skipped" || input.reason === "expired" ? "takeover-skipped" : "takeover";
-    const resumed = input.runId
+    const resumed = controlRunId
       ? await tx.run.updateMany({
           where: {
-            id: input.runId,
+            id: controlRunId,
             spaceId: input.spaceId,
             botId: input.botId,
             status: "waiting_takeover",
@@ -1337,10 +1532,10 @@ export async function finalizeComputerControlRelease(
     // A steered continue may already hold the run as leased/running. Stamp the
     // checkpoint without stealing the lease so the worker can restore tools.
     const stamped =
-      input.runId && resumed.count !== 1
+      controlRunId && resumed.count !== 1
         ? await tx.run.updateMany({
             where: {
-              id: input.runId,
+              id: controlRunId,
               spaceId: input.spaceId,
               botId: input.botId,
               status: { in: ["leased", "running"] },
@@ -1348,7 +1543,7 @@ export async function finalizeComputerControlRelease(
             data: { checkpoint },
           })
         : { count: 0 };
-    const runId = resumed.count === 1 || stamped.count === 1 ? input.runId : null;
+    const runId = resumed.count === 1 || stamped.count === 1 ? controlRunId : null;
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId },
@@ -1356,32 +1551,15 @@ export async function finalizeComputerControlRelease(
     });
     if (!bot?.thread) return { threadId: null, seq: null, runId };
 
-    // The card lives on the run thread. A group run is not the bot's own thread.
-    // Computer row is already locked above. Lock the thread after that, before
-    // reading the card. Chat send (#1406) commits its thread lock in
-    // sendUserMessage / sendThreadMessage before it calls release, so it does
-    // not hold the thread while this transaction holds the computer. Keeping
-    // computer-then-thread matches that split and this function's existing order.
-    let runThreadId: string | null = null;
-    if (input.runId) {
-      const waiting = await tx.run.findUnique({
-        where: { id: input.runId },
-        select: { threadId: true, status: true },
+    // Group cards live on the run's thread. Stopped runs cannot write history.
+    if (controlRunId && runThreadId && waiting?.status !== "cancelled") {
+      await settleReleasedTakeoverCardsInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: runThreadId,
+        botId: input.botId,
+        runId: controlRunId,
+        reason: input.reason,
       });
-      runThreadId = waiting?.threadId ?? null;
-      if (runThreadId) {
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
-      }
-      // A stopped run cannot write history, and the release must still clear the lease.
-      if (runThreadId && waiting?.status !== "cancelled") {
-        await settleReleasedTakeoverCardsInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: runThreadId,
-          botId: input.botId,
-          runId: input.runId,
-          reason: input.reason,
-        });
-      }
     }
 
     const event = await appendEventInTransaction(tx, {
@@ -1471,7 +1649,13 @@ export async function appendEvent(
     void captureRunAnalytics(prisma, analytics, input.runId, input.type);
   }
   const productEvent = mapProductEvent(event);
-  await notifyRealtime(realtime, event.threadId, event.seq);
+  await notifyCommittedEvent(
+    prisma,
+    realtime,
+    event.threadId,
+    event.seq,
+    event.firstResponse ? input.runId : undefined,
+  );
   return productEvent;
 }
 
@@ -1483,8 +1667,20 @@ export async function finalizeRun(
 ): Promise<FinalizeRunResult | false> {
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
-  void captureRunAnalytics(prisma, analytics, input.runId, `run.${input.outcome}`);
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  const timing = await readRunTimingFields(prisma, input.runId);
+  if (committed.firstResponse) {
+    getLogger().info("run.first_response", { "run.id": input.runId, ...timing });
+  }
+  getLogger().info("run.finished", {
+    "run.id": input.runId,
+    "run.outcome": input.outcome,
+    ...timing,
+    "space.id": input.spaceId,
+    "thread.id": input.threadId,
+    "bot.id": input.botId,
+  });
+  void captureRunAnalytics(prisma, analytics, input.runId, `run.${input.outcome}`);
   return { continuationRunId: committed.continuationRunId };
 }
 
@@ -1506,13 +1702,22 @@ export function completedRunBlocks(
   );
 }
 
+// The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s
+// default counts that wait, and expiring would fail a run whose work already finished.
+const FINALIZE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 20_000 };
+
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
-): Promise<{ threadId: string; seq: number; continuationRunId: string | null } | null> {
+): Promise<{
+  threadId: string;
+  seq: number;
+  continuationRunId: string | null;
+  firstResponse: boolean;
+} | null> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
-    let writableRun: { startedAt: Date | null } | undefined;
+    let writableRun: { startedAt: Date | null; userId: string } | undefined;
     try {
       writableRun = await assertRunCanWriteHistory(tx, input.runId);
     } catch (error) {
@@ -1540,6 +1745,13 @@ async function finalizeRunOnce(
       },
     });
     if (terminal.count !== 1) return null;
+    await tx.externalEffect.deleteMany({
+      where: {
+        runId: input.runId,
+        kind: RUN_TURN_CHECKPOINT_KIND,
+        status: RUN_TURN_CHECKPOINT_KIND,
+      },
+    });
 
     const attempt = await tx.attempt.updateMany({
       where: {
@@ -1567,45 +1779,9 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed") {
-      const completedBlocks = completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now);
-      if (completedBlocks.length > 0) {
-        const message = await createThreadMessageInTransaction(tx, {
-          threadId: input.threadId,
-          role: "bot",
-          blocks: completedBlocks,
-          botId: input.botId,
-          runId: input.runId,
-          markUnread: input.markUnread,
-        });
-        await appendEventInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: input.threadId,
-          botId: input.botId,
-          type: "thread.message.created",
-          runId: input.runId,
-          payload: { messageId: message.id, role: "bot", blocks: completedBlocks },
-        });
-      }
-    }
-    const lastEvent = await appendEventInTransaction(tx, {
-      spaceId: input.spaceId,
-      threadId: input.threadId,
-      botId: input.botId,
-      type: input.outcome === "completed" ? "run.completed" : "run.failed",
-      runId: input.runId,
-      payload: input.outcome === "completed" ? {} : { error: input.error },
-    });
-    await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-    if (input.outcome === "completed") {
-      await tx.steeringMessage.deleteMany({
-        where: { runId: input.runId, claimedAt: { not: null } },
-      });
-      await tx.steeringMessage.updateMany({
-        where: { runId: input.runId },
-        data: { runId: null },
-      });
-    } else {
+    if (input.outcome === "failed") {
+      // Before the partial reply below is saved: a reply the failure cut short answers no
+      // steering, so the steering it was answering still gets a run of its own.
       await discardAnsweredSteering(tx, input);
       const { sourceMessage } = await tx.run.findUniqueOrThrow({
         where: { id: input.runId },
@@ -1621,10 +1797,61 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     }
+    let firstResponse = false;
+    const replyBlocks =
+      input.outcome === "completed"
+        ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
+        : (input.partialReply ?? []);
+    if (replyBlocks.length > 0) {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: input.threadId,
+        role: "bot",
+        blocks: replyBlocks,
+        botId: input.botId,
+        runId: input.runId,
+        ...(input.outcome === "completed"
+          ? { markUnread: input.markUnread }
+          : { clientNonce: partialReplyClientNonce(input.runId) }),
+      });
+      const response = await appendEventInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: "thread.message.created",
+        runId: input.runId,
+        payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
+      });
+      firstResponse = response.firstResponse;
+    }
+    const lastEvent = await appendEventInTransaction(tx, {
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: input.outcome === "completed" ? "run.completed" : "run.failed",
+      runId: input.runId,
+      payload: input.outcome === "completed" ? {} : { error: input.error },
+    });
+    await tx.event.deleteMany({
+      where: { runId: input.runId, ...transientRunEventsWhere() },
+    });
+    if (writableRun) {
+      await deleteRunSecretsInTransaction(tx, [
+        { id: input.runId, userId: writableRun.userId, spaceId: input.spaceId },
+      ]);
+    }
+    if (input.outcome === "completed") {
+      await tx.steeringMessage.deleteMany({
+        where: { runId: input.runId, claimedAt: { not: null } },
+      });
+      await tx.steeringMessage.updateMany({
+        where: { runId: input.runId },
+        data: { runId: null },
+      });
+    }
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
-    return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
-  });
+    return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId, firstResponse };
+  }, FINALIZE_TRANSACTION_OPTIONS);
 }
 
 export async function discardAnsweredSteering(
@@ -1706,7 +1933,7 @@ export async function createPendingSteeringRun(
       prompt:
         origin === "webhook"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
-          : "Respond to the user's steering context.",
+          : STEERING_CONTINUATION_PROMPT,
       status: "queued",
     },
   });
@@ -1783,21 +2010,48 @@ export async function appendEventInTransaction(
   tx: Prisma.TransactionClient,
   input: AppendEventInput,
 ) {
-  const thread = await tx.thread.update({
-    where: { id: input.threadId },
-    data: { nextEventSeq: { increment: 1 } },
-    select: { nextEventSeq: true },
-  });
+  const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
+  if (activity) {
+    ThreadActivityPayloadSchema.parse(input.payload);
+    if (!input.runId || !input.activityLease) throw new RunHistoryWriteError();
+  }
+  const thread = await tx.thread
+    .update({
+      where: { id: input.threadId },
+      data: { nextEventSeq: { increment: 1 } },
+      select: { nextEventSeq: true },
+    })
+    .catch((error: unknown) => {
+      // Deleting the bot or space cascades the thread and its runs away under
+      // in-flight work; that run has no history left to write to.
+      if (input.runId && isRecordNotFound(error)) throw new RunHistoryWriteError();
+      throw error;
+    });
+  if (activity) {
+    const active = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { status: true, leaseOwner: true, leaseFence: true },
+    });
+    if (
+      active?.status !== "running" ||
+      active.leaseOwner !== input.activityLease?.owner ||
+      active.leaseFence !== input.activityLease?.fence
+    )
+      throw new RunHistoryWriteError();
+  }
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
+  let firstResponseAt: Date | null | undefined;
   if (input.type === "run.cancelled") {
     await assertRunIsCancelled(tx, input.runId);
   } else {
-    await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
+    firstResponseAt = (
+      await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun })
+    )?.firstResponseAt;
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
   const payload = sanitizeJsonValue(input.payload);
-  return tx.event.create({
+  const event = await tx.event.create({
     data: {
       spaceId: input.spaceId,
       threadId: input.threadId,
@@ -1808,9 +2062,41 @@ export async function appendEventInTransaction(
       runId: input.runId,
     },
   });
+  const firstResponse = Boolean(
+    input.runId &&
+      !firstResponseAt &&
+      isRunResponse(input.type, input.payload) &&
+      (
+        await tx.run.updateMany({
+          where: { id: input.runId, firstResponseAt: null },
+          data: { firstResponseAt: event.createdAt },
+        })
+      ).count === 1,
+  );
+  return { ...event, firstResponse };
 }
 
-async function notifyRealtime(
+function isRecordNotFound(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2025");
+}
+
+/** Timing metadata is returned by the transaction that recorded first output. */
+async function notifyCommittedEvent(
+  prisma: PrismaClient,
+  realtime: RealtimeFanout | undefined,
+  threadId: string,
+  seq: number,
+  firstResponseRunId?: string,
+): Promise<void> {
+  await notifyRealtime(realtime, threadId, seq);
+  if (!firstResponseRunId) return;
+  getLogger().info("run.first_response", {
+    "run.id": firstResponseRunId,
+    ...(await readRunTimingFields(prisma, firstResponseRunId)),
+  });
+}
+
+export async function notifyRealtime(
   realtime: RealtimeFanout | undefined,
   threadId: string,
   cursor: number,
@@ -1936,6 +2222,7 @@ async function captureRunAnalytics(
       select: {
         userId: true,
         trigger: true,
+        error: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,
@@ -1949,7 +2236,16 @@ async function captureRunAnalytics(
       at: (type === "run.started" ? run.startedAt : run.completedAt) ?? run.createdAt,
     };
     if (type === "run.failed")
-      analytics.capture(run.userId, { name: "run_failed", trigger: trigger.data }, identity);
+      analytics.capture(
+        run.userId,
+        {
+          name: "run_failed",
+          trigger: trigger.data,
+          // Only the coarse kind leaves the database; the error text itself never does.
+          errorKind: normalizeRunError(run.error ?? "").kind ?? "other",
+        },
+        identity,
+      );
     else
       analytics.capture(
         run.userId,

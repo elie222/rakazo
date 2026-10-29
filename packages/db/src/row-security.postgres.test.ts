@@ -36,12 +36,47 @@ type Tenant = {
 function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>]> {
   return [
     [
+      "spaceModelRoleChoice",
+      {
+        spaceId: t.spaceId,
+        userId: t.userId,
+        role: `approval-${tag}`,
+        position: 0,
+        provider: "openrouter",
+        modelId: `model-${tag}`,
+      },
+    ],
+    [
       "botSecret",
       {
         id: `rls-bot-secret-${tag}-${t.botId}`,
         userId: t.userId,
         spaceId: t.spaceId,
         botId: t.botId,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
+      "vaultCredential",
+      {
+        id: `rls-vault-space-${tag}-${t.spaceId}`,
+        userId: t.userId,
+        spaceId: t.spaceId,
+        name: `n-${tag}`,
+        origin: "https://example.test",
+        auth: {},
+        ciphertext: "c",
+      },
+    ],
+    [
+      "vaultCredential",
+      {
+        id: `rls-vault-account-${tag}-${t.userId}`,
+        userId: t.userId,
+        spaceId: null,
         name: `n-${tag}`,
         origin: "https://example.test",
         auth: {},
@@ -66,6 +101,7 @@ function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>
       { spaceId: t.spaceId, userId: t.userId, name: `n-${tag}`, description: "d", content: "c" },
     ],
     ["userVoiceCredential", { userId: t.userId, provider: "p", secretId: t.personalSecretId }],
+    ["trustedLinkSite", { userId: t.userId, site: `${tag}.example.test` }],
   ];
 }
 
@@ -168,6 +204,25 @@ describePostgres("row-level security (PostgreSQL)", () => {
           ciphertext: "c",
         },
       });
+      await o.member.create({
+        data: {
+          id: `${t.userId}-member`,
+          organizationId,
+          userId: t.userId,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
+      await o.spaceMember.create({
+        data: {
+          id: `${t.userId}-space-member`,
+          spaceId: t.spaceId,
+          userId: t.userId,
+          organizationId,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
       for (const [table, data] of rowsFor(t, "fixture")) {
         await Reflect.get(o, table).create({ data });
       }
@@ -187,17 +242,25 @@ describePostgres("row-level security (PostgreSQL)", () => {
   const threadIds = () => tenants.map((t) => t.threadId);
   const owners = () =>
     Promise.all(
-      ["botSecret", "agentSecret", "taughtSkill", "agentSkill", "userVoiceCredential"].map(
-        async (table) => {
-          const scope = table === "userVoiceCredential" ? "userId" : "spaceId";
-          const ids = tenants.map((t) => t[scope]);
-          const rows = (await Reflect.get(db, table).findMany({
-            where: { [scope]: { in: ids } },
-            select: { [scope]: true },
-          })) as Array<Record<string, string>>;
-          return [table, rows.map((row) => row[scope]).sort()] as const;
-        },
-      ),
+      [
+        "botSecret",
+        "vaultCredential",
+        "agentSecret",
+        "taughtSkill",
+        "agentSkill",
+        "userVoiceCredential",
+        "trustedLinkSite",
+      ].map(async (table) => {
+        const scope = ["userVoiceCredential", "vaultCredential", "trustedLinkSite"].includes(table)
+          ? "userId"
+          : "spaceId";
+        const ids = tenants.map((t) => t[scope]);
+        const rows = (await Reflect.get(db, table).findMany({
+          where: { [scope]: { in: ids } },
+          select: { [scope]: true },
+        })) as Array<Record<string, string>>;
+        return [table, rows.map((row) => row[scope]).sort()] as const;
+      }),
     ).then(Object.fromEntries);
   const visible = () =>
     Promise.all([
@@ -245,13 +308,282 @@ describePostgres("row-level security (PostgreSQL)", () => {
     );
   });
 
-  it("keeps security events append-only for the runtime login", async () => {
+  it("keeps security events append-only and system-only for the runtime login", async () => {
     const id = `rls-security-event-${suffix}`;
-    await db.$executeRaw`INSERT INTO security_events (id, type) VALUES (${id}, 'rls.test')`;
+    const system = <T>(fn: () => Promise<T>) => runAsSystem("row-level security test", fn);
+    await system(
+      () => db.$executeRaw`INSERT INTO security_events (id, type) VALUES (${id}, 'rls.test')`,
+    );
     await expect(
-      db.$executeRaw`UPDATE security_events SET type = 'changed' WHERE id = ${id}`,
+      system(() => db.$executeRaw`UPDATE security_events SET type = 'changed' WHERE id = ${id}`),
     ).rejects.toThrow(/permission denied/);
-    expect(await db.$executeRaw`DELETE FROM security_events WHERE id = ${id}`).toBe(1);
+    // A tenant can neither read nor write the deployment's security log.
+    expect(await runAsTenant(a, () => db.securityEvent.count({ where: { id } }))).toBe(0);
+    await expect(
+      runAsTenant(a, () =>
+        db.securityEvent.create({ data: { type: "rls.test", spaceId: a.spaceId } }),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    expect(await system(() => db.$executeRaw`DELETE FROM security_events WHERE id = ${id}`)).toBe(
+      1,
+    );
+  });
+
+  it("applies the same rules to the remaining Space-owned tables", async () => {
+    const created = new Map<string, Record<string, string[]>>();
+    const seed = async (t: (typeof tenants)[0]) => {
+      const o = owner.prisma;
+      const tag = `${t.name}-${suffix}`;
+      const ids: Record<string, string[]> = {};
+      const keep = (model: string, row: { id: string }) => {
+        ids[model] = [...(ids[model] ?? []), row.id];
+        return row;
+      };
+      const task = await o.task.create({
+        data: {
+          spaceId: t.spaceId,
+          botId: t.botId,
+          threadId: t.threadId,
+          userId: t.userId,
+          prompt: "p",
+          status: "queued",
+        },
+      });
+      keep("task", task);
+      keep(
+        "run",
+        await o.run.create({
+          data: {
+            spaceId: t.spaceId,
+            botId: t.botId,
+            threadId: t.threadId,
+            taskId: task.id,
+            userId: t.userId,
+            status: "queued",
+            trigger: "created",
+          },
+        }),
+      );
+      keep(
+        "routine",
+        await o.routine.create({
+          data: {
+            spaceId: t.spaceId,
+            botId: t.botId,
+            userId: t.userId,
+            name: "r",
+            prompt: "p",
+            crons: [],
+          },
+        }),
+      );
+      keep(
+        "connection",
+        await o.connection.create({
+          data: {
+            spaceId: t.spaceId,
+            userId: t.userId,
+            provider: "p",
+            displayName: "d",
+            status: "connected",
+          },
+        }),
+      );
+      const server = keep(
+        "mcpServer",
+        await o.mcpServer.create({
+          data: {
+            spaceId: t.spaceId,
+            userId: t.userId,
+            slug: `s-${tag}`,
+            name: "n",
+            transport: "http",
+          },
+        }),
+      );
+      keep(
+        "botMcpServer",
+        await o.botMcpServer.create({
+          data: { spaceId: t.spaceId, userId: t.userId, botId: t.botId, serverId: server.id },
+        }),
+      );
+      keep(
+        "mcpOAuthSession",
+        await o.mcpOAuthSession.create({
+          data: {
+            id: `rls-oauth-${tag}`,
+            spaceId: t.spaceId,
+            userId: t.userId,
+            serverId: server.id,
+            endpoint: "https://example.test",
+            redirectUri: "https://example.test/cb",
+            oauthCiphertext: "c",
+          },
+        }),
+      );
+      keep(
+        "computer",
+        await o.computer.create({
+          data: {
+            spaceId: t.spaceId,
+            userId: t.userId,
+            scopeKey: `rls-${tag}`,
+            homeKey: `rls-${tag}`,
+            kind: "fake",
+          },
+        }),
+      );
+      const board = keep("board", await o.board.create({ data: { spaceId: t.spaceId } }));
+      const ticket = keep(
+        "ticket",
+        await o.ticket.create({
+          data: { spaceId: t.spaceId, boardId: board.id, number: 1, title: "t" },
+        }),
+      );
+      keep(
+        "ticketComment",
+        await o.ticketComment.create({
+          data: { spaceId: t.spaceId, ticketId: ticket.id, body: "b" },
+        }),
+      );
+      const identity = keep(
+        "messagingIdentity",
+        await o.messagingIdentity.create({
+          data: {
+            provider: "test",
+            address: `addr-${tag}`,
+            userId: t.userId,
+            spaceId: t.spaceId,
+            botId: t.botId,
+          },
+        }),
+      );
+      keep(
+        "messagingOutbound",
+        await o.messagingOutbound.create({
+          data: { idempotencyKey: `rls-${tag}`, kind: "dm", identityId: identity.id, body: "b" },
+        }),
+      );
+      const conversation = keep(
+        "externalConversation",
+        await o.externalConversation.create({
+          data: {
+            provider: "test",
+            workspaceId: "w",
+            externalKey: `k-${tag}`,
+            conversationId: "c",
+            spaceId: t.spaceId,
+            botId: t.botId,
+            userId: t.userId,
+          },
+        }),
+      );
+      keep(
+        "externalMessage",
+        await o.externalMessage.create({
+          data: {
+            externalConversationId: conversation.id,
+            providerEventId: `e-${tag}`,
+            senderId: "s",
+            senderName: "n",
+            content: "c",
+          },
+        }),
+      );
+      const message = await o.message.findFirstOrThrow({ where: { threadId: t.threadId } });
+      keep(
+        "steeringMessage",
+        await o.steeringMessage.create({
+          data: { messageId: message.id, botId: t.botId, userId: t.userId },
+        }),
+      );
+      keep(
+        "usageRecord",
+        await o.usageRecord.create({
+          data: { spaceId: t.spaceId, userId: t.userId, provider: "p", model: "m" },
+        }),
+      );
+      keep(
+        "scratchpadItem",
+        await o.scratchpadItem.create({
+          data: { spaceId: t.spaceId, botId: t.botId, userId: t.userId, title: "t" },
+        }),
+      );
+      keep(
+        "actionApprovalRule",
+        await o.actionApprovalRule.create({
+          data: {
+            spaceId: t.spaceId,
+            createdByUserId: t.userId,
+            effect: "allow",
+            matchKind: "tool",
+            matchValue: `v-${tag}`,
+          },
+        }),
+      );
+      created.set(t.name, ids);
+    };
+    await runAsSystem("row-level security test", async () => {
+      for (const t of tenants) await seed(t);
+    });
+    const ownA = created.get("a")!;
+    const ownB = created.get("b")!;
+    const seen = async () => {
+      const result: Record<string, string[]> = {};
+      for (const model of Object.keys(ownA)) {
+        const ids = [...ownA[model]!, ...ownB[model]!];
+        const rows = (await Reflect.get(db, model).findMany({
+          where: { id: { in: ids } },
+          select: { id: true },
+        })) as Array<{ id: string }>;
+        result[model] = rows.map((row) => row.id).sort();
+      }
+      return result;
+    };
+    const only = (ids: Record<string, string[]>) =>
+      Object.fromEntries(Object.entries(ids).map(([model, list]) => [model, [...list].sort()]));
+    expect(await runAsTenant(a, seen)).toEqual(only(ownA));
+    expect(await runAsTenant(b, seen)).toEqual(only(ownB));
+    expect(Object.values(await seen()).flat()).toEqual([]);
+    const all = await runAsSystem("row-level security test", seen);
+    for (const model of Object.keys(ownA)) expect(all[model]).toHaveLength(2);
+    // A tenant cannot write into another Space either.
+    await expect(
+      runAsTenant(b, () =>
+        db.scratchpadItem.create({
+          data: { spaceId: a.spaceId, botId: a.botId, userId: a.userId, title: "x" },
+        }),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    expect(
+      await runAsTenant(b, () =>
+        db.bot.updateMany({ where: { id: a.botId }, data: { name: "x" } }),
+      ),
+    ).toEqual({ count: 0 });
+    // The unscoped reads above are deliberate.
+    drainUnscopedDatabaseAccess();
+  });
+
+  it("leaves the newer tables open to the previous release, which sets no version", async () => {
+    const client = await app.pool.connect();
+    try {
+      // What the previous release's connections look like: a tenant without a version.
+      await client.query(
+        "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', 'off', false), set_config('app.rls_version', '', false)",
+        [a.spaceId, a.userId],
+      );
+      const bots = await client.query("SELECT id FROM bots WHERE id = ANY($1)", [
+        tenants.map((t) => t.botId),
+      ]);
+      expect(bots.rowCount).toBe(2);
+      // The tables protected before keep their policies for it.
+      const threads = await client.query("SELECT id FROM threads WHERE id = ANY($1)", [
+        threadIds(),
+      ]);
+      expect(threads.rows.map((row) => row.id)).toEqual([a.threadId]);
+    } finally {
+      client.release(true);
+    }
   });
 
   it("gives the runtime login the job queue, replacing a hand-made policy", async () => {
@@ -330,21 +662,26 @@ describePostgres("row-level security (PostgreSQL)", () => {
     ).rejects.toThrow(/row-level security/);
   });
 
-  it("applies the same rules to secrets, skills and voice credentials", async () => {
+  it("applies the same rules to secrets, skills, voice credentials and trusted link sites", async () => {
     const none = {
       botSecret: [],
+      vaultCredential: [],
       agentSecret: [],
       taughtSkill: [],
       agentSkill: [],
       userVoiceCredential: [],
+      trustedLinkSite: [],
     };
     expect(await owners()).toEqual(none);
     expect(await runAsTenant(a, owners)).toEqual({
       botSecret: [a.spaceId],
+      // The member's account vault and their Space's own vault.
+      vaultCredential: [a.userId, a.userId],
       agentSecret: [a.spaceId],
       taughtSkill: [a.spaceId],
       agentSkill: [a.spaceId],
       userVoiceCredential: [a.userId],
+      trustedLinkSite: [a.userId],
     });
     const everyone = await runAsSystem("row-level security test", owners);
     expect(everyone.agentSkill).toEqual(tenants.map((t) => t.spaceId).sort());
@@ -357,6 +694,30 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
     // The unscoped reads and writes above are deliberate.
     drainUnscopedDatabaseAccess();
+  });
+
+  it("shows a user's trusted link sites in every space and no one else's", async () => {
+    const sites = () =>
+      db.trustedLinkSite.findMany({
+        where: { userId: { in: tenants.map((t) => t.userId) } },
+        select: { userId: true, site: true },
+      });
+    // The user of one space reading from another space they belong to.
+    expect(await runAsTenant({ spaceId: b.spaceId, userId: a.userId }, sites)).toEqual([
+      { userId: a.userId, site: `fixture.example.test` },
+    ]);
+    expect(
+      await runAsTenant(b, () => db.trustedLinkSite.deleteMany({ where: { userId: a.userId } })),
+    ).toEqual({ count: 0 });
+    // Trusting a site again, as the API does, is a no-op under the policy.
+    expect(
+      await runAsTenant(a, () =>
+        db.trustedLinkSite.createMany({
+          data: { userId: a.userId, site: "fixture.example.test" },
+          skipDuplicates: true,
+        }),
+      ),
+    ).toEqual({ count: 0 });
   });
 
   it("keeps normal reads, writes and transactions working for the tenant", async () => {
@@ -430,9 +791,10 @@ describePostgres("row-level security (PostgreSQL)", () => {
       SELECT relname FROM pg_class
       WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND relrowsecurity`;
     const tables = rows.map((row) => row.relname).sort();
-    const mapped = [...ROW_SECURITY_MODELS].map((model) =>
-      model.replace(/[A-Z]/g, (letter, index) => `${index ? "_" : ""}${letter.toLowerCase()}`),
-    );
-    expect(tables).toEqual(mapped.map((name) => `${name}s`).sort());
+    const { models } = (
+      db as unknown as { _runtimeDataModel: { models: Record<string, { dbName: string | null }> } }
+    )._runtimeDataModel;
+    const mapped = [...ROW_SECURITY_MODELS].map((name) => models[name]?.dbName ?? name);
+    expect(tables).toEqual(mapped.sort());
   });
 });

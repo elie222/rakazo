@@ -1,9 +1,11 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
+import { BuiCard } from "../ai/primitives";
 
 type SkillDraftBlock = {
   kind: "skill_draft";
@@ -13,6 +15,14 @@ type SkillDraftBlock = {
   playbook: SkillPlaybook;
   status: "draft" | "saved";
 };
+
+function fieldsOf(block: SkillDraftBlock): string {
+  return JSON.stringify({ name: block.name, playbook: block.playbook });
+}
+
+function savedSnapshot(block: SkillDraftBlock): string | null {
+  return block.status === "saved" ? fieldsOf(block) : null;
+}
 
 function fieldLabel(id: string, title: React.ReactNode) {
   return (
@@ -31,63 +41,89 @@ export function SkillDraftCard({
   onRefresh: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
 }) {
+  const { t } = useLingui();
+  const id = useId();
   const [name, setName] = useState(block.name);
   const [playbook, setPlaybook] = useState(block.playbook);
-  const [saved, setSaved] = useState(block.status === "saved");
+  // What the server last saved; "Saved" shows only while the fields still match it.
+  const [savedFields, setSavedFields] = useState(savedSnapshot(block));
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saved = savedFields === JSON.stringify({ name, playbook });
+
+  // The fields last loaded from the server, and whether this card has written since. A later
+  // update to the same skill never replaces fields this card wrote or the user edited, so a
+  // late or out-of-order saved status cannot bring back older values.
+  const synced = useRef({ skillId: block.skillId, fields: fieldsOf(block), wrote: false });
 
   useEffect(() => {
+    const sameSkill = synced.current.skillId === block.skillId;
+    if (sameSkill && synced.current.wrote) {
+      if (block.status === "saved") setSavedFields((current) => current ?? fieldsOf(block));
+      return;
+    }
+    setSavedFields(savedSnapshot(block));
+    if (sameSkill && synced.current.fields !== JSON.stringify({ name, playbook })) return;
+    synced.current = { skillId: block.skillId, fields: fieldsOf(block), wrote: false };
     setName(block.name);
     setPlaybook(block.playbook);
-    setSaved(block.status === "saved");
   }, [block.skillId, block.status]);
 
-  async function saveDraft() {
+  async function persist(then: (sent: string) => Promise<unknown>, failure?: string) {
+    const sent = JSON.stringify({ name, playbook });
     setBusy(true);
+    setError(null);
     try {
       await rpc.skills.updateDraft({ skillId: block.skillId, name, playbook });
-      await rpc.skills.save({ skillId: block.skillId, name });
-      setSaved(true);
-      await onRefresh();
-    } finally {
+      synced.current.wrote = true;
+      // A saved skill stays saved with the fields just written.
+      if (savedFields !== null) setSavedFields(sent);
+      await then(sent);
+    } catch (err) {
+      setError(errorText(err, failure));
       setBusy(false);
+      return;
     }
+    // The write already succeeded, so a failed thread refresh is not reported as its failure.
+    await onRefresh().catch(() => undefined);
+    setBusy(false);
   }
 
-  async function testDraft() {
-    setBusy(true);
-    try {
-      await rpc.skills.updateDraft({ skillId: block.skillId, name, playbook });
-      await rpc.skills.testRun({ skillId: block.skillId });
-      await onRefresh();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const saveDraft = () =>
+    persist(async (sent) => {
+      await rpc.skills.save({ skillId: block.skillId, name });
+      setSavedFields(sent);
+    }, t`Could not save skill`);
+
+  const testDraft = () => persist(() => rpc.skills.testRun({ skillId: block.skillId }));
 
   const skillName = name || block.name || block.goal.slice(0, 80);
 
   return (
-    <div
-      data-testid="skill-draft-card"
-      className="w-[min(520px,92%)] rounded-2xl border border-border bg-card px-5 py-4"
-    >
+    <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
       <div className="text-[15px] font-medium text-foreground">
         <Trans>Draft skill</Trans>
       </div>
       <div className="mt-1 text-[13.5px] text-muted-foreground">{block.goal}</div>
-      {fieldLabel("skill-draft-name", <Trans>Name</Trans>)}
-      <Input id="skill-draft-name" value={name} onChange={(event) => setName(event.target.value)} />
-      {fieldLabel("skill-draft-when", <Trans>When to use</Trans>)}
+      {fieldLabel(`${id}-name`, <Trans>Name</Trans>)}
+      <Input
+        id={`${id}-name`}
+        disabled={busy}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      />
+      {fieldLabel(`${id}-when`, <Trans>When to use</Trans>)}
       <Textarea
-        id="skill-draft-when"
+        disabled={busy}
+        id={`${id}-when`}
         value={playbook.whenToUse}
         onChange={(event) => setPlaybook({ ...playbook, whenToUse: event.target.value })}
         rows={2}
       />
-      {fieldLabel("skill-draft-inputs", <Trans>Inputs</Trans>)}
+      {fieldLabel(`${id}-inputs`, <Trans>Inputs</Trans>)}
       <Textarea
-        id="skill-draft-inputs"
+        disabled={busy}
+        id={`${id}-inputs`}
         value={playbook.inputs.join("\n")}
         onChange={(event) =>
           setPlaybook({
@@ -97,9 +133,10 @@ export function SkillDraftCard({
         }
         rows={2}
       />
-      {fieldLabel("skill-draft-steps", <Trans>Steps</Trans>)}
+      {fieldLabel(`${id}-steps`, <Trans>Steps</Trans>)}
       <Textarea
-        id="skill-draft-steps"
+        disabled={busy}
+        id={`${id}-steps`}
         value={playbook.steps.join("\n")}
         onChange={(event) =>
           setPlaybook({
@@ -109,30 +146,34 @@ export function SkillDraftCard({
         }
         rows={5}
       />
-      {fieldLabel("skill-draft-check", <Trans>How to check</Trans>)}
+      {fieldLabel(`${id}-check`, <Trans>How to check</Trans>)}
       <Textarea
-        id="skill-draft-check"
+        disabled={busy}
+        id={`${id}-check`}
         value={playbook.howToCheck}
         onChange={(event) => setPlaybook({ ...playbook, howToCheck: event.target.value })}
         rows={2}
       />
-      {fieldLabel("skill-draft-return", <Trans>What to return</Trans>)}
+      {fieldLabel(`${id}-return`, <Trans>What to return</Trans>)}
       <Textarea
-        id="skill-draft-return"
+        disabled={busy}
+        id={`${id}-return`}
         value={playbook.whatToReturn}
         onChange={(event) => setPlaybook({ ...playbook, whatToReturn: event.target.value })}
         rows={2}
       />
-      {fieldLabel("skill-draft-approval", <Trans>Approval boundaries</Trans>)}
+      {fieldLabel(`${id}-approval`, <Trans>Approval boundaries</Trans>)}
       <Textarea
-        id="skill-draft-approval"
+        disabled={busy}
+        id={`${id}-approval`}
         value={playbook.approvalBoundaries}
         onChange={(event) => setPlaybook({ ...playbook, approvalBoundaries: event.target.value })}
         rows={2}
       />
-      {fieldLabel("skill-draft-failure", <Trans>Failure handling</Trans>)}
+      {fieldLabel(`${id}-failure`, <Trans>Failure handling</Trans>)}
       <Textarea
-        id="skill-draft-failure"
+        disabled={busy}
+        id={`${id}-failure`}
         value={playbook.failureHandling}
         onChange={(event) => setPlaybook({ ...playbook, failureHandling: event.target.value })}
         rows={2}
@@ -152,6 +193,7 @@ export function SkillDraftCard({
           <Trans>Add to routine</Trans>
         </Button>
       </div>
-    </div>
+      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+    </BuiCard>
   );
 }

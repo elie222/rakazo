@@ -1,9 +1,12 @@
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 import { useWindowDimensions } from "react-native";
+import { crossesWindow } from "./fold-layout";
+import type { FoldRegion } from "./fold-regions";
+import { useFoldRegions } from "./fold-regions";
 
 /** Narrowest window that keeps the chat list beside the open chat: an unfolded foldable or a tablet. */
-const SPLIT_MIN_WIDTH = 700;
+const SPLIT_MIN_WIDTH = 600;
 const INBOX_MIN_WIDTH = 240;
 const CONTENT_MIN_WIDTH = 360;
 const INBOX_WIDTH_KEY = "rakazo.inbox-width";
@@ -68,19 +71,44 @@ const currentState = () => state;
 
 /**
  * split: the window is wide enough for the chat list and a chat side by side.
+ * inboxShown: the list is beside the screen; a book-like fold keeps it there so no column
+ * straddles the hinge.
  * contentWidth: what is left for the screen beside the list.
  */
 export function useSplitView() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const folds = useFoldRegions();
   const { hidden, chosenWidth } = useSyncExternalStore(subscribe, currentState, currentState);
   const split = splitsWindow(width);
-  const inboxWidth = inboxPaneWidth(width, chosenWidth);
-  const showsInbox = split && !hidden;
+  const { inboxWidth, gap, folded } = splitPaneLayout(width, height, chosenWidth, folds);
+  const inboxShown = split && (!hidden || folded);
   return {
     split,
     inboxHidden: hidden,
+    inboxShown,
     inboxWidth,
+    foldGap: gap,
+    foldActive: folded,
     windowWidth: width,
-    contentWidth: showsInbox ? width - inboxWidth : width,
+    contentWidth: inboxShown ? width - inboxWidth - gap : width,
   };
+}
+
+/** A vertical division already includes its safety margins in window coordinates. */
+export function splitPaneLayout(
+  width: number,
+  height: number,
+  chosenWidth: number | null,
+  regions: FoldRegion[],
+): { inboxWidth: number; gap: number; folded: boolean } {
+  const fold = regions.find(
+    (region) =>
+      crossesWindow(region, width, height) &&
+      region.height > region.width &&
+      region.x >= INBOX_MIN_WIDTH &&
+      width - region.x - region.width >= CONTENT_MIN_WIDTH,
+  );
+  return splitsWindow(width) && fold
+    ? { inboxWidth: fold.x, gap: fold.width, folded: true }
+    : { inboxWidth: inboxPaneWidth(width, chosenWidth), gap: 0, folded: false };
 }

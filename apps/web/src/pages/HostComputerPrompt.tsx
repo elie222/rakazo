@@ -83,9 +83,9 @@ export function HostComputerPrompt({
     setPending(true);
     setError(null);
     try {
+      if (!desktop?.computer?.managesHostChoice)
+        throw new Error(t`Local computer access requires the latest desktop app.`);
       if (computerHost === "this-mac") {
-        if (!desktop?.computer)
-          throw new Error(t`Local computer access requires the latest desktop app.`);
         if (!(await desktop.computer.requestAccess())) {
           setPending(false);
           return;
@@ -93,7 +93,6 @@ export function HostComputerPrompt({
       } else {
         await desktop?.computer?.revokeAccess();
       }
-      await rpc.deployment.update({ computerHost });
     } catch (err) {
       setError(errorText(err, t`Could not save that choice`));
       setPending(false);
@@ -119,9 +118,9 @@ export function HostComputerPrompt({
         if (configuring) setOpen(next);
       }}
     >
-      <DialogContent showCloseButton={configuring} className="rounded-2xl p-6 sm:max-w-[440px]">
+      <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[22px]">
+          <DialogTitle className="text-heading2">
             <Trans>Where should bots run?</Trans>
           </DialogTitle>
           <DialogDescription className="space-y-2 leading-relaxed">
@@ -163,7 +162,6 @@ export function HostComputerPrompt({
               type="button"
               variant="secondary"
               size="sm"
-              className="rounded-full"
               disabled={busy}
               onClick={() => void refreshChoiceState()}
             >

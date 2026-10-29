@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import http from "node:http";
 import https from "node:https";
@@ -7,11 +8,13 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
+  parseCrispWebsiteId,
 } from "@rakazo/contracts/content-security-policy";
 import {
   safeScreenProxyResponseHeaders,
@@ -20,11 +23,12 @@ import {
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
+import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
-import { appendForwardedFor } from "./src/forwarded-for.js";
+import { apiProxy } from "./src/api-proxy.js";
+import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -35,15 +39,25 @@ import {
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
 } from "./src/novnc-html.js";
+import { rakazoPwa } from "./src/pwa/plugin.js";
+import type { ScreenTargetFailure } from "./src/screen-proxy.js";
 import {
+  checkScreenAuthorization,
+  novncRequestPath,
   resolveNovncTarget,
   safeProxyHeaders,
+  screenCapabilityExpiry,
+  screenProbePath,
+  screenProbeStatus,
+  screenRefusal,
+  screenUpstreamReachable,
   watchScreenAuthorization,
 } from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
+const SCREEN_UPSTREAM_TIMEOUT_MS = 20_000;
 const screenLog = createServiceLogger({ service: "rakazo-web" });
 
 function screenPolicy(url: string | undefined) {
@@ -90,16 +104,23 @@ function attachDesktopStackProbe(
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
   server.middlewares.use(async (req, res, next) => {
-    if (!req.url?.startsWith("/novnc/")) {
+    const path = novncRequestPath(req.url);
+    if (!path) {
       next();
       return;
     }
+    req.url = path;
     const connectionId = randomUUID();
     const bindings = {
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
-    const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
+    const confirmedAt = performance.now();
+    // A status-only probe is answered here, after the same access check, and never forwarded.
+    const probe = screenProbePath(req.url);
+    let refusal: ScreenTargetFailure | undefined;
+    const target = await resolveNovncTarget(probe ?? req.url, secret, api, (reason) => {
+      refusal = reason;
       screenLog.warn("screen.proxy.target_rejected", {
         ...bindings,
         "screen.transport": "http",
@@ -107,16 +128,26 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       });
     });
     if (res.destroyed) return;
-    if (!target) {
-      res.statusCode = 403;
-      res.end("Invalid or expired screen capability");
+    if (probe) {
+      // Only a connection attempt reaches the computer; the proxy writes the whole answer.
+      const reachable = target ? await screenUpstreamReachable(target) : false;
+      if (res.destroyed) return;
+      res.statusCode = screenProbeStatus(target, refusal, reachable);
+      res.setHeader("cache-control", "no-store");
+      res.end();
       return;
     }
-    const forwarded = safeProxyHeaders(req.headers);
+    if (!target) {
+      const { status, body } = screenRefusal(refusal);
+      res.statusCode = status;
+      res.end(body);
+      return;
+    }
+    const forwarded = safeProxyHeaders(req.headers, target);
     const headers = {
       // The storage shim rewrites the page, so ask for all of it, uncompressed.
       ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
-      host: `${target.hostname}:${target.port}`,
+      host: `${target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
     let upstream: ClientRequest | undefined;
@@ -158,7 +189,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         return;
       }
       res.statusCode = 502;
-      res.end("Screen unavailable");
+      res.end(`Screen unavailable (${reason})`);
     };
     function requestUpstream() {
       if (res.destroyed) return;
@@ -194,7 +225,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
               .then((html) => {
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
-                const body = injectNovncStorageShim(html);
+                const body = injectNovncStorageShim(html, { viewOnly: !target.interactive });
                 res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })
@@ -207,6 +238,15 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           incoming.pipe(res);
         },
       );
+      // A silent upstream would leave the frame blank for as long as the browser waits. The limit
+      // covers only the wait for response headers; a slow or idle body after that keeps flowing.
+      const request = upstream;
+      const headersTimer = setTimeout(() => {
+        finishUnavailable("upstream_timeout");
+        request.destroy();
+      }, SCREEN_UPSTREAM_TIMEOUT_MS);
+      request.once("response", () => clearTimeout(headersTimer));
+      request.once("close", () => clearTimeout(headersTimer));
       upstream.on("error", (error) => {
         if (
           retryable &&
@@ -223,11 +263,24 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else req.pipe(upstream);
     }
     stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
-      () => {
-        screenLog.warn("screen.proxy.http_revoked", bindings);
+      () => checkScreenAuthorization(req.url, secret, api, target),
+      (reason) => {
+        screenLog.warn("screen.proxy.http_revoked", {
+          ...bindings,
+          "screen.revoke_reason": reason,
+        });
         upstream?.destroy();
         res.destroy();
+      },
+      {
+        confirmedAt,
+        expiresAt: screenCapabilityExpiry(req.url),
+        onUnavailable: (consecutive) =>
+          screenLog.warn("screen.proxy.recheck_unavailable", {
+            ...bindings,
+            "screen.transport": "http",
+            "screen.consecutive": consecutive,
+          }),
       },
     );
     res.once("close", () => {
@@ -238,13 +291,32 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
-    if (!req.url?.startsWith("/novnc/")) return;
+    const path = novncRequestPath(req.url);
+    // Node drops its own socket error handler on upgrade, so a client reset with no listener
+    // crashes the server. Other upgrades belong to Vite's HMR or the API proxy, so only their
+    // errors are ignored.
+    if (!path) {
+      socket.on("error", () => {});
+      return;
+    }
+    req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();
     const bindings = {
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
+    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
+    // Listen before the access check; the close handler below tears down the upstream.
+    socket.on("error", (error) => {
+      screenLog.warn("screen.proxy.websocket_error", {
+        ...bindings,
+        "screen.side": "client",
+        "error.code": socketErrorCode(error),
+      });
+      closeInitiator ??= "client";
+    });
+    const confirmedAt = performance.now();
     const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
       screenLog.warn("screen.proxy.target_rejected", {
         ...bindings,
@@ -263,7 +335,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         : net.connect(target.port, target.hostname);
     let upgraded = false;
     let closed = false;
-    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
     const logClose = (side: "client" | "upstream") => {
       if (closed) return;
       closed = true;
@@ -278,12 +349,25 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else screenLog.info("screen.proxy.websocket_closed", details);
     };
     const stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
-      () => {
-        screenLog.warn("screen.proxy.websocket_revoked", bindings);
+      () => checkScreenAuthorization(req.url, secret, api, target),
+      (reason) => {
+        screenLog.warn("screen.proxy.websocket_revoked", {
+          ...bindings,
+          "screen.revoke_reason": reason,
+        });
         closeInitiator ??= "revoked";
         socket.destroy();
         upstream.destroy();
+      },
+      {
+        confirmedAt,
+        expiresAt: screenCapabilityExpiry(req.url),
+        onUnavailable: (consecutive) =>
+          screenLog.warn("screen.proxy.recheck_unavailable", {
+            ...bindings,
+            "screen.transport": "websocket",
+            "screen.consecutive": consecutive,
+          }),
       },
     );
     socket.once("close", () => {
@@ -299,9 +383,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
     upstream.once(target.protocol === "https:" ? "secureConnect" : "connect", () => {
       const headerLines = [
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
-        `Host: ${target.hostname}:${target.port}`,
+        `Host: ${target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname}:${target.port}`,
       ];
-      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers))) {
+      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers, target))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);
       }
       upstream.write(`${headerLines.join("\r\n")}\r\n\r\n`);
@@ -371,43 +455,14 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       closeInitiator ??= "upstream";
       socket.destroy();
     });
-    socket.on("error", (error) => {
-      screenLog.warn("screen.proxy.websocket_error", {
-        ...bindings,
-        "screen.side": "client",
-        "error.code": socketErrorCode(error),
-      });
-      closeInitiator ??= "client";
-      upstream.destroy();
-    });
   });
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
+  // Names this build in every API request; the dev server has none, so the handshake stays off.
+  const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
-  const apiProxy = Object.fromEntries(
-    [
-      "/api",
-      "/rpc",
-      // Native app domain association, served by the API from deployment settings.
-      "/.well-known/apple-app-site-association",
-      "/.well-known/assetlinks.json",
-    ].map((path) => [
-      path,
-      {
-        target: api,
-        changeOrigin: true,
-        // Append the hop this proxy saw, so the API never mistakes a caller's own header for its
-        // address. The API reads past this hop only when it is listed in TRUSTED_PROXIES.
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq, req) => {
-            proxyReq.setHeader("x-forwarded-for", appendForwardedFor(req));
-          });
-        },
-      } satisfies ProxyOptions,
-    ]),
-  );
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const allowedHosts = [
     previewHost,
@@ -416,6 +471,10 @@ export default defineConfig(({ mode }) => {
       .map((entry) => entry.trim())
       .filter(Boolean),
   ];
+  // Set by the server built from this config; reusing one config object for two servers would
+  // leave the last one's list.
+  let proxyHosts: readonly string[] | true = [];
+  const proxy = apiProxy(api, () => proxyHosts);
   const screenProxySecret = () =>
     resolveScreenProxySecret({
       ...process.env,
@@ -438,13 +497,26 @@ export default defineConfig(({ mode }) => {
       "RAKAZO_CSP_CONNECT_SRC",
       process.env.RAKAZO_CSP_CONNECT_SRC ?? rootEnv.RAKAZO_CSP_CONNECT_SRC,
     ),
+    crisp: parseCrispWebsiteId(process.env.CRISP_WEBSITE_ID ?? rootEnv.CRISP_WEBSITE_ID) !== null,
   });
   return {
+    build: { sourcemap: true },
+    define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
+      {
+        // The API reads this to name the deployed build, and a tab fetches it to confirm the
+        // server already serves a newer build before it reloads.
+        name: "rakazo-build-id",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "build-id", source: `${buildId}\n` });
+        },
+      },
       react(),
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),
       tailwindcss(),
+      rakazoPwa(buildId),
       {
         // Production only: the dev server injects inline scripts for React Refresh.
         name: "rakazo-content-security-policy",
@@ -462,11 +534,21 @@ export default defineConfig(({ mode }) => {
       {
         name: "rakazo-missing-asset-404",
         configurePreviewServer({ config, middlewares }) {
+          const outDir = path.resolve(config.root, config.build.outDir);
+          const assetsDir = path.join(outDir, config.build.assetsDir);
+          let archive: string | null = null;
+          try {
+            archive = archiveAssets({
+              assetsDir,
+              archiveDir: path.resolve(config.root, ASSET_ARCHIVE_DIR),
+              buildId: readFileSync(path.join(outDir, "build-id"), "utf8").trim(),
+              now: Date.now(),
+            });
+          } catch (error) {
+            screenLog.warn("web.asset_archive_failed", { "error.code": socketErrorCode(error) });
+          }
           middlewares.use(
-            missingAssetMiddleware(
-              path.resolve(config.root, config.build.outDir, config.build.assetsDir),
-              `${config.base}${config.build.assetsDir}/`,
-            ),
+            missingAssetMiddleware(assetsDir, `${config.base}${config.build.assetsDir}/`, archive),
           );
         },
       },
@@ -491,6 +573,16 @@ export default defineConfig(({ mode }) => {
         },
       },
       {
+        // The hosts the running server allows, as Vite resolved them, for proxied upgrades.
+        name: "rakazo-api-proxy-hosts",
+        configureServer: (server) => {
+          proxyHosts = server.config.server.allowedHosts;
+        },
+        configurePreviewServer: (server) => {
+          proxyHosts = server.config.preview.allowedHosts;
+        },
+      },
+      {
         name: "rakazo-novnc-proxy",
         configureServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
         configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
@@ -501,13 +593,13 @@ export default defineConfig(({ mode }) => {
       port: webPort,
       strictPort: true,
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
   };
 });

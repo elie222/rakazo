@@ -21,7 +21,10 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
     },
     billingAccount: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaClient;
-  const provider = { getPrice: vi.fn(getPrice) } as unknown as BillingProvider;
+  const provider = {
+    describe: () => ({ capabilities: { trials: true, portal: true } }),
+    getPrice: vi.fn(getPrice),
+  } as unknown as BillingProvider;
   return {
     provider,
     billing: createBillingService({ prisma, provider, webOrigin: "https://app.example.com" }),

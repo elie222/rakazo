@@ -8,12 +8,12 @@ import type {
   RoutineWatchInput,
 } from "@rakazo/contracts";
 import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
+import type { CronFreq, CronLabels, CronPreset } from "@rakazo/core";
 import {
-  type CronFreq,
-  type CronPreset,
   credentialForModel,
   cronFromPreset,
   defaultCronPreset,
+  ENGLISH_CRON_LABELS,
   formatCron,
   isOneShotRoutineCrons,
   presetFromCron,
@@ -49,6 +49,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { cronLabels } from "../lib/cron";
 import {
   connectedModelOptions,
   modelOptionKey,
@@ -222,7 +223,10 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
   };
 }
 
-export function routineTriggerSummary(routine: Routine): string {
+export function routineTriggerSummary(
+  routine: Routine,
+  labels: CronLabels = ENGLISH_CRON_LABELS,
+): string {
   if (!routine.active) return t`Paused`;
   const parts: string[] = [];
   if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
@@ -230,9 +234,9 @@ export function routineTriggerSummary(routine: Routine): string {
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
-  for (const cron of routine.crons) parts.push(formatCron(cron));
+  for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
-  return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
+  return parts.length > 0 ? parts.join(", ") : t`No trigger`;
 }
 
 export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
@@ -267,6 +271,8 @@ export function RoutineListRow({
   onOpen: () => void;
   onStop: () => void;
 }) {
+  const { i18n } = useLingui();
+  const scheduleLabels = cronLabels(i18n.locale);
   return (
     <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
       <button
@@ -285,20 +291,27 @@ export function RoutineListRow({
           <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="block truncate text-[12.5px] text-muted-foreground/80">
-            {routineTriggerSummary(routine)}
-            {routine.modelProvider && routine.modelId ? ` · ${routine.modelId}` : ""}
+          <span className="flex min-w-0 gap-2 text-[12.5px] text-muted-foreground/80">
+            <span className="truncate">{routineTriggerSummary(routine, scheduleLabels)}</span>
+            {routine.modelProvider && routine.modelId ? (
+              <span className="truncate">{routine.modelId}</span>
+            ) : null}
           </span>
         </span>
       </button>
       {running ? (
-        <Button
-          size="xs"
-          onClick={onStop}
-          className="shrink-0 rounded-full bg-warning/15 text-warning hover:bg-warning/25"
-        >
-          <Trans>Running · Stop</Trans>
-        </Button>
+        <>
+          <span className="shrink-0 text-[12.5px] text-warning">
+            <Trans>Running</Trans>
+          </span>
+          <Button
+            size="xs"
+            onClick={onStop}
+            className="shrink-0 bg-warning/15 text-warning hover:bg-warning/25"
+          >
+            <Trans>Stop</Trans>
+          </Button>
+        </>
       ) : null}
     </div>
   );

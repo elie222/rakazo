@@ -1,12 +1,15 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   displayName,
+  escapeJsonSearchWildcards,
+  escapeSearchWildcards,
   extractLinksFromText,
   matchesSearchQuery,
   snippetAroundMatch,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { contentEncryptionOf, Prisma } from "@rakazo/db";
+import { contentEncryptionOf, INDEXED_MESSAGE, Prisma, UNINDEXED_MESSAGE } from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
@@ -21,21 +24,22 @@ const UNINDEXED_SCAN_LIMIT = 200;
  * on rows that are still plaintext.
  */
 async function messageMatch(prisma: PrismaClient, spaceId: string, query: string) {
-  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${query}%`}`;
+  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
-  const tokenSets = (await encryption.messageSearchTokens(spaceId, query, "prefix")).filter(
-    (tokens) => tokens.length,
-  );
+  const keyTokens = await encryption.messageSearchTokens(spaceId, query, "prefix");
+  // No keys: nothing in the space was ever encrypted (encryption off from the start).
+  if (!keyTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
+  const tokenSets = keyTokens.filter((tokens) => tokens.length);
   if (!tokenSets.length)
     return {
-      sql: Prisma.sql`(m."searchTokens" IS NOT NULL OR ${plaintext})`,
+      sql: Prisma.sql`(${INDEXED_MESSAGE} OR ${plaintext})`,
       limit: UNINDEXED_SCAN_LIMIT,
       pages: 1,
     };
   const encrypted = tokenSets.map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
   return {
-    sql: Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(m."searchTokens" IS NULL AND ${plaintext})`], " OR ")})`,
+    sql: Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(${UNINDEXED_MESSAGE} AND ${plaintext})`], " OR ")})`,
     limit: SEARCH_LIMIT * 4,
     // Candidates can share the query's words without containing the phrase, so
     // keep fetching until results fill or candidates run out, within a bound.
@@ -85,6 +89,10 @@ export async function querySpaceSearch(
 ): Promise<SearchHit[]> {
   const query = q.trim();
   if (!query) return [];
+  // The database side has to match the text the user typed, the way
+  // `matchesSearchQuery` does in memory: a `%` or `_` would otherwise widen
+  // the match, and a `\` would swallow the character after it.
+  const likeQuery = escapeSearchWildcards(query);
 
   const conversationHits: SearchHit[] = [];
   const contentHits: SearchHit[] = [];
@@ -111,9 +119,8 @@ export async function querySpaceSearch(
       userId: actor.userId,
       archivedAt: null,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { description: { contains: likeQuery, mode: "insensitive" } },
       ],
     },
     take: CONVERSATION_HIT_LIMIT,
@@ -126,17 +133,35 @@ export async function querySpaceSearch(
         botId: bot.id,
         botName: bot.name,
         title: bot.name,
-        snippet: displayName(bot.title, "") || bot.description || displayName(bot.name, ""),
+        snippet: bot.description || displayName(bot.name, ""),
       },
       CONVERSATION_HIT_LIMIT * 2,
     );
   }
 
+  // Only groups that can actually be opened: not archived, and still holding
+  // enough active-member bots (archiving bots can empty a group below the
+  // minimum — those land on the Archived list instead of opening).
+  const openableGroups = await prisma.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`
+      SELECT g.id FROM chat_groups g
+      WHERE g."spaceId" = ${actor.spaceId}
+        AND g."userId" = ${actor.userId}
+        AND g."archivedAt" IS NULL
+        AND (
+          SELECT COUNT(*) FROM chat_group_members gm
+          INNER JOIN bots gb ON gb.id = gm."botId"
+          WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
+        ) >= ${GROUP_MEMBER_MIN}
+    `,
+  );
+  const openableGroupIds = openableGroups.map(({ id }) => id);
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      name: { contains: query, mode: "insensitive" },
+      id: { in: openableGroupIds },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     take: CONVERSATION_HIT_LIMIT,
   });
@@ -155,6 +180,7 @@ export async function querySpaceSearch(
   }
 
   const contentBudget = Math.max(0, SEARCH_LIMIT - conversationHits.length);
+  const full = () => contentHits.length >= contentBudget;
 
   const artifacts = await prisma.artifact.findMany({
     where: {
@@ -162,7 +188,7 @@ export async function querySpaceSearch(
       userId: actor.userId,
       groupId: null,
       botId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
       bot: { archivedAt: null },
     },
     include: { bot: { select: { name: true } } },
@@ -187,7 +213,7 @@ export async function querySpaceSearch(
         botId: artifact.botId,
         botName: artifact.bot.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -196,12 +222,14 @@ export async function querySpaceSearch(
     );
   }
 
+  if (full()) return [...conversationHits, ...contentHits];
+
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      groupId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      groupId: { in: openableGroupIds },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     include: { group: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -225,7 +253,7 @@ export async function querySpaceSearch(
         groupId: artifact.groupId,
         groupName: artifact.group.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -234,13 +262,15 @@ export async function querySpaceSearch(
     );
   }
 
+  if (full()) return [...conversationHits, ...contentHits];
+
   const routines = await prisma.routine.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { prompt: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { prompt: { contains: likeQuery, mode: "insensitive" } },
       ],
       bot: { archivedAt: null },
     },
@@ -262,8 +292,9 @@ export async function querySpaceSearch(
     );
   }
 
+  if (full()) return [...conversationHits, ...contentHits];
+
   const match = await messageMatch(prisma, actor.spaceId, query);
-  const full = () => contentHits.length >= contentBudget;
   for (let page = 0; page < match.pages && !full(); page += 1) {
     const messageRows = await openMessages(
       prisma,
@@ -322,6 +353,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."groupId" IS NOT NULL
+        AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}

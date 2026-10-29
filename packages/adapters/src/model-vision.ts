@@ -2,12 +2,15 @@ import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
+import { liveModelSibling, withLiveImageInput } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import { CHATGPT_OAUTH_PROVIDER } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -19,7 +22,6 @@ export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
 
 export const MODEL_CANNOT_SEE_MESSAGE = "This bot's model cannot see; pick a vision-capable model.";
 
-/** Return whether a model id is explicitly enabled for image input on a connection. */
 export function modelIdSupportsImages(
   modelIds: readonly string[] | undefined,
   modelId: string | null | undefined,
@@ -79,16 +81,14 @@ export function resolveModelRefForVisionCheck(
 }
 
 /**
- * Whether the selected model accepts image input, per the Pi model catalog's
- * declared `input` modalities. Unknown models are treated as text-only.
- * The `scripted` placeholder is resolved the same way Pi does (env default /
- * GPT-5.6 Luna fallback) before the catalog check. An explicit connection capability
- * override is honored for OpenAI-compatible models.
+ * Unknown models are treated as text-only. An explicit connection capability
+ * override is honored for OpenAI-compatible models. For Codex, `acceptsImages`
+ * is the account catalog's answer when a run has one, and is left unused when absent.
  */
 export function modelAcceptsImageInput(
   provider: string,
   modelId: string,
-  acceptsImages = false,
+  acceptsImages?: boolean,
 ): boolean {
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id) return false;
@@ -103,6 +103,10 @@ export function modelAcceptsImageInput(
   ) {
     model = models.getModel("openrouter", resolved.id);
   }
+  model ??= liveModelSibling(models, resolved.provider, resolved.id);
+  if (model && resolved.provider === CHATGPT_OAUTH_PROVIDER) {
+    model = withLiveImageInput(model, acceptsImages);
+  }
   return Boolean(model?.input.includes("image"));
 }
 
@@ -112,4 +116,16 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
 ): T[] {
   if (acceptsImages) return tools;
   return tools.filter((tool) => !IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name));
+}
+
+/** Attachment admission needs proof, unlike conservative screenshot tool gating. */
+export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
+  const resolved = resolveModelRefForVisionCheck(provider, modelId);
+  if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
+  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  return model ? model.input.includes("image") : undefined;
+}
+
+export function runtimeModelAcceptsImages(provider: string, modelId: string): boolean {
+  return Boolean(resolveRuntimeModel({ provider, id: modelId }).model?.input.includes("image"));
 }

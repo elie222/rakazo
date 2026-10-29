@@ -49,11 +49,13 @@ Implementation complexity is acceptable only when it protects a real boundary or
 
 Spaces are authorization boundaries across which private chats, files, memory, computers, and integrations do not mix implicitly.
 Sharing a bot transfers an intentional configuration, not its computer, credentials, files, private memory, or history.
-Consequential actions respect explicit approval policy, and uncertain automated review fails toward asking rather than silently acting.
+Consequential actions follow the owner's approval mode and lists, and an automated review that errors or is unsure asks rather than silently acting.
 Authentication, secret handling, sandbox boundaries, host commands, and integrations are treated as security-sensitive product behavior.
 Important effects are verified independently, recovery preserves known-good user state, and core tests remain deterministic and offline by default.
 
 ## Current decisions
+
+App accounts never administer the server. Signup order, email address, and workspace ownership do not grant deployment privileges or billing exemptions; there is no app-admin role or `ADMINS` list. Operators configure the server through environment variables and manage updates, logs, and shared credentials through deployment tooling. Desktop host access is a separate local capability that requires native confirmation, is restricted to the app-managed local instance, and can be revoked locally.
 
 This file records current product truth rather than an append-only decision log, and Git history preserves decisions that are later replaced.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
@@ -61,6 +63,26 @@ One bot has one continuous visible thread because continuity is part of its iden
 Team Computers share a persisted browser identity and isolate simultaneous live desktops when supported because shared login state and safe concurrency are both required.
 Private Computers isolate the entire working home because some trust boundaries must be stronger than collaboration convenience.
 Connections belong to the user or space rather than requiring repetitive per-bot setup because bots differ through role and state, not account plumbing.
+Plugins in the shared plugin format install as ordinary connectors and skills rather than a runtime of their own, so sign-in, approvals and per-bot enablement work the same wherever a capability came from.
+The built-in plugin catalog lists only plugins whose every part installs, because a half-working default is worse than none, while a plugin imported by URL installs what works and names what it left out.
+Plugin parts that would run the plugin's own code on our side, such as hooks, language servers, local MCP commands and skill scripts, are not installed, because executing third-party code is a boundary the catalog does not cross.
+Integrations is where apps are connected and skills have their own place, because a skill is know-how that needs no account and many skills have nothing to connect.
+A brand's connector and its skills are added separately, because connecting an app should not also load dozens of playbooks.
+Settings such as models, voice and approvals are account defaults that every space follows, and a space customizes one only as a deliberate exception, because few people want a different setup per space and spaces exist to separate work, not configuration.
+Skills, MCP servers, plugins and tool sources belong to the account of the user who added them, and each is available in all of that user's spaces or only in chosen ones, because one setup should serve every space while spaces stay private.
+All spaces includes spaces created later, because choosing it means the item should follow the user wherever they work.
+What a user adds is available in all their spaces until they narrow it, and what a bot creates, such as a skill, is available only in the space it was created in, because a bot's writing may carry that space's private details.
+A bot changes only skills that live in its space alone, because editing one that other spaces read would carry this space's details into them.
+Items that existed before availability did stay available only in the space they were in, so nothing became visible somewhere new.
+Bots use what is available in their space, and each bot still chooses which apps it uses, because availability decides what a space may touch and the bot decides what it needs.
+A teammate in a shared space never gets another member's items, because availability spans one owner's spaces, never other people.
+Models, voice and approval settings follow the same account-first rule without a per-item choice, because they carry no private content and the per-space override covers the exceptions.
+Managed app connections stay with the space they were connected in for now, because a hosted connector provider can identify connected accounts per space and moving them would disconnect them.
+Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
+Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
+Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
+Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask and are refused in Never ask, which cannot wait for anyone.
+The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Scope
 

@@ -29,6 +29,59 @@ const path = (url: string, interactive = false) =>
     ),
   ).pathname;
 describe("sealed screen capabilities", () => {
+  it("seals provider credentials for page, asset, and websocket requests", () => {
+    const upstream = "https://screen.example/vnc.html?path=websockify%3Ftoken%3Dfake-socket";
+    const headers = { cookie: "provider_auth=fake-private-token" };
+    const url = new URL(
+      sealScreenCapability(upstream, "secret", "https://app.example", scope, 100, headers),
+    );
+    expect(url.toString()).not.toContain("fake-private-token");
+    for (const resource of ["vnc.html", "app/ui.js", "websockify"]) {
+      const opened = openScreenCapability(
+        url.pathname.replace("vnc.html", resource),
+        "secret",
+        101,
+      );
+      expect(opened?.target.headers).toEqual(headers);
+      expect(opened?.target.path).toContain(
+        resource === "websockify" ? "token=fake-socket" : resource,
+      );
+      expect(
+        openScreenCapability(url.pathname.replace("vnc.html", resource), "wrong", 101),
+      ).toBeNull();
+    }
+  });
+  it("includes provider credentials in the remote capability cache identity", () => {
+    resetRemoteScreenCapabilityReuse();
+    const issue = (cookie: string) =>
+      issueScreenCapability(
+        "https://screen.example/vnc.html",
+        "secret",
+        "https://app.example",
+        scope,
+        100,
+        { cookie },
+      );
+    expect(issue("first")).toBe(issue("first"));
+    expect(issue("second")).not.toBe(issue("first"));
+  });
+  it.each<Record<string, string>>([
+    { cookie: "fake\r\nInjected: value" },
+    { host: "other.example" },
+    { connection: "upgrade" },
+  ])("rejects unsafe upstream headers %j", (headers) => {
+    expect(() =>
+      sealScreenCapability(
+        "https://screen.example/vnc.html",
+        "secret",
+        "https://app.example",
+        scope,
+        100,
+        headers,
+      ),
+    ).toThrow("Invalid screen authentication headers");
+  });
+
   it.each([false, true])(
     "connects the shipped embed through one capability prefix (control=%s)",
     (interactive) => {
@@ -46,12 +99,36 @@ describe("sealed screen capabilities", () => {
         .match(/<script type="module">([\s\S]*?)<\/script>/)![1]!
         .replace(/^\s*import[\s\S]*?;\s*$/gm, "");
       let socketUrl = "";
+      const rootClasses = new Set<string>();
+      const rootAttributes = new Map<string, string>();
+      const rfbListeners = new Map<string, (event: { detail?: Record<string, unknown> }) => void>();
       runInNewContext(script, {
-        document: { location: url, getElementById: () => ({}) },
+        document: {
+          location: url,
+          getElementById: () => ({}),
+          documentElement: {
+            classList: {
+              add: (...names: string[]) => {
+                for (const name of names) rootClasses.add(name);
+              },
+              remove: (...names: string[]) => {
+                for (const name of names) rootClasses.delete(name);
+              },
+            },
+            setAttribute: (name: string, value: string) => rootAttributes.set(name, value),
+            hasAttribute: (name: string) => rootAttributes.has(name),
+          },
+        },
         window: { location: url },
         RFB: class {
           constructor(_element: unknown, value: string) {
             socketUrl = value;
+          }
+          addEventListener(
+            type: string,
+            listener: (event: { detail?: Record<string, unknown> }) => void,
+          ) {
+            rfbListeners.set(type, listener);
           }
         },
         attachHostClipboardPaste: () => {},
@@ -65,6 +142,13 @@ describe("sealed screen capabilities", () => {
         attachMobileKeyboard: () => {},
         attachMobileTrackpad: () => {},
       });
+      // The page shim reports these classes to the app, as it does for stock noVNC.
+      expect([...rootClasses]).toEqual(["noVNC_connecting"]);
+      rfbListeners.get("connect")?.({});
+      expect([...rootClasses]).toEqual(["noVNC_connected"]);
+      rfbListeners.get("disconnect")?.({ detail: { clean: false } });
+      expect([...rootClasses]).toEqual([]);
+      expect(rootAttributes.get("data-rakazo-screen-error")).toBe("");
       const socket = new URL(socketUrl);
       expect(socket.protocol).toBe("wss:");
       expect(socket.host).toBe(url.host);
@@ -160,6 +244,20 @@ describe("sealed screen capabilities", () => {
       expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
     },
   );
+  it.each(["::1", "fc00::1", "fd50::8"])("allows private IPv6 screen sockets (%s)", (host) => {
+    expect(
+      openScreenCapability(path(`http://[${host}]:6100/embed.html`), "fake-secret", 101)?.target
+        .hostname,
+    ).toBe(host);
+  });
+  it.each(["2001:db8::1", "fe80::1", "::ffff:127.0.0.1", "::", "fc::1", "fd00:ec2::254"])(
+    "rejects other IPv6 HTTP screen targets (%s)",
+    (host) => {
+      expect(
+        openScreenCapability(path(`http://[${host}]:6100/embed.html`), "fake-secret", 101),
+      ).toBeNull();
+    },
+  );
   it.each(["http://100.64.0.1:49152/embed.html", "http://100.127.255.254:49152/embed.html"])(
     "allows CGNAT 100.64/10 screen targets %s",
     (url) => {
@@ -168,12 +266,15 @@ describe("sealed screen capabilities", () => {
       );
     },
   );
-  it.each(["http://100.63.255.255:49152/embed.html", "http://100.128.0.1:49152/embed.html"])(
-    "rejects addresses outside CGNAT 100.64/10 %s",
-    (url) => {
-      expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
-    },
-  );
+  it.each([
+    "http://100.63.255.255:49152/embed.html",
+    "http://100.128.0.1:49152/embed.html",
+    "http://100.100.100.200:49152/embed.html",
+    "http://169.254.169.254:49152/embed.html",
+    "http://0.0.0.0:49152/embed.html",
+  ])("rejects addresses outside the private network, and metadata inside it %s", (url) => {
+    expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
+  });
 });
 
 describe("remote screen capability reuse", () => {

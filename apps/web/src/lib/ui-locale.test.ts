@@ -38,6 +38,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("nl-BE")).toBe("nl");
     expect(normalizeUiLocale("NL")).toBe("nl");
     expect(normalizeUiLocale("nl_nl")).toBe("nl");
+    expect(normalizeUiLocale("ja")).toBe("ja");
+    expect(normalizeUiLocale("ja-JP")).toBe("ja");
+    expect(normalizeUiLocale("ja_JP")).toBe("ja");
     expect(normalizeUiLocale("iw")).toBe("he");
     expect(normalizeUiLocale("iw-IL")).toBe("he");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
@@ -52,13 +55,24 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("zh_Hans_CN")).toBe("zh-CN");
   });
 
-  it("does not fold Traditional Chinese into Simplified", () => {
-    expect(normalizeUiLocale("zh-TW")).toBe("en");
-    expect(normalizeUiLocale("zh-HK")).toBe("en");
-    expect(normalizeUiLocale("zh-MO")).toBe("en");
-    expect(normalizeUiLocale("zh-Hant")).toBe("en");
-    expect(normalizeUiLocale("zh-Hant-TW")).toBe("en");
-    expect(normalizeUiLocale("zh-Hant-HK")).toBe("en");
+  it.each([
+    "zh-TW",
+    "zh_TW",
+    " ZH-tw ",
+    "zh-HK",
+    "zh-MO",
+    "zh-Hant",
+    "zh-Hant-TW",
+    "zh-Hant-HK",
+    "zh-TW-u-nu-hanidec",
+    "zh-Hant-CN",
+  ])("maps %s to Traditional Chinese", (tag) => expect(normalizeUiLocale(tag)).toBe("zh-TW"));
+
+  it("honors an explicit Simplified script in Traditional Chinese regions", () => {
+    expect(normalizeUiLocale("zh-Hans-TW")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-Hans-HK")).toBe("zh-CN");
+    expect(normalizeUiLocale("en-TW")).toBe("en");
+    expect(normalizeUiLocale("de-HK")).toBe("de");
   });
 
   it("falls back to English for unknown locales", () => {
@@ -158,5 +172,22 @@ describe("persistUiLocale", () => {
       },
     });
     expect(store.get(UI_LOCALE_STORAGE_KEY)).toBe("ko");
+  });
+});
+
+describe("Traditional Chinese preferences", () => {
+  it("uses the device locale and lets a saved choice override it", () => {
+    expect(resolveUiLocale({ stored: null, envDefault: null, navigatorLanguage: "zh-TW" })).toBe(
+      "zh-TW",
+    );
+    expect(resolveUiLocale({ stored: "zh-TW", envDefault: "en", navigatorLanguage: "zh-CN" })).toBe(
+      "zh-TW",
+    );
+    expect(
+      resolveUiLocale({ stored: "zh-CN", envDefault: "zh-TW", navigatorLanguage: "zh-TW" }),
+    ).toBe("zh-CN");
+    expect(resolveUiLocale({ stored: null, envDefault: "zh-TW", navigatorLanguage: "en" })).toBe(
+      "zh-TW",
+    );
   });
 });

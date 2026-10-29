@@ -29,11 +29,13 @@ import {
 } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 const PAGE_SIZE = 30;
 
 export default function ArtifactsScreen() {
+  const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
   const { t } = useI18n();
@@ -93,7 +95,7 @@ export default function ArtifactsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      rpc<MobileBot[]>("bots/list")
+      rpc("bots/list")
         .then(setBots)
         .catch(() => undefined);
     }, []),
@@ -260,12 +262,19 @@ export default function ArtifactsScreen() {
                 label={bot.name}
                 active={activeBotId === bot.id}
                 onPress={() => setActiveBotId(bot.id)}
-                avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+                avatar={
+                  <BotAvatar
+                    color={bot.color}
+                    avatarSet={bot.avatarSet}
+                    identity={bot.id}
+                    size={16}
+                  />
+                }
               />
             ))}
           </ScrollView>
         }
-        style={styles.listView}
+        style={[styles.listView, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
         data={filtered ?? []}
         keyExtractor={(item) => item.id}
@@ -410,7 +419,7 @@ function ArtifactRow({
         <View style={styles.rowFooter}>
           {bot ? (
             <>
-              <BotAvatar color={bot.color} identity={bot.id} size={14} />
+              <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={14} />
               <Text style={styles.rowBotName} numberOfLines={1}>
                 {bot.name}
               </Text>

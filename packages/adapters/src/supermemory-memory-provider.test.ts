@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
 import {
   prepareSupermemoryConnection,
@@ -354,14 +354,14 @@ describe("Supermemory local base URL", () => {
         credentials,
         { allowPrivateEndpoint: false, resolveHostname },
       ),
-    ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
     await expect(
       prepareSupermemoryConnection(
         { mode: "local", baseUrl: "http://supermemory:6767" },
         credentials,
         { allowPrivateEndpoint: false, resolveHostname },
       ),
-    ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
 
     expect(resolveHostname).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();

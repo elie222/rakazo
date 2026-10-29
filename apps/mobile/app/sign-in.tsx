@@ -1,9 +1,9 @@
-import type { IntegrationSetupState } from "@rakazo/contracts";
 import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -33,6 +33,7 @@ import {
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
+import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
@@ -49,6 +50,7 @@ export default function SignIn() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
@@ -58,10 +60,13 @@ export default function SignIn() {
   const [capabilityError, setCapabilityError] = useState(false);
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [resetSent, setResetSent] = useState(false);
-  const [usePassword, setUsePassword] = useState(false);
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+
+  useEffect(() => {
+    setPasswordVisible(false);
+  }, [mode, apiBase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -120,15 +125,16 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
       </View>
     );
   }
-  if (hasSession) return <Redirect href="/" />;
+  if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
-  const usingCode = codeFlow && !usePassword;
-  const codeStep = usingCode && codeSent;
+  // A blank password asks for an emailed code, so code-only accounts need no toggle.
+  const usingCode = codeFlow && (codeSent || !password);
+  const codeStep = codeFlow && codeSent;
 
   async function submit(enteredCode = code) {
     if (pending || !reset?.passwordAuth) return;
@@ -183,12 +189,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      // A code can create the account from either form.
-      const setup =
-        mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
-          : null;
-      router.replace(setup?.needsSetup ? "/integration-setup" : "/");
+      await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -196,11 +197,18 @@ export default function SignIn() {
     }
   }
 
+  // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
+  async function openApp() {
+    if (hasIncomingShare()) return router.replace("/share");
+    const me = await rpc("me").catch(() => null);
+    router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
+  }
+
   async function externalSignIn(run: () => Promise<boolean>) {
     setPending(true);
     setError(null);
     try {
-      if (await run()) router.replace("/");
+      if (await run()) await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -273,11 +281,11 @@ export default function SignIn() {
                       />
                     </View>
                   ) : !reset ? (
-                    <Text
-                      style={{ color: tokens.mutedForeground, textAlign: "center", marginTop: 16 }}
-                    >
-                      {t("Loading…")}
-                    </Text>
+                    <ActivityIndicator
+                      color={tokens.mutedForeground}
+                      accessibilityLabel={t("Loading…")}
+                      style={{ marginTop: 16 }}
+                    />
                   ) : null}
                   {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
                     <NativeActionButton
@@ -377,27 +385,55 @@ export default function SignIn() {
                           color: tokens.foreground,
                         }}
                       />
-                      {mode !== "forgot" && !usingCode ? (
-                        <TextInput
-                          autoComplete={mode === "in" ? "current-password" : "new-password"}
-                          textContentType={mode === "in" ? "password" : "newPassword"}
-                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
-                          maxLength={MAX_PASSWORD_LENGTH}
-                          placeholder={t("Password")}
-                          placeholderTextColor={tokens.mutedForeground}
-                          returnKeyType="go"
-                          secureTextEntry
-                          value={password}
-                          onChangeText={setPassword}
-                          onSubmitEditing={() => void submit()}
+                      {mode !== "forgot" ? (
+                        <View
                           style={{
                             marginTop: 12,
+                            flexDirection: "row",
+                            alignItems: "center",
                             backgroundColor: tokens.muted,
                             borderRadius: 13,
-                            padding: 16,
-                            color: tokens.foreground,
                           }}
-                        />
+                        >
+                          <TextInput
+                            autoComplete={mode === "in" ? "current-password" : "new-password"}
+                            textContentType={mode === "in" ? "password" : "newPassword"}
+                            passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
+                            maxLength={MAX_PASSWORD_LENGTH}
+                            placeholder={t("Password")}
+                            placeholderTextColor={tokens.mutedForeground}
+                            returnKeyType="go"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            secureTextEntry={!passwordVisible}
+                            value={password}
+                            onChangeText={setPassword}
+                            onSubmitEditing={() => void submit()}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              padding: 16,
+                              color: tokens.foreground,
+                            }}
+                          />
+                          <NativeActionButton
+                            accessibilityLabel={
+                              passwordVisible ? t("Hide password") : t("Show password")
+                            }
+                            icon={{
+                              ios: passwordVisible ? "eye.slash" : "eye",
+                              android: passwordVisible ? "eye-off-outline" : "eye-outline",
+                            }}
+                            prominence="quiet"
+                            onPress={() => setPasswordVisible((visible) => !visible)}
+                            style={{
+                              alignSelf: "center",
+                              minWidth: 44,
+                              minHeight: 44,
+                              marginRight: 4,
+                            }}
+                          />
+                        </View>
                       ) : null}
                       {error ? (
                         <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
@@ -418,25 +454,15 @@ export default function SignIn() {
                         onPress={() => void submit()}
                         style={{ marginTop: 16 }}
                       />
-                      {passkeys && mode === "in" && !codeSent ? (
+                      {passkeys && mode === "in" ? (
                         <NativeActionButton
                           label={t("Sign in with passkey")}
-                          prominence="quiet"
+                          icon={{ ios: "key.fill", android: "key-outline" }}
+                          prominence="secondary"
+                          fill
                           disabled={pending}
                           onPress={() => void externalSignIn(signInWithPasskey)}
-                          style={{ alignSelf: "center", marginTop: 16 }}
-                        />
-                      ) : null}
-                      {codeFlow ? (
-                        <NativeActionButton
-                          label={usingCode ? t("Use password") : t("Use email code")}
-                          prominence="quiet"
-                          disabled={pending}
-                          onPress={() => {
-                            setUsePassword(usingCode);
-                            setError(null);
-                          }}
-                          style={{ alignSelf: "center", marginTop: 16 }}
+                          style={{ marginTop: 12 }}
                         />
                       ) : null}
                       {reset.sso && mode !== "forgot" ? (
@@ -448,7 +474,7 @@ export default function SignIn() {
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}
-                      {mode === "in" && !usingCode && reset?.passwordReset && reset.resetUrl ? (
+                      {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}

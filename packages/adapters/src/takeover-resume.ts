@@ -29,14 +29,13 @@ export function takeoverResumeFromRelease(reason: unknown): {
   return {
     checkpoint: "takeover",
     promptNote:
-      "The user handed the computer back. Continue from where you left off. Do not request takeover again.",
+      "The user handed the computer back. Continue using the current screen state. Do not request takeover again.",
   };
 }
 
 export type TakeoverContinuePlan = {
   resumeCheckpoint: TakeoverResumeCheckpoint | null;
   heldForTakeover: boolean;
-  resumeHeldLease: boolean;
   takeoverResume: ReturnType<typeof takeoverResumeFromRelease> | null;
 };
 
@@ -49,7 +48,6 @@ export function takeoverContinuePlan(run: {
   return {
     resumeCheckpoint,
     heldForTakeover,
-    resumeHeldLease: heldForTakeover || Boolean(resumeCheckpoint),
     takeoverResume: resumeCheckpoint
       ? takeoverResumeFromRelease(resumeCheckpoint === "takeover-skipped" ? "skipped" : "done")
       : null,

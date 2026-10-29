@@ -6,6 +6,7 @@ const itOffline = process.env.VERIFY_DATABASE ? it.skip : it;
 describeFast("pnpm test emulator pin", () => {
   it("forces scripted runtime, fake sandbox, and in-memory wakeup", () => {
     expect(process.env.AGENT_RUNTIME).toBe("scripted");
+    expect(process.env.RAKAZO_LIVE_MODEL_CATALOG).toBe("off");
     expect(process.env.SANDBOX_PROVIDER).toBe("fake");
     expect(process.env.WAKEUP_DRIVER).toBe("memory");
   });
@@ -18,6 +19,12 @@ describeFast("pnpm test emulator pin", () => {
   it("does not keep a live Composio key in the test process", () => {
     expect(process.env.COMPOSIO_API_KEY).toBeUndefined();
     expect(process.env.INTEGRATIONS_CATALOG_URL).toBeUndefined();
+  });
+
+  it("does not inherit live email delivery configuration", () => {
+    expect(process.env.EMAIL_PROVIDER).toBeUndefined();
+    expect(process.env.EMAIL_API_KEY).toBeUndefined();
+    expect(process.env.SMTP_URL).toBeUndefined();
   });
 
   itOffline(

@@ -1,12 +1,11 @@
 ---
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 ---
 
 <BaseLayout title="Support · Rakazo" description="Get help with the Rakazo app and self-hosted Rakazo.">
@@ -25,11 +24,17 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
         Start with the <a href={SELF_HOST_GUIDE_PATH}>self-hosting guide</a>. For reproducible bugs or feature requests,
         open an issue in the <a href={`${GITHUB_URL}/issues`}>Rakazo GitHub repository</a>.
       </p>
-      <h2>Account deletion</h2>
+      <h2 id="account-deletion">Account deletion</h2>
       <p>
         In the mobile app, open <strong>Account</strong>, enter your current password under{" "}
-        <strong>Delete account</strong>, and confirm. This permanently deletes the hosted account and its
+        <strong>Delete account</strong>, and confirm. On the web, sign in at{" "}
+        <a href="https://app.rakazo.com">app.rakazo.com</a> and do the same under{" "}
+        <strong>Settings</strong> → <strong>Account</strong>. This permanently deletes the hosted account and its
         associated personal Space data.
+      </p>
+      <p>
+        Without access to the app, email <a href="mailto:hello@rakazo.com">hello@rakazo.com</a> from your account's
+        email address to ask us to delete it. Sign-in security records are kept for up to 90 days.
       </p>
     </main>
     <Footer />

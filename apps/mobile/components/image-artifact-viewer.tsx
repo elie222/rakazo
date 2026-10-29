@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -253,10 +253,13 @@ export function ImageArtifactViewer({
             onClose={onClose}
             onError={() => fail(new Error(t("Could not load image")))}
           />
+        ) : state.status === "error" ? (
+          <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
         ) : (
-          <Text style={[styles.message, { color: tokens.mutedForeground }]}>
-            {state.status === "error" ? state.message : t("Loading image…")}
-          </Text>
+          <ActivityIndicator
+            color={tokens.mutedForeground}
+            accessibilityLabel={t("Loading image…")}
+          />
         )}
       </View>
     </View>

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expectCardWidth, signup } from "./helpers";
 
 test("teach a task records interaction and saves a draft", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -58,9 +58,54 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await page.getByTestId("teach-capture-overlay").click({ position: { x: 200, y: 200 } });
   await page.keyboard.type("demo");
   await page.getByTestId("teach-stop-overlay").click();
-  await expect(page.getByTestId("skill-draft-card")).toBeVisible({ timeout: 20_000 });
+  const draftCard = page.getByTestId("skill-draft-card");
+  await expect(draftCard).toBeVisible({ timeout: 20_000 });
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "teach-skill-draft-card");
+  await expectCardWidth(draftCard, 520);
   await page.getByTestId("skill-draft-card").getByRole("button", { name: "Save" }).click();
   await expect(
     page.getByTestId("skill-draft-card").getByRole("button", { name: "Saved" }),
   ).toBeVisible({ timeout: 10_000 });
+
+  // Each card labels its own fields.
+  const nameId = await draftCard.getByRole("textbox", { name: "Name" }).getAttribute("id");
+  expect(nameId).not.toBe("skill-draft-name");
+  await expect(draftCard.getByText("Name", { exact: true })).toHaveAttribute("for", nameId ?? "");
+
+  // Any edit after saving is unsaved until saved again.
+  const save = draftCard.getByRole("button", { name: "Save", exact: true });
+  const saved = draftCard.getByRole("button", { name: "Saved", exact: true });
+  await draftCard.getByLabel("Steps").fill("Open the CRM\nExport the weekly list");
+  await expect(save).toBeVisible();
+  await save.click();
+  await expect(saved).toBeVisible();
+  await draftCard.getByLabel("Name").fill("Weekly CRM export");
+  await expect(save).toBeVisible();
+
+  // Failed writes say so, and a successful retry clears the error.
+  await page.route("**/rpc/skills/updateDraft", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          defined: false,
+          code: "INTERNAL_SERVER_ERROR",
+          status: 500,
+          message: "INTERNAL_SERVER_ERROR",
+        },
+      }),
+    }),
+  );
+  await save.click();
+  await expect(draftCard.getByText("Could not save skill")).toBeVisible();
+  await captureScreenshot(page, testInfo, "teach-skill-draft-save-failed");
+  await draftCard.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(draftCard.getByText("Something went wrong. Try again.")).toBeVisible();
+  await page.unroute("**/rpc/skills/updateDraft");
+  // Testing a saved skill writes the edit too, so the card reads Saved again.
+  await draftCard.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(saved).toBeVisible();
+  await expect(draftCard.getByText("Something went wrong. Try again.")).toHaveCount(0);
 });

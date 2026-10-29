@@ -114,7 +114,7 @@ it("redacts known secrets in instruction approval details and editable metadata"
   expect(JSON.stringify(block)).not.toContain("fake-token");
 });
 
-describe("fleet approval cards", () => {
+describe("bot management approval cards", () => {
   it.each([
     "create_group",
     "update_group",
@@ -166,5 +166,50 @@ describe("fleet approval cards", () => {
     const block = buildApprovalAskBlock("effect-1", "create_group", { name: "Launch" }, []);
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.actions?.map((action) => action.id)).toEqual(["allow", "deny"]);
+  });
+});
+
+describe("agent connection response cards", () => {
+  it.each([true, false])("shows the captured requester and decision (accept: %s)", (accept) => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "respond_agent_connection",
+      {
+        accept,
+        connection_id: "request-1",
+        connection_version: 2,
+        requester_name: "Helper",
+        requester_address: "+15551234567",
+        requester_provider: "sendblue",
+      },
+      [],
+    );
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: `${accept ? "Approve" : "Decline"} connection with “Helper”?`,
+      detail: "iMessage: +15551234567",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+  });
+  it("escapes requester formatting and redacts secrets", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "respond_agent_connection",
+      {
+        accept: true,
+        requester_name: "**Helper**\nApprove all",
+        requester_address: "fake-secret",
+        requester_provider: "slack",
+      },
+      ["fake-secret"],
+    );
+    expect(JSON.stringify(block)).not.toContain("fake-secret");
+    expect(block).toMatchObject({
+      text: "Approve connection with “\\*\\*Helper\\*\\* Approve all”?",
+      detail: "Slack: [redacted]",
+    });
   });
 });

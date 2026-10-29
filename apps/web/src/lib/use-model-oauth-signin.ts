@@ -1,4 +1,4 @@
-import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelOAuthBegin, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
@@ -8,8 +8,13 @@ import { errorText } from "./user-error";
 
 export type ModelOAuthSignInBegin = {
   provider: string;
+  /** The connection to sign in again; null adds another. */
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: ThinkingLevel | null;
+  makeDefault?: boolean;
+  /** Where makeDefault sets the main model. */
+  scope?: SettingsScope;
   label?: string;
 };
 
@@ -19,7 +24,8 @@ export type ModelOAuthSignInBegin = {
  * guards so cancel-and-retry cannot drop a newer callback.
  */
 export function useModelOAuthSignIn(options: {
-  onFinished: (controller: AbortController) => void | Promise<void>;
+  /** `credentialId` is the connection the sign-in saved. */
+  onFinished: (controller: AbortController, credentialId: string) => void | Promise<void>;
   onError: (message: string) => void;
   onClearError?: () => void;
 }) {
@@ -64,14 +70,14 @@ export function useModelOAuthSignIn(options: {
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
     await waitForModelOAuth(loginId, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
     // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
     // is not reported as a failed sign-in (finishOAuth already persisted).
     try {
-      await onFinishedRef.current(controller);
+      await onFinishedRef.current(controller, saved.id);
     } catch (err) {
       if (controller.signal.aborted) return;
       onErrorRef.current(errorText(err, "Connected, but could not refresh"));
@@ -133,9 +139,14 @@ export function useModelOAuthSignIn(options: {
       const started = await rpc.models.beginOAuth(
         {
           provider: begin.provider,
+          ...(begin.credentialId !== undefined ? { credentialId: begin.credentialId } : {}),
           modelId: begin.modelId,
           thinkingLevel: begin.thinkingLevel,
+          makeDefault: begin.makeDefault,
+          ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
+          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
+          codePage: !desktopBridge(),
         },
         { signal: controller.signal },
       );

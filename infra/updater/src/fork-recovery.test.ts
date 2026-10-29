@@ -12,7 +12,7 @@ const targetCommit = "2".repeat(40);
 const oldTag = `local-${currentCommit}`;
 const originalRemote = "https://github.com/example/previous-fork";
 const nextRemote = "https://github.com/example/next-fork";
-const originalEnv = `RAKAZO_IMAGE_TAG=${oldTag}\nRAKAZO_IMAGE_TAG_PREVIOUS=v0.9.0\n`;
+const originalEnv = `POSTGRES_APP_PASSWORD=fake-app-password\nRAKAZO_IMAGE_TAG=${oldTag}\nRAKAZO_IMAGE_TAG_PREVIOUS=v0.9.0\n`;
 const directories: string[] = [];
 
 afterEach(async () => {

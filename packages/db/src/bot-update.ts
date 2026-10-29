@@ -7,8 +7,8 @@ import { appendEventInTransaction } from "./events.js";
 type AppendEvent = typeof appendEventInTransaction;
 
 /**
- * Persist a bot row. When profile labels or instructions change, write `bot.updated`
- * in the same transaction so clients can refresh after every successful write.
+ * When profile labels or instructions change, write `bot.updated` in the same
+ * transaction so clients can refresh after every successful write.
  * Realtime notify stays best-effort after commit.
  */
 export async function commitBotUpdate(
@@ -30,7 +30,7 @@ export async function commitBotUpdate(
     reason?: string;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
-): Promise<{ id: string; name: string; title: string; description: string }> {
+): Promise<{ id: string; name: string; description: string }> {
   if (typeof options.data.name === "string") {
     options = {
       ...options,
@@ -45,7 +45,7 @@ export async function commitBotUpdate(
     return options.prisma.bot.update({
       where: { id: options.botId, ...options.expectedModel },
       data: options.data,
-      select: { id: true, name: true, title: true, description: true },
+      select: { id: true, name: true, description: true },
     });
   }
 
@@ -65,7 +65,7 @@ export async function commitBotUpdate(
     const updated = await tx.bot.update({
       where: { id: options.botId, ...options.expectedModel },
       data,
-      select: { id: true, name: true, title: true, description: true },
+      select: { id: true, name: true, description: true },
     });
     const event = await appendEvent(tx, {
       spaceId: options.spaceId,
@@ -75,7 +75,6 @@ export async function commitBotUpdate(
       payload: {
         botId: updated.id,
         name: updated.name,
-        title: updated.title,
         description: updated.description,
       },
     });
@@ -90,14 +89,14 @@ export async function commitBotUpdate(
 
 export function botProfileLabelsChanged(input: {
   name?: unknown;
-  title?: unknown;
   description?: unknown;
   color?: unknown;
+  avatarSet?: unknown;
 }): boolean {
   return (
     input.name !== undefined ||
-    input.title !== undefined ||
     input.description !== undefined ||
-    input.color !== undefined
+    input.color !== undefined ||
+    input.avatarSet !== undefined
   );
 }

@@ -1,8 +1,11 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  DEFAULT_MODEL_MAX_TOKENS,
   normalizeOpenAiCompatibleBaseUrl,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
+  withConnectionName,
 } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
@@ -17,6 +20,17 @@ export const COMPATIBLE_THINKING_LEVELS = [
 ] as const;
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
+
+/**
+ * The max-tokens field for a connection. An OpenAI-compatible endpoint always sends a limit, so
+ * an unsaved one shows the default it would get; catalog providers leave it blank to use theirs.
+ */
+export function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
+  }
+  return stored !== undefined ? String(stored) : "";
+}
 
 /**
  * Map a staged effort onto the levels a model actually supports.
@@ -49,12 +63,11 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openai",
   "openai-codex",
   "anthropic",
-  "google",
+  "openai",
   "openrouter",
-  "vercel-ai-gateway",
+  "google",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
@@ -72,28 +85,10 @@ export function popularModelProvidersFirst<T>(
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
-/** Keep provider selection short while ensuring a deployment's current default is never hidden. */
-export function featuredModelProviders(
-  providers: readonly ModelCatalogEntry[],
-  selectedProvider: string,
-): ModelCatalogEntry[] {
-  const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
-  const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(canonicalPiProviderId(selectedProvider));
-
-  if (
-    !selected ||
-    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  )
-    return featured;
-  return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
-}
-
 /**
- * Model to preselect when a provider row is opened: the preferred id (usually the
- * space or deployment default) when that provider carries it, otherwise the
- * provider's first catalog entry.
+ * Model to preselect when a provider row is opened: the saved/preferred id
+ * when that provider carries it, otherwise its recommended model, then its
+ * first catalog entry.
  *
  * Aggregator providers prefix ids with the upstream vendor ("openai/gpt-6-luna"
  * on OpenRouter) while first-party providers expose the same model unprefixed
@@ -101,7 +96,7 @@ export function featuredModelProviders(
  * the exact id. This is only a preselection — the user still confirms the pick.
  */
 export function pickCatalogModelId(
-  catalog: readonly { provider: string; id: string }[],
+  catalog: readonly { provider: string; id: string; recommended?: boolean }[],
   provider: string,
   preferredId?: string | null,
 ): string {
@@ -116,7 +111,7 @@ export function pickCatalogModelId(
       if (shared) return shared.id;
     }
   }
-  return entries[0]?.id ?? "";
+  return entries.find((entry) => entry.recommended)?.id ?? entries[0]?.id ?? "";
 }
 
 /** Return the active choice separately when it is not one of the search results. */
@@ -149,14 +144,18 @@ export type ConnectedModelChoice = {
   label: string;
   providerLabel?: string;
   modelLabel?: string;
+  /** The catalog says whether the model reads images; unknown for free-form ids. */
+  images?: boolean;
 };
 
 type CatalogModelRef = {
+  managed?: boolean;
   provider: string;
   id: string;
   label: string;
   providerName?: string;
   placeholder?: boolean;
+  images?: boolean;
 };
 
 type CredentialModelRef = {
@@ -231,7 +230,7 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
     key: modelOptionKey(credential.provider, modelId),
     provider: credential.provider,
     modelId,
-    label: `${credential.label} · ${modelId}`,
+    label: withConnectionName(modelId, credential.label),
     providerLabel: credential.label,
     modelLabel: modelId,
   };
@@ -244,9 +243,10 @@ function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedMo
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
-      label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+      label: withConnectionName(entry.label, entry.providerName ?? entry.provider),
       providerLabel: entry.providerName ?? entry.provider,
       modelLabel: entry.label,
+      images: entry.images,
     };
   });
 }
@@ -314,17 +314,21 @@ export function connectedModelChoices(
     const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
       enabled.length > 0
-        ? enabled.map((id) => freeFormChoice(credential, id))
+        ? enabled.map((id) => ({
+            ...freeFormChoice(credential, id),
+            images: providerModels.find((entry) => entry.id === id)?.images,
+          }))
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
           : catalogChoices(providerModels);
-    for (const choice of next) {
-      if (seen.has(choice.key)) continue;
-      seen.add(choice.key);
-      choices.push(choice);
-    }
+    choices.push(...next);
   }
-  return choices;
+  choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
+  return choices.filter((choice) => {
+    if (seen.has(choice.key)) return false;
+    seen.add(choice.key);
+    return true;
+  });
 }
 
 /** Match a model by name, id, or provider name; a blank query keeps every model. */
@@ -350,6 +354,7 @@ export type ChatModelChoice = {
   modelLabel?: string;
   title?: string;
   detail?: string;
+  images?: boolean;
 };
 
 /** Filter on full labels before shortening rows; saved/default choices stay first. */
@@ -359,7 +364,9 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
     // The catalog has no vendor field. Its display convention is "Vendor: Model".
     const vendor = choice.modelLabel?.match(/^([^:]+): (.+)$/);
     const heading = choice.providerLabel
-      ? [choice.providerLabel, vendor?.[1]].filter(Boolean).join(" · ")
+      ? vendor?.[1]
+        ? withConnectionName(vendor[1], choice.providerLabel)
+        : choice.providerLabel
       : undefined;
     const key = heading ? `provider:${heading}` : "ungrouped";
     let section = sections.find((entry) => entry.key === key);
@@ -384,8 +391,12 @@ export function chatModelChoices(
   connected: readonly ConnectedModelChoice[],
   selectedKey: string,
   spaceDefaultLabel: string,
+  /** Whether the space's default model reads images, when the catalog knows. */
+  spaceDefaultImages?: boolean,
 ): ChatModelChoice[] {
-  const choices: ChatModelChoice[] = [{ key: "", label: spaceDefaultLabel }];
+  const choices: ChatModelChoice[] = [
+    { key: "", label: spaceDefaultLabel, images: spaceDefaultImages },
+  ];
   if (selectedKey && !connected.some((option) => option.key === selectedKey)) {
     const saved = parseModelOptionKey(selectedKey);
     choices.push({
@@ -398,14 +409,24 @@ export function chatModelChoices(
   return choices.concat(connected);
 }
 
-/** Match a choice by label, model id, or provider; a blank query keeps every choice. */
+/**
+ * Match a choice by label, model id, provider id, or (for a model that names its provider) the
+ * provider's display name; a blank query keeps every choice. A choice without a provider only
+ * uses providerLabel as a section heading, so that heading is not searched.
+ */
 export function filterModelChoices<C extends ChatModelChoice>(
   choices: readonly C[],
   query: string,
 ): readonly C[] {
   if (!query.trim()) return choices;
   return choices.filter((choice) =>
-    matchesSearchQuery(query, choice.label, choice.modelId, choice.provider),
+    matchesSearchQuery(
+      query,
+      choice.label,
+      choice.modelId,
+      choice.provider,
+      choice.provider ? choice.providerLabel : undefined,
+    ),
   );
 }
 

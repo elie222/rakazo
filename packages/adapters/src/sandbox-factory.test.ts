@@ -26,9 +26,11 @@ describe("createSandboxProvider", () => {
 
   it("boots without a remote key and keeps computers unavailable", async () => {
     expect(createSandboxProvider("e2b", {}).describe().id).toBe("none");
+    expect(createSandboxProvider("novita", {}).describe().id).toBe("none");
     expect(createSandboxProvider("daytona", {}).describe().id).toBe("none");
     expect(createSandboxProvider("createos", {}).describe().id).toBe("none");
     expect(createSandboxProvider("boat", {}).describe().id).toBe("none");
+    expect(createSandboxProvider("boxd", {}).describe().id).toBe("none");
     await expect(
       createSandboxProvider("e2b", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
@@ -40,6 +42,9 @@ describe("createSandboxProvider", () => {
     ).toBe("createos");
     expect(createSandboxProvider("boat", { boatApiKey: "test-boat-key" }).describe().id).toBe(
       "boat",
+    );
+    expect(createSandboxProvider("boxd", { boxdApiKey: "test-boxd-key" }).describe().id).toBe(
+      "boxd",
     );
   });
 
@@ -55,9 +60,35 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("desktop", {}).describe().id).toBe("desktop");
   });
 
+  it("returns the Kubernetes provider without contacting the cluster", () => {
+    const sandbox = createSandboxProvider("kubernetes", {
+      kubernetesNamespace: "rakazo-computers",
+      kubernetesRuntimeClassName: "kata",
+    });
+    expect(sandbox.describe()).toMatchObject({
+      id: "kubernetes",
+      capabilities: { graphical: true, pty: true, persistentHome: false },
+    });
+  });
+
+  it("selects Novita without using E2B credentials", async () => {
+    expect(
+      createSandboxProvider("novita", { novitaApiKey: "test-novita-key" }).describe(),
+    ).toMatchObject({
+      id: "novita",
+      capabilities: { graphical: true, persistentHome: true, multiScreen: true },
+    });
+    await expect(
+      createSandboxProvider("novita", { e2bApiKey: "test-e2b-key" }).provision(
+        { botId: "b", homePath: "/unused" },
+        ctx,
+      ),
+    ).rejects.toThrow(/NOVITA_API_KEY/);
+  });
+
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | desktop | fake.',
     );
   });
 });

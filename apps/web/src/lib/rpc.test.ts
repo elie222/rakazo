@@ -2,14 +2,102 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearSpaceSelection,
   createSpaceRpc,
+  leaveUnavailableSpace,
   rpc,
   rpcForSpace,
   selectedSpaceId,
   selectSpace,
 } from "./rpc.js";
 
+const notify = vi.hoisted(() => vi.fn());
+vi.mock("./auth", () => ({ authClient: { $store: { notify } } }));
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  notify.mockClear();
+});
+
+describe("signed-out responses", () => {
+  it("rechecks the session when the server answers 401, and only then", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await expect(rpc.me()).rejects.toMatchObject({ status: 401 });
+    expect(notify).toHaveBeenCalledWith("$sessionSignal");
+
+    notify.mockClear();
+    fetch.mockImplementation(async () =>
+      Response.json({ json: { code: "INTERNAL_SERVER_ERROR", status: 500 } }, { status: 500 }),
+    );
+    await expect(rpc.me()).rejects.toMatchObject({ status: 500 });
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("unavailable space", () => {
+  function browser(selected: string, spaces: string[] | null) {
+    const items = new Map([["rakazo:space-id", selected]]);
+    const reload = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => items.get(key) ?? null,
+        setItem: (key: string, value: string) => items.set(key, value),
+        removeItem: (key: string) => items.delete(key),
+      },
+      location: { origin: "http://app.example", reload },
+    });
+    const fetch = vi.fn(async (_request: Request, init?: RequestInit) => {
+      if (!spaces)
+        return Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 });
+      expect(new Headers(init?.headers).has("x-rakazo-space-id")).toBe(false);
+      return Response.json({
+        json: {
+          current: {
+            id: "home",
+            name: "Home",
+            bots: [],
+            groups: [],
+            externalConversations: [],
+            botSections: [],
+          },
+          spaces: spaces.map((id) => ({ id })),
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    return { items, reload };
+  }
+
+  it("drops a space the user is no longer in and reloads", async () => {
+    const { items, reload } = browser("space-gone", ["home"]);
+    await leaveUnavailableSpace("space-gone");
+    expect(items.has("rakazo:space-id")).toBe(false);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("recovers from a 401 on the shell's space-bound client", async () => {
+    const { items, reload } = browser("space-gone", ["home"]);
+    const fetch = vi.mocked(globalThis.fetch);
+    const list = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (request, init) =>
+      new Headers(init?.headers).get("x-rakazo-space-id") === "space-gone"
+        ? Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 })
+        : list(request, init),
+    );
+    await expect(createSpaceRpc("space-gone").me()).rejects.toMatchObject({ status: 401 });
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(items.has("rakazo:space-id")).toBe(false);
+  });
+
+  it("keeps a space the user still has, and keeps it when signed out", async () => {
+    for (const spaces of [["home", "space-a"], null]) {
+      const { items, reload } = browser("space-a", spaces);
+      await leaveUnavailableSpace("space-a");
+      expect(items.get("rakazo:space-id")).toBe("space-a");
+      expect(reload).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe("space selection storage", () => {

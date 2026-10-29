@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent, UsageOperationKind } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "./generated/prisma/client.js";
+import { hasFinalModelCost, settleModelCreditsTx } from "./model-credits.js";
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 export interface UsageAttribution {
@@ -14,15 +15,13 @@ export interface UsageAttribution {
 
 /** Usage is financial history, independent from message clearing or bot deletion. */
 export async function recordUsage(
-  prisma: Pick<PrismaClient, "usageRecord">,
+  prisma: Pick<PrismaClient, "$transaction">,
   event: UsageEvent,
   attribution: UsageAttribution,
+  reconcile = false,
 ) {
-  const data = {
-    ...attribution,
-    parentRunId: attribution.parentRunId ?? attribution.runId,
-    provider: event.provider,
-    model: event.model,
+  const observation = {
+    providerRequestId: event.providerRequestId ?? null,
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens ?? null,
@@ -33,33 +32,55 @@ export async function recordUsage(
     costUsd: event.costUsd ?? null,
     costSource: event.costSource ?? null,
     pricingVersion: event.pricingVersion ?? null,
+    pricingSnapshot: event.pricingSnapshot
+      ? JSON.parse(JSON.stringify(event.pricingSnapshot))
+      : undefined,
     usageSource: event.usageSource ?? null,
+  };
+  const data = {
+    provider: event.provider,
+    model: event.model,
+    spaceId: attribution.spaceId,
+    userId: attribution.userId,
+    botId: attribution.botId,
+    runId: attribution.runId,
+    operationId: attribution.operationId,
+    parentRunId: attribution.parentRunId ?? attribution.runId,
+    ...observation,
     callId: event.callId ?? null,
     operationKind: attribution.operationKind ?? event.operationKind ?? "answer",
     agentId: event.agentId ?? null,
   };
-  const insert = (runId: string | null | undefined = data.runId) => {
-    if (event.callId) {
-      // A database uniqueness constraint makes duplicate delivery harmless even concurrently.
-      return prisma.usageRecord.createMany({ data: [{ ...data, runId }], skipDuplicates: true });
-    }
-    return prisma.usageRecord.create({
-      data: { ...data, ...(runId !== undefined ? { runId } : {}) },
-    });
-  };
-  try {
-    return await insert();
-  } catch (error) {
-    // A cancelled/deleted run can disappear while its last model call is settling.
-    // Keep durable attribution while allowing the optional lifecycle FK to dangle as null.
+  return prisma.$transaction(async (tx) => {
+    await tx.usageRecord.createMany({ data: [data], skipDuplicates: true });
+    const entry = event.callId
+      ? await tx.modelCreditEntry.findUnique({ where: { callId: event.callId } })
+      : null;
+    if (!entry) return;
     if (
-      data.runId &&
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "P2003"
+      entry.userId !== attribution.userId ||
+      entry.spaceId !== attribution.spaceId ||
+      entry.provider !== event.provider ||
+      entry.model !== event.model
     )
-      return insert(null);
-    throw error;
-  }
+      throw new Error("Usage attribution does not match its credit reservation");
+    if (!entry.pending && entry.reconciliationState === "complete" && !reconcile) return;
+    let usage = await tx.usageRecord.findUniqueOrThrow({ where: { callId: event.callId! } });
+    if (reconcile) {
+      usage = await tx.usageRecord.update({
+        where: { id: usage.id },
+        data: observation,
+      });
+    }
+    await settleModelCreditsTx(tx, entry.id, usage.costUsd, reconcile);
+    const complete = hasFinalModelCost(usage);
+    await tx.modelCreditEntry.update({
+      where: { id: entry.id },
+      data: {
+        reconciliationState: complete ? "complete" : "pending",
+        ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}),
+        ...(complete ? { nextReconcileAt: null } : {}),
+      },
+    });
+  });
 }

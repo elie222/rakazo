@@ -309,16 +309,21 @@ RAKAZO_IPTABLES="$bin/missing-iptables" RAKAZO_IP6TABLES="$bin/missing-ip6tables
 docs="$root/../../docs/self-host.md"
 grep -q 'restrict-computer-egress.sh' "$docs" || fail "self-host.md does not mention the script"
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$docs" || fail "self-host.md does not document the flag"
+grep -q 'https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/restrict-computer-egress.sh' "$docs" ||
+  fail "self-host.md does not point VM hosts at the egress script"
+grep -q 'name: rakazo-computer-egress' "$docs" ||
+  fail "self-host.md does not keep the VM egress helper in its own Compose project"
 for compose in docker-compose.yml docker-compose.images.yml docker-compose.topology.yml \
   docker-compose.prod.docker.yml; do
   for flag in SANDBOX_COMPUTER_EGRESS SANDBOX_COMPUTER_DNS; do
     grep -q "$flag" "$root/$compose" || fail "$compose does not pass $flag"
   done
 done
-# Self-host stacks default to restricted; the supervisor refuses computers until the rules exist.
+# Self-host stacks default to auto: restricted once the rules exist, so an install from before
+# them keeps working. An explicit restricted still refuses computers until the rules exist.
 for compose in docker-compose.yml docker-compose.images.yml docker-compose.prod.docker.yml; do
-  grep -qF 'SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-restricted}' "$root/$compose" ||
-    fail "$compose does not default to restricted egress"
+  grep -qF 'SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}' "$root/$compose" ||
+    fail "$compose does not default to auto egress"
 done
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/../../.env.example" || fail ".env.example lacks the flag"
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/.env.images.example" ||

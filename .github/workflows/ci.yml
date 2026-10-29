@@ -7,50 +7,50 @@ on:
 permissions:
   contents: read
 
+# Superseded PR checks cancel together. On main, each job that leads to a deploy holds a per-job
+# lock: one revision runs while only the newest waits, so a burst of merges deploys its last commit
+# without stopping work already in progress. Main reruns only what the deploy needs; the pull
+# request already ran the rest against the then-current main, and the nightly run refreshes the
+# E2E screenshot baseline.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - name: Check translation catalogs are current
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
+# Testcontainers pulls Docker Hub images through Google's public mirror: anonymous Docker Hub pulls
+# from shared runner IPs fail intermittently with "authentication required" or rate limits.
+env:
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
 
-  check:
-    name: Typecheck
+jobs:
+  # Pull requests skip suites their files cannot affect (see .github/scripts/changed-areas.sh); a
+  # job skipped by `if` still satisfies a required check. Main skips this job, and with it every
+  # job that needs it.
+  changes:
+    name: Changed areas
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.areas.outputs.web }}
+      e2e: ${{ steps.areas.outputs.e2e }}
+      server: ${{ steps.areas.outputs.server }}
+      native: ${{ steps.areas.outputs.native }}
+      compose: ${{ steps.areas.outputs.compose }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
-        env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm check
+          # The merge commit's first parent is the base, so this diff is exactly what the PR adds.
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github
+      - id: areas
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
 
   build:
     name: Production builds
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -78,30 +78,101 @@ jobs:
           path: apps/desktop/e2e/screenshots
           if-no-files-found: ignore
 
-  test:
-    name: Unit tests
+  # Lint, typecheck and unit tests share one runner so a run installs once. A deploy needs this job,
+  # so like Postgres journeys it checks its own changed areas to reach its main lock in push order.
+  # Pull requests typecheck and test only the packages their files touch and the packages that
+  # depend on them, unless a change sits outside the package graph; main always runs everything.
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: ci-checks-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - id: areas
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Lint
+        if: github.event_name == 'pull_request'
+        run: pnpm lint
+      - name: Check translation catalogs are current
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm --filter @rakazo/web intl:extract
+          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      # Pull requests reuse main's typecheck results for packages whose inputs they leave unchanged.
+      # Main starts with an empty cache, so it typechecks everything before a deploy.
+      - name: Restore typecheck cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ github.sha }}
+          restore-keys: turbo-check-
+      - name: Typecheck
+        if: steps.areas.outputs.all_packages != 'false'
+        run: pnpm check
+      - name: Typecheck affected packages
+        if: steps.areas.outputs.all_packages == 'false'
+        run: pnpm check --affected
+        env:
+          TURBO_SCM_BASE: HEAD^1
+      - name: Save typecheck cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ github.sha }}
       - name: Install age for the encrypted backup round trip
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
-      - run: pnpm test
+      - name: Unit tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: pnpm test
+      - name: Unit tests for affected packages
+        if: steps.areas.outputs.all_packages == 'false'
+        env:
+          TURBO_SCM_BASE: HEAD^1
+        run: |
+          affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
+          mapfile -t packages < <(printf "%s" "$affected")
+          # These read other packages' files without importing them, so the package graph misses them.
+          pnpm exec vitest run "${packages[@]}" \
+            infra/updater/src/compose-env.test.ts \
+            packages/adapters/src/lark-lazy-loading.test.ts \
+            packages/testkit/src/ios-screenshot-catalog.test.ts
       - name: Host operations safety tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Codex subscription auth safety tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/codex-subscription-auth.test.py
+      - name: Dependency update patch safety tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/dependency-update-patch.test.py
+      - name: Changed-area classification tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 .github/scripts/changed-areas.test.py
+      - name: App Store review submission tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: node --test .github/scripts/app-store-review.test.mjs
 
   native-computer:
     name: Native computer (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -117,6 +188,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Windows pnpm launcher test
+        if: runner.os == 'Windows'
+        run: node --test scripts/pnpm.test.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
         env:
@@ -128,37 +202,93 @@ jobs:
         env:
           ELECTRON_RUN_AS_NODE: "1"
 
+  # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
+  # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
+  # The suites are CPU-bound, so two runners finish in about half the time.
+  test-integration-shard:
+    name: Postgres journeys (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    concurrency:
+      group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: areas
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        if: steps.areas.outputs.server != 'false'
+      - uses: actions/setup-node@v4
+        if: steps.areas.outputs.server != 'false'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.areas.outputs.server != 'false'
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
+        if: steps.areas.outputs.server != 'false'
+
+  # The required check and the deploy gate, under one stable name.
   test-integration:
     name: Postgres journeys
+    needs: test-integration-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-integration-shard.result }}" = success
+
+  test-postgres-upgrade:
+    name: Postgres upgrade
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test:integration
+      - run: bash infra/compose/upgrade-postgres.docker-test.sh
 
   test-e2e:
     name: Web E2E
+    needs: changes
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
+      # Skipped inside the called workflow so the required "Web E2E / Web E2E" check still reports.
+      skip: ${{ needs.changes.outputs.e2e != 'true' }}
+
+  # Publishes sha-<commit> and edge alongside the checks, so the production deploy pulls the
+  # image this run built instead of building on the production host.
+  publish-server-image:
+    name: Publish server images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: ci-images-main
+    uses: ./.github/workflows/publish-server-image.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
 
   publish-mobile-update:
     name: Publish compatible mobile update
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, check, build, test, test-integration, test-e2e]
+    needs: [checks, test-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
       group: mobile-production-update
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -170,35 +300,102 @@ jobs:
         shell: bash
         env:
           BEFORE_SHA: ${{ github.event.before }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          base="$BEFORE_SHA"
+          # Compare against the commit installed builds already run, not just this push, so a
+          # change from a cancelled or skipped run is still published (or still blocks).
+          runtime="$(jq -r .expo.version apps/mobile/app.json)"
+          project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
+          # The GraphQL API reports failures inside an HTTP 200 body, and transport failures
+          # leave no body; neither may pass as "no published update", which would shrink the
+          # comparison to this push only and let an earlier native change escape the diff.
+          response="$(
+            curl -fsS --max-time 30 https://api.expo.dev/graphql \
+              -H "authorization: Bearer $EXPO_TOKEN" \
+              -H "content-type: application/json" \
+              --data "$(jq -n --arg id "$project" '{
+                query: "query($id: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
+                variables: { id: $id }
+              }')"
+          )" || response=""
+          published="$(
+            jq -er --arg runtime "$runtime" '
+              if has("errors") or (.data.app.byId | type) != "object" or
+                 (.data.app.byId | has("updateBranchByName") | not) then
+                error("no usable update data")
+              else
+                .data.app.byId.updateBranchByName
+                | if . == null then []
+                  elif (.updates | type) == "array" then .updates
+                  else error("malformed updates") end
+                | . as $updates
+                | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
+                | if $update == null and ($updates | length) >= 50 then
+                    error("update lookup is incomplete")
+                  elif $update == null then
+                    ""
+                  elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
+                    error("missing published commit")
+                  else
+                    $update.gitCommitHash
+                  end
+              end
+            ' <<<"$response"
+          )" || published="unknown"
+          # A published update this checkout has no object for cannot anchor the diff either.
+          if [[ -n "$published" && "$published" != "unknown" ]] &&
+            ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
+            published="unknown"
+          fi
+          if [[ "$published" == "unknown" ]]; then
+            echo "::warning::Could not determine the last published update for runtime $runtime; not publishing this push."
+            {
+              echo "### Mobile OTA skipped"
+              echo
+              echo "Could not determine the last published update for runtime \`$runtime\`, so this job will not publish a partial-range update."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$published" ]] && git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null; then
+            base="$published"
+          else
+            echo "::warning::No published update for runtime $runtime on main's history; comparing with the previous push only."
+            base="$BEFORE_SHA"
+          fi
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "Could not resolve \`github.event.before\` for the full push range, so this job will not publish a partial-range update."
+              echo "Found neither the last published update for runtime \`$runtime\` nor \`github.event.before\`, so this job will not publish a partial-range update."
             } >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # Every package the mobile app resolves, transitive ones included, from the lockfile.
+          mobile_dependencies() {
+            git show "$1:pnpm-lock.yaml" | node .github/scripts/mobile-dependency-tree.mjs
+          }
+
           mapfile -t files < <(
             git diff --name-only "$base" "$GITHUB_SHA" -- \
-              .github/workflows/ci.yml \
               apps/mobile \
-              package.json \
               packages/chat-ui \
               packages/contracts \
-              packages/core \
-              pnpm-lock.yaml
+              packages/core
           )
+          if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
+            files+=("pnpm-lock.yaml (mobile dependency tree)")
+          fi
 
           publish=false
-          blocked=false
+          blocked=()
           for file in "${files[@]}"; do
+            # Tests, types, docs and device test flows never ship in the app.
             case "$file" in
-              *.test.ts|*.test.tsx|*.d.ts)
+              *.test.ts|*.test.tsx|*.test.js|*.d.ts|*.md|apps/mobile/.maestro/*|apps/mobile/e2e/*)
                 continue
                 ;;
             esac
@@ -225,28 +422,32 @@ jobs:
             if [[ "$eligible" == true ]]; then
               publish=true
             else
-              blocked=true
+              blocked+=("$file")
             fi
           done
 
-          if [[ "$blocked" == true ]]; then
+          if (( ${#blocked[@]} > 0 )); then
             publish=false
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "This revision changes native-sensitive mobile configuration, dependencies, modules, assets, or workflow files. Create new iOS and Android builds instead of publishing it to an older native runtime."
+              echo "Since \`${base:0:9}\`, the last update installed builds run, these native-sensitive files changed:"
+              echo
+              printf -- '- `%s`\n' "${blocked[@]}"
+              echo
+              echo "Ship new iOS and Android builds, or publish by hand once the JavaScript is confirmed safe on the current builds."
             } >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$publish" == true ]]; then
             {
               echo "### Mobile OTA eligible"
               echo
-              echo "The revision only changes JavaScript, TypeScript, or bundled CSS used by the mobile client."
+              echo "Since \`${base:0:9}\`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo "### No mobile OTA needed"
               echo
-              echo "This revision does not change the shipped mobile bundle."
+              echo "Nothing in the shipped mobile bundle changed since \`${base:0:9}\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
@@ -284,34 +485,61 @@ jobs:
       - name: Publish production update
         if: steps.ota.outputs.publish == 'true'
         working-directory: apps/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ secrets.SENTRY_URL }}
         run: |
           set -euo pipefail
-          head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ -z "$head" ]]; then
-            echo "Could not resolve the current main head before publishing." >&2
+          check_current_main() {
+            local head
+            head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+            if [[ -z "$head" ]]; then
+              echo "Could not resolve the current main head before publishing." >&2
+              exit 1
+            fi
+            if [[ "$GITHUB_SHA" != "$head" ]]; then
+              {
+                echo "### Mobile OTA skipped"
+                echo
+                echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          }
+          check_current_main
+          if [[ -n "$SENTRY_AUTH_TOKEN" && ( -z "$SENTRY_ORG" || -z "$SENTRY_PROJECT" ) ]]; then
+            echo "Sentry uploads require SENTRY_ORG and SENTRY_PROJECT." >&2
             exit 1
           fi
-          if [[ "$GITHUB_SHA" != "$head" ]]; then
-            {
-              echo "### Mobile OTA skipped"
-              echo
-              echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
+          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+            # The SDK uploader only warns when there are no source maps; fail instead.
+            if [[ -z "$(find dist -type f -name '*.map' -print -quit)" ]]; then
+              echo "The mobile export has no source maps to upload." >&2
+              exit 1
+            fi
+            SENTRY_URL="${SENTRY_URL:-https://sentry.io/}" pnpm exec sentry-expo-upload-sourcemaps dist
           fi
-          eas update --platform all --channel production --environment production --message "$GITHUB_SHA" --non-interactive
+          check_current_main
+          eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
-    needs: [lint, check, build, test, test-integration, test-e2e]
+    # The host pulls the image published for this commit; it builds only if that pull fails.
+    # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
+    needs: [checks, test-integration, publish-server-image]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
+    timeout-minutes: 45
     concurrency:
       group: production
       cancel-in-progress: false
+      queue: max
     environment:
       name: production
       url: https://app.rakazo.com
@@ -343,4 +571,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$SSH_USER@$SSH_HOST" deploy-main
+            "$SSH_USER@$SSH_HOST" "deploy-main $GITHUB_SHA"

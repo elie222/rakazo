@@ -1,11 +1,14 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
+import { accountDisplay, displayName } from "@rakazo/core";
+import * as Notifications from "expo-notifications";
+import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,11 +21,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
-import { useAvatarStyle } from "../../components/avatar-style";
-import { BotAvatar } from "../../components/bot-avatar";
+import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
+import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
-import { NativeSymbol } from "../../components/native-symbol";
 import {
   SettingsGroup,
   SettingsLabel,
@@ -30,6 +32,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
+import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
   currentApiBase,
@@ -41,6 +44,7 @@ import {
   rpc,
   selectedSpaceId,
   signOut,
+  updateAccountName,
 } from "../../lib/api";
 import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
 import {
@@ -48,6 +52,7 @@ import {
   mobileTokens,
   setAppearancePreference,
 } from "../../lib/appearance";
+import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { promptAccountDeletion } from "../../lib/delete-account-prompt";
@@ -57,6 +62,7 @@ import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
+  hasLiveUpdateSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
@@ -84,17 +90,50 @@ import {
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
+import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
+import {
+  loadTrustedLinkSites,
+  removeTrustedLinkSite,
+  useTrustedLinkSites,
+} from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
-/** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
+  const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t("Your account"));
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const currentName = account.label === me?.email ? "" : displayName(me?.name, "");
+
+  const nameSaving = useRef(false);
+  const nameSaveVersion = useRef(0);
+  const { saveName, editName, closeNameDialog } = createAccountNameEditor({
+    currentName,
+    pending: nameSaving,
+    saveVersion: nameSaveVersion,
+    Platform,
+    Alert,
+    t,
+    errorText,
+    updateAccountName,
+    refresh: () => rpc("me"),
+    onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
+    onRefreshed: setMe,
+    setNameDraft,
+    setNamePending,
+    setNameError,
+    setNameDialogOpen,
+  });
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
@@ -107,8 +146,6 @@ export default function Account() {
     (security?.hasPassword
       ? !deletePassword
       : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
@@ -116,6 +153,7 @@ export default function Account() {
   const notificationQueue = useRef<ReturnType<
     typeof createQueuedSave<LiveNotificationSettings>
   > | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -134,16 +172,11 @@ export default function Account() {
     }
   }, [t]);
   const colorScheme = useResolvedAppearance();
+  const trustedSites = useTrustedLinkSites();
   const [archivedCount, setArchivedCount] = useState(0);
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
-  const [usage, setUsage] = useState<{
-    runs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens?: number | null;
-  } | null>(null);
-  const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -162,17 +195,26 @@ export default function Account() {
   const versionInfo = getAppVersionInfo();
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
+    <SettingsRow
+      key={href}
+      accessibilityRole="button"
+      chevron="right"
+      disabled={pending}
+      // Artifacts lives on the root stack, so it closes the sheet before opening.
+      onPress={() =>
+        isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+      }
+      title={title}
+    />
+  );
 
   useEffect(() => {
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<{
-      runs: number;
-      inputTokens: number | null;
-      outputTokens: number | null;
-      totalTokens?: number | null;
-    }>("usage/summary")
+    void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
     if (Platform.OS === "android") {
@@ -183,20 +225,49 @@ export default function Account() {
     }
   }, []);
 
+  const count = new Intl.NumberFormat(dateLocaleForUi(locale));
+  const usd = new Intl.NumberFormat(dateLocaleForUi(locale), {
+    style: "currency",
+    currency: "USD",
+  });
+  const tokens = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
+  const cost = (value: number | null | undefined) =>
+    value == null
+      ? undefined
+      : value > 0 && value < 0.01
+        ? `<${usd.format(0.01)}`
+        : usd.format(value);
   const usageBlock = (
     <SettingsRow
       accessible
       title={t("Usage")}
       detail={
         usage
-          ? t("{runs} runs · {tokens} tokens", {
-              runs: usage.runs,
-              tokens: usage.totalTokens ?? "—",
+          ? t("{runs} runs, {tokens} tokens", {
+              runs: count.format(usage.runs),
+              tokens: tokens(usage.totalTokens),
             })
           : undefined
       }
+      value={cost(usage?.costUsd)}
     />
   );
+  const usageModels = usage?.models?.length ? (
+    <SettingsGroup>
+      {usage.models.map((row) => (
+        <SettingsRow
+          key={`${row.provider}:${row.model}`}
+          accessible
+          title={row.model}
+          detail={`${row.provider}, ${t("{calls} calls, {tokens} tokens", {
+            calls: count.format(row.modelCalls),
+            tokens: tokens(row.totalTokens),
+          })}`}
+          value={cost(row.costUsd)}
+        />
+      ))}
+    </SettingsGroup>
+  ) : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -212,18 +283,35 @@ export default function Account() {
     }, []),
   );
 
-  async function selectAvatarStyle(next: AvatarStyle) {
-    if (next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await updateAvatarStyle(next);
-    } catch {
-      setAvatarError(t("Couldn't update avatars"));
-    } finally {
-      setAvatarPending(false);
-    }
-  }
+  useFocusEffect(
+    useCallback(() => {
+      void loadTrustedLinkSites().catch(() => undefined);
+    }, []),
+  );
+
+  // Granting notifications in system settings leaves this screen mounted, so the
+  // row would keep saying blocked until the app comes back to the foreground.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      let active = true;
+      const read = () => {
+        void Notifications.getPermissionsAsync()
+          .then((permission) => {
+            if (active) setNotificationPermission(permission.status);
+          })
+          .catch(() => undefined);
+      };
+      read();
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") read();
+      });
+      return () => {
+        active = false;
+        subscription.remove();
+      };
+    }, []),
+  );
 
   async function handleSignOut() {
     setPending(true);
@@ -322,6 +410,12 @@ export default function Account() {
     }
   }
 
+  function removeTrustedSite(site: string) {
+    void removeTrustedLinkSite(site).catch((cause: unknown) =>
+      Alert.alert(t("Could not continue"), errorText(cause, t("Try again."))),
+    );
+  }
+
   function closeDeletePrompt() {
     if (pending) return;
     setDeleteOpen(false);
@@ -387,16 +481,34 @@ export default function Account() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        style={sideInsets}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {focus === "usage" ? <SettingsGroup>{usageBlock}</SettingsGroup> : null}
+        {focus === "usage" ? (
+          <>
+            <SettingsGroup>{usageBlock}</SettingsGroup>
+            {usageModels}
+          </>
+        ) : null}
         <SettingsGroup>
           <SettingsRow
-            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t("Edit name")}
+            accessibilityValue={{
+              text:
+                me?.email && account.label !== me.email
+                  ? `${account.label}, ${me.email}`
+                  : account.label,
+            }}
+            chevron="right"
+            disabled={!me}
             detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
             title={account.label}
+            dimmed={namePending}
+            onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
@@ -490,6 +602,22 @@ export default function Account() {
           </SettingsGroup>
         ) : null}
 
+        {trustedSites.length > 0 ? (
+          <SettingsGroup accessibilityLabel={t("Trusted sites")} label={t("Trusted sites")}>
+            {trustedSites.map((site) => (
+              <MenuView
+                key={site}
+                actions={[{ id: "remove", title: t("Remove"), attributes: { destructive: true } }]}
+                colorScheme={colorScheme}
+                onPressAction={() => removeTrustedSite(site)}
+                title={site}
+              >
+                <SettingsRow accessible accessibilityRole="button" title={site} />
+              </MenuView>
+            ))}
+          </SettingsGroup>
+        ) : null}
+
         <View accessibilityLabel={t("Appearance")} style={styles.section}>
           <SettingsLabel>{t("Appearance")}</SettingsLabel>
           <NativeSegmentedControl
@@ -502,49 +630,6 @@ export default function Account() {
             ]}
             value={appearance}
           />
-        </View>
-
-        <View accessibilityLabel={t("Avatar style")} style={styles.section}>
-          <SettingsLabel>{t("Avatars")}</SettingsLabel>
-          <View style={[styles.options, stackOptions && styles.optionsStacked]}>
-            {(["robot", "organic"] as const).map((style) => {
-              const selected = avatarStyle === style;
-              const styleLabel = style === "robot" ? t("Robot") : t("Organic");
-              return (
-                <Pressable
-                  key={style}
-                  accessibilityLabel={t("{style} avatars", { style: styleLabel })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: avatarPending }}
-                  disabled={avatarPending}
-                  onPress={() => void selectAvatarStyle(style)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.avatarOption,
-                    !stackOptions && styles.optionSideBySide,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <BotAvatar
-                    color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
-                    identity="avatar-preview"
-                    size={42}
-                    variant={style}
-                  />
-                  <Text style={styles.optionLabel}>{styleLabel}</Text>
-                  <NativeSymbol
-                    android={selected ? "checkmark-circle" : "ellipse-outline"}
-                    color={selected ? native.label : native.tertiaryLabel}
-                    ios={selected ? "checkmark.circle.fill" : "circle"}
-                    size={22}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-          <SettingsGroup>
-            {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
-          </SettingsGroup>
         </View>
 
         <SettingsGroup>
@@ -561,6 +646,14 @@ export default function Account() {
 
         {Platform.OS === "android" ? (
           <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
+            {notificationPermission === "denied" ? (
+              <SettingsRow
+                accessibilityRole="button"
+                detail={t("Android blocked notifications.")}
+                onPress={() => void openLiveNotificationSettings()}
+                title={t("Notifications")}
+              />
+            ) : null}
             <SettingsSwitch
               label={t("Live working status")}
               value={notifications.liveConnection}
@@ -593,11 +686,13 @@ export default function Account() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <SettingsRow
-              accessibilityRole="button"
-              onPress={() => void openPromotedNotificationSettings()}
-              title={t("Live update settings")}
-            />
+            {hasLiveUpdateSettings() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                onPress={() => void openPromotedNotificationSettings()}
+                title={t("Live update settings")}
+              />
+            ) : null}
             <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
@@ -608,35 +703,41 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
+          {me?.billingEnabled ? (
+            <SettingsRow
+              title={t("Billing")}
+              chevron="right"
+              onPress={() => router.push("/billing")}
+            />
+          ) : null}
           {(
             [
               { title: t("Artifacts"), href: "/artifacts" },
               { title: t("Models"), href: "/models" },
               { title: t("Voice"), href: "/voice" },
-              { title: t("Integrations"), href: "/integrations" },
-              { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
-          ).map(({ title, href }) => (
-            <SettingsRow
-              key={href}
-              accessibilityRole="button"
-              chevron="right"
+          ).map(settingsLink)}
+          <ApprovalModeRow key="approvals" approvals={approvals} disabled={pending} />
+          {approvals.ruleCount ? (
+            <ApprovalRulesRow
+              key="approval-rules"
+              count={approvals.ruleCount}
               disabled={pending}
-              // Artifacts lives on the root stack, so it closes the sheet before opening.
-              onPress={() =>
-                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
-              }
-              title={title}
-            />
-          ))}
-          {me?.isDeploymentOwner ? (
-            <SettingsRow
-              accessibilityRole="button"
-              chevron="right"
-              onPress={() => router.push("/integration-setup")}
-              title={t("Server integrations")}
+              onPress={() => router.push("/approvals")}
             />
           ) : null}
+          {(
+            [
+              { title: t("Vault"), href: "/vault" },
+              ...(me?.paymentWalletProvider
+                ? [{ title: t("Wallet"), href: "/wallet" } as const]
+                : []),
+              { title: t("Integrations"), href: "/integrations" },
+              { title: t("Skills"), href: "/skills" },
+              { title: t("Messaging"), href: "/messaging" },
+              { title: t("AI data sharing"), href: "/ai-data-sharing" },
+            ] as const
+          ).map(settingsLink)}
         </SettingsGroup>
 
         <SettingsGroup>
@@ -728,6 +829,19 @@ export default function Account() {
           ) : null}
         </SettingsGroup>
       </ScrollView>
+      {nameDialogOpen ? (
+        <NameDialog
+          draft={nameDraft}
+          error={nameError}
+          saving={namePending}
+          onChange={(value) => {
+            setNameDraft(value);
+            setNameError(null);
+          }}
+          onSave={(value) => void saveName(value)}
+          onClose={closeNameDialog}
+        />
+      ) : null}
       {deleteOpen ? (
         <Modal transparent animationType="fade" onRequestClose={closeDeletePrompt}>
           <KeyboardAvoidingView
@@ -851,38 +965,6 @@ function createAccountStyles() {
     section: {
       gap: 7,
     },
-    options: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    optionsStacked: {
-      flexDirection: "column",
-    },
-    option: {
-      minHeight: 48,
-      borderRadius: 14,
-      borderCurve: "continuous",
-      borderWidth: 2,
-      borderColor: "transparent",
-      backgroundColor: native.groupedCell,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    optionSideBySide: {
-      flex: 1,
-    },
-    avatarOption: {
-      minHeight: 96,
-      gap: 8,
-    },
-    optionLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-      textAlign: "center",
-    },
     about: {
       alignItems: "center",
       gap: 16,
@@ -965,9 +1047,6 @@ function createAccountStyles() {
     },
     disabled: {
       opacity: 0.45,
-    },
-    pressed: {
-      backgroundColor: native.fillPressed,
     },
   });
 }

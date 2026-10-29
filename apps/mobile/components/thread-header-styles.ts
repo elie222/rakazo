@@ -1,3 +1,4 @@
+import { typeScale } from "@rakazo/ui-tokens";
 import { StyleSheet } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { transparentColor } from "../lib/color";
@@ -13,18 +14,18 @@ export function createThreadHeaderStyles() {
       gap: 8,
       maxWidth: 220,
       minHeight: HEADER_CONTROL_SIZE,
-      paddingHorizontal: 14,
+      paddingStart: 14,
+      paddingEnd: 10,
       borderRadius: 999,
     },
     titleCapsuleFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.glassStroke,
       backgroundColor: tokens.glassFill,
     },
     title: {
+      // A long name gives way to the avatars beside it and ends in "…".
+      flexShrink: 1,
+      ...typeScale.cardTitle,
       color: tokens.foreground,
-      fontSize: 18,
-      fontWeight: "600",
     },
     headerActions: {
       flexDirection: "row",
@@ -42,20 +43,12 @@ export function createThreadHeaderStyles() {
       borderColor: tokens.glassStroke,
       backgroundColor: tokens.glassFill,
     },
-    headerFade: {
+    statusBarFade: {
       position: "absolute",
       top: 0,
       left: 0,
       right: 0,
-      backgroundColor: tokens.background,
-    },
-    headerFadeEdge: {
-      position: "absolute",
-      top: "100%",
-      left: 0,
-      right: 0,
-      height: 16,
-      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${transparentBackground} 100%)`,
+      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 60%, ${transparentBackground} 100%)`,
     },
     composerFade: {
       position: "absolute",

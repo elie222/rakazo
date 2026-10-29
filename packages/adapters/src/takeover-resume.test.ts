@@ -7,7 +7,7 @@ import {
 } from "./takeover-resume.js";
 
 const HANDED_BACK_NOTE =
-  "The user handed the computer back. Continue from where you left off. Do not request takeover again.";
+  "The user handed the computer back. Continue using the current screen state. Do not request takeover again.";
 const UNFINISHED_NOTE =
   "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again unless you still cannot proceed.";
 
@@ -39,7 +39,6 @@ describe("takeoverContinuePlan", () => {
   it("keeps a waiting takeover held without treating login as finished", () => {
     const plan = takeoverContinuePlan({ status: "waiting_takeover", checkpoint: null });
     expect(plan.heldForTakeover).toBe(true);
-    expect(plan.resumeHeldLease).toBe(true);
     expect(plan.resumeCheckpoint).toBeNull();
     expect(plan.takeoverResume).toBeNull();
   });
@@ -47,7 +46,6 @@ describe("takeoverContinuePlan", () => {
   it("resumes after a finished or skipped takeover from the release checkpoint", () => {
     const done = takeoverContinuePlan({ status: "queued", checkpoint: "takeover" });
     expect(done.heldForTakeover).toBe(false);
-    expect(done.resumeHeldLease).toBe(true);
     expect(done.takeoverResume?.checkpoint).toBe("takeover");
     expect(done.takeoverResume?.promptNote).toBe(HANDED_BACK_NOTE);
     expect(done.takeoverResume?.promptNote).not.toMatch(/login/i);
@@ -66,7 +64,6 @@ describe("takeoverContinuePlan", () => {
     expect(takeoverContinuePlan({ status: "queued", checkpoint: null })).toEqual({
       resumeCheckpoint: null,
       heldForTakeover: false,
-      resumeHeldLease: false,
       takeoverResume: null,
     });
   });

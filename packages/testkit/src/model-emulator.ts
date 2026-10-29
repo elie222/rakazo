@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer, type ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 
@@ -17,6 +18,10 @@ export interface ModelEmulatorRequest {
 
 export type ModelEmulatorResponse =
   | { type: "text"; text: string }
+  | {
+      type: "tools";
+      calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    }
   | {
       type: "tool";
       id: string;
@@ -110,7 +115,17 @@ export async function startModelEmulator(options: {
           );
       };
       emit({ role: "assistant" });
-      if (reply.type === "tool") {
+      if (reply.type === "tools") {
+        emit({
+          tool_calls: reply.calls.map((call, index) => ({
+            index,
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          })),
+        });
+        emit({}, "tool_calls");
+      } else if (reply.type === "tool") {
         if (reply.assistantText) emit({ content: reply.assistantText });
         emit({
           tool_calls: [

@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-/** Collapsed inbox sections and roster parents for the last account that changed them here. */
+/** Collapsed inbox sections for the last account that changed them here. */
 export const COLLAPSED_SECTIONS_KEY = "rakazo.collapsed-sections";
 
 export type CollapsedSections = { userId?: string; keys: ReadonlySet<string> };

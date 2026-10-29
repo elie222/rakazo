@@ -1,14 +1,23 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
-import { afterEach, describe, expect, it } from "vitest";
-import { fakeBoatProvider as fakeBoat } from "./boat-sandbox.test-support.js";
+import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  fakeBoatProvider as fakeBoat,
+  routeFakeBoatDownloads,
+} from "./boat-sandbox.test-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";
 import { provisionPrepared } from "./sandbox-test-support.js";
+
+let restoreFetch: () => void;
+beforeAll(() => {
+  restoreFetch = routeFakeBoatDownloads();
+});
+afterAll(() => restoreFetch());
 
 const context = {
   operationId: "sandbox-fault-test",
@@ -310,8 +319,22 @@ async function* portableFiles(files: Iterable<PortableFile>): AsyncIterable<Port
   yield* files;
 }
 
-async function collect(files: AsyncIterable<PortableFile>): Promise<PortableFile[]> {
+async function collect(
+  files: AsyncIterable<PortableFile | StreamedPortableFile>,
+): Promise<PortableFile[]> {
   const collected: PortableFile[] = [];
-  for await (const file of files) collected.push(file);
+  for await (const file of files) {
+    if (!("body" in file)) {
+      collected.push(file);
+      continue;
+    }
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of file.body) chunks.push(chunk);
+    collected.push({
+      path: file.path,
+      content: Buffer.concat(chunks),
+      executable: file.executable,
+    });
+  }
   return collected;
 }

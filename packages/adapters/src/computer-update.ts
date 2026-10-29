@@ -1,6 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
-import { type ComputerUpdate, ComputerUpdateSchema } from "@rakazo/contracts";
+import type { ComputerUpdate } from "@rakazo/contracts";
+import { ComputerUpdateSchema } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -27,19 +28,16 @@ const STALE_MS = 10 * 60_000;
 const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
 const PENDING_HANDBACK_STATUSES = ["reserving", "revoking", "revoked"] as const;
 
-export function computerUpdateView(
-  row: {
-    action: string;
-    id: string;
-    botId: string;
-    status: string;
-    stage: string;
-    computer: { scope: string; bots: { id: string; name: string }[] };
-  },
-  isDeploymentOwner = false,
-): ComputerUpdate {
+export function computerUpdateView(row: {
+  action: string;
+  id: string;
+  botId: string;
+  status: string;
+  stage: string;
+  computer: { scope: string; bots: { id: string; name: string }[] };
+}): ComputerUpdate {
   return ComputerUpdateSchema.parse({
-    canReleaseReservation: isDeploymentOwner && row.status === "interrupted",
+    canReleaseReservation: false,
     action: row.action,
     id: row.id,
     botId: row.computer.bots.some((bot) => bot.id === row.botId)
@@ -566,7 +564,6 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
       },
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
-    scheduleComputerSleep(deps.jobs, update.computerId);
   } catch (error) {
     getLogger().error("computer update failed", error, { updateId, computerId: update.computerId });
     // Provider errors may contain credentials or private URLs. Expose only the failed stage.
@@ -574,6 +571,8 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
   } finally {
     clearInterval(heartbeat);
   }
+  // A failure before teardown leaves the computer running, so idle sleep resumes either way.
+  scheduleComputerSleep(deps.jobs, update.computerId);
 }
 
 async function finishUpdate(

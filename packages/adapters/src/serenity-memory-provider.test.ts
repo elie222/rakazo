@@ -1,14 +1,15 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as SerenityClientModule from "./serenity-client.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
-  MemoryProviderDeploymentOwnerRequiredError,
+  MemoryProviderPrivateEndpointRequiredError,
   prepareSerenityConnection,
   SerenityMemoryProvider,
   sanitizeSerenityBrainLabel,
   serenityBotEntity,
-  serenityRequiresDeploymentOwner,
+  serenityRequiresPrivateEndpoint,
   serenitySpaceEntity,
 } from "./serenity-memory-provider.js";
 
@@ -25,7 +26,7 @@ const context: AdapterContext = {
 };
 
 vi.mock("./serenity-client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./serenity-client.js")>();
+  const actual = await importOriginal<typeof SerenityClientModule>();
   return {
     ...actual,
     probeSerenity: vi.fn(),
@@ -93,15 +94,15 @@ describe("SerenityMemoryProvider", () => {
   });
 
   it("requires deployment owner for loopback, private DNS, and classified LAN hosts", () => {
-    expect(serenityRequiresDeploymentOwner({ endpoint: "http://127.0.0.1:8787/mcp" })).toBe(true);
-    expect(serenityRequiresDeploymentOwner({ endpoint: "https://serenity.internal/mcp" })).toBe(
+    expect(serenityRequiresPrivateEndpoint({ endpoint: "http://127.0.0.1:8787/mcp" })).toBe(true);
+    expect(serenityRequiresPrivateEndpoint({ endpoint: "https://serenity.internal/mcp" })).toBe(
       true,
     );
-    expect(serenityRequiresDeploymentOwner({ endpoint: "https://serenity.example.test/mcp" })).toBe(
+    expect(serenityRequiresPrivateEndpoint({ endpoint: "https://serenity.example.test/mcp" })).toBe(
       false,
     );
     expect(
-      serenityRequiresDeploymentOwner({
+      serenityRequiresPrivateEndpoint({
         endpoint: "https://serenity.example.test/mcp",
         endpointTrust: "private",
       }),
@@ -123,7 +124,7 @@ describe("SerenityMemoryProvider", () => {
       },
     );
     expect(classified.endpointTrust).toBe("private");
-    expect(serenityRequiresDeploymentOwner(classified)).toBe(true);
+    expect(serenityRequiresPrivateEndpoint(classified)).toBe(true);
     expect(probeSerenityMock).not.toHaveBeenCalled();
   });
 
@@ -137,7 +138,7 @@ describe("SerenityMemoryProvider", () => {
         },
         { allowPrivateEndpoint: false },
       ),
-    ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
     expect(probeSerenityMock).not.toHaveBeenCalled();
   });
 
@@ -151,7 +152,7 @@ describe("SerenityMemoryProvider", () => {
       },
     );
     expect(prepared.settings.endpointTrust).toBe("private");
-    expect(serenityRequiresDeploymentOwner(prepared.settings)).toBe(true);
+    expect(serenityRequiresPrivateEndpoint(prepared.settings)).toBe(true);
   });
 
   it("probes before accepting a connection", async () => {

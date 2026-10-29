@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">智能体实时状态</string>
+  <string name="rakazo_channel_messages">智能体消息</string>
+  <string name="rakazo_channel_scheduled">计划任务</string>
+  <string name="rakazo_channel_attention">需要关注</string>
+
+  <string name="rakazo_live_one">%1$s 正在工作</string>
+  <string name="rakazo_live_many">%1$s 和另外 %2$d 个正在工作</string>
+  <string name="rakazo_live_working">正在工作</string>
+
+  <string name="rakazo_scheduled_title">%1$s · 计划任务</string>
+  <string name="rakazo_replied_group">%1$s 在 %2$s 中回复了</string>
+  <string name="rakazo_replied">%1$s 回复了</string>
+
+  <string name="rakazo_attention_failed">%1$s 遇到问题</string>
+  <string name="rakazo_attention_takeover">%1$s 需要你查看屏幕</string>
+  <string name="rakazo_attention_input">%1$s 需要你的输入</string>
+</resources>

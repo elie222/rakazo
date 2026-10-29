@@ -2,6 +2,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { splitOutboundBody } from "./messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
@@ -62,6 +63,53 @@ function createSurface(sendErrors: string[] = []) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Telegram messaging Markdown", () => {
+  it.each([
+    ["a".repeat(9000), "a".repeat(9000)],
+    [`${"a".repeat(4095)}😀${"b".repeat(4096)}`, `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+    ["!".repeat(4096), "!".repeat(4096)],
+    [`**${"!".repeat(4090)}**`, "!".repeat(4090)],
+    [`\`\`\`text\n${"\\".repeat(4090)}\n\`\`\``, "\\".repeat(4090)],
+  ])("sends every split part without adapter truncation", async (body, expected) => {
+    const { surface, sends, threadId } = createSurface();
+    const parts = splitOutboundBody("telegram", body);
+    for (const part of parts) {
+      await surface.sendToThread({ threadId, body: part }, context);
+    }
+
+    expect(sends).toHaveLength(parts.length);
+    expect(sends.every(({ text }) => text.length <= 4096 && !/[\uD800-\uDFFF]/u.test(text))).toBe(
+      true,
+    );
+    expect(sends.every(({ text }) => !text.includes("…"))).toBe(true);
+    // Remove the fixtures' MarkdownV2 wrappers before unescaping literal content.
+    const visibleText = sends
+      .map(({ text }) =>
+        text
+          .replace(/^```[^\n]*\n([\s\S]*)\n```$/, "$1")
+          .replace(/^\*([^*]*)\*$/s, "$1")
+          .replace(/\\([\\!*`])/g, "$1"),
+      )
+      .join("");
+    expect(visibleText).toBe(expected);
+  });
+
+  it("keeps every split part in the plain-text fallback after Markdown rejection", async () => {
+    const { surface, sends, threadId } = createSurface([
+      "Bad Request: can't parse entities",
+      "",
+      "Bad Request: can't parse entities",
+    ]);
+    const body = "!".repeat(4096);
+    for (const part of splitOutboundBody("telegram", body)) {
+      await surface.sendToThread({ threadId, body: part }, context);
+    }
+
+    const fallback = sends.filter((send) => !send.parse_mode);
+    expect(fallback).toHaveLength(2);
+    expect(fallback.map(({ text }) => text).join("")).toBe(body);
+    expect(sends.every(({ text }) => text.length <= 4096)).toBe(true);
+  });
+
   it("renders headings, bold, links and escaped punctuation as MarkdownV2", async () => {
     const { surface, sends, threadId } = createSurface();
     const result = await surface.sendToThread(
@@ -224,5 +272,73 @@ describe("Telegram bots side by side", () => {
 
     expect(response?.status).toBe(401);
     expect(inbound).toEqual([]);
+  });
+});
+
+describe("Telegram messaging files", () => {
+  function createFileSurface() {
+    const uploads: { method: string; field: string; filename: string; caption: unknown }[] = [];
+    // Exercise the pinned adapter's upload requests, replacing only HTTP.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init: RequestInit) => {
+        const method = new URL(input).pathname.split("/").at(-1)!;
+        if (method === "getMe") {
+          return Response.json({
+            ok: true,
+            result: { id: 999, is_bot: true, username: "testbot" },
+          });
+        }
+        if (method !== "sendPhoto" && method !== "sendDocument") {
+          throw new Error(`Unexpected Telegram method: ${method}`);
+        }
+        const form = init.body as FormData;
+        const field = method === "sendPhoto" ? "photo" : "document";
+        const file = form.get(field) as File;
+        uploads.push({ method, field, filename: file.name, caption: form.get("caption") });
+        return Response.json({
+          ok: true,
+          result: {
+            message_id: 43,
+            date: 1_700_000_000,
+            chat: { id: 123, type: "private" },
+            from: { id: 999, is_bot: true, first_name: "Test Bot" },
+          },
+        });
+      }),
+    );
+    const adapter = createTelegramAdapter({
+      botToken: "test-token",
+      secretToken: "test-webhook-secret",
+      mode: "webhook",
+    });
+    const surface = new ChatSdkMessagingSurface([
+      {
+        provider: "telegram",
+        capabilities: { direct: true, groups: false, receipt: null, files: true },
+        adapter,
+      },
+    ]);
+    return { surface, uploads, threadId: adapter.encodeThreadId({ chatId: "123" }) };
+  }
+
+  it("sends an image as a photo and other files as documents", async () => {
+    const { surface, uploads, threadId } = createFileSurface();
+    const data = new Uint8Array([1, 2, 3]);
+
+    const photo = await surface.sendToThread(
+      { threadId, body: "", attachment: { name: "chart.png", mimeType: "image/png", data } },
+      context,
+    );
+    await surface.sendToThread(
+      { threadId, body: "", attachment: { name: "report.pdf", mimeType: "application/pdf", data } },
+      context,
+    );
+
+    expect(photo.handle).toBeTruthy();
+    expect(uploads).toEqual([
+      { method: "sendPhoto", field: "photo", filename: "chart.png", caption: null },
+      { method: "sendDocument", field: "document", filename: "report.pdf", caption: null },
+    ]);
   });
 });

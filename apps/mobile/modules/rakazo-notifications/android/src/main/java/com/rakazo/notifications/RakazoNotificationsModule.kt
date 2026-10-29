@@ -1,9 +1,11 @@
 package com.rakazo.notifications
 
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -15,7 +17,7 @@ class RakazoNotificationsModule : Module() {
       NotificationStorage(context()).settings.toMap()
     }
 
-    AsyncFunction("setSettings") { value: Map<String, Boolean>, endpoint: String, token: String, spaceId: String ->
+    AsyncFunction("setSettings") { value: Map<String, Boolean>, endpoint: String, token: String, spaceId: String, locale: String ->
       val context = context()
       val storage = NotificationStorage(context)
       if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
@@ -24,6 +26,7 @@ class RakazoNotificationsModule : Module() {
       storage.endpoint = endpoint
       storage.token = token
       storage.spaceId = spaceId
+      storage.locale = locale
       storage.settings = NotificationSettings.fromMap(value)
       if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
         RakazoNotificationService.start(context)
@@ -32,7 +35,7 @@ class RakazoNotificationsModule : Module() {
       }
     }
 
-    AsyncFunction("resume") { endpoint: String, token: String, spaceId: String ->
+    AsyncFunction("resume") { endpoint: String, token: String, spaceId: String, locale: String ->
       val context = context()
       if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
         RakazoNotificationService.stop(context)
@@ -41,6 +44,7 @@ class RakazoNotificationsModule : Module() {
         storage.endpoint = endpoint
         storage.token = token
         storage.spaceId = spaceId
+        storage.locale = locale
         if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
           RakazoNotificationService.start(context)
         }
@@ -63,6 +67,14 @@ class RakazoNotificationsModule : Module() {
       RakazoNotificationService.setOpenThread(context(), botId, threadId)
     }
 
+    AsyncFunction("startCall") { title: String, promise: Promise ->
+      RakazoCallService.start(context(), title) { started -> promise.resolve(started) }
+    }
+
+    AsyncFunction("stopCall") {
+      RakazoCallService.stop(context())
+    }
+
     AsyncFunction("openSettings") {
       val context = context()
       context.startActivity(
@@ -83,11 +95,16 @@ class RakazoNotificationsModule : Module() {
       }
     }
 
+    Function("hasPromotedSettings") {
+      Build.VERSION.SDK_INT >= 36 && runCatching {
+        val context = context()
+        promotedSettingsIntent(context).resolveActivity(context.packageManager) != null
+      }.getOrDefault(false)
+    }
+
     AsyncFunction("openPromotedSettings") {
       val context = context()
-      val promoted = Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
-        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      val promoted = promotedSettingsIntent(context)
       runCatching { context.startActivity(promoted) }.getOrElse {
         context.startActivity(
           Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -97,6 +114,11 @@ class RakazoNotificationsModule : Module() {
       }
     }
   }
+
+  private fun promotedSettingsIntent(context: Context) =
+    Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
+      .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
   private fun context() = appContext.reactContext
     ?: throw IllegalStateException("Android application context is unavailable")

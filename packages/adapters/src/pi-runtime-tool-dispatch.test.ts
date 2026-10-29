@@ -6,9 +6,11 @@ const fakeAgentState = vi.hoisted(() => ({
   mode: "dispatch" as
     | "dispatch"
     | "empty"
+    | "answer-then-stop"
     | "two-boundaries"
     | "silent-continuation"
     | "subagent-limit"
+    | "two-subagents"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
@@ -61,6 +63,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     private readonly prepareNextTurnWithContext?: (input: {
       context: { messages: unknown[] };
     }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+    private readonly finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     private aborted = false;
 
     constructor(options: {
@@ -68,9 +71,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       prepareNextTurnWithContext?: (input: {
         context: { messages: unknown[] };
       }) => Promise<{ context?: { messages: unknown[] } } | undefined>;
+      finishTurn?: (turn: unknown, signal?: AbortSignal) => Promise<unknown>;
     }) {
       this.tools = options.initialState.tools;
       this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
+      this.finishTurn = options.finishTurn;
       fakeAgentState.tools = this.tools;
       fakeAgentState.initialMessages = options.initialState.messages;
     }
@@ -82,6 +87,21 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     async prompt(prompt: string, images?: unknown[]) {
       fakeAgentState.promptInputs.push(prompt);
       fakeAgentState.promptImages.push(images ?? []);
+      if (fakeAgentState.mode === "answer-then-stop") {
+        // The model answers the steered message in text and stops.
+        await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+        await this.finishTurn?.({
+          message: {
+            role: "assistant",
+            stopReason: "stop",
+            content: [{ type: "text", text: "Yes" }],
+          },
+          toolResults: [],
+          context: { messages: [] },
+          newMessages: [],
+        });
+        return;
+      }
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
         await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
         if (fakeAgentState.mode === "two-boundaries") {
@@ -311,6 +331,16 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "two-subagents") {
+        await Promise.all(
+          ["a", "b"].map((name) => {
+            const args = { name, task: "keep calling shell" };
+            this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+            return delegation.execute(`delegate-${name}`, args);
+          }),
+        );
+        return;
+      }
       if (delegation) {
         const args = { name: "loop", task: "keep calling shell" };
         this.emit({
@@ -376,14 +406,12 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { toolCompletionAuditPayload } from "./executor.js";
-import {
-  MISSING_TOOL_FINAL_RESPONSE_ERROR,
-  maxToolCallsPerTurn,
-  PiAgentRuntime,
-  providerFailureText,
-} from "./pi-runtime.js";
+import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
+import { providerFailureText } from "./pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import { maxToolCallsPerTurn } from "./pi-runtime-tools.js";
+import { toolCompletionAuditPayload } from "./tool-completion-audit.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const destinationTool: ConnectorTool = {
   name: "destination.write",
@@ -484,16 +512,113 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-1",
               messageId: "message-1",
               text: "Use the newer customer totals.",
+              origin: "user" as const,
             },
             {
               id: "steering-2",
               messageId: "message-2",
               text: "Keep the original date range.",
+              origin: "webhook" as const,
             },
           ];
     });
     const runtime = new PiAgentRuntime();
+    const events: Array<{ type: string; fromRunUser?: boolean }> = [];
 
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "prepare the report",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [],
+        model: { provider: "test", id: "dispatch-test-model" },
+        claimSteering,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      events.push(event);
+    }
+
+    expect(claimSteering).toHaveBeenNthCalledWith(1, []);
+    expect(claimSteering).toHaveBeenNthCalledWith(2, []);
+    // The run's person is asked for a reply; anything else is passed on with its source and
+    // no call to reply. The run sees one boundary, marked as from its person.
+    expect(fakeAgentState.preparedMessages).toEqual([
+      expect.objectContaining({
+        role: "user",
+        content: midTaskMessagePrompt("Use the newer customer totals.", false),
+      }),
+      expect.objectContaining({
+        role: "user",
+        content: midTaskMessageFromPrompt("Keep the original date range.", "webhook"),
+      }),
+    ]);
+    expect(fakeAgentState.preparedMessages[1]).toMatchObject({
+      content: expect.not.stringContaining("reply"),
+    });
+    expect(events.filter((event) => event.type === "steered")).toEqual([
+      { type: "steered", fromRunUser: true },
+    ]);
+  });
+
+  it("asks the run's person for an answer through message_user when the bot has it", async () => {
+    fakeAgentState.mode = "empty";
+    let claimCount = 0;
+    const claimSteering = vi.fn(async () => {
+      claimCount += 1;
+      return claimCount === 1
+        ? []
+        : [
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "Still working?",
+              origin: "user" as const,
+            },
+          ];
+    });
+    const runtime = new PiAgentRuntime();
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "prepare the report",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [builtinAgentTools.find((tool) => tool.name === "message_user")!],
+        model: { provider: "test", id: "dispatch-test-model" },
+        claimSteering,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime event stream.
+    }
+    expect(fakeAgentState.preparedMessages).toEqual([
+      expect.objectContaining({ content: midTaskMessagePrompt("Still working?", true) }),
+    ]);
+  });
+
+  it("ends the run when the model answers the person in text and stops", async () => {
+    fakeAgentState.mode = "answer-then-stop";
+    let claimCount = 0;
+    const claimSteering = vi.fn(async () => {
+      claimCount += 1;
+      return claimCount === 1
+        ? []
+        : [
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "Still working?",
+              origin: "user" as const,
+            },
+          ];
+    });
+    const runtime = new PiAgentRuntime();
     for await (const _event of runtime.run(
       {
         botId: "b",
@@ -510,19 +635,7 @@ describe("Pi connector tool dispatch", () => {
     )) {
       // Exhaust the runtime event stream.
     }
-
-    expect(claimSteering).toHaveBeenNthCalledWith(1, []);
-    expect(claimSteering).toHaveBeenNthCalledWith(2, []);
-    expect(fakeAgentState.preparedMessages).toEqual([
-      expect.objectContaining({
-        role: "user",
-        content: "Use the newer customer totals.",
-      }),
-      expect.objectContaining({
-        role: "user",
-        content: "Keep the original date range.",
-      }),
-    ]);
+    expect(fakeAgentState.followUpMessages).toEqual([]);
   });
 
   it("defers steering arriving during a continuation to the following boundary", async () => {
@@ -537,6 +650,7 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-1",
               messageId: "message-1",
               text: "First boundary context.",
+              origin: "user" as const,
             },
           ]
         : [
@@ -544,6 +658,7 @@ describe("Pi connector tool dispatch", () => {
               id: "steering-2",
               messageId: "message-2",
               text: "Next boundary context.",
+              origin: "user" as const,
             },
           ];
     });
@@ -570,8 +685,8 @@ describe("Pi connector tool dispatch", () => {
     expect(claimSteering).toHaveBeenNthCalledWith(2, []);
     expect(claimSteering).toHaveBeenNthCalledWith(3, ["steering-1"]);
     expect(fakeAgentState.preparedMessages).toEqual([
-      expect.objectContaining({ content: "First boundary context." }),
-      expect.objectContaining({ content: "Next boundary context." }),
+      expect.objectContaining({ content: midTaskMessagePrompt("First boundary context.", false) }),
+      expect.objectContaining({ content: midTaskMessagePrompt("Next boundary context.", false) }),
     ]);
   });
 
@@ -655,6 +770,7 @@ describe("Pi connector tool dispatch", () => {
           id: "boundary-image",
           messageId: "boundary-image-message",
           text: "Compare the second image.",
+          origin: "user" as const,
           images: [
             {
               name: "second.png",
@@ -690,7 +806,7 @@ describe("Pi connector tool dispatch", () => {
     expect(fakeAgentState.steeredMessages).toContainEqual({
       role: "user",
       content: [
-        { type: "text", text: "Compare the second image." },
+        { type: "text", text: midTaskMessagePrompt("Compare the second image.", false) },
         { type: "image", data: "BAUG", mimeType: "image/png" },
       ],
       timestamp: expect.any(Number),
@@ -1781,6 +1897,54 @@ describe("Pi connector tool dispatch", () => {
           "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
       }),
     );
+  });
+
+  it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "50";
+    fakeAgentState.mode = "two-subagents";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const request = {
+      botId: "b",
+      threadId: "t",
+      runId: "tree-limited",
+      prompt: "delegate twice",
+      instructions: "Use run_subagent.",
+      history: [],
+      tools: [
+        {
+          name: "run_subagent",
+          description: "Delegate work",
+          inputSchema: { type: "object", properties: {} },
+        },
+        shellTool,
+      ],
+      model: { provider: "test", id: "dispatch-test-model" },
+      executeTool,
+    };
+    const context = {
+      operationId: "2j",
+      traceId: "2j",
+      spaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    };
+    const stopText =
+      "I stopped after reaching the limit of 50 tool calls in this turn. Send another message to continue.";
+
+    const first: unknown[] = [];
+    for await (const event of runtime.run(request, context)) first.push(event);
+    // 2 run_subagent calls + shell calls from both children never exceed the cap in total.
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(first.at(-1)).toEqual({ type: "done", text: stopText });
+    expect(first.filter((e) => (e as { status?: string }).status === "failed")).toHaveLength(0);
+
+    // The budget was released: the same run id starts at zero again.
+    executeTool.mockClear();
+    const second: unknown[] = [];
+    for await (const event of runtime.run(request, context)) second.push(event);
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(second.at(-1)).toEqual({ type: "done", text: stopText });
   });
 
   it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {

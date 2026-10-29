@@ -1,5 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { BOT_MESSAGE_MAX_LENGTH, clampBotMessage } from "./bot-messages.js";
 import { foldPeerReplies } from "./message-visibility.js";
 import { peerExchangeLines, splitPeerLabel } from "./peer-exchanges.js";
 import { peerMessagesFrom } from "./peer-messages.js";
@@ -50,6 +51,30 @@ describe("peer exchanges", () => {
     },
   );
 
+  it("counts an oversized reply and its truncated return receipt once", () => {
+    const wake = received("m1");
+    const text = "x".repeat(BOT_MESSAGE_MAX_LENGTH + 500);
+    const messages = [
+      wake,
+      reply("m2", wake.runId!, text),
+      message(
+        "m3",
+        [
+          {
+            kind: "bot_message_sent",
+            toBotId: "peer",
+            toBotName: "Peer",
+            text: clampBotMessage(text),
+          },
+        ],
+        wake.runId,
+      ),
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+    expect(peerExchangeLines(transcript).lines.get("m1")?.count).toBe(2);
+    expect(peerMessagesFrom(messages).map((item) => item.messageId)).toEqual(["m1", "m3"]);
+  });
+
   it("counts a reply and its trimmed auto-return echo once", () => {
     const wake = received("m1");
     const messages = [
@@ -81,7 +106,7 @@ describe("peer exchanges", () => {
       expect(peerMessagesFrom(messages).map((m) => m.text)).toEqual(["Request"]);
       expect(
         foldPeerReplies(messages, { includeDelegatedReplyText: false }).messages.map((m) => m.id),
-      ).toEqual(["m3"]);
+      ).toEqual(["m2", "m3"]);
     },
   );
 

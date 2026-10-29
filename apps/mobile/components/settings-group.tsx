@@ -1,10 +1,19 @@
 import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
-import type { PressableProps } from "react-native";
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import type { PressableProps, TextInputProps } from "react-native";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
+import { androidRipple } from "../lib/ripple";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { NativeSwitch } from "./native-switch";
 import { Chevron } from "./row-accessories";
@@ -62,6 +71,19 @@ export function SettingsGroup({
   );
 }
 
+/** A native text field using the same insets and growing row height as settings actions. */
+export function SettingsInputRow(props: Omit<TextInputProps, "style">) {
+  const styles = useThemedStyles(createSettingsStyles);
+  const stacked = useStackedSettings();
+  return (
+    <TextInput
+      placeholderTextColor={native.tertiaryLabel}
+      {...props}
+      style={[styles.row, styles.title, stacked && styles.compactRow]}
+    />
+  );
+}
+
 type SettingsRowProps = Omit<PressableProps, "children" | "style"> & {
   title: string;
   detail?: string;
@@ -69,7 +91,9 @@ type SettingsRowProps = Omit<PressableProps, "children" | "style"> & {
   chevron?: "right" | "down";
   prominent?: boolean;
   destructive?: boolean;
+  tinted?: boolean;
   dimmed?: boolean;
+  leading?: ReactNode;
   trailing?: ReactNode;
 };
 
@@ -80,7 +104,9 @@ export function SettingsRow({
   chevron,
   prominent,
   destructive,
+  tinted,
   dimmed,
+  leading,
   trailing,
   ...props
 }: SettingsRowProps) {
@@ -88,15 +114,28 @@ export function SettingsRow({
   const stacked = useStackedSettings();
   const end = (
     <>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
+      {value ? (
+        <Text
+          numberOfLines={stacked ? undefined : 1}
+          style={[styles.value, !stacked && styles.inlineValue]}
+        >
+          {value}
+        </Text>
+      ) : null}
       {trailing}
     </>
   );
   const content = (
     <>
+      {leading}
       <View style={styles.titleColumn}>
         <Text
-          style={[styles.title, prominent && styles.prominent, destructive && styles.destructive]}
+          style={[
+            styles.title,
+            prominent && styles.prominent,
+            tinted && styles.tinted,
+            destructive && styles.destructive,
+          ]}
         >
           {title}
         </Text>
@@ -115,6 +154,13 @@ export function SettingsRow({
     return (
       <View
         accessible={props.accessible}
+        accessibilityActions={props.accessibilityActions}
+        accessibilityHint={props.accessibilityHint}
+        accessibilityLabel={props.accessibilityLabel}
+        accessibilityRole={props.accessibilityRole}
+        accessibilityState={props.accessibilityState}
+        accessibilityValue={props.accessibilityValue}
+        onAccessibilityAction={props.onAccessibilityAction}
         style={[styles.row, stacked && styles.compactRow, dimmed && styles.dimmed]}
       >
         {content}
@@ -124,10 +170,11 @@ export function SettingsRow({
   return (
     <Pressable
       {...props}
+      android_ripple={androidRipple()}
       style={({ pressed }) => [
         styles.row,
         stacked && styles.compactRow,
-        pressed && styles.pressed,
+        pressed && Platform.OS !== "android" && styles.pressed,
         dimmed && styles.dimmed,
       ]}
     >
@@ -197,7 +244,9 @@ function createSettingsStyles() {
       backgroundColor: native.groupedCell,
     },
     separator: {
-      height: StyleSheet.hairlineWidth,
+      // iOS draws sheets scaled down slightly, which makes a one-pixel line fall between
+      // pixels and vanish at some offsets. Two pixels always leave at least one visible.
+      height: StyleSheet.hairlineWidth * 2,
       marginStart: 16,
       backgroundColor: native.separator,
     },
@@ -218,7 +267,10 @@ function createSettingsStyles() {
     prominent: { fontSize: 20, fontWeight: "600" },
     detail: { color: native.secondaryLabel, ...typeScale.caption },
     destructive: { color: tokens.destructive },
+    tinted: { color: tokens.link },
     value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
+    // A long value truncates instead of pushing the title out of the row.
+    inlineValue: { maxWidth: "60%" },
     pressed: { backgroundColor: native.fillPressed },
     dimmed: { opacity: 0.45 },
   });

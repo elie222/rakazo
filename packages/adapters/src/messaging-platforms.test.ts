@@ -1,14 +1,14 @@
-import { WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
@@ -44,6 +44,14 @@ describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
     expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+  });
+
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
   });
 
   it("requires all four sendblue values", () => {
@@ -111,6 +119,7 @@ describe("messagingPlatformsFromEnv", () => {
       ["telegram-work", "telegram"],
     ]);
     expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
+    expect(platforms[1]!.capabilities.files).toBe(true);
   });
 
   it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
@@ -194,10 +203,9 @@ describe("messagingPlatformsFromEnv", () => {
     })[0]!;
     const incoming = lark.adapter as unknown as {
       incomingConfig: { events: string; callbacks: string };
-      shouldStartWsClient: () => boolean;
     };
     expect(incoming.incomingConfig).toEqual({ events: "webhook", callbacks: "webhook" });
-    expect(incoming.shouldStartWsClient()).toBe(false);
+    expect("shouldStartWsClient" in incoming).toBe(false);
   });
 
   it("maps LARK_* process env and accepts the international domain switch", () => {
@@ -249,7 +257,7 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group support and the receipt for each platform", () => {
+  it("declares group support, the receipt and file support for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
@@ -257,7 +265,12 @@ describe("messagingPlatformsFromEnv", () => {
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
     expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
     expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
-    expect(capabilities.telegram).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.telegram).toEqual({
+      direct: true,
+      groups: false,
+      receipt: null,
+      files: true,
+    });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
   });
 });
@@ -377,10 +390,47 @@ describe("parseWhatsAppStatuses", () => {
 });
 
 describe("splitOutboundBody", () => {
-  it("splits only WhatsApp bodies over its per-message limit", () => {
+  it.each(["telegram", "telegram-work"])(
+    "splits %s replies on paragraph boundaries",
+    (provider) => {
+      const paragraph = "a".repeat(3000);
+      expect(splitOutboundBody(provider, `${paragraph}\n\n${paragraph}`)).toEqual([
+        paragraph,
+        paragraph,
+      ]);
+      expect(splitOutboundBody(provider, "short")).toEqual(["short"]);
+      expect(splitOutboundBody(provider, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
+    },
+  );
+
+  it.each([
+    "a".repeat(4097),
+    `${"a".repeat(4095)}😀${"b".repeat(4096)}`,
+    "😀".repeat(4097),
+    "!".repeat(4096),
+  ])("preserves the full text without breaking UTF-16 pairs", (body) => {
+    const parts = splitOutboundBody("telegram", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it.each([
+    ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
+    ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+  ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
+    const parts = splitOutboundBody("whatsapp", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
+    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

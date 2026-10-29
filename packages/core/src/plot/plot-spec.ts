@@ -110,6 +110,18 @@ const DATALESS_MARKS = {
   graticule: Plot.graticule,
 } as unknown as Record<string, (options: Record<string, unknown>) => Plot.Markish>;
 
+const MAX_PLOT_TICKS = 1_000;
+
+function assertPlotTickLimits(spec: PlotSpec): void {
+  // Tick counts generate new data independently of the input-row limit.
+  const axes = [spec.x, spec.y, spec.fx, spec.fy, ...spec.marks.map((mark) => mark.options)];
+  for (const options of axes) {
+    if (typeof options?.ticks === "number" && options.ticks > MAX_PLOT_TICKS) {
+      throw new Error("Plot tick count exceeds the 1,000-tick limit.");
+    }
+  }
+}
+
 type TransformFactory = (
   outputs: Record<string, unknown>,
   options: Record<string, unknown>,
@@ -322,6 +334,7 @@ export function buildPlotParts(
     throw new Error("The spec needs a non-empty marks array.");
   }
   assertPlotDataWithinLimits(spec, data);
+  assertPlotTickLimits(spec);
   const { title, marks, data: nestedData, ...plotOptions } = spec;
   const sharedData = data ?? (Array.isArray(nestedData) ? nestedData : undefined);
   const normalizedData = new WeakMap<unknown[], unknown[]>();
@@ -362,7 +375,6 @@ export function buildPlotParts(
   return { plotted, svg, title, swatches: categoricalSwatches(colorScale), width, height };
 }
 
-/** Render a spec to a standalone SVG string using the provided DOM document. */
 export function renderPlotSpecToSvg(
   spec: PlotSpec,
   data: unknown[] | undefined,
@@ -370,12 +382,6 @@ export function renderPlotSpecToSvg(
 ): string {
   const { svg, title, swatches, width, height } = buildPlotParts(spec, data, document);
   const titleHeight = title ? 28 : 0;
-  const legendHeight = swatches.length > 0 ? 24 : 0;
-  const totalHeight = height + titleHeight + legendHeight;
-
-  svg.setAttributeNS(XMLNS, "xmlns", "http://www.w3.org/2000/svg");
-  svg.setAttributeNS(XMLNS, "xmlns:xlink", "http://www.w3.org/1999/xlink");
-  svg.setAttribute("y", String(titleHeight + legendHeight));
   const header: string[] = [];
   if (title) {
     header.push(
@@ -383,14 +389,75 @@ export function renderPlotSpecToSvg(
     );
   }
   let swatchX = 8;
+  let swatchY = 0;
+  let rowHeight = 0;
+  const labelWidth = Math.max(1, width - 8 - 8 - 15);
   for (const { label, color } of swatches) {
+    const lines = wrapLegendLabel(label, labelWidth);
+    const entryWidth = 15 + lines.reduce((max, line) => Math.max(max, line.width), 0);
+    if (swatchX > 8 && swatchX + entryWidth > width - 8) {
+      swatchX = 8;
+      swatchY += rowHeight;
+      rowHeight = 0;
+    }
+    rowHeight = Math.max(rowHeight, 24 + (lines.length - 1) * 16);
+    const labelLines = lines
+      .map(
+        (line, index) =>
+          `<tspan x="${swatchX + 15}" dy="${index === 0 ? 0 : 16}"${line.fontSize ? ` font-size="${line.fontSize}"` : ""}>${escapeXml(line.text)}</tspan>`,
+      )
+      .join("");
     header.push(
-      `<rect x="${swatchX}" y="${titleHeight + 5}" width="11" height="11" fill="${escapeXml(color)}"></rect>`,
-      `<text x="${swatchX + 15}" y="${titleHeight + 15}" font-family="system-ui, sans-serif" font-size="12" fill="currentColor">${escapeXml(label)}</text>`,
+      `<rect x="${swatchX}" y="${titleHeight + swatchY + 5}" width="11" height="11" fill="${escapeXml(color)}"></rect>`,
+      `<text x="${swatchX + 15}" y="${titleHeight + swatchY + 15}" font-family="system-ui, sans-serif" font-size="12" fill="currentColor">${labelLines}</text>`,
     );
-    swatchX += 15 + 8 + label.length * 7 + 14;
+    swatchX += entryWidth + 22;
   }
+  const legendHeight = swatchY + rowHeight;
+  const totalHeight = height + titleHeight + legendHeight;
+  svg.setAttributeNS(XMLNS, "xmlns", "http://www.w3.org/2000/svg");
+  svg.setAttributeNS(XMLNS, "xmlns:xlink", "http://www.w3.org/1999/xlink");
+  svg.setAttribute("y", String(titleHeight + legendHeight));
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}" font-family="system-ui, sans-serif" style="background:#ffffff;color:#1a1a1a">${header.join("")}${svg.outerHTML}</svg>`;
+}
+
+function wrapLegendLabel(label: string, maxWidth: number) {
+  const lines: { text: string; width: number }[] = [];
+  let text = "";
+  let width = 0;
+  // Conservative 12px-font advances work without browser layout in the server
+  // DOM. Emoji budgets count visible bases for fallback fonts, not code units,
+  // joiners, variation selectors, or modifiers.
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+    label,
+  )) {
+    const bases = Array.from(
+      segment.replace(/\p{Mark}|\p{Emoji_Modifier}|\p{Default_Ignorable_Code_Point}/gu, ""),
+    );
+    const emoji = /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(segment);
+    const advance = emoji
+      ? Math.max(28, bases.length * 14)
+      : bases.reduce((sum, base) => {
+          const ordinary = /^[a-z0-9]$/.test(base) && base !== "m" && base !== "w";
+          const wide = "MWmw".includes(base) || base.codePointAt(0)! > 127;
+          return sum + (base === " " ? 6 : ordinary ? 9 : wide ? 14 : 12);
+        }, 0);
+    if (text && width + advance > maxWidth) {
+      lines.push({ text, width });
+      text = "";
+      width = 0;
+    }
+    text += segment;
+    width += advance;
+  }
+  lines.push({ text, width });
+  return lines.map((line) => ({
+    text: line.text,
+    width: Math.min(line.width, maxWidth),
+    // Shrink an oversized grapheme; textLength could instead enlarge it when
+    // its natural width is smaller than our conservative estimate.
+    fontSize: line.width > maxWidth ? (12 * maxWidth) / line.width : undefined,
+  }));
 }
 
 function categoricalSwatches(scale: Plot.Scale | undefined): { label: string; color: string }[] {

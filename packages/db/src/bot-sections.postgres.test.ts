@@ -4,6 +4,7 @@ import { createDb } from "./client.js";
 import { createGroupRepos } from "./groups.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { createRepos } from "./repos.js";
+import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 import { IsolationError } from "./scope.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -43,13 +44,14 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
       await db.prisma.$disconnect();
       await db.pool.end();
     };
-    owner = await provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup);
-    stranger = await provisionMessagingIdentity(
-      prisma,
-      { provider, address: strangerAddress },
-      signup,
+    const system = asSystem(prisma);
+    owner = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(prisma, { provider, address: ownerAddress }, signup),
     );
-    await prisma.user.create({
+    stranger = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(prisma, { provider, address: strangerAddress }, signup),
+    );
+    await system.user.create({
       data: {
         id: neighborId,
         name: "Section Neighbor",
@@ -61,39 +63,46 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.messagingIdentity.deleteMany({
+      const system = asSystem(prisma, "test fixture cleanup");
+      await system.messagingIdentity.deleteMany({
         where: { provider, address: { in: [ownerAddress, strangerAddress] } },
       });
       const spaceIds = [owner?.spaceId, stranger?.spaceId].filter(Boolean) as string[];
       const userIds = [owner?.userId, stranger?.userId, neighborId].filter(Boolean) as string[];
-      await prisma.organization.deleteMany({ where: { id: { in: spaceIds } } });
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+      await system.organization.deleteMany({ where: { id: { in: spaceIds } } });
+      await system.user.deleteMany({ where: { id: { in: userIds } } });
     }
     await close?.();
   });
 
   it("deletes the section and keeps its bots and groups, now unsectioned", async () => {
     const repos = createRepos(prisma);
+    const system = asSystem(prisma);
     const actor = actorFor(owner);
-    const first = await repos.createBot(actor, botInput("First"));
-    const second = await repos.createBot(actor, botInput("Second"));
-    const group = await createGroupRepos(prisma).createGroup(actor, {
-      name: "Pair",
-      botIds: [first.id, second.id],
+    const { first, group, section } = await runAsTenant(owner, async () => {
+      const first = await repos.createBot(actor, botInput("First"));
+      const second = await repos.createBot(actor, botInput("Second"));
+      const group = await createGroupRepos(prisma).createGroup(actor, {
+        name: "Pair",
+        botIds: [first.id, second.id],
+      });
+      const section = await repos.createBotSection(actor, { botId: first.id, name: "Doomed" });
+      return { first, group, section };
     });
-    const section = await repos.createBotSection(actor, { botId: first.id, name: "Doomed" });
-    await prisma.chatGroup.update({ where: { id: group.id }, data: { sectionId: section.id } });
+    await system.chatGroup.update({ where: { id: group.id }, data: { sectionId: section.id } });
 
-    await expect(repos.deleteBotSection(actor, { sectionId: section.id })).resolves.toEqual({
+    await expect(
+      runAsTenant(owner, () => repos.deleteBotSection(actor, { sectionId: section.id })),
+    ).resolves.toEqual({
       id: section.id,
       releasedBots: 1,
       releasedGroups: 1,
     });
 
-    expect(await prisma.botSection.findUnique({ where: { id: section.id } })).toBeNull();
+    expect(await system.botSection.findUnique({ where: { id: section.id } })).toBeNull();
     const [bot, chatGroup] = await Promise.all([
-      prisma.bot.findUniqueOrThrow({ where: { id: first.id } }),
-      prisma.chatGroup.findUniqueOrThrow({ where: { id: group.id } }),
+      system.bot.findUniqueOrThrow({ where: { id: first.id } }),
+      system.chatGroup.findUniqueOrThrow({ where: { id: group.id } }),
     ]);
     expect(bot.sectionId).toBeNull();
     expect(bot.archivedAt).toBeNull();
@@ -102,31 +111,39 @@ describePostgres("deleteBotSection (PostgreSQL)", () => {
   });
 
   it("treats another user's section in the same space as not found", async () => {
-    const neighborSection = await prisma.botSection.create({
+    const system = asSystem(prisma);
+    const neighborSection = await system.botSection.create({
       data: { spaceId: owner.spaceId, userId: neighborId, name: "Theirs" },
     });
 
     await expect(
-      createRepos(prisma).deleteBotSection(actorFor(owner), { sectionId: neighborSection.id }),
+      runAsTenant(owner, () =>
+        createRepos(prisma).deleteBotSection(actorFor(owner), { sectionId: neighborSection.id }),
+      ),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(
-      await prisma.botSection.findUnique({ where: { id: neighborSection.id } }),
+      await system.botSection.findUnique({ where: { id: neighborSection.id } }),
     ).not.toBeNull();
   });
 
   it("treats another space's section as not found", async () => {
     const repos = createRepos(prisma);
-    const strangerBot = await repos.createBot(actorFor(stranger), botInput("Elsewhere"));
-    const strangerSection = await repos.createBotSection(actorFor(stranger), {
-      botId: strangerBot.id,
-      name: "Far",
+    const { strangerBot, strangerSection } = await runAsTenant(stranger, async () => {
+      const strangerBot = await repos.createBot(actorFor(stranger), botInput("Elsewhere"));
+      const strangerSection = await repos.createBotSection(actorFor(stranger), {
+        botId: strangerBot.id,
+        name: "Far",
+      });
+      return { strangerBot, strangerSection };
     });
 
     await expect(
-      repos.deleteBotSection(actorFor(owner), { sectionId: strangerSection.id }),
+      runAsTenant(owner, () =>
+        repos.deleteBotSection(actorFor(owner), { sectionId: strangerSection.id }),
+      ),
     ).rejects.toBeInstanceOf(IsolationError);
-    expect((await prisma.bot.findUniqueOrThrow({ where: { id: strangerBot.id } })).sectionId).toBe(
-      strangerSection.id,
-    );
+    expect(
+      (await asSystem(prisma).bot.findUniqueOrThrow({ where: { id: strangerBot.id } })).sectionId,
+    ).toBe(strangerSection.id);
   });
 });

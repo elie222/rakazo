@@ -1,4 +1,6 @@
+import { isModelRequiredSendError } from "@rakazo/core";
 import { Alert, AppState } from "react-native";
+import type { RpcArgs } from "./api";
 import {
   captureApiRequestContext,
   currentApiBase,
@@ -10,6 +12,7 @@ import {
 import { artifactCacheSession } from "./artifact-cache-session";
 import { t } from "./i18n";
 import { integrationsCacheScope } from "./integrations-cache";
+import { openModelSettings } from "./model-settings";
 import { outboxDisk } from "./outbox-disk";
 import {
   currentSessionGeneration,
@@ -57,25 +60,32 @@ export async function prepareUnsentSends(): Promise<void> {
 }
 // Configure the wipe before bootstrap can replace credentials or the saved server.
 configureUnsentSends({
-  request: async <T>(
-    proc: string,
-    body: unknown,
-    options: Parameters<typeof rpc>[2],
-    spaceId: string | null,
-  ) => {
+  request: async (proc, body, options, spaceId) => {
     const generation = currentSessionGeneration();
     const context = await captureApiRequestContext();
     if (generation !== currentSessionGeneration()) throw new Error("Session changed");
     const headers = { ...context.headers };
     if (spaceId) headers["x-rakazo-space-id"] = spaceId;
     else delete headers["x-rakazo-space-id"];
-    return rpc<T>(proc, body, { ...options, requestContext: { ...context, headers } });
+    return rpc(
+      proc,
+      ...([body, { ...options, requestContext: { ...context, headers } }] as RpcArgs<typeof proc>),
+    );
   },
   serverReachable: isServerReachable,
   scope,
   disk: outboxDisk,
   errorText: (error) => errorText(error, t("Failed to send message")),
-  notDelivered: (attempt) => Alert.alert(t("Failed to send message"), attempt.error),
+  notDelivered: (attempt) => {
+    if (isModelRequiredSendError(attempt.error)) {
+      Alert.alert(t("Add an AI model to keep chatting"), undefined, [
+        { text: t("Not Now"), style: "cancel" },
+        { text: t("Add Model"), onPress: openModelSettings, isPreferred: true },
+      ]);
+    } else if (!attempt.imageConfirmation) {
+      Alert.alert(t("Failed to send message"), attempt.error);
+    }
+  },
 });
 export function startUnsentSends(): () => void {
   let stopped = false;

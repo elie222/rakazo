@@ -17,6 +17,8 @@ FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
 # with no privilege escalation, so nothing can be installed at runtime.
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
+# The bot browser: chromium by default, or BROWSER=brave (installed below).
+ARG BROWSER=chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
@@ -34,10 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     procps \
     bash \
-    chromium \
+    $([ "$BROWSER" = chromium ] && echo chromium) \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-noto-cjk \
+    fonts-noto-color-emoji \
     locales \
     dbus-x11 \
     xdg-desktop-portal \
@@ -60,10 +63,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && python3 -c 'import openpyxl; print(openpyxl.__version__)' \
   && groupadd --gid 1000 rakazo \
   && useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo \
-  && mkdir -p /etc/rakazo/fluxbox \
+  && mkdir -p /etc/rakazo/fluxbox /etc/chromium/policies/managed /etc/brave/policies/managed \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
+# Brave replaces Chromium only when built with BROWSER=brave. The default
+# build installs Chromium above, so this step does nothing for it.
+RUN set -eux; \
+    case "$BROWSER" in \
+      chromium) ;; \
+      brave) \
+        keyring=/usr/share/keyrings/brave-browser-archive-keyring.gpg; \
+        curl -fsSLo "$keyring" https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg; \
+        echo "deb [signed-by=$keyring arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+          > /etc/apt/sources.list.d/brave-browser-release.list; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends brave-browser; \
+        rm -rf /var/lib/apt/lists/*; \
+        mkdir -p /etc/brave/policies/managed; \
+        printf '%s\n' '{' \
+          '  "BraveRewardsDisabled": true,' \
+          '  "BraveWalletDisabled": true,' \
+          '  "BraveAIChatEnabled": false,' \
+          '  "BraveVPNDisabled": true,' \
+          '  "BraveNewsDisabled": true,' \
+          '  "BraveTalkDisabled": true' \
+          '}' > /etc/brave/policies/managed/rakazo.json ;; \
+      *) echo "unsupported BROWSER: $BROWSER (use chromium or brave)" >&2; exit 1 ;; \
+    esac
 RUN ln -s "$(dpkg -L libnss-wrapper | grep '/libnss_wrapper.so$')" /usr/local/lib/libnss_wrapper.so
 ARG TARGETARCH
 ARG UV_VERSION=0.12.19
@@ -103,19 +130,24 @@ RUN sed -i 's/^# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && locale
 ENV LANG=C.UTF-8
 ENV UV_TOOL_DIR=/home/rakazo/.local/share/uv/tools \
     UV_TOOL_BIN_DIR=/home/rakazo/.local/bin \
-    UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python \
-    UV_CACHE_DIR=/home/rakazo/.cache/uv
+    UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python
 WORKDIR /home/rakazo
 # --chmod normalizes modes: a restrictive host umask (e.g. 077 on hardened hosts) would
 # otherwise leave these files unreadable to USER 1000 at runtime.
 COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=644 user-env.sh /usr/local/lib/rakazo-user-env.sh
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
+# Tells the supervisor this control service accepts scrolls aimed at a point and sideways
+# scrolls; it sends those to older images through its fallback instead.
+LABEL rakazo.control.aimedScroll="1"
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
 COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
 COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch
 COPY --chmod=755 rakazo-page-browser /usr/local/bin/rakazo-page-browser
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
+# Rakazo keeps credentials itself; the browser's save prompts would cover pages.
+COPY --chmod=644 browser-policy.json /etc/chromium/policies/managed/rakazo-browser.json
+COPY --chmod=644 browser-policy.json /etc/brave/policies/managed/rakazo-browser.json
 COPY --chmod=644 fluxbox.init /etc/rakazo/fluxbox/init
 COPY --chmod=644 fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY --chmod=644 fluxbox.menu /etc/rakazo/fluxbox/menu
@@ -140,4 +172,5 @@ ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
 USER 1000:1000
-CMD ["/usr/local/bin/rakazo-computer"]
+# Start Bash without the wrapper; user-env enables it once both files exist.
+CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]

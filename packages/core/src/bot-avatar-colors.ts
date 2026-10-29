@@ -1,4 +1,6 @@
-export interface GrokColorDef {
+import { parseBotAvatarValue } from "@rakazo/contracts";
+
+export interface BotColorDef {
   id: string;
   name: string;
   light: string;
@@ -7,7 +9,7 @@ export interface GrokColorDef {
   hex: string;
 }
 
-export const GROK_COLOR_LIST: GrokColorDef[] = [
+export const BOT_COLOR_LIST: BotColorDef[] = [
   {
     id: "white",
     name: "Staff White",
@@ -98,10 +100,10 @@ export const GROK_COLOR_LIST: GrokColorDef[] = [
   },
 ];
 
-export const GROK_BOT_COLORS = GROK_COLOR_LIST.map((c) => c.hex);
+export const BOT_AVATAR_COLORS = BOT_COLOR_LIST.map((c) => c.hex);
 
 /** Shared identity color for Avatar Studio reset/fallback (Executive Violet). */
-export const DEFAULT_GROK_BOT_COLOR = GROK_COLOR_LIST.find((color) => color.id === "violet")!.hex;
+export const DEFAULT_BOT_AVATAR_COLOR = BOT_COLOR_LIST.find((color) => color.id === "violet")!.hex;
 
 export function shippedHash(value: string): number {
   let hash = 2166136261;
@@ -124,14 +126,13 @@ export function shippedRandom(seed: number): () => number {
 export function resolvePersonaColorDef(
   identity: string,
   explicitColor?: string | null,
-): GrokColorDef {
+): BotColorDef {
   if (explicitColor) {
     const clean = explicitColor.toLowerCase();
-    const foundById = GROK_COLOR_LIST.find((c) => c.id === clean || c.name.toLowerCase() === clean);
+    const foundById = BOT_COLOR_LIST.find((c) => c.id === clean || c.name.toLowerCase() === clean);
     if (foundById) return foundById;
-    const foundByHex = GROK_COLOR_LIST.find((c) => c.hex.toLowerCase() === clean);
+    const foundByHex = BOT_COLOR_LIST.find((c) => c.hex.toLowerCase() === clean);
     if (foundByHex) return foundByHex;
-    // If custom hex, synthesize gradient
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(explicitColor)) {
       const isBright = isColorBright(explicitColor);
       return {
@@ -145,8 +146,46 @@ export function resolvePersonaColorDef(
     }
   }
   const seed = (shippedHash(identity) ^ Math.imul(1, 2654435769)) >>> 0;
-  const index = Math.floor(shippedRandom((seed ^ 2654435769) >>> 0)() * GROK_COLOR_LIST.length);
-  return GROK_COLOR_LIST[index % GROK_COLOR_LIST.length] ?? GROK_COLOR_LIST[0]!;
+  const index = Math.floor(shippedRandom((seed ^ 2654435769) >>> 0)() * BOT_COLOR_LIST.length);
+  return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
+}
+
+/** WCAG AA contrast for body text. */
+const BUBBLE_TEXT_CONTRAST = 4.5;
+const LIGHT_TEXT = "#FFFFFF";
+
+/**
+ * Your messages in a bot's chat wear that bot's color, deepened as needed for
+ * white body text to meet AA contrast. Photo and white avatars keep the neutral bubble.
+ */
+export function chatUserBubbleColors(
+  avatarValue: string,
+  identity: string,
+): { background: string; foreground: string } | undefined {
+  const parsed = parseBotAvatarValue(avatarValue);
+  if (parsed.kind === "image") return undefined;
+  const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
+  if (def.id === "white") return undefined;
+  let background = `#${expandHex(def.hex)}`.toUpperCase();
+  while (contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST) {
+    background = darkenHex(background, 5).toUpperCase();
+  }
+  return { background, foreground: LIGHT_TEXT };
+}
+
+/** WCAG contrast ratio between two hex colors. */
+export function contrastRatio(a: string, b: string): number {
+  const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+}
+
+function relativeLuminance(hex: string): number {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
 function expandHex(hex: string): string {

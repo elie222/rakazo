@@ -10,30 +10,31 @@ export function chatModelPickerChoices(
   selectedKey: string,
   t: (message: string) => string,
 ): ChatModelChoice[] {
+  const defaultEntry = me?.defaultModel
+    ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
+    : undefined;
   const spaceDefaultLabel = me?.defaultModel
-    ? `${t("Space default")} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+    ? `${t("Space default")} (${defaultEntry?.label ?? me.defaultModel})`
     : t("Space default");
   const choices = chatModelChoices(
     connectedModelChoices(credentials, catalog),
     selectedKey,
     spaceDefaultLabel,
+    defaultEntry?.images,
   );
   choices[0] = {
-    key: "",
-    label: spaceDefaultLabel,
+    ...choices[0]!,
     title: t("Space default"),
-    detail: me?.defaultModel
-      ? (catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel)
-      : undefined,
+    detail: me?.defaultModel ? (defaultEntry?.label ?? me.defaultModel) : undefined,
   };
   return choices;
 }
 
-function catalogLabel(
+function catalogEntry(
   catalog: MobileModel[],
   provider: string | null | undefined,
   modelId: string,
 ) {
   if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
+  return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
 }

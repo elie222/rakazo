@@ -9,7 +9,7 @@
       "environment": "preview",
       "channel": "preview",
       "ios": {
-        "image": "macos-tahoe-26.5-xcode-26.6"
+        "image": "macos-tahoe-26.6-xcode-27.1"
       }
     },
     "production": {
@@ -17,14 +17,19 @@
       "environment": "production",
       "channel": "production",
       "ios": {
-        "image": "macos-tahoe-26.5-xcode-26.6"
+        "image": "macos-tahoe-26.6-xcode-27.1"
       }
     },
     "android-apk": {
       "extends": "production",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "production"
+    },
+    "diagnostic": {
+      "extends": "production",
+      "channel": "diagnostic"
     }
   },
   "submit": {

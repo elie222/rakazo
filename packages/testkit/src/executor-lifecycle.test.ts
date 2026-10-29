@@ -8,6 +8,7 @@ import {
   DestinationEmulator,
   releaseComputerExecutionLease,
 } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import {
   createThreadEvents,
@@ -17,7 +18,6 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { asSystem } from "./system-db.js";
 
@@ -36,7 +36,7 @@ describeIntegration("run executor lifecycle", () => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -172,10 +172,9 @@ describeIntegration("run executor lifecycle", () => {
         request: args,
       },
     });
-    await db.actionApprovalRule.create({
+    await db.userActionApprovalRule.create({
       data: {
-        spaceId: seeded.me.spaceId,
-        createdByUserId: seeded.me.userId,
+        userId: seeded.me.userId,
         effect: "require_approval",
         matchKind: "tool",
         matchValue: "destination.write",
@@ -963,7 +962,7 @@ describeIntegration("run executor lifecycle", () => {
       // A mode switch holds the computer first; deletion holds the bot first.
       // Allocation must requeue without waiting in either case (including a locked run).
       for (const locked of ["bot", "computer", "run"] as const) {
-        await handles.prisma.$transaction(async (tx) => {
+        await db.$transaction(async (tx) => {
           if (locked === "bot") {
             await tx.$queryRaw`SELECT id FROM bots WHERE id = ${seeded.bot.id} FOR UPDATE`;
           } else if (locked === "computer") {
@@ -972,7 +971,7 @@ describeIntegration("run executor lifecycle", () => {
             await tx.$queryRaw`SELECT id FROM runs WHERE id = ${seeded.run.id} FOR UPDATE`;
           }
           await expect(
-            acquireDedicatedScreenLeaseFence(handles.prisma, {
+            acquireDedicatedScreenLeaseFence(db, {
               computerId,
               runId: seeded.run.id,
               botId: seeded.bot.id,
@@ -986,7 +985,7 @@ describeIntegration("run executor lifecycle", () => {
         });
       }
 
-      const first = await acquireDedicatedScreenLeaseFence(handles.prisma, {
+      const first = await acquireDedicatedScreenLeaseFence(db, {
         computerId,
         runId: seeded.run.id,
         botId: seeded.bot.id,
@@ -994,7 +993,7 @@ describeIntegration("run executor lifecycle", () => {
         runFence: 1,
       });
       expect(first.fence).toBe(8);
-      await releaseComputerExecutionLease(handles.prisma, first);
+      await releaseComputerExecutionLease(db, first);
       const leaseKey = { computerId_botId: { computerId, botId: seeded.bot.id } };
       await expect(
         db.computerExecutionLease.findUniqueOrThrow({ where: leaseKey }),
@@ -1011,7 +1010,7 @@ describeIntegration("run executor lifecycle", () => {
         leaseExpiresAt: new Date(Date.now() + 60_000),
       });
       activeRunIds.push(laterRun.id);
-      const later = await acquireDedicatedScreenLeaseFence(handles.prisma, {
+      const later = await acquireDedicatedScreenLeaseFence(db, {
         computerId,
         runId: laterRun.id,
         botId: seeded.bot.id,
@@ -1020,7 +1019,7 @@ describeIntegration("run executor lifecycle", () => {
       });
       expect(later.fence).toBe(9);
 
-      await releaseComputerExecutionLease(handles.prisma, later);
+      await releaseComputerExecutionLease(db, later);
       const staleRun = await createRunForBot(seeded, "stale-dedicated-worker", {
         status: "running",
         leaseOwner: "worker-current",
@@ -1029,7 +1028,7 @@ describeIntegration("run executor lifecycle", () => {
       });
       activeRunIds.push(staleRun.id);
       await expect(
-        acquireDedicatedScreenLeaseFence(handles.prisma, {
+        acquireDedicatedScreenLeaseFence(db, {
           computerId,
           runId: staleRun.id,
           botId: seeded.bot.id,
@@ -1061,7 +1060,7 @@ describeIntegration("run executor lifecycle", () => {
       ]);
       activeRunIds.push(...parallelRuns.map((run) => run.id));
       const allocateParallel = (run: (typeof parallelRuns)[number], index: number) =>
-        acquireDedicatedScreenLeaseFence(handles.prisma, {
+        acquireDedicatedScreenLeaseFence(db, {
           computerId,
           runId: run.id,
           botId: seeded.bot.id,
@@ -1074,7 +1073,7 @@ describeIntegration("run executor lifecycle", () => {
       // Release the winner before retrying a competing worker, irrespective of order.
       for (const attempt of attempts) {
         if (attempt.status === "fulfilled") {
-          await releaseComputerExecutionLease(handles.prisma, attempt.value);
+          await releaseComputerExecutionLease(db, attempt.value);
         }
       }
       for (const [index, attempt] of attempts.entries()) {
@@ -1085,7 +1084,7 @@ describeIntegration("run executor lifecycle", () => {
           // Match the worker's retry after the competing allocation completes.
           const lease = await allocateParallel(parallelRuns[index]!, index);
           parallelLeases.push(lease);
-          await releaseComputerExecutionLease(handles.prisma, lease);
+          await releaseComputerExecutionLease(db, lease);
         }
       }
       expect(parallelLeases.map((lease) => lease.fence).sort((a, b) => a - b)).toEqual([10, 11]);
@@ -1130,8 +1129,8 @@ describeIntegration("run executor lifecycle", () => {
       workerId: "worker-first",
       runFence: 1,
     };
-    const first = await acquireDedicatedScreenLeaseFence(handles.prisma, input);
-    const resumed = await acquireDedicatedScreenLeaseFence(handles.prisma, input);
+    const first = await acquireDedicatedScreenLeaseFence(db, input);
+    const resumed = await acquireDedicatedScreenLeaseFence(db, input);
     expect(resumed.fence).toBe(first.fence + 1);
     const other = await createRunForBot(seeded, "competing-screen", {
       status: "running",
@@ -1140,14 +1139,14 @@ describeIntegration("run executor lifecycle", () => {
       leaseExpiresAt: new Date(Date.now() + 60_000),
     });
     const otherInput = { ...input, runId: other.id, workerId: "worker-other" };
-    await expect(
-      acquireDedicatedScreenLeaseFence(handles.prisma, otherInput),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
+    await expect(acquireDedicatedScreenLeaseFence(db, otherInput)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
     await db.computerExecutionLease.updateMany({
       where: { runId: seeded.run.id },
       data: { expiresAt: new Date(Date.now() - 1) },
     });
-    const reclaimed = await acquireDedicatedScreenLeaseFence(handles.prisma, otherInput);
+    const reclaimed = await acquireDedicatedScreenLeaseFence(db, otherInput);
     expect(reclaimed.fence).toBe(resumed.fence + 1);
     const attempt = await db.attempt.create({
       data: { runId: other.id, fence: 1, status: "running" },
@@ -1167,16 +1166,16 @@ describeIntegration("run executor lifecycle", () => {
         }),
       ),
     ).resolves.toEqual({ continuationRunId: null });
-    const afterPause = await acquireDedicatedScreenLeaseFence(handles.prisma, input);
+    const afterPause = await acquireDedicatedScreenLeaseFence(db, input);
     expect(afterPause.fence).toBe(reclaimed.fence + 1);
     // A stale cleanup must not expire a successor's lease.
-    await releaseComputerExecutionLease(handles.prisma, reclaimed);
+    await releaseComputerExecutionLease(db, reclaimed);
     const held = await db.computerExecutionLease.findUniqueOrThrow({
       where: { computerId_botId: { computerId, botId: bot.id } },
     });
     expect(held.fence).toBe(afterPause.fence);
     expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now());
-    await releaseComputerExecutionLease(handles.prisma, afterPause);
+    await releaseComputerExecutionLease(db, afterPause);
     await db.run.update({
       where: { id: seeded.run.id },
       data: { status: "completed", leaseOwner: null, leaseExpiresAt: null },
@@ -1227,7 +1226,7 @@ describeIntegration("run executor lifecycle", () => {
         throw new Error("Fence fixture bot has no assigned computer");
 
       await expect(
-        acquireDedicatedScreenLeaseFence(handles.prisma, {
+        acquireDedicatedScreenLeaseFence(db, {
           computerId: dedicatedBot.computerId,
           runId: team.run.id,
           botId: team.bot.id,
@@ -1241,7 +1240,7 @@ describeIntegration("run executor lifecycle", () => {
         }),
       ).resolves.toBeNull();
 
-      teamLease = await acquireComputerExecutionLease(handles.prisma, {
+      teamLease = await acquireComputerExecutionLease(db, {
         computerId: teamBot.computerId,
         runId: team.run.id,
         botId: team.bot.id,
@@ -1252,7 +1251,7 @@ describeIntegration("run executor lifecycle", () => {
         where: { computerId_botId: { computerId: teamBot.computerId, botId: team.bot.id } },
       });
       await expect(
-        acquireDedicatedScreenLeaseFence(handles.prisma, {
+        acquireDedicatedScreenLeaseFence(db, {
           computerId: teamBot.computerId,
           runId: team.run.id,
           botId: team.bot.id,
@@ -1277,7 +1276,7 @@ describeIntegration("run executor lifecycle", () => {
         data: { ...conflictingLease, expiresAt: heldUntil },
       });
       await expect(
-        acquireDedicatedScreenLeaseFence(handles.prisma, {
+        acquireDedicatedScreenLeaseFence(db, {
           computerId: dedicatedBot.computerId,
           runId: dedicated.run.id,
           botId: dedicated.bot.id,
@@ -1293,8 +1292,8 @@ describeIntegration("run executor lifecycle", () => {
         }),
       ).resolves.toMatchObject({ ...conflictingLease, expiresAt: heldUntil });
     } finally {
-      await releaseComputerExecutionLease(handles.prisma, teamLease);
-      await releaseComputerExecutionLease(handles.prisma, conflictingLease);
+      await releaseComputerExecutionLease(db, teamLease);
+      await releaseComputerExecutionLease(db, conflictingLease);
       await db.run.updateMany({
         where: { id: { in: activeRunIds }, status: "running" },
         data: {

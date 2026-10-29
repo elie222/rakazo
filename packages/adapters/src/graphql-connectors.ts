@@ -136,7 +136,7 @@ export async function prepareGraphqlInstall(input: {
   credential?: string;
   signal?: AbortSignal;
   remote?: RemoteTransportDependencies;
-  /** Loopback / LAN endpoint escape: deployment owner or instance flag. */
+  /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
   const auth = AuthSchema.parse(input.config.auth);

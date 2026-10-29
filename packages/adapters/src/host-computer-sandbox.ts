@@ -20,6 +20,7 @@ import {
   HOST_COMPUTER_MAX_FILE_BYTES,
   hostComputerDeadlineMs,
 } from "./host-computer-protocol.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 /** Authenticated native host transport. Commands are never retried after a lost response. */
 export class HostComputerSandbox implements SandboxProvider {
@@ -37,11 +38,15 @@ export class HostComputerSandbox implements SandboxProvider {
     const body = JSON.stringify({ ...input, runId: context.runId });
     if (Buffer.byteLength(body) > HOST_COMPUTER_MAX_BYTES)
       throw new Error("Local computer request is too large");
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(hostComputerDeadlineMs(input)),
+    ]);
     const response = await fetch(new URL("/computer", this.url), {
       method: "POST",
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
       body,
-      signal: AbortSignal.any([context.signal, AbortSignal.timeout(hostComputerDeadlineMs(input))]),
+      signal,
       redirect: "error",
     });
     if (!response.ok || !response.body) {
@@ -51,15 +56,23 @@ export class HostComputerSandbox implements SandboxProvider {
       );
     }
     const reader = response.body.getReader();
+    const abort = () => {
+      void reader.cancel(signal.reason).catch(() => undefined);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
     const decoder = new TextDecoder();
     let pending = "";
     try {
       while (true) {
+        signal.throwIfAborted();
         const chunk = await reader.read();
+        signal.throwIfAborted();
         if (chunk.done) break;
         pending += decoder.decode(chunk.value, { stream: true });
         let newline = pending.indexOf("\n");
         while (newline !== -1) {
+          signal.throwIfAborted();
           if (newline > HOST_COMPUTER_MAX_BYTES)
             throw new Error("Local computer response is too large");
           const frame = JSON.parse(pending.slice(0, newline)) as HostComputerFrame<T>;
@@ -80,7 +93,9 @@ export class HostComputerSandbox implements SandboxProvider {
       }
       throw new Error("Local computer disconnected. Check the result before retrying.");
     } finally {
-      await reader.cancel().catch(() => undefined);
+      signal.removeEventListener("abort", abort);
+      const cancellation = reader.cancel().catch(() => undefined);
+      if (!signal.aborted) await cancellation;
       reader.releaseLock();
     }
   }
@@ -176,6 +191,7 @@ export class HostComputerSandbox implements SandboxProvider {
       { method: "exportWorkspace", botId: computer.botId },
       context,
     )) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       yield { ...file, content: new Uint8Array(Buffer.from(file.content, "base64")) };
     }
   }
@@ -184,7 +200,10 @@ export class HostComputerSandbox implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, context);
+    for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      await this.writeFile(computer, file, context);
+    }
   }
   snapshot(computer: ComputerRef, context: AdapterContext) {
     return this.one<{ id: string; createdAt: string }>(

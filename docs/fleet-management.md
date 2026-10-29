@@ -1,28 +1,28 @@
-# Fleet management
+# Manage the bots it creates
 
-A bot can set up a fleet of bots the way you would: create groups, organize the sidebar, rewrite
+A bot can set up other bots the way you would: create groups, organize the sidebar, rewrite
 the instructions of bots it created, pick their model and schedule them. This is controlled per
 bot and is off by default.
 
 ## Turning it on
 
-Open a bot's settings, expand **Advanced** and turn on **Fleet management**. The switch is on web,
+Open a bot's settings, expand **Advanced** and turn on **Manage the bots it creates**. The switch is on web,
 the Electron desktop app (which hosts the web UI) and mobile bot settings.
 
 - It is off for every new bot. A bot that creates another bot, or a duplicate, starts with it off;
   the switch is never inherited.
 - It is checked again each time a tool is called, so turning it off takes effect immediately.
-- Subagents get none of the fleet tools, not even `list_fleet`.
+- Subagents get none of the bot management tools, not even `list_fleet`.
 
-## Which runs can use the fleet tools
+## Which runs can use the bot management tools
 
 Only runs you started can use them: a message you sent, a follow-up to your message, or the end of
 a call. Runs started by another bot's message, a messaging channel, a spawn, tickets, a webhook or a
-routine get none of the fleet tools, including `list_fleet`. The tools are hidden from them and
+routine get none of the bot management tools, including `list_fleet`. The tools are hidden from them and
 rejected if called.
 
 A run that has received a message from a messaging channel or a webhook while it was working
-cannot change the fleet for the rest of that run. Channel or webhook messages that were already in
+cannot change the bots it manages for the rest of that run. Channel or webhook messages that were already in
 the thread history before the run started are not covered by this rule. A follow-up counts as yours only when every
 message it answers came from you in the app.
 
@@ -34,7 +34,7 @@ message it answers came from you in the app.
 - `update_group`: renames a group or adds and removes members.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
   or a group.
-- `update_bot` with `bot_id`: edits a child bot's name, title, description, color and
+- `update_bot` with `bot_id`: edits a child bot's name, description, color and
   notifications. It never changes instructions. Without `bot_id` it acts on the calling bot as
   before.
 - `set_child_instructions`: replaces a child bot's instructions. The bot passes the version it read

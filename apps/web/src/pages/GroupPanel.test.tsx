@@ -73,12 +73,12 @@ const group: Group = {
 let container: HTMLDivElement;
 let root: Root;
 
-function fakeBot(id: string, name: string, title: string): Bot {
+function fakeBot(id: string, name: string): Bot {
   return {
     id,
     spaceId: "space-1",
     name,
-    title,
+    title: "",
     description: "",
     instructions: "",
     color: "blue",
@@ -111,14 +111,15 @@ function fakeBot(id: string, name: string, title: string): Bot {
 }
 
 const bots = [
-  fakeBot("bot-1", "Researcher", "Reads papers"),
-  fakeBot("bot-2", "Writer", "Drafts prose"),
-  fakeBot("bot-3", "Runner", "Runs tasks"),
+  fakeBot("bot-1", "Researcher"),
+  fakeBot("bot-2", "Writer"),
+  fakeBot("bot-3", "Runner"),
 ];
 
 async function render(
   options: {
-    onSave?: () => Promise<void>;
+    onSave?: ComponentProps<typeof GroupSettings>["onSave"];
+    group?: Group;
     onRemove?: () => Promise<void>;
     covered?: boolean;
     instance?: string;
@@ -132,7 +133,7 @@ async function render(
     root.render(
       <GroupSettings
         key={options.instance}
-        group={group}
+        group={options.group ?? group}
         bots={options.bots ?? bots}
         onSave={options.onSave ?? (async () => undefined)}
         onRemove={onRemove}
@@ -182,6 +183,28 @@ afterEach(async () => {
 });
 
 describe("GroupSettings", () => {
+  it("follows a refreshed group in fields not edited and keeps the ones that were", async () => {
+    const onSave = vi.fn(async () => undefined);
+    await render({ onSave });
+    const name = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        name,
+        "My edit",
+      );
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const refreshed = {
+      ...group,
+      name: "Renamed elsewhere",
+      members: [...group.members, { botId: "bot-3", name: "Runner", color: "blue" }],
+    };
+    await render({ onSave, group: refreshed });
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("My edit");
+    await click("Save");
+    expect(onSave).toHaveBeenCalledWith({ name: "My edit", botIds: undefined });
+  });
+
   it("closes from the header button", async () => {
     const { onClose } = await render();
     await click("Close panel");
@@ -281,14 +304,14 @@ describe("GroupSettings", () => {
     expect(rowNames()).toEqual(["Researcher", "Writer"]);
   });
 
-  it("filters the expanded roster by name or title", async () => {
+  it("filters the expanded roster by name", async () => {
     await render();
     await click("Show all");
     const filter = container.querySelector('input[aria-label="Filter bots"]');
     expect(filter).not.toBeNull();
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(filter, "  PROSE ");
+      setter.call(filter, "  WRIT ");
       filter!.dispatchEvent(new Event("input", { bubbles: true }));
       await Promise.resolve();
     });

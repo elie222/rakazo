@@ -1,11 +1,22 @@
+import type {
+  AnyContractProcedure,
+  InferContractRouterInputs,
+  InferContractRouterOutputs,
+} from "@orpc/contract";
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import {
+  AgentImportCreateInput,
+  AgentImportPlanSchema,
+  AgentImportPreviewInput,
+} from "./agent-import.js";
+import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
-  ATTACHMENT_MAX_COUNT,
+  ATTACHMENT_COUNT_CEILING,
 } from "./attachments.js";
 import {
   BoardEventSchema,
@@ -21,8 +32,18 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
-import { BotSecretMetadata, BotSecretPutInput, StoredBotSecretName } from "./bot-secrets.js";
 import {
+  BotSecretMetadata,
+  BotSecretPutInput,
+  LOGIN_FIELD_LIMIT,
+  LoginFieldInput,
+  StoredBotSecretName,
+  VaultPutInput,
+  VaultRevealed,
+  VaultRevealInput,
+} from "./bot-secrets.js";
+import {
+  AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -30,16 +51,21 @@ import {
   AgentSkillCatalogEntrySchema,
   AgentSkillSchema,
   AppBootstrapSchema,
+  ApprovalModeSchema,
+  ApprovalRulePreviewSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
+  AvailabilityKindSchema,
   AvatarStyleSchema,
+  BillingClientSchema,
   BillingStatusSchema,
   BotMcpServerSchema,
   BotSchema,
   BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
+  CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -64,17 +90,28 @@ import {
   MeSchema,
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
+  MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
+  ModelConnectionLabelSchema,
+  ModelConnectionTargetSchema,
   ModelCredentialSchema,
+  ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PluginMarketplaceCatalogSchema,
+  PluginPartSchema,
+  PluginPreviewSchema,
+  PluginSubmissionReviewSchema,
+  PluginSubmissionSchema,
+  PluginSubmissionStatusSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
+  ROUTINE_MENTION_BATCH_MAX,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -82,7 +119,9 @@ import {
   ServerUpdateRequestSchema,
   ServerUpdateRunSchema,
   ServerUpdateStatusSchema,
+  SignupSurveySchema,
   SkillPlaybookSchema,
+  SpaceAvailabilitySchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -97,6 +136,7 @@ import {
   UpdateExternalConversationPolicyInput,
   UpdateGroupInput,
   UsageRecordSchema,
+  UsageSummarySchema,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
@@ -108,11 +148,20 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { ModelHeadersSchema } from "./model-headers.js";
+import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
+import { PaymentWalletStatusSchema } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
-import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
+import {
+  ROUTINE_HISTORY_PAGE_SIZE,
+  RoutineHistorySchema,
+  RoutineRunCursorSchema,
+  RunsListOutputSchema,
+} from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
+import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -143,8 +192,9 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendInput = threadTarget
   .safeExtend({
+    imageHandling: z.enum(["confirm", "file"]).optional(),
     text: z.string().optional(),
-    artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
+    artifactIds: z.array(Id).max(ATTACHMENT_COUNT_CEILING).optional(),
     /** Bare bot ids (legacy) or typed mention chips from the composer. */
     mentions: z
       .array(z.union([Id, structuredMentionTarget]))
@@ -185,6 +235,8 @@ export const appContract = {
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
+          /** The settings copy the reviewed recipients came from, as in `status`. */
+          settingsScope: SettingsScopeSchema.optional(),
         }),
       )
       .output(AiConsentStatusSchema),
@@ -194,8 +246,34 @@ export const appContract = {
   me: oc.output(MeSchema),
   billing: {
     status: oc.output(BillingStatusSchema),
-    checkout: oc.output(z.object({ url: z.string().url() })),
-    portal: oc.output(z.object({ url: z.string().url() })),
+    /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
+    refresh: oc.output(BillingStatusSchema),
+    selectFunding: oc
+      .input(z.object({ funding: z.enum(["byok", "credits"]), client: BillingClientSchema }))
+      /** `url` is the checkout to pay for the own-key plan before it has access. */
+      .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
+    purchaseCredits: oc
+      .input(
+        z.object({
+          amountCents: ModelCreditAmountSchema,
+          monthly: z.boolean(),
+          client: BillingClientSchema,
+        }),
+      )
+      .output(z.object({ url: z.string().url() })),
+    setMonthlyCredits: oc
+      .input(z.object({ amountCents: ModelCreditAmountSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+    checkout: oc
+      .input(z.object({ client: BillingClientSchema }).optional())
+      .output(z.object({ url: z.string().url() })),
+    portal: oc
+      .input(z.object({ client: BillingClientSchema }).optional())
+      .output(z.object({ url: z.string().url() })),
+    /** Records who invited this organization; ignored once it has subscribed. */
+    claimReferral: oc
+      .input(z.object({ code: z.string().min(1).max(64) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   preferences: {
     update: oc
@@ -251,6 +329,27 @@ export const appContract = {
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
   models: {
+    forRole: oc
+      .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
+      .output(z.array(ModelCatalogEntrySchema)),
+    role: oc
+      .input(
+        z.object({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
+      .output(ModelRoleViewSchema),
+    setRole: oc
+      .input(
+        ModelRoleUpdateSchema.extend({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
+      .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelBackupChoiceSchema)),
@@ -260,6 +359,8 @@ export const appContract = {
       .input(
         z.object({
           baseUrl: z.string(),
+          credentialId: z.string().optional(),
+          headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
         }),
       )
@@ -277,8 +378,14 @@ export const appContract = {
         z.object({
           provider: z.string(),
           label: z.string().optional(),
+          /** Signs an existing connection in again; null adds another, as connect does. */
+          credentialId: ModelConnectionTargetSchema,
           modelId: z.string().optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+          makeDefault: z.boolean().optional(),
+          scope: SettingsScopeSchema.optional(),
+          /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
+          codePage: z.boolean().optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
@@ -307,8 +414,12 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
+    rename: oc
+      .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
-      .input(z.object({ provider: z.string().trim().min(1) }))
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {
@@ -316,6 +427,9 @@ export const appContract = {
     listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
+    importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
+    importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
+    importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -474,22 +588,41 @@ export const appContract = {
             answer: z.string(),
             /** Carries the call id for an answer spoken during a call. */
             clientNonce: z.string().min(1).max(200).optional(),
-            /** Only for a login card; `answer` carries its password. */
+            /** A login card's answer, one per requested field; `answer` is then empty. */
+            fields: z.array(LoginFieldInput).min(1).max(LOGIN_FIELD_LIMIT).optional(),
+            /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
             username: z.string().min(1).max(512).optional(),
+            /** Only for a login card: use the login for this run only instead of saving it. */
+            remember: z.literal(false).optional(),
             /** Turns down a pending secret request; `answer` is then empty. */
             dismiss: z.literal(true).optional(),
           })
           .refine(
+            (input) => input.remember === undefined || Boolean(input.fields ?? input.username),
+            {
+              message: "Only a website login can be used without saving it",
+              path: ["remember"],
+            },
+          )
+          .refine(
             (input) =>
               input.dismiss
-                ? input.answer === "" && !input.username && !input.clientNonce
-                : input.answer.length > 0,
+                ? input.answer === "" && !input.username && !input.fields && !input.clientNonce
+                : input.fields
+                  ? input.answer === "" && !input.username
+                  : input.answer.length > 0,
             "Send either an answer or a dismissal",
           ),
       )
       .output(z.object({ ok: z.literal(true) })),
-    markRead: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
-    markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    /** `unreadAfterSeq`: the seq read up to before this call, null when nothing was unread. */
+    markRead: oc
+      .input(threadTarget)
+      .output(z.object({ ok: z.literal(true), unreadAfterSeq: z.number().int().nullable() })),
+    /** With `messageId`, the chat reads as unread from that message: the next open puts New above it. */
+    markUnread: oc
+      .input(threadTarget.and(z.object({ messageId: Id.optional() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
@@ -580,9 +713,18 @@ export const appContract = {
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {
+    listForMentions: oc
+      .input(z.object({ botIds: z.array(Id).min(1).max(ROUTINE_MENTION_BATCH_MAX) }))
+      .output(z.array(z.object({ botId: Id, routines: z.array(RoutineSchema) }))),
     list: oc.input(botId).output(z.array(RoutineSchema)),
     history: oc
-      .input(z.object({ routineId: Id, before: RoutineRunCursorSchema.optional() }))
+      .input(
+        z.object({
+          routineId: Id,
+          before: RoutineRunCursorSchema.optional(),
+          limit: z.number().int().min(1).max(ROUTINE_HISTORY_PAGE_SIZE).optional(),
+        }),
+      )
       .output(RoutineHistorySchema),
     create: oc.input(CreateRoutineInput).output(RoutineSchema),
     update: oc
@@ -708,7 +850,7 @@ export const appContract = {
       .output(z.object({ runId: Id })),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
-  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). Pi already understands this format; we persist and inject them. */
+  /** Claude Agent Skills (SKILL.md recipes) shared across assistants (not taught/demo skills). */
   agentSkills: {
     list: oc.output(z.array(AgentSkillCatalogEntrySchema)),
     get: oc
@@ -729,6 +871,33 @@ export const appContract = {
     create: oc.input(CreateAgentSkillInput).output(AgentSkillSchema),
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  availability: {
+    set: oc
+      .input(z.object({ kind: AvailabilityKindSchema, id: Id }).and(SpaceAvailabilitySchema))
+      .output(SpaceAvailabilitySchema),
+    /** The user's own skills, MCP servers, plugins and tool sources across their spaces. */
+    items: oc.output(z.array(AccountItemSchema)),
+    /** Make exactly the listed items available in a space, keeping each one's other spaces. */
+    chooseForSpace: oc
+      .input(
+        z.object({
+          spaceId: Id,
+          items: z.array(z.object({ kind: AvailabilityKindSchema, id: Id })).max(500),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  marketplace: {
+    catalog: oc
+      .input(z.object({ query: z.string().trim().max(200).default("") }))
+      .output(PluginMarketplaceCatalogSchema),
+    /** Admins only. */
+    submissions: oc
+      .input(z.object({ status: PluginSubmissionStatusSchema.default("pending") }))
+      .output(z.array(PluginSubmissionSchema)),
+    /** Admins only. */
+    review: oc.input(PluginSubmissionReviewSchema).output(PluginSubmissionSchema),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
@@ -753,9 +922,25 @@ export const appContract = {
           source: z.string().min(1).max(2048),
           config: z.record(z.string(), z.unknown()).default({}),
           credential: z.string().max(16_384).optional(),
+          /** Required for plugins: confirms the exact previewed package content. */
+          pluginDigest: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .optional(),
+          /** Plugins only: which parts to add; all supported parts when omitted. */
+          pluginParts: z.array(PluginPartSchema).min(1).max(2).optional(),
         }),
       )
       .output(CapabilityInstallSchema),
+    /** Add or remove parts of an installed plugin at its pinned version; no parts removes it. */
+    pluginParts: oc
+      .input(z.object({ id: Id, parts: z.array(PluginPartSchema).max(2) }))
+      .output(z.object({ install: CapabilityInstallSchema.nullable() })),
+    /** Fetch and parse a plugin repo without installing: shows the skills,
+     * MCP endpoints, variables, and skipped parts before confirmation. */
+    pluginPreview: oc
+      .input(z.object({ source: z.string().min(1).max(2048) }))
+      .output(PluginPreviewSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   mcp: {
@@ -799,7 +984,7 @@ export const appContract = {
         .output(z.array(BotMcpServerSchema)),
     },
     oauth: {
-      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url() })).output(
+      begin: oc.input(z.object({ serverId: Id, redirectUri: z.string().url().optional() })).output(
         z.discriminatedUnion("status", [
           z.object({
             status: z.literal("authorization_required"),
@@ -818,6 +1003,8 @@ export const appContract = {
     },
   },
   onboarding: {
+    /** Record the optional signup survey; an empty submission marks it skipped. */
+    signupSurvey: oc.input(SignupSurveySchema).output(z.object({ ok: z.literal(true) })),
     /** Seed the first-run greeting into the bot's thread (focus card is separate). */
     start: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Post the focus choice card when the thread is still idle. */
@@ -831,7 +1018,14 @@ export const appContract = {
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
       .input(
-        z.object({ botId: Id, provider: z.string(), connectorId: z.string().default("composio") }),
+        z.object({
+          botId: Id,
+          threadId: Id.optional(),
+          /** The card's own message, so it is found however far back it is. */
+          messageId: Id.optional(),
+          provider: z.string(),
+          connectorId: z.string().default("composio"),
+        }),
       )
       .output(z.object({ ok: z.literal(true) })),
   },
@@ -857,7 +1051,12 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     rename: oc
-      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .input(
+        z.object({
+          connectionId: Id,
+          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+        }),
+      )
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
@@ -872,6 +1071,12 @@ export const appContract = {
   },
   /** External messaging surface: link state, group channels, agent connections. */
   messaging: {
+    installations: {
+      list: oc.output(MessagingInstallationsStatusSchema),
+      /** Without a bot, the workspace answers as the first bot in the user's default space. */
+      start: oc.input(z.object({ botId: Id.optional() })).output(z.object({ url: z.string() })),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
@@ -903,21 +1108,79 @@ export const appContract = {
     },
   },
   approvalRules: {
-    list: oc.output(z.array(ActionApprovalRuleSchema)),
+    list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
+    preview: oc
+      .input(
+        settingsScopeInput.extend({
+          id: Id,
+          effect: z.enum(["always_allow", "deny", "remove"]),
+          sample: z.object({
+            tools: z
+              .array(
+                z.object({
+                  name: z.string().trim().min(1).max(200),
+                  connectorKind: z.string().trim().min(1).max(200).optional(),
+                  readOnly: z.boolean().optional(),
+                }),
+              )
+              .min(1)
+              .max(20),
+            wrapper: z
+              .object({
+                name: z.string().trim().min(1).max(200),
+                connectorKind: z.string().trim().min(1).max(200).optional(),
+              })
+              .optional(),
+            site: z.string().trim().min(1).max(253).optional(),
+          }),
+        }),
+      )
+      .output(ApprovalRulePreviewSchema),
     set: oc
       .input(
-        z.object({
-          effect: z.enum(["always_allow", "require_approval"]),
-          matchKind: z.enum(["tool", "connector", "category"]),
+        settingsScopeInput.extend({
+          effect: z.enum(["always_allow", "deny"]),
+          matchKind: z.enum(["tool", "connector", "site"]),
           matchValue: z.string().min(1),
         }),
       )
       .output(ActionApprovalRuleSchema),
-    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    remove: oc
+      .input(settingsScopeInput.extend({ id: Id }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  /**
+   * Sites the signed-in user opens from chat links without the external-link prompt, in every
+   * space. The server computes each site from a link; bot fetches never read this list.
+   */
+  trustedLinkSites: {
+    list: oc.output(z.array(z.string())),
+    trust: oc
+      .input(z.object({ url: z.string().min(1).max(8192) }))
+      .output(z.object({ site: z.string() })),
+    remove: oc
+      .input(z.object({ site: z.string().min(1).max(253) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   autoReview: {
-    get: oc.output(ActionAutoReviewSettingsSchema),
-    set: oc.input(z.object({ enabled: z.boolean() })).output(ActionAutoReviewSettingsSchema),
+    get: oc.input(settingsScopeInput.optional()).output(ActionAutoReviewSettingsSchema),
+    set: oc
+      .input(
+        settingsScopeInput.extend({
+          mode: ApprovalModeSchema.optional(),
+          enabled: z.boolean().optional(),
+          skipApprovals: z.boolean().optional(),
+        }),
+      )
+      .output(ActionAutoReviewSettingsSchema),
+  },
+  /** Which account settings the bound Space overrides for the member. */
+  spaceSettings: {
+    overrides: oc.output(z.array(SpaceSettingSchema)),
+    /** Customizing copies the account's settings into the Space; ending it drops the copy. */
+    setOverride: oc
+      .input(z.object({ setting: SpaceSettingSchema, enabled: z.boolean() }))
+      .output(z.array(SpaceSettingSchema)),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
@@ -956,18 +1219,15 @@ export const appContract = {
   },
   usage: {
     list: oc.output(z.array(UsageRecordSchema)),
-    summary: oc.output(
-      z.object({
-        inputTokens: z.number().nullable(),
-        outputTokens: z.number().nullable(),
-        totalTokens: z.number().nullable().optional(),
-        modelCalls: z.number().optional(),
-        runs: z.number(),
-      }),
-    ),
+    summary: oc.output(UsageSummarySchema),
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
+    /**
+     * A one-time token for `GET /api/account/export?token=`, which streams the account zip. Needs
+     * a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED).
+     */
+    accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
     registerPush: oc
@@ -992,16 +1252,23 @@ export const appContract = {
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
   },
+  /** The signed-in user's wallet; absent when the deployment offers none. */
+  paymentWallet: {
+    status: oc.output(PaymentWalletStatusSchema),
+    /** Starts a sign-in the user finishes with the provider; `status` then reports it. */
+    connect: oc.output(PaymentWalletStatusSchema),
+    disconnect: oc.output(PaymentWalletStatusSchema),
+  },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
-    status: oc.output(VoiceStatusSchema),
-    credentials: oc.output(z.array(VoiceCredentialSchema)),
+    status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
         z
           .object({
             provider: z.string(),
-            /** Optional only for a self-hosted server, which may run without a key. */
+            /** Optional for a self-hosted server and for providers without keys. */
             apiKey: z.string().max(4096).default(""),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
@@ -1009,14 +1276,13 @@ export const appContract = {
             baseUrl: z.string().max(2048).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
+            /** Where the connection becomes the default voice. */
+            scope: SettingsScopeSchema.optional(),
           })
           .superRefine((input, ctx) => {
-            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-              if (!input.baseUrl?.trim()) {
-                ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Enter a server URL." });
-              }
-            } else if (input.apiKey.length < 8) {
-              ctx.addIssue({ code: "custom", path: ["apiKey"], message: "Enter an API key." });
+            // Hosted keys are checked by the server, which knows which providers are keyless.
+            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID && !input.baseUrl?.trim()) {
+              ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Enter a server URL." });
             }
           }),
       )
@@ -1025,13 +1291,23 @@ export const appContract = {
       .input(z.object({ provider: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
     setVoice: oc
-      .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          voiceId: z.string().min(1).max(120),
+          provider: z.string().optional(),
+        }),
+      )
       .output(VoiceStatusSchema),
     setSpeechModel: oc
-      .input(z.object({ provider: z.string().min(1), speechModel: z.string().max(64) }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().min(1),
+          speechModel: z.string().max(64),
+        }),
+      )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(z.object({ provider: z.string().optional() }))
+      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(
@@ -1039,6 +1315,7 @@ export const appContract = {
           text: z.string().max(20000),
           voiceId: z.string().max(120).optional(),
           botId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
@@ -1053,6 +1330,16 @@ export const appContract = {
     put: oc.input(AgentSecretInputSchema).output(AgentSecretSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
+  vault: {
+    list: oc.input(settingsScopeInput.optional()).output(z.array(BotSecretMetadata)),
+    put: oc.input(VaultPutInput).output(BotSecretMetadata),
+    /** Needs a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED). */
+    reveal: oc.input(VaultRevealInput).output(VaultRevealed),
+    remove: oc
+      .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  /** The vault this Space uses, for apps that predate it. The bot only checks access. */
   botSecrets: {
     list: oc.input(z.object({ botId: Id })).output(z.array(BotSecretMetadata)),
     put: oc.input(BotSecretPutInput).output(BotSecretMetadata),
@@ -1063,3 +1350,24 @@ export const appContract = {
 };
 
 export type AppContract = typeof appContract;
+
+type ProcedurePaths<Router, Prefix extends string = ""> = {
+  [Key in keyof Router & string]: Router[Key] extends AnyContractProcedure
+    ? `${Prefix}${Key}`
+    : ProcedurePaths<Router[Key], `${Prefix}${Key}/`>;
+}[keyof Router & string];
+
+type AtPath<Tree, Path extends string> = Path extends `${infer Head}/${infer Rest}`
+  ? Head extends keyof Tree
+    ? AtPath<Tree[Head], Rest>
+    : never
+  : Path extends keyof Tree
+    ? Tree[Path]
+    : never;
+
+/** A procedure's URL path under `/rpc/`, such as `bots/list`. */
+export type RpcPath = ProcedurePaths<AppContract>;
+type RpcInputs = { [Path in RpcPath]: AtPath<InferContractRouterInputs<AppContract>, Path> };
+type RpcOutputs = { [Path in RpcPath]: AtPath<InferContractRouterOutputs<AppContract>, Path> };
+export type RpcInput<Path extends RpcPath> = RpcInputs[Path];
+export type RpcOutput<Path extends RpcPath> = RpcOutputs[Path];

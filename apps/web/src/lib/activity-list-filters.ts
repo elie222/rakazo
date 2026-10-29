@@ -44,11 +44,7 @@ export function activityPreview(run: RunActivityRow): string {
 export function activitySearchHaystack(run: RunActivityRow): string {
   const parts = [run.botName];
   if (run.groupName) {
-    parts.push(
-      run.groupName,
-      `${run.botName} ${run.groupName}`,
-      `${run.botName} · ${run.groupName}`,
-    );
+    parts.push(run.groupName, `${run.botName} ${run.groupName}`);
   }
   parts.push(activityPreview(run));
   return parts.join(" ").toLowerCase();

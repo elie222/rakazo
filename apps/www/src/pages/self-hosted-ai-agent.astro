@@ -17,7 +17,7 @@ import {
   SOURCE_CHECKOUT,
   SOURCE_DEV,
 } from "../guide";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
 import {
@@ -30,8 +30,7 @@ import {
   SETUP_PROMPT_URL,
 } from "../site";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
 ---
 
@@ -78,6 +77,18 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         any remote computer provider you choose. Local Docker computers are the default, so a single
         machine does not need an E2B, Daytona, CreateOS, or Boat account.
       </p>
+
+      <h2 id="self-host-only">Self-host only, for now</h2>
+      <p>These work on your own deployment and are not yet on Rakazo Cloud. Each turns on from <code>.env</code>.</p>
+      <ul>
+        <li><strong>Telegram, WhatsApp, iMessage and SMS, Feishu and Lark.</strong> Add the platform's credentials: <code>TELEGRAM_BOT_TOKEN</code>, <code>WHATSAPP_*</code>, <code>SENDBLUE_*</code> (iMessage and SMS), or <code>LARK_*</code>.</li>
+        <li><strong>Image and video generation.</strong> <code>MEDIA_GENERATION_PROVIDER=fal</code>, <code>MEDIA_GENERATION_API_KEY</code>, and an image or video model (<code>MEDIA_GENERATION_IMAGE_MODEL</code>, <code>MEDIA_GENERATION_VIDEO_MODEL</code>).</li>
+        <li><strong>Purchases with Stripe Link.</strong> <code>PAYMENT_WALLET_PROVIDER=link</code>. Each purchase waits for your approval in Link.</li>
+        <li><strong>Cursor cloud agents.</strong> <code>CLOUD_AGENT_PROVIDER=cursor</code>, <code>CURSOR_API_KEY</code>, and <code>CLOUD_AGENT_SPACE_ID</code>.</li>
+        <li><strong>Ticket board.</strong> <code>TICKET_BOARD_ENABLED=true</code>.</li>
+        <li><strong>Local models and local MCP servers.</strong> <code>RAKAZO_LOCAL_MODELS</code>, and <code>MCP_STDIO_ENABLED</code> with <code>MCP_STDIO_ALLOWED_COMMANDS</code>.</li>
+      </ul>
+      <p>The <a href={DOCS_URL}>full guide</a> lists every setting for each one.</p>
 
       <h2>Requirements</h2>
       <ul>

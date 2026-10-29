@@ -18,7 +18,7 @@ function fixture(count = 30) {
     id: `message-${index}`,
     createdAt: "2026-01-01T00:00:00Z",
     role: "user" as const,
-    content: `Original discussion ${index}: ${"synthetic history ".repeat(30)}`,
+    content: `Original discussion ${index}: ${"synthetic history ".repeat(100)}`,
   }));
   const request: AgentRunRequest = {
     botId: "bot",
@@ -49,7 +49,102 @@ function enableHistoryRetrieval(request: AgentRunRequest) {
   }));
   request.executeTool = async () => ({});
 }
+function connectorPages() {
+  const { request, context } = fixture(0);
+  const bodies = Array.from({ length: 14 }, (_, index) => `Page ${index}: ${"0".repeat(9500)}`);
+  context.messages.push({
+    role: "assistant",
+    content: bodies.map((_, index) => ({
+      type: "toolCall",
+      id: `page-${index}`,
+      name: "connectors_execute_tool",
+      arguments: {},
+    })),
+    timestamp: 101,
+  } as Message);
+  for (const [index, body] of bodies.entries()) {
+    context.messages.push({
+      role: "toolResult",
+      toolCallId: `page-${index}`,
+      toolName: "connectors_execute_tool",
+      content: [{ type: "text", text: body }],
+      isError: false,
+      timestamp: 102,
+    });
+  }
+  context.messages.push(
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "later", name: "shell", arguments: {} }],
+      timestamp: 103,
+    } as Message,
+    {
+      role: "toolResult",
+      toolCallId: "later",
+      toolName: "shell",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: 104,
+    },
+  );
+  return { request, context, bodies };
+}
+
 describe("runtime context policy", () => {
+  it.each([200_000, 80_000])(
+    "retains connector pages newest-first within a %i context budget",
+    (contextWindow) => {
+      const { request, context, bodies } = connectorPages();
+      const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+      const prepared = policy.prepareContext(context, { ...model, contextWindow });
+      const pages = prepared.messages.filter(
+        (message) =>
+          message.role === "toolResult" && message.toolName === "connectors_execute_tool",
+      );
+      expect(pages).toHaveLength(14);
+      const whole = pages.map(
+        (message, index) =>
+          JSON.stringify(message.content) ===
+          JSON.stringify([{ type: "text", text: bodies[index] }]),
+      );
+      if (contextWindow === 200_000) expect(whole).toEqual(bodies.map(() => true));
+      else {
+        const firstWhole = whole.indexOf(true);
+        expect(firstWhole).toBeGreaterThan(0);
+        expect(firstWhole).toBeLessThan(10);
+        expect(whole).toEqual(whole.map((_, index) => index >= firstWhole));
+        for (const page of pages.slice(0, firstWhole))
+          expect(JSON.stringify(page.content)).toContain(
+            "Earlier result shortened after you read it",
+          );
+      }
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(contextWindow - 4096);
+    },
+  );
+
+  it("never restores shortened connector pages on later rebuilds with more room", () => {
+    const { request, context } = connectorPages();
+    const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+    const first = policy.prepareContext(context, { ...model, contextWindow: 25_000 });
+    const shortened = first.messages.filter(
+      (message): message is Extract<Message, { role: "toolResult" }> =>
+        message.role === "toolResult" &&
+        JSON.stringify(message.content).includes("Earlier result shortened after you read it"),
+    );
+    expect(shortened.length).toBeGreaterThan(0);
+    const next = policy.prepareContext(
+      { ...context, systemPrompt: "Changed instructions" },
+      { ...model, contextWindow: 200_000 },
+    );
+    for (const page of shortened) {
+      expect(
+        next.messages.find(
+          (message) => message.role === "toolResult" && message.toolCallId === page.toolCallId,
+        ),
+      ).toEqual(page);
+    }
+  });
+
   it("preserves fitting history with oversized output and warns once per policy", () => {
     const { request, context } = fixture(30);
     request.model.contextWindow = 32_768;
@@ -218,7 +313,7 @@ describe("runtime context policy", () => {
       readOnly: false,
       content: `---\nname: daily-brief\n---\n${"1. Step kept for skill_update.\n".repeat(80)}`,
     });
-    const shellOutput = "synthetic shell output ".repeat(100);
+    const shellOutput = "synthetic shell output ".repeat(3000);
     context.messages.push(
       call("read", "skill_read"),
       result("read", "skill_read", skill),
@@ -226,7 +321,7 @@ describe("runtime context policy", () => {
       result(
         "fleet",
         "list_fleet",
-        JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+        JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "0".repeat(20_000) } }),
       ),
       call("shell-1", "shell"),
       result("shell-1", "shell", shellOutput),
@@ -241,7 +336,7 @@ describe("runtime context policy", () => {
       ...request,
       contextStrategy: DEFAULT_CONTEXT_STRATEGY,
     });
-    const prepared = policy.prepareContext(context, model);
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 100_000 });
     const body = (id: string) => {
       const message = prepared.messages.find(
         (message) => message.role === "toolResult" && message.toolCallId === id,
@@ -249,7 +344,7 @@ describe("runtime context policy", () => {
       return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
     };
     expect(body("fleet")).toBe(
-      JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+      JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "0".repeat(20_000) } }),
     );
     expect(skill.length).toBeGreaterThan(2500);
     expect(body("read")).toBe(skill);
@@ -263,7 +358,7 @@ describe("runtime context policy", () => {
     "retains individual parallel results within a %i budget",
     (contextWindow) => {
       const { request, context } = fixture(0);
-      const bodies = Array.from({ length: 4 }, (_, i) => `${i}: ${"evidence ".repeat(400)}`);
+      const bodies = Array.from({ length: 4 }, (_, i) => `${i}: ${"evidence ".repeat(1333)}`);
       context.messages.push({
         role: "assistant",
         content: bodies.slice(0, 3).map((_, i) => ({
@@ -300,7 +395,7 @@ describe("runtime context policy", () => {
       const results = selected.messages.filter((message) => message.role === "toolResult");
       expect(results).toHaveLength(4);
       for (const [i, result] of results.entries()) {
-        if ((contextWindow === 65_536 && i > 0) || i === 3)
+        if (contextWindow === 65_536 || i === 3)
           expect(result.content).toEqual([{ type: "text", text: bodies[i] }]);
         else
           expect(JSON.stringify(result.content)).toContain(

@@ -45,7 +45,9 @@ export function novncPageRequestHeaders<T extends Record<string, unknown>>(heade
 
 /**
  * Headers for a rewritten noVNC page. Capability URLs are reused while their seal is valid, so a
- * cached page would outlive a proxy change; the rewritten page is never stored.
+ * cached page would outlive a proxy change; the rewritten page is never stored. A CDN in front of
+ * the web service must not rewrite it either: script injection, minification and script loaders
+ * break noVNC's module scripts, and `no-transform` is the signal CDNs honour.
  */
 export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {
   const {
@@ -55,16 +57,24 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
     expires: _expires,
     ...rest
   } = headers;
-  return { ...rest, "cache-control": "no-store" };
+  return { ...rest, "cache-control": "no-store, no-transform" };
 }
 
 /**
- * Replace both storages, and keep browser extensions from taking the page down. Their content
- * scripts run inside the sandboxed document too; one reading storage throws a SecurityError
- * that noVNC's global error handler would otherwise show in place of the screen.
+ * Replace both storages, keep browser extensions from taking the page down, and report the
+ * screen's state to the app. Extension content scripts run inside the sandboxed document too;
+ * one reading storage throws a SecurityError that noVNC's global error handler would otherwise
+ * show in place of the screen. The app cannot see into the frame, so the page posts "loading" as
+ * soon as it runs and then follows noVNC's connection classes (which Rakazo's own embed page
+ * sets as well) and its status bar.
  */
-export function injectNovncStorageShim(html: string) {
-  const shim = `<script>
+export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) {
+  // The app shows the screen's state itself, and noVNC's status bar names the provider's host.
+  // Its side panel only has controls to offer while the user has control.
+  const chrome = `<style>#noVNC_status{display:none!important}${
+    viewOnly ? "#noVNC_control_bar_anchor{display:none!important}" : ""
+  }</style>`;
+  const shim = `${chrome}<script>
 (() => {
   const memoryStorage = () => {
     const items = new Map();
@@ -81,6 +91,78 @@ export function injectNovncStorageShim(html: string) {
   window.addEventListener("error", (event) => {
     if (/^[a-z-]+-extension:/.test(String(event.filename))) event.stopImmediatePropagation();
   }, true);
+  // noVNC probes WebCodecs H.264 support while its modules evaluate. On some Android devices
+  // VideoDecoder.flush() never returns, so the page never starts. Screens never use H.264.
+  try { delete window.VideoDecoder; } catch {}
+  // The app cannot look into this sandboxed frame, so tell it how the screen is doing.
+  const report = (rakazoScreen, detail) => {
+    try {
+      window.parent.postMessage(detail ? { rakazoScreen, detail } : { rakazoScreen }, "*");
+    } catch {}
+    // The mobile app's WebView hears only the state word: no URL and none of the page's text.
+    try {
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ rakazoScreen }));
+    } catch {}
+  };
+  // A reconnected screen takes the keyboard back when the app asks; nothing else is accepted.
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (
+      event.source !== window.parent ||
+      !data ||
+      typeof data !== "object" ||
+      Object.keys(data).length !== 1 ||
+      data.rakazoScreenFocus !== true
+    )
+      return;
+    const canvas = document.querySelector("#screen canvas, #noVNC_container canvas, canvas");
+    try {
+      canvas?.focus();
+    } catch {}
+  });
+  let last = "";
+  // Pages that never set noVNC's classes (older Rakazo embed images) still build their viewer
+  // canvas, which is as far as they can be followed.
+  let classed = false;
+  const sync = () => {
+    const root = document.documentElement;
+    const status = document.getElementById("noVNC_status");
+    const failure = root.getAttribute("data-rakazo-screen-error");
+    const statusError =
+      status && status.classList.contains("noVNC_open") && status.classList.contains("noVNC_status_error");
+    const connecting =
+      root.classList.contains("noVNC_connecting") || root.classList.contains("noVNC_reconnecting");
+    const connected = root.classList.contains("noVNC_connected");
+    if (connecting || connected) classed = true;
+    const state = connected
+      ? "connected"
+      : failure !== null || statusError
+        ? "failed"
+        : connecting
+          ? "connecting"
+          : classed
+            ? last === "connected" || last === "connecting"
+              ? "disconnected"
+              : ""
+            : document.querySelector("#screen canvas")
+              ? "connecting"
+              : "";
+    if (!state || state === last) return;
+    last = state;
+    report(state, state === "failed" ? failure || String(status?.textContent || "") : undefined);
+  };
+  const observe = () => {
+    sync();
+    new MutationObserver(sync).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-rakazo-screen-error"],
+      childList: true,
+      subtree: true,
+    });
+  };
+  report("loading");
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observe);
+  else observe();
 })();
 </script>`;
   return html.includes("<head>")

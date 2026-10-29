@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactPreview } from "../lib/artifact-open";
@@ -80,9 +88,14 @@ export function InlineImageAttachment({
     <Pressable {...pressableProps} onPress={state.status === "error" ? onOpen : undefined}>
       <View style={[styles.placeholder, { backgroundColor: tokens.muted }]}>
         <Text style={[styles.label, { color: labelColor }]}>🖼 {name}</Text>
-        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
-          {state.status === "loading" ? t("Loading image…") : t("Tap to open")}
-        </Text>
+        {state.status === "loading" ? (
+          <ActivityIndicator
+            color={tokens.mutedForeground}
+            accessibilityLabel={t("Loading image…")}
+          />
+        ) : (
+          <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{t("Tap to open")}</Text>
+        )}
       </View>
     </Pressable>
   );

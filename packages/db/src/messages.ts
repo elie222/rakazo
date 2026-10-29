@@ -38,8 +38,18 @@ export function loadRunHistoryMessages(
       replyToMessageId: true,
       replyQuote: true,
       replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+      clientNonce: true,
     },
   });
+}
+
+/** Marks the bot message that keeps the reply text of a run that failed partway through it. */
+export function partialReplyClientNonce(runId: string): string {
+  return `partial-reply:${runId}`;
+}
+
+export function isPartialReplyClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith("partial-reply:"));
 }
 
 export interface CreateThreadMessageInput {
@@ -103,11 +113,14 @@ export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
   options?: { allowCancelled?: boolean },
-): Promise<{ status: string; startedAt: Date | null } | undefined> {
+): Promise<
+  | { status: string; startedAt: Date | null; firstResponseAt: Date | null; userId: string }
+  | undefined
+> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
-    select: { status: true, startedAt: true },
+    select: { status: true, startedAt: true, firstResponseAt: true, userId: true },
   });
   if (!run || (run.status === "cancelled" && !options?.allowCancelled)) {
     throw new RunHistoryWriteError();

@@ -2,24 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import {
-  jsonField,
-  jsonSchemaParameters,
-  parametersFor,
-  prepareRequestSecretArguments,
-} from "./pi-runtime.js";
+import { jsonField, jsonSchemaParameters, parametersFor } from "./pi-runtime-tool-parameters.js";
+import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";
 
 /**
- * `pi-runtime` used to re-declare `request_secret`'s parameters by hand, and the
- * copy omitted `credential`. The model therefore never saw the one argument that
- * makes a credential persist: `request_secret` calls arrived with only
- * `{label, purpose}`, the submitted value had nowhere to be stored, and the tool
- * looked broken from the outside.
- *
- * These assert the canonical schema still carries what the executor requires, so
- * a future hand-rolled override has to fail here rather than silently drop a
- * field again — including the credential XOR connectionId exclusivity the
- * executor enforces.
+ * The canonical schema must carry what the executor requires, so a hand-rolled
+ * override fails here rather than silently dropping `credential` from the model.
  */
 function toolNamed(name: string) {
   const tool = builtinAgentTools.find((entry) => entry.name === name);
@@ -46,6 +34,12 @@ const sampleCredential = {
 };
 
 describe("request_secret parameters", () => {
+  it("tells the bot which login labels start visible, and that the user decides", () => {
+    const { description } = toolNamed("request_secret");
+    expect(description).toContain("ID, phone, email or username starts visible");
+    expect(description).toContain("The user decides which fields are hidden");
+  });
+
   it("exposes credential on the destination branch the executor persists", () => {
     const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
       (branch.required ?? []).includes("credential"),
@@ -60,6 +54,16 @@ describe("request_secret parameters", () => {
     const credential = credentialBranch?.properties?.credential?.properties ?? {};
     // normalizeSecretDestination rejects the call unless all three resolve.
     expect(Object.keys(credential).sort()).toEqual(["auth", "name", "origin"]);
+  });
+
+  it("tells the model what origin is for, since a command variable leaves it optional", () => {
+    const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
+      (branch.required ?? []).includes("credential"),
+    );
+    const origin = credentialBranch?.properties?.credential?.properties?.origin as
+      | { description?: string }
+      | undefined;
+    expect(origin?.description).toBeTruthy();
   });
 
   it("exposes connectionId on the mutually exclusive alternative branch", () => {
@@ -132,11 +136,9 @@ describe("request_secret parameters", () => {
   });
 
   it("exposes OpenAI-compatible parameters.type object for local servers", () => {
-    // LM Studio and similar validators reject tools[].function.parameters without
-    // type === "object" (and often without properties). request_secret is the
-    // builtin that previously serialized as a bare anyOf union. Anthropic rejects
-    // a root union outright, so the wire shape is one object with both destinations;
-    // the executor still enforces credential XOR connectionId.
+    // LM Studio and similar validators reject parameters without type === "object",
+    // and Anthropic rejects a root union, so the wire shape is one object with both
+    // destinations; the executor still enforces credential XOR connectionId.
     const wire = JSON.parse(JSON.stringify(parametersFor(toolNamed("request_secret")))) as {
       type?: unknown;
       properties?: Record<string, unknown>;
@@ -161,6 +163,28 @@ describe("prepareRequestSecretArguments", () => {
     ).toEqual({ label: "GitHub PAT", purpose: "api_key", credential: sampleCredential });
   });
 
+  it("keeps a page URL's site, not its path or query", () => {
+    expect(
+      prepareRequestSecretArguments({
+        label: "Sign in",
+        purpose: "password",
+        credential: {
+          name: "site_login",
+          origin: "https://www.example.test/some/login/page?x=1",
+          auth: { type: "login" },
+        },
+      }),
+    ).toEqual({
+      label: "Sign in",
+      purpose: "password",
+      credential: {
+        name: "site_login",
+        origin: "https://www.example.test",
+        auth: { type: "login" },
+      },
+    });
+  });
+
   it("keeps replace, so an existing credential can be overwritten", () => {
     const credential = { name: "x", origin: "https://api.example.com", auth: { type: "bearer" } };
     const out = prepareRequestSecretArguments({
@@ -170,6 +194,26 @@ describe("prepareRequestSecretArguments", () => {
       replace: true,
     });
     expect(out).toMatchObject({ replace: true, credential });
+  });
+
+  it("keeps only the labels of a login's fields, never a hidden choice or a value", () => {
+    const credential = {
+      name: "bank",
+      origin: "https://bank.example.test",
+      auth: { type: "login" },
+    };
+    const out = prepareRequestSecretArguments({
+      label: "Bank",
+      purpose: "password",
+      credential,
+      fields: ["ID number", { label: "Phone number", hidden: false, value: "fake-planted" }],
+    });
+    expect(out).toEqual({
+      label: "Bank",
+      purpose: "password",
+      credential,
+      fields: ["ID number", "Phone number"],
+    });
   });
 
   it("still passes connectionId for the connector-code path", () => {
@@ -311,9 +355,8 @@ describe("prepareRequestSecretArguments", () => {
 
 describe("jsonField union handling", () => {
   it("converts a discriminated union instead of defaulting to string", () => {
-    // BotSecretAuth converts to oneOf with no sibling `type`. Treating that as a
-    // string told the model to send `auth: "bearer"`, which the executor then
-    // rejected -- observed twice against the live deployment.
+    // BotSecretAuth converts to oneOf with no sibling `type`; as a string the model
+    // would send `auth: "bearer"`, which the executor rejects.
     const authSchema = {
       oneOf: [
         { type: "object", properties: { type: { type: "string", const: "bearer" } } },
@@ -334,9 +377,7 @@ describe("jsonField union handling", () => {
 
 describe("jsonField const handling", () => {
   it("preserves a const so the model knows the only accepted value", () => {
-    // BotSecretAuth's discriminator is {type: {type:"string", const:"bearer"}}.
-    // Degrading that to a plain string left the model guessing: recorded calls
-    // sent auth.type as "api_key" and "authorization_bearer" before this.
+    // A plain string would leave the model guessing the discriminator value.
     // enumUnion wraps literals, so the value lands inside a single-member union.
     expect(JSON.stringify(jsonField({ type: "string", const: "bearer" }))).toContain(
       '"const":"bearer"',
@@ -345,5 +386,35 @@ describe("jsonField const handling", () => {
 
   it("leaves a plain string alone", () => {
     expect(JSON.stringify(jsonField({ type: "string" }))).not.toContain("const");
+  });
+});
+
+describe("request_secret login card arguments", () => {
+  const login = {
+    name: "example-login",
+    origin: "https://login.example.test",
+    auth: { type: "login" },
+  };
+
+  it("accepts a login without a password as labeled fields", () => {
+    const schema = requestSecretSchema();
+    expect(
+      parseConnectorToolArgs(schema, {
+        label: "Example sign-in",
+        purpose: "password",
+        credential: login,
+        fields: ["ID number", "Phone"],
+      }),
+    ).toMatchObject({ credential: login, fields: ["ID number", "Phone"] });
+  });
+
+  it("rejects a purpose outside the allowed values and an empty field list", () => {
+    const schema = requestSecretSchema();
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "c", purpose: "login", credential: login }),
+    ).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "c", purpose: "otp", credential: login, fields: [] }),
+    ).toThrow();
   });
 });

@@ -3,6 +3,8 @@ import { hostMatchesPasskeyRpId } from "@rakazo/core";
 import { WebAuthnAbortService } from "@simplewebauthn/browser";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { fetchAuthCapabilities } from "./auth-capabilities";
+import type { RakazoDesktop } from "./desktop";
+import { desktopBridge } from "./desktop";
 import { authErrorText } from "./user-error";
 
 type PasskeyBrowser = {
@@ -10,26 +12,43 @@ type PasskeyBrowser = {
   credential?: {
     isUserVerifyingPlatformAuthenticatorAvailable?: () => Promise<boolean>;
   };
+  desktop?: Pick<RakazoDesktop, "platform" | "passkeys">;
 };
 
 function currentBrowser(): PasskeyBrowser {
   return {
     host: window.location.hostname,
     credential: typeof PublicKeyCredential === "undefined" ? undefined : PublicKeyCredential,
+    desktop: desktopBridge(),
   };
+}
+
+/** The macOS app reaches passkeys through the system sheet, which serves only its associated domains. */
+function systemPasskeysDesktop(desktop: PasskeyBrowser["desktop"]): boolean {
+  return desktop?.platform === "darwin";
+}
+
+async function desktopAssociated(desktop: PasskeyBrowser["desktop"], rpId: string) {
+  if (!systemPasskeysDesktop(desktop)) return true;
+  try {
+    return (await desktop?.passkeys?.rpIds())?.includes(rpId.toLowerCase()) === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Whether this page can use passkeys: the server offers a relying party this host
- * belongs to, and the browser has a ready platform authenticator. Electron on macOS
- * reports none without WebAuthn configured, so it is hidden there by detection.
+ * belongs to, and the browser has a ready platform authenticator. The macOS app also
+ * needs to be associated with that relying party, or the system sheet refuses it.
  */
 export async function passkeysSupported(
   rpId: string | null | undefined,
   browser: PasskeyBrowser = currentBrowser(),
 ): Promise<boolean> {
   if (!browser.credential?.isUserVerifyingPlatformAuthenticatorAvailable) return false;
-  if (!hostMatchesPasskeyRpId(browser.host, rpId)) return false;
+  if (!rpId || !hostMatchesPasskeyRpId(browser.host, rpId)) return false;
+  if (!(await desktopAssociated(browser.desktop, rpId))) return false;
   try {
     return await browser.credential.isUserVerifyingPlatformAuthenticatorAvailable();
   } catch {
@@ -80,8 +99,14 @@ export function cancelPasskeyRequest() {
   WebAuthnAbortService.cancelCeremony();
 }
 
-export async function conditionalPasskeyAvailable(): Promise<boolean> {
-  if (typeof PublicKeyCredential === "undefined") return false;
+/**
+ * Electron's system passkey sheet is modal and has no autofill mode, so on macOS a
+ * conditional request would open it as soon as the form appears. The button opens it instead.
+ */
+export async function conditionalPasskeyAvailable(
+  desktop: PasskeyBrowser["desktop"] = desktopBridge(),
+): Promise<boolean> {
+  if (typeof PublicKeyCredential === "undefined" || systemPasskeysDesktop(desktop)) return false;
   try {
     return (await PublicKeyCredential.isConditionalMediationAvailable?.()) === true;
   } catch {

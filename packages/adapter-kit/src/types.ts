@@ -1,6 +1,7 @@
 import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
+  PurchaseCardField,
   SandboxKind,
 } from "@rakazo/contracts";
 
@@ -78,6 +79,22 @@ export interface PortableFile {
   executable?: boolean;
 }
 
+/**
+ * A workspace file too large to hold in memory. Read `body` to the end before asking the export
+ * for its next file.
+ */
+export interface StreamedPortableFile {
+  path: string;
+  body: AsyncIterable<Uint8Array>;
+  executable?: boolean;
+}
+
+/** Bounds a workspace export may enforce up front, before copying anything. */
+export interface WorkspaceExportLimits {
+  maxBytes: number;
+  maxFiles: number;
+}
+
 export interface ComputerRef {
   id: string;
   botId: string;
@@ -126,6 +143,8 @@ export interface TerminalRequest {
 }
 
 export interface ScreenSession {
+  /** Provider credentials for the server proxy only; never return these to clients. */
+  headers?: Record<string, string>;
   url: string | null;
   mimeType: string;
   close(): Promise<void>;
@@ -144,7 +163,14 @@ export type ComputerInput =
 
 export type ComputerAction =
   | ComputerInput
-  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  /** With x and y, the wheel turns there, so it scrolls what is under that point. */
+  | {
+      kind: "scroll";
+      direction: "up" | "down" | "left" | "right";
+      amount?: number;
+      x?: number;
+      y?: number;
+    }
   | { kind: "wait"; ms: number }
   | { kind: "open"; path: string }
   | { kind: "launch"; application: string; uri?: string }
@@ -238,8 +264,21 @@ export interface ConnectorTool {
   inputSchema: Record<string, unknown>;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
+  /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
+  batch?: ToolBatch;
   /** In-process routing metadata. It is never exposed to the model. */
   route?: ConnectorRoute;
+}
+
+/**
+ * Where a batch tool's arguments name the actions it runs: `args[items][i][action]`, each with
+ * its own arguments at `args[items][i][arguments]`. Approval rules and the read/write check judge
+ * those actions, never the batch tool, so allowing one action cannot allow the rest.
+ */
+export interface ToolBatch {
+  items: string;
+  action: string;
+  arguments: string;
 }
 
 export interface ConnectorRoute {
@@ -413,24 +452,36 @@ export interface AgentSteeringMessage {
   id: string;
   messageId: string;
   text: string;
+  /**
+   * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
+   * else, or no origin, is passed on as a neutral note.
+   */
+  origin?: "user" | "member" | "messaging" | "webhook";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  imageFileFallback?: boolean;
 }
 
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
 export interface AgentRunModel {
+  /** Server-side spending authorization, carried with the resolved credential. */
+  callObserver?: ModelCallObserver;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
+  /** Opaque id of the stored connection serving it, so a model can fall back to another account. */
+  connectionId?: string;
   apiKey?: string;
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
@@ -483,17 +534,31 @@ export interface AgentRunRequest {
     images?: AgentInputImage[];
   }>;
   currentTurnImages?: AgentInputImage[];
+  /** A confirmed image belongs to this run, including a resumed waiting-input reply. */
+  currentRunRequiresImageInput?: boolean;
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
-  fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id">>;
+  fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id" | "connectionId">>;
   /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
-  resolveFallbackModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
+  resolveFallbackModel?: (
+    provider: string,
+    modelId: string,
+    connectionId?: string,
+  ) => Promise<AgentRunModel>;
   /** Persist the selected backup against the active run lease before requesting it. */
   onModelChange?: (provider: string, modelId: string) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
+  /** Opaque runtime transcript, persisted only on the server. */
+  turnCheckpoint?: string;
+  /** Cheap per-call capture; serialize only when persisting that call’s human pause. */
+  onCheckpoint?: (capture: () => string, executionId: string) => Promise<void>;
+  /** Human answer or takeover outcome for the pending interaction. Never secret input. */
+  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -529,6 +594,8 @@ export interface ScriptedTurn {
  * Input excludes cache buckets. Reasoning is already included in output.
  */
 export interface AgentUsage {
+  providerRequestId?: string | null;
+  operationKind?: UsageOperationKind;
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens?: number | null;
@@ -539,6 +606,7 @@ export interface AgentUsage {
   costUsd?: number | null;
   costSource?: string | null;
   pricingVersion?: string | null;
+  pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
 }
 
@@ -546,20 +614,34 @@ export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" |
 
 export interface ModelCallObserver {
   beforeCall(call: {
+    callId?: string;
+    runId?: string;
+    operationKind?: UsageOperationKind;
     provider: string;
     modelId: string;
     inputTokensEstimate: number;
     maxOutputTokens: number;
+    /** Conservative dollar bound from the resolved model pricing; absent means unknown. */
+    maxCostUsd?: number;
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
     cacheWriteRetention?: "1h";
   }): string | Promise<string>;
   afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+  onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;
 }
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
+  /** Explicit provider reasoning lifecycle only; never contains reasoning text. */
+  | { type: "thinking"; active: boolean }
   /** A new assistant message starts; its text does not continue the previous text. */
   | { type: "turn" }
+  /** Messages sent while the bot worked were handed to the model before this turn. */
+  | {
+      type: "steered";
+      /** At least one came from the run's own person, in the app or a connected chat. */
+      fromRunUser: boolean;
+    }
   | {
       type: "progress";
       text: string;
@@ -569,11 +651,12 @@ export type AgentRuntimeEvent =
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";
+      executionId?: string;
       text: string;
       detail?: string;
       actions?: Array<{ id: string; label: string }>;
     }
-  | { type: "takeover"; reason: string }
+  | { type: "takeover"; reason: string; executionId?: string }
   | ({
       type: "usage";
       /** Producer-side onUsage completed; consumers must not account it again. */
@@ -660,8 +743,10 @@ export interface BackgroundJobPayloads {
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string };
   "messaging.deliver": { runId?: string };
+  "messaging.credential-cleanup": { installationId: string; ref: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "purchase.poll": { purchaseId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
@@ -690,8 +775,16 @@ export type BackgroundJob = {
   };
 }[BackgroundJobName];
 
+export interface BackgroundJobExecution {
+  /** Release the dispatch slot only after durable run ownership and heartbeat setup. */
+  onRunStarted(): void;
+}
+
 export type BackgroundJobHandlers = {
-  [Name in BackgroundJobName]: (payload: BackgroundJobPayloads[Name]) => Promise<void>;
+  [Name in BackgroundJobName]: (
+    payload: BackgroundJobPayloads[Name],
+    execution?: BackgroundJobExecution,
+  ) => Promise<void>;
 };
 
 export interface SecretRecord {
@@ -722,6 +815,8 @@ export interface NotificationMessage {
   threadId: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
+  /** Unread chats to show on the app icon, when the sender knows them. */
+  badge?: number;
 }
 
 /** A product-authored transactional email, independent of its delivery vendor. */
@@ -730,6 +825,7 @@ export interface TransactionalEmail {
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
 }
 
 export type MessagingReceipt = "typing" | "reaction";
@@ -738,12 +834,16 @@ export interface MessagingCapabilities {
   direct: boolean;
   groups: boolean;
   receipt: MessagingReceipt | null;
+  /** Sends image and file attachments. Absent means replies go out as text only. */
+  files?: boolean;
 }
 
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
 export interface MessagingPlatformDescriptor {
   provider: string;
   capabilities: MessagingCapabilities;
+  /** The line people message to reach this deployment (a phone number), when it has one. */
+  address?: string;
 }
 
 /** Send into an existing conversation, addressed by its opaque thread id. */
@@ -752,6 +852,15 @@ export interface MessagingSendRequest {
   body: string;
   /** Stable key so retries of the same logical send can be deduped upstream. */
   idempotencyKey?: string;
+  /** A file to post as this message; only sent to platforms with the `files` capability. */
+  attachment?: MessagingOutboundAttachment;
+}
+
+/** An outbound file, already read from the artifact store. */
+export interface MessagingOutboundAttachment {
+  name: string;
+  mimeType: string;
+  data: Uint8Array;
 }
 
 export interface MessagingSendResult {
@@ -788,13 +897,16 @@ export interface MessagingInboundMessage {
   mentionsBot?: boolean;
   /** Team-room workspace/team id when the platform reports one (Slack team_id, …). */
   workspaceId?: string;
+  /** Trusted installation owner, attached only after webhook verification. */
+  installationId?: string;
+  installationSpaceId?: string;
+  installationBotId?: string;
   /** Stable conversation key within the workspace (channel id, DM key, …). */
   conversationKey?: string;
   /** How this message should engage the team-chat bot. */
   kind?: TeamChatMessageKind;
   /** Provider thread id for in-channel replies (Slack thread_ts); null for channel root. */
   replyThreadId?: string | null;
-  /** True when the sender is another bot/app. */
   senderIsBot?: boolean;
   /** Display names for room participants when the platform reports them. */
   participantNames?: string[];
@@ -878,6 +990,8 @@ export interface WebSearchHit {
 export interface WebFetchRequest {
   url: string;
   maxChars?: number;
+  /** Characters of page text to skip, to read on after a truncated fetch. */
+  offset?: number;
   signal?: AbortSignal;
 }
 
@@ -921,6 +1035,10 @@ export interface BrowserSnapshotNode {
   name: string;
   value?: string;
   tag?: string;
+  /** A native select's options: what the page shows, the value it keeps, and which one is chosen. */
+  options?: Array<{ label: string; value: string; selected?: boolean; disabled?: boolean }>;
+  /** How many options a long select has, when only the first ones and the chosen one are listed. */
+  optionsTotal?: number;
 }
 
 export interface BrowserSnapshotResult {
@@ -937,7 +1055,6 @@ export interface BrowserSnapshotResult {
 
 export type BrowserActKind = "click" | "fill" | "type" | "upload";
 
-/** Most files one upload step may attach. */
 export const MAX_BROWSER_UPLOAD_FILES = 10;
 
 export type BrowserActStep =
@@ -950,6 +1067,27 @@ export type BrowserActStep =
       text: string;
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
+      /**
+       * What `text` is: a saved login's hidden field ("password", typed only into a password
+       * field) or visible field ("username"), or an approved purchase's card detail. A card fill
+       * always carries `origin`.
+       */
+      field?: "username" | "password" | "card";
+    }
+  | {
+      kind: "fill";
+      ref?: undefined;
+      text: string;
+      origin: string;
+      field: "card";
+      cardField: PurchaseCardField;
+    }
+  | {
+      kind: "pay_token";
+      ref?: undefined;
+      text: string;
+      origin: string;
+      merchantAccountId: string;
     };
 
 export interface BrowserActRequest {
@@ -981,7 +1119,6 @@ export type PageBrowserCommand =
 
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
 
-/** Vendor-neutral status for a remote cloud coding agent. */
 export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";
 
 export interface CloudAgentCapabilities {
@@ -1089,8 +1226,30 @@ export interface BillingPrice {
   intervalCount: number;
 }
 
+export interface BillingCreditPurchase {
+  /** Stable provider payment identity, including any subsequent refund adjustment. */
+  id: string;
+  amountCents: number;
+  /** Subscription service-period end; absent for non-expiring top-ups. */
+  expiresAt?: string;
+}
+
+export interface BillingCreditCheckoutRequest {
+  customerId: string;
+  amountCents: number;
+  monthly: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export interface BillingByokCheckoutRequest extends Omit<BillingCreditCheckoutRequest, "monthly"> {
+  /** Omitted when the customer has already used its trial. */
+  trialDays?: number;
+}
+
 /** Full subscription state for one billing customer, re-fetched from the provider on every sync. */
 export interface BillingSubscriptionSnapshot {
+  creditAmountCents?: number;
   subscriptionId: string;
   subscriptionItemId: string;
   priceId: string;
@@ -1100,6 +1259,10 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** The flat own-key plan, which grants access without credits. */
+  byokPlan?: boolean;
+  /** Stable identity of the subscription's card across customers, when the provider has one. */
+  cardFingerprint?: string;
 }
 
 export interface BillingCheckoutRequest {
@@ -1109,4 +1272,10 @@ export interface BillingCheckoutRequest {
   trialDays?: number;
   successUrl: string;
   cancelUrl: string;
+}
+
+/** Optional provider adapter for recovering authoritative cost after an interrupted call. */
+export interface ModelUsageLookup {
+  provider: string;
+  lookupUsage(providerRequestId: string): Promise<AgentUsage | null>;
 }

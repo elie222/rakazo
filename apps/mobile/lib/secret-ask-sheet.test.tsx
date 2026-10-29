@@ -94,7 +94,8 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ useThemedStyles: (factory: () => unknown) => factory() }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+const i18n = vi.hoisted(() => ({ t: (text: string) => text }));
+vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => i18n.t(text) }) }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -111,10 +112,30 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    value,
+    onValueChange,
+    accessibilityLabel,
+  }: {
+    value: boolean;
+    onValueChange: (next: boolean) => void;
+    accessibilityLabel: string;
+  }) => (
+    <input
+      type="checkbox"
+      checked={value}
+      onChange={(event) => onValueChange(event.target.checked)}
+      aria-label={accessibilityLabel}
+    />
+  ),
+}));
+
+import type { LoginFieldInput } from "@rakazo/contracts";
 import { SecretAskSheet } from "../components/secret-ask-sheet";
 
 const onClose = vi.fn();
-const onSave = vi.fn<(password: string, username: string) => Promise<void>>();
+const onSave = vi.fn<(fields: LoginFieldInput[], remember: boolean) => Promise<void>>();
 let root: Root;
 let container: HTMLDivElement;
 
@@ -122,6 +143,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   native.commands = [];
   native.endEditing = {};
+  i18n.t = (text) => text;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -135,12 +157,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(pending = true) {
+async function render(pending = true, loginFields?: string[]) {
   await act(async () =>
     root.render(
       <SecretAskSheet
         title="Example sign-in"
         destination="https://login.example.test"
+        loginFields={loginFields}
         pending={pending}
         onClose={onClose}
         onSave={onSave}
@@ -171,7 +194,15 @@ async function type(label: string, value: string) {
   });
 }
 
-it("opens as a page sheet with the title, AutoFill fields and the destination", async () => {
+function hiddenSwitches() {
+  return [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Hidden"]')];
+}
+
+function valueFields() {
+  return [...container.querySelectorAll<HTMLInputElement>("input:not([type=checkbox])")];
+}
+
+it("opens as a page sheet with the title, the default fields and the destination", async () => {
   await render();
 
   expect(container.querySelector("[data-presentation]")?.getAttribute("data-presentation")).toBe(
@@ -179,14 +210,78 @@ it("opens as a page sheet with the title, AutoFill fields and the destination", 
   );
   expect(container.textContent).toContain("Example sign-in");
   expect(container.textContent).toContain("https://login.example.test");
-  const username = field("Username");
-  expect(username.type).toBe("text");
-  expect(username.dataset.contentType).toBe("username");
-  expect(username.dataset.autocomplete).toBe("username");
+  expect(valueFields().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Username",
+    "Password",
+  ]);
+  // As logins always started: Username visible, Password hidden.
+  expect(field("Username").type).toBe("text");
   const password = field("Password");
   expect(password.type).toBe("password");
   expect(password.dataset.contentType).toBe("password");
   expect(password.dataset.autocomplete).toBe("current-password");
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, true]);
+});
+
+it("shows the default labels translated but saves them in English", async () => {
+  const translated: Record<string, string> = { Username: "Benutzername", Password: "Passwort" };
+  i18n.t = (text) => translated[text] ?? text;
+  onSave.mockResolvedValue();
+  await render();
+  expect(valueFields().map((input) => input.getAttribute("aria-label"))).toEqual([
+    "Benutzername",
+    "Passwort",
+  ]);
+
+  await type("Benutzername", "ada");
+  await type("Passwort", "example-password");
+  await act(async () => button("Save").click());
+
+  expect(onSave.mock.lastCall![0].map((answer) => answer.label)).toEqual(["Username", "Password"]);
+});
+
+it("starts an ID and a phone visible and a PIN hidden", async () => {
+  await render(true, ["ID number", "Phone number", "PIN"]);
+
+  expect(valueFields().map((input) => [input.getAttribute("aria-label"), input.type])).toEqual([
+    ["ID number", "text"],
+    ["Phone number", "text"],
+    ["PIN", "password"],
+  ]);
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, false, true]);
+});
+
+it("starts every field hidden when no label names an identifier", async () => {
+  await render(true, ["Memorable word", "Card number"]);
+
+  expect(valueFields().map((input) => input.type)).toEqual(["password", "password"]);
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([true, true]);
+});
+
+it("lets the person hide or show a field, and saves it as chosen", async () => {
+  onSave.mockResolvedValue();
+  await render(true, ["Email", "PIN"]);
+
+  expect(field("Email").type).toBe("text");
+  expect(field("Email").dataset.contentType).toBe("none");
+  expect(field("PIN").type).toBe("password");
+
+  await act(async () => hiddenSwitches()[0]!.click());
+  expect(field("Email").type).toBe("password");
+  await act(async () => hiddenSwitches()[0]!.click());
+  expect(field("Email").type).toBe("text");
+
+  await type("Email", "ada@example.test");
+  await type("PIN", "1234");
+  await act(async () => button("Save").click());
+
+  expect(onSave).toHaveBeenCalledWith(
+    [
+      { label: "Email", value: "ada@example.test", hidden: false },
+      { label: "PIN", value: "1234", hidden: true },
+    ],
+    true,
+  );
 });
 
 // A field focused while the page sheet is still being laid out clips its placeholder at the
@@ -221,11 +316,10 @@ it("lets the fields scroll above the keyboard", async () => {
   expect(scroll?.contains(field("Username"))).toBe(true);
 });
 
-it("enables Save only once both fields have values", async () => {
+it("enables Save only once every field has a value", async () => {
   await render();
   expect(button("Save").disabled).toBe(true);
 
-  await type("Username", "  ");
   await type("Password", "example-password");
   expect(button("Save").disabled).toBe(true);
 
@@ -235,19 +329,67 @@ it("enables Save only once both fields have values", async () => {
 
   await type("Password", "example-password");
   expect(button("Save").disabled).toBe(false);
+
+  // A blank value counts only while it is hidden.
+  await type("Username", "  ");
+  expect(button("Save").disabled).toBe(true);
+  await act(async () => hiddenSwitches()[0]!.click());
+  expect(button("Save").disabled).toBe(false);
 });
 
-it("saves the password and trimmed username, then clears both fields", async () => {
+it("saves the default fields under their English labels, then clears them", async () => {
   onSave.mockResolvedValue();
   await render();
-  await type("Username", " ada@example.test ");
+  await type("Username", "ada@example.test");
   await type("Password", " example-password ");
 
   await act(async () => button("Save").click());
 
   expect(onSave).toHaveBeenCalledTimes(1);
-  expect(onSave).toHaveBeenCalledWith(" example-password ", "ada@example.test");
+  expect(onSave).toHaveBeenCalledWith(
+    [
+      { label: "Username", value: "ada@example.test", hidden: false },
+      { label: "Password", value: " example-password ", hidden: true },
+    ],
+    true,
+  );
   expect(field("Username").value).toBe("");
+  expect(field("Password").value).toBe("");
+});
+
+function saveToVault() {
+  return container.querySelector<HTMLInputElement>('input[aria-label="Save to Vault"]')!;
+}
+
+it("starts with Save to Vault on, under the fields", async () => {
+  await render();
+  expect(saveToVault().checked).toBe(true);
+  const inputs = [...container.querySelectorAll("input")];
+  expect(inputs.indexOf(saveToVault())).toBe(inputs.length - 1);
+});
+
+it("sends a login for this run only once Save to Vault is off, behind Continue", async () => {
+  onSave.mockResolvedValue();
+  await render();
+  await type("Username", "ada@example.test");
+  await act(async () => saveToVault().click());
+  expect(saveToVault().checked).toBe(false);
+  // Turning it off keeps what was typed.
+  expect(field("Username").value).toBe("ada@example.test");
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Cancel",
+    "Continue",
+  ]);
+  await type("Password", "example-password");
+  await act(async () => button("Continue").click());
+
+  expect(onSave).toHaveBeenCalledWith(
+    [
+      { label: "Username", value: "ada@example.test", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
+    ],
+    false,
+  );
   expect(field("Password").value).toBe("");
 });
 

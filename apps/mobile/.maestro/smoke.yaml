@@ -20,14 +20,10 @@ name: Rakazo mobile smoke
 - tapOn: "Sign in"
 
 - extendedWaitUntil:
-    visible: "New bot"
+    visible: "Create"
     timeout: 30000
-- tapOn: "New bot"
-- assertVisible: "Name this bot"
-- tapOn: "Name this bot"
-- inputText: ${RAKAZO_E2E_BOT_NAME}
-- hideKeyboard
 - tapOn: "Create"
+- tapOn: "New bot"
 
 - extendedWaitUntil:
     visible: "Message…"

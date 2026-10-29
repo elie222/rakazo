@@ -25,6 +25,7 @@ const REDACT_KEYS = new Set([
   "api_key",
 ]);
 const SECRET_KEY = /password|secret|token|authorization|cookie|credential|apikey/;
+const TOKEN_BUDGET_KEYS = new Set(["requestedmaxtokens", "effectivemaxtokens"]);
 
 function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) return value;
@@ -54,7 +55,7 @@ function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value instanceof Date) return value;
   const output: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
-    output[key] = shouldRedactKey(key) ? REDACTED : redactValue(nested, seen);
+    output[key] = shouldRedactKey(key, nested) ? REDACTED : redactValue(nested, seen);
   }
   return output;
 }
@@ -63,25 +64,48 @@ export function redactBindings(bindings: Record<string, unknown>): Record<string
   return redactValue(bindings) as Record<string, unknown>;
 }
 
-const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+// Consume a failed local-part candidate once instead of retrying at every dot or hyphen.
+const EMAIL_CANDIDATE = /\b[A-Z0-9._%+-]+(?:@[A-Z0-9.-]+\.[A-Z]{2,}\b)?/gi;
 const BEARER = /\bBearer\s+[^\s"',;&]+/gi;
+// The lookahead admits only words that contain a secret name, so a long word is scanned once
+// rather than once per name inside it. A credential after an auth scheme goes with its scheme.
 const SECRET_ASSIGNMENT =
-  /\b([A-Za-z0-9_]*(?:password|secret|token|authorization|apikey|api_key)[A-Za-z0-9_]*)\s*[:=]\s*\S+/gi;
+  /\b(?=[A-Za-z0-9_]*(?:password|secret|token|authorization|apikey|api_key|api-key))([A-Za-z0-9_]+|api-key)\s*[:=]\s*(?:(?:basic|bearer|digest|token)\s+)?\S+/gi;
+// Quoted keys follow the structured-binding rule: any key containing a secret name.
 const JSON_SECRET_FIELD =
-  /"(password|passwd|secret|token|authorization|apikey|api_key|accesstoken|refreshtoken|email|cookie)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
+  /"(?=[A-Za-z0-9_-]*(?:password|passwd|secret|token|authorization|apikey|api_key|api-key|email|cookie|credential))([A-Za-z0-9_-]+)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
 const BARE_SECRET =
   /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+// Profile paths leak the account name; leave later drive prefixes available for independent redaction.
+const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
+const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
+
+// An unfinished quoted value consumes the rest of the text as well.
+const INVALID_HEADER_VALUE =
+  /Headers\.append: (\\?")[\s\S]*?(?:\1 is an invalid header value\.|$)/g;
 
 export function redactSensitiveText(text: string): string {
   return text
-    .replace(EMAIL, REDACTED)
+    .replace(INVALID_HEADER_VALUE, `Headers.append: $1${REDACTED}$1 is an invalid header value.`)
+    .replace(EMAIL_CANDIDATE, (candidate) => (candidate.includes("@") ? REDACTED : candidate))
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)
-    .replace(BARE_SECRET, REDACTED);
+    .replace(BARE_SECRET, REDACTED)
+    .replace(WINDOWS_PROFILE, "[user]")
+    .replace(POSIX_PROFILE, "/[user]");
 }
 
-function shouldRedactKey(key: string): boolean {
+function shouldRedactKey(key: string, value: unknown): boolean {
   const normalized = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  // Only known numeric counters bypass token redaction; strings and containers may be secrets.
+  if (
+    TOKEN_BUDGET_KEYS.has(normalized.replaceAll("_", "")) &&
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  ) {
+    return false;
+  }
   return REDACT_KEYS.has(normalized) || SECRET_KEY.test(normalized);
 }

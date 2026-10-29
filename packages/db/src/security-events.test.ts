@@ -8,7 +8,7 @@ import {
   pruneSecurityEvents,
   recordSecurityEvent,
   securityEventRetentionDays,
-  securityRequestBindings,
+  withSecurityRequest,
 } from "./security-events.js";
 
 function fakeStore() {
@@ -69,24 +69,25 @@ describe("recordSecurityEvent", () => {
       {
         "user.id": "user-1",
         "space.id": "space-1",
-        ...securityRequestBindings({ ip: "203.0.113.5", userAgent: "Mozilla/5.0" }),
       },
       () =>
-        recordSecurityEvent({
-          type: "credential.created",
-          metadata: {
-            kind: "model",
-            provider: "openrouter",
-            apiKey: "sk-or-v1-abcdefghijklmnop",
-            token: "session-token",
-            message: "please summarise my inbox",
-            content: "private text",
-            label: "owner@example.com",
-            note: "Bearer abc.def.ghi",
-            nested: { deep: "value" } as never,
-            long: "x".repeat(500),
-          },
-        }),
+        withSecurityRequest({ ip: "203.0.113.5", userAgent: "Mozilla/5.0" }, () =>
+          recordSecurityEvent({
+            type: "credential.created",
+            metadata: {
+              kind: "model",
+              provider: "openrouter",
+              apiKey: "sk-test-xxxxxxxxxxxxxxxxxxxxxxxx",
+              token: "session-token",
+              message: "please summarise my inbox",
+              content: "private text",
+              label: "owner@example.org",
+              note: "Bearer fake-value",
+              nested: { deep: "value" } as never,
+              long: "x".repeat(500),
+            },
+          }),
+        ),
     );
 
     expect(store.rows).toHaveLength(1);
@@ -105,15 +106,15 @@ describe("recordSecurityEvent", () => {
     }
     expect((metadata.long as string).length).toBe(200);
     const stored = JSON.stringify(row);
-    for (const leaked of [
-      "sk-or-v1",
+    for (const sensitive of [
+      "sk-test-",
       "session-token",
       "summarise",
       "private text",
-      "owner@example.com",
-      "abc.def.ghi",
+      "owner@example.org",
+      "fake-value",
     ]) {
-      expect(stored).not.toContain(leaked);
+      expect(stored).not.toContain(sensitive);
     }
   });
 
@@ -132,6 +133,29 @@ describe("recordSecurityEvent", () => {
       "client.ip": "198.51.100.7",
       "security.event.metadata": { host: "169.254.169.254" },
     });
+  });
+
+  it("isolates concurrent callers and restores the enclosing caller", async () => {
+    await withSecurityRequest({ ip: "192.0.2.1", userAgent: "example-agent" }, async () => {
+      await Promise.all(
+        ["192.0.2.2", "192.0.2.3"].map((ip) =>
+          withSecurityRequest({ ip }, async () => {
+            await Promise.resolve();
+            await recordSecurityEvent({ type: "auth.sign_out" });
+          }),
+        ),
+      );
+      await recordSecurityEvent({ type: "auth.sign_out", ip: "192.0.2.4" });
+      await recordSecurityEvent({ type: "auth.sign_out" });
+    });
+    await recordSecurityEvent({ type: "auth.sign_out" });
+    expect(store.rows.map((row) => [row.ip, row.userAgent])).toEqual([
+      ["192.0.2.2", null],
+      ["192.0.2.3", null],
+      ["192.0.2.4", "example-agent"],
+      ["192.0.2.1", "example-agent"],
+      [null, null],
+    ]);
   });
 
   it("still logs and never throws when the database write fails", async () => {

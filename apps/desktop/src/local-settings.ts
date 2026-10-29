@@ -1,35 +1,30 @@
 import {
-  isLocalSettingsProcedure,
+  LOCAL_COMPUTER_HOST_PATH,
   LOCAL_SETTINGS_TOKEN_HEADER,
 } from "@rakazo/contracts/local-settings";
-import { isLoopbackHost } from "./setup-config.js";
+import { isLoopbackHost } from "@rakazo/contracts/network-host";
 
-/** Only a fixed local target and known settings procedures can receive host authority. */
-export async function requestLocalSettings(
+/** Called by native main only after the local host permission flow. Never exposes the token. */
+export async function saveLocalComputerHost(
   target: { origin: string; token: string },
-  pathname: unknown,
-  body: unknown,
+  computerHost: "docker" | "this-mac",
   request: typeof fetch,
-): Promise<{ status: number; body: string }> {
+): Promise<void> {
   const url = new URL(target.origin);
   if (
     url.origin !== target.origin ||
     !["http:", "https:"].includes(url.protocol) ||
-    !isLoopbackHost(url.hostname) ||
-    typeof pathname !== "string" ||
-    !isLocalSettingsProcedure(pathname) ||
-    typeof body !== "string" ||
-    body.length > 1024 * 1024
+    !isLoopbackHost(url.hostname)
   ) {
-    throw new Error("Invalid local settings request");
+    throw new Error("Invalid local settings target");
   }
-  const response = await request(`${target.origin}${pathname}`, {
+  const response = await request(`${target.origin}${LOCAL_COMPUTER_HOST_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/json", [LOCAL_SETTINGS_TOKEN_HEADER]: target.token },
-    body,
+    body: JSON.stringify({ computerHost }),
     credentials: "omit",
     redirect: "error",
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(10_000),
   });
-  return { status: response.status, body: await response.text() };
+  if (!response.ok) throw new Error("Could not save local computer choice");
 }

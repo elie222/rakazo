@@ -16,7 +16,7 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
-  voiceHttpError,
+  voiceRequestError,
 } from "./voice-http.js";
 
 const API = "https://api.openai.com/v1";
@@ -27,9 +27,11 @@ const OPENAI_VOICES: VoiceInfo[] = [
   { id: "alloy", label: "Alloy", description: "Neutral" },
   { id: "ash", label: "Ash", description: "Clear" },
   { id: "ballad", label: "Ballad", description: "Warm" },
+  { id: "cedar", label: "Cedar" },
   { id: "coral", label: "Coral", description: "Bright" },
   { id: "echo", label: "Echo", description: "Even" },
   { id: "fable", label: "Fable", description: "Narrative" },
+  { id: "marin", label: "Marin" },
   { id: "onyx", label: "Onyx", description: "Deep" },
   { id: "nova", label: "Nova", description: "Energetic" },
   { id: "sage", label: "Sage", description: "Calm" },
@@ -98,7 +100,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));
+    if (!res.ok) throw voiceRequestError(res.status, "OpenAI", "transcribing", body);
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }
 }

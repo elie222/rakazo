@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { fileURLToPath } from "node:url";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -12,22 +10,28 @@ import {
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 const TOKEN = "serenity_test_token";
 
 describe("serenity endpoint helpers", () => {
-  it("requires an explicit endpoint and does not assume a hosted URL", () => {
+  it("requires an explicit endpoint and does not assume a hosted URL", async () => {
     expect(() => parseSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
     expect(() => parseSerenityEndpoint("   ")).toThrow("Serenity endpoint is required.");
     expect(() => normalizeSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
-    const source = readFileSync(
-      fileURLToPath(new URL("./serenity-client.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(source).not.toContain("serenity.sire.run");
-    expect(source).not.toContain("DEFAULT_ENDPOINT");
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    const resolveHostname = vi.fn(async () => [{ address: "93.184.216.34", family: 4 as const }]);
+    const result = await probeSerenity({ endpoint: "", token: TOKEN }, undefined, {
+      fetch: fetchMock,
+      resolveHostname,
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "Serenity is unreachable: Serenity endpoint is required.",
+    });
+    expect(resolveHostname).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("appends /mcp when missing", () => {
@@ -48,11 +52,11 @@ describe("serenity endpoint helpers", () => {
   });
 
   it("requires deployment-owner trust for loopback, private LAN, and private DNS", () => {
-    expect(serenityEndpointRequiresDeploymentOwner("http://127.0.0.1:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("http://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.internal/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.example.test/mcp")).toBe(
+    expect(serenityEndpointRequiresPrivateEndpoint("http://127.0.0.1:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("http://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.internal/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.example.test/mcp")).toBe(
       false,
     );
   });
@@ -290,9 +294,8 @@ describe("serenity SSRF fetch path", () => {
   });
 
   it("drives the private-hostname dispatcher with a fetch from the same undici", async () => {
-    // A mismatched fetch throws invalid onRequestStart before the socket opens.
-    // A completed response on the pinned ephemeral port proves the package fetch
-    // accepted the Agent. Omit, builtin, and a captured builtin all pair.
+    // A mismatched fetch throws invalid onRequestStart before the socket opens, so a completed
+    // response proves the package fetch accepted the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
     let hits = 0;
     const server = createServer((_request, response) => {

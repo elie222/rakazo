@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { Button, toast } from "@rakazo/ui-web";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
 
 function useDesktopUpdates() {
@@ -149,7 +150,6 @@ function DesktopUpdatePrompt({ onLater }: { onLater: (version: string | null) =>
   );
 }
 
-/** Reuse the provider's bridge polling and guarded install action. */
 export function useSidebarUpdate() {
   const updates = useContext(UpdatesContext);
   return {
@@ -172,7 +172,7 @@ export function DesktopUpdateSection() {
       data-testid="desktop-update-settings"
       className="mt-5 rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-[15px] font-medium text-foreground">
+      <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Desktop app</Trans>
       </h3>
       <div className="mt-3 flex items-center justify-between gap-3">

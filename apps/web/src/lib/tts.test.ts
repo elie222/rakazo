@@ -1,5 +1,6 @@
+import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_VOICE_AUDIO_BYTES, Speaker, VOICE_RESPONSE_TIMEOUT_MS } from "./tts.js";
+import { Speaker } from "./tts.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -32,8 +33,26 @@ describe("Speaker", () => {
     ).mockImplementation(() => new Promise(() => undefined));
     const pending = speaker.speak("Hello there.", { messageId: "m1" });
     speaker.stop();
-    await pending;
+    await expect(pending).resolves.toBeUndefined();
     expect(speaker.state.status).toBe("idle");
+  });
+
+  it("does not report a failure for a request a newer one replaced", async () => {
+    const speaker = new Speaker();
+    let fail: (error: Error) => void = () => undefined;
+    vi.spyOn(speaker as unknown as { prepare: () => Promise<string[]> }, "prepare")
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValueOnce([]);
+    const first = speaker.speak("First.", { messageId: "m1" });
+    await speaker.speak("Second.", { messageId: "m2" });
+    fail(new Error("Your voice provider is out of credit."));
+    await expect(first).resolves.toBeUndefined();
+    expect(speaker.state.error).toBeUndefined();
   });
 
   it("resolves with an error snapshot instead of rejecting", async () => {
@@ -42,7 +61,7 @@ describe("Speaker", () => {
       speaker as unknown as { prepare: () => Promise<string[]> },
       "prepare",
     ).mockRejectedValue(new Error("ElevenLabs rejected that key."));
-    await expect(speaker.speak("Hi there.")).resolves.toBeUndefined();
+    await expect(speaker.speak("Hi there.")).resolves.toBe("ElevenLabs rejected that key.");
     expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
   });
 
@@ -119,10 +138,34 @@ describe("Speaker", () => {
       "prepare",
     ).mockResolvedValue(["Hello."]);
 
-    await expect(speaker.speak("Hello.")).resolves.toBeUndefined();
+    await expect(speaker.speak("Hello.")).resolves.toBe("Voice response is too large.");
 
     expect(speaker.state.error).toBe("Voice response is too large.");
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["VOICE_OUT_OF_CREDIT", 402, "Your voice provider is out of credit."],
+    ["VOICE_KEY_REJECTED", 403, "Your voice provider key was rejected."],
+  ])("shows its own copy for %s", async (code, status, copy) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "Insufficient API credit at fish.audio", code }), {
+            status,
+          }),
+      ),
+    );
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: () => Promise<string[]> },
+      "prepare",
+    ).mockResolvedValue(["Hello."]);
+
+    await expect(speaker.speak("Hello.")).resolves.toBe(copy);
+
+    expect(speaker.state.error).toBe(copy);
   });
 
   it("times out while a voice response body is stalled", async () => {

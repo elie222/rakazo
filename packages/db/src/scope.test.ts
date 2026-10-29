@@ -22,14 +22,14 @@ function prismaForMembership(found: boolean) {
 }
 
 describe("requireMembership", () => {
-  it("scopes the actor to an explicitly requested space", async () => {
+  it("scopes the actor without granting privileges to a stored deployment owner", async () => {
     const prisma = prismaForMembership(true);
 
     await expect(requireMembership(prisma, "user-1", "space-support")).resolves.toEqual({
       userId: "user-1",
       spaceId: "space-support",
       email: "owner@example.test",
-      isDeploymentOwner: true,
+      isDeploymentOwner: false,
     });
     expect(prisma.spaceMember.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({

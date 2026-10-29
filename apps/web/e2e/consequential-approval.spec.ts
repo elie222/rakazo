@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   activeBotId,
   captureScreenshot,
@@ -8,56 +9,14 @@ import {
   signup,
 } from "./helpers";
 
-test("actions run by default while optional confirmations live in space settings", async ({
+test("A change asks without an approval model, and approvals settings shape what asks", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `action-confirmations-${stamp}@rakazo.test`, "password12", "Approval UI");
+  await signup(page, `action-approvals-${stamp}@rakazo.test`, "password12", "Approval UI");
   await completeOnboarding(page, testInfo);
 
-  await sendDestinationWrite(page, "write this to the destination crm as a note");
-  await waitForRunIdle(page);
-  await expectComposerReady(page);
-  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "50-actions-run-without-confirmation");
-
-  await page.getByTestId("bot-settings-trigger").click();
-  await expect(page.getByTestId("bot-settings")).toBeVisible();
-  await expect(page.getByTestId("bot-settings").getByText("Action confirmations")).toHaveCount(0);
-  await page.getByRole("button", { name: "Close panel" }).click();
-
-  const settings = await openUserSettings(page);
-  await expect(settings).toHaveAttribute("role", "dialog");
-  await expect(settings).toBeFocused();
-  await expect(settings.getByText("Advanced", { exact: true })).toBeVisible();
-  await expect(settings.getByText("Optional controls most people never need")).toHaveCount(0);
-  // Confirmations are per space, so they live in their own section, not General.
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "51-user-settings-general");
-
-  await settings.getByTestId("settings-nav-confirmations").click();
-  await expect(settings.getByRole("heading", { name: "Confirmations", exact: true })).toBeVisible();
-  await expect(
-    settings.getByText(
-      "Bots act without asking by default. Add an exception only when you want to review a type of action first.",
-    ),
-  ).toHaveCount(0);
-  await expect(settings.getByText("No exceptions. Actions run automatically.")).toHaveCount(0);
-  await expect(settings.getByTestId("auto-review-toggle")).toBeVisible();
-  await expect(settings.getByTestId("auto-review-toggle")).not.toBeChecked();
-  await expect(settings.getByText("Flag unexpected actions")).toBeVisible();
-  await settings.getByRole("button", { name: "Ask before sending external email" }).click();
-  await expect(settings.getByText("Ask before email actions", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "52-advanced-action-confirmations");
-  await settings.getByRole("button", { name: "Close user settings" }).click();
-
-  await rpc(page, "approvalRules/set", {
-    effect: "require_approval",
-    matchKind: "connector",
-    matchValue: "destination.write",
-  });
-
-  await requestDestinationWrite(page, "write this to the destination crm as a note again");
+  await requestDestinationWrite(page, "write this to the destination crm as a note");
   const allowOnce = page.getByRole("button", { name: "Allow once", exact: true });
   const alwaysAllow = page.getByRole("button", { name: "Always allow this tool", exact: true });
   const deny = page.getByRole("button", { name: "Deny", exact: true });
@@ -82,7 +41,7 @@ test("actions run by default while optional confirmations live in space settings
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   if (viewport) await page.setViewportSize(viewport);
 
-  await page.getByRole("button", { name: "Deny", exact: true }).click();
+  await deny.click();
   await expect(page.getByTestId("transcript").getByText("Denied", { exact: true })).toHaveClass(
     /text-muted-foreground/,
   );
@@ -97,7 +56,7 @@ test("actions run by default while optional confirmations live in space settings
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "55-action-confirmation-allowed-once");
 
-  await requestDestinationWrite(page, "write this to the destination crm one final time");
+  await requestDestinationWrite(page, "write this to the destination crm one more time");
   await page.getByRole("button", { name: "Always allow this tool", exact: true }).click();
   await expect(page.getByText("Always allowed", { exact: true })).toBeVisible();
   await waitForRunIdle(page);
@@ -105,6 +64,53 @@ test("actions run by default while optional confirmations live in space settings
   await captureScreenshot(page, testInfo, "56-action-confirmation-always-allowed");
 
   await sendDestinationWrite(page, "write this to the destination crm after always allow");
+  await waitForRunIdle(page);
+  await expectComposerReady(page);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+
+  const settings = await openUserSettings(page);
+  await expect(settings).toHaveAttribute("role", "dialog");
+  await expect(settings).toBeFocused();
+  await settings.getByTestId("settings-nav-confirmations").click();
+  await expect(settings.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
+  const mode = settings.getByTestId("approval-mode");
+  await expect(mode.getByRole("button", { name: "Auto", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const rules = settings.getByTestId("approval-rules");
+  await expect(rules.getByText("Destination.write", { exact: true })).toBeVisible();
+  await expect(rules.getByRole("button", { name: "Allow", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "52-approvals-settings");
+  await rules.getByRole("button", { name: "Preview", exact: true }).click();
+  const preview = rules.locator("form");
+  await preview.getByRole("button", { name: "Block", exact: true }).click();
+  await preview.getByRole("button", { name: "Test rule", exact: true }).click();
+  await expect(preview.getByRole("status")).toHaveText("Current: Allow rule → Preview: Block rule");
+  const savedRules = await rpc<Array<{ effect: string }>>(page, "approvalRules/list", {
+    scope: "account",
+  });
+  expect(savedRules.map((rule) => rule.effect)).toEqual(["always_allow"]);
+  await captureScreenshot(page, testInfo, "approval-rule-preview");
+  await rules.getByRole("button", { name: "Preview", exact: true }).click();
+  await rules.getByRole("button", { name: "Block", exact: true }).click();
+  await expect(rules.getByRole("button", { name: "Block", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await mode.getByRole("button", { name: "Never ask", exact: true }).click();
+  await expect(mode.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "52b-approvals-never-ask-with-block");
+  await settings.getByRole("button", { name: "Close user settings" }).click();
+
+  // A blocked tool is refused without a card, even in Never ask.
+  await sendDestinationWrite(page, "write this to the destination crm while it is blocked");
   await waitForRunIdle(page);
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);

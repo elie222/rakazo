@@ -95,3 +95,8 @@ function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
     // Cancellation is best-effort and must not delay the bounded failure.
   }
 }
+
+/** The server rejected the caller's session; retrying the same request cannot succeed. */
+export function isUnauthorizedError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 401;
+}

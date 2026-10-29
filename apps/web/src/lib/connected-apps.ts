@@ -1,6 +1,15 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import { matchFeaturedConnectorId } from "@rakazo/core";
 
-/** Connected apps, or artwork-first suggestions from the already loaded catalog. */
+function isFamiliarApp(item: ConnectionCatalogItem) {
+  return (
+    matchFeaturedConnectorId(item.slug) !== null ||
+    matchFeaturedConnectorId(item.name) !== null ||
+    item.slug.toLowerCase() === "github"
+  );
+}
+
+/** Connected apps, or familiar artwork-first suggestions from the loaded catalog. */
 export function connectedAppMarks(
   catalog: readonly ConnectionCatalogItem[],
   connections: readonly Connection[],
@@ -16,7 +25,11 @@ export function connectedAppMarks(
       ),
   );
   const apps = [...(connected.length ? connected : catalog)]
-    .sort((a, b) => Number(Boolean(b.logo)) - Number(Boolean(a.logo)))
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.logo)) - Number(Boolean(a.logo)) ||
+        (connected.length ? 0 : Number(isFamiliarApp(b)) - Number(isFamiliarApp(a))),
+    )
     .filter((item, index, apps) => apps.findIndex((app) => app.name === item.name) === index);
   const initials = new Set<string>();
   const preferred = apps.filter((app) => {

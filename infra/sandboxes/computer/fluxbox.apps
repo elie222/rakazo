@@ -7,6 +7,9 @@
 [app] (class=Google-chrome)
   [Maximized] {yes}
 [end]
+[app] (class=Brave-browser)
+  [Maximized] {yes}
+[end]
 [app] (class=Firefox)
   [Maximized] {yes}
 [end]

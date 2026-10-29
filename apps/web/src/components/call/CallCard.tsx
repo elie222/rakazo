@@ -63,7 +63,6 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
         : call.muted
           ? t`Muted`
           : t`Listening`;
-  const status = ringing ? t`Calling…` : `${callClock(elapsed)} · ${activity}`;
   return (
     <div
       data-testid="call-view"
@@ -119,14 +118,29 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
               style={{ borderColor: defaultBotAvatarValue(call.botColor) }}
             />
           ) : null}
-          <BotAvatar color={call.botColor} identity={call.botId} size={96} />
+          <BotAvatar
+            avatarSet={call.botAvatarSet}
+            color={call.botColor}
+            identity={call.botId}
+            size={96}
+          />
         </button>
         <div className="flex flex-col items-center gap-1 text-center">
           <span className="text-2xl font-semibold text-foreground md:text-xl" dir="auto">
             {call.botName}
           </span>
-          <span className="text-sm tabular-nums text-muted-foreground" aria-live="polite">
-            {status}
+          <span
+            className="flex gap-2 text-sm tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {ringing ? (
+              t`Calling…`
+            ) : (
+              <>
+                <span>{callClock(elapsed)}</span>
+                <span>{activity}</span>
+              </>
+            )}
           </span>
         </div>
         {!ringing ? (
@@ -216,8 +230,8 @@ export function CallReturnBar() {
       className="app-no-drag flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 bg-success px-3 text-sm font-medium text-background"
     >
       <span dir="auto">{t`Return to call with ${call.botName}`}</span>
-      <span className="tabular-nums">
-        · {call.phase === "ringing" ? t`Calling…` : callClock(elapsed)}
+      <span className="ms-1 tabular-nums">
+        {call.phase === "ringing" ? t`Calling…` : callClock(elapsed)}
       </span>
     </button>
   );

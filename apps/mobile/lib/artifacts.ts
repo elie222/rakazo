@@ -1,30 +1,31 @@
-import type { Artifact, ArtifactVersion } from "@rakazo/contracts";
+import type { Artifact, RpcInput, RpcOutput } from "@rakazo/contracts";
 import { rpc } from "./api";
 import type { MobileArtifactTarget } from "./artifact-open";
 
-export type MobileArtifactSummary = Artifact & { versionCount: number };
-export type MobileArtifactWithContent = Artifact & { contentBase64: string };
+/**
+ * An artifact travels as base64 inside the RPC body: up to the attachment limit (10 MiB) plus
+ * a third of encoding overhead. The default RPC timeout is sized for small JSON replies and
+ * gives up on a multi-megabyte photo over a relayed cellular link, so downloads get a budget
+ * of their own.
+ */
+export const ARTIFACT_DOWNLOAD_TIMEOUT_MS = 120_000;
 
-export type ArtifactListPage = { items: MobileArtifactSummary[]; nextCursor: string | null };
+export type MobileArtifactSummary = RpcOutput<"artifacts/listSpace">["items"][number];
 
-export function listSpaceArtifacts(input: {
-  botId?: string;
-  cursor?: string;
-  limit?: number;
-}): Promise<ArtifactListPage> {
-  return rpc<ArtifactListPage>("artifacts/listSpace", input);
+export function listSpaceArtifacts(input: RpcInput<"artifacts/listSpace">) {
+  return rpc("artifacts/listSpace", input);
 }
 
-export function listArtifactVersions(familyId: string): Promise<ArtifactVersion[]> {
-  return rpc<ArtifactVersion[]>("artifacts/listVersions", { familyId });
+export function listArtifactVersions(familyId: string) {
+  return rpc("artifacts/listVersions", { familyId });
 }
 
-export function getArtifactById(artifactId: string): Promise<MobileArtifactWithContent> {
-  return rpc<MobileArtifactWithContent>("artifacts/getById", { artifactId });
+export function getArtifactById(artifactId: string) {
+  return rpc("artifacts/getById", { artifactId }, { timeoutMs: ARTIFACT_DOWNLOAD_TIMEOUT_MS });
 }
 
-export function removeArtifact(artifactId: string): Promise<{ ok: true }> {
-  return rpc<{ ok: true }>("artifacts/remove", { artifactId });
+export function removeArtifact(artifactId: string) {
+  return rpc("artifacts/remove", { artifactId });
 }
 
 /** Group scope wins: a bot-scoped read drops rows that also have a group id. */

@@ -1,19 +1,14 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { groupBotsForSidebar, nestRosterByParent } from "@rakazo/core";
-import {
-  adoptDeletedSpaceFallback,
-  type MobileBot,
-  type MobileGroup,
-  type MobileSpace,
-  rpc,
-  selectedSpaceId,
-  selectSpace,
-} from "./api";
+import { botAvatarActivity, groupBotsForSidebar, logoAvatarNeedsAttention } from "@rakazo/core";
+import type { MobileBot, MobileGroup, MobileSpace } from "./api";
+import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { t } from "./i18n";
+import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<
   MobileSpace,
-  "id" | "name" | "isDefault" | "hasContent" | "canDelete" | "botSections"
+  "id" | "name" | "isDefault" | "hasContent" | "canDelete" | "botCount" | "botSections"
 > & {
   bots: (MobileBot | SpaceBot)[];
   groups: (MobileGroup | SpaceGroup)[];
@@ -23,8 +18,6 @@ export type InboxSpaceItem =
   | {
       type: "bot";
       bot: MobileBot | SpaceBot;
-      depth: number;
-      hasChildren: boolean;
     }
   | { type: "group"; group: MobileGroup | SpaceGroup }
   | {
@@ -37,10 +30,59 @@ export type InboxSpaceItem =
       count?: number;
     };
 
-export function canDeleteInboxSpace(
-  space: Pick<InboxSpace, "isDefault" | "hasContent" | "canDelete">,
-) {
-  return !space.isDefault && !space.hasContent && space.canDelete === true;
+export type PinnedChat =
+  | { kind: "bot"; bot: MobileBot | SpaceBot }
+  | { kind: "group"; group: MobileGroup | SpaceGroup };
+export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
+
+/** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
+function chatSignal(chat: PinnedChat): InboxSignal {
+  return chat.kind === "bot"
+    ? {
+        unread: chat.bot.unread ? 1 : 0,
+        attention: logoAvatarNeedsAttention(
+          botAvatarActivity(
+            chat.bot,
+            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
+          ),
+        )
+          ? 1
+          : 0,
+      }
+    : { unread: chat.group.unread ? 1 : 0, attention: 0 };
+}
+
+export function inboxItemKey(item: InboxItem): string {
+  if (item.type === "pinned") return "pinned";
+  if (item.type === "heading") return `heading-${item.key}`;
+  if (item.type === "bot") return item.bot.id;
+  return `group-${item.group.id}`;
+}
+
+export function inboxSignal(item: InboxItem): InboxSignal {
+  if (item.type === "heading") return { unread: 0, attention: 0 };
+  if (item.type === "bot") return chatSignal({ kind: "bot", bot: item.bot });
+  if (item.type === "group") return chatSignal({ kind: "group", group: item.group });
+  return item.chats.map(chatSignal).reduce(
+    (total, signal) => ({
+      unread: total.unread + signal.unread,
+      attention: total.attention + signal.attention,
+    }),
+    { unread: 0, attention: 0 },
+  );
+}
+
+export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDelete">) {
+  return !space.isDefault && space.canDelete === true;
+}
+
+/** Names every bot that goes with the space, archived and other members' included. */
+export function deleteSpaceTitle(space: Pick<InboxSpace, "name" | "botCount" | "bots">) {
+  // Servers before botCount only listed the member's active bots.
+  const bots = space.botCount ?? space.bots.length;
+  if (bots === 0) return t("Delete {name}?", { name: space.name });
+  if (bots === 1) return t("Delete {name} and its bot?", { name: space.name });
+  return t("Delete {name} and its {count} bots?", { name: space.name, count: bots });
 }
 
 /** Only headings with no chats under them, counting chats in collapsed sections. */
@@ -53,7 +95,7 @@ export function inboxNeedsCreateHint(items: readonly { type: string; count?: num
   return items.length > 0 && inboxHasNoChats(items);
 }
 
-/** `collapsed` holds both roster parent bot ids and section heading keys. */
+/** `collapsed` holds section heading keys. */
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsed: ReadonlySet<string> = new Set(),
@@ -65,7 +107,6 @@ export function spaceInboxItems(
         type: "bot" as const,
         bot: chat,
         id: chat.id,
-        parentBotId: chat.parentBotId,
         pinned: chat.pinned,
         sectionId: chat.sectionId,
       })),
@@ -99,16 +140,11 @@ export function spaceInboxItems(
         });
         if (collapsed.has(key)) continue;
       }
-      for (const row of nestRosterByParent(group.bots, collapsed)) {
-        if (row.item.type === "bot") {
-          items.push({
-            type: "bot",
-            bot: row.item.bot,
-            depth: row.depth,
-            hasChildren: row.hasChildren,
-          });
+      for (const item of group.bots) {
+        if (item.type === "bot") {
+          items.push({ type: "bot", bot: item.bot });
         } else {
-          items.push({ type: "group", group: row.item.group });
+          items.push({ type: "group", group: item.group });
         }
       }
     }
@@ -134,7 +170,7 @@ export async function removeInboxSpace(
   spaceId: string,
   refresh: () => Promise<void>,
 ): Promise<string | null> {
-  const response = await rpc<{ ok: true; activeSpaceId: string }>("spaces/remove", { spaceId });
+  const response = await rpc("spaces/remove", { spaceId });
   if (selectedSpaceId() === spaceId) {
     if (await selectSpace(response.activeSpaceId).catch(() => false)) {
       await refresh();

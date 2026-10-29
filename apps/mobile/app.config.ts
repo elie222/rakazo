@@ -1,6 +1,6 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
-const RELEASE_PROFILES = new Set(["production", "android-apk"]);
+const RELEASE_PROFILES = new Set(["production", "android-apk", "diagnostic"]);
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   if (RELEASE_PROFILES.has(process.env.EAS_BUILD_PROFILE ?? "")) {
@@ -42,6 +42,23 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     result = { ...result, android: { ...result.android, googleServicesFile } };
   }
 
+  // Native crash handling autolinks; upload build hooks are optional and require credentials.
+  if (process.env.SENTRY_AUTH_TOKEN) {
+    result = {
+      ...result,
+      plugins: [
+        ...(result.plugins ?? []),
+        [
+          "@sentry/react-native/expo",
+          {
+            organization: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+            url: process.env.SENTRY_URL,
+          },
+        ],
+      ],
+    };
+  }
   return result;
 };
 

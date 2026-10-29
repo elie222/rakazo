@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { Bot, Ticket, TicketComment, TicketPriority, TicketStatus } from "@rakazo/contracts";
+import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
 import {
   TICKET_COMMENT_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
@@ -8,8 +8,11 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
+import { isRetryableError, retryDelayMs } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -19,9 +22,11 @@ import {
   NativeSelectOption,
   Textarea,
 } from "@rakazo/ui-web";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useTicketPriorityLabels } from "../lib/ticket-priority";
@@ -32,61 +37,59 @@ import { WindowChrome } from "./WindowChrome";
 export function BoardPage() {
   const { t } = useLingui();
   const statuses = useTicketStatusLabels();
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [bots, setBots] = useState<Bot[]>([]);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const ticketsOptions = queries.tickets.list.queryOptions({ input: {} });
+  const ticketsQuery = useQuery(ticketsOptions);
+  const botsQuery = useQuery(queries.bots.list.queryOptions());
+  const tickets = ticketsQuery.data?.tickets ?? [];
+  const bots = botsQuery.data ?? [];
   const [selected, setSelected] = useState<Ticket | "new" | null>(null);
-  const [error, setError] = useState("");
-  const [commentRefresh, setCommentRefresh] = useState<Record<string, number>>({});
-  const reload = useCallback(async () => {
-    const result = await rpc.tickets.list({});
-    setTickets(result.tickets);
-  }, []);
+  const [streamError, setError] = useState("");
+  const loadFailed = ticketsQuery.error ?? botsQuery.error;
+  const error = streamError || (loadFailed ? errorText(loadFailed) : "");
+  /** A read sent after a change, so an older one in flight cannot bring back the old board. */
+  const reload = () => fetchFresh(queryClient, ticketsOptions).then(() => undefined);
 
   useEffect(() => {
     let currentController: AbortController | undefined;
     let active = true;
-    void Promise.all([rpc.tickets.list({}), rpc.bots.list()])
-      .then(([result, owners]) => {
-        if (!active) return;
-        setTickets(result.tickets);
-        setBots(owners);
-      })
-      .catch((cause) => {
-        if (active) setError(errorText(cause));
+    // Live events refresh the board and any open ticket's comments.
+    const refreshComments = (ticketId?: string) =>
+      void queryClient.invalidateQueries({
+        queryKey: ticketId
+          ? queries.tickets.comments.queryKey({ input: { ticketId } })
+          : queries.tickets.comments.key(),
       });
     let cancelRetry: (() => void) | undefined;
     void (async () => {
       while (active) {
         const controller = new AbortController();
         currentController = controller;
+        let failure: unknown;
         try {
-          const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
+          const stream = await rpc.boards.subscribe(undefined, {
+            signal: controller.signal,
+          });
           if (!active) return;
-          const result = await rpc.tickets.list({});
+          await fetchFresh(queryClient, ticketsOptions);
           if (!active) return;
-          setTickets(result.tickets);
-          setCommentRefresh((previous) => ({
-            ...previous,
-            "*": (previous["*"] ?? 0) + 1,
-          }));
+          refreshComments();
           setError("");
           for await (const event of stream) {
             if (!active) return;
-            setCommentRefresh((previous) => ({
-              ...previous,
-              [event.ticketId ?? "*"]: (previous[event.ticketId ?? "*"] ?? 0) + 1,
-            }));
-            const result = await rpc.tickets.list({});
-            if (active) setTickets(result.tickets);
+            refreshComments(event.ticketId);
+            await fetchFresh(queryClient, ticketsOptions);
           }
         } catch (cause) {
+          failure = cause;
           if (active) setError(errorText(cause));
         } finally {
           controller.abort();
         }
-        if (!active) return;
+        if (!active || !isRetryableError(failure)) return;
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, 1_000);
+          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
           cancelRetry = () => {
             clearTimeout(timer);
             resolve();
@@ -100,15 +103,19 @@ export function BoardPage() {
       currentController?.abort();
       cancelRetry?.();
     };
-  }, []);
+  }, [queries]);
 
   return (
-    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
       <header className="flex items-center gap-3 border-b px-4 py-3">
-        <Button variant="ghost" size="icon" render={<Link to="/app" />} aria-label={t`Back`}>
+        <Link
+          to="/app"
+          className={buttonVariants({ variant: "ghost", size: "icon" })}
+          aria-label={t`Back`}
+        >
           <ChevronLeft />
-        </Button>
+        </Link>
         <h1 className="flex-1 font-medium">
           <Trans>Board</Trans>
         </h1>
@@ -157,10 +164,6 @@ export function BoardPage() {
           key={selected === "new" ? "new" : selected.id}
           ticket={selected === "new" ? null : selected}
           bots={bots}
-          commentRevision={
-            (commentRefresh["*"] ?? 0) +
-            (selected === "new" ? 0 : (commentRefresh[selected.id] ?? 0))
-          }
           onClose={() => setSelected(null)}
           onSaved={reload}
         />
@@ -174,9 +177,7 @@ function TicketDialog({
   bots,
   onClose,
   onSaved,
-  commentRevision,
 }: {
-  commentRevision?: number;
   ticket: Ticket | null;
   bots: Bot[];
   onClose: () => void;
@@ -191,26 +192,17 @@ function TicketDialog({
   const [owner, setOwner] = useState(ticket?.assigneeBotId ?? bots[0]?.id ?? "");
   const [status, setStatus] = useState<TicketStatus>(ticket?.status ?? "todo");
   const [priority, setPriority] = useState<TicketPriority>(ticket?.priority ?? "normal");
-  const [comments, setComments] = useState<TicketComment[]>([]);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const commentsOptions = queries.tickets.comments.queryOptions({
+    input: ticket ? { ticketId: ticket.id } : skipToken,
+  });
+  const commentsQuery = useQuery(commentsOptions);
+  const comments = commentsQuery.data ?? [];
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!ticket) return;
-    let active = true;
-    void rpc.tickets
-      .comments({ ticketId: ticket.id })
-      .then((rows) => {
-        if (active) setComments(rows);
-      })
-      .catch((cause) => {
-        if (active) setError(errorText(cause));
-      });
-    return () => {
-      active = false;
-    };
-  }, [ticket, commentRevision]);
+  const shownError = error || (commentsQuery.error ? errorText(commentsQuery.error) : "");
 
   async function save() {
     setBusy(true);
@@ -227,7 +219,13 @@ function TicketDialog({
           ...(status !== ticket.status ? { status } : {}),
           ...(priority !== ticket.priority ? { priority } : {}),
         });
-      else await rpc.tickets.create({ title, description, assigneeBotId: owner, priority });
+      else
+        await rpc.tickets.create({
+          title,
+          description,
+          assigneeBotId: owner,
+          priority,
+        });
       await onSaved();
       onClose();
     } catch (cause) {
@@ -242,8 +240,16 @@ function TicketDialog({
     setError("");
     try {
       const row = await rpc.tickets.comment({ ticketId: ticket.id, body });
-      setComments((previous) => [...previous, row]);
+      const options = queries.tickets.comments.queryOptions({ input: { ticketId: ticket.id } });
+      // A list already on screen shows the comment at once, unless a read already brought it.
+      if (queryClient.getQueryData(options.queryKey)) {
+        await writeSaved(queryClient, options.queryKey, (previous = []) =>
+          previous.some((item) => item.id === row.id) ? previous : [...previous, row],
+        );
+      }
       setBody("");
+      // Saving cancelled any read in flight, so the whole list is read again after the post.
+      void fetchFresh(queryClient, options).catch(() => undefined);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -385,9 +391,9 @@ function TicketDialog({
             </form>
           </div>
         ) : null}
-        {error ? (
+        {shownError ? (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {shownError}
           </p>
         ) : null}
       </DialogContent>

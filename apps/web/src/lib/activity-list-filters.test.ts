@@ -95,7 +95,7 @@ describe("filterActivityRuns", () => {
       promptSnippet: "standby",
     });
     const filters = (query: string) => ({ ...emptyActivityFilters(), query });
-    expect(runMatchesActivityFilters(run, filters("Chief · Ops"))).toBe(true);
+    expect(runMatchesActivityFilters(run, filters("Chief Ops"))).toBe(true);
     expect(runMatchesActivityFilters(run, filters("Chief Ops"))).toBe(true);
     expect(runMatchesActivityFilters(run, filters("Chief"))).toBe(true);
     expect(runMatchesActivityFilters(run, filters("Ops"))).toBe(true);

@@ -17,10 +17,7 @@ export function nativePasskeys(
   };
 }
 
-/**
- * Domain association files that let the native apps use this domain's
- * passkeys. Each file exists only when the deployment names its apps.
- */
+/** Each association file exists only when the deployment names its apps. */
 export function mountAppAssociation(
   app: Hono,
   env: { passkeyAppleAppIds: string[]; passkeyAndroidCertFingerprints: string[] },

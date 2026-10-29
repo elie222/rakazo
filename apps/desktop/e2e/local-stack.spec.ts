@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { createServer, type RequestListener, type Server } from "node:http";
+import type { RequestListener, Server } from "node:http";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
+import type { ElectronApplication } from "@playwright/test";
+import { _electron as electron, expect, test } from "@playwright/test";
 import { prepareHostComputer } from "../src/host-computer.js";
 
 const APP_MARKER = "Local Rakazo stack ready";
@@ -40,19 +42,6 @@ test.beforeAll(async () => {
       }
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({ ok: true, imageTag: IMAGE_TAG }));
-      return;
-    }
-    if (request.url === "/api/desktop-settings/rpc/integrationSetup/get") {
-      const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8");
-      if (
-        request.headers["x-rakazo-local-settings-token"] !== expected.trim() ||
-        request.headers.cookie
-      ) {
-        response.writeHead(401).end();
-        return;
-      }
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ json: { canConfigure: true } }));
       return;
     }
     if (request.url === "/rpc/health" && request.method === "POST") {
@@ -217,6 +206,7 @@ test("This computer installs and starts the stack, then opens the app", async ()
   expect(await readLog()).toEqual([
     `${stackDir} | ${IMAGE_TAG} | compose version --short`,
     `${stackDir} | ${IMAGE_TAG} | info --format {{.ServerVersion}}`,
+    `${stackDir} | ${IMAGE_TAG} | ${compose} config --images`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} pull`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} up -d --wait --wait-timeout 300`,
   ]);
@@ -488,7 +478,7 @@ test("repeated port conflicts stop with a retry action", async () => {
   });
 });
 
-test("the native settings menu opens an isolated logged-out settings capability", async () => {
+test("the desktop never exposes server administration or account impersonation", async () => {
   app = await launch("ok");
   const setup = await app.firstWindow();
   await setup.getByRole("radio", { name: /This computer/ }).check();
@@ -496,39 +486,10 @@ test("the native settings menu opens an isolated logged-out settings capability"
   await setup.getByRole("button", { name: "Continue", exact: true }).click();
   const main = await nextWindow;
   await expect(main.getByText(APP_MARKER)).toBeVisible();
-  await expect.poll(savedSetup).toEqual({ mode: "new", serverUrl });
-  const denied = await main.evaluate(async () => {
-    try {
-      await window.rakazoDesktop?.localSettings?.request(
-        "/api/desktop-settings/rpc/integrationSetup/get",
-        "{}",
-      );
-      return false;
-    } catch {
-      return true;
-    }
-  });
-  expect(denied).toBe(true);
-  const settingsOpened = app.waitForEvent("window");
-  await app.evaluate(({ Menu }) => {
-    const item = Menu.getApplicationMenu()?.getMenuItemById("local-server-settings");
-    if (!item) throw new Error("Missing settings menu");
-    item.click();
-  });
-  const settings = await settingsOpened;
-  await expect(settings).toHaveURL(`${serverUrl}/desktop-settings`);
-  const result = await settings.evaluate(() =>
-    window.rakazoDesktop?.localSettings?.request(
-      "/api/desktop-settings/rpc/integrationSetup/get",
-      "{}",
+  expect(await main.evaluate(() => "localSettings" in window.rakazoDesktop!)).toBe(false);
+  expect(
+    await app.evaluate(({ Menu }) =>
+      Boolean(Menu.getApplicationMenu()?.getMenuItemById("local-server-settings")),
     ),
-  );
-  expect(result?.status).toBe(200);
-  expect(JSON.parse(result!.body)).toEqual({ json: { canConfigure: true } });
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()?.getMenuItemById("local-server-settings")?.click(),
-  );
-  expect(app.windows()).toHaveLength(2);
-  await settings.close();
-  await expect(main.getByText(APP_MARKER)).toBeVisible();
+  ).toBe(false);
 });

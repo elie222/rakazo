@@ -1,16 +1,17 @@
-import type { Routine } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
-import { rpc } from "../lib/api";
+import { RoutineRunHistory } from "../components/routine-run-history";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { routineStatusLine } from "../lib/routine";
+import { useBotRoutines } from "../lib/routine-store";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function RoutineDetail() {
+  const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const { botId, botName, routineId, origin } = useLocalSearchParams<{
@@ -20,41 +21,30 @@ export default function RoutineDetail() {
     origin?: string;
   }>();
   const router = useRouter();
-  const [routine, setRoutine] = useState<Routine | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!botId || !routineId) {
-      setError(t("Routine link is incomplete"));
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    void rpc<Routine[]>("routines/list", { botId })
-      .then((routines) => {
-        if (cancelled) return;
-        const match = routines.find((item) => item.id === routineId);
-        if (match) setRoutine(match);
-        else setError(t("This routine no longer exists"));
-      })
-      .catch((loadError) => {
-        if (!cancelled) {
-          setError(errorText(loadError, t("Could not load routine")));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [botId, routineId]);
+  // Opened from the list, the routine is already known; it still reads again. A routine missing
+  // from what was known before only counts as gone once that read answers.
+  const {
+    routines,
+    error: loadError,
+    readSinceShown,
+    failedSinceShown,
+  } = useBotRoutines(botId ?? "", { poll: false });
+  const routine = routines?.find((item) => item.id === routineId) ?? null;
+  const error =
+    !botId || !routineId
+      ? t("Routine link is incomplete")
+      : routine
+        ? null
+        : failedSinceShown
+          ? errorText(loadError, t("Could not load routine"))
+          : readSinceShown
+            ? t("This routine no longer exists")
+            : null;
+  const loading = !routine && !error;
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: tokens.background }}
+      style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
       contentContainerStyle={{ padding: 24, gap: 18 }}
       contentInsetAdjustmentBehavior="automatic"
     >
@@ -105,6 +95,7 @@ export default function RoutineDetail() {
               }
             />
           ) : null}
+          <RoutineRunHistory routineId={routine.id} botName={botName} />
         </>
       ) : null}
     </ScrollView>

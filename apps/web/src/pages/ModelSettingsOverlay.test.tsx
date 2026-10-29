@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type * as UiWeb from "@rakazo/ui-web";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -8,13 +10,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 type UiWebModule = typeof UiWeb;
 
+/** Provider rows end with their "Connect" action; models show their name alone. */
+const optionName = (entry: Element) => entry.textContent?.replace(/Connect$/, "");
 const models = vi.hoisted(() => ({
   list: vi.fn(),
-  backups: vi.fn(async () => []),
-  setBackups: vi.fn(async () => ({ ok: true })),
+  role: vi.fn(),
+  forRole: vi.fn(),
+  setRole: vi.fn(),
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  rename: vi.fn(),
   setDefault: vi.fn(),
   probeOpenAiCompatible: vi.fn(),
   beginOAuth: vi.fn(),
@@ -24,16 +30,23 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({
-  selectedSpaceId: () => "space-1",
-  rpc: {
+vi.mock("../lib/rpc", () => {
+  const rpc = {
     models,
+    bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
-  },
-}));
+  };
+  return {
+    selectedSpaceId: () => "space-1",
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+  };
+});
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
+  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -49,10 +62,10 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Checkbox, Label, Popover, PopoverContent, PopoverTrigger } =
-    await importOriginal<UiWebModule>();
+  const actual = await importOriginal<UiWebModule>();
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    ...actual,
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
       open ? <div>{children}</div> : null,
     AlertDialogAction: ({
@@ -90,31 +103,32 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
         {children}
       </button>
     ),
-    Dialog: Pass,
+    // Dialogs render inline, and only while open.
+    Dialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
+      open ? <div>{children}</div> : null,
     DialogClose: Pass,
     DialogContent: Pass,
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p data-testid="model-description">{children}</p>
     ),
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
     DialogHeader: Pass,
-    DialogTitle: Pass,
+    DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    Checkbox,
-    Label,
     ModelThinkingOptions: (props: {
+      children?: ReactNode;
       maxTokens?: string;
       maxTokensLabel?: string;
       onMaxTokensChange?: (value: string) => void;
     }) =>
       props.onMaxTokensChange ? (
-        <input
-          aria-label={props.maxTokensLabel}
-          value={props.maxTokens ?? ""}
-          onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
-        />
+        <>
+          <input
+            aria-label={props.maxTokensLabel}
+            value={props.maxTokens ?? ""}
+            onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+          />
+          {props.children}
+        </>
       ) : null,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
@@ -134,6 +148,15 @@ const deepseekEntry = {
   auth: "api-key" as const,
   authHint: "API key",
 };
+const openrouterEntry = {
+  provider: "openrouter",
+  providerName: "OpenRouter",
+  id: "fixture/router-model",
+  label: "Router model",
+  billing: "API key",
+  auth: "api-key" as const,
+  authHint: "API key",
+};
 const compatibleEntry = {
   provider: "openai-compatible",
   providerName: "OpenAI-compatible",
@@ -144,6 +167,14 @@ const compatibleEntry = {
   authHint: "Custom server",
   placeholder: true,
 };
+const deepseekCredential = {
+  id: "cred-deepseek",
+  provider: "deepseek",
+  label: "DeepSeek",
+  hasKey: true,
+  isDefault: true,
+  modelId: "deepseek-chat",
+};
 
 function account(provider: string, modelId: string) {
   return {
@@ -152,6 +183,7 @@ function account(provider: string, modelId: string) {
     name: "Ada",
     spaceId: "space-1",
     isDeploymentOwner: false,
+    isAdmin: false,
     needsModel: false,
     defaultProvider: provider,
     defaultModel: modelId,
@@ -160,9 +192,11 @@ function account(provider: string, modelId: string) {
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",
-    avatarStyle: "robot" as const,
+    mcpStdioEnabled: false,
+    avatarStyle: "organic" as const,
     billingEnabled: false,
     ticketBoardEnabled: false,
+    navLinks: [],
     phoneCallsEnabled: false,
   };
 }
@@ -197,18 +231,78 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
-async function renderSettings(embedded = true, localOwner = false) {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+async function click(element: Element | null | undefined) {
+  if (!(element instanceof HTMLElement)) throw new Error("Missing element");
+  await act(async () => element.click());
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+function section(role: "main" | "approval") {
+  const found = document.querySelector(`[data-testid="model-role-${role}"]`);
+  if (!found) throw new Error(`Missing ${role} model list`);
+  return found;
+}
+
+/** Visible names of the open picker's options. */
+function pickerOptions() {
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(optionName);
+}
+
+async function openPicker(label: string, role: "main" | "approval" = "main") {
+  await click(section(role).querySelector(`button[aria-label="${label}"]`));
+}
+
+async function choose(option: string) {
+  await click(
+    [...document.querySelectorAll('[role="option"]')].find((entry) => optionName(entry) === option),
+  );
+}
+
+/** Picks a model or a not-connected provider from one of the list's pickers. */
+async function pick(label: string, option: string, role: "main" | "approval" = "main") {
+  await openPicker(label, role);
+  await choose(option);
+}
+
+/** Opens the connection dialog for the main model's first row through its options menu. */
+async function manage() {
+  await click(
+    section("main").querySelector(
+      '[data-testid="model-role-row-1"] button[aria-label$=" options"]',
+    ),
+  );
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((entry) =>
+      entry.textContent?.startsWith("Manage "),
+    ),
+  );
+}
+
+function titles(container: HTMLElement) {
+  return [...container.querySelectorAll('[data-testid="model-connection-title"]')].map(
+    (entry) => entry.textContent,
+  );
+}
+
+function testQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+async function renderSettings(
+  embedded = true,
+  queryClient = testQueryClient(),
+  scope: "account" | "space" = "account",
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <ModelSettingsOverlay
-        embedded={embedded}
-        localOwner={localOwner}
-        onClose={() => undefined}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <ModelSettingsOverlay embedded={embedded} scope={scope} onClose={() => undefined} />
+      </QueryClientProvider>,
     );
   });
   await act(async () => {
@@ -226,41 +320,89 @@ async function renderSettings(embedded = true, localOwner = false) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Element.prototype.scrollIntoView = () => undefined;
+  i18n.loadAndActivate({ locale: "en", messages: {} });
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
+  models.forRole.mockImplementation(() => models.list());
+  models.setRole.mockImplementation(
+    async ({ role: _role, expectedUserId: _user, ...patch }: Record<string, unknown>) => ({
+      primary: null,
+      backups: [],
+      ...patch,
+    }),
+  );
+  // The main role's first slot is the space default once its provider is connected.
+  models.role.mockImplementation(async ({ role }: { role: string }) => {
+    if (role !== "main") return { primary: null, backups: [] };
+    const [me, credentials] = await Promise.all([rpc.me(), models.credentials()]);
+    const connected =
+      !me.needsModel &&
+      (credentials as { provider: string }[]).some(
+        (entry) => entry.provider === me.defaultProvider,
+      );
+    return {
+      primary: connected ? { provider: me.defaultProvider, modelId: me.defaultModel } : null,
+      backups: [],
+    };
+  });
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
 
+it("reopens on cached models without a spinner and refreshes them behind it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  expect(first.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+  await first.unmount();
+
+  const hold = new Promise<never>(() => undefined);
+  models.list.mockReturnValue(hold);
+  models.role.mockReturnValue(hold);
+  models.forRole.mockReturnValue(hold);
+  const listCalls = models.list.mock.calls.length;
+  const roleCalls = models.role.mock.calls.length;
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(view.container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+    expect(models.list.mock.calls.length).toBeGreaterThan(listCalls);
+    expect(models.role.mock.calls.length).toBeGreaterThan(roleCalls);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("shows a stored BYOK key when provider settings reopen", async () => {
-  models.credentials.mockResolvedValue([
-    {
-      id: "cred-deepseek",
-      provider: "deepseek",
-      label: "DeepSeek",
-      hasKey: true,
-      isDefault: true,
-      modelId: "deepseek-chat",
-    },
-  ]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
 
   const view = await renderSettings();
   try {
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+    await manage();
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
     const input = keyField(view.container);
     expect(input.value).toBe("");
     expect(input.placeholder).toBe(STORED_PLACEHOLDER);
     expect(input.type).toBe("password");
     expect(view.container.textContent).not.toContain("sk-");
-    // The Active model row is the only connection status in the connected view.
-    expect(view.container.textContent).not.toContain("Connected · DeepSeek");
-    expect(view.container.textContent).not.toContain("Stored securely");
-    expect(view.container.textContent).not.toContain("Save limits");
     expect(buttons(view.container, "Replace API key")[0]?.disabled).toBe(true);
 
     await typeInto(input, "sk-replacement-key");
@@ -271,31 +413,28 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
     await typeInto(keyField(view.container), "sk-replacement-key");
-    await act(async () => {
-      buttons(view.container, "Replace API key")[0]?.click();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await click(buttons(view.container, "Replace API key")[0]);
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "deepseek", apiKey: "sk-replacement-key" }),
     );
-    expect(view.container.textContent).not.toContain("Connected and using");
+    // A saved connection closes its dialog; reopening shows the stored key again.
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+    await manage();
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
     models.credentials.mockResolvedValue([]);
-    await act(async () => {
-      buttons(view.container, "Disconnect")[0]?.click();
-    });
+    await click(buttons(view.container, "Disconnect")[0]);
     const confirm = buttons(view.container, "Disconnect");
-    await act(async () => {
-      confirm[confirm.length - 1]?.click();
+    await click(confirm[confirm.length - 1]);
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "cred-deepseek",
     });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(models.disconnect).toHaveBeenCalledWith({ provider: "deepseek" });
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+
+    await pick("Change Main model", "DeepSeek");
+    expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe("sk-…");
   } finally {
@@ -304,36 +443,23 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
 });
 
 it("saves an edited output limit without sending a half-typed replacement key", async () => {
-  models.credentials.mockResolvedValue([
-    {
-      id: "cred-deepseek",
-      provider: "deepseek",
-      label: "DeepSeek",
-      hasKey: true,
-      isDefault: true,
-      modelId: "deepseek-chat",
-    },
-  ]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
 
   const view = await renderSettings();
   try {
+    await manage();
     const limit = view.container.querySelector<HTMLInputElement>(
       'input[aria-label="Maximum output tokens"]',
     );
     if (!limit) throw new Error("Missing output limit field");
     await typeInto(limit, "4096");
     await typeInto(keyField(view.container), "sk-ab");
-    const save = buttons(view.container, "Save").find((entry) => entry.textContent === "Save");
-    await act(async () => {
-      save?.click();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await click(buttons(view.container, "Save").find((entry) => entry.textContent === "Save"));
     expect(models.connect).toHaveBeenCalledTimes(1);
     const input = models.connect.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(input).toMatchObject({ provider: "deepseek", maxTokens: 4096 });
     expect(input).not.toHaveProperty("apiKey");
+    // A limits-only save keeps the dialog and the half-typed key.
     expect(keyField(view.container).value).toBe("sk-ab");
   } finally {
     await view.unmount();
@@ -343,6 +469,7 @@ it("saves an edited output limit without sending a half-typed replacement key", 
 it("leaves the key field empty until a key is saved", async () => {
   const view = await renderSettings();
   try {
+    await pick("Change Main model", "DeepSeek");
     const input = keyField(view.container);
     expect(input.value).toBe("");
     expect(input.placeholder).toBe("sk-…");
@@ -352,25 +479,138 @@ it("leaves the key field empty until a key is saved", async () => {
   }
 });
 
-it("shows the active model only once a model is connected", async () => {
+it("labels the empty main slot by what runs there", async () => {
   vi.mocked(rpc.me).mockResolvedValue({
     ...account("deepseek", "deepseek-chat"),
     needsModel: true,
   });
   const view = await renderSettings();
   try {
-    expect(view.container.textContent).not.toContain("Active model");
+    expect(section("main").querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
+      "Choose a model",
+    );
+    expect(
+      section("approval").querySelector('[data-testid="model-role-default"]')?.textContent,
+    ).toBe("Choose a model");
   } finally {
     await view.unmount();
   }
 
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  models.credentials.mockResolvedValue([deepseekCredential]);
   const connected = await renderSettings();
   try {
-    expect(connected.container.textContent).toContain("Active model");
-    expect(connected.container.textContent).toContain("DeepSeek Chat");
+    expect(section("main").querySelector('[data-testid="model-role-default"]')).toBeNull();
+    expect(
+      section("main").querySelector('[data-testid="model-role-row-1"]')?.textContent,
+    ).toContain("DeepSeek Chat");
   } finally {
     await connected.unmount();
+  }
+});
+
+it("connects a provider from Add fallback without replacing the main model, then picks its model", async () => {
+  models.list.mockResolvedValue([deepseekEntry, openrouterEntry]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    expect(pickerOptions()).toContain("OpenRouter");
+    await choose("OpenRouter");
+    expect(titles(view.container)).toEqual(["Connect OpenRouter"]);
+    await typeInto(keyField(view.container), "sk-fixture-router");
+    models.credentials.mockResolvedValue([
+      deepseekCredential,
+      {
+        id: "cred-openrouter",
+        provider: "openrouter",
+        label: "OpenRouter",
+        hasKey: true,
+        isDefault: false,
+        modelId: openrouterEntry.id,
+      },
+    ]);
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openrouter",
+        apiKey: "sk-fixture-router",
+        modelId: openrouterEntry.id,
+        makeDefault: false,
+      }),
+    );
+    // The key belongs to the provider; its models are then chosen in the reopened picker.
+    expect(titles(view.container)).toEqual([]);
+    expect(models.setRole).not.toHaveBeenCalled();
+    expect(pickerOptions()).toEqual([openrouterEntry.label]);
+    await choose(openrouterEntry.label);
+    expect(models.setRole).toHaveBeenCalledTimes(1);
+    // The unchanged main model is left out, so the save cannot rewrite it.
+    const [saved] = vi.mocked(models.setRole).mock.calls[0]!;
+    expect(saved).toMatchObject({
+      role: "main",
+      backups: [
+        { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
+      ],
+    });
+    expect(saved).not.toHaveProperty("primary");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("connects the main model from the empty default row as the space default", async () => {
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    needsModel: true,
+  });
+  const view = await renderSettings();
+  try {
+    await pick("Change Main model", "DeepSeek");
+    expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
+    await typeInto(keyField(view.container), "sk-fixture-deepseek");
+    const loads = models.role.mock.calls.length;
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepseek",
+        apiKey: "sk-fixture-deepseek",
+        makeDefault: true,
+        scope: "account",
+      }),
+    );
+    // The connection already made it the main model, so the list reloads instead of writing.
+    expect(models.setRole).not.toHaveBeenCalled();
+    expect(models.role.mock.calls.length).toBeGreaterThan(loads);
+    expect(titles(view.container)).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows a Space only its own role lists and makes a new connection its main model there", async () => {
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    needsModel: true,
+  });
+  const view = await renderSettings(true, testQueryClient(), "space");
+  try {
+    expect(view.container.querySelector('[data-testid="model-role-main"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-approval"]')).not.toBeNull();
+    // Connections are the account's, so a Space does not list or add them.
+    expect(view.container.querySelector('[data-testid="model-providers"]')).toBeNull();
+    expect(models.role).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "main", scope: "space" }),
+      expect.anything(),
+    );
+    await pick("Change Main model", "DeepSeek");
+    await typeInto(keyField(view.container), "sk-fixture-deepseek");
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "deepseek", makeDefault: true, scope: "space" }),
+    );
+  } finally {
+    await view.unmount();
   }
 });
 
@@ -390,6 +630,7 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
 
   const fresh = await renderSettings();
   try {
+    await pick("Change Main model", "Cloudflare AI Gateway");
     const accountId = fresh.container.querySelector("#cloudflare-account-id");
     const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
     expect(accountId).toBeInstanceOf(HTMLInputElement);
@@ -416,6 +657,7 @@ it("shows Cloudflare account and gateway fields for a new and a saved connection
   ]);
   const saved = await renderSettings();
   try {
+    await manage();
     expect(
       (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
     ).toBe("acct1234");
@@ -444,6 +686,7 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
 
   const stored = await renderSettings();
   try {
+    await manage();
     const input = compatibleKeyField(stored.container);
     expect(input.value).toBe("");
     expect(input.placeholder).toBe(STORED_PLACEHOLDER);
@@ -464,123 +707,12 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
   ]);
   const empty = await renderSettings();
   try {
+    await manage();
     const input = compatibleKeyField(empty.container);
     expect(input.value).toBe("");
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
-  }
-});
-
-it("warns only on text-only models in the picker", async () => {
-  models.list.mockResolvedValue([
-    { ...deepseekEntry, images: false },
-    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision", images: true },
-    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
-  ]);
-  const view = await renderSettings();
-  try {
-    const describedAs = (element: Element) =>
-      (element.getAttribute("aria-describedby") ?? "")
-        .split(" ")
-        .map((id) => (id ? document.getElementById(id)?.textContent : null))
-        .filter(Boolean)
-        .join(" ");
-    const marked = (element: Element) =>
-      Boolean(element.querySelector(`[title="Can't read images"]`));
-    const trigger = view.container.querySelector('button[role="combobox"]');
-    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    const options = [...document.querySelectorAll('[role="option"]')];
-    // The label stays the model name; the icon is for eyes, the description for screen readers.
-    expect(
-      options.map((option) => [option.textContent, marked(option), describedAs(option)]),
-    ).toEqual([
-      ["DeepSeek Chat", true, "Can't read images"],
-      ["DeepSeek Vision", false, ""],
-      ["DeepSeek Unknown", false, ""],
-    ]);
-    await act(async () => {
-      (options[1] as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Vision",
-      false,
-      "",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    await act(async () => {
-      (document.querySelector('[role="option"]') as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("highlights the last model when ArrowUp reopens a searched picker", async () => {
-  models.list.mockResolvedValue([
-    deepseekEntry,
-    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision" },
-    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
-  ]);
-  const view = await renderSettings();
-  try {
-    const trigger = view.container.querySelector('button[role="combobox"]');
-    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
-    const search = () => document.querySelector('input[aria-label="Search models"]');
-    await act(async () => {
-      trigger.click();
-    });
-    await typeInto(search() as HTMLInputElement, "Vision");
-    await act(async () => {
-      trigger.click();
-    });
-    await act(async () => {
-      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
-    });
-    const active = search()?.getAttribute("aria-activedescendant");
-    expect(active ? document.getElementById(active)?.textContent : null).toBe("DeepSeek Unknown");
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("omits the redundant description and connection prompt", async () => {
-  const view = await renderSettings(false);
-  try {
-    expect(view.container.querySelector('[data-testid="model-description"]')).toBeNull();
-    expect(view.container.textContent).not.toContain("Choose which connected model Rakazo uses.");
-    expect(view.container.textContent).not.toContain(
-      "Connect this provider to use it as your personal model.",
-    );
-    expect(keyField(view.container)).toBeInstanceOf(HTMLInputElement);
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("keeps the server owner's description when relevant", async () => {
-  const view = await renderSettings(false, true);
-  try {
-    expect(view.container.querySelector('[data-testid="model-description"]')?.textContent).toBe(
-      "Models for the server owner’s default space.",
-    );
-  } finally {
-    await view.unmount();
   }
 });
 
@@ -630,18 +762,20 @@ const compatibleCredential = {
   enabledModelIds: ["model-a"],
 };
 
-async function renderCompatibleWithProbe(probed: string[]) {
+/** Renders a saved compatible connection as the main model and opens its dialog. */
+async function renderCompatible(credential: object = compatibleCredential) {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
   models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([compatibleCredential]);
-  models.probeOpenAiCompatible.mockResolvedValue({ models: probed });
+  models.credentials.mockResolvedValue([credential]);
   const view = await renderSettings();
-  await act(async () => {
-    buttons(view.container, "Find models")[0]?.click();
-  });
-  await act(async () => {
-    await Promise.resolve();
-  });
+  await manage();
+  return view;
+}
+
+async function renderCompatibleWithProbe(probed: string[]) {
+  models.probeOpenAiCompatible.mockResolvedValue({ models: probed });
+  const view = await renderCompatible();
+  await click(buttons(view.container, "Find models")[0]);
   return view;
 }
 
@@ -653,9 +787,7 @@ it("sends the ticked models other than the default when an OpenAI-compatible end
       modelCheckbox(view.container, "model-b").click();
     });
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
-    await act(async () => {
-      buttons(view.container, "Save")[0]?.click();
-    });
+    await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "openai-compatible",
@@ -685,12 +817,10 @@ it("keeps the default model checked and disabled", async () => {
 });
 
 it("lists saved models as checked rows before the server is probed", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([
-    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
-  ]);
-  const view = await renderSettings();
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
   try {
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
     const select = view.container.querySelector("select[aria-label='Models from server']");
@@ -704,40 +834,31 @@ it("lists saved models as checked rows before the server is probed", async () =>
   }
 });
 
-async function chooseDefault(container: HTMLElement, id: string) {
-  const select = container.querySelector("select[aria-label='Models from server']");
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Missing model select");
-  // Setting a value with no matching option would silently stage "" instead.
-  if (![...select.options].some((option) => option.value === id)) {
-    throw new Error(`Not a default option: ${id}`);
-  }
-  await act(async () => {
-    select.value = id;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
-it("allows Use this model only for a saved enabled model", async () => {
-  const unsaved = await renderCompatibleWithProbe(["model-a", "model-b"]);
-  try {
-    await act(async () => {
-      modelCheckbox(unsaved.container, "model-b").click();
-    });
-    await chooseDefault(unsaved.container, "model-b");
-    expect(buttons(unsaved.container, "Use this model")[0]?.disabled).toBe(true);
-  } finally {
-    await unsaved.unmount();
-  }
-
+it("offers a saved compatible model in the main picker and uses it", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
   models.credentials.mockResolvedValue([
     { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
   ]);
-  const saved = await renderSettings();
+  const view = await renderSettings();
   try {
-    await chooseDefault(saved.container, "model-b");
-    expect(buttons(saved.container, "Use this model")[0]?.disabled).toBe(false);
+    await openPicker("Change model-a");
+    expect(pickerOptions()).toEqual(expect.arrayContaining(["model-a", "model-b"]));
+    await choose("model-b");
+    expect(models.setRole).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "main",
+        primary: {
+          provider: "openai-compatible",
+          modelId: "model-b",
+          credentialId: "cred-compatible",
+        },
+        backups: [],
+      }),
+      expect.anything(),
+    );
   } finally {
-    await saved.unmount();
+    await view.unmount();
   }
 });
 
@@ -751,42 +872,29 @@ it("names each model checkbox by its id alone", async () => {
   }
 });
 
-it("omits model counts and key subtitles on the OpenAI-compatible provider row", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([
-    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
-  ]);
+it("lists not-connected providers by name alone", async () => {
+  models.list.mockResolvedValue([deepseekEntry, compatibleEntry]);
   const view = await renderSettings();
   try {
-    // Provider search keeps connection details out of the row.
-    const search = view.container.querySelector("#model-provider-search");
-    if (!(search instanceof HTMLInputElement)) throw new Error("Missing provider search");
-    await typeInto(search, "o");
-    const row = [...view.container.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes("OpenAI-compatible"),
-    );
-    expect(row?.textContent).not.toMatch(/models|API key/);
+    await openPicker("Change Main model");
+    expect(pickerOptions()).toEqual(["DeepSeek", "OpenAI-compatible", "Ollama Cloud"]);
+    expect(document.querySelectorAll("[cmdk-group-heading]")).toHaveLength(0);
   } finally {
     await view.unmount();
   }
 });
 
 it("keeps a saved model listed, unticked, after a refused save", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([
-    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
-  ]);
   models.connect.mockRejectedValue(new Error("In use by Helper"));
-  const view = await renderSettings();
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
   try {
     await act(async () => {
       modelCheckbox(view.container, "model-b").click();
     });
-    await act(async () => {
-      buttons(view.container, "Save")[0]?.click();
-    });
+    await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ modelId: "model-a", enabledModelIds: [] }),
     );
@@ -797,57 +905,562 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
   }
 });
 
-it("allows Use this model for a legacy connection without a saved list", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  const { enabledModelIds: _unread, ...unreadable } = compatibleCredential;
-  models.credentials.mockResolvedValue([unreadable]);
-  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a", "model-b"] });
-  const view = await renderSettings();
-  try {
-    await act(async () => {
-      buttons(view.container, "Find models")[0]?.click();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    await act(async () => {
-      modelCheckbox(view.container, "model-b").click();
-    });
-    await chooseDefault(view.container, "model-b");
-    expect(buttons(view.container, "Use this model")[0]?.disabled).toBe(false);
-  } finally {
-    await view.unmount();
-  }
-});
-
 function baseUrlField(container: HTMLElement) {
-  const input = [...container.querySelectorAll("input")].find(
-    (entry) => entry.value === compatibleCredential.baseUrl,
-  );
+  const input = container.querySelector("#model-base-url");
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing server URL field");
   return input;
 }
 
 it("drops the saved ticks and rows when the server URL changes, and restores them on the saved URL", async () => {
-  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
-  models.list.mockResolvedValue([compatibleEntry]);
-  models.credentials.mockResolvedValue([
-    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
-  ]);
-  const view = await renderSettings();
+  const view = await renderCompatible({
+    ...compatibleCredential,
+    enabledModelIds: ["model-a", "model-b"],
+  });
   try {
-    const field = baseUrlField(view.container);
-    await typeInto(field, "http://other.test/v1");
+    await typeInto(baseUrlField(view.container), "http://other.test/v1");
     expect(() => modelCheckbox(view.container, "model-b")).toThrow();
-    await act(async () => {
-      buttons(view.container, "Save")[0]?.click();
-    });
+    await typeInto(baseUrlField(view.container), compatibleCredential.baseUrl);
+    expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
+    await typeInto(baseUrlField(view.container), "http://other.test/v1");
+    await click(buttons(view.container, "Save")[0]);
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ baseUrl: "http://other.test/v1", enabledModelIds: [] }),
     );
-    await typeInto(field, compatibleCredential.baseUrl);
-    expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("probes with the editing credential id without sending saved header values", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith({
+      baseUrl: compatibleCredential.baseUrl,
+      apiKey: undefined,
+      headers: undefined,
+      credentialId: compatibleCredential.id,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows saved header names only, preserves untouched headers and explicitly clears removed headers", async () => {
+  const view = await renderCompatible({ ...compatibleCredential, headerNames: ["x-session"] });
+  try {
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    expect(name.value).toBe("x-session");
+    expect(value.type).toBe("password");
+    expect(value.placeholder).toBe("••••••••");
+    expect(value.value).toBe("");
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ headers: undefined }),
+    );
+    await manage();
+    await click(view.container.querySelector('button[aria-label="Remove header"]'));
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenLastCalledWith(expect.objectContaining({ headers: {} }));
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each([" http://127.0.0.1:8000/v1 ", "http://127.0.0.1:8000/v1/", "http://127.0.0.1:8000"])(
+  "preserves saved header rows at the equivalent endpoint %s",
+  async (endpoint) => {
+    const view = await renderCompatible({
+      ...compatibleCredential,
+      headerNames: ["x-session", "x-route"],
+    });
+    try {
+      await typeInto(baseUrlField(view.container), endpoint);
+      const names = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header name"]',
+      );
+      const values = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header value"]',
+      );
+      expect([...names].map((input) => input.value)).toEqual(["x-session", "x-route"]);
+      expect([...values].map((input) => input.placeholder)).toEqual(["••••••••", "••••••••"]);
+      expect([...values].map((input) => input.value)).toEqual(["", ""]);
+      await typeInto(values[0]!, "fake-session-secret");
+      // Editing one saved header must retain the other row and require its value too.
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+      await typeInto(values[1]!, "fake-routing-secret");
+      await click(buttons(view.container, "Save")[0]);
+      expect(models.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          headers: { "x-session": "fake-session-secret", "x-route": "fake-routing-secret" },
+        }),
+      );
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("does not inherit saved header rows or placeholders at another origin", async () => {
+  const view = await renderCompatible({ ...compatibleCredential, headerNames: ["x-session"] });
+  try {
+    await typeInto(baseUrlField(view.container), "http://other.test/v1");
+    expect(view.container.querySelector('input[aria-label="Header name"]')).toBeNull();
+    await click(buttons(view.container, "Add header")[0]);
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>('input[aria-label="Header name"]')!,
+      "x-session",
+    );
+    const value = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Header value"]',
+    )!;
+    expect(value.placeholder).toBe("");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("disables Save for invalid custom header names", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    await click(buttons(view.container, "Add header")[0]);
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    await typeInto(name, "Authorization");
+    await typeInto(value, "long-session-secret");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(name, "bad name");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("opens the Ollama preset with a required key and saves a compatible connection", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["fixture-model"] });
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "Ollama Cloud");
+    expect(titles(view.container)).toContain("Connect Ollama Cloud");
+    expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
+    expect(
+      [...view.container.querySelectorAll("button")].filter(
+        (row) => row.textContent === "Setup help",
+      ),
+    ).toHaveLength(0);
+    expect(
+      [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
+    ).toHaveLength(0);
+    const key = view.container.querySelector(
+      'input[placeholder="Ollama API key"]',
+    ) as HTMLInputElement;
+    expect(key.required).toBe(true);
+    await typeInto(key, "fake-fixture-key");
+    await click(buttons(view.container, "Find models")[0]);
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: "https://ollama.com/v1", apiKey: "fake-fixture-key" }),
+    );
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        baseUrl: "https://ollama.com/v1",
+        apiKey: "fake-fixture-key",
+        modelId: "fixture-model",
+        makeDefault: true,
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("offers a saved Ollama connection's models without the Ollama preset", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      label: "OpenAI-compatible",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "https://ollama.com/",
+      hasKey: true,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    await openPicker("Change Main model");
+    expect(pickerOptions()).toEqual(["fixture-model"]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the Ollama preset to connect beside a saved local connection", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      label: "OpenAI-compatible",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      hasKey: false,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    await openPicker("Add fallback");
+    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
+    await choose("Ollama Cloud");
+    expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "OpenAI-compatible");
+    for (const name of ["Setup help", "API key"]) {
+      const row = buttons(view.container, name)[0]!;
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+      expect(row.querySelector("svg")).not.toBeNull();
+      await act(async () => row.click());
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+    }
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+  "keeps Save enabled with a saved Ollama key at %s",
+  async (baseUrl) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "fixture-model"));
+    models.list.mockResolvedValue([compatibleEntry]);
+    models.credentials.mockResolvedValue([
+      {
+        id: "fixture",
+        label: "OpenAI-compatible",
+        provider: "openai-compatible",
+        modelId: "fixture-model",
+        baseUrl: "https://ollama.com/v1",
+        hasKey: true,
+      },
+    ]);
+    const view = await renderSettings(false);
+    try {
+      await manage();
+      expect(titles(view.container)).toContain("Ollama Cloud");
+      await typeInto(baseUrlField(view.container), baseUrl);
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+      await typeInto(baseUrlField(view.container), "https://other.test/v1");
+      await typeInto(baseUrlField(view.container), "https://ollama.com/v1/");
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it.each([undefined, "api_key", "oauth"])(
+  "only enables subscription connection checks for saved OAuth credentials (%s)",
+  async (authKind) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
+    models.list.mockResolvedValue([
+      {
+        provider: "openai-codex",
+        providerName: "ChatGPT",
+        id: "fixture-model",
+        label: "Fixture model",
+        billing: "Subscription",
+        auth: "oauth",
+        signIn: "device-code",
+        oauthLabel: "Sign in with ChatGPT",
+      },
+    ]);
+    models.credentials.mockResolvedValue(
+      authKind
+        ? [
+            {
+              id: "fixture",
+              label: "ChatGPT",
+              provider: "openai-codex",
+              modelId: "fixture-model",
+              authKind,
+            },
+          ]
+        : [],
+    );
+    const view = await renderSettings();
+    try {
+      if (authKind) await manage();
+      else await pick("Change Main model", "ChatGPT");
+      expect(buttons(view.container, "Test connection")[0]?.disabled).toBe(authKind !== "oauth");
+      expect(view.container.textContent).not.toContain("Test sign-in");
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("tests the selected subscription connection when another connection has the same model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "api",
+      label: "API",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "api_key",
+    },
+    {
+      id: "oauth",
+      label: "Subscription",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "oauth",
+    },
+  ]);
+  models.role.mockImplementation(async ({ role }: { role: string }) => ({
+    primary:
+      role === "main"
+        ? { provider: "anthropic", modelId: "claude-fixture", credentialId: "oauth" }
+        : null,
+    backups: [],
+  }));
+  const view = await renderSettings();
+  try {
+    await manage();
+    await click(buttons(view.container, "Test connection")[0]);
+    expect(view.container.textContent).toContain("A subscription credential is stored securely.");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      label: "Anthropic",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      hasKey: false,
+      authKind: "oauth",
+    },
+  ]);
+  const view = await renderSettings();
+  try {
+    await manage();
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+    await click(buttons(view.container, "Or paste an API key")[0]);
+    expect(keyField(view.container)).toBeTruthy();
+    expect(buttons(view.container, "Connect API key")).toHaveLength(1);
+    expect(view.container.textContent).not.toContain("Replace API key");
+  } finally {
+    await view.unmount();
+  }
+});
+
+function providersSection() {
+  const found = document.querySelector('[data-testid="model-providers"]');
+  if (!found) throw new Error("Missing Providers section");
+  return found as HTMLElement;
+}
+
+/** Opens a connection's page from the Providers list. */
+async function openProvider(name: string) {
+  await click(
+    [...providersSection().querySelectorAll("button")].find((entry) => entry.textContent === name),
+  );
+}
+
+const workCredential = {
+  ...deepseekCredential,
+  id: "cred-deepseek-work",
+  label: "Work",
+  isDefault: false,
+};
+
+it("lists every connection under Providers and adds another for a connected provider", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    expect(
+      [...providersSection().querySelectorAll('[data-testid^="model-provider-"]')].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["DeepSeek", "DeepSeek (Work)"]);
+    await click(buttons(providersSection() as HTMLElement, "Add provider")[0]);
+    expect(pickerOptions()).toContain("DeepSeek");
+    await choose("DeepSeek");
+    expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
+    expect(keyField(view.container).placeholder).toBe("sk-…");
+    await typeInto(keyField(view.container), "sk-fixture-personal");
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepseek",
+        apiKey: "sk-fixture-personal",
+        credentialId: null,
+        makeDefault: false,
+      }),
+    );
+    expect(models.setRole).not.toHaveBeenCalled();
+    expect(titles(view.container)).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("replaces one connection's key and disconnects only that connection", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    expect(titles(view.container)).toEqual(["DeepSeek (Work)"]);
+    await typeInto(keyField(view.container), "sk-fixture-rotated");
+    await click(buttons(view.container, "Replace API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepseek",
+        apiKey: "sk-fixture-rotated",
+        credentialId: "cred-deepseek-work",
+      }),
+    );
+
+    await openProvider("DeepSeek (Work)");
+    await click(buttons(view.container, "Disconnect")[0]);
+    const confirm = buttons(view.container, "Disconnect");
+    await click(confirm[confirm.length - 1]);
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "cred-deepseek-work",
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps another connection's form when an earlier save finishes", async () => {
+  models.list.mockResolvedValue([deepseekEntry, openrouterEntry]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  let finishSave!: (value: unknown) => void;
+  models.connect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+  );
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    await choose("OpenRouter");
+    await typeInto(keyField(view.container), "sk-fixture-router");
+    await click(buttons(view.container, "Connect API key")[0]);
+    // Fields wait for the save, so it cannot overwrite edits made meanwhile.
+    expect(keyField(view.container).closest("fieldset")?.disabled).toBe(true);
+    // The main model's connection opens while the first key still saves.
+    await manage();
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    await act(async () => {
+      finishSave({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
+    });
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    // The finished save's slot picker does not take over.
+    expect(pickerOptions()).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("renames a connection", async () => {
+  models.rename.mockResolvedValue({ ok: true });
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek (Work)");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    expect(input.value).toBe("Work");
+    await typeInto(input, "Client work");
+    await act(async () => {
+      input.form?.requestSubmit();
+    });
+    expect(models.rename).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek-work",
+      label: "Client work",
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows what a disconnect left, not a read sent before it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  await first.unmount();
+
+  // The revisit's background read still lists Work when the disconnect lands.
+  let releaseStale: () => void = () => undefined;
+  models.credentials
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStale = () => resolve([deepseekCredential, workCredential]);
+        }),
+    )
+    .mockResolvedValue([deepseekCredential]);
+  const providerNames = () =>
+    [...providersSection().querySelectorAll("button")].map((entry) => entry.textContent);
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(providerNames()).toContain("DeepSeek (Work)");
+    await openProvider("DeepSeek (Work)");
+    await click(buttons(view.container, "Disconnect")[0]);
+    const confirm = buttons(view.container, "Disconnect");
+    await click(confirm[confirm.length - 1]);
+    await act(async () => releaseStale());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(providerNames()).not.toContain("DeepSeek (Work)");
   } finally {
     await view.unmount();
   }

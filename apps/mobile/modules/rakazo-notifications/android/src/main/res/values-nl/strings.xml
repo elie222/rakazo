@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">Live-agentstatus</string>
+  <string name="rakazo_channel_messages">Berichten van agents</string>
+  <string name="rakazo_channel_scheduled">Geplande taken</string>
+  <string name="rakazo_channel_attention">Vereist aandacht</string>
+
+  <string name="rakazo_live_one">%1$s is bezig</string>
+  <string name="rakazo_live_many">%1$s en %2$d anderen zijn bezig</string>
+  <string name="rakazo_live_working">Bezig</string>
+
+  <string name="rakazo_scheduled_title">%1$s · Geplande taak</string>
+  <string name="rakazo_replied_group">%1$s heeft gereageerd in %2$s</string>
+  <string name="rakazo_replied">%1$s heeft gereageerd</string>
+
+  <string name="rakazo_attention_failed">%1$s is een probleem tegengekomen</string>
+  <string name="rakazo_attention_takeover">%1$s heeft je op het scherm nodig</string>
+  <string name="rakazo_attention_input">%1$s heeft je invoer nodig</string>
+</resources>

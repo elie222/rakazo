@@ -118,7 +118,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-deferred",
         status: { in: ["deferred", "received", "observed"] },
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         status: "ignored",
@@ -1108,7 +1112,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-raced",
         status: { in: ["deferred", "received", "observed"] },
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         status: "ignored",
@@ -1141,7 +1149,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-deferred",
         status: "deferred",
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         nextAttemptAt: expect.any(Date),
@@ -1731,7 +1743,12 @@ describe("team chat bridge", () => {
           in: ["message_routine_routing", "message_routine_routing_rearmed"],
         },
         nextAttemptAt: { lte: expect.any(Date) },
-        externalConversation: { provider: "slack", botId: "bot-1", spaceId: "space-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          spaceId: "space-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
     });
@@ -2013,12 +2030,14 @@ describe("team chat bridge", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const runUpdateMany = vi.fn(async () => ({ count: 1 }));
     const taskUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const secretDeleteMany = vi.fn(async () => ({ count: 0 }));
     const sendUserMessage = vi.fn(async () => {
       await sendGate;
       return { messageId: "message-1", runId: "run-1", seq: 1, taskId: "task-1" };
     });
     const bridge = new TeamChatBridge({
       prisma: {
+        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
         externalMessage: {
           updateMany,
           findUnique: vi.fn(async () => ({
@@ -2027,8 +2046,12 @@ describe("team chat bridge", () => {
           })),
         },
         message: { findUnique: messageFindUnique, findMany: vi.fn(async () => []) },
-        run: { updateMany: runUpdateMany },
+        run: {
+          updateMany: runUpdateMany,
+          findMany: vi.fn(async () => [{ id: "run-1", userId: "owner-1", spaceId: "space-1" }]),
+        },
         task: { updateMany: taskUpdateMany },
+        secret: { deleteMany: secretDeleteMany },
       } as unknown as PrismaClient,
       events: { sendUserMessage },
       jobs: { enqueue },
@@ -2115,6 +2138,14 @@ describe("team chat bridge", () => {
     expect(taskUpdateMany).toHaveBeenCalledWith({
       where: { id: "task-1" },
       data: { status: "cancelled" },
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" },
+          { userId: "owner-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-atomic", status: "queueing", runId: null },

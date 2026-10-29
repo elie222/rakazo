@@ -5,6 +5,7 @@ import type {
   BrowserSnapshotNode,
   BrowserSnapshotResult,
 } from "@rakazo/adapter-kit";
+import type { PurchaseCardField } from "@rakazo/contracts";
 import { JSDOM } from "jsdom";
 
 const INTERACTIVE_SELECTOR = [
@@ -24,8 +25,34 @@ const INTERACTIVE_SELECTOR = [
   "[contenteditable='true']",
 ].join(",");
 
-/** Saved logins are typed only into these input types. Textareas stay out: a username is an input. */
-const LOGIN_FILL_INPUT_TYPES = new Set(["text", "email", "password", "tel"]);
+const REOPEN_SAVED_SITE = "Open the saved site with browser_navigate, then fill again.";
+const REOPEN_MERCHANT_SITE = "Open the merchant's checkout with browser_navigate, then fill again.";
+const CARD_FIELD_MISSING =
+  "No field for this card detail was found on the page. Pass its ref from browser_snapshot.";
+const CARD_FIELD_AMBIGUOUS =
+  "More than one field on the page takes this card detail. Pass its ref from browser_snapshot.";
+
+const PAY_TOKEN_MISSING =
+  "This checkout has no pay token field for this purchase's merchant. Take a fresh snapshot.";
+
+/** Saved usernames are typed only into these input types. Textareas stay out: a username is an input. */
+const USERNAME_INPUT_TYPES = new Set(["text", "email", "tel"]);
+
+/** Card details are typed only into these; the CVC field is often a password input. */
+const CARD_INPUT_TYPES = new Set(["text", "tel", "password"]);
+
+const CARD_AUTOCOMPLETE: Record<PurchaseCardField, string> = {
+  number: "cc-number",
+  expiry: "cc-exp",
+  cvc: "cc-csc",
+  postal_code: "postal-code",
+};
+
+/** A saved-login or card fill declined before the page changed; reported as settled, not uncertain. */
+class FillRefused extends Error {}
+
+/** A step the page cannot take as asked, such as an option the dropdown does not have. */
+class SettledStep extends Error {}
 
 type DomWindow = JSDOM["window"];
 type DomElement = InstanceType<DomWindow["Element"]>;
@@ -34,7 +61,7 @@ type DomElement = InstanceType<DomWindow["Element"]>;
 export class PageBrowserSession {
   private dom: JSDOM;
   private refs = new Map<string, DomElement>();
-  /** Fields holding a saved login; snapshots never report their values. */
+  /** Fields holding a saved login or card detail; snapshots never report their values. */
   private loginFilled = new WeakSet<DomElement>();
   private nextRef = 1;
 
@@ -67,10 +94,11 @@ export class PageBrowserSession {
 
   snapshot(): BrowserSnapshotResult {
     const { elements, tree } = this.buildSnapshot();
+    const account = payTokenAccount(this.dom.window);
     return {
       url: this.url,
       title: this.title,
-      tree,
+      tree: account ? `${tree}\n${payTokenHint(account)}` : tree,
       elements,
     };
   }
@@ -78,8 +106,8 @@ export class PageBrowserSession {
   act(actions: BrowserActStep[]): BrowserActResult {
     let completed = 0;
     for (const action of actions) {
-      const el = this.refs.get(action.ref);
-      if (!el) {
+      const el = action.ref === undefined ? undefined : this.refs.get(action.ref);
+      if (action.ref !== undefined && !el) {
         const snap = this.snapshot();
         return {
           ok: false,
@@ -88,12 +116,16 @@ export class PageBrowserSession {
           title: snap.title,
           tree: snap.tree,
           elements: snap.elements,
-          error: `Unknown element ref "${action.ref}". Call browser_snapshot and use a fresh ref.`,
-          fallback: "computer_act",
+          error: `Stale element ref "${action.ref}": the page has changed since that snapshot. Use a ref from the page below.`,
+          uncertain: false,
         };
       }
       try {
-        this.applyAction(el, action);
+        if (action.kind === "pay_token") this.fillPayToken(action);
+        else {
+          if (action.kind === "fill" || action.kind === "type") this.checkFillOrigin(action);
+          this.applyAction(el ?? this.cardField(action), action);
+        }
       } catch (error) {
         const snap = this.snapshot();
         return {
@@ -104,7 +136,9 @@ export class PageBrowserSession {
           tree: snap.tree,
           elements: snap.elements,
           error: error instanceof Error ? error.message : String(error),
-          fallback: "computer_act",
+          ...(error instanceof FillRefused || error instanceof SettledStep
+            ? { uncertain: false }
+            : { fallback: "computer_act" as const }),
         };
       }
       completed += 1;
@@ -118,6 +152,60 @@ export class PageBrowserSession {
       tree: snap.tree,
       elements: snap.elements,
     };
+  }
+
+  private fillPayToken(action: Extract<BrowserActStep, { kind: "pay_token" }>): void {
+    this.checkFillOrigin({ ...action, field: "card" });
+    const win = this.dom.window;
+    if (payTokenAccount(win) !== action.merchantAccountId) throw new FillRefused(PAY_TOKEN_MISSING);
+    const input = win.document.querySelector(PAY_TOKEN_INPUT);
+    if (!(input instanceof win.HTMLInputElement)) throw new FillRefused(PAY_TOKEN_MISSING);
+    this.loginFilled.add(input);
+    input.value = action.text;
+    input.dispatchEvent(new win.Event("input", { bubbles: true }));
+  }
+
+  private checkFillOrigin(action: { origin?: string; field?: string }): void {
+    const card = action.field === "card";
+    if (!action.origin && !card) return;
+    const page = new URL(this.url);
+    const notHttps = card
+      ? `A card can only be filled on HTTPS. ${REOPEN_MERCHANT_SITE}`
+      : `Website logins can only be filled on HTTPS. ${REOPEN_SAVED_SITE}`;
+    let saved: URL;
+    try {
+      saved = new URL(action.origin ?? "");
+    } catch {
+      throw new FillRefused(notHttps);
+    }
+    // Private-LAN HTTP never qualifies, even when the page origin matches.
+    if (saved.protocol !== "https:" || page.protocol !== "https:") {
+      throw new FillRefused(notHttps);
+    }
+    if (page.origin !== saved.origin) {
+      throw new FillRefused(
+        card
+          ? `The page is not on the merchant's site for this purchase. ${REOPEN_MERCHANT_SITE}`
+          : `The page is not on the site this login was saved for. ${REOPEN_SAVED_SITE}`,
+      );
+    }
+  }
+
+  private cardField(action: BrowserActStep): DomElement {
+    if (!("cardField" in action)) throw new Error("Element ref is required");
+    const win = this.dom.window;
+    const token = CARD_AUTOCOMPLETE[action.cardField];
+    const matches = [...win.document.querySelectorAll("input")].filter(
+      (input) =>
+        CARD_INPUT_TYPES.has(input.type) &&
+        !input.disabled &&
+        !input.readOnly &&
+        !isIgnored(win, input) &&
+        (input.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/).includes(token),
+    );
+    if (matches.length === 0) throw new FillRefused(CARD_FIELD_MISSING);
+    if (matches.length > 1) throw new FillRefused(CARD_FIELD_AMBIGUOUS);
+    return matches[0]!;
   }
 
   private applyAction(el: DomElement, action: BrowserActStep): void {
@@ -156,49 +244,69 @@ export class PageBrowserSession {
       return;
     }
     if (action.kind === "fill" || action.kind === "type") {
-      if (action.origin) {
-        const page = new URL(this.url);
-        let saved: URL;
-        try {
-          saved = new URL(action.origin);
-        } catch {
-          throw new Error("Website logins can only be filled on HTTPS.");
-        }
-        // Private-LAN HTTP never qualifies, even when the page origin matches.
-        if (saved.protocol !== "https:" || page.protocol !== "https:") {
-          throw new Error("Website logins can only be filled on HTTPS.");
-        }
-        if (page.origin !== saved.origin) {
-          throw new Error("The page is not on the site this login was saved for.");
-        }
+      const card = action.field === "card";
+      if (action.origin || card) {
         const inputType = el instanceof win.HTMLInputElement ? el.type : "";
-        if (!LOGIN_FILL_INPUT_TYPES.has(inputType)) {
-          throw new Error(
-            "A saved login can only be typed into a text, email, password, or telephone field.",
+        if (card) {
+          if (!CARD_INPUT_TYPES.has(inputType)) {
+            throw new FillRefused("A card can only be typed into a card field.");
+          }
+        } else if (action.field !== "username" && inputType !== "password") {
+          // A password goes only into a password field, which never displays it.
+          throw new FillRefused("A saved password can only be typed into a password field.");
+        }
+        if (action.field === "username" && !USERNAME_INPUT_TYPES.has(inputType)) {
+          throw new FillRefused(
+            "A saved username can only be typed into a text, email, or telephone field.",
           );
         }
       }
       const text = action.text;
       const formField = el instanceof win.HTMLInputElement || el instanceof win.HTMLTextAreaElement;
       if (formField) {
-        // Only a plain fill replaces a saved login; typing appends to it.
+        // Fill and type both replace the field, and with it any saved login.
         if (action.origin) this.loginFilled.add(el);
-        else if (action.kind === "fill") this.loginFilled.delete(el);
-        if (action.kind === "fill") el.value = text;
-        else el.value = `${el.value}${text}`;
+        else this.loginFilled.delete(el);
+        el.value = text;
+        // A partly accepted login or card is not left on the page, as in the live helper.
+        if (action.origin && el.value !== text) {
+          el.value = "";
+          throw new FillRefused(
+            card
+              ? "This field didn't accept the card, so it was cleared."
+              : "This field didn't accept the saved login, so it was cleared.",
+          );
+        }
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
         return;
       }
       if (el instanceof win.HTMLSelectElement) {
-        const match = [...el.options].find((o) => o.value === text || o.text === text);
-        el.value = match ? match.value : text;
+        const norm = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+        const options = [...el.options];
+        const match =
+          options.find((o) => o.value === text) ??
+          options.find((o) => optionLabel(o) === text) ??
+          options.find((o) => norm(optionLabel(o)) === norm(text) || norm(o.value) === norm(text));
+        if (!match) {
+          throw new SettledStep(
+            `This dropdown has no option "${text}". Its options: ${describeOptions(optionsOf(el, win))}.`,
+          );
+        }
+        if (unavailable(win, match)) {
+          throw new SettledStep(
+            `The option "${optionLabel(match)}" is disabled. Its options: ${describeOptions(optionsOf(el, win))}.`,
+          );
+        }
+        // The old choice goes: a multiple select would keep it otherwise.
+        for (const option of options) option.selected = false;
+        match.selected = true;
+        el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
         return;
       }
       if (el.getAttribute("contenteditable") === "true") {
-        if (action.kind === "fill") el.textContent = text;
-        else el.textContent = `${el.textContent ?? ""}${text}`;
+        el.textContent = text;
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         return;
       }
@@ -224,12 +332,33 @@ export class PageBrowserSession {
       const tag = node.tagName.toLowerCase();
       const entry: BrowserSnapshotNode = { ref, role, name, tag };
       if (value !== undefined) entry.value = value;
+      if (node instanceof win.HTMLSelectElement) entry.options = optionsOf(node, win);
       elements.push(entry);
       const valuePart = value !== undefined ? ` value=${JSON.stringify(value)}` : "";
-      lines.push(`- ${role} ${JSON.stringify(name)} [${ref}]${valuePart}`);
+      const optionsPart = entry.options ? ` options: ${describeOptions(entry.options)}` : "";
+      lines.push(`- ${role} ${JSON.stringify(name)} [${ref}]${valuePart}${optionsPart}`);
     }
     return { elements, tree: lines.join("\n") || "(no interactive elements)" };
   }
+}
+
+const PAY_TOKEN_INPUT = '.AiAgentPaymentSteering input[name="link_pay_token"]';
+
+function payTokenAccount(win: DomWindow): string | null {
+  const blocks = [...win.document.querySelectorAll(".AiAgentPaymentSteering")].filter((block) =>
+    block.querySelector('input[name="link_pay_token"]'),
+  );
+  if (blocks.length !== 1) return null;
+  const block = blocks[0]!;
+  const holder = block.matches("[data-stripe-merchant-account]")
+    ? block
+    : block.querySelector("[data-stripe-merchant-account]");
+  const account = holder?.getAttribute("data-stripe-merchant-account") ?? "";
+  return /^acct_[A-Za-z0-9]{1,64}$/.test(account) ? account : null;
+}
+
+function payTokenHint(account: string): string {
+  return `This checkout accepts a pay token: merchantAccountId "${account}".`;
 }
 
 function isIgnored(win: DomWindow, el: DomElement): boolean {
@@ -238,6 +367,37 @@ function isIgnored(win: DomWindow, el: DomElement): boolean {
   if (el.getAttribute("aria-hidden") === "true")
     return !(el instanceof win.HTMLInputElement && el.type === "file");
   return false;
+}
+
+function optionLabel(option: { label: string; text: string }): string {
+  return (option.label || option.text).replace(/\s+/g, " ").trim();
+}
+
+/** An option is out of reach when it, or the group it is in, is disabled. */
+function unavailable(win: DomWindow, option: HTMLOptionElement): boolean {
+  const group = option.parentElement;
+  return option.disabled || (group instanceof win.HTMLOptGroupElement && group.disabled);
+}
+
+function optionsOf(select: { options: Iterable<HTMLOptionElement> }, win: DomWindow) {
+  return [...select.options].map((option) => ({
+    label: optionLabel(option),
+    value: option.value,
+    ...(option.selected ? { selected: true } : {}),
+    ...(unavailable(win, option) ? { disabled: true } : {}),
+  }));
+}
+
+function describeOptions(options: NonNullable<BrowserSnapshotNode["options"]>): string {
+  return options
+    .map(
+      (option) =>
+        JSON.stringify(option.label) +
+        (option.value !== option.label ? `=${JSON.stringify(option.value)}` : "") +
+        (option.selected ? " (selected)" : "") +
+        (option.disabled ? " (disabled)" : ""),
+    )
+    .join(", ");
 }
 
 function roleFor(win: DomWindow, el: DomElement): string {
@@ -261,6 +421,20 @@ function roleFor(win: DomWindow, el: DomElement): string {
 }
 
 function nameFor(win: DomWindow, el: DomElement): string {
+  const root = el.getRootNode();
+  const labelledBy = (el.getAttribute("aria-labelledby") ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) =>
+      root instanceof win.Document || root instanceof win.ShadowRoot
+        ? (root.getElementById(id)?.textContent ?? "")
+        : "",
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (labelledBy) return labelledBy;
   const aria = el.getAttribute("aria-label")?.trim();
   if (aria) return aria;
   if (el instanceof win.HTMLInputElement || el instanceof win.HTMLTextAreaElement) {

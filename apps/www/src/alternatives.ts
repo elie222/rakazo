@@ -2,8 +2,7 @@ import { OPENCLAW_H1 } from "./guide";
 import { GROK_ALTERNATIVE_H1, GROK_ALTERNATIVE_PATH } from "./grok-alternative";
 import { DOCS_URL, GITHUB_URL, OPENCLAW_ALTERNATIVE_PATH } from "./site";
 
-/** Public descriptions were read on this date. */
-export const COMPARED_ON = "October 7, 2026";
+export const ROUNDUP_UPDATED = "October 24, 2026";
 
 export const GET_STARTED = {
   heading: "Get started",
@@ -53,6 +52,7 @@ export type Alternative = {
   h1: string;
   /** Column heading for the other product. */
   otherName: string;
+  comparedOn: string;
   intro: readonly string[];
   /** Optional sections rendered before the comparison table. */
   sections?: readonly AlternativeSection[];
@@ -65,10 +65,10 @@ export const ALTERNATIVES_HUB = {
   title:
     "Best Personal AI Agents in 2026: Grok Bot, Muse, Dots, Instinct, Hark Pro & Open Source Alternatives",
   description:
-    "A dated comparison of Grok Bot, Meta Muse, OpenAI Dots, Instinct, Hark Pro, OpenClaw, Hermes Agent, and Rakazo. Licenses, self-hosting, model choice, price, setup, and whether you manage the agent from chat.",
+    "A dated comparison of Grok Bot, Meta Muse, OpenAI Dots, Instinct, Claude Duet, Hark Pro, OpenClaw, Hermes Agent, and Rakazo. Licenses, self-hosting, model choice, price, setup, and whether you manage the agent from chat.",
   h1: "Best Personal AI Agents in 2026: Grok Bot, Muse, Dots, Instinct, Hark Pro & Open Source Alternatives",
   intro:
-    "These are different products that all take on work beyond a single reply. This page compares their public descriptions as of October 7, 2026. It is not a score, a benchmark, or a claim that one of them is best at every task.",
+    "These are different products that all take on work beyond a single reply. This page compares their public descriptions, read between October 7 and October 24, 2026. It is not a score, a benchmark, or a claim that one of them is best at every task.",
 } as const;
 
 const MUSE_SOURCES = [
@@ -151,6 +151,23 @@ const HARK_SOURCES = [
   { label: "Hark security", href: "https://hark.com/security" },
 ] as const satisfies readonly SourceLink[];
 
+const DUET_SOURCES = [
+  {
+    label: "Anthropic, Introducing Claude Duet (October 21, 2026)",
+    href: "https://claude.com/resources/articles/claude-duet",
+  },
+  { label: "Claude Duet", href: "https://claude.com/product/claude-duet" },
+  {
+    label: "Claude Help Center, Get started with Claude Duet",
+    href: "https://support.claude.com/en/articles/17631495",
+  },
+  {
+    label: "Anthropic, Claude Duet: Safety, Privacy, and Security (October 23, 2026)",
+    href: "https://claude.com/resources/articles/claude-duet-safety-privacy-and-security",
+  },
+  { label: "Claude pricing", href: "https://claude.com/pricing" },
+] as const satisfies readonly SourceLink[];
+
 /**
  * Comparison pages. Add an entry here to publish `/${slug}/` and a hub card.
  */
@@ -163,6 +180,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Meta's Muse personal agent.",
     h1: "Open source Meta Muse alternative",
+    comparedOn: "October 7, 2026",
     otherName: "Muse",
     intro: [
       "Muse is Meta's personal AI agent, introduced on September 8, 2026. It runs on a virtual machine Meta operates, and you talk to it in the Muse app or WhatsApp. Meta says it can keep working after you close the app.",
@@ -261,6 +279,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with OpenAI's Dots agents.",
     h1: "Open source OpenAI Dots alternative",
+    comparedOn: "October 7, 2026",
     otherName: "Dots",
     intro: [
       "Dots are OpenAI's always-on agents, announced on September 29, 2026. OpenAI says they use GPT-6 Astra, have their own cloud computer, and are rolling out on eligible Pro, Business Premium, and Enterprise plans.",
@@ -339,6 +358,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     description:
       "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Instinct, the personal assistant you text or call.",
     h1: "Open source Instinct AI alternative",
+    comparedOn: "October 7, 2026",
     otherName: "Instinct",
     intro: [
       "Instinct is a personal assistant operated by Spear Street Technology, Inc. The homepage says there are no new interfaces: you text or call it, and it can use a phone and a computer the way a person does. Examples on that page include disputing a bill, sending gifts, ordering groceries, scheduling a doctor's appointment, and planning a trip.",
@@ -438,6 +458,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     description:
       "Rakazo is an open source, self-hosted AI agent with a chat interface. Compare its setup with Hermes Agent, the MIT-licensed agent from Nous Research.",
     h1: "Open source Hermes Agent alternative",
+    comparedOn: "October 7, 2026",
     otherName: "Hermes Agent",
     intro: [
       "Hermes Agent is Nous Research's open source AI agent, released under the MIT license. You can run it on your own machine. The project site also offers optional Nous Portal credits and cloud hosting.",
@@ -555,6 +576,86 @@ export const ALTERNATIVES: readonly Alternative[] = [
     sources: HERMES_SOURCES,
   },
   {
+    slug: "claude-duet-alternative",
+    name: "Claude Duet",
+    summary: "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
+    title: "Open Source Claude Duet Alternative – Rakazo",
+    description:
+      "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Claude Duet, Anthropic's personal agent.",
+    h1: "Open source Claude Duet alternative",
+    comparedOn: "October 24, 2026",
+    otherName: "Claude Duet",
+    intro: [
+      "Claude Duet is Anthropic's proactive personal agent, released as a research preview on October 21, 2026. You message it like a person. It sends a morning brief, checks your connected accounts, and works on a cloud computer Anthropic runs.",
+      "Rakazo is open source software for persistent AI teammates. You run it, you choose the model, and you can have more than one bot. Rakazo can also sign in with your Claude Pro or Max subscription.",
+    ],
+    rows: [
+      {
+        topic: "Product",
+        rakazo: "Open source platform for persistent AI teammates. Rakazo is in beta.",
+        other:
+          "A standalone Anthropic app with one ongoing thread, by text or voice. Anthropic says it is for professionals and small business owners.",
+      },
+      {
+        topic: "Who runs it",
+        rakazo:
+          "You do when you self-host with Docker or point the desktop and mobile apps at a server you operate. Rakazo Cloud, in beta, runs it for you.",
+        other:
+          "Anthropic. Duet works on its own cloud virtual machine with a browser. The help center says you cannot watch or take over that browser.",
+      },
+      {
+        topic: "Source",
+        rakazo: "Apache-2.0 source on GitHub.",
+        other: "Hosted service from Anthropic. Its pages do not describe self-hosting.",
+      },
+      {
+        topic: "Model",
+        rakazo:
+          "Bring your own model credentials, including Claude Pro/Max sign-in, other providers, and a local server. Each bot can use a different model.",
+        other: "Claude Opus 5.5. The help center says you cannot choose a model.",
+      },
+      {
+        topic: "Connections",
+        rakazo:
+          "Composio or Pipedream Connect, or a Treg, remote MCP, or OpenAPI source you install. Bots also get a sandboxed browser, terminal, files, and a graphical desktop.",
+        other:
+          "Claude's connectors and plugins, which Anthropic puts at more than 6,000. The help center names Gmail, Google Calendar, Google Drive, Slack, QuickBooks, HubSpot, Docusign, and Calendly. Microsoft 365 is not available yet. Purchases use Link by Stripe or Shop Pay with one-time virtual cards.",
+      },
+      {
+        topic: "Ongoing work",
+        rakazo:
+          "Each bot keeps conversations, memory, routines, and history. Routines are readable Markdown and can run on a schedule. A bot can delegate to a peer bot or a short-lived subagent.",
+        other:
+          "A morning brief, then check-ins on your accounts. The announcement says every few hours; the help center says set intervals. Duet uses your Claude memory, skills, and connectors.",
+      },
+      {
+        topic: "Control and availability",
+        rakazo:
+          "A bot can pause for approval at a boundary you set, and actions are recorded in an audit log. The web, desktop, and mobile clients are available with self-hosting now.",
+        other:
+          "Duet asks before it sends a message, makes a payment, signs a document, or deletes anything. Trading securities, moving money between accounts, and accessing someone else's account are blocked. Pro and Max only, in the US, from a waitlist. Usage counts against the plan's limits.",
+      },
+    ],
+    faq: [
+      {
+        question: "Can Rakazo use my Claude subscription?",
+        answer:
+          "Yes. Sign in with Claude Pro or Max, or bring an Anthropic key. Claude is one model choice, and each bot can use a different one.",
+      },
+      {
+        question: "Is Claude Duet open source or self-hosted?",
+        answer:
+          "Anthropic's Duet pages do not describe source you can run or a self-hosted install. Duet runs on a cloud computer Anthropic operates. Rakazo is Apache-2.0, and you can run it yourself.",
+      },
+      {
+        question: "Where do the Claude Duet details come from?",
+        answer:
+          "The Claude Duet column summarizes Anthropic's October 21, 2026 announcement, the product page, the help center article, and the October 23, 2026 safety post. Duet is a research preview, so check those pages before you rely on a detail.",
+      },
+    ],
+    sources: DUET_SOURCES,
+  },
+  {
     slug: "hark-alternative",
     name: "Hark",
     summary: "A hosted personal agent. After install, Rakazo stays in chat on a stack you run.",
@@ -562,6 +663,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
     description:
       "Rakazo is an open source, self-hosted AI agent with a chat interface. Compare it with Hark Pro, the hosted personal agent at hark.com.",
     h1: "Open source Hark Pro alternative",
+    comparedOn: "October 7, 2026",
     otherName: "Hark Pro",
     intro: [
       "Hark Pro is the personal agent at hark.com, launched October 6, 2026. It is a hosted app on the web, iOS, and Android. The launch article says every feature stays free, with $20 a month for twice the usage and $100 a month for ten times the usage.",
@@ -736,7 +838,7 @@ export function alternativeMarkdown(alternative: Alternative): string {
       "",
       ...section.paragraphs.flatMap((paragraph) => [paragraph, ""]),
     ]),
-    `Public descriptions as of ${COMPARED_ON}.`,
+    `Public descriptions as of ${alternative.comparedOn}.`,
     "",
     "## Comparison",
     "",

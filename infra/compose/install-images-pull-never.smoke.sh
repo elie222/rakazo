@@ -3,17 +3,6 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
 src="$root/install-images.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
-# BSD grep needs -e so patterns starting with -- are not flags.
-g() { grep -F -e "$1" "$src" >/dev/null || fail "missing $1"; }
-g '--pull-never)'
-g '--offline)'
-g 'RAKAZO_PULL_NEVER'
-g 'Skipping image pull'
-g '--pull never'
-g 'cannot enforce pull-never on this Compose version'
-g '${up_pull_args[@]+"${up_pull_args[@]}"}'
-g 'HTTP_PROXY/HTTPS_PROXY'
-g '[--prepare-only] [--local] [--pull-never] [--offline]'
 set +e
 out="$(bash "$src" --not-a-flag 2>&1)"
 code=$?
@@ -193,6 +182,28 @@ set -e
 has_compose_pull "$tmp/offline" && fail "--offline should not run compose pull"
 has_up_pull_never "$tmp/offline" || fail "--offline should pass --pull never to compose up: $(cat "$tmp/offline/docker.log")"
 
+for missing_input in docker-compose.images.yml .env.images.example; do
+  work="$tmp/missing-${missing_input}"
+  setup_work "$work"
+  rm -- "$work/cwd/$missing_input"
+  set +e
+  missing_out="$(run_install "$work" --offline 2>&1)"
+  missing_code=$?
+  set -e
+  [[ "$missing_code" -ne 0 ]] || fail "--offline accepted missing $missing_input"
+  [[ "$missing_out" == *"$missing_input"* ]] || fail "--offline did not identify missing $missing_input"
+  [[ ! -s "$work/curl.log" ]] || fail "--offline attempted a network request for missing $missing_input"
+  has_compose_pull "$work" && fail "--offline pulled images with missing $missing_input"
+  [[ ! -s "$work/docker.log" ]] || fail "--offline invoked Compose with missing $missing_input"
+done
+
+setup_work "$tmp/local-missing"
+rm -- "$tmp/local-missing/cwd/docker-compose.images.yml"
+local_out="$(run_install "$tmp/local-missing" --local 2>&1)"
+[[ -s "$tmp/local-missing/curl.log" ]] || fail "--local should download missing files"
+has_compose_pull "$tmp/local-missing" || fail "--local should still pull images"
+grep -q 'VERB=up' "$tmp/local-missing/docker.log" || fail "--local should start services"
+
 # --pull-never is accepted and skips pull (may still download Compose files).
 setup_work "$tmp/pull-never"
 set +e
@@ -238,5 +249,26 @@ set -e
 [[ "$default_out" != *"unbound variable"* ]] || fail "empty array expansion aborted: $default_out"
 has_compose_pull "$tmp/default" || fail "default install should run compose pull"
 grep -q 'VERB=up' "$tmp/default/docker.log" || fail "default install should run compose up"
+
+# A setting the Compose file does not name is reported instead of silently dropped.
+setup_work "$tmp/unpassed"
+printf '  TELEGRAM_BOT_TOKEN:\n  POSTGRES_PASSWORD: x\n' > "$tmp/unpassed/cwd/docker-compose.images.yml"
+printf 'TELEGRAM_BOT_TOKEN=1\nTELEGRAM_BOT_TOKEN_SUPPORT=2\nCOMPOSE_PROJECT_NAME=x\n' >> "$tmp/unpassed/cwd/.env"
+unpassed_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$unpassed_out" == *"no container receives these .env settings:"*"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "custom setting was not reported: $unpassed_out"
+[[ "$unpassed_out" != *" TELEGRAM_BOT_TOKEN "* && "$unpassed_out" != *" TELEGRAM_BOT_TOKEN." ]] ||
+  fail "a listed setting was reported: $unpassed_out"
+[[ "$unpassed_out" != *"COMPOSE_PROJECT_NAME"* ]] || fail "a Compose setting was reported"
+
+# An override file next to the base file is layered into every command and counts as listing.
+printf 'services:\n  api:\n    environment:\n      TELEGRAM_BOT_TOKEN_SUPPORT:\n' \
+  > "$tmp/unpassed/cwd/docker-compose.override.yml"
+: > "$tmp/unpassed/docker.log"
+override_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$override_out" != *"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "a setting listed in the override was reported: $override_out"
+grep -qF -e '-f docker-compose.override.yml up' "$tmp/unpassed/docker.log" ||
+  fail "compose up did not layer the override: $(cat "$tmp/unpassed/docker.log")"
 
 echo "ok"

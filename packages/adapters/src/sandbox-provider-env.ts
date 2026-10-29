@@ -4,12 +4,14 @@ import type { SandboxProviderOptions } from "./sandbox-factory.js";
 export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env): string {
   const configured = source.SANDBOX_PROVIDER;
   if (configured !== undefined && !configured.trim()) return "none";
-  const requested = legacyProvider(configured?.trim() || "docker");
+  const requested = configured?.trim() || "docker";
   if (requested === "none") return "none";
   if (requested === "e2b" && !optional(source.E2B_API_KEY)) return "none";
+  if (requested === "novita" && !optional(source.NOVITA_API_KEY)) return "none";
   if (requested === "daytona" && !optional(source.DAYTONA_API_KEY)) return "none";
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
+  if (requested === "boxd" && !optional(source.BOXD_API_KEY)) return "none";
   if (
     requested === "railway" &&
     (!optional(source.RAILWAY_API_TOKEN) || !optional(source.RAILWAY_ENVIRONMENT_ID))
@@ -26,7 +28,6 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   return requested;
 }
 
-/** Remote computer credentials for the adapter factory. */
 export function sandboxProviderOptionsFromEnv(
   source: NodeJS.ProcessEnv = process.env,
 ): Pick<
@@ -34,6 +35,8 @@ export function sandboxProviderOptionsFromEnv(
   | "hostComputerUrl"
   | "hostComputerToken"
   | "e2bApiKey"
+  | "novitaApiKey"
+  | "sandboxTemplate"
   | "daytonaApiKey"
   | "daytonaApiUrl"
   | "daytonaTarget"
@@ -47,11 +50,26 @@ export function sandboxProviderOptionsFromEnv(
   | "railwaySandboxRegion"
   | "boatApiKey"
   | "boatApiUrl"
+  | "boxdApiKey"
+  | "boxdOrg"
+  | "kubernetesNamespace"
+  | "kubernetesRuntimeClassName"
+  | "kubernetesComputerImage"
+  | "kubernetesCpuLimit"
+  | "kubernetesMemoryLimit"
+  | "kubernetesPodAnnotations"
+  | "kubernetesPodLabels"
+  | "kubernetesReadyTimeoutMs"
+  | "kubernetesHomeClaim"
+  | "kubernetesHomeColocateNamespace"
+  | "kubernetesHomeColocateLabels"
 > {
   return {
     hostComputerUrl: source.SANDBOX_HOST_URL,
     hostComputerToken: source.SANDBOX_HOST_TOKEN,
     e2bApiKey: source.E2B_API_KEY,
+    novitaApiKey: optional(source.NOVITA_API_KEY),
+    sandboxTemplate: optional(source.SANDBOX_TEMPLATE),
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,
@@ -65,7 +83,64 @@ export function sandboxProviderOptionsFromEnv(
     railwaySandboxRegion: optional(source.RAILWAY_SANDBOX_REGION),
     boatApiKey: boatApiKeyFromEnv(source),
     boatApiUrl: boatApiUrlFromEnv(source),
+    boxdApiKey: optional(source.BOXD_API_KEY),
+    boxdOrg: optional(source.BOXD_ORG),
+    kubernetesNamespace: optional(source.KUBERNETES_SANDBOX_NAMESPACE),
+    kubernetesRuntimeClassName: optional(source.KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME),
+    kubernetesComputerImage: optional(source.KUBERNETES_SANDBOX_COMPUTER_IMAGE),
+    kubernetesCpuLimit: optional(source.KUBERNETES_SANDBOX_CPU_LIMIT),
+    kubernetesMemoryLimit: optional(source.KUBERNETES_SANDBOX_MEMORY_LIMIT),
+    kubernetesPodAnnotations: stringMap(
+      source.KUBERNETES_SANDBOX_POD_ANNOTATIONS,
+      "KUBERNETES_SANDBOX_POD_ANNOTATIONS",
+    ),
+    kubernetesPodLabels: stringMap(
+      source.KUBERNETES_SANDBOX_POD_LABELS,
+      "KUBERNETES_SANDBOX_POD_LABELS",
+    ),
+    kubernetesReadyTimeoutMs: positiveInteger(
+      source.KUBERNETES_SANDBOX_READY_TIMEOUT_MS,
+      "KUBERNETES_SANDBOX_READY_TIMEOUT_MS",
+    ),
+    kubernetesHomeClaim: optional(source.OBJECT_STORAGE_BUCKET)
+      ? undefined
+      : optional(source.KUBERNETES_SANDBOX_HOME_CLAIM),
+    kubernetesHomeColocateNamespace: optional(source.KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE),
+    kubernetesHomeColocateLabels: stringMap(
+      source.KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS,
+      "KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS",
+    ),
   };
+}
+
+function stringMap(value: string | undefined, name: string): Record<string, string> | undefined {
+  const configured = optional(value);
+  if (!configured) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(configured);
+  } catch (error) {
+    throw new Error(`${name} must be a JSON object of string values`, { cause: error });
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((entry) => typeof entry !== "string")
+  ) {
+    throw new Error(`${name} must be a JSON object of string values`);
+  }
+  return parsed as Record<string, string>;
+}
+
+function positiveInteger(value: string | undefined, name: string): number | undefined {
+  const configured = optional(value);
+  if (!configured) return undefined;
+  const parsed = Number(configured);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function optional(value: string | undefined): string | undefined {
@@ -73,17 +148,10 @@ function optional(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-/** Box was renamed to Boat; keep deployments with the old settings booting. */
-function legacyProvider(provider: string): string {
-  return provider === "box" ? "boat" : provider;
-}
-
 export function boatApiKeyFromEnv(source: NodeJS.ProcessEnv): string | undefined {
-  return optional(source.BOAT_API_KEY) ?? optional(source.BOX_API_KEY);
+  return optional(source.BOAT_API_KEY);
 }
 
 export function boatApiUrlFromEnv(source: NodeJS.ProcessEnv): string | undefined {
-  return (
-    optional(source.BOAT_API_URL) ?? optional(source.BOX_API_URL) ?? optional(source.BOX_BASE_URL)
-  );
+  return optional(source.BOAT_API_URL);
 }

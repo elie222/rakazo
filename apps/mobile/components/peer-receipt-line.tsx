@@ -1,14 +1,17 @@
+import type { BotAvatarSet } from "@rakazo/contracts";
 import { splitPeerLabel } from "@rakazo/core";
 import type { PressableProps } from "react-native";
-import { Pressable, Text } from "react-native";
+import { Pressable, StyleSheet, Text } from "react-native";
+import { mobileTokens } from "../lib/appearance";
 import { peerExchangeLabel, useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
 export function PeerReceiptLine({
   peerBotId,
   peerBotName,
   color,
+  avatarSet,
   count,
   direction,
   onPress,
@@ -17,16 +20,17 @@ export function PeerReceiptLine({
   peerBotId: string;
   peerBotName: string;
   color: string;
+  avatarSet?: BotAvatarSet;
   count: number;
   direction: "sent" | "received";
-  onPress: () => void;
+  onPress?: () => void;
   actionProps: Pick<
     PressableProps,
     "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
   >;
 }) {
   useI18n();
-  const tokens = useMobileTokens();
+  const styles = useThemedStyles(createStyles);
   const label = peerExchangeLabel(count, direction, peerBotName);
   const parts = splitPeerLabel(label, peerBotName);
   return (
@@ -34,34 +38,36 @@ export function PeerReceiptLine({
       {...actionProps}
       testID="peer-receipt-line"
       accessible
-      accessibilityRole="button"
+      accessibilityRole={onPress ? "button" : undefined}
+      disabled={!onPress}
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => ({
-        width: "100%",
-        paddingVertical: 8,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 4,
-        opacity: pressed ? 0.6 : 1,
-      })}
+      style={({ pressed }) => [styles.line, { opacity: pressed ? 0.6 : 1 }]}
     >
-      {parts.before ? (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{parts.before}</Text>
-      ) : null}
-      <BotAvatar color={color} identity={peerBotId} size={16} />
+      {parts.before ? <Text style={styles.label}>{parts.before}</Text> : null}
+      <BotAvatar avatarSet={avatarSet} color={color} identity={peerBotId} size={16} />
       {parts.name ? (
-        <Text
-          numberOfLines={1}
-          style={{ color: tokens.mutedForeground, fontSize: 13, fontWeight: "500", flexShrink: 1 }}
-        >
+        <Text numberOfLines={1} style={[styles.label, styles.name]}>
           {parts.name}
         </Text>
       ) : null}
-      {parts.after ? (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{parts.after}</Text>
-      ) : null}
+      {parts.after ? <Text style={styles.label}>{parts.after}</Text> : null}
     </Pressable>
   );
+}
+
+function createStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    line: {
+      width: "100%",
+      paddingVertical: 8,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    label: { color: tokens.mutedForeground, fontSize: 13 },
+    name: { fontWeight: "500", flexShrink: 1 },
+  });
 }

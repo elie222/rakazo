@@ -1,4 +1,4 @@
-import { ATTACHMENT_MAX_BYTES, attachmentSizeLabel, LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, attachmentSizeLabel } from "@rakazo/contracts";
 import type { Hono, MiddlewareHandler } from "hono";
 import { cancelBody } from "./http-body.js";
 
@@ -73,6 +73,5 @@ export function mountApiRequestBodyLimits(
     rpcRequestMaxBytes(maxUploadSizeBytes),
     `Request body is too large. Upload limit: ${attachmentSizeLabel(maxUploadSizeBytes)} per file.`,
   );
-  app.use(`${LOCAL_SETTINGS_RPC}/*`, rpcLimit);
   app.use("/rpc/*", rpcLimit);
 }

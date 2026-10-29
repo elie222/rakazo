@@ -9,14 +9,10 @@ export function selectMemoryTools(
   semanticMemoryForgets: boolean,
 ): ConnectorTool[] {
   return semanticMemoryConfigured
-    ? tools.filter(
-        (tool) =>
-          tool.name !== "remember" && (semanticMemoryForgets || tool.name !== "forget_memory"),
-      )
+    ? tools.filter((tool) => semanticMemoryForgets || tool.name !== "forget_memory")
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
 
-/** Adds a remembered fact to a bot memory document without dropping what it already holds. */
 export function appendMemoryFact(existing: string, fact: string): string {
   const current = existing.trimEnd().replace(/\r\n/g, "\n");
   const next = fact.trim();

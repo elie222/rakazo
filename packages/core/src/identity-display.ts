@@ -110,6 +110,8 @@ export function displayIdentityResult(
   if (procedure === "botSections/list") return list(section)(result);
   if (/^botSections\/(create|update)$/.test(procedure)) return section(result);
   if (procedure === "routines/list") return list(routine)(result);
+  if (procedure === "routines/listForMentions")
+    return list((value) => fields(value, { routines: list(routine) }))(result);
   if (/^routines\/(create|update)$/.test(procedure)) return routine(result);
   if (procedure === "threads/get" || procedure === "threads/messages") return thread(result);
   if (procedure === "runs/list")

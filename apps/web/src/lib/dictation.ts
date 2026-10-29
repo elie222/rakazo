@@ -1,8 +1,7 @@
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { cancelResponseBody, readJsonObjectWithin, speechLocaleTag, withAbort } from "@rakazo/core";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
-import type { UiLocale } from "./ui-locale.js";
-import { errorText } from "./user-error.js";
+import { errorText, voiceAccountErrorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -95,27 +94,6 @@ const RESTART_BACKOFF_MS = 900;
 const RESTART_GIVE_UP_AFTER = 4;
 const RESTART_GIVE_UP_ERROR =
   "The browser keeps dropping the microphone. Start dictation again to retry.";
-
-/** Web Speech wants a BCP-47 tag; the app's UI locale is a short code. */
-const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
-  en: "en-US",
-  de: "de-DE",
-  es: "es-ES",
-  fr: "fr-FR",
-  he: "he-IL",
-  hi: "hi-IN",
-  ko: "ko-KR",
-  nl: "nl-NL",
-  "pt-BR": "pt-BR",
-  ru: "ru-RU",
-  tr: "tr-TR",
-  "zh-CN": "zh-CN",
-};
-
-/** The tag the recognizer needs for a UI locale, when we know one. */
-export function speechLocaleTag(locale: UiLocale): string | undefined {
-  return SPEECH_LOCALE_TAGS[locale];
-}
 
 /**
  * The language the recognizer listens in: the app's own language when the UI is
@@ -592,13 +570,16 @@ export class Dictation {
         abort.signal,
       );
       if (this.token !== mine) {
-        cancelResponse(res);
+        cancelResponseBody(res);
         return;
       }
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
-        this.failListening(mine, body.error ?? "Could not transcribe that recording.");
+        this.failListening(
+          mine,
+          voiceAccountErrorText(body) ?? body.error ?? "Could not transcribe that recording.",
+        );
         return;
       }
       // The recorder captures fresh audio, so matching words are intentional repetitions.
@@ -664,55 +645,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-async function readTranscriptionBody(
-  response: Response,
-  signal: AbortSignal,
-): Promise<{ text?: string; error?: string }> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
-    cancelResponse(response);
-    throw new Error("Transcription response is too large.");
-  }
-  const bytes = await readBoundedResponseBytes(response, {
+function readTranscriptionBody(response: Response, signal: AbortSignal) {
+  return readJsonObjectWithin<{ text?: string; error?: string; code?: string }>(response, {
     maxBytes: MAX_TRANSCRIPTION_RESPONSE_BYTES,
     tooLargeMessage: "Transcription response is too large.",
-    read: (operation) => withAbort(operation(), signal),
+    signal,
   });
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object"
-      ? (parsed as { text?: string; error?: string })
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request aborted."));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Request aborted."));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        // Prefer abort reason over a bare AbortError from fetch/read.
-        reject(signal.aborted ? (signal.reason ?? error) : error);
-      },
-    );
-  });
-}
-
-function cancelResponse(response: Response): void {
-  try {
-    void Promise.resolve(response.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Response cleanup is best-effort.
-  }
 }
 
 export const dictation = new Dictation();

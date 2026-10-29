@@ -47,6 +47,58 @@ describe("buildMcpUpdateMaterial", () => {
     expect(result).toEqual({ action: "store", material: { env: { API_KEY: "k" } } });
   });
 
+  it("keeps a stored value sent back blank, and drops a name no longer sent", () => {
+    const stored = {
+      env: { API_KEY: "stored-key", OLD: "old" },
+      files: { CREDS: "stored-file" },
+      headers: { Authorization: "stored-header" },
+    };
+    expect(
+      buildMcpUpdateMaterial(stored, {
+        transport: "stdio",
+        slug: "x",
+        name: "x",
+        command: "/bin/mcp",
+        env: { API_KEY: "", REGION: "eu" },
+        files: { CREDS: "" },
+      }),
+    ).toEqual({
+      action: "store",
+      material: {
+        env: { API_KEY: "stored-key", REGION: "eu" },
+        files: { CREDS: "stored-file" },
+        headers: { Authorization: "stored-header" },
+      },
+    });
+    expect(
+      buildMcpUpdateMaterial(stored, {
+        transport: "streamable_http",
+        slug: "x",
+        name: "x",
+        endpoint: "https://mcp.example.test",
+        headers: { Authorization: "", "X-Team": "t" },
+      }),
+    ).toMatchObject({
+      action: "store",
+      material: { headers: { Authorization: "stored-header", "X-Team": "t" } },
+    });
+  });
+
+  it("never carries a stored header over to a new endpoint", () => {
+    const update = buildMcpUpdateMaterial(
+      { headers: { Authorization: "stored-header" } },
+      {
+        transport: "streamable_http",
+        slug: "x",
+        name: "x",
+        endpoint: "https://other.example.test",
+        headers: { Authorization: "" },
+      },
+      { clearOAuth: true, endpointChanged: true },
+    );
+    expect(JSON.stringify(update)).not.toContain("stored-header");
+  });
+
   it("clearing removes static credentials but keeps OAuth state", () => {
     const existing = { secret: "token", env: { A: "b" }, oauth: { tokens: { access_token: "t" } } };
     const result = buildMcpUpdateMaterial(existing, {

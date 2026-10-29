@@ -1,7 +1,12 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { projectMessageReactions } from "./message-reactions.js";
-import { foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
+import {
+  expandPeerReplies,
+  foldPeerReplies,
+  jumpTargetId,
+  userVisibleMessages,
+} from "./message-visibility.js";
 
 function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return {
@@ -87,6 +92,82 @@ describe("user-visible messages", () => {
     ]);
   });
 
+  it("keeps replies about delegated work inline while their peer activity stays hidden", () => {
+    const resultFor = (intent: "result" | "status" | "question" | "request" | "fyi") => [
+      message("user", "run-user", [{ kind: "text", text: "Please ask Coder." }]),
+      message("sent", "run-user", [
+        { kind: "bot_message_sent", toBotId: "coder", toBotName: "Coder", text: "Check this." },
+      ]),
+      {
+        ...message("received", "run-peer", [
+          {
+            kind: "bot_message_received",
+            fromBotId: "coder",
+            fromBotName: "Coder",
+            text: "The endpoint returns 200.",
+            intent,
+          },
+        ]),
+        replyToMessageId: "sent",
+      },
+      message("activity", "run-peer", [
+        { kind: "steps", steps: [{ label: "Message bot", count: 1 }] },
+      ]),
+      message("relay", "run-peer", [{ kind: "text", text: "Coder confirmed it returns 200." }]),
+    ];
+
+    // Results, statuses, and the helper asking back about the delegated work all wake the bot to
+    // speak to the user. An FYI never threads back, but it is not new work either.
+    const unthreaded = (intent: "fyi" | "request" | "question") =>
+      resultFor(intent).map((item) => ({ ...item, replyToMessageId: undefined }));
+    for (const messages of [
+      resultFor("result"),
+      resultFor("status"),
+      resultFor("question"),
+      resultFor("request"),
+      unthreaded("fyi"),
+    ]) {
+      const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+      // Threaded back to "Messaged Coder", the marker merges into that receipt; an FYI keeps it.
+      expect(transcript.messages.map((item) => item.id)).toEqual(
+        messages[2]?.replyToMessageId
+          ? ["user", "sent", "relay"]
+          : ["user", "sent", "received", "relay"],
+      );
+      expect(transcript.folded.size).toBe(0);
+    }
+    // With the receipt outside the loaded page, the marker stays so the exchange is still reachable.
+    expect(
+      foldPeerReplies(
+        resultFor("result").filter((item) => item.id !== "sent"),
+        { includePeerReceipts: true },
+      ).messages.map((item) => item.id),
+    ).toEqual(["user", "received", "relay"]);
+    // A jump to the dropped marker (a search hit on its text) lands on the receipt it merged into.
+    const merged = foldPeerReplies(resultFor("result"), { includePeerReceipts: true });
+    expect(jumpTargetId(merged, "received")).toBe("sent");
+    expect(jumpTargetId(merged, "relay")).toBe("relay");
+    // New work from another bot: the reply goes back to that bot, so it folds.
+    for (const intent of ["request", "question"] as const) {
+      expect(
+        foldPeerReplies(unthreaded(intent), { includePeerReceipts: true })
+          .folded.get("received")
+          ?.map((item) => item.id),
+      ).toEqual(["relay"]);
+    }
+    // Sidebar previews show the relay, the bot's own reply, but never another bot's new work.
+    expect(
+      userVisibleMessages(resultFor("result"), { includeDelegatedReplyText: false }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["user", "relay"]);
+    expect(
+      userVisibleMessages(unthreaded("request"), { includeDelegatedReplyText: false }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["user"]);
+  });
+
   it("folds peer-run file replies under their received marker", () => {
     const messages = [
       ...peerExchange,
@@ -118,44 +199,52 @@ describe("user-visible messages", () => {
     ]);
   });
 
-  it.each(["result", "status", "fyi"] as const)(
-    "keeps %s-woken text and attachments in their actual transcript position",
-    (intent) => {
-      const wake = {
-        ...received,
-        blocks: received.blocks.map((block) =>
-          block.kind === "bot_message_received" ? { ...block, intent } : block,
-        ),
-      };
-      const messages = [
-        wake,
-        message("file", "run-peer", [
-          {
-            kind: "file",
-            artifactId: "report",
-            name: "report.pdf",
-            mimeType: "application/pdf",
-            size: 12,
-          },
-        ]),
-        message("ordinary", "other-run", [{ kind: "text", text: "Another message" }]),
-        message("image", "run-peer", [
-          { kind: "image", artifactId: "image", name: "chart.png", mimeType: "image/png" },
-        ]),
-        message("text", "run-peer", [{ kind: "text", text: "Here is the report." }]),
-      ];
-      const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
-      expect(transcript.messages).toEqual(messages);
-      expect(transcript.folded.size).toBe(0);
-      expect(transcript.markerOf.size).toBe(0);
-      expect(
-        userVisibleMessages(messages, {
-          includePeerReceipts: false,
-          includeDelegatedReplyText: false,
-        }).map((item) => item.id),
-      ).toEqual(["ordinary"]);
-    },
-  );
+  it("folds chart-only peer replies under their received marker and expands them", () => {
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const activity = message("activity", "run-peer", [
+      { kind: "steps", steps: [{ label: "Work", count: 1 }] },
+    ]);
+    const transcript = foldPeerReplies([received, activity, chartReply], {
+      includePeerReceipts: true,
+    });
+
+    expect(transcript.messages).toEqual([received]);
+    expect(transcript.folded.get("received")).toEqual([chartReply]);
+    expect(transcript.markerOf.get("chart_reply")).toBe("received");
+    expect(expandPeerReplies(transcript, new Set())).toEqual([received]);
+    expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([received, chartReply]);
+  });
+
+  it("keeps chart-only relays inline", () => {
+    const relayReceipt = { ...received, replyToMessageId: "sent" };
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const transcript = foldPeerReplies([relayReceipt, chartReply], {
+      includePeerReceipts: true,
+      includeDelegatedReplyText: false,
+    });
+
+    expect(transcript.messages).toEqual([relayReceipt, chartReply]);
+    expect(transcript.folded.size).toBe(0);
+  });
+
+  it("hides chart-only background replies even when their peer receipt is expanded", () => {
+    const chartReply = message("chart_reply", "run-peer", [
+      { kind: "chart", name: "Results", spec: {}, data: [] },
+    ]);
+    const transcript = foldPeerReplies([received, chartReply], {
+      includePeerReceipts: true,
+      backgroundRunIds: ["run-peer"],
+    });
+
+    expect(transcript.messages).toEqual([]);
+    expect(transcript.folded.size).toBe(0);
+    expect(transcript.markerOf.size).toBe(0);
+    expect(expandPeerReplies(transcript, new Set(["received"]))).toEqual([]);
+  });
 
   it("keeps peer-run user-input cards inline while folding the reply", () => {
     const messages = [
@@ -176,6 +265,24 @@ describe("user-visible messages", () => {
       "choice",
     ]);
     expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual(["reply"]);
+  });
+
+  it("draws expanded folds right after their marker", () => {
+    const transcript = foldPeerReplies(peerExchange, { includePeerReceipts: true });
+
+    expect(expandPeerReplies(transcript, new Set()).map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+    ]);
+    expect(expandPeerReplies(transcript, new Set(["received"])).map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "reply",
+      "answer",
+    ]);
   });
 
   it("resolves a folded message to the marker it folds under", () => {
@@ -211,8 +318,18 @@ describe("user-visible messages", () => {
       "quote",
     ]);
     expect(transcript.markerOf.get("reaction")).toBe("received");
-    const collapsed = projectMessageReactions(transcript.messages);
+    const collapsed = projectMessageReactions(expandPeerReplies(transcript, new Set()));
     expect(collapsed.visibleMessages.map((item) => item.id)).not.toContain("reaction");
+    const expanded = projectMessageReactions(expandPeerReplies(transcript, new Set(["received"])));
+    expect(expanded.visibleMessages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "reply",
+      "answer",
+      "quote",
+    ]);
+    expect(expanded.reactions.get("reply")?.get("👍")).toBe(1);
   });
 
   describe("a human message in a peer run", () => {
@@ -240,7 +357,7 @@ describe("user-visible messages", () => {
       });
 
       expect(transcript.messages.map((item) => item.id)).toEqual(["received", "ask", "thumbs"]);
-      const view = projectMessageReactions(transcript.messages);
+      const view = projectMessageReactions(expandPeerReplies(transcript, new Set()));
       expect(view.visibleMessages.map((item) => item.id)).toEqual(["received", "ask"]);
       expect(view.reactions.get("ask")?.get("👍")).toBe(1);
     });
@@ -334,12 +451,22 @@ describe("user-visible messages", () => {
           status: "pending",
         },
       ]),
+      message("connect", "run-ticket", [
+        {
+          kind: "app_connect",
+          provider: "gmail",
+          name: "Gmail",
+          description: "",
+          logo: null,
+          status: "pending",
+        },
+      ]),
       message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
       message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
-    ).toEqual(["ask", "computer", "approval", "user"]);
+    ).toEqual(["ask", "computer", "approval", "connect", "user"]);
   });
 });

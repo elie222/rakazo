@@ -1,22 +1,30 @@
 name: publish-server-image
 
 # Release tags publish the source-addressed image used by in-app updates plus the human-readable
-# semver tags. Main publishes `edge`. Pull requests build with a read-only token and an isolated
-# cache, so untrusted code can validate the images without receiving package-publish authority.
+# semver tags. Main commits publish `sha-<commit>` and `edge` through ci.yml, which calls this
+# workflow so a production deploy starts only once its image exists. Pull requests build with a
+# read-only token and an isolated cache, so untrusted code can validate the images without
+# receiving package-publish authority.
+#
+# Published builds run on Depot when the DEPOT_PROJECT_ID repository variable names a project, and
+# on GitHub's runners otherwise (forks) or when a Depot build fails. Pull requests never use Depot.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
+  workflow_call:
+  # Only what the image definitions consume directly. A source change that breaks the app's build
+  # fails ci.yml's production builds first, and main still builds every image before it deploys.
   pull_request:
     paths:
       - ".dockerignore"
+      - ".npmrc"
       - ".github/workflows/publish-server-image.yml"
-      - "apps/**"
+      - ".github/actions/publish-image/**"
       - "infra/compose/**"
-      - "infra/sandboxes/computer/**"
+      - "infra/sandboxes/**"
       - "infra/updater/**"
-      - "packages/**"
-      - "package.json"
+      - "patches/**"
+      - "**/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   workflow_dispatch:
@@ -29,8 +37,8 @@ env:
   DOCKER_METADATA_SHORT_SHA_LENGTH: 40
 
 concurrency:
-  group: publish-server-image-${{ github.ref }}
-  cancel-in-progress: false
+  group: publish-server-image-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   installer-smoke:
@@ -84,14 +92,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
-          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-from: |
+            type=gha,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
+            type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
 
   build:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}
-    if: github.event_name != 'pull_request'
+    # A Depot outage must not block deploys, so any failed Depot build rebuilds every image here.
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' &&
+      (vars.DEPOT_PROJECT_ID == '' || contains(needs.build-depot.outputs.*, 'failed'))
+    needs: [build-depot]
     # Each architecture builds natively on its own runner and pushes by digest only.
     # No QEMU: GitHub hosts native arm64 runners, and emulated arm64 took hours for the
     # desktop-sized computer image. See docs/self-host.md (Published images and tags).
@@ -135,7 +149,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # Labels only; the tagged manifest is assembled in the publish job.
+          # Labels only; publication applies tags after validation.
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: type=sha,prefix=sha-
       - id: build
@@ -146,13 +160,20 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           # A fork can publish only to its own namespace; no credential can redirect this value.
-          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+          # The app's filesystem is also written locally so the credential scan needs no registry pull.
+          outputs: |
+            type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+            ${{ matrix.name == 'app' && 'type=tar,dest=/tmp/rootfs.tar' || '' }}
           # GET /health can report the exact source commit without a deployment-supplied override.
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
           provenance: mode=max
           sbom: true
+      # Before any tag points at it: the untagged digest is unreachable without this run's output.
+      - name: Check the app image ships no credentials
+        if: matrix.name == 'app'
+        run: bash infra/compose/check-image.sh /tmp/rootfs.tar
       - name: Record the architecture digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -167,31 +188,46 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  publish:
-    name: Publish ${{ matrix.name }} image
-    if: github.event_name != 'pull_request'
-    needs: build
+  build-depot:
+    name: Build ${{ matrix.name }} on Depot
+    if: github.event_name != 'pull_request' && vars.DEPOT_PROJECT_ID != ''
+    # Each Depot image is checked, tagged, and attested in this job without a second runner.
+    # Per-image locks bound builds and protect moving tags while other CI runs independently.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
+      # Depot authenticates the build with the workflow's OIDC token; no Depot secret exists.
       id-token: write
       attestations: write
+    # Each image reports its own key; the fallback build reads them all.
+    outputs:
+      app: ${{ steps.depot.outputs.app }}
+      updater: ${{ steps.depot.outputs.updater }}
+      computer: ${{ steps.depot.outputs.computer }}
+    concurrency:
+      group: publish-image-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: false
+      queue: max
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: app
+            dockerfile: infra/compose/Dockerfile
+            context: .
           - name: updater
+            dockerfile: infra/updater/Dockerfile
+            context: .
           - name: computer
+            dockerfile: infra/sandboxes/computer/Dockerfile
+            context: infra/sandboxes/computer
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          pattern: digest-${{ matrix.name }}-*
-          path: /tmp/digests
-          merge-multiple: true
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+          persist-credentials: false
+      - uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -201,47 +237,97 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # A fork can publish only to its own namespace; no credential can redirect this value.
+          # Labels only; publication applies tags after validation.
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          tags: |
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=sha,prefix=sha-
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
-            # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
-      - name: Assemble and verify the multi-arch manifest
-        id: manifest
-        working-directory: /tmp/digests
+          tags: type=sha,prefix=sha-
+      - id: build
+        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1.18.0
+        continue-on-error: true
+        with:
+          project: ${{ vars.DEPOT_PROJECT_ID }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          # A fork can publish only to its own namespace; no credential can redirect this value.
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
+          build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
+          provenance: mode=max
+          sbom: true
+      - id: depot
         env:
-          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE: ${{ matrix.name }}
+          OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          [[ "$OUTCOME" == success ]] || echo "::warning::Depot could not build ${IMAGE}; building on GitHub's runners instead."
+          echo "${IMAGE}=$([[ "$OUTCOME" == success ]] && echo built || echo failed)" >> "$GITHUB_OUTPUT"
+      - name: Check the app image ships no credentials
+        if: matrix.name == 'app' && steps.build.outcome == 'success'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/app@${{ steps.build.outputs.digest }}
+        # Exporting a filesystem needs no emulation, so one runner checks both platforms.
         run: |
           set -euo pipefail
-          tag_args=()
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] && tag_args+=(-t "$tag")
-          done <<< "$TAGS"
-          sources=()
-          for digest in *; do
-            sources+=("${IMAGE}@sha256:${digest}")
+          for platform in linux/amd64 linux/arm64; do
+            bash infra/compose/check-image.sh "$IMAGE" "$platform"
           done
-          if [[ "${#sources[@]}" -ne 2 ]]; then
-            echo "Expected one digest per architecture, found ${#sources[@]}." >&2
-            exit 1
-          fi
-          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
-
-          first_tag="$(head -n 1 <<< "$TAGS")"
-          platforms="$(docker buildx imagetools inspect "$first_tag" \
-            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}')"
-          for want in linux/amd64 linux/arm64; do
-            grep -Fqx "$want" <<< "$platforms" || { echo "$first_tag is missing $want" >&2; exit 1; }
-          done
-          echo "digest=$(docker buildx imagetools inspect "$first_tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
-      - name: Attest the published image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - name: Record the image digest
+        if: steps.build.outcome == 'success'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_ID: ${{ steps.build.outputs.build-id }}
+          IMAGE: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" == sha256:* ]] || { echo "Depot reported no image digest." >&2; exit 1; }
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+          echo "Built ${IMAGE} on Depot (build ${BUILD_ID}): ${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.build.outcome == 'success'
+        uses: ./.github/actions/publish-image
         with:
-          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
-          push-to-registry: true
+          image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          digests-directory: /tmp/digests
+
+  publish:
+    name: Publish ${{ matrix.name }} image
+    # Native GitHub builds still need to combine their two architecture artifacts.
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' && needs.build.result == 'success'
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: publish-image-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: false
+      queue: max
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: app
+          - name: updater
+          - name: computer
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/publish-image
+        with:
+          image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          digests-directory: /tmp/digests

@@ -41,7 +41,11 @@ const group = {
   spaceId: "space-b",
   members: [],
 };
-const spaces = [{ id: "space-a", bots: [bot], groups: [group] }] as unknown as InboxSpace[];
+// An archived bot sits in the roster while its read-only chat opens; search must skip it.
+const archived = { ...bot, id: "bot-archived", name: "Old helper", archivedAt: "2026-01-02" };
+const spaces = [
+  { id: "space-a", bots: [bot, archived], groups: [group] },
+] as unknown as InboxSpace[];
 const message = {
   kind: "message" as const,
   botId: "bot-a",
@@ -208,6 +212,9 @@ it("renders inbox chats before typing and closes with the close button", async (
   );
   expect(state.back).toHaveBeenCalledOnce();
 });
+it("leaves out an archived bot that is only in the roster while its chat opens", () => {
+  expect(row("Old helper, Bot")).toBeNull();
+});
 it("debounces typing, renders server hits and preserves the message jump destination", async () => {
   state.search.mockResolvedValue([message, message]);
   await type("matching");
@@ -217,7 +224,7 @@ it("debounces typing, renders server hits and preserves the message jump destina
   await act(async () => vi.advanceTimersByTime(1));
   expect(state.search).toHaveBeenCalledWith("matching");
   expect(container.querySelectorAll('button[aria-label="Found note, Message"]')).toHaveLength(1);
-  expect(row("Found note, Message").textContent).toContain("Scout · A matching line");
+  expect(row("Found note, Message").textContent).toContain("Scout: A matching line");
   await act(async () => row("Found note, Message").click());
   expect(state.selectSpace).toHaveBeenCalledWith("space-a");
   expect(state.dismiss).toHaveBeenCalledOnce();

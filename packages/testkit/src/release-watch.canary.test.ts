@@ -38,7 +38,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
     const { modelId, label } = resolveReleaseWatchEvalModelId(process.env);
     process.env.PI_DEFAULT_MODEL = modelId;
 
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-release-watch-"));
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
@@ -191,7 +191,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
   }, 420_000);
 });
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type Snap = {
   messages: Array<{ role: string; blocks: unknown[] }>;
   run: {

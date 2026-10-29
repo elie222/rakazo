@@ -3,6 +3,7 @@ import type {
   ComputerAction,
   ComputerObservation,
 } from "@rakazo/adapter-kit";
+import { scrollDirection } from "@rakazo/core";
 
 /** Identical visual actions that leave the frame unchanged before computer_act stops repeating them. */
 export const MAX_CONSECUTIVE_UNCHANGED_VISUAL_ACTIONS = 3;
@@ -57,11 +58,18 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
       ];
     }
     if (kind === "scroll") {
+      // A point is optional, and needs both coordinates: the wheel turns where the pointer is.
+      const at =
+        action.x === undefined && action.y === undefined
+          ? {}
+          : { x: finiteCoordinate(action.x, "x"), y: finiteCoordinate(action.y, "y") };
       return [
         {
           kind: "scroll",
-          direction: action.direction === "up" ? "up" : "down",
-          amount: boundedNumber(action.amount, 1, 20, 3),
+          direction: scrollDirection(action.direction),
+          // Wheel notches; none or fewer means the default three.
+          amount: Number(action.amount) > 0 ? boundedNumber(action.amount, 1, 20, 3) : 3,
+          ...at,
         },
       ];
     }
