@@ -366,6 +366,20 @@ describe("run computer provisioning", () => {
     );
   });
 
+  it("spreads retries over minutes while the computer provider is down", async () => {
+    const before = Date.now();
+    const { run, enqueue } = await runRoutine([], {
+      setupError: new SandboxUnresponsiveError("Boat could not be reached"),
+      onRunStarted: vi.fn(),
+      priorSetupFailures: 2,
+    });
+
+    const [[job]] = enqueue.mock.calls as unknown as [[{ availableAt: Date }]];
+    expect(job.availableAt.getTime() - before).toBeGreaterThanOrEqual(60_000);
+    expect(job.availableAt.getTime() - Date.now()).toBeLessThanOrEqual(60_000);
+    expect(run.wakeAt).toEqual(job.availableAt);
+  });
+
   it("retains the setup-failure limit after handing off a run", async () => {
     const onRunStarted = vi.fn();
     const { enqueue, finalizeRun } = await runRoutine([], {

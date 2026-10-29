@@ -136,6 +136,7 @@ import {
   createRunWorkspaceCheckpoint,
   failRunBeforeTurn,
   mayOpenModelStream,
+  providerOutageRetryDelay,
   RUN_SETUP_FAILURE_LIMIT,
   renewRunLease,
   requeueComputerRun,
@@ -1699,20 +1700,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         // An outage at the computer provider is retried like any setup failure, but is not a
         // Rakazo bug to report.
-        if (
+        const providerOutage =
           setupError instanceof SandboxUnavailableError ||
-          setupError instanceof SandboxUnresponsiveError
-        ) {
+          setupError instanceof SandboxUnresponsiveError;
+        if (providerOutage) {
           getLogger().warn("run setup failed", { error: reportedSetupError });
         } else if (!computerBusy) {
           getLogger().error("run setup failed", reportedSetupError);
         }
+        const priorFailures = retryForever ? 0 : await setupFailureStreak(deps.prisma, runId);
         // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
         // setup that fails every time would retry forever. End the run instead.
-        if (
-          !retryForever &&
-          (await setupFailureStreak(deps.prisma, runId)) >= RUN_SETUP_FAILURE_LIMIT - 1
-        ) {
+        if (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1) {
           const bot = await deps.prisma.bot.findUnique({
             where: { id: run.botId },
             select: { name: true },
@@ -1726,6 +1725,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
           return;
         }
+        const retryDelay = providerOutage
+          ? providerOutageRetryDelay(priorFailures)
+          : computerRetryDelay(fence);
         const released = await writeComputerRunRequeue(
           deps,
           runId,
@@ -1734,6 +1736,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           resumeCheckpoint,
           heldForTakeover,
           retryForever ? null : "Run setup failed; retrying",
+          new Date(Date.now() + retryDelay),
         );
         if (released) {
           await deps.prisma.attempt.update({
@@ -1747,7 +1750,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (retryForever || dispatchHandedOff) {
             await deps.jobs.enqueue({
               ...runContinueJob(runId),
-              availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+              availableAt: new Date(Date.now() + retryDelay),
             });
             return;
           }
