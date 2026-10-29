@@ -521,6 +521,30 @@ describe("OIDC callbacks", () => {
     expect(session.status).toBe(200);
     expect(await session.json()).toMatchObject({ user: { email: "sso@example.test" } });
   });
+  it.each([
+    "https://attacker.example.test/authorize",
+    `${issuer}/elsewhere`,
+    "https://identity.example.test.attacker.example.test/authorize",
+  ])(
+    "only lets the native proxy redirect to the SSO authorization endpoint (%s)",
+    async (target) => {
+      setup();
+      const response = await request(
+        `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: `${target}?state=planted` })}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("location")).toBeNull();
+      expect(cookies).not.toContain("state=");
+    },
+  );
+  it("closes the native proxy without SSO", async () => {
+    setup({ oidc: undefined });
+    const response = await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: "https://attacker.example.test/x?state=planted" })}`,
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+  });
   it("enforces the allowlist before inserting a user", async () => {
     setup({ signupAllowlist: "allowed@example.test" });
     expect((await signIn()).headers.get("location")).toContain("error=EMAIL_NOT_ALLOWED");
