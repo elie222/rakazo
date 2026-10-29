@@ -1081,36 +1081,48 @@ export async function replaceComputer(
   }
 
   const oldRef = existing.providerRef ? toComputerRef(existing) : null;
+  // Until teardown starts the old computer is still running, so a failure before then leaves it
+  // running, and a later Recover tries to save its work first.
+  let tornDown = false;
   try {
     // Retry the checkpoint even after an earlier update left the row in error.
     if (oldRef && (mode === "update" || (existing.state === "running" && mode === "recover"))) {
+      // Recover may skip a save that fails while exporting, whether the computer or the staging
+      // disk fails it, and a mounted home's save, whose files stay on the server. Once an export
+      // is done, failing to store or record it stops Recover instead: the computer still holds
+      // the work.
+      await onProgress?.("saving");
+      const checkpointedAt = new Date();
+      let revision: string | undefined;
+      let exported = false;
       try {
-        await onProgress?.("saving");
-        const checkpointedAt = new Date();
-        const revision = await checkpointComputerWorkspace(
+        revision = await checkpointComputerWorkspace(
           deps.home,
           deps.sandbox,
           existing.homeKey,
           oldRef,
           context,
-          () => deletedTeamBotFolders(deps.prisma, existing),
+          // Called once the export has finished, just before the files are stored.
+          () => {
+            exported = true;
+            return deletedTeamBotFolders(deps.prisma, existing);
+          },
         );
+      } catch (error) {
+        // A gone sandbox has nothing left to checkpoint; the replacement restores
+        // the last recorded revision instead of failing the whole replacement.
+        if (exported || (!isSandboxGoneError(error) && mode !== "recover")) throw error;
+      }
+      if (revision !== undefined) {
         const recorded = await deps.prisma.computer.updateMany({
           where: { id: computerId, state: "suspending", updatedAt: claimStamp },
           data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: claimStamp },
         });
         if (recorded.count !== 1) throw new ComputerBusyError();
-      } catch (error) {
-        // A gone sandbox has nothing left to checkpoint; the replacement restores
-        // the last recorded revision instead of failing the whole replacement.
-        if (
-          !isSandboxGoneError(error) &&
-          (mode !== "recover" || error instanceof ComputerBusyError)
-        )
-          throw error;
       }
     }
     await onProgress?.("recreating");
+    tornDown = true;
     if (oldRef) {
       await deps.sandbox.releaseScreen?.(oldRef, context).catch(() => undefined);
       try {
@@ -1144,6 +1156,12 @@ export async function replaceComputer(
     await recordComputerRunEnd(deps.prisma, existing, "replaced");
     return provisionComputer(deps, computerId, context, controlHolder, onProgress);
   } catch (error) {
+    const failedState =
+      previousState === "quarantined"
+        ? "quarantined"
+        : previousState === "running" && !tornDown
+          ? "running"
+          : "error";
     await deps.prisma.computer
       .updateMany({
         where: {
@@ -1151,7 +1169,7 @@ export async function replaceComputer(
           updatedAt: claimStamp,
           maintenanceId: existing.maintenanceId ?? null,
         },
-        data: { state: previousState === "quarantined" ? "quarantined" : "error" },
+        data: { state: failedState },
       })
       .catch(() => undefined);
     throw error;

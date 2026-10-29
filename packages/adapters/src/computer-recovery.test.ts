@@ -273,7 +273,7 @@ describe("computer recovery preserves live work", () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       await expect(replaceComputer(deps, row.id, "update", context)).rejects.toBe(error);
       expect(row).toMatchObject({
-        state: "error",
+        state: "running",
         providerRef: first.providerRef,
         homeRevision: "saved",
       });
@@ -359,6 +359,134 @@ describe("computer recovery preserves live work", () => {
     await expect(replaceComputer(deps, row.id, "reset", context)).rejects.toBe(failure);
     expect(provision).not.toHaveBeenCalled();
     expect(row.providerRef).toBe(first.providerRef);
+  });
+
+  it("saves live work before recovering a computer whose update failed while saving", async () => {
+    const { deps, row, first } = await fixture();
+    const failure = new Error("workspace export failed");
+    vi.spyOn(deps.sandbox, "exportWorkspace").mockImplementationOnce(async function* () {
+      yield { path: "notes.txt", content: new TextEncoder().encode("incomplete checkpoint") };
+      throw failure;
+    });
+    await expect(replaceComputer(deps, row.id, "update", context)).rejects.toBe(failure);
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+
+    const recovered = await replaceComputer(deps, row.id, "recover", context);
+    expect(row).toMatchObject({ state: "running", providerRef: recovered.providerRef });
+    expect(await deps.home.readFile("bot", "notes.txt", context)).toBe("live work");
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(recovered, "notes.txt", context)),
+    ).toBe("live work");
+  });
+
+  it("keeps a computer running when its update is interrupted before teardown", async () => {
+    const { deps, row, first } = await fixture();
+    const interrupted = new Error("Computer update interrupted");
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(
+      replaceComputer(deps, row.id, "update", context, "none", async (stage) => {
+        if (stage === "recreating") throw interrupted;
+      }),
+    ).rejects.toBe(interrupted);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+  });
+
+  it("stops Recover instead of skipping its save when saving cannot be reported", async () => {
+    const { deps, row, first } = await fixture();
+    const blip = new Error("database unavailable");
+    const exportWorkspace = vi.spyOn(deps.sandbox, "exportWorkspace");
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(
+      replaceComputer(deps, row.id, "recover", context, "none", async (stage) => {
+        if (stage === "saving") throw blip;
+      }),
+    ).rejects.toBe(blip);
+    expect(exportWorkspace).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+    expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
+      "live work",
+    );
+  });
+
+  it("stops Recover instead of rebuilding when its save cannot be recorded", async () => {
+    const { deps, row, first, computer } = await fixture();
+    const blip = new Error("database unavailable");
+    const record = computer.updateMany.getMockImplementation()!;
+    computer.updateMany.mockImplementation(async (args) => {
+      if ("homeRevision" in args.data) throw blip;
+      return record(args);
+    });
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, "recover", context)).rejects.toBe(blip);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+    expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
+      "live work",
+    );
+  });
+
+  it("records nothing for a save Recover skipped", async () => {
+    const { deps, row, computer } = await fixture();
+    vi.spyOn(deps.sandbox, "exportWorkspace").mockImplementationOnce(async function* () {
+      yield { path: "notes.txt", content: new TextEncoder().encode("incomplete checkpoint") };
+      throw new Error("export process killed");
+    });
+    const recovered = await replaceComputer(deps, row.id, "recover", context);
+    expect(row).toMatchObject({ state: "running", providerRef: recovered.providerRef });
+    for (const [args] of computer.updateMany.mock.calls) {
+      expect(args.data).not.toHaveProperty("homeRevisionAt");
+    }
+    expect(await deps.home.readFile("bot", "notes.txt", context)).toBe("checkpoint");
+  });
+
+  it("stops Recover instead of rebuilding when it cannot store the exported files", async () => {
+    const { deps, row, first } = await fixture();
+    const blip = new Error("object storage unavailable");
+    vi.spyOn(deps.home, "commit").mockRejectedValueOnce(blip);
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, "recover", context)).rejects.toBe(blip);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+    expect(new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context))).toBe(
+      "live work",
+    );
+  });
+
+  it("stops a replacement whose save another writer overtook", async () => {
+    const { deps, row, first, computer } = await fixture();
+    const record = computer.updateMany.getMockImplementation()!;
+    computer.updateMany.mockImplementation(async (args) =>
+      "homeRevision" in args.data ? { count: 0 } : record(args),
+    );
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, "recover", context)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+  });
+
+  it("stops Recover instead of rebuilding when it cannot look up deleted bots' folders", async () => {
+    const { deps, row, first } = await fixture();
+    row.scope = "team";
+    const blip = new Error("database unavailable");
+    Object.assign(deps.prisma, {
+      botDeletion: { findMany: vi.fn().mockRejectedValue(blip) },
+    });
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    await expect(replaceComputer(deps, row.id, "recover", context)).rejects.toBe(blip);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+  });
+
+  it("records an error when an update fails once teardown has started", async () => {
+    const { deps, row, first } = await fixture();
+    const failure = new Error("sandbox destroy failed: 500");
+    vi.spyOn(deps.sandbox, "destroy").mockRejectedValueOnce(failure);
+    await expect(replaceComputer(deps, row.id, "update", context)).rejects.toBe(failure);
+    expect(row).toMatchObject({ state: "error", providerRef: first.providerRef });
   });
 
   it("keeps the reference for a retry when Recover cannot delete the old sandbox", async () => {

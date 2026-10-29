@@ -134,8 +134,11 @@ active operations and failures from the API.
 Update explicitly rebuilds with the configured provider/image; `canUpdate` means
 the computer supports that action, not that a newer image was detected. Provider
 migration and image-version discovery are not part of this UI. Updates checkpoint
-live work before teardown. Recovery can fall back to the last saved workspace,
-so its failure action warns that unsaved work may be lost.
+live work before teardown; an update that fails before teardown leaves a
+running computer running, so Recover can still save that work first. Recover
+stops rather than rebuild when it exported the work but cannot store or record
+it. Recovery can fall back to the last saved workspace, so its failure action
+warns that unsaved work may be lost.
 
 The reconciler republishes queued operations after a missed enqueue. Jobs already
 claimed are never destructively replayed. A worker that stops heartbeating for ten

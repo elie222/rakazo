@@ -3553,7 +3553,7 @@ describe("computer replacement", () => {
       expect(destroy).not.toHaveBeenCalled();
       expect(updateMany).toHaveBeenLastCalledWith({
         where: { id: "computer-1", maintenanceId: null, updatedAt: expect.any(Date) },
-        data: { state: "error" },
+        data: { state: "running" },
       });
     } finally {
       await rm(dataDir, { recursive: true, force: true });
