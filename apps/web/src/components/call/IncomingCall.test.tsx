@@ -45,6 +45,19 @@ function bot(callId: string, expiresAt: number): Bot {
     },
   } as Bot;
 }
+/** Below md the call view covers the app. */
+function viewport(width: number) {
+  vi.stubGlobal("innerWidth", width);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: width < 768,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+}
+/** Base UI moves focus a microtask and an animation frame after a change. */
+async function flushFocus() {
+  await act(() => vi.advanceTimersByTimeAsync(50));
+}
 function render(bots: Bot[]) {
   act(() => root.render(<IncomingCall bots={bots} onAnswered={vi.fn()} />));
 }
@@ -52,6 +65,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(start);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  viewport(1024);
   vi.stubGlobal(
     "Notification",
     class {
@@ -226,4 +240,32 @@ it("hangs up an answer that lands while a lazy route hides the call view", async
     { botId: "bot-1", callId: "call-1" },
     { context: { spaceId: "space-1" } },
   );
+});
+
+it("takes focus on a phone screen, shuts out the app behind it, and gives focus back", async () => {
+  viewport(375);
+  const composer = document.createElement("textarea");
+  document.body.append(composer);
+  composer.focus();
+  render([bot("call-1", start + 45_000)]);
+  await flushFocus();
+  const view = document.querySelector('[role="alertdialog"]');
+  expect(view?.contains(document.activeElement)).toBe(true);
+  expect(composer.closest('[aria-hidden="true"]')).not.toBeNull();
+  render([]);
+  await flushFocus();
+  expect(document.activeElement).toBe(composer);
+  expect(composer.closest('[aria-hidden="true"]')).toBeNull();
+  composer.remove();
+});
+
+it("leaves focus in the app beside the desktop card", async () => {
+  const composer = document.createElement("textarea");
+  document.body.append(composer);
+  composer.focus();
+  render([bot("call-1", start + 45_000)]);
+  await flushFocus();
+  expect(document.activeElement).toBe(composer);
+  expect(composer.closest('[aria-hidden="true"]')).toBeNull();
+  composer.remove();
 });

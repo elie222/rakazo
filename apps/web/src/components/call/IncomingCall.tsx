@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { startCall, useCallSession } from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
+import { CallWindow } from "./CallWindow";
 
 /** Two short rising tones every two seconds: an incoming ring, unlike the outgoing ringback. */
 function startRingtone(): () => void {
@@ -173,7 +174,7 @@ export function IncomingCall({
   };
 
   return (
-    <div
+    <CallWindow
       data-testid="incoming-call"
       role="alertdialog"
       aria-label={t`${bot.name} is calling you`}
@@ -229,6 +230,6 @@ export function IncomingCall({
           {t({ message: "Answer", context: "incoming call" })}
         </Button>
       </div>
-    </div>
+    </CallWindow>
   );
 }
