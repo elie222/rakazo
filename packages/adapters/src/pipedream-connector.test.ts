@@ -573,6 +573,41 @@ describe("PipedreamConnector", () => {
     expect(calls).toEqual([{ app: "gmail", name: "send_email", args: { text: "hello" } }]);
   });
 
+  it.each([
+    { label: "its one approved account", refs: ["apn_work"], pinned: "apn_work" },
+    { label: "no account when two are approved", refs: ["apn_work", "apn_home"], pinned: null },
+    { label: "no account when a row has no account id", refs: ["apn_work", "gmail"], pinned: null },
+  ])("pins an app's tools to $label", async ({ refs, pinned }) => {
+    const fetch = pipedreamMcpFetch({ gmail: ["send_email"] });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+    const context: AdapterContext = {
+      ...connectedContext(),
+      connectedConnections: refs.map((providerRef, index) => ({
+        id: `connection-${index}`,
+        connectorId: "pipedream",
+        externalId: "gmail",
+        displayName: "Gmail",
+        providerRef,
+      })),
+    };
+    const [tool] = await connector.discoverTools(context);
+    const events = [];
+    for await (const event of connector.execute(
+      { tool: tool!.name, args: { text: "hello" }, executionId: "pin", route: tool!.route },
+      context,
+    )) {
+      events.push(event);
+    }
+    expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+
+    const mcpAccounts = fetch.mock.calls
+      .map(([input, init]) => new Request(input, init))
+      .filter((request) => request.headers.has("x-pd-app-slug"))
+      .map((request) => request.headers.get("x-pd-account-id"));
+    expect(mcpAccounts.length).toBeGreaterThan(0);
+    expect(new Set(mcpAccounts)).toEqual(new Set([pinned]));
+  });
+
   it("leaves a direct app route to the normal execute path", async () => {
     const connector = new PipedreamConnector(FAKE_CONFIG, TEST_NETWORK);
 

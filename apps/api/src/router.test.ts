@@ -3202,11 +3202,30 @@ describe("connections.complete", () => {
       row.status = "connected";
       return true;
     });
-    Object.assign(connector, { connectedAccountId: vi.fn(async () => "account-1") });
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("stores the connected account a request id resolves to", async () => {
+    const { complete, connector, row } = pollFixture("pending");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      accounts: new Map([["request-1", "account-1"]]),
+      async resolveConnectedAccountId(
+        this: { accounts: Map<string, string> },
+        _userId: string,
+        _slug: string,
+        ref: string,
+      ) {
+        return this.accounts.get(ref);
+      },
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
   });
 
   it("reports a superseded connection as revoked instead of failing", async () => {
