@@ -15,7 +15,7 @@ import {
   parseScreenLeaseId,
   screenLeaseId,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,
   parseComputerMode,
@@ -661,16 +661,7 @@ export async function acquireDedicatedScreenLeaseFence(
       throw new ComputerBusyError();
     }
 
-    const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM runs
-      WHERE id = ${input.runId}
-        AND "botId" = ${input.botId}
-        AND status = 'running'
-        AND "leaseOwner" = ${input.workerId}
-        AND "leaseFence" = ${input.runFence}
-        AND "leaseExpiresAt" > ${new Date()}
-      FOR UPDATE SKIP LOCKED`;
-    if (currentRun.length !== 1) throw new ComputerBusyError();
+    await lockOwnedRun(tx, input);
 
     // An unexpired holder owns the screen until release, pause, or expiry. Keep the
     // expired row so explicit release never resets the next worker's screen fence.
@@ -724,13 +715,30 @@ export async function acquireDedicatedScreenLeaseFence(
   });
 }
 
+async function lockOwnedRun(
+  tx: Prisma.TransactionClient,
+  input: { runId: string; botId: string; workerId: string; runFence: number },
+): Promise<void> {
+  const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM runs
+    WHERE id = ${input.runId}
+      AND "botId" = ${input.botId}
+      AND status = 'running'
+      AND "leaseOwner" = ${input.workerId}
+      AND "leaseFence" = ${input.runFence}
+      AND "leaseExpiresAt" > ${new Date()}
+    FOR UPDATE SKIP LOCKED`;
+  if (currentRun.length !== 1) throw new ComputerBusyError();
+}
+
 export async function acquireComputerExecutionLease(
   prisma: PrismaClient,
   input: {
     computerId: string;
     runId: string;
     botId: string;
-    resumeHeldLease?: boolean;
+    workerId: string;
+    runFence: number;
   },
 ): Promise<ComputerExecutionLease | null> {
   const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
@@ -738,54 +746,59 @@ export async function acquireComputerExecutionLease(
     throw new ComputerBusyError();
   if (computer.scope !== "team") return null;
   if (isLiveSuspending(computer)) throw new ComputerBusyError();
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
-  const [reclaimed] = await prisma.computerExecutionLease.updateManyAndReturn({
-    where: {
-      computerId: input.computerId,
-      botId: input.botId,
-      OR: [{ expiresAt: { lt: now } }, ...(input.resumeHeldLease ? [{ runId: input.runId }] : [])],
-    },
-    data: {
-      runId: input.runId,
-      expiresAt,
-      fence: { increment: 1 },
-    },
-    select: { fence: true },
-  });
-  if (reclaimed) {
-    return validateAcquiredComputerLease(prisma, {
-      computerId: input.computerId,
-      botId: input.botId,
-      runId: input.runId,
-      fence: reclaimed.fence,
-    });
-  }
-  try {
-    const created = await prisma.computerExecutionLease.create({
-      data: {
+  return prisma.$transaction(async (tx) => {
+    // Recovery may own the run before its takeover pause was committed. Lock the
+    // current claim so a stale worker cannot reclaim the screen from its successor.
+    await lockOwnedRun(tx, input);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
+    const [reclaimed] = await tx.computerExecutionLease.updateManyAndReturn({
+      where: {
         computerId: input.computerId,
         botId: input.botId,
+        OR: [{ expiresAt: { lt: now } }, { runId: input.runId }],
+      },
+      data: {
         runId: input.runId,
-        fence: 1,
         expiresAt,
+        fence: { increment: 1 },
       },
       select: { fence: true },
     });
-    return validateAcquiredComputerLease(prisma, {
-      computerId: input.computerId,
-      botId: input.botId,
-      runId: input.runId,
-      fence: created.fence,
-    });
-  } catch (error) {
-    if (isUniqueConstraintError(error)) throw new ComputerBusyError();
-    throw error;
-  }
+    if (reclaimed) {
+      return validateAcquiredComputerLease(tx, {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: reclaimed.fence,
+      });
+    }
+    try {
+      const created = await tx.computerExecutionLease.create({
+        data: {
+          computerId: input.computerId,
+          botId: input.botId,
+          runId: input.runId,
+          fence: 1,
+          expiresAt,
+        },
+        select: { fence: true },
+      });
+      return validateAcquiredComputerLease(tx, {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: created.fence,
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ComputerBusyError();
+      throw error;
+    }
+  });
 }
 
 async function validateAcquiredComputerLease(
-  prisma: PrismaClient,
+  prisma: Prisma.TransactionClient,
   lease: ComputerExecutionLease,
 ): Promise<ComputerExecutionLease> {
   const computer = await prisma.computer.findUniqueOrThrow({
@@ -797,7 +810,6 @@ async function validateAcquiredComputerLease(
     (!computer.maintenanceId || computer.maintenanceId === lease.runId)
   )
     return lease;
-  await releaseComputerExecutionLease(prisma, lease);
   throw new ComputerBusyError();
 }
 
