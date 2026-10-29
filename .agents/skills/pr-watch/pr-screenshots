@@ -23,7 +23,7 @@ gallery_url="$(gh api --paginate --slurp "repos/{owner}/{repo}/issues/$pr/commen
 public_base="${gallery_url%/prs/*}"
 
 run="$(curl -fsS "$public_base/history.json" |
-  jq -c --argjson pr "$pr" '[.[] | select(.pullRequestNumber == $pr)] | max_by(.createdAt) // empty')"
+  jq -c --argjson pr "$pr" 'first(.[] | select(.pullRequestNumber == $pr)) // empty')"
 [[ -n "$run" ]] || die "no published run for PR #$pr"
 screenshots_url="$(jq -r .screenshotsUrl <<<"$run")"
 run_sha="$(jq -r .sha <<<"$run")"
