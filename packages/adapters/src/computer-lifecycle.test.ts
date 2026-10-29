@@ -41,40 +41,60 @@ const context = {
 } satisfies AdapterContext;
 
 describe("computer provisioning", () => {
-  it.each([
-    { kind: "wuying", selected: "fake", state: "running" },
-    { kind: "wuying", selected: "wuying", state: "stopped" },
-    { kind: "docker", selected: "wuying", state: "stopped" },
-  ])(
-    "refuses Private Computers before any Wuying start or reconnect ($kind/$selected/$state)",
-    async ({ kind, selected, state }) => {
-      const provision = vi.fn();
-      const isRunning = vi.fn();
-      const updateMany = vi.fn();
-      const deps = {
-        prisma: {
-          computer: {
-            findUniqueOrThrow: vi.fn().mockResolvedValue({ kind, state, scope: "dedicated" }),
-            updateMany,
+  it("provisions a Private Computer with Wuying selected", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-private-provision-"));
+    const ref: ComputerRef = {
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "wuying",
+      providerRef: "ecd-fake",
+    };
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          ...ref,
+          homeKey: "bot-1",
+          scope: "dedicated",
+          state: "stopped",
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      computerRun: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    } as unknown as PrismaClient;
+    const provision = vi.fn().mockResolvedValue(ref);
+    const sandbox = {
+      describe: () => ({ id: "wuying" }),
+      provision,
+      prepare: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
           },
-        } as unknown as PrismaClient,
-        sandbox: {
-          describe: () => ({ id: selected }),
-          provision,
-          isRunning,
-        } as unknown as SandboxProvider,
-        home: {} as AgentHomeStore,
-        jobs: {} as JobPublisher,
-        events: {} as ThreadEvents,
-      };
-      await expect(provisionComputer(deps, "private-computer", context)).rejects.toThrow(
-        "Wuying supports Team Computers only. Select a Team Computer instead of a Private Computer.",
+          "computer-1",
+          context,
+        ),
+      ).resolves.toEqual(ref);
+      expect(provision).toHaveBeenCalledOnce();
+      expect(prisma.computer.updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ state: "running" }) }),
       );
-      expect(provision).not.toHaveBeenCalled();
-      expect(isRunning).not.toHaveBeenCalled();
-      expect(updateMany).not.toHaveBeenCalled();
-    },
-  );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
 
   it("stops a provider when archive invalidates its boot claim", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-race-"));

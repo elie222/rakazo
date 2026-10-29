@@ -193,10 +193,9 @@ cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuyin
 the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
 only in the URL fragment, outside HTTP requests and Referer.
 
-Wuying supports **Team Computers only**; starting or reconnecting a Private Computer is refused.
-All bots, users and spaces configured with this provider share the same Windows desktop and
-account permissions, including files outside their workspace folders. Use it only in a trusted
-team deployment.
+All bots, users and spaces configured with this provider, including Private Computers, share
+the same Windows desktop and account permissions, including files outside their workspace
+folders. Use it only in a trusted deployment.
 The gateway bounds each call to one minute, 16 KiB of command output and 1,000 folder entries.
 A command allowed longer than a minute runs detached with its output in files under
 `%USERPROFILE%\rakazo\.runs`, read back every second and removed when it ends or is cancelled.
