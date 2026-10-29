@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, RoutineHistory } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test(
@@ -66,13 +66,30 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await captureScreenshot(page, testInfo, "33-routine-scheduled");
 
   await routine.click();
+  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
+    (item) => item.name === "Daily verification",
+  );
+  const runs = async () =>
+    (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
   await page.getByRole("button", { name: "Test run" }).click();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
+  // The open editor's instruction already shows the marker text, so wait on the run itself
+  // and read the marker from the bot reply the run recorded.
+  await expect
+    .poll(async () => (await runs()).map((run) => run.status), { timeout: 30_000 })
+    .toEqual(["completed"]);
+  const messageId = (await runs())[0]?.messageId;
+  expect(messageId).toBeTruthy();
+  const reply = page
+    .getByTestId("transcript")
+    .locator(`[data-message-id="${messageId}"]`)
+    .getByTestId("message-bot-bubble");
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await captureScreenshot(page, testInfo, "34-routine-run-completed");
 
   await page.reload();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible();
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await expect(page.getByRole("button", { name: /Daily verification/ })).toContainText(
     "Weekdays at 9:00 AM",
@@ -80,17 +97,12 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.getByRole("button", { name: /Daily verification/ }).click();
   const history = page.getByTestId("routine-run-history");
   await expect(history.getByTestId("routine-run-row")).toHaveCount(1);
-  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
-    (item) => item.name === "Daily verification",
-  );
-  const ran = await rpc<{ runs: Array<{ status: string }> }>(page, "routines/history", {
-    routineId: created?.id,
-  });
-  expect(ran.runs.map((run) => run.status)).toEqual(["completed"]);
+  expect((await runs()).map((run) => run.status)).toEqual(["completed"]);
   await expect(history.getByText("No runs yet")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "36-routine-run-history");
   await history.getByTestId("routine-run-row").getByRole("link").click();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible();
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await captureScreenshot(page, testInfo, "35-routine-run-persisted");
 });
 
