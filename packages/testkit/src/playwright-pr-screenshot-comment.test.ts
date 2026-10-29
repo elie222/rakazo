@@ -42,18 +42,27 @@ describe("screenshotMatchesSpecStem", () => {
       ),
     ).toBe(false);
   });
+
+  it("matches output directories nested under a project folder", () => {
+    expect(
+      screenshotMatchesSpecStem(
+        "www-marketing/homepage-screenshots-plugin-pages-chromium/07-submit.png",
+        "homepage-screenshots",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("selectPlaywrightPrFeatureFrames", () => {
-  it("prefers NEW checkpoints over everything else", () => {
+  it("lists NEW checkpoints before CHANGED ones", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: [],
+      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
       screenshots: [
         screenshot({
           comparison: "changed",
-          fileName: "images/001-onboarding.png",
-          source: "onboarding-x/01.png",
-          title: "onboarding drift",
+          fileName: "images/001-shell-idle.png",
+          source: "tool-activity-shell-x/shell-idle.png",
+          title: "shell idle",
         }),
         screenshot({
           comparison: "new",
@@ -70,9 +79,29 @@ describe("selectPlaywrightPrFeatureFrames", () => {
           kind: "new",
           title: "shell live",
         }),
+        expect.objectContaining({
+          kind: "changed",
+          title: "shell idle",
+        }),
       ],
       omittedCount: 0,
     });
+  });
+
+  it("skips NEW checkpoints from specs outside the PR diff", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedPaths: ["apps/web/e2e/plugin-marketplace.spec.ts"],
+      screenshots: [
+        screenshot({
+          comparison: "new",
+          fileName: "images/001-group-mentions.png",
+          source: "group-chats-create-group-f-23e27-chromium/group-mentions.png",
+          title: "group mentions",
+        }),
+      ],
+    });
+
+    expect(selection).toEqual({ frames: [], omittedCount: 0 });
   });
 
   it("includes CHANGED checkpoints only when their spec is in the PR diff", () => {
@@ -202,7 +231,10 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("includes spec-touched CHANGED frames after NEW frames", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/e2e/tool-activity-disclosure.spec.ts"],
+      changedPaths: [
+        "apps/web/e2e/tool-activity-disclosure.spec.ts",
+        "apps/web/e2e/tool-activity-shell.spec.ts",
+      ],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -281,7 +313,7 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("neutralizes Markdown and HTML syntax in contributor-controlled titles", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: [],
+      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
       screenshots: [
         screenshot({
           comparison: "new",
