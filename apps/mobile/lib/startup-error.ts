@@ -1,10 +1,16 @@
 import { sanitizedError } from "@rakazo/logging/monitoring";
+import type * as Application from "expo-application";
 import { API_BASE_STORAGE_KEY, DEFAULT_API } from "./server-config";
 
 export interface StartupErrorStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
+
+export type NativeApplication = Pick<
+  typeof Application,
+  "applicationId" | "nativeApplicationVersion" | "nativeBuildVersion"
+>;
 
 const KEY = "rakazo.startup-error";
 const MAX_LENGTH = 8_192;
@@ -71,12 +77,24 @@ function selectedServer(storage: StartupErrorStorage): string {
 }
 
 /** Synchronous because React Native's fatal handler may terminate before a write promise runs. */
-export function saveStartupError(error: unknown, storage?: StartupErrorStorage): void {
+export function saveStartupError(
+  error: unknown,
+  storage: StartupErrorStorage | undefined,
+  application: NativeApplication | undefined,
+): void {
   if (!storage) return;
   try {
     const safe = sanitizedError(error);
+    const { applicationId, nativeApplicationVersion, nativeBuildVersion } = application ?? {};
     const record = {
       server: selectedServer(storage),
+      // The native SDK's default release, so the next launch reports the build that crashed.
+      ...(applicationId && nativeApplicationVersion && nativeBuildVersion
+        ? {
+            release: `${applicationId}@${nativeApplicationVersion}+${nativeBuildVersion}`,
+            dist: nativeBuildVersion,
+          }
+        : {}),
       name: safe.name.slice(0, 128),
       message: safe.message.slice(0, 1_024),
       stack: safe.stack?.slice(0, 4_096),
@@ -97,7 +115,9 @@ export function saveStartupError(error: unknown, storage?: StartupErrorStorage):
   }
 }
 
-export function readStartupError(storage?: StartupErrorStorage): Error | undefined {
+export function readStartupError(
+  storage?: StartupErrorStorage,
+): { error: Error; release?: string; dist?: string } | undefined {
   if (!storage) return;
   try {
     const raw = storage.getItem(KEY);
@@ -109,6 +129,8 @@ export function readStartupError(storage?: StartupErrorStorage): Error | undefin
       name?: unknown;
       message?: unknown;
       stack?: unknown;
+      release?: unknown;
+      dist?: unknown;
     };
     // A failed best-effort wipe must never send another server's report after a restart.
     if (stored.server !== selectedServer(storage)) return;
@@ -116,7 +138,11 @@ export function readStartupError(storage?: StartupErrorStorage): Error | undefin
     const error = new Error(stored.message);
     error.name = stored.name;
     if (typeof stored.stack === "string") error.stack = stored.stack;
-    return sanitizedError(error);
+    return {
+      error: sanitizedError(error),
+      release: typeof stored.release === "string" ? stored.release : undefined,
+      dist: typeof stored.dist === "string" ? stored.dist : undefined,
+    };
   } catch {
     return;
   }

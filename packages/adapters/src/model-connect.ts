@@ -189,11 +189,12 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "oauth") {
-    return serializeModelSecret({
-      kind: "oauth",
-      credential: previous.credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
-    });
+    const limit = maxTokens !== undefined ? { maxTokens } : {};
+    return serializeModelSecret(
+      previous.reconnectRequired
+        ? { kind: "oauth", reconnectRequired: true, ...limit }
+        : { kind: "oauth", credential: previous.credential, ...limit },
+    );
   }
   if (input.provider === CHATGPT_OAUTH_PROVIDER) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
@@ -293,6 +294,7 @@ export function modelCredentialDto(
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),
+      ...(parsed.kind === "oauth" && parsed.reconnectRequired ? { reconnectRequired: true } : {}),
       ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
       ...(parsed.kind !== "oauth"
         ? {

@@ -93,6 +93,11 @@ import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet"
 import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
+import {
+  loadTrustedLinkSites,
+  removeTrustedLinkSite,
+  useTrustedLinkSites,
+} from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
@@ -167,6 +172,7 @@ export default function Account() {
     }
   }, [t]);
   const colorScheme = useResolvedAppearance();
+  const trustedSites = useTrustedLinkSites();
   const [archivedCount, setArchivedCount] = useState(0);
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
@@ -274,6 +280,12 @@ export default function Account() {
       return () => {
         active = false;
       };
+    }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadTrustedLinkSites().catch(() => undefined);
     }, []),
   );
 
@@ -396,6 +408,12 @@ export default function Account() {
         },
       ]);
     }
+  }
+
+  function removeTrustedSite(site: string) {
+    void removeTrustedLinkSite(site).catch((cause: unknown) =>
+      Alert.alert(t("Could not continue"), errorText(cause, t("Try again."))),
+    );
   }
 
   function closeDeletePrompt() {
@@ -584,6 +602,22 @@ export default function Account() {
           </SettingsGroup>
         ) : null}
 
+        {trustedSites.length > 0 ? (
+          <SettingsGroup accessibilityLabel={t("Trusted sites")} label={t("Trusted sites")}>
+            {trustedSites.map((site) => (
+              <MenuView
+                key={site}
+                actions={[{ id: "remove", title: t("Remove"), attributes: { destructive: true } }]}
+                colorScheme={colorScheme}
+                onPressAction={() => removeTrustedSite(site)}
+                title={site}
+              >
+                <SettingsRow accessible accessibilityRole="button" title={site} />
+              </MenuView>
+            ))}
+          </SettingsGroup>
+        ) : null}
+
         <View accessibilityLabel={t("Appearance")} style={styles.section}>
           <SettingsLabel>{t("Appearance")}</SettingsLabel>
           <NativeSegmentedControl
@@ -699,6 +733,7 @@ export default function Account() {
                 ? [{ title: t("Wallet"), href: "/wallet" } as const]
                 : []),
               { title: t("Integrations"), href: "/integrations" },
+              { title: t("Skills"), href: "/skills" },
               { title: t("Messaging"), href: "/messaging" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const

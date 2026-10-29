@@ -1,4 +1,5 @@
 import type { SearchHit } from "@rakazo/contracts";
+import { textBoundary, truncatePlainText } from "./markdown-plain.js";
 
 const URL_PATTERN = /https?:\/\/[^\s<>"'\]][^\s<>"']*/gi;
 
@@ -59,12 +60,13 @@ export function escapeJsonSearchWildcards(value: string): string {
   return escapeSearchWildcards(JSON.stringify(value).slice(1, -1));
 }
 
+/** 按 UTF-16 长度生成搜索摘要，保持原有匹配逻辑并避免在边界切断代理对。 */
 export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
   const q = query.trim().toLowerCase();
-  if (!q) return text.slice(0, maxLen);
+  if (!q) return truncatePlainText(text, maxLen);
   const lower = text.toLowerCase();
   const index = lower.indexOf(q);
-  if (index < 0) return text.slice(0, maxLen);
+  if (index < 0) return truncatePlainText(text, maxLen);
   let originalIndex = index;
   if (lower.length !== text.length) {
     // Lowercasing can expand a character (İ → i + combining dot).
@@ -78,8 +80,8 @@ export function snippetAroundMatch(text: string, query: string, maxLen = 120): s
       originalIndex += character.length;
     }
   }
-  const start = Math.max(0, originalIndex - 40);
-  const end = Math.min(text.length, start + maxLen);
+  const start = textBoundary(text, Math.max(0, originalIndex - 40));
+  const end = textBoundary(text, Math.min(text.length, start + maxLen));
   const prefix = start > 0 ? "…" : "";
   const suffix = end < text.length ? "…" : "";
   return `${prefix}${text.slice(start, end)}${suffix}`;

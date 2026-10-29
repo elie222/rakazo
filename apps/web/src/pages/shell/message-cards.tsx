@@ -18,13 +18,10 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
-  onImportAgent,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
-  /** Offered on the first-run focus card while it is unanswered. */
-  onImportAgent?: () => void;
 }) {
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
@@ -98,15 +95,6 @@ export function ChoiceCard({
           ))}
         </div>
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
-        {onImportAgent && !block.answerId && block.question === FOCUS_QUESTION ? (
-          <Button
-            variant="link"
-            className="mt-2 h-auto px-0 text-muted-foreground"
-            onClick={onImportAgent}
-          >
-            <Trans>Import an agent</Trans>
-          </Button>
-        ) : null}
       </BuiCard>
     </div>
   );

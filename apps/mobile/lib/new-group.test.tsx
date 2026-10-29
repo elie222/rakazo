@@ -9,17 +9,27 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import NewGroup from "../app/new-group";
 import type { MobileBot } from "./api";
 
-const { rpc, back, push, replace, announce, hardwareBack, nativeHeader, addToSearchInbox } =
-  vi.hoisted(() => ({
-    rpc: vi.fn(),
-    addToSearchInbox: vi.fn(),
-    back: vi.fn(),
-    push: vi.fn(),
-    replace: vi.fn(),
-    announce: vi.fn(),
-    hardwareBack: { current: undefined as (() => boolean) | undefined },
-    nativeHeader: { current: false },
-  }));
+const {
+  rpc,
+  back,
+  push,
+  replace,
+  announce,
+  hardwareBack,
+  nativeHeader,
+  addToSearchInbox,
+  groupPreview,
+} = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  groupPreview: vi.fn(),
+  addToSearchInbox: vi.fn(),
+  back: vi.fn(),
+  push: vi.fn(),
+  replace: vi.fn(),
+  announce: vi.fn(),
+  hardwareBack: { current: undefined as (() => boolean) | undefined },
+  nativeHeader: { current: false },
+}));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("./search-inbox", () => ({
@@ -176,7 +186,12 @@ vi.mock("../components/sheet-close-button", () => ({
     </button>
   ),
 }));
-vi.mock("../components/group-avatar", () => ({ GroupAvatar: () => null }));
+vi.mock("../components/group-avatar", () => ({
+  GroupAvatar: (props: unknown) => {
+    groupPreview(props);
+    return null;
+  },
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -195,9 +210,9 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 const bots = [
-  { id: "bot-1", name: "Researcher", title: "Reads papers" },
-  { id: "bot-2", name: "Writer", title: "Drafts prose" },
-  { id: "bot-3", name: "Support", title: "Helps out" },
+  { id: "bot-1", name: "Researcher" },
+  { id: "bot-2", name: "Writer" },
+  { id: "bot-3", name: "Support" },
 ] as MobileBot[];
 let root: Root;
 let container: HTMLDivElement;
@@ -241,6 +256,27 @@ async function pickPair() {
   await click("Next");
 }
 
+it("keeps each selected bot's icon set in the name-step group preview", async () => {
+  const looks = bots.map((bot, index) => ({
+    ...bot,
+    color: index === 0 ? "#10B981" : "#8B5CF6",
+    avatarSet: index === 0 ? "rakazo" : "organic",
+  }));
+  rpc.mockImplementation(async (procedure: string) =>
+    procedure === "bots/list" ? looks : { id: "group-1", name: "Created" },
+  );
+  await start();
+  await pickPair();
+  expect(groupPreview).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      members: [
+        { botId: "bot-2", color: "#8B5CF6", avatarSet: "organic" },
+        { botId: "bot-1", color: "#10B981", avatarSet: "rakazo" },
+      ],
+    }),
+  );
+});
+
 it("adds and removes chips, hides picked and archived bots, and clears filters on pick", async () => {
   rpc.mockResolvedValue([
     ...bots,
@@ -248,7 +284,7 @@ it("adds and removes chips, hides picked and archived bots, and clears filters o
   ]);
   await start();
   expect(button("Archived")).toBeUndefined();
-  await type("  PROSE ");
+  await type("  WRIT ");
   expect(button("Researcher")).toBeUndefined();
   await click("Writer");
   expect(button("Writer")).toBeUndefined();

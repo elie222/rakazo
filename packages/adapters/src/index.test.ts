@@ -250,7 +250,6 @@ describe("builtin tools", () => {
       expect.objectContaining({
         properties: expect.objectContaining({
           name: expect.any(Object),
-          title: expect.any(Object),
           description: expect.any(Object),
           color: expect.any(Object),
           artifact_id: expect.any(Object),

@@ -8,7 +8,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  abortableDelay,
+  isRetryableError,
+  parseScreenLeaseId,
+  screenLeaseId,
+} from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,
@@ -34,7 +40,11 @@ import {
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
-import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
+import {
+  isSandboxDamagedError,
+  isSandboxGoneError,
+  isSandboxUnsafeStopError,
+} from "./sandbox-errors.js";
 
 type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
@@ -43,6 +53,7 @@ type ComputerUpdateProgress = (
 const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+const RUNNING_CHECK_RETRY_MS = [250, 750];
 /**
  * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
  * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Slow dedicated
@@ -164,6 +175,8 @@ export async function provisionComputer(
   const started = performance.now();
   const log = getLogger().child({ "computer.id": computerId, "run.id": context.runId });
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+  if (existing.state === "quarantined")
+    throw new Error("Computer requires recovery after an unconfirmed stop");
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw new ComputerBusyError();
   if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
@@ -180,7 +193,7 @@ export async function provisionComputer(
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
   if (existing.state === "running" && existing.providerRef && deps.sandbox.isRunning) {
     const ref = toComputerRef(existing);
-    if (await deps.sandbox.isRunning(ref, context)) {
+    if (await confirmedRunning(deps.sandbox, ref, context)) {
       context.signal.throwIfAborted();
       const runningSince = existing.runningSince ?? new Date();
       const retained = await deps.prisma.computer.updateMany({
@@ -198,20 +211,30 @@ export async function provisionComputer(
       });
       if (retained.count !== 1) throw new ComputerBusyError();
       await recordComputerRunStart(deps.prisma, existing, runningSince);
-      await deps.sandbox.prepare(ref, context);
-      await ensureComputerWorkspaceLayout(
-        deps.sandbox,
-        ref,
-        parseComputerMode(existing.scope),
-        context.botId,
-        context,
+      const damaged = await deps.sandbox.prepare(ref, context).then(
+        () => false,
+        (error: unknown) => {
+          // Only the reconnect claim below can stop a damaged system back to its last good copy.
+          if (!isSandboxDamagedError(error)) throw error;
+          return true;
+        },
       );
-      log.info("computer.provisioned", {
-        provider: ref.kind,
-        operation: "reuse",
-        durationMs: Math.round(performance.now() - started),
-      });
-      return ref;
+      if (!damaged) {
+        await ensureComputerWorkspaceLayout(
+          deps.sandbox,
+          ref,
+          parseComputerMode(existing.scope),
+          context.botId,
+          context,
+        );
+        log.info("computer.provisioned", {
+          provider: ref.kind,
+          operation: "reuse",
+          durationMs: Math.round(performance.now() - started),
+        });
+        return ref;
+      }
+      context.signal.throwIfAborted();
     }
   }
 
@@ -464,6 +487,7 @@ export async function provisionComputer(
       provisioned && (!reconnecting || provisioned.fresh === true)
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
+    const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
     try {
       await deps.prisma.computer.updateMany({
         where: {
@@ -474,8 +498,15 @@ export async function provisionComputer(
           maintenanceId: existing.maintenanceId ?? null,
         },
         data: {
-          state: reconnecting ? "running" : "error",
-          ...(!reconnecting && rollbackError && provisioned
+          state:
+            (reconnecting || rollbackError) && unsafeStop
+              ? "quarantined"
+              : reconnecting
+                ? "running"
+                : "error",
+          ...((!reconnecting || (unsafeStop && provisioned?.fresh === true)) &&
+          rollbackError &&
+          provisioned
             ? { providerRef: provisioned.providerRef, kind: provisioned.kind }
             : {}),
         },
@@ -493,6 +524,33 @@ export async function provisionComputer(
       );
     }
     throw error;
+  }
+}
+
+/**
+ * Whether the provider confirms this reference is running. A status it still cannot read after
+ * short retries is not a confirmation, so the caller reconnects as it did before the check.
+ */
+async function confirmedRunning(
+  sandbox: SandboxProvider,
+  ref: ComputerRef,
+  context: AdapterContext,
+): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const running = (await sandbox.isRunning?.(ref, context)) === true;
+      // Some status reads ignore the signal and answer after the run was cancelled.
+      context.signal.throwIfAborted();
+      return running;
+    } catch (error) {
+      context.signal.throwIfAborted();
+      const wait = RUNNING_CHECK_RETRY_MS[attempt];
+      if (wait === undefined || !isRetryableError(error)) {
+        getLogger().warn("computer.running_check", { provider: ref.kind, error });
+        return false;
+      }
+      await abortableDelay(wait, context.signal);
+    }
   }
 }
 
@@ -812,6 +870,7 @@ export function computerSupportsTerminal(kind: string): boolean {
   return (
     kind === "docker" ||
     kind === "e2b" ||
+    kind === "novita" ||
     kind === "daytona" ||
     kind === "boat" ||
     kind === "kubernetes" ||
@@ -1057,7 +1116,8 @@ export async function replaceComputer(
       try {
         await deps.sandbox.destroy(oldRef, context);
       } catch (error) {
-        if (mode !== "recover" && !isSandboxGoneError(error)) throw error;
+        // Recover too: dropping the reference would orphan a sandbox that may still run.
+        if (!isSandboxGoneError(error)) throw error;
       }
     }
     const stopped = await deps.prisma.computer.updateMany({
@@ -1091,7 +1151,7 @@ export async function replaceComputer(
           updatedAt: claimStamp,
           maintenanceId: existing.maintenanceId ?? null,
         },
-        data: { state: "error" },
+        data: { state: previousState === "quarantined" ? "quarantined" : "error" },
       })
       .catch(() => undefined);
     throw error;

@@ -18,7 +18,7 @@ import {
   userRunError,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
-import { recordUsage } from "@rakazo/db";
+import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { isToolPauseResult } from "./approval-effect.js";
@@ -99,59 +99,100 @@ export async function consumeRunEvents(
 ): Promise<boolean> {
   const { deps, run, runId, bot } = ctx;
   const { reply } = ctx.state;
-  for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
-    if (ctx.state.approval.pausePending) return true;
-    if (!ctx.state.lease.valid) return true;
-    if (await runLeaseLost(ctx)) return true;
-
-    // Check complete assistant turns so split sentinel chunks are recognized
-    // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
-    if (event.type === "tool" || event.type === "takeover") {
-      recordExplicitNoResponse(reply, reply.assistantTurnText);
-      reply.assistantTurnText = "";
-    }
-    if (event.type === "text") {
-      await streamText(ctx, event);
-    } else if (event.type === "turn") {
-      reply.assistantTurnBreakPending = true;
-    } else if (event.type === "steered") {
-      await onSteered(ctx, event);
-    } else if (event.type === "progress") {
-      await streamProgress(ctx, event);
-    } else if (event.type === "ask") {
-      await pauseForAnswer(ctx, event);
-      return true;
-    } else if (event.type === "takeover") {
-      await pauseForTakeover(ctx, event);
-      return true;
-    } else if (event.type === "tool") {
-      if (await onToolCalled(ctx, event)) return true;
-    } else if (event.type === "subagent") {
-      await publishSubagent(ctx, event);
-    } else if (event.type === "usage" && !event.accounted) {
-      await recordUsage(deps.prisma, event, {
+  let thinking = false;
+  const publishThinking = async (active: boolean) => {
+    if (thinking === active) return;
+    thinking = active;
+    if (ctx.scripted || isBackgroundRunTrigger(run.trigger)) return;
+    try {
+      await deps.events.append({
         spaceId: run.spaceId,
+        threadId: run.threadId,
         botId: bot.id,
-        userId: run.userId,
         runId,
-        parentRunId: runId,
-        operationId: runId,
+        type: "thread.meta",
+        activityLease: { owner: ctx.workerId, fence: ctx.fence },
+        payload: { activity: { thinking: active } },
       });
-    } else if (event.type === "done") {
-      recordExplicitNoResponse(reply, event.text ?? "");
-      if (!reply.assembled && event.text) {
-        if (reply.publishedMidTurnUserMessage || reply.discardedMidTurnNarration) {
-          // Mid-turn narration was already published or discarded (routines).
-          // Post-tool finals are streamed into assembled; do not restore
-          // cumulative done.text (clamp/redaction make substring stripping brittle).
-        } else {
-          reply.assembled = event.text;
-          reply.currentTextSegment += event.text;
+    } catch (error) {
+      // Cancellation and a superseded attempt own their subsequent lifecycle.
+      // A stale marker must never override the current worker's state.
+      if (!(error instanceof RunHistoryWriteError)) throw error;
+    }
+  };
+  try {
+    for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
+      if (ctx.state.approval.pausePending) return true;
+      if (!ctx.state.lease.valid) return true;
+      if (await runLeaseLost(ctx)) return true;
+
+      if (event.type === "thinking") {
+        await publishThinking(event.active);
+        continue;
+      }
+      if (
+        (event.type === "text" && event.text.length > 0) ||
+        event.type === "tool" ||
+        event.type === "progress" ||
+        event.type === "ask" ||
+        event.type === "takeover" ||
+        event.type === "turn" ||
+        event.type === "done"
+      )
+        await publishThinking(false);
+
+      // Check complete assistant turns so split sentinel chunks are recognized
+      // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
+      if (event.type === "tool" || event.type === "takeover") {
+        recordExplicitNoResponse(reply, reply.assistantTurnText);
+        reply.assistantTurnText = "";
+      }
+      if (event.type === "text") {
+        await streamText(ctx, event);
+      } else if (event.type === "turn") {
+        reply.assistantTurnBreakPending = true;
+      } else if (event.type === "steered") {
+        await onSteered(ctx, event);
+      } else if (event.type === "progress") {
+        await streamProgress(ctx, event);
+      } else if (event.type === "ask") {
+        await pauseForAnswer(ctx, event);
+        return true;
+      } else if (event.type === "takeover") {
+        await pauseForTakeover(ctx, event);
+        return true;
+      } else if (event.type === "tool") {
+        if (await onToolCalled(ctx, event)) return true;
+      } else if (event.type === "subagent") {
+        await publishSubagent(ctx, event);
+      } else if (event.type === "usage" && !event.accounted) {
+        await recordUsage(deps.prisma, event, {
+          spaceId: run.spaceId,
+          botId: bot.id,
+          userId: run.userId,
+          runId,
+          parentRunId: runId,
+          operationId: runId,
+        });
+      } else if (event.type === "done") {
+        recordExplicitNoResponse(reply, event.text ?? "");
+        if (!reply.assembled && event.text) {
+          if (reply.publishedMidTurnUserMessage || reply.discardedMidTurnNarration) {
+            // Mid-turn narration was already published or discarded (routines).
+            // Post-tool finals are streamed into assembled; do not restore
+            // cumulative done.text (clamp/redaction make substring stripping brittle).
+          } else {
+            reply.assembled = event.text;
+            reply.currentTextSegment += event.text;
+          }
         }
       }
     }
+    return false;
+  } finally {
+    // Run completion clears thinking too; never let this replace the turn's own outcome.
+    await publishThinking(false).catch(() => {});
   }
-  return false;
 }
 
 /** At most once a second, check the run is still this attempt's and not cancelled or released. */

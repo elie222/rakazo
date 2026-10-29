@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { computerTestSandbox } from "../computer-test-config.js";
+import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 async function main() {
@@ -16,7 +16,7 @@ async function main() {
     if (!process.env[key]) throw new Error(`${key} is required`);
   }
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-computer-e2e-run-"));
-  const database = await new PostgreSqlContainer("postgres:18-alpine").start();
+  const database = await startPostgres();
   const env = {
     ...process.env,
     DATABASE_URL: database.getConnectionUri(),

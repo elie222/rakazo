@@ -1,21 +1,23 @@
 /**
- * Distance from the top of the screen to the chat's keyboard avoiding view.
+ * `automaticOffset` reads the avoiding view's absolute window position from
+ * native code on Android. Do not add a second measured offset to it: on a
+ * tablet, split-screen or after a keyboard resize it double-counts the header.
  *
- * Android uses the measured window position. A floating iOS header starts the chat
- * at the top of the screen; an opaque header would need its native height.
+ * iOS retains its existing behavior because its floating header does not
+ * occupy vertical space in the chat layout.
  */
-export function threadKeyboardOffset({
+export function threadKeyboardAvoidance({
   os,
   floatingHeader,
   nativeHeaderHeight,
-  measuredOffset,
 }: {
   os: string;
   floatingHeader: boolean;
   nativeHeaderHeight: number;
-  measuredOffset: number;
-}) {
-  if (os === "android") return measuredOffset;
-  if (os === "ios" && !floatingHeader) return nativeHeaderHeight;
-  return 0;
+}): { automaticOffset: boolean; keyboardVerticalOffset: number } {
+  if (os === "android") return { automaticOffset: true, keyboardVerticalOffset: 0 };
+  return {
+    automaticOffset: false,
+    keyboardVerticalOffset: os === "ios" && !floatingHeader ? nativeHeaderHeight : 0,
+  };
 }

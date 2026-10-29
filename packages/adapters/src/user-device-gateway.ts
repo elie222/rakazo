@@ -161,6 +161,11 @@ export class UserDeviceHub {
 
   /** Node `upgrade` listener for the device socket path; every other upgrade is refused. */
   handleUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    // Until ws takes over the socket, a client reset (say during the token lookup) would
+    // otherwise crash the process.
+    const onError = (error: Error) =>
+      getLogger().warn("user device upgrade socket error", { error });
+    socket.on("error", onError);
     const reject = (status: number, text: string) => {
       socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
     };
@@ -169,6 +174,7 @@ export class UserDeviceHub {
     void this.authenticate(request.headers.authorization)
       .then((device) => {
         if (!device) return reject(401, "Unauthorized");
+        socket.off("error", onError);
         this.wss.handleUpgrade(request, socket, head, (ws) => {
           void this.attach(device, ws).catch((error) => {
             getLogger().error("user device attach failed", error);

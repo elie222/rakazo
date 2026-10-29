@@ -130,6 +130,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** A login the user used for this run only instead of saving it. */
+    remembered: z.literal(false).optional(),
     actions: z
       .array(
         z.object({
@@ -227,7 +229,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("child_bot"),
     botId: z.string(),
     name: z.string(),
-    title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
@@ -273,7 +274,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("import_setup"),
     items: z.array(AgentImportSetupItemSchema),
-    /** Set by Undo, which also empties `items`; the checklist is then hidden. */
+    /** Set on checklists an earlier Undo retired, with `items` emptied; it is then hidden. */
     undone: z.boolean().optional(),
   }),
   z.object({
@@ -374,17 +375,40 @@ export function foldComputerCommands<T extends ComputerCommand>(events: T[]): T[
   return [...byId.values()];
 }
 
-export const ProductEventSchema = z.object({
-  id: Id,
-  spaceId: Id,
-  threadId: Id,
-  botId: Id,
-  seq: z.number().int().nonnegative(),
-  type: ProductEventType,
-  runId: Id.optional(),
-  createdAt: z.string(),
-  payload: z.record(z.string(), z.unknown()),
-});
+/** Coarse live run state. Never accepts provider reasoning content or partial messages. */
+export const ThreadActivityPayloadSchema = z
+  .object({
+    activity: z.object({ thinking: z.boolean() }).strict(),
+  })
+  .strict();
+
+/** Distinguish this live lifecycle subtype from unrelated thread metadata. */
+export function hasThinkingActivityMarker(payload: Record<string, unknown>): payload is {
+  activity: { thinking: unknown };
+} {
+  const activity = payload.activity;
+  return activity !== null && typeof activity === "object" && "thinking" in activity;
+}
+export type ThreadActivityPayload = z.infer<typeof ThreadActivityPayloadSchema>;
+
+export const ProductEventSchema = z
+  .object({
+    id: Id,
+    spaceId: Id,
+    threadId: Id,
+    botId: Id,
+    seq: z.number().int().nonnegative(),
+    type: ProductEventType,
+    runId: Id.optional(),
+    createdAt: z.string(),
+    payload: z.record(z.string(), z.unknown()),
+  })
+  .superRefine((event, ctx) => {
+    if (event.type !== "thread.meta" || !hasThinkingActivityMarker(event.payload)) return;
+    if (!event.runId || !ThreadActivityPayloadSchema.safeParse(event.payload).success) {
+      ctx.addIssue({ code: "custom", path: ["payload"], message: "Invalid run activity" });
+    }
+  });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
 export const ReplyPreviewSchema = z.object({

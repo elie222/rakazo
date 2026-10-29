@@ -95,7 +95,6 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "spawn_bot") {
     return Type.Object({
       name: Type.String(),
-      title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
@@ -105,8 +104,8 @@ function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "update_bot") {
     return Type.Object({
       name: Type.Optional(Type.String()),
-      title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
+      instructions: Type.Optional(Type.String()),
       color: Type.Optional(Type.String()),
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
@@ -301,7 +300,6 @@ const FLEET_STRING_ARGS = [
   "group_id",
   "group_name",
   "name",
-  "title",
   "description",
   "color",
   "artifact_id",
@@ -330,9 +328,7 @@ export function prepareFleetArguments(
   }
   const out: Record<string, unknown> = {};
   for (const key of FLEET_STRING_ARGS) {
-    // update_bot never carries instructions; set_child_instructions does, behind a card.
-    if (toolName === "update_bot" && (key === "instructions" || key === "expected_version"))
-      continue;
+    if (toolName === "update_bot" && key === "expected_version") continue;
     if (argumentGiven(raw[key])) out[key] = String(raw[key]);
   }
   for (const key of FLEET_LIST_ARGS) {

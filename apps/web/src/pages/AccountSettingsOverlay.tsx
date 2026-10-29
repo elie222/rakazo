@@ -31,12 +31,14 @@ import {
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { AccountAccess } from "../components/AccountAccess";
+import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { TrustedLinkSitesSettings } from "../components/TrustedLinkSitesSettings";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
@@ -77,6 +79,8 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
+  onAccountImported?: () => Promise<void>;
+  onImportAgent?: () => void;
 };
 
 export function GeneralSettingsPanels({
@@ -85,6 +89,8 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
+  onAccountImported,
+  onImportAgent,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
   const account = accountDisplay({ name, email }, t`You`);
@@ -455,6 +461,7 @@ export function GeneralSettingsPanels({
         </div>
       </Disclosure>
 
+      <TrustedLinkSitesSettings />
       <ComputerDeviceSettings />
 
       {showPassword || passkeysSupported ? (
@@ -463,6 +470,8 @@ export function GeneralSettingsPanels({
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
+
+      <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>

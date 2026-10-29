@@ -3,6 +3,7 @@ import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-ki
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   shortenedTextLength,
+  textBoundary,
   truncatePlainText,
 } from "@rakazo/core";
 
@@ -432,8 +433,19 @@ export function shortenToolResultText(
     shortenHistoryResult(source, size, tool) ??
     shortenMcpEnvelope(source, size, marker) ??
     shortenStructuredResult(source, size, marker) ??
-    `${source.slice(0, Math.floor(size / 2))}\n${afterUse ? OMITTED_AFTER_USE : OMITTED_TEXT_BEFORE_USE}\n${source.slice(-Math.floor(size / 2))}`
+    shortenPlainText(source, size, afterUse ? OMITTED_AFTER_USE : OMITTED_TEXT_BEFORE_USE)
   );
+}
+
+/** Keep the head and tail halves of plain text around an omission marker. */
+export function shortenPlainText(
+  source: string,
+  size: number,
+  marker = OMITTED_TEXT_BEFORE_USE,
+): string {
+  const half = Math.floor(size / 2);
+  const tail = textBoundary(source, source.length - half);
+  return `${truncatePlainText(source, half)}\n${marker}\n${source.slice(tail)}`;
 }
 interface Group {
   indexes: number[];

@@ -108,6 +108,7 @@ type RawUsage = Record<string, unknown> & {
   completion_tokens_details?: Record<string, unknown>;
   output_tokens_details?: Record<string, unknown>;
   cache_creation?: Record<string, unknown>;
+  cost_details?: Record<string, unknown>;
 };
 
 type RawUsageEvent = {
@@ -117,6 +118,22 @@ type RawUsageEvent = {
   message?: { id?: unknown; usage?: RawUsage };
 };
 
+async function observeRequestId(
+  id: unknown,
+  reported: ReportedUsageFields,
+  onRequestId?: (id: string) => void | Promise<void>,
+): Promise<void> {
+  if (
+    reportedRequestIds.has(reported) ||
+    typeof id !== "string" ||
+    id.length === 0 ||
+    id.length > 256
+  )
+    return;
+  reportedRequestIds.set(reported, id);
+  await onRequestId?.(id);
+}
+
 async function observeUsageEvent(
   raw: unknown,
   reported: ReportedUsageFields,
@@ -124,16 +141,11 @@ async function observeUsageEvent(
 ): Promise<void> {
   if (!raw || typeof raw !== "object") return;
   const event = raw as RawUsageEvent;
-  const id = event.response?.id ?? event.message?.id ?? event.id;
-  if (
-    !reportedRequestIds.has(reported) &&
-    typeof id === "string" &&
-    id.length > 0 &&
-    id.length <= 256
-  ) {
-    reportedRequestIds.set(reported, id);
-    await onRequestId?.(id);
-  }
+  await observeRequestId(
+    event.response?.id ?? event.message?.id ?? event.id,
+    reported,
+    onRequestId,
+  );
   try {
     const usage = event.usage ?? event.response?.usage ?? event.message?.usage;
     if (!usage || typeof usage !== "object") return;
@@ -171,8 +183,18 @@ async function observeUsageEvent(
     );
     mark(usage.completion_tokens ?? usage.output_tokens, "outputTokens");
     mark(usage.total_tokens, "totalTokens");
-    if (typeof usage.cost === "number" && Number.isFinite(usage.cost) && usage.cost >= 0)
-      reportedCosts.set(reported, usage.cost);
+    // With a bring-your-own-key upstream, OpenRouter's cost is only its fee; the upstream
+    // provider bills the inference separately.
+    const upstream = usage.is_byok === true ? usage.cost_details?.upstream_inference_cost : 0;
+    if (
+      typeof usage.cost === "number" &&
+      Number.isFinite(usage.cost) &&
+      usage.cost >= 0 &&
+      typeof upstream === "number" &&
+      Number.isFinite(upstream) &&
+      upstream >= 0
+    )
+      reportedCosts.set(reported, usage.cost + upstream);
     mark(rawRead ?? usage.cache_read_input_tokens, "cacheReadTokens");
     mark(rawWrite ?? usage.cache_creation_input_tokens, "cacheWriteTokens");
     mark(usage.cache_creation?.ephemeral_1h_input_tokens, "cacheWrite1hTokens");
@@ -202,6 +224,9 @@ export function usageReportingFetch(
     rejectedRequests.delete(reported);
     sseObserved.delete(reported);
     const response = await transport(input, init);
+    // OpenRouter's Anthropic-format stream carries the upstream message id; its usage
+    // lookup accepts only the generation id from this header.
+    await observeRequestId(response.headers.get("x-generation-id"), reported, onRequestId);
     // These HTTP responses reject the request before generation. Timeouts,
     // transport failures, and server errors remain uncertain and retain their holds.
     if (

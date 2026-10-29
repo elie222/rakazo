@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { signupRequiresEmailVerification } from "@rakazo/core";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
-  return provider === "e2b" || provider === "daytona" || provider === "boat";
+  return (
+    provider === "e2b" || provider === "novita" || provider === "daytona" || provider === "boat"
+  );
 }
 
 export function realSandboxTimeout(real: number, emulated: number) {
@@ -94,6 +96,13 @@ export async function signupThroughForm(
 }
 
 /** Open Advanced through its trigger, preserving an already-expanded section. */
+/** Opens Integrations' add menu and picks one of its custom sources. */
+export async function openIntegrationsAdd(page: Page, item: string) {
+  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  await dialog.getByRole("button", { name: "Add custom", exact: true }).click();
+  await page.getByRole("menuitem", { name: item, exact: true }).click();
+}
+
 export async function expandAdvancedSection(section: Locator) {
   const trigger = section.getByRole("button", { name: "Advanced", exact: true });
   if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();

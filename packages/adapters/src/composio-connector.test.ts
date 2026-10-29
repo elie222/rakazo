@@ -15,6 +15,7 @@ import {
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
+  isNoManagedAuthError,
   mergeConnectedPlugins,
   needsLivePluginSync,
   pickReusableConnection,
@@ -157,6 +158,19 @@ describe("composio tool mapping", () => {
       "HACKERNEWS_GET_USER",
     ]);
     expect(tools[1]?.inputSchema).toMatchObject({ properties: { username: { type: "string" } } });
+  });
+
+  it("marks the multi-execute tool as a batch of the actions it names", () => {
+    const tools = asConnectorTools([
+      { slug: "COMPOSIO_MULTI_EXECUTE_TOOL" },
+      { type: "function", function: { name: "COMPOSIO_MULTI_EXECUTE_TOOL" } },
+      { slug: "COMPOSIO_SEARCH_TOOLS" },
+    ]);
+    expect(tools.map((tool) => tool.batch)).toEqual([
+      { items: "tools", action: "tool_slug", arguments: "arguments" },
+      { items: "tools", action: "tool_slug", arguments: "arguments" },
+      undefined,
+    ]);
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
@@ -314,6 +328,15 @@ describe("composio tool mapping", () => {
       ),
     ).toBe(true);
     expect(isNoAuthToolkitError(new Error("redirect required"))).toBe(false);
+  });
+
+  it("recognizes toolkits Composio has no managed auth for", () => {
+    const noManagedAuth = new Error(
+      '400 {"error":{"message":"Composio does not manage auth for toolkit twitter and no auth config without required fields is available.","code":4308,"slug":"ToolRouterV2_NoManagedAuth","status":400}}',
+    );
+    expect(isNoManagedAuthError(noManagedAuth)).toBe(true);
+    expect(isNoAuthToolkitError(noManagedAuth)).toBe(false);
+    expect(isNoManagedAuthError(new Error("redirect required"))).toBe(false);
   });
 
   it("collects nested Composio log ids", () => {

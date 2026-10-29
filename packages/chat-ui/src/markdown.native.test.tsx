@@ -1757,6 +1757,62 @@ describe("native external link confirmation", () => {
   });
 });
 
+describe("native trusted link sites", () => {
+  async function renderTrusted(markdown: string, trustedSites: string[], trustSite = vi.fn()) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    alert.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MarkdownLinkPromptProvider trustedSites={trustedSites} trustSite={trustSite}>
+          <ChatMarkdown>{markdown}</ChatMarkdown>
+        </MarkdownLinkPromptProvider>,
+      );
+    });
+    const link = () => container.querySelector<HTMLElement>("[data-accessibility-role='link']");
+    return { link, unmount: () => act(async () => root.unmount()) };
+  }
+
+  it("opens the link and trusts its site from the third button", async () => {
+    const trustSite = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const view = await renderTrusted("[Docs](https://docs.example.test/a)", [], trustSite);
+    await act(async () => {
+      view.link()?.click();
+    });
+    const buttons = alert.mock.calls.at(-1)![2] as Array<{ text: string; onPress?: () => void }>;
+    expect(buttons.map((button) => button.text)).toEqual([
+      "Cancel",
+      "Always open example.test",
+      "Open",
+    ]);
+    await act(async () => {
+      buttons[1]!.onPress?.();
+    });
+    // A failed save still opens the link.
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://docs.example.test/a");
+    });
+    expect(trustSite).toHaveBeenCalledWith("https://docs.example.test/a");
+    await view.unmount();
+  });
+
+  it("opens a link to a trusted site directly", async () => {
+    const view = await renderTrusted("[Docs](https://docs.example.test/a)", ["example.test"]);
+    await act(async () => {
+      view.link()?.click();
+    });
+    expect(alert).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://docs.example.test/a");
+    });
+    await view.unmount();
+  });
+});
+
 it("shows a full long native URL and opens it only on confirmation", async () => {
   const url = `https://example.test/${"a".repeat(10000)}`;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

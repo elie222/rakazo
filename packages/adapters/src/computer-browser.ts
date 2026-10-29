@@ -233,7 +233,7 @@ function formatTree(elements: BrowserSnapshotNode[]): string {
     .map((el) => {
       const value =
         el.value !== undefined && el.value !== "" ? ` value=${JSON.stringify(el.value)}` : "";
-      return `- ${el.role} "${el.name}" [${el.ref}]${value}`;
+      return `- ${el.role} ${JSON.stringify(el.name)} [${el.ref}]${value}`;
     })
     .join("\n");
 }

@@ -14,7 +14,7 @@ type SheetProps = {
   pending: boolean;
   onClose: () => void;
   loginFields: readonly string[] | undefined;
-  onSave: (fields: LoginFieldInput[]) => Promise<void>;
+  onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
 };
 let sheet: SheetProps;
 
@@ -203,9 +203,20 @@ it("asks for a login card's fields and answers with them and an empty answer", a
   await openSheet();
   expect(sheet.loginFields).toEqual(["Email", "PIN"]);
 
-  await act(async () => sheet.onSave(loginAnswer));
+  await act(async () => sheet.onSave(loginAnswer, true));
   expect(onAnswer).toHaveBeenCalledWith("", loginAnswer);
   expect(container.textContent).toContain("Saved");
+});
+
+it("answers a login with Save to Vault off for this run only and reads Sent", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(loginAsk, onAnswer);
+  await openSheet();
+
+  await act(async () => sheet.onSave(loginAnswer, false));
+  expect(onAnswer).toHaveBeenCalledWith("", loginAnswer, false);
+  expect(state("Sent")?.dataset.color).toBe("success");
+  expect(container.textContent).not.toContain("Saved");
 });
 
 it("leaves a login card without requested fields to the default labels", async () => {
@@ -257,7 +268,7 @@ it("keeps a reopened sheet open when an earlier save completes", async () => {
   const first = sheet;
   let saving!: Promise<void>;
   await act(async () => {
-    saving = first.onSave(loginAnswer);
+    saving = first.onSave(loginAnswer, true);
   });
   await act(async () => first.onClose());
   await openSheet();
@@ -296,7 +307,7 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
     ),
   );
   await openSheet();
-  await act(async () => sheet.onSave(loginAnswer));
+  await act(async () => sheet.onSave(loginAnswer, true));
   expect(rpc).toHaveBeenCalledTimes(1);
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(container.querySelector("[data-sheet]")).toBeNull();
@@ -356,6 +367,9 @@ it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved"
   await render({ input: "secret", status: "answered", answer: "" });
   expect(state("Saved")?.dataset.color).toBe("success");
   expect(container.textContent).not.toContain("Dismissed");
+  // A login used for this run only reads Sent, also once the card is reloaded.
+  await render({ input: "secret", status: "answered", answer: "", remembered: false });
+  expect(state("Sent")?.dataset.color).toBe("success");
 });
 
 it("offers Dismiss only on secret cards", async () => {

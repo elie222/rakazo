@@ -13,7 +13,6 @@ test("command palette opens with keyboard, filters, and switches bots", async ({
   const chiefId = activeBotId(page);
   const researcher = await rpc<{ id: string }>(page, "bots/create", {
     name: "Researcher",
-    title: "research lead",
     description: "Finds sources and writes briefs.",
     instructions: "",
     notifyOnFinish: true,

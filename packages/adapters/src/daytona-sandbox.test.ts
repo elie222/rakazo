@@ -692,6 +692,27 @@ describe("DaytonaSandboxProvider", () => {
     expect(fixture.stop).toHaveBeenCalledTimes(2);
   });
 
+  it("reports only a started sandbox as running, without starting it", async () => {
+    const fixture = daytonaFixture({ id: "remote", state: "stopped" });
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = {
+      id: "remote",
+      botId: "bot-a",
+      kind: "daytona" as const,
+      providerRef: "remote",
+    };
+
+    expect(await provider.isRunning(computer, context)).toBe(false);
+    fixture.remote.state = "started";
+    expect(await provider.isRunning(computer, context)).toBe(true);
+    expect(await provider.isRunning({ ...computer, kind: "e2b" }, context)).toBe(false);
+    fixture.remote.missing = true;
+    expect(await provider.isRunning(computer, context)).toBe(false);
+    fixture.get.mockRejectedValueOnce(new Error("temporary Daytona outage"));
+    await expect(provider.isRunning(computer, context)).rejects.toThrow("temporary Daytona outage");
+    expect(fixture.start).not.toHaveBeenCalled();
+  });
+
   it("distinguishes transient lookup failures from an already deleted sandbox", async () => {
     const fixture = daytonaFixture({ id: "remote" });
     const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);

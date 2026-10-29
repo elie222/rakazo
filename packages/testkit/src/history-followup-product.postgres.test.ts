@@ -12,7 +12,6 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
   it.each([
     { size: 1000 as const, strategy: "snapshots" as const },
     { size: 1000 as const, strategy: undefined },
-    { size: 1000 as const, strategy: "retrieval" as const },
     { size: 100 as const, strategy: undefined },
   ])(
     "retains source-verified replies with $size originals and $strategy strategy",

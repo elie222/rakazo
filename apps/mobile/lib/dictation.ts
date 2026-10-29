@@ -118,6 +118,8 @@ export async function listen(opts: {
   const recognizer = await load();
   // A hang-up or a newer session landed while the native module was loading.
   if (token !== mine) return;
+  // A signal aborted during loading never fires the listener added below, so check it here.
+  if (opts.signal?.aborted) return;
   const session: Session = {
     recognizer,
     lang: opts.lang || "en-US",

@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
-import { BotAvatarValueSchema } from "./bot-avatar.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import {
   cloudflareGatewayRoutingId,
@@ -8,6 +8,7 @@ import {
   isCloudflareAiGatewayProvider,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import {
@@ -30,8 +31,8 @@ export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 /**
- * Deprecated: bots have one avatar style. Kept so app versions that still send or read it
- * keep working; the server ignores a sent style and always reports "organic".
+ * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
+ * app versions; the legacy settings endpoint still always reports "organic".
  */
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 
@@ -92,12 +93,13 @@ export const BotSchema = z.object({
   id: Id,
   spaceId: Id,
   name: z.string(),
+  /** Always empty; installed mobile apps still read it. */
   title: z.string(),
   description: z.string(),
   instructions: z.string(),
-  selfUpdateInstructions: z.boolean().optional(),
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
   sectionId: Id.nullable(),
@@ -150,6 +152,7 @@ export const GroupMemberSchema = z.object({
   botId: Id,
   name: z.string(),
   color: z.string(),
+  avatarSet: BotAvatarSetSchema.optional(),
   status: z.string().optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
@@ -241,6 +244,7 @@ export const SpaceBotSchema = BotSchema.pick({
   name: true,
   title: true,
   color: true,
+  avatarSet: true,
   notifyOnFinish: true,
   pinned: true,
   sectionId: true,
@@ -365,19 +369,23 @@ export const SpaceNavigationSchema = z.object({
 export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
 export const BOT_NAME_MAX_LENGTH = 80;
-export const BOT_TITLE_MAX_LENGTH = 500;
 export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
 export const CreateBotInput = z.object({
+  /** Optional reserved identity so a creation preview uses the final bot seed. */
+  id: z
+    .string()
+    .regex(/^c[a-z0-9]{24}$/)
+    .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
-  title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
-  /** Organic body family (0-9) to draw the new bot with; the server picks an id that hashes to it. */
+  avatarSet: BotAvatarSetSchema.optional(),
+  /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
   computerMode: ComputerModeSchema.default("team"),
   /** Idempotency key within a space (unique with spaceId). */
@@ -385,29 +393,18 @@ export const CreateBotInput = z.object({
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
-export function normalizeCreateBotProfile(
-  input: Pick<CreateBotInput, "name" | "title" | "description">,
-) {
-  const description = input.description.trim();
-  return {
-    name: input.name.trim().slice(0, BOT_NAME_MAX_LENGTH),
-    title: input.title.trim().slice(0, BOT_TITLE_MAX_LENGTH),
-    description: description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-    instructions: description.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
-  };
-}
-
 export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
     description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
     instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    /** Ignored; installed mobile apps may still send it. */
     selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
     pinned: z.boolean().optional(),
     memoryScope: MemoryScopeSchema.nullable().optional(),
     sectionId: Id.nullable().optional(),
@@ -446,6 +443,7 @@ export const UpdateBotInput = z
       });
     }
   });
+export type UpdateBotInput = z.infer<typeof UpdateBotInput>;
 
 /**
  * A routine's model is optional, but provider and id only mean something together,
@@ -642,6 +640,25 @@ export type TaughtSkill = z.infer<typeof TaughtSkillSchema>;
 export const AgentSkillSourceSchema = z.enum(["user", "builtin", "plugin"]);
 export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
 
+/** Where an account-owned item is available: every space, or these (starting with the one it was added in). */
+export const SpaceAvailabilitySchema = z.object({
+  allSpaces: z.boolean(),
+  spaceIds: z.array(Id).min(1),
+});
+export type SpaceAvailability = z.infer<typeof SpaceAvailabilitySchema>;
+
+export const AvailabilityKindSchema = z.enum(["skill", "mcpServer", "install"]);
+export type AvailabilityKind = z.infer<typeof AvailabilityKindSchema>;
+
+/** One of the user's own items, across all their spaces, for choosing what a space can use. */
+export const AccountItemSchema = z.object({
+  kind: AvailabilityKindSchema,
+  id: Id,
+  name: z.string(),
+  availability: SpaceAvailabilitySchema,
+});
+export type AccountItem = z.infer<typeof AccountItemSchema>;
+
 export const AgentSkillSchema = z.object({
   id: Id,
   name: z.string(),
@@ -649,6 +666,8 @@ export const AgentSkillSchema = z.object({
   content: z.string(),
   source: AgentSkillSourceSchema,
   readOnly: z.boolean(),
+  /** Absent for built-in skills, which every space has. */
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -660,6 +679,7 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   description: true,
   source: true,
   readOnly: true,
+  availability: true,
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
 
@@ -751,6 +771,12 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+export const ApprovalRulePreviewSchema = z.object({
+  before: z.enum(["always_allow", "require_approval", "deny", "default"]),
+  after: z.enum(["always_allow", "require_approval", "deny", "default"]),
+});
+export type ApprovalRulePreview = z.infer<typeof ApprovalRulePreviewSchema>;
+
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
@@ -773,9 +799,127 @@ export const CapabilityInstallSchema = z.object({
   digest: z.string().nullable(),
   secretConfigured: z.boolean(),
   config: z.record(z.string(), z.unknown()),
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
 });
 export type CapabilityInstall = z.infer<typeof CapabilityInstallSchema>;
+
+export const PluginPreviewSkillSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** Paths of the reference files that install with the skill. */
+  files: z.array(z.string()).optional(),
+});
+export const PluginPreviewMcpServerSchema = z.object({
+  name: z.string(),
+  transport: z.enum(["streamable_http", "sse"]),
+  endpoint: z.string(),
+  staticHeaderKeys: z.array(z.string()),
+});
+export const PluginPreviewSkippedSchema = z.object({
+  kind: z.enum([
+    "mcp_stdio",
+    "mcp_invalid",
+    "skill_invalid",
+    "editor_only",
+    "unsupported_transport",
+    "unsupported_field",
+  ]),
+  name: z.string(),
+  reason: z.string(),
+});
+export const PluginPreviewSchema = z.object({
+  format: z.enum(["agent-plugins", "cursor", "grok"]),
+  name: z.string(),
+  version: z.string().nullable(),
+  description: z.string(),
+  author: z.string().nullable(),
+  homepage: z.string().nullable(),
+  repository: z.string().nullable(),
+  license: z.string().nullable(),
+  keywords: z.array(z.string()),
+  resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+  /** Immutable source for confirming this preview, present on new API responses. */
+  pinnedSource: z.string().optional(),
+  /** The source an install of this preview is saved under. */
+  installedSource: z.string().optional(),
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  skills: z.array(PluginPreviewSkillSchema),
+  mcpServers: z.array(PluginPreviewMcpServerSchema),
+  skipped: z.array(PluginPreviewSkippedSchema),
+});
+export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
+
+/** A plugin installs as up to two independent parts: its MCP connector and its skills. */
+export const PluginPartSchema = z.enum(["connector", "skills"]);
+export type PluginPart = z.infer<typeof PluginPartSchema>;
+
+export const PluginMarketplaceEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  keywords: z.array(z.string()),
+  category: z.string().nullable(),
+  logo: z.string().nullable(),
+  homepage: z.string().nullable(),
+  domains: z.array(z.string()),
+  registry: z.string(),
+  source: z.string(),
+  installedSource: z.string(),
+  /** Whether installing adds a remote MCP connector; plugins without one are skill packs. */
+  hasConnector: z.boolean(),
+  /** Skills, sub-agents and commands, which all install as skills. */
+  skillCount: z.number().int().nonnegative(),
+});
+export type PluginMarketplaceEntry = z.infer<typeof PluginMarketplaceEntrySchema>;
+export const PluginMarketplaceCatalogSchema = z.object({
+  entries: z.array(PluginMarketplaceEntrySchema),
+  unavailableRegistries: z.array(z.string()),
+  skippedEntries: z.number().int().nonnegative(),
+});
+export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
+
+export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+
+const HttpsUrlSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .url()
+  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+
+export const PluginSubmissionInputSchema = z.object({
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema.optional(),
+  logo: HttpsUrlSchema,
+  source: HttpsUrlSchema,
+  description: z.string().trim().min(1).max(2000),
+  testing: z.string().trim().min(1).max(4000),
+  tested: z.literal(true),
+});
+export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
+
+export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
+
+export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
+  id: z.string(),
+  website: z.string().nullable(),
+  status: PluginSubmissionStatusSchema,
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+  reviewedAt: z.string().nullable(),
+});
+export type PluginSubmission = z.infer<typeof PluginSubmissionSchema>;
+
+export const PluginSubmissionReviewSchema = z.discriminatedUnion("decision", [
+  z.object({ id: Id, decision: z.literal("approve") }),
+  z.object({ id: Id, decision: z.literal("reject"), reason: z.string().trim().min(1).max(1000) }),
+]);
+export type PluginSubmissionReview = z.infer<typeof PluginSubmissionReviewSchema>;
 
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
@@ -887,6 +1031,8 @@ export const McpServerHealthSchema = z.object({
   status: z.enum(["unknown", "installing", "ok", "error"]),
   /** Redacted, human-readable failure reason (stderr tail included for stdio). */
   message: z.string().nullable(),
+  /** A failure the user fixes in the server's settings, so clients can say how. */
+  code: z.enum([MCP_OAUTH_CLIENT_REQUIRED]).nullable().optional(),
   toolCount: z.number().int().nonnegative().nullable(),
   checkedAt: z.string().nullable(),
 });
@@ -895,6 +1041,7 @@ export type McpServerHealth = z.infer<typeof McpServerHealthSchema>;
 export const McpServerSchema = z.object({
   id: Id,
   spaceId: Id,
+  installId: Id.nullable().optional(),
   slug: z.string(),
   name: z.string(),
   description: z.string(),
@@ -913,6 +1060,7 @@ export const McpServerSchema = z.object({
   health: McpServerHealthSchema,
   enabled: z.boolean(),
   revision: z.number().int().positive(),
+  availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -1234,6 +1382,11 @@ export const ModelCredentialSchema = z.object({
   enabledModelIds: z.array(z.string()).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
+  /**
+   * The subscription sign-in was rejected. The stored tokens are gone and the
+   * owner has to sign in again. Model choices on this connection are kept.
+   */
+  reconnectRequired: z.boolean().optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -1440,6 +1593,7 @@ export const VoiceCatalogEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  keyless: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -1599,6 +1753,8 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions. */
+  isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
@@ -1697,6 +1853,11 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
+  /** Present once the organization has subscribed: its invite link and free months earned. */
+  referral: z
+    .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
+    .nullable()
+    .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
@@ -1716,7 +1877,10 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }),
+  bot: BotSchema.pick({ name: true, description: true, instructions: true }).extend({
+    color: z.string().optional(),
+    avatarSet: BotAvatarSetSchema.optional(),
+  }),
   memory: z.array(z.object({ path: z.string(), content: z.string() })),
   routines: z.array(RoutineSchema.pick({ name: true, prompt: true, crons: true, timezone: true })),
   files: z.array(

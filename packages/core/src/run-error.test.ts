@@ -181,6 +181,10 @@ describe("normalizeRunError", () => {
         tooLong,
       ],
       ["prompt is too long: 210344 tokens > 200000 maximum", tooLong],
+      [
+        '400: {"code":400,"message":"request (19563 tokens) exceeds the available context size (2048 tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":19563,"n_ctx":2048}',
+        tooLong,
+      ],
       ['413: {"message":"Request entity too large"}', tooLong],
       ["Required context exceeds the model context budget", tooLong],
       ["terminated", tookTooLong],
@@ -284,6 +288,7 @@ describe("normalizeRunError", () => {
       '401 {"status":401,"title":"Unauthorized","detail":"Invalid unsecured/JWS/JWE header: Invalid JSON object"}',
       'xai API error (400): 400 "Incorrect API key provided. You can obtain an API key from the console."',
       "Your authentication token has expired. Please try refreshing it.",
+      "Encountered invalidated oauth token for user, failing request",
       // A key pasted with code around it; the code's words are not provider signals.
       'Headers.append: "Bearer example-key\nclient = Client(timeout=30, credits=5, rate_limit=1)" is an invalid header value.',
       "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",

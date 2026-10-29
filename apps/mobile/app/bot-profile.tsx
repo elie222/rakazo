@@ -102,14 +102,19 @@ export default function BotProfile() {
       />
       <View style={styles.identity}>
         {bot ? (
-          <BotAvatar color={bot.color} identity={bot.id} size={96} status={bot.status} />
+          <BotAvatar
+            color={bot.color}
+            avatarSet={bot.avatarSet}
+            identity={bot.id}
+            size={96}
+            status={bot.status}
+          />
         ) : (
           <View style={styles.avatarSpace} />
         )}
         <Text accessibilityRole="header" style={styles.name}>
           {name}
         </Text>
-        {bot?.title ? <Text style={styles.title}>{bot.title}</Text> : null}
       </View>
       <SettingsGroup>
         <SettingsRow
@@ -169,6 +174,5 @@ function createStyles() {
     identity: { alignItems: "center", gap: 8 },
     avatarSpace: { width: 96, height: 96 },
     name: { color: native.label, fontSize: 22, fontWeight: "600", textAlign: "center" },
-    title: { color: native.secondaryLabel, fontSize: 15, textAlign: "center" },
   });
 }

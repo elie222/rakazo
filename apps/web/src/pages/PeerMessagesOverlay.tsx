@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
+import type { BotAvatarSet } from "@rakazo/contracts";
 import { loadPeerHistory, peerConversations } from "@rakazo/core";
 import {
   BotAvatar,
@@ -11,9 +12,12 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
+import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { transcriptIsNearEnd } from "../lib/transcript-scroll";
+import { WindowChrome } from "./WindowChrome";
 
 /**
  * Full-screen view-only transcript of a bot-to-bot exchange.
@@ -23,17 +27,21 @@ export function PeerMessagesOverlay({
   botId,
   botName,
   botColor,
+  botAvatarSet,
   peerBotId,
   peerBotName: initialPeerBotName,
   peerBotColor,
+  peerBotAvatarSet,
   onClose,
 }: {
   botId: string;
   botName: string;
   botColor: string;
+  botAvatarSet?: BotAvatarSet;
   peerBotId: string;
   peerBotName: string;
   peerBotColor: string;
+  peerBotAvatarSet?: BotAvatarSet;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -60,6 +68,13 @@ export function PeerMessagesOverlay({
     return peerConversations(history.data).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [history.data, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const followingEnd = useRef(true);
+  // Opens at the latest message like the chat transcript, and follows a refresh while still there.
+  useLayoutEffect(() => {
+    const element = transcriptRef.current;
+    if (element && conversation && followingEnd.current) element.scrollTop = element.scrollHeight;
+  }, [conversation]);
 
   return (
     <Dialog
@@ -73,18 +88,27 @@ export function PeerMessagesOverlay({
         showCloseButton={false}
         className="inset-0 top-0 left-0 flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
       >
-        <div className="flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
+        <div className="app-drag flex items-center justify-between gap-4 border-b border-sidebar-border px-[18px] py-3.5">
           <div className="flex min-w-0 flex-1 items-center gap-3">
+            {desktopBridge() ? <WindowChrome /> : null}
             <div className="flex items-center -space-x-2">
-              <BotAvatar color={botColor} identity={botId} size={28} />
-              <BotAvatar color={peerBotColor} identity={peerBotId} size={28} />
+              <BotAvatar avatarSet={botAvatarSet} color={botColor} identity={botId} size={28} />
+              <BotAvatar
+                avatarSet={peerBotAvatarSet}
+                color={peerBotColor}
+                identity={peerBotId}
+                size={28}
+              />
             </div>
             <DialogTitle className="flex min-w-0 gap-2 text-[15.5px] font-medium" dir="auto">
               <span className="truncate text-foreground">{botName}</span>
               <span className="truncate text-muted-foreground">{peerBotName}</span>
             </DialogTitle>
           </div>
-          <DialogClose aria-label={t`Close`} render={<Button variant="ghost" size="sm" />}>
+          <DialogClose
+            aria-label={t`Close`}
+            render={<Button variant="ghost" size="sm" className="app-no-drag" />}
+          >
             <Trans>Close</Trans>
           </DialogClose>
         </div>
@@ -119,7 +143,11 @@ export function PeerMessagesOverlay({
           </div>
         ) : (
           <div
+            ref={transcriptRef}
             data-testid="peer-conversation-transcript"
+            onScroll={(event) => {
+              followingEnd.current = transcriptIsNearEnd(event.currentTarget);
+            }}
             className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
           >
             {conversation.messages.map((peerMessage, index) => {

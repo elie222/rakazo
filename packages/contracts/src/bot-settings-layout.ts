@@ -1,6 +1,5 @@
 /** Shared section membership and order; surfaces omit unavailable capabilities. */
 export const BOT_SETTINGS_SECTIONS = {
-  profile: ["instructions"],
   openWork: ["scratchpad"],
   memory: ["knowledge"],
   advanced: [
@@ -12,6 +11,7 @@ export const BOT_SETTINGS_SECTIONS = {
     "voice",
     "crossSpaceCommunication",
     "fleetManagement",
+    "instructions",
     "description",
     "disabledTools",
     "credentials",

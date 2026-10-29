@@ -6,7 +6,6 @@ import type { createRepos } from "@rakazo/db";
 import { findModelCredential, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "./agent-import.js";
-import type { createBotRemoval } from "./bot-removal.js";
 import type { createMcpServers } from "./mcp-servers.js";
 import { mcpCredentialRecords, mcpStdioPolicy } from "./mcp-servers.js";
 import type { createModelConnector } from "./model-credentials.js";
@@ -25,8 +24,6 @@ export function createAgentImportServices({
   prepareMcpServer,
   insertMcpServer,
   announceRoutine,
-  removeBot,
-  removeMcpServerInTransaction,
 }: {
   deps: RouterDeps;
   repos: ReturnType<typeof createRepos>;
@@ -36,8 +33,6 @@ export function createAgentImportServices({
   prepareMcpServer: ReturnType<typeof createMcpServers>["prepareMcpServer"];
   insertMcpServer: ReturnType<typeof createMcpServers>["insertMcpServer"];
   announceRoutine: ReturnType<typeof createRoutineAnnouncer>;
-  removeBot: ReturnType<typeof createBotRemoval>;
-  removeMcpServerInTransaction: ReturnType<typeof createMcpServers>["removeMcpServerInTransaction"];
 }) {
   type ImportKey = {
     credential: Parameters<typeof prepareModelCredential>[2];
@@ -116,20 +111,12 @@ export function createAgentImportServices({
       (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(provider)),
     prepareMcpServer,
     insertMcpServer,
-    inTransaction: (run) =>
-      withSerializableRetry(() =>
-        deps.prisma.$transaction(run, {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        }),
-      ),
     findBot: async (actor, botId) =>
       (await repos.listBots(actor)).find((bot) => bot.id === botId) ?? null,
     assertRoutineSchedule,
     routineNextRunAt,
     routineRowData,
     announceRoutine,
-    destroyBot: removeBot,
-    removeMcpServer: removeMcpServerInTransaction,
     notifyThread: (threadId, seq) => deps.events.notify(threadId, seq),
   };
   return agentImportServices;

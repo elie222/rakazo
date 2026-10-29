@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
-import type { CommandResult, EntryInfo, Sandbox } from "@e2b/desktop";
+import type { CommandResult, EntryInfo } from "@e2b/desktop";
 import {
   AuthenticationError,
   CommandExitError,
   FileNotFoundError,
   FileType,
   RateLimitError,
+  Sandbox,
   SandboxError,
   SandboxNotFoundError,
   TimeoutError,
@@ -174,6 +175,66 @@ describe("E2B computer backend", () => {
       fresh: false,
     });
     expect(sdk.create).not.toHaveBeenCalled();
+  });
+
+  it("reports a sandbox running from its status without connecting to it", async () => {
+    const outage = new Error("fetch failed");
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn(),
+      connect: vi.fn(),
+      pause: vi.fn(),
+      kill: vi.fn(async () => true),
+      isRunning: vi
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockRejectedValueOnce(new SandboxNotFoundError("Sandbox existing not found"))
+        .mockRejectedValueOnce(outage),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+    const computer = {
+      id: "existing",
+      providerRef: "existing",
+      kind: "e2b" as const,
+      botId: "bot",
+    };
+
+    await expect(provider.isRunning(computer, context)).resolves.toBe(true);
+    await expect(provider.isRunning(computer, context)).resolves.toBe(false);
+    await expect(provider.isRunning(computer, context)).resolves.toBe(false);
+    await expect(provider.isRunning(computer, context)).rejects.toBe(outage);
+    await expect(provider.isRunning({ ...computer, kind: "novita" }, context)).resolves.toBe(false);
+    expect(sdk.isRunning).toHaveBeenCalledTimes(4);
+    expect(sdk.isRunning).toHaveBeenCalledWith("existing", {
+      apiKey: "test-key",
+      signal: context.signal,
+    });
+    expect(sdk.connect).not.toHaveBeenCalled();
+  });
+
+  it("reads a sandbox's status from the E2B SDK", async () => {
+    const info = (state: string) => ({ state }) as Awaited<ReturnType<typeof Sandbox.getInfo>>;
+    const getInfo = vi
+      .spyOn(Sandbox, "getInfo")
+      .mockResolvedValueOnce(info("running"))
+      .mockResolvedValueOnce(info("paused"));
+    const provider = new E2BSandboxProvider("test-key");
+    const computer = {
+      id: "existing",
+      providerRef: "existing",
+      kind: "e2b" as const,
+      botId: "bot",
+    };
+    try {
+      await expect(provider.isRunning(computer, context)).resolves.toBe(true);
+      await expect(provider.isRunning(computer, context)).resolves.toBe(false);
+      expect(getInfo).toHaveBeenCalledWith("existing", {
+        apiKey: "test-key",
+        signal: context.signal,
+      });
+    } finally {
+      getInfo.mockRestore();
+    }
   });
 
   it("creates new computers from the Rakazo computer template", async () => {

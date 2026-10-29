@@ -80,7 +80,11 @@ describe("classifyUpdaterFailure", () => {
   });
 
   it("stays silent when the machine is simply offline", () => {
-    for (const message of ["getaddrinfo ENOTFOUND github.com", "net::ERR_INTERNET_DISCONNECTED"]) {
+    for (const message of [
+      "getaddrinfo ENOTFOUND github.com",
+      "net::ERR_INTERNET_DISCONNECTED",
+      "HttpError: 618 \nData:\n<title>618 jwt:expired</title>",
+    ]) {
       expect(classifyUpdaterFailure(new Error(message))).toEqual({
         kind: "offline",
         message: null,

@@ -3,6 +3,7 @@ import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
+import { windowCounter } from "./window-counter.js";
 
 /**
  * Content-Security-Policy violation reports. Browsers post them without credentials, so the
@@ -13,7 +14,6 @@ export const MAX_CSP_REPORT_BYTES = 64 * 1024;
 const MAX_VIOLATIONS_PER_REQUEST = 20;
 const WINDOW_MS = 60_000;
 const REQUESTS_PER_WINDOW = 30;
-const MAX_TRACKED_KEYS = 10_000;
 const REPORT_TYPES = ["application/csp-report", "application/reports+json", "application/json"];
 // Values a browser reports in place of a URL for inline code, eval and similar sources.
 const KEYWORD = /^[a-z][a-z-]*$/;
@@ -119,26 +119,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Fixed-window counters per key. The table is bounded: when full it starts over. */
-function windowCounter(now: () => number) {
-  const windows = new Map<string, { start: number; count: number }>();
-  return (key: string): number => {
-    const at = now();
-    const current = windows.get(key);
-    if (current && at - current.start < WINDOW_MS) return ++current.count;
-    if (windows.size >= MAX_TRACKED_KEYS) windows.clear();
-    windows.set(key, { start: at, count: 1 });
-    return 1;
-  };
-}
-
 export function cspReportRoutes(
   clientIp: (c: Context) => string | undefined,
   now: () => number = Date.now,
 ) {
   const app = new Hono();
-  const requests = windowCounter(now);
-  const violations = windowCounter(now);
+  const requests = windowCounter(WINDOW_MS, now);
+  const violations = windowCounter(WINDOW_MS, now);
 
   app.post(CSP_REPORT_PATH, async (c) => {
     const type = c.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";

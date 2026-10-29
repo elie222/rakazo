@@ -316,8 +316,8 @@ describe("createJobReconciler", () => {
     let runPage = 0;
     const runFindMany = vi.fn(async (args: { where?: Record<string, unknown> } = {}) => {
       if (args.where?.messagingMirroredAt === null) return [];
-      const status = args.where?.status as { in?: string[] } | undefined;
-      if (status?.in?.includes("waiting_takeover")) return [];
+      // The stuck-work scan is the only run query that looks at takeover waits.
+      if (JSON.stringify(args.where).includes("waiting_takeover")) return [];
       return runPages[runPage++] ?? [];
     });
     const routineFindMany = vi

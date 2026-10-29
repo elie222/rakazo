@@ -3,6 +3,7 @@ import importlib.machinery
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import struct
 import os
 import subprocess
@@ -123,12 +124,46 @@ def urlsplit_origin(url):
 
 
 class PageBrowserTest(unittest.TestCase):
+    def setUp(self):
+        # The stand-in clients have no socket to listen on: waiting for events is just waiting.
+        self.real_listen = getattr(helper.CdpClient, "listen", None)
+        patcher = patch.object(helper.CdpClient, "listen", lambda client, seconds: helper.time.sleep(seconds), create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_listening_stamps_events_when_they_arrive(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client._sock = Mock()
+        event = json.dumps({"method": "Network.requestWillBeSent", "sessionId": "s",
+                            "params": {"requestId": "r1", "type": "Fetch"}}).encode()
+        frames = iter([b"\x81" + bytes([len(event)]) + event])
+
+        def recv(_):
+            try:
+                return next(frames)
+            except StopIteration:
+                raise socket.timeout from None
+
+        client._sock.recv.side_effect = recv
+        with patch.object(helper.time, "monotonic", side_effect=[0.0, 0.0, 5.0, 5.0, 100.0]):
+            self.real_listen(client, 0.03)
+        self.assertEqual(client._requests[("s", "r1")], [5.0, None])
+
     def test_closed_stdin_cancels_helper_without_a_browser(self):
         with subprocess.Popen([sys.executable, str(Path(__file__).with_name("rakazo-page-browser")), "snapshot", "{}"],
                               env={**os.environ, "RAKAZO_BROWSER_WATCH_STDIN": "1", "RAKAZO_CDP_PORT": "0"},
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
             process.stdin.close()
             self.assertEqual(process.wait(timeout=3), 130)
+
+    def test_act_without_a_browser_is_not_uncertain(self):
+        out = []
+        with patch.object(helper, "wait_for_cdp", side_effect=RuntimeError("CDP not ready on port 9222: refused")), \
+                patch("builtins.print", side_effect=out.append):
+            code = helper.run(["rakazo-page-browser", "act", json.dumps({"actions": [{"kind": "click", "ref": "e1"}]})])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out[0]), {"ok": False, "error": "CDP not ready on port 9222: refused",
+                                              "fallback": "computer_act", "uncertain": False})
 
     def test_closed_extended_frame_does_not_spin(self):
         for partial in (b"\x81\x7e", b"\x81\x7f", b"\x81\x80"):
@@ -147,6 +182,64 @@ class PageBrowserTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "too large"):
             client._read_frame()
         client._sock.recv.assert_not_called()
+
+    HUGE = 3_000_000
+
+    def frame_client(self, payload, then=b"", drop=True):
+        """A client reading one frame of HUGE bytes that begins with `payload`, then the bytes `then`."""
+        stream = bytearray(payload + b"x" * (self.HUGE - len(payload)) + then)
+
+        def recv(size):
+            chunk = bytes(stream[:size])
+            del stream[:size]
+            if not chunk:
+                raise socket.timeout
+            return chunk
+
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client._sock = Mock()
+        client._sock.recv.side_effect = recv
+        client._buf.extend(b"\x81\x7f" + struct.pack("!Q", self.HUGE))
+        client.drop_oversized = drop
+        return client
+
+    SMALL = b"\x81\x05hello"
+    EVENT = b'{"method":"Network.webSocketFrameReceived","params":'
+
+    def test_a_page_s_huge_network_event_is_dropped_once_requests_are_watched(self):
+        client = self.frame_client(self.EVENT, self.SMALL)
+        self.assertEqual(client._read_frame(), b"hello")
+        self.assertEqual(len(client._buf), 0)
+
+    def test_dropping_a_huge_event_survives_a_read_that_times_out_in_the_middle_of_it(self):
+        client = self.frame_client(self.EVENT, self.SMALL)
+        real_recv, calls = client._sock.recv.side_effect, [0]
+
+        def recv(size):
+            calls[0] += 1
+            if calls[0] % 7 == 0:
+                raise socket.timeout
+            return real_recv(size)
+
+        client._sock.recv.side_effect = recv
+        frame = None
+        for _ in range(1000):
+            try:
+                frame = client._read_frame()
+                break
+            except socket.timeout:
+                continue
+        self.assertEqual(frame, b"hello")
+
+    def test_a_huge_answer_to_a_call_is_never_dropped(self):
+        for payload in (b'{"id":7,"result":{"x":"', b'{"method":"Page.frameNavigated","params":'):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(RuntimeError, "too large"):
+                    self.frame_client(payload, self.SMALL)._read_frame()
+
+    def test_a_huge_frame_is_not_dropped_before_requests_are_watched(self):
+        with self.assertRaisesRegex(RuntimeError, "too large"):
+            self.frame_client(self.EVENT, self.SMALL, drop=False)._read_frame()
 
     def settling_client(self, idle_after_calls):
         """A client whose page reaches networkIdle on the given getFrameTree call, or never."""
@@ -300,6 +393,7 @@ class PageBrowserTest(unittest.TestCase):
     def test_reports_a_refused_fill_as_settled_with_its_reason(self):
         client = Mock()
         client.call.side_effect = [
+            {},
             {"result": {"value": True}},
             {"exceptionDetails": {"text": "Uncaught", "exception": {
                 "description": "Error: Refused: The page is not on the site this login was saved for."
@@ -565,6 +659,8 @@ class PageBrowserTest(unittest.TestCase):
             if method == "Page.getFrameTree":
                 document = (client.navigations("session", "main"), state["gone"])
                 return {"frameTree": {"frame": {"id": "main", "loaderId": str(document)}}}
+            if method in ("Network.enable", "Page.setInterceptFileChooserDialog"):
+                return {}
             sent.append((method, params))
             if after_key and (method == "Input.insertText" or params.get("type") == "keyUp"):
                 after_key(sum(m == "Input.insertText" or p.get("type") == "keyUp" for m, p in sent), client, state)
@@ -590,7 +686,7 @@ class PageBrowserTest(unittest.TestCase):
                 patch.object(helper, "snapshot", return_value=page or {"ok": True}), \
                 patch.object(helper, "eval_json", side_effect=evaluate) as evaluated:
             result = helper.act(client, "session", [{"kind": "type", "ref": "e1", "text": text}, *more])
-        return result, sent, [call.args[2] for call in evaluated.call_args_list]
+        return result, sent, [call.args[2] for call in evaluated.call_args_list if "quietFor" not in call.args[2]]
 
     @staticmethod
     def navigate_on(key, event="Page.frameRequestedNavigation", **params):
@@ -946,6 +1042,389 @@ class PageBrowserTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "File not found"):
                 helper.act(Mock(), "session", [{"kind": "upload", "ref": "e1", "paths": ["nope.pdf"]}])
         ensure.assert_not_called()
+
+    def scripted_act(self, actions, page, on_call=None, frame_at_spot="main", node_at_spot="BUTTON"):
+        """Runs act against a stand-in page: `page` answers each helper expression, CDP calls are recorded.
+
+        The browser says the main frame owns every spot unless frame_at_spot is another frame, and that a
+        node_at_spot element is there.
+        """
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        self.client = client
+        sent = []
+
+        def call(method, params=None, **_):
+            sent.append((method, params))
+            if on_call:
+                on_call(client, method, params)
+            if method == "DOM.getNodeForLocation":
+                return {"frameId": frame_at_spot, "backendNodeId": 5}
+            if method == "DOM.describeNode":
+                return {"node": {"backendNodeId": 5, "nodeName": node_at_spot}}
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "main"}}}
+            return {}
+
+        def evaluate(_, __, expression):
+            answer = page(expression)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        client.call = call
+        snap = {"ok": True, "url": "https://portal.example.test/", "title": "Portal", "tree": "Portal",
+                "elements": []}
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value=snap) as snapshot_mock, \
+                patch.object(helper, "eval_json", side_effect=evaluate):
+            result = helper.act(client, "session", actions)
+        self.snapshot_calls = snapshot_mock.call_args_list
+        return result, sent
+
+    def test_click_is_a_real_mouse_click_at_the_spot_the_page_reports(self):
+        def page(expression):
+            return {"x": 120, "y": 210} if "aim(" in expression else True
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertEqual(result["completed"], 1)
+        mouse = [(params["type"], params["x"], params["y"]) for method, params in sent
+                 if method == "Input.dispatchMouseEvent"]
+        self.assertEqual(mouse, [("mouseMoved", 120, 210), ("mousePressed", 120, 210), ("mouseReleased", 120, 210)])
+        pressed = [params for _, params in sent if params and params.get("type") == "mousePressed"][0]
+        self.assertEqual((pressed["button"], pressed["clickCount"]), ("left", 1))
+
+    def test_click_checks_the_spot_again_after_the_pointer_moved_and_stops_if_it_changed(self):
+        def page(expression):
+            if "aim(" in expression:
+                return {"x": 120, "y": 210}
+            if "stillAimed(" in expression:
+                self.assertIn('stillAimed("e1", 120, 210)', expression)
+                return helper.Settled('Element is covered by button "Confirm payment", so a click would land there.')
+            return True
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertIn("Confirm payment", result["error"])
+        self.assertEqual([params["type"] for method, params in sent if method == "Input.dispatchMouseEvent"],
+                         ["mouseMoved"])
+
+    def test_click_presses_nothing_when_the_browser_says_the_spot_is_in_a_frame(self):
+        # A frame the page script cannot see into, such as one in a closed shadow tree.
+        def page(expression):
+            return {"x": 120, "y": 210} if "aim(" in expression else True
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page, frame_at_spot="other-origin-frame")
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertEqual(result["error"], "That spot is inside a frame, which the page tools cannot click in.")
+        self.assertNotIn("fallback", result)
+        self.assertEqual([params["type"] for method, params in sent if method == "Input.dispatchMouseEvent"],
+                         ["mouseMoved"])
+        locate = [params for method, params in sent if method == "DOM.getNodeForLocation"]
+        self.assertEqual(locate, [{"x": 120, "y": 210, "includeUserAgentShadowDOM": True}])
+
+    def test_click_presses_nothing_on_a_cross_origin_frame_the_main_frame_owns(self):
+        # A cross-origin frame has its own process: the main frame's hit-test stops at the iframe element.
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page, node_at_spot="IFRAME")
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertEqual(result["error"], helper.FRAME_CLICK)
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved"])
+
+    def mouse_types(self, sent):
+        return [params["type"] for method, params in sent if method == "Input.dispatchMouseEvent"]
+
+    def test_the_browser_is_asked_about_the_spot_on_the_page_not_in_the_window(self):
+        # DOM.getNodeForLocation counts from the top of the page: a scrolled page needs the offset added.
+        def page(expression):
+            if "stillAimed(" in expression:
+                return {"x": 0, "y": 2251}
+            return self.click_page(expression)
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertTrue(result["ok"])
+        (locate,) = [params for method, params in sent if method == "DOM.getNodeForLocation"]
+        self.assertEqual((locate["x"], locate["y"]), (120, 210 + 2251))
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved", "mousePressed", "mouseReleased"])
+        # While the mouse events themselves keep using the window's spot.
+        moved = [params for method, params in sent if method == "Input.dispatchMouseEvent"]
+        self.assertTrue(all((params["x"], params["y"]) == (120, 210) for params in moved))
+
+    def test_a_click_presses_nothing_when_the_browsers_answer_cannot_be_had(self):
+        # Fail closed: whatever goes wrong asking which frame owns the spot, nothing is pressed.
+        for method, error in (("DOM.getNodeForLocation", RuntimeError("DOM.getNodeForLocation failed: boom")),
+                              ("Page.getFrameTree", RuntimeError("Page.getFrameTree failed: boom")),
+                              ("Page.getFrameTree", KeyError("frameTree"))):
+            with self.subTest(method=method, error=error):
+                def fail(client, called, params, method=method, error=error):
+                    if called == method:
+                        raise error
+                result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page, on_call=fail)
+                self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+                self.assertEqual(result["error"], helper.CHANGED_UNDER_POINTER)
+                self.assertNotIn("fallback", result)
+                self.assertEqual(self.mouse_types(sent), ["mouseMoved"])
+
+    def test_a_spot_the_browser_does_not_know_yet_after_a_far_scroll_gets_one_more_frame(self):
+        seen = {"asked": 0}
+
+        def unknown_once(client, called, params):
+            if called == "DOM.getNodeForLocation":
+                seen["asked"] += 1
+                if seen["asked"] == 1:
+                    raise RuntimeError("DOM.getNodeForLocation failed: {'code': -32000, 'message': "
+                                       "'No node found at given location'}")
+        evaluated = []
+
+        def page(expression):
+            evaluated.append(expression)
+            return self.click_page(expression)
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page, on_call=unknown_once)
+        self.assertTrue(result["ok"])
+        self.assertEqual(seen["asked"], 2)
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved", "mousePressed", "mouseReleased"])
+        # The page drew before the pointer moved, and once more before the second try.
+        self.assertEqual(sum("nextFrames()" in expression for expression in evaluated), 2)
+
+    def test_a_spot_that_stays_unknown_ends_in_a_settled_error_and_no_press(self):
+        def never_known(client, called, params):
+            if called == "DOM.getNodeForLocation":
+                raise RuntimeError("DOM.getNodeForLocation failed: 'No node found at given location'")
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page, on_call=never_known)
+        self.assertEqual((result["ok"], result["uncertain"], result["error"]), (False, False, helper.STILL_MOVING))
+        self.assertNotIn("fallback", result)
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved"])
+        # A click again, with the page standing still, works.
+        again, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page)
+        self.assertTrue(again["ok"])
+
+    def test_a_click_runs_its_checks_in_order_before_the_press(self):
+        trace = []
+
+        def page(expression):
+            for name in ("aim(", "nextFrames(", "stillAimed("):
+                if name in expression:
+                    trace.append(name[:-1])
+            return self.click_page(expression)
+
+        def called(client, method, params):
+            if method == "Input.dispatchMouseEvent":
+                trace.append(params["type"])
+            elif method == "DOM.getNodeForLocation":
+                trace.append("getNodeForLocation")
+        self.scripted_act([{"kind": "click", "ref": "e1"}], page, on_call=called)
+        self.assertEqual(trace, ["aim", "nextFrames", "mouseMoved", "stillAimed", "getNodeForLocation",
+                                 "mousePressed", "mouseReleased"])
+
+    def test_click_asks_the_browser_who_owns_the_spot_right_before_the_press(self):
+        def page(expression):
+            return {"x": 120, "y": 210} if "aim(" in expression else True
+        _, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        order = [params.get("type", method) for method, params in sent
+                 if method in ("Input.dispatchMouseEvent", "DOM.getNodeForLocation")]
+        self.assertEqual(order, ["mouseMoved", "DOM.getNodeForLocation", "mousePressed", "mouseReleased"])
+
+    def test_requests_are_watched_with_oversize_events_dropped_only_once_network_is_on(self):
+        def page(expression):
+            return {"x": 120, "y": 210} if "aim(" in expression else True
+        self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertTrue(self.client.drop_oversized)
+
+        def refuse_network(client, method, params):
+            if method == "Network.enable":
+                raise RuntimeError("Network.enable failed")
+        self.scripted_act([{"kind": "click", "ref": "e1"}], page, on_call=refuse_network)
+        self.assertFalse(self.client.drop_oversized)
+
+    def click_page(self, expression):
+        return {"x": 120, "y": 210} if "aim(" in expression else True
+
+    def test_a_click_that_opens_a_file_chooser_is_held_back_and_pointed_to_upload(self):
+        def open_chooser(client, method, params):
+            if method == "Input.dispatchMouseEvent" and params["type"] == "mouseReleased":
+                client._handle_event({"method": "Page.fileChooserOpened", "sessionId": "session",
+                                      "params": {"frameId": "main", "mode": "selectSingle"}})
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page, on_call=open_chooser)
+        self.assertIn(("Page.setInterceptFileChooserDialog", {"enabled": True}), sent)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, False))
+        self.assertIn("use upload", result["error"])
+        self.assertNotIn("fallback", result)
+        self.assertEqual(result["tree"], "Portal")
+        # Asked for before anything could be clicked.
+        self.assertLess([m for m, _ in sent].index("Page.setInterceptFileChooserDialog"),
+                        [m for m, _ in sent].index("Input.dispatchMouseEvent"))
+
+    def test_a_click_without_a_file_chooser_is_unaffected(self):
+        result, _ = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page)
+        self.assertTrue(result["ok"])
+
+    def waited(self, on_call=None, busy=False):
+        with patch.object(helper, "wait_for_action", return_value=not busy) as wait:
+            result, _ = self.scripted_act([{"kind": "click", "ref": "e1"}], self.click_page, on_call=on_call)
+        return result, wait.call_args.args[3]
+
+    def test_the_whole_wait_after_an_action_has_one_budget(self):
+        result, seconds = self.waited()
+        self.assertEqual(seconds, helper.ACTION_WAIT_SECONDS)
+        # The snapshot gets what is left of it, never a budget of its own on top.
+        (call,) = self.snapshot_calls
+        self.assertLessEqual(call.args[2], helper.ACTION_WAIT_SECONDS)
+        self.assertGreater(call.args[2], helper.ACTION_WAIT_SECONDS - 0.5)
+        self.assertNotIn("loading", result)
+
+    def test_a_request_still_open_at_the_bound_skips_the_settle_and_flags_loading(self):
+        result, _ = self.waited(busy=True)
+        (call,) = self.snapshot_calls
+        self.assertEqual(call.args[2], 0.0)
+        self.assertTrue(result["loading"])
+
+    def test_an_action_that_moves_to_another_document_waits_as_long_as_a_snapshot_does(self):
+        def navigate(client, method, params):
+            if method == "Input.dispatchMouseEvent" and params["type"] == "mouseReleased":
+                client._handle_event({"method": "Page.frameRequestedNavigation", "sessionId": "session",
+                                      "params": {"frameId": "main", "disposition": "currentTab",
+                                                 "navigationType": "differentDocument"}})
+        _, seconds = self.waited(on_call=navigate)
+        self.assertEqual(seconds, helper.SETTLE_SECONDS)
+
+    def test_a_snapshot_after_a_spent_budget_does_not_wait_for_the_page(self):
+        client, calls, _ = self.settling_client(idle_after_calls=0)
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate:
+            evaluate.return_value = {"title": "Example", "tree": "Loading"}
+            result = helper.snapshot(client, "session", 0.0)
+        self.assertEqual(result["loading"], True)
+        self.assertEqual(calls, [])
+
+    def test_click_on_a_native_select_sends_no_mouse_event(self):
+        def page(expression):
+            return {"x": None, "y": None} if "aim(" in expression else True
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertEqual(result["completed"], 1)
+        self.assertNotIn("Input.dispatchMouseEvent", [method for method, _ in sent])
+
+    def test_a_step_the_page_cannot_take_is_settled_with_the_page_and_no_desktop_fallback(self):
+        for message in ("Stale element ref: the page has changed.", "Element is hidden. Open its menu first.",
+                        "Element is disabled.", 'Element is covered by dialog "Cookies", so a click would land there.',
+                        'This dropdown has no option "2019". Its options: "2023", "2024".'):
+            with self.subTest(message=message):
+                def page(expression, message=message):
+                    return helper.Settled(message) if "aim(" in expression else True
+                result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+                self.assertEqual({key: result.get(key) for key in ("ok", "completed", "uncertain", "error")},
+                                 {"ok": False, "completed": 0, "uncertain": False, "error": message})
+                self.assertNotIn("fallback", result)
+                self.assertEqual(result["tree"], "Portal")
+                self.assertNotIn("Input.dispatchMouseEvent", [method for method, _ in sent])
+
+    def test_a_settled_step_reports_the_steps_already_done(self):
+        def page(expression):
+            if "resolve(\"e2\")" in expression:
+                return helper.Settled("Stale element ref: the page has changed.")
+            return {} if "fill(" in expression else True
+        result, _ = self.scripted_act([{"kind": "fill", "ref": "e1", "text": "x"},
+                                       {"kind": "fill", "ref": "e2", "text": "y"}], page)
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 1, False))
+        self.assertNotIn("fallback", result)
+
+    def test_the_helper_raises_the_page_script_s_settled_errors_as_settled(self):
+        client = Mock()
+        client.call.return_value = {"exceptionDetails": {"text": "Uncaught", "exception": {
+            "description": "Error: Settled: Element is hidden.\n    at Object.aim (<anonymous>:1:1)"}}}
+        with self.assertRaises(helper.Settled) as raised:
+            helper.eval_json(client, "session", "x", context_id=1)
+        self.assertEqual(str(raised.exception), "Element is hidden.")
+
+    def test_unsupported_input_types_still_fall_back_to_the_desktop(self):
+        def page(expression):
+            return RuntimeError("Input type requires desktop tools") if "fill(" in expression else True
+        result, _ = self.scripted_act([{"kind": "fill", "ref": "e1", "text": "2024-01-01"}], page)
+        self.assertEqual(result["fallback"], "computer_act")
+
+    def request(self, client, request_id, started, finished=None, kind="Fetch"):
+        with patch.object(helper.time, "monotonic", return_value=started):
+            client._handle_event({"method": "Network.requestWillBeSent", "sessionId": "session",
+                                  "params": {"requestId": request_id, "type": kind}})
+        if finished is not None:
+            with patch.object(helper.time, "monotonic", return_value=finished):
+                client._handle_event({"method": "Network.loadingFinished", "sessionId": "session",
+                                      "params": {"requestId": request_id}})
+
+    def test_requests_the_action_started_are_told_from_background_ones(self):
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        self.request(client, "click-fetch", 10.02)
+        self.request(client, "follow-up", 11.03, 11.2)
+        self.request(client, "chained", 11.22)
+        self.request(client, "poll", 14.0)
+        # A poll that starts 100 ms after the last answer is the page's own, however steadily it repeats.
+        self.request(client, "steady-poll", 11.34, 11.5)
+        self.request(client, "stream", 10.03, kind="EventSource")
+        # While the fetch is open, requests that begin later may be the page's own.
+        self.assertEqual(client.action_requests("session", 10.0, 0.12, 0.03)[0], 1)
+        with patch.object(helper.time, "monotonic", return_value=11.0):
+            client._handle_event({"method": "Network.loadingFinished", "sessionId": "session",
+                                  "params": {"requestId": "click-fetch"}})
+        # The follow-up began just after the fetch finished, the chained request just after that.
+        pending, last = client.action_requests("session", 10.0, 0.12, 0.03)
+        self.assertEqual(pending, 1)
+        self.assertEqual(last, 11.2)
+        self.assertEqual(client.action_requests("other", 10.0, 0.12, 0.03), (0, 10.0))
+
+    def test_the_result_waits_for_the_action_s_own_request_and_the_page_drawing_it(self):
+        now = [10.0]
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        client.call = Mock(return_value={})
+        self.request(client, "fetch", 10.02)
+
+        def sleep(seconds):
+            now[0] += seconds
+            if now[0] >= 11.2 and client._requests[("session", "fetch")][1] is None:
+                client._requests[("session", "fetch")][1] = now[0]
+
+        def quiet_for(*_):
+            # The page redrew the moment the answer came in.
+            return max(0.0, (now[0] - 11.2) * 1000) if now[0] >= 11.2 else 0.0
+
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(helper.time, "sleep", side_effect=sleep), \
+                patch.object(helper, "eval_json", side_effect=quiet_for):
+            self.assertTrue(helper.wait_for_action(client, "session", 10.0, helper.ACTION_WAIT_SECONDS))
+        self.assertGreaterEqual(now[0], 11.2 + helper.ACTION_QUIET_SECONDS)
+        self.assertLess(now[0], 11.2 + helper.ACTION_QUIET_SECONDS + 0.2)
+
+    def test_an_idle_page_costs_only_the_quiet_interval(self):
+        now = [10.0]
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        # A poll started long after the action is the page's own business.
+        self.request(client, "poll", 12.5)
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(helper.time, "sleep", side_effect=lambda s: now.__setitem__(0, now[0] + s)), \
+                patch.object(helper, "eval_json", return_value=60_000.0):
+            self.assertTrue(helper.wait_for_action(client, "session", 10.0, helper.ACTION_WAIT_SECONDS))
+        self.assertLess(now[0] - 10.0, helper.ACTION_QUIET_SECONDS + 0.05)
+
+    def test_a_page_that_always_changes_does_not_hold_the_result_back(self):
+        now = [10.0]
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(helper.time, "sleep", side_effect=lambda s: now.__setitem__(0, now[0] + s)), \
+                patch.object(helper, "eval_json", return_value=0.0):
+            self.assertTrue(helper.wait_for_action(client, "session", 10.0, helper.ACTION_WAIT_SECONDS))
+        self.assertLess(now[0] - 10.0, helper.ACTION_CHANGE_SECONDS + helper.ACTION_QUIET_SECONDS + 0.1)
+
+    def test_a_request_still_open_at_the_bound_marks_the_result_as_loading(self):
+        now = [10.0]
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        self.request(client, "slow", 10.01)
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(helper.time, "sleep", side_effect=lambda s: now.__setitem__(0, now[0] + s)), \
+                patch.object(helper, "eval_json", return_value=0.0):
+            self.assertFalse(helper.wait_for_action(client, "session", 10.0, helper.ACTION_WAIT_SECONDS))
+        self.assertAlmostEqual(now[0] - 10.0, helper.ACTION_WAIT_SECONDS, delta=0.1)
+
+    def test_act_takes_its_snapshot_only_after_waiting_and_flags_a_page_still_busy(self):
+        order = []
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                def page(expression):
+                    return {"x": 1, "y": 2} if "aim(" in expression else True
+                with patch.object(helper, "wait_for_action", side_effect=lambda *a: order.append("wait") or not busy):
+                    result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+                self.assertEqual(result.get("loading"), True if busy else None)
+                self.assertIn(("Network.enable", {"maxPostDataSize": 1}), sent)
 
 
 if __name__ == "__main__":

@@ -153,7 +153,7 @@ export function shouldPublishStableMainBaseline(input: {
 }): boolean {
   const history = Array.isArray(input.history) ? input.history.filter(isPlaywrightRun) : [];
   const latestMain = history.find(
-    (run) => run.event === "push" && run.branch === "main" && run.result === "success",
+    (run) => run.event !== "pull_request" && run.branch === "main" && run.result === "success",
   );
   if (
     latestMain === undefined ||

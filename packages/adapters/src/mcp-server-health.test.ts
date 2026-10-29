@@ -1,7 +1,12 @@
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mcpServerHealthDto, recordMcpServerHealth } from "./mcp-server-health.js";
+import {
+  MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+  mcpServerHealthDto,
+  recordMcpServerHealth,
+} from "./mcp-server-health.js";
 
 function fakePrisma(updateMany = vi.fn().mockResolvedValue({ count: 1 })) {
   return { prisma: { mcpServer: { updateMany } } as unknown as PrismaClient, updateMany };
@@ -70,6 +75,12 @@ describe("recordMcpServerHealth", () => {
     });
   });
 
+  it("records only against the revision it is about, when given one", async () => {
+    const { prisma, updateMany } = fakePrisma();
+    await recordMcpServerHealth(prisma, "s", { status: "error", message: "x" }, 3);
+    expect(updateMany.mock.calls[0]![0].where).toEqual({ id: "s", revision: 3 });
+  });
+
   it("never touches the revision", async () => {
     const { prisma, updateMany } = fakePrisma();
     await recordMcpServerHealth(prisma, "s", { status: "ok", toolCount: 1 });
@@ -101,7 +112,13 @@ describe("mcpServerHealthDto", () => {
         healthToolCount: 3,
         healthCheckedAt: checkedAt,
       }),
-    ).toEqual({ status: "ok", message: null, toolCount: 3, checkedAt: checkedAt.toISOString() });
+    ).toEqual({
+      status: "ok",
+      message: null,
+      code: null,
+      toolCount: 3,
+      checkedAt: checkedAt.toISOString(),
+    });
     expect(
       mcpServerHealthDto({
         healthStatus: "bogus",
@@ -109,6 +126,17 @@ describe("mcpServerHealthDto", () => {
         healthToolCount: null,
         healthCheckedAt: null,
       }),
-    ).toEqual({ status: "unknown", message: null, toolCount: null, checkedAt: null });
+    ).toEqual({ status: "unknown", message: null, code: null, toolCount: null, checkedAt: null });
+  });
+
+  it("marks a server that needs a pre-registered OAuth client", () => {
+    const row = {
+      healthStatus: "error",
+      healthMessage: MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+      healthToolCount: null,
+      healthCheckedAt: null,
+    };
+    expect(mcpServerHealthDto(row).code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
+    expect(mcpServerHealthDto({ ...row, healthMessage: "fetch failed" }).code).toBeNull();
   });
 });

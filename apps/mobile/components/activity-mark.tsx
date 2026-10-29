@@ -1,3 +1,4 @@
+import type { BotAvatarSet } from "@rakazo/contracts";
 import { avatarPhotoDot } from "@rakazo/core";
 import { MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
@@ -19,7 +20,13 @@ import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 
 /** A working bot; `composing` while it writes reply text (the mark turns into dots). */
-export type ActivityMarkBot = { id: string; color: string; status?: string; composing?: boolean };
+export type ActivityMarkBot = {
+  id: string;
+  color: string;
+  avatarSet?: BotAvatarSet;
+  status?: string;
+  composing?: boolean;
+};
 
 /** The mark is the bot's 28 pt avatar. */
 export const MARK_SIZE = 28;
@@ -98,6 +105,7 @@ export function ActivityMark({
           ) : (
             <BotAvatar
               color={bot.color}
+              avatarSet={bot.avatarSet}
               identity={bot.id}
               size={MARK_SIZE}
               status={bot.status}

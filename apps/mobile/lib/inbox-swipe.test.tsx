@@ -51,11 +51,18 @@ vi.mock("@expo/ui/swift-ui", async () => {
     swift.groups.push({ edge, allowsFullSwipe, labels });
     return <div data-ui="SwipeActions.Actions">{children}</div>;
   };
-  const ContextMenu = Object.assign(box("ContextMenu"), {
-    Trigger: box("ContextMenu.Trigger"),
-    Preview: box("ContextMenu.Preview"),
-    Items: box("ContextMenu.Items"),
-  });
+  const ContextMenu = Object.assign(
+    ({ children, modifiers }: { children?: ReactNode; modifiers?: unknown[] }) => (
+      <div data-ui="ContextMenu" data-modifiers={JSON.stringify(modifiers ?? [])}>
+        {children}
+      </div>
+    ),
+    {
+      Trigger: box("ContextMenu.Trigger"),
+      Preview: box("ContextMenu.Preview"),
+      Items: box("ContextMenu.Items"),
+    },
+  );
   return {
     Host: box("Host"),
     List: box("List"),
@@ -125,10 +132,14 @@ vi.mock("@expo/ui/swift-ui", async () => {
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
   return {
-    shapes: { roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }) },
+    shapes: {
+      roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }),
+      rectangle: () => ({ shape: "rectangle" }),
+    },
     ...Object.fromEntries(
       [
         "background",
+        "contentShape",
         "font",
         "foregroundStyle",
         "frame",
@@ -318,6 +329,15 @@ describe("iOS swipe row", () => {
     const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
     expect(menu?.querySelector('[data-ui="ContextMenu.Trigger"]')?.textContent).toBe("bot:1");
     expect(menu?.querySelector('[data-ui="ContextMenu.Preview"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("gives the chat row context menu a rectangular hit area", () => {
+    const { find, root } = render();
+    const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
+    expect(JSON.parse(menu?.dataset.modifiers ?? "[]")).toEqual([
+      { name: "contentShape", value: { shape: "rectangle" } },
+    ]);
     act(() => root.unmount());
   });
 

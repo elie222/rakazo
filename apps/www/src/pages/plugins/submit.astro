@@ -1,0 +1,112 @@
+---
+import SiteFrame from "../../components/SiteFrame.astro";
+import { PLUGIN_SUBMISSIONS_URL } from "../../site";
+
+const fields = [
+  { name: "email", label: "Email", placeholder: "you@acme.com", type: "email", required: true },
+  { name: "name", label: "Plugin name", placeholder: "Acme", type: "text", required: true },
+  { name: "website", label: "Website URL", placeholder: "https://acme.com", type: "url", required: false },
+  {
+    name: "logo",
+    label: "Logo URL",
+    placeholder: "https://acme.com/logo.svg",
+    type: "url",
+    required: true,
+  },
+  {
+    name: "source",
+    label: "GitHub repository",
+    placeholder: "https://github.com/acme/plugin",
+    type: "url",
+    required: true,
+  },
+] as const;
+---
+
+<SiteFrame
+  title="Submit a plugin to Rakazo"
+  description="List your plugin or MCP server in the Rakazo marketplace."
+  markdownAlternate="/plugins/submit.md"
+>
+  <h1>Submit a plugin</h1>
+  <p>List your plugin or MCP server in the Rakazo marketplace. We review every submission.</p>
+  <form class="plugin-form" action={PLUGIN_SUBMISSIONS_URL} data-plugin-form>
+    {
+      fields.map((field) => (
+        <label>
+          <span>{field.label}</span>
+          <input
+            name={field.name}
+            type={field.type}
+            placeholder={field.placeholder}
+            required={field.required}
+          />
+        </label>
+      ))
+    }
+    <label>
+      <span>Description</span>
+      <textarea name="description" rows="3" placeholder="What your plugin does and how it helps people" required
+      ></textarea>
+    </label>
+    <label>
+      <span>Testing instructions</span>
+      <textarea name="testing" rows="3" placeholder="How to try it in Rakazo, without real credentials" required
+      ></textarea>
+    </label>
+    <label class="plugin-form__check">
+      <input name="tested" type="checkbox" required />
+      <span>I've tested this plugin in Rakazo and it works</span>
+    </label>
+    <p class="plugin-form__error" role="alert" data-plugin-error hidden></p>
+    <button class="button button--primary" type="submit">Submit plugin</button>
+  </form>
+  <p class="plugin-form__done" role="status" data-plugin-done hidden>
+    Thanks. We'll email you when it's reviewed.
+  </p>
+</SiteFrame>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-plugin-form]");
+  const error = document.querySelector<HTMLElement>("[data-plugin-error]");
+  const done = document.querySelector<HTMLElement>("[data-plugin-done]");
+
+  const labelFor = (field: string) =>
+    form?.querySelector(`[name="${field}"]`)?.closest("label")?.querySelector("span")?.textContent ??
+    field;
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!error || !done) return;
+    const button = form.querySelector("button");
+    const values = Object.fromEntries(new FormData(form)) as Record<string, string>;
+    const body = { ...values, website: values.website || undefined, tested: true };
+    error.hidden = true;
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        form.hidden = true;
+        done.hidden = false;
+        return;
+      }
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        issues?: Array<{ field: string; message: string }>;
+      };
+      error.textContent =
+        result.issues?.map((issue) => `${labelFor(issue.field)}: ${issue.message}`).join(". ") ??
+        result.error ??
+        "Could not submit. Try again.";
+    } catch {
+      error.textContent = "Could not submit. Try again.";
+    } finally {
+      if (button) button.disabled = false;
+    }
+    error.hidden = false;
+  });
+</script>

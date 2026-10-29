@@ -152,6 +152,29 @@ export function computerRetryDelay(fence: number): number {
   return Math.min(10_000, 250 * 2 ** Math.min(Math.max(fence - 1, 0), 5));
 }
 
+/**
+ * A bot uses its computer for one run at a time, and runs that found it held wait without
+ * a retry timer. The run releasing it starts the next one due. Runs backing off after a
+ * failure keep their delay.
+ */
+export async function startNextWaitingRun(
+  deps: ExecutorDeps,
+  botId: string,
+  releasedBy: string,
+): Promise<void> {
+  const next = await deps.prisma.run.findFirst({
+    where: {
+      botId,
+      status: "queued",
+      id: { not: releasedBy },
+      OR: [{ wakeAt: null }, { wakeAt: { lte: new Date() } }],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  if (next) await deps.jobs.enqueue(runContinueJob(next.id));
+}
+
 /** Open the model only while this worker still owns the running lease. */
 export function mayOpenModelStream(
   run: { status: string; leaseOwner: string | null; leaseFence: number | null } | null,
@@ -187,6 +210,7 @@ export async function writeComputerRunRequeue(
   resumeCheckpoint: TakeoverResumeCheckpoint | null,
   heldForTakeover = false,
   error: string | null = null,
+  retryAt: Date | null = new Date(Date.now() + computerRetryDelay(fence)),
 ): Promise<boolean> {
   const whereLease = {
     id: runId,
@@ -196,7 +220,7 @@ export async function writeComputerRunRequeue(
   };
   const releasedHold = {
     status: "queued" as const,
-    wakeAt: new Date(Date.now() + computerRetryDelay(fence)),
+    wakeAt: retryAt,
     error,
     leaseOwner: null,
     leaseExpiresAt: null,
@@ -227,6 +251,43 @@ export async function writeComputerRunRequeue(
   return retried.count === 1;
 }
 
+/**
+ * This worker is stopping and still owns the run. Queue it for another worker.
+ * The row stays recoverable: no failure is recorded, and the lease does not keep
+ * the next worker from claiming it.
+ */
+export async function requeueRunAfterShutdown(
+  deps: ExecutorDeps,
+  runId: string,
+  workerId: string,
+  fence: number,
+): Promise<boolean> {
+  const released = await deps.prisma.run.updateMany({
+    where: {
+      id: runId,
+      status: "running",
+      leaseOwner: workerId,
+      leaseFence: fence,
+    },
+    data: {
+      status: "queued",
+      error: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      wakeAt: null,
+    },
+  });
+  if (released.count !== 1) return false;
+  await deps.jobs
+    .enqueue(runContinueJob(runId))
+    .catch((error) => getLogger().error("shutdown run requeue", error));
+  return true;
+}
+
+/**
+ * `untilReleased` is for a computer another run of the same bot holds: the run waits
+ * without a retry timer, and the run releasing the computer starts it.
+ */
 export async function requeueComputerRun(
   deps: ExecutorDeps,
   runId: string,
@@ -234,6 +295,7 @@ export async function requeueComputerRun(
   fence: number,
   resumeCheckpoint: TakeoverResumeCheckpoint | null,
   heldForTakeover = false,
+  untilReleased = false,
 ): Promise<void> {
   const released = await writeComputerRunRequeue(
     deps,
@@ -242,8 +304,10 @@ export async function requeueComputerRun(
     fence,
     resumeCheckpoint,
     heldForTakeover,
+    null,
+    untilReleased ? null : undefined,
   );
-  if (!released) return;
+  if (!released || untilReleased) return;
   await deps.jobs.enqueue({
     ...runContinueJob(runId),
     availableAt: new Date(Date.now() + computerRetryDelay(fence)),

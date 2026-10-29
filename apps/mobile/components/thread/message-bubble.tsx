@@ -81,6 +81,10 @@ export const MessageBubble = memo(function MessageBubble({
         props.bots.find((bot) => bot.id === id)?.color ??
         props.members?.find((member) => member.botId === id)?.color
       }
+      avatarSetOf={(id) =>
+        props.bots.find((bot) => bot.id === id)?.avatarSet ??
+        props.members?.find((member) => member.botId === id)?.avatarSet
+      }
       tokens={mobileTokens()}
       onOpenBot={props.onOpenBot}
     >
@@ -177,6 +181,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     answer: string,
     fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
+    remember?: false,
   ) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
@@ -230,7 +235,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           actionProps={actionProps}
           canAnswer={canAnswer}
           canDismiss={canDismiss}
-          onAnswer={(answer, fields) => onAnswer(message, answer, fields)}
+          onAnswer={(answer, fields, remember) =>
+            onAnswer(message, answer, fields, undefined, remember)
+          }
           onDismiss={() => onAnswer(message, "", undefined, true)}
         />
         {appConnectBlocks.map((block, index) => (
@@ -284,6 +291,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const label = sent
       ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
       : t("Message from {peer}", { peer: peer ?? t("Bot") });
+    const peerAvatarSet =
+      bots.find((bot) => bot.id === peerBotId)?.avatarSet ??
+      members?.find((member) => member.botId === peerBotId)?.avatarSet;
     const peerColor =
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
@@ -321,12 +331,12 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           width: "100%",
           paddingVertical: 4,
           alignItems: "center",
-          justifyContent: "flex-start",
+          justifyContent: "center",
           flexDirection: "row",
           gap: 6,
         }}
       >
-        <BotAvatar color={peerColor} identity={peerBotId} size={16} />
+        <BotAvatar color={peerColor} avatarSet={peerAvatarSet} identity={peerBotId} size={16} />
         <Text
           numberOfLines={1}
           style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}

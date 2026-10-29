@@ -1,6 +1,6 @@
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({ exec: vi.fn(), inspect: vi.fn(), stdin: [] as string[] }));
 vi.mock("dockerode", () => ({
@@ -12,6 +12,7 @@ vi.mock("dockerode", () => ({
 }));
 
 import { supervisorApp } from "./index.js";
+import { SCREEN_REUSE_MS } from "./supervisor-logic.js";
 
 beforeEach(() => {
   mock.exec.mockReset();
@@ -313,6 +314,49 @@ it.each([
   expect(result.uncertain).toBe(body.command === "act");
 });
 
+it("passes a settled step error through with the page, without a desktop fallback", async () => {
+  const settled = {
+    ok: false,
+    completed: 0,
+    uncertain: false,
+    url: "https://portal.example.test/",
+    title: "Portal",
+    tree: '- combobox "Year" [e5] options: "2023", "2024"',
+    elements: [
+      { ref: "e5", role: "combobox", name: "Year", options: [{ label: "2024", value: "2024" }] },
+    ],
+    error: 'This dropdown has no option "2019". Its options: "2023", "2024".',
+  };
+  const defaultExec = mock.exec.getMockImplementation()!;
+  mock.exec.mockImplementation(async (options: { Cmd: string[] }) =>
+    options.Cmd.includes("/usr/local/bin/rakazo-page-browser")
+      ? {
+          start: async () =>
+            Duplex.from({
+              readable: Readable.from([Buffer.from(JSON.stringify(settled))]),
+              writable: new PassThrough(),
+            }),
+          inspect: async () => ({ ExitCode: 0 }),
+        }
+      : defaultExec(options),
+  );
+  const response = await supervisorApp.request("/computers/computer-settled/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "first",
+      "x-rakazo-screen-lease-id": "run:1",
+    },
+    body: JSON.stringify({ command: "act", actions: [{ kind: "fill", ref: "e5", text: "2019" }] }),
+  });
+  const result = await response.json();
+  expect(result).toEqual(settled);
+  expect(result).not.toHaveProperty("fallback");
+});
+
 async function uploadRequest(roots?: unknown) {
   return supervisorApp.request("/computers/computer-upload/browser", {
     method: "POST",
@@ -367,4 +411,84 @@ it.each([undefined, "5"])("forwards the upload size override only when set: %j",
     if (original === undefined) delete process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES;
     else process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES = original;
   }
+});
+
+describe("screen setup reuse", () => {
+  const bootedAt = "2026-10-27T00:00:00.000Z";
+  const helper = (options: { Cmd: string[] }) =>
+    options.Cmd.includes("/usr/local/bin/rakazo-page-browser");
+  const commands = () =>
+    mock.exec.mock.calls.map(([options]) => (helper(options) ? "helper" : "setup"));
+
+  beforeEach(() => {
+    mock.inspect.mockResolvedValue({
+      Config: {
+        Labels: { "rakazo.managed": "true", "rakazo.botId": "home", "rakazo.spaceId": "space" },
+      },
+      State: { StartedAt: bootedAt },
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("runs only the page helper for a screen set up moments ago", async () => {
+    await snapshot("computer-reuse", "reuse", "run:1");
+    mock.exec.mockClear();
+    expect(await (await snapshot("computer-reuse", "reuse", "run:1")).json()).toMatchObject({
+      ok: true,
+    });
+    expect(commands()).toEqual(["helper"]);
+  });
+
+  it("sets the screen up again once its last setup is 30 seconds old", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    await snapshot("computer-stale", "stale", "run:1");
+    clock.mockReturnValue(now + SCREEN_REUSE_MS);
+    mock.exec.mockClear();
+    await snapshot("computer-stale", "stale", "run:1");
+    expect(commands().at(0)).toBe("setup");
+    expect(commands().at(-1)).toBe("helper");
+  });
+
+  it("still refuses an older lease on a reused screen", async () => {
+    await snapshot("computer-reuse-fence", "fenced", "run:2");
+    mock.exec.mockClear();
+    expect(await (await snapshot("computer-reuse-fence", "fenced", "run:1")).json()).toMatchObject({
+      ok: false,
+    });
+    expect(mock.exec).not.toHaveBeenCalled();
+  });
+
+  it("sets up a reused screen whose browser has exited, then retries the helper once", async () => {
+    await snapshot("computer-exited", "exited", "run:1");
+    const defaultExec = mock.exec.getMockImplementation()!;
+    let helperCalls = 0;
+    mock.exec.mockClear();
+    mock.exec.mockImplementation(async (options: { Cmd: string[] }) => {
+      if (!helper(options) || helperCalls++ > 0) return defaultExec(options);
+      return {
+        start: async () =>
+          Duplex.from({
+            readable: Readable.from([
+              Buffer.from(
+                JSON.stringify({
+                  ok: false,
+                  error: "CDP not ready on port 9222: unreachable",
+                  fallback: "computer_act",
+                  uncertain: false,
+                }),
+              ),
+            ]),
+            writable: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+          }),
+        inspect: async () => ({ ExitCode: 0 }),
+      };
+    });
+    expect(await (await snapshot("computer-exited", "exited", "run:1")).json()).toMatchObject({
+      ok: true,
+    });
+    expect(commands()).toEqual(["helper", "setup", "helper"]);
+  });
 });

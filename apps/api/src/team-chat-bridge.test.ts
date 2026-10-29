@@ -2140,7 +2140,12 @@ describe("team chat bridge", () => {
       data: { status: "cancelled" },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" },
+          { userId: "owner-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-atomic", status: "queueing", runId: null },

@@ -17,6 +17,7 @@ import { purchaseTools } from "./run-tools-purchases.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerShell } from "./run-tools-user-computer.js";
+import { argumentGiven } from "./update-bot-patch.js";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
@@ -50,7 +51,9 @@ export async function applyTool(
   try {
     return await dispatchOneTool(ctx, name, args, executionId, observer);
   } finally {
-    if (toolResultTaintsRun(name)) ctx.state.tainted = true;
+    // Editing its own profile returns only what this run wrote; a child's profile is another bot's.
+    const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
+    if (toolResultTaintsRun(name) && !ownProfile) ctx.state.tainted = true;
   }
 }
 

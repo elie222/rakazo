@@ -4,8 +4,8 @@ import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
 import { Pressable } from "react-native";
 import type { MobileBot, MobileGroup } from "../lib/api";
-import type { ChatSettingsRoute } from "../lib/chat-settings-route";
-import { chatSettingsRoute } from "../lib/chat-settings-route";
+import type { ChatTitleRoute } from "../lib/chat-settings-route";
+import { chatTitleRoute } from "../lib/chat-settings-route";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
 import { useInboxBot, useInboxGroup } from "../lib/search-inbox";
@@ -22,7 +22,8 @@ export type ChatTitle = {
   composing: boolean;
   /** The chat's name, or undefined while only a placeholder is known. */
   name: string | undefined;
-  settings: ChatSettingsRoute | null;
+  /** Where tapping the title goes, or null when it opens nothing. */
+  opens: ChatTitleRoute | null;
   /** A group's members, in order, for its title. */
   members?: MobileGroup["members"];
 };
@@ -60,8 +61,9 @@ function subscribe(listener: () => void): () => void {
 
 /**
  * A chat's title capsule: its avatar (or the avatar's reserved place) and name, opening the
- * chat's settings. The chat route renders it from the screen's first native header, from the
- * route params and the inbox's copy of the bot, until the open chat publishes its own data.
+ * bot's profile in a one-to-one chat and the group's settings in a group. The chat route renders
+ * it from the screen's first native header, from the route params and the inbox's copy of the
+ * bot, until the open chat publishes its own data.
  */
 export function ChatHeaderTitle({
   routeKey,
@@ -82,30 +84,31 @@ export function ChatHeaderTitle({
     status: inboxBot?.status,
     composing: false,
     name: params.name || inboxBot?.name,
-    settings: chatSettingsRoute({
+    opens: chatTitleRoute({
       groupId: params.groupId,
       botId: params.botId,
+      name: params.name || inboxBot?.name,
       readOnly: params.readOnly === "1",
     }),
   };
   // A group seats its members from the inbox's copy until the chat has loaded its own.
   const members = inGroup ? (title.members ?? inboxGroup?.members) : undefined;
   const label = safeDisplayName(title.name, inGroup ? t("Group") : t("Bot")) || t("Thread");
-  const settings = title.settings;
+  const opens = title.opens;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={settings ? t(inGroup ? "Group settings" : "Chat settings") : label}
-      disabled={!settings}
+      accessibilityLabel={opens ? t(inGroup ? "Group settings" : "Profile") : label}
+      disabled={!opens}
       onPress={() => {
-        if (settings) router.push(settings);
+        if (opens) router.push(opens);
       }}
     >
       <GlassSurface style={styles.titleCapsule} fallbackStyle={styles.titleCapsuleFill}>
         {!inGroup && params.botId ? (
           <ChatTitleAvatar bot={title.bot} status={title.status} composing={title.composing} />
         ) : null}
-        {members ? <GroupSeats members={members} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
+        {inGroup ? <GroupSeats members={members ?? []} size={CHAT_TITLE_AVATAR_SIZE} /> : null}
         <ChatTitleLabel label={label} placeholder={!title.name} style={styles.title} />
       </GlassSurface>
     </Pressable>

@@ -9,7 +9,9 @@ type StandaloneHost = Pick<Window, "document" | "matchMedia"> & {
  */
 export function lockStandaloneZoom(target: StandaloneHost = window): void {
   const standalone =
-    target.navigator.standalone === true || target.matchMedia("(display-mode: standalone)").matches;
+    target.navigator.standalone === true ||
+    (typeof target.matchMedia === "function" &&
+      target.matchMedia("(display-mode: standalone)").matches);
   if (!standalone) return;
   const { document } = target;
   const viewport = document.querySelector('meta[name="viewport"]');

@@ -105,9 +105,10 @@ container_healthy() {
   return 1
 }
 
-# Replaces the API and web without a gap: one new container starts beside the running ones, and
-# the old ones stop only once it passes its health check. Caddy dials whichever container
-# answers, so requests keep flowing through a deploy. Every other service is then reconciled
+# Replaces the API, web and worker without a gap: one new container starts beside the running
+# ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
+# answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
+# the old one hands back the runs it was executing. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
 roll_out() {
   local service old new
@@ -117,7 +118,7 @@ roll_out() {
   if compose 1m config --services | grep -qx migrate; then
     compose "${UP_TIMEOUT}" run --rm -T migrate
   fi
-  for service in api web; do
+  for service in api web worker; do
     old="$(compose 1m ps --all --quiet "${service}")"
     if [[ -z "${old}" ]]; then
       # Nothing to keep serving, so start it with its dependencies (the database on a new host).

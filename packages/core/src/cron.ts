@@ -523,7 +523,8 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
     return null;
   }
   if (wall[8]) {
-    const instant = new Date(text);
+    // Date only parses an offset with minutes; ISO 8601 also allows hours alone (+05).
+    const instant = new Date(/^[+-]\d{2}$/.test(wall[8]) ? `${text}:00` : text);
     return Number.isFinite(instant.getTime()) ? instant : null;
   }
   const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));

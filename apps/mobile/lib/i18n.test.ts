@@ -14,6 +14,8 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(),
 }));
 
+vi.mock("./material-icons", () => ({ materialIcons: {} }));
+
 vi.mock("./ui-direction", () => ({
   applyMobileUiDirection: vi.fn(),
 }));
@@ -143,6 +145,7 @@ describe("mobile i18n", () => {
     const { AI_DATA_DISCLOSURES, OPENAI_COMPATIBLE_BASE_URL_HINT } = await import(
       "@rakazo/contracts"
     );
+    const { createMenuItems } = await import("./create-chooser");
     const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
     const ids = new Set<string>([
       ...Object.values(AI_DATA_DISCLOSURES),
@@ -174,6 +177,7 @@ describe("mobile i18n", () => {
       EMPTY_PLUGIN_CATALOG_MESSAGE,
       OPENAI_COMPATIBLE_BASE_URL_HINT,
       ...SLASH_ACTIONS.map((action) => action.label),
+      ...createMenuItems.map((item) => item.label),
       "Sign-in did not return a session",
       "Sign-up did not return a session",
       "{count} model",

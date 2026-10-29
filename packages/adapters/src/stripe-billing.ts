@@ -48,6 +48,12 @@ const subscriptionSchema = z.object({
   cancel_at_period_end: z.boolean().nullish(),
   cancel_at: z.number().nullish(),
   ended_at: z.number().nullish(),
+  default_payment_method: z
+    .union([
+      z.string(),
+      z.object({ card: z.object({ fingerprint: z.string().nullish() }).nullish() }),
+    ])
+    .nullish(),
   items: z.object({
     data: z.array(
       z.object({
@@ -576,6 +582,31 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
+  async grantBalanceCredit(customerId: string, amountCents: number, referenceId: string) {
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0)
+      throw new Error("Invalid balance credit");
+    const path = `/v1/customers/${encodeURIComponent(customerId)}/balance_transactions`;
+    const granted = await this.listPages(
+      path,
+      z.object({ metadata: z.record(z.string(), z.string()).nullish() }),
+    );
+    if (granted.some((entry) => entry.metadata?.[BALANCE_REFERENCE_METADATA] === referenceId))
+      return;
+    // A fixed key only for this write: overlapping syncs must not both credit, and the lookup
+    // above covers retries after Stripe has forgotten the key.
+    await this.request(
+      "POST",
+      path,
+      {
+        amount: -amountCents,
+        currency: "usd",
+        description: "Referral reward",
+        metadata: { [BALANCE_REFERENCE_METADATA]: referenceId },
+      },
+      `rakazo-balance-${referenceId}`,
+    );
+  }
+
   parseWebhook(rawBody: string, headers: Headers) {
     return parseStripeWebhook(this.config.webhookSecret, rawBody, headers, this.now());
   }
@@ -632,6 +663,7 @@ export class StripeBillingProvider implements BillingProvider {
         status: "all",
         limit: 100,
         starting_after: startingAfter,
+        expand: ["data.default_payment_method"],
       });
       const page = subscriptionListSchema.parse(
         await this.request("GET", `/v1/subscriptions?${query}`),
@@ -647,11 +679,12 @@ export class StripeBillingProvider implements BillingProvider {
     method: "GET" | "POST" | "DELETE",
     path: string,
     params?: Record<string, unknown> | string,
+    fixedIdempotencyKey?: string,
   ): Promise<unknown> {
     const body = typeof params === "string" ? params : params && encodeStripeForm(params);
     // One key per call: retries replay the first outcome, a later call starts fresh. Stripe
     // keeps a key's response, even a 500, for 24 hours, so a fixed key would wedge the call.
-    const idempotencyKey = method === "POST" ? randomUUID() : undefined;
+    const idempotencyKey = method === "POST" ? (fixedIdempotencyKey ?? randomUUID()) : undefined;
     for (let attempt = 0; ; attempt++) {
       const response = await this.fetchImpl(`${this.apiBase}${path}`, {
         method,
@@ -759,6 +792,8 @@ function toSnapshot(
 ): BillingSubscriptionSnapshot {
   const item = subscription.items.data[0];
   if (!item) throw new Error("Stripe subscription has no items");
+  const method = subscription.default_payment_method;
+  const fingerprint = typeof method === "object" ? method?.card?.fingerprint : undefined;
   return {
     creditAmountCents: creditAmount(subscription.metadata?.rakazo_credit_cents),
     subscriptionId: subscription.id,
@@ -771,6 +806,7 @@ function toSnapshot(
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),
     ...(isByokPlan(subscription) ? { byokPlan: true } : {}),
+    ...(fingerprint ? { cardFingerprint: fingerprint } : {}),
   };
 }
 
@@ -874,6 +910,7 @@ export function stripeBillingConfigFromEnv(env: {
 }
 
 const BYOK_PLAN_METADATA = "rakazo_plan";
+const BALANCE_REFERENCE_METADATA = "rakazo_reference";
 
 function isByokPlan(subscription: StripeSubscription) {
   return subscription.metadata?.[BYOK_PLAN_METADATA] === "byok";

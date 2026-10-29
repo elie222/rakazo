@@ -386,6 +386,65 @@ it("keeps a saved mode when a read that started before the save lands after it",
   expect(container.querySelector("output")?.textContent).toBe("1");
 });
 
+it.each(["autoReview/get", "approvalRules/list"])(
+  "keeps the saved mode when an older %s refresh fails",
+  async (failedProc) => {
+    await render();
+    const base = state.rpc.getMockImplementation()!;
+    let rejectRead: (reason: Error) => void = () => undefined;
+    state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
+      proc === failedProc
+        ? new Promise((_, reject) => {
+            rejectRead = reject;
+          })
+        : base(proc, input),
+    );
+
+    await act(async () => state.refocus());
+    await act(async () => choice("Never ask").click());
+    expect(state.settings.mode).toBe("never");
+    expect(row()).toBe("Approvals | Never ask");
+    await act(async () => rejectRead(new Error("offline")));
+    expect(row()).toBe("Approvals | Never ask");
+    expect(choices()).toEqual(["Never ask*", "Ask"]);
+  },
+);
+
+it("ignores an older refresh failure while a save is pending", async () => {
+  await render();
+  const slow = slowSaves();
+  const base = state.rpc.getMockImplementation()!;
+  let rejectRead: (reason: Error) => void = () => undefined;
+  state.rpc.mockImplementation((proc: string, input?: Record<string, unknown>) =>
+    proc === "autoReview/get"
+      ? new Promise((_, reject) => {
+          rejectRead = reject;
+        })
+      : base(proc, input),
+  );
+
+  await act(async () => state.refocus());
+  await act(async () => choice("Never ask").click());
+  await act(async () => rejectRead(new Error("offline")));
+  expect(row()).toBe("Approvals | Never ask");
+  expect(held()).toBe("true");
+  await act(async () => slow.finish());
+  expect(state.settings.mode).toBe("never");
+  expect(row()).toBe("Approvals | Never ask");
+});
+
+it("shows a refresh failure from a read started after a successful save", async () => {
+  await render();
+  await act(async () => choice("Never ask").click());
+  state.rpc.mockImplementationOnce(async () => {
+    throw new Error("offline");
+  });
+  await act(async () => state.refocus());
+  expect(row()).toBe("Approvals | Retry | Something went wrong. Try again.");
+  await act(async () => container.querySelector("span")!.click());
+  expect(row()).toBe("Approvals | Never ask");
+});
+
 it("reads and saves a Space's own copy, and nothing while the Space follows the account", async () => {
   const spaceContext = { requestContext: { headers: { space: "space-1" } } };
   const target: SettingsTarget = { scope: "space", spaceId: "space-1" };

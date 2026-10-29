@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import type { McpServer } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
+import { connectMcpOauth } from "../lib/mcp-connect";
 import { McpServersOverlay } from "./McpServersOverlay";
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), test: vi.fn(), update: vi.fn() }));
@@ -13,6 +15,14 @@ const api = vi.hoisted(() => ({
   mcp: { servers: mocks, assignments: { all: access.all, replace: access.replace } },
   bots: { list: access.bots },
 }));
+// One space, so no "Available in" choice appears.
+vi.mock("../components/integrations/space-availability", () => ({
+  AvailabilityControl: () => null,
+  AvailabilityLabel: () => null,
+  reachesOtherSpaces: () => false,
+  useOwnSpaces: () => [],
+}));
+
 vi.mock("../lib/rpc", () => ({
   rpc: api,
   rpcForSpace: () => api,
@@ -249,6 +259,65 @@ it("opens a server's form and saves it in place, sending blank values to keep wh
         headers: { Authorization: "", "X-Team": "" },
       }),
     });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("points a server that cannot register a client at the client ID fields", async () => {
+  const remote = {
+    id: "srv_1",
+    slug: "docs",
+    name: "docs",
+    description: "",
+    transport: "streamable_http",
+    endpoint: "https://mcp.example.test/mcp",
+    command: null,
+    args: [],
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    oauthStatus: "none",
+    oauthClientId: null,
+    hasSecret: false,
+    health: { status: "unknown" },
+    enabled: true,
+  } as unknown as McpServer;
+  const needsClient = {
+    ...remote,
+    health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+  } as unknown as McpServer;
+  mocks.list.mockReset().mockResolvedValueOnce([remote]).mockResolvedValue([needsClient]);
+  vi.mocked(connectMcpOauth).mockRejectedValueOnce(
+    Object.assign(new Error("Incompatible auth server"), { code: MCP_OAUTH_CLIENT_REQUIRED }),
+  );
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const button = (label: string) =>
+    Array.from(host.querySelectorAll("button")).find((item) => item.textContent === label);
+  const advancedOpen = () =>
+    host.querySelector('[data-slot="disclosure"]')?.hasAttribute("data-open") ?? false;
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(button("Connect OAuth")).toBeDefined());
+    expect(advancedOpen()).toBe(false);
+
+    await act(async () => button("Connect OAuth")?.click());
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Needs an OAuth client ID");
+    expect(button("Save")).toBeDefined();
+    expect(advancedOpen()).toBe(true);
+
+    // The server now says why, and a sign-in that cannot work is no longer offered.
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="mcp-health"]')?.textContent).toContain(
+        "Needs an OAuth client ID",
+      ),
+    );
+    expect(button("Connect OAuth")).toBeUndefined();
+    await act(async () => button("Cancel")?.click());
+    expect(advancedOpen()).toBe(false);
+    await act(async () => button("Edit")?.click());
+    expect(advancedOpen()).toBe(true);
   } finally {
     await act(async () => root.unmount());
   }

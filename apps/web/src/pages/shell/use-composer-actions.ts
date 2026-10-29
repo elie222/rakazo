@@ -202,7 +202,13 @@ export function useComposerActions({
   }, [activeId, clearReply, groupId, inGroup]);
 
   const answerMessage = useCallback(
-    async (message: ThreadMessage, text: string, fields?: LoginFieldInput[], dismiss?: boolean) => {
+    async (
+      message: ThreadMessage,
+      text: string,
+      fields?: LoginFieldInput[],
+      dismiss?: boolean,
+      remember?: false,
+    ) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
@@ -213,6 +219,7 @@ export function useComposerActions({
         messageId: message.id,
         answer: text,
         ...(fields ? { fields } : {}),
+        ...(remember === false ? { remember } : {}),
         ...(dismiss ? { dismiss: true as const } : {}),
       });
       // The answer is saved; live events can reconcile a failed refresh.

@@ -158,6 +158,7 @@ async function failRun(scenario: Scenario) {
       ),
     },
     secret: {
+      findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () =>
         scenario.personalKey ? { id: "personal-secret", ciphertext: "fixture-ciphertext" } : null,
       ),

@@ -16,7 +16,7 @@ For example, the bot can request:
 }
 ```
 
-The value is encrypted in Postgres `bot_secrets` using the deployment's `ENCRYPTION_KEY` (AES-256-GCM with record-bound authentication). Only the run's user can submit a reusable credential. It belongs to that user, space and bot, survives later runs, and is deleted when its owner, space or bot is deleted. Names, destinations and authentication configuration are metadata; `list_secrets` returns those fields without values. No hosted credential service or prebuilt connector is required.
+The value is encrypted in Postgres `vault_credentials` using the deployment's `ENCRYPTION_KEY` (AES-256-GCM with record-bound authentication). Only the run's user can submit a reusable credential. It belongs to that user and survives later runs. By default it sits in the user's account vault, which every Space uses; a Space where the user keeps its own credentials has a separate vault that starts empty, so they have to be saved there again, and no other Space can read it. It is deleted when its owner is deleted, and a Space's own vault is also deleted with its Space. Names, destinations and authentication configuration are metadata; `list_secrets` returns those fields without values. No hosted credential service or prebuilt connector is required.
 
 The bot uses `secret_request` to ask the backend to decrypt and inject the credential:
 
@@ -82,7 +82,11 @@ When you want a bot to sign in to a website by itself, ask it to save the login.
 }
 ```
 
-Without `fields`, the card asks for a Username, which starts visible, and a Password, which starts hidden, as logins always have. A login has 1 to 8 fields, each with its own label. The card asks for one value per field, and fields the bot names all start hidden; you can switch any field between hidden and visible. Only you choose: the bot names the fields but cannot make one visible, and the server only accepts an answer with exactly the fields the card asked for. All values are stored encrypted in the same way as other reusable credentials. To sign in, the bot fills fields found with `browser_snapshot`, naming each by its label:
+Without `fields`, the card asks for a Username, which starts visible, and a Password, which starts hidden, as logins always have. A login has 1 to 8 fields, each with its own label. The card asks for one value per field, and a field the bot names starts visible only if every word of its label is an identifier word (ID, phone, email, account, username) or a plain filler word (number, name, address, last, digits), in English or Hebrew, such as "ID number" or "Phone number"; any other word, such as a password, PIN or code, or a misspelling, keeps it hidden, as does every label that isn't recognised. You can switch any field between hidden and visible before saving, and what you save is final: the bot names the fields but cannot send a visible flag, so the label is all it can influence, and the server only accepts an answer with exactly the fields the card asked for. All values are stored encrypted in the same way as other reusable credentials.
+
+The card also has a **Save to Vault** switch, on by default, that only you can turn off. With it off, the login is kept encrypted for the run that asked for it and never goes into a vault. Only that run can fill it, on the card's HTTPS site, and it is hidden from tool output like a saved login. It is deleted when the run ends, however it ends, so a later run has to ask again. The site's cookies stay, so the bot may still be signed in.
+
+To sign in, the bot fills fields found with `browser_snapshot`, naming each by its label:
 
 ```json
 {
@@ -113,6 +117,6 @@ The thread credential card still works on the phone, including website logins, a
 bot obtains a value there. Listing, replacing, and removing saved credentials stays on the web
 section. Asking the bot to `forget_secret` a name only removes it; it does not list or replace one.
 
-Two-factor codes, CAPTCHA and passkeys still use `request_takeover`, as does any site where you prefer to sign in yourself.
+A sign-in without a password, such as an ID number and phone number, uses the same login card. Texted or emailed one-time codes, CAPTCHA and passkeys still use `request_takeover`, so a code is typed on the live screen rather than saved, as is any sign-in you prefer to do yourself.
 
 The value is typed into a real browser on the bot's computer. Anything that can read that browser, including the bot's own shell commands through the page or its debugging port, could read a filled field. Keeping the value out of model input stops accidental disclosure, not a bot that sets out to extract it. Save logins only for accounts you would let the bot use unattended.

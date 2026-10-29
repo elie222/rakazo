@@ -10,10 +10,15 @@ import type {
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, ConnectorTool } from "@rakazo/adapter-kit";
-import { isRetryableProviderUnavailable, isTransientModelError } from "@rakazo/adapter-kit";
+import {
+  isModelCredentialRejected,
+  isRetryableProviderUnavailable,
+  isTransientModelError,
+} from "@rakazo/adapter-kit";
 import type { ModelBackupOutcome } from "@rakazo/core";
 import {
   abortableDelay,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
@@ -44,6 +49,7 @@ import {
   withOutputBudget,
 } from "./pi-runtime-models.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE } from "./pi-runtime-stream.js";
+import { reportedContextWindow } from "./reported-context-window.js";
 import {
   isThinkingSignatureMismatch,
   withoutThinkingBlocks,
@@ -504,11 +510,18 @@ export function fallbackAwareModelStream(
               !sizingFailure &&
               state.isProviderFailure(event.error)
             ) {
-              const contextWindow = groqRequestContextWindow(
+              const requestWindow = groqRequestContextWindow(
                 target.config.provider,
                 event.error.errorMessage,
                 target.model.contextWindow,
               );
+              const contextWindow =
+                requestWindow ??
+                reportedContextWindow(
+                  target.config.provider,
+                  event.error.errorMessage,
+                  target.model.contextWindow,
+                );
               if (contextWindow !== undefined && Date.now() - startedAt < timeoutMs) {
                 const requiredContext = requestContext();
                 const minimumInput = estimateModelContextTokens({
@@ -529,11 +542,12 @@ export function fallbackAwareModelStream(
                   },
                 );
                 if (requestLimitTooSmall) {
-                  terminalEvent = {
-                    ...event,
-                    error: { ...event.error, errorMessage: MODEL_REQUEST_LIMIT_ERROR },
-                  };
-                  recordFailure(target, MODEL_REQUEST_LIMIT_ERROR);
+                  const limitError =
+                    requestWindow === undefined
+                      ? MODEL_CONTEXT_TOO_SMALL_ERROR
+                      : MODEL_REQUEST_LIMIT_ERROR;
+                  terminalEvent = { ...event, error: { ...event.error, errorMessage: limitError } };
+                  recordFailure(target, limitError);
                 } else {
                   state.onContextLimit(contextWindow);
                   sizingFailure = event;
@@ -598,7 +612,9 @@ export function fallbackAwareModelStream(
               event.reason === "error" &&
               !signalAborted() &&
               state.isProviderFailure(event.error) &&
-              (requestLimitTooSmall || isRetryableProviderUnavailable(event.error))
+              (requestLimitTooSmall ||
+                isRetryableProviderUnavailable(event.error) ||
+                isModelCredentialRejected(event.error))
             ) {
               state.primaryFailure ??= sanitizeProviderError(
                 target.config.provider,
@@ -617,8 +633,8 @@ export function fallbackAwareModelStream(
                 restart = true;
                 break;
               }
-              // An exhausted quota or usage window can move to a backup but will not clear
-              // within the retry budget, so only transient failures retry the same model.
+              // An exhausted quota, usage window or rejected credential can move to a backup
+              // but will not clear within the retry budget, so only transient failures retry the same model.
               if (isTransientModelError(event.error)) {
                 firstRetryableError ??= event;
                 const idle = event.error.errorMessage === MODEL_STREAM_IDLE_TIMEOUT_MESSAGE;
