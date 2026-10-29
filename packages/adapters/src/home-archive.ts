@@ -2,8 +2,10 @@ import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { lstat, mkdir, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import { isContained } from "./home.js";
+import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 /**
  * A home as one byte stream, so a revision is a single stored object however many files it
@@ -35,6 +37,7 @@ export interface HomeArchiveLimits {
   maxEntries: number;
 }
 
+/** Read bounds retain compatibility with homes saved before the save limit was lowered. */
 export const DEFAULT_HOME_ARCHIVE_LIMITS: HomeArchiveLimits = {
   maxBytes: 100 * 1024 ** 3,
   maxEntries: 2_000_000,
@@ -56,8 +59,12 @@ export async function* packHome(
   root: string,
   limits: HomeArchiveLimits = DEFAULT_HOME_ARCHIVE_LIMITS,
 ): AsyncGenerator<Buffer> {
+  limits = {
+    maxBytes: Math.min(limits.maxBytes, WORKSPACE_SAVE_LIMITS.maxBytes),
+    maxEntries: limits.maxEntries,
+  };
   const resolvedRoot = await realpath(root);
-  const counts = { bytes: 0, entries: 0 };
+  const counts = { bytes: 0, entries: 0, files: 0 };
   async function* entries() {
     yield MAGIC;
     yield* packDirectory(resolvedRoot, resolvedRoot, "", new Set([resolvedRoot]), counts, limits);
@@ -83,7 +90,7 @@ async function* packDirectory(
   directory: string,
   prefix: string,
   visited: Set<string>,
-  counts: { bytes: number; entries: number },
+  counts: { bytes: number; entries: number; files: number },
   limits: HomeArchiveLimits,
 ): AsyncGenerator<Buffer> {
   const entries = await readdir(directory).catch(skipVanished([] as string[]));
@@ -93,7 +100,8 @@ async function* packDirectory(
     const resolved = await realpath(path.join(directory, name)).catch(skipVanished(undefined));
     if (!resolved || !isContained(root, resolved) || resolved === root) continue;
     const info = await lstat(resolved).catch(skipVanished(undefined));
-    if (info?.isDirectory()) {
+    if (!info || shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
+    if (info.isDirectory()) {
       if (visited.has(resolved)) continue;
       countEntry(counts, 0, limits);
       yield entryHeader(DIRECTORY, relative);
@@ -105,7 +113,9 @@ async function* packDirectory(
         counts,
         limits,
       );
-    } else if (info?.isFile()) {
+    } else if (info.isFile()) {
+      if (++counts.files > WORKSPACE_SAVE_LIMITS.maxFiles)
+        throw new WorkspaceTooLargeError("files");
       const handle = await openContained(root, resolved);
       if (!handle) continue;
       try {
@@ -183,10 +193,8 @@ function countEntry(
 ) {
   counts.entries += 1;
   counts.bytes += bytes;
-  if (counts.entries > limits.maxEntries)
-    throw new HomeArchiveError(`Home has more than ${limits.maxEntries} entries`);
-  if (counts.bytes > limits.maxBytes)
-    throw new HomeArchiveError(`Home is larger than ${limits.maxBytes} bytes`);
+  if (counts.entries > limits.maxEntries) throw new WorkspaceTooLargeError("files");
+  if (counts.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
 }
 
 /** A relative path made only of ordinary segments. */
@@ -216,9 +224,14 @@ export async function unpackHome(
 ): Promise<void> {
   await readArchive(source, limits, {
     directory: async (relative) => {
+      if (shouldSkipPortableWorkspaceFile(relative, true)) return;
       await mkdir(path.join(dest, relative), { recursive: true, mode: 0o700 });
     },
     file: async (relative, mode, body) => {
+      if (shouldSkipPortableWorkspaceFile(relative)) {
+        for await (const _chunk of body);
+        return;
+      }
       const target = path.join(dest, relative);
       await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
       const handle = await open(
@@ -290,8 +303,7 @@ async function readArchive(
     }
     const meta = await reader.read(10);
     const size = meta.readBigUInt64BE(2);
-    if (size > BigInt(limits.maxBytes))
-      throw new HomeArchiveError(`Home is larger than ${limits.maxBytes} bytes`);
+    if (size > BigInt(limits.maxBytes)) throw new WorkspaceTooLargeError("bytes");
     countEntry(counts, Number(size), limits);
     await sink.file(relative, meta.readUInt16BE(0) & 0o777, reader.stream(Number(size)));
   }

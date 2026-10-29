@@ -80,6 +80,47 @@ async function exported(store: LocalAgentHomeStore, directory = "") {
 }
 
 describe("LocalAgentHomeStore path containment", () => {
+  it.each([false, true])(
+    "excludes caches from commits without descending into them (staged: %s)",
+    async (staged) => {
+      const { root, store } = await fixture();
+      const staging = staged ? await store.createStaging() : undefined;
+      const source = staging?.path ?? path.join(root, "source");
+      try {
+        for (const name of [
+          "project/node_modules/pkg/index.js",
+          ".cache/uv/data",
+          ".yarn/cache/pkg",
+          "packages/core/keep.txt",
+          ".yarn/patches/fix.patch",
+          "debug.log",
+        ]) {
+          await mkdir(path.dirname(path.join(source, name)), { recursive: true });
+          await writeFile(path.join(source, name), "ok");
+        }
+        hooks.beforeReaddir = async (directory) => {
+          if (directory.includes("node_modules") || directory.endsWith(".cache"))
+            throw new Error("must prune before descending");
+        };
+        await store.commit("bot-1", source, context);
+        expect(
+          await readFile(path.join(store.pathFor("bot-1"), "packages/core/keep.txt"), "utf8"),
+        ).toBe("ok");
+        expect(
+          await readFile(path.join(store.pathFor("bot-1"), ".yarn/patches/fix.patch"), "utf8"),
+        ).toBe("ok");
+        for (const name of ["project/node_modules", ".cache", ".yarn/cache", "debug.log"]) {
+          await expect(stat(path.join(store.pathFor("bot-1"), name))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }
+        if (!staged) expect(await readFile(path.join(source, ".cache/uv/data"), "utf8")).toBe("ok");
+      } finally {
+        await staging?.remove();
+      }
+    },
+  );
+
   it("keeps revision metadata external without reserving a workspace file name", async () => {
     const { root, store } = await fixture();
     const source = path.join(root, "checkpoint-source");

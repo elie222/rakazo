@@ -9,10 +9,6 @@ import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { encodeTarEntry, KubernetesSandboxProvider, TarReader } from "./kubernetes-sandbox.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
-vi.mock("./computer-workspace.js", () => ({
-  shouldSkipPortableWorkspaceFile: (file: string) => file.includes(".browser-profiles/Cache/"),
-}));
-
 const TAR_END = Buffer.alloc(1024);
 
 const context: AdapterContext = {
@@ -107,8 +103,13 @@ describe("KubernetesSandboxProvider", () => {
           else if (command.includes("stat"))
             stdout?.write(String(files.get(command.at(-1)!)!.content.length));
           else if (command.includes("cat")) stdout?.write(files.get(command.at(-1)!)!.content);
-          else if (command.includes("find")) {
-            const directory = command[command.indexOf("find") + 1]!;
+          else if (
+            command.includes("find") ||
+            command.some((arg) => arg.includes("find . -regextype"))
+          ) {
+            const directory = command.includes("find")
+              ? command[command.indexOf("find") + 1]!
+              : "/home/rakazo";
             for (const [name, file] of files) {
               const relative = name.slice(directory.length + 1);
               if (!name.startsWith(`${directory}/`)) continue;
@@ -821,7 +822,10 @@ describe("KubernetesSandboxProvider", () => {
         args[6].on("end", () => args[8]?.({ status: "Success" }));
       } else
         queueMicrotask(() => {
-          if (command.includes("find")) {
+          if (
+            command.includes("find") ||
+            command.some((arg) => arg.includes("find . -regextype"))
+          ) {
             args[4]?.write(["a.txt", ".browser-profiles/Cache/blob", "run.sh", ""].join("\0"));
           } else if (command.includes("tar")) {
             expect(args[6]).toBeNull();

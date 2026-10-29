@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import path from "node:path";
-import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
+import {
+  COMPUTER_CACHE_ENV,
+  MAX_DESKTOP_DISPLAY,
+  screenPorts,
+} from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
 
 /**
@@ -385,6 +389,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
     User: input.user ?? COMPUTER_USER,
     Tty: true,
     Env: [
+      ...Object.entries(COMPUTER_CACHE_ENV).map(([key, value]) => `${key}=${value}`),
       "DISPLAY=:1",
       "HOME=/home/rakazo",
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

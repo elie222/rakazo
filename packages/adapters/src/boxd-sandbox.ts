@@ -26,10 +26,7 @@ import {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
@@ -38,6 +35,10 @@ import {
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
+import {
+  shouldSkipPortableWorkspaceFile,
+  workspaceSaveFindExpression,
+} from "./workspace-save-policy.js";
 
 const HOME = "/home/boxd";
 const WORKSPACE = `${HOME}/rakazo-home`;
@@ -468,6 +469,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
         await flush();
       batch.push(file);
@@ -829,7 +831,7 @@ function boxdCwd(cwd: string | undefined): string {
 }
 
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */
-const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . -type f -printf '%P\\0%m\\0%s\\0'`;
+const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0%m\\0%s\\0'`;
 
 function parseWorkspaceListing(
   listing: string,

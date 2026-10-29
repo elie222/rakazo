@@ -1253,10 +1253,14 @@ is stopped. Remote computers save straight from their files to the bucket; the w
 their copies after an hour unread. Homes never saved to the bucket keep their only copy.
 
 **Saving large homes.** A save streams files through `DATA_DIR/staging` on the data volume,
-so memory use does not grow with file or home size. A computer with more than 20 GiB or a
-million files, or more than the volume has free, is not saved and keeps running; the worker logs
-`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Staging left by a killed
-process is removed at startup and by the worker within minutes.
+so memory use does not grow with file or home size. A computer with more than 5 GiB or a
+million files, or more than the volume has free, is not saved and keeps running unsaved. A system
+note in each bot’s thread asks you to remove large or unneeded files. The worker also logs
+`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Saves leave out rebuildable
+caches, dependencies (`node_modules` and `.venv`), build output (`.next` and `.turbo`), logs and
+core dump files. These files stay on the running computer but are absent on a fresh restore.
+Docker, Kubernetes and Railway put tool caches under `/tmp/rakazo-cache`, outside the saved home.
+Staging left by a killed process is removed at startup and by the worker within minutes.
 
 ### Moving existing homes
 

@@ -21,6 +21,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
 /** Staging directories in use are touched this often, so other processes can tell them apart. */
@@ -70,6 +71,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return this.withBotWrite(botId, async () => {
       await this.replaceHome(botId, async (staging) => {
         if (!staged) return copyDir(src, staging);
+        await removeExcludedStagedEntries(src);
         await rm(staging, { recursive: true, force: true });
         await rename(src, staging);
       });
@@ -607,6 +609,13 @@ async function copyDir(
     if (!from) continue;
     const to = path.join(dest, entry.name);
     const info = await stat(from);
+    if (
+      shouldSkipPortableWorkspaceFile(
+        path.relative(root, path.join(current, entry.name)).split(path.sep).join("/"),
+        info.isDirectory(),
+      )
+    )
+      continue;
     if (info.isDirectory()) await copyDir(from, to, root, visited);
     else if (info.isFile()) await copyTraversalFile(root, from, to);
   }
@@ -629,11 +638,25 @@ async function* walkFiles(
     const full = await exportTarget(root, path.join(resolvedCurrent, entry.name), skipHidden);
     if (!full) continue;
     const info = await stat(full);
+    if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
       yield { path: portablePath, content, executable: Boolean(mode & 0o100) };
+    }
+  }
+}
+
+/** Only private save staging is pruned; mounted homes are never cleaned by a save. */
+async function removeExcludedStagedEntries(root: string, directory = root) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    const relative = path.relative(root, full).split(path.sep).join("/");
+    if (shouldSkipPortableWorkspaceFile(relative, entry.isDirectory())) {
+      await rm(full, { recursive: true, force: true });
+    } else if (entry.isDirectory()) {
+      await removeExcludedStagedEntries(root, full);
     }
   }
 }

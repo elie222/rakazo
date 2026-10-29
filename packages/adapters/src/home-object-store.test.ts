@@ -172,6 +172,36 @@ describe("ObjectAgentHomeStore", () => {
     expect(rows[0]!.homeStorageKey).toMatch(/^rkz1:/);
   });
 
+  it("excludes rebuildable content from a mounted Docker home without deleting it", async () => {
+    const { store, otherHost } = await setup();
+    const durable = {
+      "packages/core/notes.txt": "keep",
+      ".browser-profiles/chromium/Default/Cookies": "session",
+    };
+    const excluded = {
+      "project/node_modules/pkg/index.js": "dependency",
+      ".cache/uv/data": "cache",
+      ".yarn/cache/pkg": "cache",
+      "run.log": "log",
+      "core.123": "dump",
+    };
+    for (const [filePath, content] of Object.entries({ ...durable, ...excluded })) {
+      await store.writeFile("bot-1", filePath, content, context);
+    }
+    await store.revise("bot-1");
+    for (const [filePath, content] of Object.entries(excluded)) {
+      expect(await store.readFile("bot-1", filePath, context)).toBe(content);
+    }
+    const restored = await otherHost();
+    await restored.hydrate("bot-1");
+    expect(await exported(restored, "bot-1")).toEqual(durable);
+    for (const filePath of Object.keys(excluded)) {
+      await expect(readFile(path.join(restored.pathFor("bot-1"), filePath))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
+  });
+
   it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
     const { store, rows } = await setup();
     const claimedAt = new Date("2026-01-01T00:00:00Z");

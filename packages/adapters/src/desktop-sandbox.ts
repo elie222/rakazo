@@ -50,6 +50,7 @@ import {
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
@@ -400,7 +401,10 @@ export class DesktopSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     _context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file);
+    for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      await this.writeFile(computer, file);
+    }
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
@@ -829,6 +833,7 @@ async function* walkDesktopWorkspace(
     const child = await localWorkspaceTarget(home, relative, true).catch(() => null);
     if (!child) continue;
     const info = await stat(child);
+    if (shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
     if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative, maxFileBytes);
     else if (info.isFile()) {
       if (maxFileBytes !== undefined && info.size > maxFileBytes)

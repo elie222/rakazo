@@ -20,78 +20,18 @@ import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
 import { isSandboxDamagedError } from "./sandbox-errors.js";
+import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
+
+export { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
-/** The most one save copies; a larger workspace keeps running unsaved. */
-export const WORKSPACE_SAVE_LIMITS: WorkspaceExportLimits = {
-  maxBytes: 20 * 1024 ** 3,
-  maxFiles: 1_000_000,
-};
 /** Disk a save leaves free for everything else on the data volume. */
 const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 /** How often, in bytes written, a save checks the volume's free space again. */
 const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
 /** Disk a file costs beyond its contents, so many small files still trigger the check. */
 const FILE_DISK_OVERHEAD_BYTES = 4096;
-
-/** Browser profile directories the browser rebuilds on its own; exports skip them. */
-export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set([
-  "Cache",
-  "Code Cache",
-  "CacheStorage",
-  "GPUCache",
-  "GrShaderCache",
-  "ShaderCache",
-  "DawnGraphiteCache",
-  "DawnWebGPUCache",
-  "GraphiteDawnCache",
-  "Crashpad",
-  "startup_cache",
-  "cache2",
-  // Components and models the browser downloads again on its own; each copy is per bot.
-  "ActorSafetyLists",
-  "CertificateRevocation",
-  "component_crx_cache",
-  "Crowd Deny",
-  "DeferredBrowserMetrics",
-  "Dictionaries",
-  "extensions_crx_cache",
-  "hyphen-data",
-  "OnDeviceHeadSuggestModel",
-  "optimization_guide_model_store",
-  "OptimizationHints",
-  "PKIMetadata",
-  "Safe Browsing",
-  "SafetyTips",
-  "screen_ai",
-  "Subresource Filter",
-  "WasmTtsEngine",
-  "WidevineCdm",
-  "ZxcvbnData",
-]);
-/** Browser profile files that are transient locks and metrics; exports skip them. */
-export const SKIPPED_BROWSER_PROFILE_FILES: ReadonlySet<string> = new Set([
-  "BrowserMetrics",
-  "BrowserMetrics-spare.pma",
-  "DevToolsActivePort",
-  "SingletonCookie",
-  "SingletonLock",
-  "SingletonSocket",
-  ".parentlock",
-  "lock",
-]);
-
-/** Excludes transient browser state that is unsafe or wasteful to restore. */
-export function shouldSkipPortableWorkspaceFile(relative: string) {
-  if (!relative.startsWith(".browser-profiles/")) return false;
-  const segments = relative.split("/");
-  const name = segments.at(-1) ?? "";
-  return (
-    segments.some((segment) => SKIPPED_BROWSER_PROFILE_DIRECTORIES.has(segment)) ||
-    SKIPPED_BROWSER_PROFILE_FILES.has(name)
-  );
-}
 
 /** Docker computers mount the server's home directory, whichever store keeps it. */
 export function mountsServerHome(kind: string) {
@@ -400,6 +340,7 @@ export async function checkpointComputerWorkspace(
       await use(bytes);
     };
     for await (const file of sandbox.exportWorkspace(computer, context, limits)) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (++copied.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
       // Even an empty file takes an inode and usually a block.
       await use(FILE_DISK_OVERHEAD_BYTES);

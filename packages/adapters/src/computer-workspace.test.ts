@@ -16,6 +16,7 @@ import {
   restoreComputerWorkspace,
   shouldSkipPortableWorkspaceFile,
   teamBrowserProfileName,
+  WORKSPACE_SAVE_LIMITS,
 } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
@@ -59,6 +60,36 @@ describe("provider-neutral computer workspace", () => {
       expect(shouldSkipPortableWorkspaceFile(`${profile}/${skipped}`)).toBe(true);
     }
     expect(shouldSkipPortableWorkspaceFile("project/WidevineCdm/notes.txt")).toBe(false);
+  });
+
+  it("limits saves to 5 GiB and one million files", () => {
+    expect(WORKSPACE_SAVE_LIMITS).toEqual({ maxBytes: 5 * 1024 ** 3, maxFiles: 1_000_000 });
+  });
+
+  it("skips dependencies and caches before counting a remote export", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "cache-test", homePath: "/ignored" },
+      context,
+    );
+    for (const file of [
+      "project/node_modules/lib/data",
+      ".cache/uv/data",
+      "run.log",
+      "packages/core/keep.txt",
+    ]) {
+      await provider.writeFile(computer, { path: file, content: Buffer.from("ok") }, context);
+    }
+    await checkpointComputerWorkspace(home, provider, "cache-test", computer, context, undefined, {
+      maxBytes: 2,
+      maxFiles: 1,
+    });
+    const files = [];
+    for await (const file of home.exportHome("cache-test", context)) files.push(file.path);
+    expect(files).toEqual(["packages/core/keep.txt"]);
   });
 
   it("prepares shared and bot folders for a Team Computer", async () => {

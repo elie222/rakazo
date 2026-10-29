@@ -1288,7 +1288,7 @@ describe("BoatSandboxProvider", () => {
       expected.push([path, content, executable]);
     };
     for (let index = 0; index < 500; index++) {
-      put(`project/node_modules/pkg-${index}/index.js`, Buffer.from(`module ${index}`));
+      put(`project/src/pkg-${index}/index.js`, Buffer.from(`module ${index}`));
     }
     const large = Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1, 0xcd);
     large[0] = 0;
@@ -1353,7 +1353,7 @@ describe("BoatSandboxProvider", () => {
     const script = scripts(command).find((text) => text.startsWith("archive="));
     expect(script).toContain("-printf '%p\\0'");
     expect(script).toContain("-type f");
-    expect(script).toContain("-name 'Code Cache'");
+    expect(script).toContain("Code Cache");
     expect(script).toContain("-prune");
     expect(script).toContain("--hard-dereference");
     expect(script).toContain("--format=pax");

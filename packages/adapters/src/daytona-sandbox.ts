@@ -32,14 +32,12 @@ import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { withAbort } from "./web-ssrf.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
 const DAYTONA_START_TIMEOUT_MS = 120_000;
@@ -383,6 +381,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
       if (
         batch.length >= 8 ||
@@ -897,7 +896,7 @@ async function* walkDaytonaWorkspace(
   }
   for (const entry of directories) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
-    if (!shouldSkipPortableWorkspaceFile(`${relative}/placeholder`)) {
+    if (!shouldSkipPortableWorkspaceFile(relative, true)) {
       yield* walkDaytonaWorkspace(sandbox, root, relative, context);
     }
   }
