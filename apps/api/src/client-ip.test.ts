@@ -94,6 +94,32 @@ describe("createClientIpResolver", () => {
     expect(await resolve({ peer: "172.20.0.9", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
   });
 
+  it("refreshes hostnames that still resolve when one lookup fails", async () => {
+    let now = 0;
+    const lookup = vi.fn(async (hostname: string) => {
+      if (hostname === "edge" && now >= 31_000) throw new Error("EAI_AGAIN");
+      if (hostname === "caddy") return now >= 31_000 ? ["172.20.0.4"] : ["172.20.0.9"];
+      return ["172.20.0.8"];
+    });
+    const resolve = createClientIpResolver(
+      { trustedProxies: ["caddy", "edge"], header },
+      { resolve: lookup, now: () => now },
+    );
+
+    expect(await resolve({ peer: "172.20.0.9", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(await resolve({ peer: "172.20.0.8", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(lookup).toHaveBeenCalledTimes(2);
+
+    now = 31_000;
+    expect(await resolve({ peer: "172.20.0.4", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(await resolve({ peer: "172.20.0.8", forwarded: "203.0.113.5" })).toBe("203.0.113.5");
+    expect(lookup).toHaveBeenCalledTimes(4);
+
+    now = 50_000;
+    expect(await resolve({ peer: "172.20.0.4", forwarded: "198.51.100.7" })).toBe("198.51.100.7");
+    expect(lookup).toHaveBeenCalledTimes(4);
+  });
+
   it("trusts the stack's own networks for local-networks, so a host proxy is believed", async () => {
     // The API's view inside Compose: loopback, the app network and the internal data network.
     const interfaces = () => ({
