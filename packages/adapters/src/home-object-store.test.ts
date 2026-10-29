@@ -233,6 +233,7 @@ describe("ObjectAgentHomeStore", () => {
     const { root, store, storage, rows } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "stored" }), context);
     await store.hydrate("bot-1");
+    await store.revise("bot-1");
     await rm(path.join(root, "homes"), { recursive: true });
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("stored");
 
@@ -271,7 +272,7 @@ describe("ObjectAgentHomeStore", () => {
     expect(storage.objects.size).toBe(1);
   });
 
-  it("keeps the upload when recording its revision fails without a reply", async () => {
+  it("recognizes its own committed revision when the database reply is lost", async () => {
     const { root, storage, records, rows } = await setup();
     const store = new ObjectAgentHomeStore(root, storage, {
       load: (homeKey) => records.load(homeKey),
@@ -284,12 +285,191 @@ describe("ObjectAgentHomeStore", () => {
         throw new Error("connection terminated");
       },
     });
-    await expect(store.commit("bot-1", await staged({ "a.txt": "x" }), context)).rejects.toThrow(
-      "connection terminated",
-    );
+    const revision = await store.commit("bot-1", await staged({ "a.txt": "x" }), context);
+    expect(revision).toBe(rows[0]!.homeStorageRevision);
     expect([...storage.objects.keys()]).toEqual([
       `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`,
     ]);
+  });
+
+  it("recovers a committed cached save after its database reply is lost", async () => {
+    const { root, store, storage, records, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+    await store.hydrate("bot-1");
+    const advance = records.advance.bind(records);
+    records.advance = async (...args) => {
+      await advance(...args);
+      throw new Error("connection terminated");
+    };
+    await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "checkpoint");
+    await store.revise("bot-1").catch(() => undefined);
+    records.advance = advance;
+    await writeFile(path.join(store.pathFor("bot-1"), "recent.txt"), "after the lost reply");
+
+    // A fresh instance represents the API or worker sharing the mounted cache.
+    const restarted = new ObjectAgentHomeStore(root, storage, records);
+    await restarted.hydrate("bot-1");
+    expect(await readFile(path.join(store.pathFor("bot-1"), "recent.txt"), "utf8")).toBe(
+      "after the lost reply",
+    );
+    await restarted.revise("bot-1");
+    expect(await (await otherHost()).readFile("bot-1", "recent.txt", context)).toBe(
+      "after the lost reply",
+    );
+  });
+
+  it.each([
+    { first: false, committed: true, recover: "hydrate" },
+    { first: false, committed: true, recover: "revise" },
+    { first: true, committed: true, recover: "hydrate" },
+    { first: true, committed: true, recover: "revise" },
+    { first: false, committed: false, recover: "hydrate" },
+    { first: false, committed: false, recover: "revise" },
+    { first: true, committed: false, recover: "hydrate" },
+    { first: true, committed: false, recover: "revise" },
+  ] as const)(
+    "preserves an uncertain save across instances ($first, $committed, $recover)",
+    async ({ first, committed, recover }) => {
+      const { root, store, storage, records, otherHost } = await setup();
+      if (!first) {
+        await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+        await store.hydrate("bot-1");
+      }
+      await mkdir(store.pathFor("bot-1"), { recursive: true });
+      await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "checkpoint");
+      const load = records.load.bind(records);
+      const advance = records.advance.bind(records);
+      let unavailable = false;
+      records.load = async (key) => {
+        if (unavailable) throw new Error("database unavailable");
+        return load(key);
+      };
+      records.advance = async (...args) => {
+        if (committed) await advance(...args);
+        unavailable = true;
+        throw new Error("connection terminated");
+      };
+      await expect(store.revise("bot-1")).rejects.toThrow("connection terminated");
+      const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+      await writeFile(recent, "after the lost reply");
+      const restarted = new ObjectAgentHomeStore(root, storage, records);
+      await expect(restarted.hydrate("bot-1")).rejects.toThrow("database unavailable");
+      expect(await readFile(recent, "utf8")).toBe("after the lost reply");
+      unavailable = false;
+      records.advance = advance;
+      // An uncommitted upload may already have been swept before recovery.
+      await store.sweep(Date.now() + 2 * 24 * 60 * 60_000);
+
+      await restarted[recover]("bot-1");
+      expect(await readFile(recent, "utf8")).toBe("after the lost reply");
+      await restarted.revise("bot-1");
+      expect(await (await otherHost()).readFile("bot-1", "recent.txt", context)).toBe(
+        "after the lost reply",
+      );
+    },
+  );
+
+  it.each([true, false])(
+    "preserves the live cache when another writer wins after an uncertain save (committed: %s)",
+    async (committed) => {
+      const { root, store, storage, records, otherHost } = await setup();
+      await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+      await store.hydrate("bot-1");
+      const advance = records.advance.bind(records);
+      records.advance = async (...args) => {
+        if (committed) await advance(...args);
+        throw new Error("connection terminated");
+      };
+      await store.revise("bot-1").catch(() => undefined);
+      records.advance = advance;
+      const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+      await writeFile(recent, "local work");
+      await (await otherHost()).commit("bot-1", await staged({ "a.txt": "other writer" }), context);
+
+      const restarted = new ObjectAgentHomeStore(root, storage, records);
+      await expect(restarted.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
+      await expect(restarted.hydrate("bot-1")).rejects.toThrow(HomeSaveConflictError);
+      expect(await readFile(recent, "utf8")).toBe("local work");
+      expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("other writer");
+    },
+  );
+
+  it("reads the marker after the database when another process saves during hydration", async () => {
+    const { root, store, storage, records } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+    await store.hydrate("bot-1");
+    const load = records.load.bind(records);
+    let resume = () => {};
+    let reading = () => {};
+    const started = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    const delayed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    let paused = false;
+    records.load = async (key) => {
+      if (!paused) {
+        paused = true;
+        reading();
+        await delayed;
+      }
+      return load(key);
+    };
+    const markerFile = path.join(root, "home-revisions/bot-1.txt");
+    let marker = await readFile(markerFile, "utf8");
+    // Make the marker snapshot immediate, so a parallel read deterministically sees
+    // the old marker while the database response is held back.
+    class ReadingStore extends ObjectAgentHomeStore {
+      protected override async localRevision() {
+        return marker;
+      }
+    }
+    const otherProcess = new ReadingStore(root, storage, records);
+    const hydrating = otherProcess.hydrate("bot-1");
+    await started;
+    await store.revise("bot-1");
+    marker = await readFile(markerFile, "utf8");
+    const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+    await writeFile(recent, "after the checkpoint");
+    resume();
+    await hydrating;
+    expect(await readFile(recent, "utf8")).toBe("after the checkpoint");
+  });
+
+  it("does not overwrite a shared cache's newer marker when an older save finally replies", async () => {
+    const { root, store, storage, records, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+    await store.hydrate("bot-1");
+    const advance = records.advance.bind(records);
+    let reply = () => {};
+    let updated = () => {};
+    const waiting = new Promise<void>((resolve) => {
+      updated = resolve;
+    });
+    const delayed = new Promise<void>((resolve) => {
+      reply = resolve;
+    });
+    records.advance = async (...args) => {
+      const result = await advance(...args);
+      updated();
+      await delayed;
+      return result;
+    };
+    const saving = store.revise("bot-1");
+    await waiting;
+    records.advance = advance;
+    const otherProcess = new ObjectAgentHomeStore(root, storage, records);
+    await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "newer checkpoint");
+    await otherProcess.revise("bot-1");
+    reply();
+    await saving;
+    const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+    await writeFile(recent, "after both saves");
+
+    await new ObjectAgentHomeStore(root, storage, records).hydrate("bot-1");
+    expect(await readFile(recent, "utf8")).toBe("after both saves");
+    expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("newer checkpoint");
   });
 
   it("keeps only the current revision once a newer one is saved", async () => {
@@ -416,6 +596,39 @@ describe("ObjectAgentHomeStore", () => {
 
     expect(await exported(await otherHost(), "team-1")).toEqual({});
   });
+
+  it.each([true, false])(
+    "keeps folder removal's live cache after a lost reply (committed: %s)",
+    async (committed) => {
+      const { root, store, storage, records, otherHost } = await setup(["team-1"]);
+      await store.commit("team-1", await staged({ "bots/gone/work.txt": "old" }), context);
+      const advance = records.advance.bind(records);
+      const load = records.load.bind(records);
+      let unavailable = false;
+      records.load = async (key) => {
+        if (unavailable) throw new Error("database unavailable");
+        return load(key);
+      };
+      records.advance = async (...args) => {
+        if (committed) await advance(...args);
+        unavailable = true;
+        throw new Error("connection terminated");
+      };
+      await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+        "connection terminated",
+      );
+      await writeFile(path.join(store.pathFor("team-1"), "recent.txt"), "local work");
+      unavailable = false;
+      records.advance = advance;
+      const restarted = new ObjectAgentHomeStore(root, storage, records);
+      await restarted.removeFolders("team-1", "bots", ["gone"]);
+      expect(await readFile(path.join(store.pathFor("team-1"), "recent.txt"), "utf8")).toBe(
+        "local work",
+      );
+      await restarted.revise("team-1");
+      expect(await exported(await otherHost(), "team-1")).toEqual({ "recent.txt": "local work" });
+    },
+  );
 
   it("keeps the rest of a home never stored when its first save fails", async () => {
     const { store, storage } = await setup(["team-1"]);

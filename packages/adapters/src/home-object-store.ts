@@ -181,11 +181,14 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
   override async removeFolders(botId: string, parent: string, names: readonly string[]) {
     await this.hydrate(botId);
     const stored = Boolean((await this.records.load(botId))?.revision);
+    const before = await this.localRevision(botId);
     if (!(await super.removeFolders(botId, parent, names))) return false;
     await this.revise(botId).catch(async (error) => {
-      // A cache that no longer matches its stored revision would hide the folders from a retry,
-      // so it is downloaded again. A home never stored has no other copy and is already clean.
-      if (stored) await this.remove(botId);
+      // Before publication, restore stored folders so a retry can remove them again.
+      // After publication, keep the live copy: the UPDATE may have committed without a
+      // reply. Hydration settles it before a retry inspects the folders. A home never
+      // stored keeps its only copy.
+      if (stored && (await this.localRevision(botId)) === before) await this.remove(botId);
       throw error;
     });
     return true;
@@ -198,10 +201,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    */
   override async revise(botId: string): Promise<string> {
     return this.withBotWrite(botId, async () => {
-      const [stored, local] = await Promise.all([
-        this.records.load(botId),
-        this.localRevision(botId),
-      ]);
+      const { stored, local } = await this.loadCacheRevision(botId);
       const base = stored?.revision ?? null;
       if (base && (local !== base || !(await this.hasCache(botId))))
         throw new Error("The cached home is older than its stored revision");
@@ -259,10 +259,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    */
   async hydrate(botId: string): Promise<void> {
     await this.withBotWrite(botId, async () => {
-      const stored = await this.records.load(botId);
+      const { stored, local } = await this.loadCacheRevision(botId);
       if (!stored?.revision) return;
       // A removed cache directory leaves its marker behind; only a present copy counts.
-      if ((await this.localRevision(botId)) === stored.revision && (await this.hasCache(botId))) {
+      if (local === stored.revision && (await this.hasCache(botId))) {
         await this.touchRevision(botId);
         return;
       }
@@ -272,6 +272,37 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       );
       await super.writeRevision(botId, revision);
     });
+  }
+
+  /**
+   * Cached saves retain their proposed revision and base in the marker. Unlike a plain
+   * downloaded revision, this is a live copy: an unresolved or competing save must never
+   * cause hydration to replace it. Keeping the proposal after success also avoids a late
+   * database reply overwriting a newer save's marker in another process.
+   */
+  private async loadCacheRevision(botId: string) {
+    // Read in this order: a newly stored revision must see the proposal published before
+    // its UPDATE, even when another process saves while the database read is in flight.
+    const stored = await this.records.load(botId);
+    const local = await this.localRevision(botId);
+    if (!local?.startsWith("{")) return { stored, local };
+    const pending = JSON.parse(local) as Record<string, unknown>;
+    if (
+      pending.version !== 1 ||
+      typeof pending.storageId !== "string" ||
+      typeof pending.revision !== "string" ||
+      !(pending.base === null || typeof pending.base === "string")
+    )
+      throw new HomeSaveConflictError();
+    if (!(await this.hasCache(botId))) return { stored, local: undefined };
+    if (stored?.storageId !== pending.storageId) throw new HomeSaveConflictError();
+    if (stored.revision !== pending.revision && stored.revision !== pending.base)
+      throw new HomeSaveConflictError();
+    if (stored.revision === pending.revision) return { stored, local: pending.revision };
+    // Still at the base: save the latest local bytes with the usual compare-and-swap.
+    // Never republish the old upload: it may have been swept during the outage.
+    const { revision } = await this.upload(botId, { base: stored.revision });
+    return { stored: { ...stored, revision }, local: revision };
   }
 
   private async hasCache(botId: string) {
@@ -314,14 +345,26 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         await discard();
         throw error;
       });
+    // Publish the proposal atomically before the UPDATE. The API and worker share this
+    // marker, so either can recover a lost reply without replacing the mounted directory.
+    if (!options.source)
+      await super.writeRevision(
+        botId,
+        JSON.stringify({ version: 1, storageId: stored.storageId, base, revision }),
+      );
     // Only a confirmed refusal discards the upload. An error may hide a committed update, so
     // that object is left for the sweep, which keeps whatever revision the home points at.
-    if (!(await this.records.advance(botId, stored.storageId, base, revision))) {
+    const advanced = await this.records
+      .advance(botId, stored.storageId, base, revision)
+      .catch(async (error: unknown) => {
+        const current = await this.records.load(botId).catch(() => undefined);
+        if (current?.storageId === stored.storageId && current.revision === revision) return true;
+        throw error;
+      });
+    if (!advanced) {
       await discard();
       throw new HomeSaveConflictError();
     }
-    // Only the cached copy is now at this revision; a staged source leaves the cache behind.
-    if (!options.source) await super.writeRevision(botId, revision);
     if (base)
       await this.storage
         .delete([objectKey(stored.storageId, base)])

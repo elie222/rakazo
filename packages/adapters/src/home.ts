@@ -283,7 +283,14 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async writeRevision(botId: string, revision = newRevision()) {
     const directory = path.join(this.root, "home-revisions");
     await mkdir(directory, { recursive: true });
-    await writeFile(this.revisionFile(botId), revision, "utf8");
+    const file = this.revisionFile(botId);
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, revision, "utf8");
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true });
+    }
     return revision;
   }
 
