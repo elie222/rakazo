@@ -145,7 +145,8 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
   if (error instanceof StreamableHTTPError) {
-    if (error.code === 408 || error.code === 429) return "unreachable";
+    // A timeout, rate limit or server error is the server's own outage.
+    if (error.code === 408 || error.code === 429 || (error.code ?? 0) >= 500) return "unreachable";
     // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
     if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
       return "reconnect";
