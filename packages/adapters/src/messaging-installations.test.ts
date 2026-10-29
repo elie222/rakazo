@@ -1,6 +1,7 @@
 import type { MessagingInstallProvider, SecretStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
 import { MessagingInstallations } from "./messaging-installations.js";
 
@@ -153,7 +154,7 @@ it("rechecks membership and bot ownership after authorization", async () => {
 it("requires an owned, active bot before creating an install URL", async () => {
   const f = fixture();
   f.prisma.bot.findFirst.mockResolvedValueOnce(null as never);
-  await expect(f.manager.start(actor, "bot-b")).rejects.toThrow("Bot not found");
+  await expect(f.manager.start(actor, "bot-b")).rejects.toBeInstanceOf(IsolationError);
   expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
 it("connects the first bot in the user's default space when no bot is chosen", async () => {

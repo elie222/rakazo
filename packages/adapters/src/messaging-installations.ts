@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { requireMembership, runAsSystem } from "@rakazo/db";
+import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 
@@ -29,7 +29,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
           select: { id: true, spaceId: true },
         })
       : await this.defaultBot(actor.userId);
-    if (!bot) throw new Error("Bot not found");
+    if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
     await runAsSystem("start messaging workspace installation", async () => {
       await this.prisma.messagingInstallSession.deleteMany({

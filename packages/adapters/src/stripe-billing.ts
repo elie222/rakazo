@@ -9,7 +9,11 @@ import type {
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
 } from "@rakazo/adapter-kit";
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingNoMonthlyCreditsError,
+} from "@rakazo/adapter-kit";
 import { ModelCreditAmountSchema } from "@rakazo/contracts";
 import { z } from "zod";
 
@@ -227,8 +231,7 @@ export class StripeBillingProvider implements BillingProvider {
     );
     const item = subscription?.items.data[0];
     const previousAmount = creditAmount(subscription?.metadata?.rakazo_credit_cents);
-    if (!subscription || !item || !previousAmount)
-      throw new Error("No monthly credit subscription");
+    if (!subscription || !item || !previousAmount) throw new BillingNoMonthlyCreditsError();
     if (amountCents === previousAmount) return;
     const upgrading = amountCents > previousAmount;
     await this.request("POST", `/v1/subscriptions/${encodeURIComponent(subscription.id)}`, {

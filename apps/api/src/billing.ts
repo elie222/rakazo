@@ -4,7 +4,11 @@ import type {
   BillingProvider,
   BillingSubscriptionSnapshot,
 } from "@rakazo/adapter-kit";
-import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
+import {
+  BillingCheckoutCompletedError,
+  BillingCustomerNotFoundError,
+  BillingNoMonthlyCreditsError,
+} from "@rakazo/adapter-kit";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
@@ -315,7 +319,14 @@ export function createBillingService(deps: {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND");
-      await provider.setMonthlyCredits(account.customerId, amountCents);
+      try {
+        await provider.setMonthlyCredits(account.customerId, amountCents);
+      } catch (error) {
+        if (!(error instanceof BillingNoMonthlyCreditsError)) throw error;
+        // The plan ended after the page loaded; syncing lets the next status offer Subscribe.
+        await sync(account.customerId);
+        throw new ORPCError("CONFLICT", { message: error.message, cause: error });
+      }
       await sync(account.customerId);
       return { ok: true };
     },
