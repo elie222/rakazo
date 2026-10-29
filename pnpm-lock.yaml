@@ -16,6 +16,9 @@ patchedDependencies:
   app-builder-lib@26.15.3:
     hash: etbhenc3wnsl43rdtwvgrimboq
     path: patches/app-builder-lib@26.15.3.patch
+  dockerode@5.0.1:
+    hash: 4e3w6bgm3rh6hjush2fsvzwl7m
+    path: patches/dockerode@5.0.1.patch
 
 importers:
 
@@ -530,7 +533,7 @@ importers:
         version: link:../../../packages/logging
       dockerode:
         specifier: 5.0.1
-        version: 5.0.1
+        version: 5.0.1(patch_hash=4e3w6bgm3rh6hjush2fsvzwl7m)
       hono:
         specifier: 4.13.14
         version: 4.13.14
@@ -17763,7 +17766,7 @@ snapshots:
       vscode-languageserver-textdocument: 1.0.12
       vscode-languageserver-types: 3.18.0
 
-  dockerode@5.0.1:
+  dockerode@5.0.1(patch_hash=4e3w6bgm3rh6hjush2fsvzwl7m):
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@grpc/grpc-js': 1.14.4
@@ -22216,7 +22219,7 @@ snapshots:
       byline: 5.0.0
       debug: 4.4.3
       docker-compose: 1.5.0
-      dockerode: 5.0.1
+      dockerode: 5.0.1(patch_hash=4e3w6bgm3rh6hjush2fsvzwl7m)
       get-port: 5.1.1
       proper-lockfile: 4.1.2
       properties-reader: 3.0.1

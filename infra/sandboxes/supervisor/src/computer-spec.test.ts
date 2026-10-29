@@ -36,6 +36,7 @@ import {
   controlPortPublicationMatches,
   homeVolumeMatches,
   hostComputerUser,
+  isRegistryQualifiedImage,
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
   publishedLoopbackControlHostPort,
@@ -263,6 +264,39 @@ describe("graphical computer spec", () => {
     for (const file of COMPUTER_IMAGE_CONTEXT_FILES) {
       expect(existsSync(path.join(root, file)), file).toBe(true);
     }
+  });
+
+  it("sends every file the computer Dockerfile copies or adds when it builds the image locally", () => {
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    const sources = dockerfile
+      .replace(/\\[ \t]*\r?\n/g, " ")
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/))
+      .filter(
+        ([instruction, ...args]) =>
+          ["COPY", "ADD"].includes(instruction?.toUpperCase() ?? "") &&
+          !args.some((arg) => arg.startsWith("--from=")),
+      )
+      .flatMap(([, ...args]) => args.slice(0, -1).filter((arg) => !arg.startsWith("--")));
+    const listed = new Set<string>(COMPUTER_IMAGE_CONTEXT_FILES);
+    expect(sources.length).toBeGreaterThan(10);
+    expect(sources.filter((source) => !listed.has(source))).toEqual([]);
+  });
+
+  it("pulls a missing computer image only from a registry the name spells out", () => {
+    expect(isRegistryQualifiedImage("ghcr.io/elie222/rakazo/computer:edge")).toBe(true);
+    expect(isRegistryQualifiedImage("registry.test/rakazo/computer@sha256:0123")).toBe(true);
+    expect(isRegistryQualifiedImage("localhost:5000/rakazo/computer")).toBe(true);
+    expect(isRegistryQualifiedImage("localhost/rakazo/computer:local")).toBe(true);
+    expect(isRegistryQualifiedImage("docker.io/rakazo/computer:edge")).toBe(true);
+    expect(isRegistryQualifiedImage("Registry/rakazo/computer:edge")).toBe(true);
+    expect(isRegistryQualifiedImage("rakazO/computer:edge")).toBe(true);
+    expect(isRegistryQualifiedImage("rakazo/computer:local")).toBe(false);
+    expect(isRegistryQualifiedImage("rakazo/computer@sha256:0123")).toBe(false);
+    expect(isRegistryQualifiedImage("computer:local")).toBe(false);
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {

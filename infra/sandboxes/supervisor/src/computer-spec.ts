@@ -31,15 +31,32 @@ export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "control.py",
   "xcapture.c",
   "rakazo-browser",
+  "rakazo-focus-or-launch",
   "rakazo-page-browser",
   "rakazo-browser.desktop",
+  "browser-policy.json",
   "embed.html",
   "clipboard-bridge.js",
   "mobile-keyboard.js",
   "fluxbox.init",
   "fluxbox.apps",
   "fluxbox.menu",
+  "rakazo-local-bin.sh",
 ] as const;
+
+/**
+ * Docker's rule for a name that carries its registry: the first path component has a "." or
+ * ":", is "localhost", or has an uppercase letter. The supervisor pulls only such names, never an
+ * unqualified one that Docker would look up on Docker Hub, where anyone could register
+ * rakazo/computer.
+ */
+export function isRegistryQualifiedImage(image: string): boolean {
+  const slash = image.indexOf("/");
+  if (slash < 0) return false;
+  const host = image.slice(0, slash);
+  return /[.:A-Z]/.test(host) || host === "localhost";
+}
+
 export const COMPUTER_UID = 1000;
 export const COMPUTER_GID = 1000;
 export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
