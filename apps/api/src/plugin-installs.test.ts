@@ -342,6 +342,37 @@ describe("plugin RPC boundary", () => {
       await setPluginParts({ ...deps, removeServer }, actor, { id: installed.id, parts: [] }),
     ).toBeNull();
   });
+  it("lists only the skills that installed when skills are added later", async () => {
+    const { deps, prisma } = setup();
+    deps.fetcher = async () => ({
+      resolvedSha: sha,
+      files: [
+        ...(await fetcher()).files,
+        { path: "skills/builtin/SKILL.md", content: BUILTIN_AGENT_SKILLS[0]!.content },
+      ],
+    });
+    const digest = (await previewPluginInstall({ source, fetcher: deps.fetcher })).digest;
+    // Saved by a connector-only install from before built-in names were left out.
+    const stalePreview = [{ name: BUILTIN_AGENT_SKILLS[0]!.name }, { name: "example-skill" }];
+    prisma.capabilityInstall.findFirst.mockResolvedValue({
+      id: "install-test",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      allSpaces: true,
+      availableIn: [],
+      kind: "plugin",
+      source,
+      version: sha,
+      digest,
+      config: { parts: ["connector"], skills: stalePreview },
+    } as never);
+    const result = await setPluginParts({ ...deps, removeServer: vi.fn() }, actor, {
+      id: "install-test",
+      parts: ["connector", "skills"],
+    });
+    expect(prisma.agentSkill.create).toHaveBeenCalledTimes(1);
+    expect(result?.config.skills).toEqual([expect.objectContaining({ name: "example-skill" })]);
+  });
   it("refuses to add a part when the pinned content no longer matches", async () => {
     const { deps, prisma } = setup();
     prisma.capabilityInstall.findFirst.mockResolvedValue({

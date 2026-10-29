@@ -412,6 +412,8 @@ export async function setPluginParts(
           data: {
             config: {
               ...(install.config as Record<string, unknown>),
+              // Re-read at the pinned commit, so the saved preview matches what is installed now.
+              ...(plugin ? pluginPreviewDto(plugin) : {}),
               parts,
             } as Prisma.InputJsonValue,
           },
