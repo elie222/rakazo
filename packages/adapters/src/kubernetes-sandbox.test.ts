@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { encodeTarEntry, KubernetesSandboxProvider, TarReader } from "./kubernetes-sandbox.js";
@@ -1101,9 +1102,16 @@ describe("KubernetesSandboxProvider", () => {
         await link(path.join(root, long), path.join(root, "linked.txt"));
         const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
           const argv = args[3] as string[];
+          const script = argv[argv.indexOf("bash") + 2];
           queueMicrotask(() => {
-            if (argv.includes("find")) args[4]?.write(`${long}\0linked.txt\0`);
-            else if (args[6]) {
+            if (script?.includes("&& find . ")) {
+              args[4]?.write(
+                execFileSync("bash", [
+                  "-c",
+                  script.replace(`cd ${shellQuote("/home/rakazo")}`, `cd ${shellQuote(root)}`),
+                ]),
+              );
+            } else if (args[6]) {
               args[6].resume();
             } else if (argv.includes("tar")) {
               const command = argv.slice(argv.indexOf("tar") + 1);
