@@ -1799,6 +1799,7 @@ msgstr "De update kon niet worden voltooid. Probeer het opnieuw."
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Verbinden mislukt"
 
@@ -4945,6 +4946,7 @@ msgid "Return to call with {0}"
 msgstr "Terug naar het gesprek met {0}"
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Terug naar Rakazo"
 
