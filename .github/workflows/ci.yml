@@ -321,10 +321,15 @@ jobs:
           )" || response=""
           published="$(
             jq -er --arg runtime "$runtime" '
-              if has("errors") or (.data.app.byId | type) != "object" then
+              if has("errors") or (.data.app.byId | type) != "object" or
+                 (.data.app.byId | has("updateBranchByName") | not) then
                 error("no usable update data")
               else
-                [.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not))][0] as $update
+                .data.app.byId.updateBranchByName
+                | if . == null then []
+                  elif (.updates | type) == "array" then .updates
+                  else error("malformed updates") end
+                | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
                 | if $update == null then
                     ""
                   elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
