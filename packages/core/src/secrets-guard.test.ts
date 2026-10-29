@@ -231,8 +231,15 @@ describe("secrets-guard", () => {
 
   it("compares bearer tokens without leaking a length or a prefix match", () => {
     expect(hasValidBearerToken("Bearer secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bearer secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("BEARER secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bEaReR secret-token", "secret-token")).toBe(true);
+    expect(hasValidBearerToken("bearer Secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Bearer secret-token-longer", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Bearer secret-toke", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearersecret-token", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearer  secret-token", "secret-token")).toBe(false);
+    expect(hasValidBearerToken("Bearer\tsecret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken("Basic secret-token", "secret-token")).toBe(false);
     expect(hasValidBearerToken(undefined, "secret-token")).toBe(false);

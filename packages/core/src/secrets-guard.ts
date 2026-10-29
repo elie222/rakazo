@@ -156,6 +156,7 @@ export function timingSafeStringEqual(supplied: string | undefined, expected: st
  * first because a length mismatch is already observable from the response.
  */
 export function hasValidBearerToken(authorization: string | undefined, expectedToken: string) {
-  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const supplied =
+    authorization?.slice(0, 7).toLowerCase() === "bearer " ? authorization.slice(7) : "";
   return timingSafeStringEqual(supplied, expectedToken);
 }
