@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import type { Bot } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { startCall } from "../../lib/call-session";
 import { rpc } from "../../lib/rpc";
 import { IncomingCall } from "./IncomingCall";
 
@@ -22,7 +23,8 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("../../lib/call-session", () => ({ startCall: vi.fn(), useCallSession: () => null }));
 vi.mock("../../lib/rpc", () => ({
-  rpc: { threads: { answerCall: vi.fn(), declineCall: vi.fn() } },
+  rpc: { threads: { answerCall: vi.fn(), declineCall: vi.fn(), endCall: vi.fn() } },
+  selectedSpaceId: () => "space-1",
 }));
 
 let container: HTMLDivElement;
@@ -65,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(rpc.threads.answerCall).mockReset();
   vi.mocked(rpc.threads.declineCall).mockReset();
+  vi.mocked(rpc.threads.endCall).mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -159,4 +162,68 @@ it("keeps private call content out of notifications", () => {
   render([caller]);
   expect(notify).toHaveBeenCalledOnce();
   expect(JSON.stringify(notify.mock.calls)).not.toContain("Private");
+});
+
+it("hangs up an answer that lands after the call view is gone", async () => {
+  let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
+  vi.mocked(rpc.threads.answerCall).mockReturnValue(
+    new Promise((resolve) => {
+      deliver = resolve;
+    }),
+  );
+  vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
+  const onAnswered = vi.fn();
+  act(() =>
+    root.render(<IncomingCall bots={[bot("call-1", start + 45_000)]} onAnswered={onAnswered} />),
+  );
+  act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Answer")!
+      .click(),
+  );
+  act(() => root.render(null));
+  await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+  expect(startCall).not.toHaveBeenCalled();
+  expect(onAnswered).not.toHaveBeenCalled();
+  expect(rpc.threads.endCall).toHaveBeenCalledWith(
+    { botId: "bot-1", callId: "call-1" },
+    { context: { spaceId: "space-1" } },
+  );
+});
+
+it("hangs up an answer that lands while a lazy route hides the call view", async () => {
+  let deliver: (value: { opening: string; reason: string }) => void = () => undefined;
+  vi.mocked(rpc.threads.answerCall).mockReturnValue(
+    new Promise((resolve) => {
+      deliver = resolve;
+    }),
+  );
+  vi.mocked(rpc.threads.endCall).mockResolvedValue({ ok: true });
+  const onAnswered = vi.fn();
+  const pendingRoute = new Promise<never>(() => undefined);
+  function Route({ loading }: { loading: boolean }) {
+    if (loading) throw pendingRoute;
+    return null;
+  }
+  const view = (loading: boolean) => (
+    <Suspense fallback={null}>
+      <IncomingCall bots={[bot("call-1", start + 45_000)]} onAnswered={onAnswered} />
+      <Route loading={loading} />
+    </Suspense>
+  );
+  act(() => root.render(view(false)));
+  act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Answer")!
+      .click(),
+  );
+  // Navigating to a lazy page hides the shell without unmounting it.
+  act(() => root.render(view(true)));
+  await act(async () => deliver({ opening: "Ready?", reason: "Review" }));
+  expect(startCall).not.toHaveBeenCalled();
+  expect(onAnswered).not.toHaveBeenCalled();
+  expect(rpc.threads.endCall).toHaveBeenCalledWith(
+    { botId: "bot-1", callId: "call-1" },
+    { context: { spaceId: "space-1" } },
+  );
 });
