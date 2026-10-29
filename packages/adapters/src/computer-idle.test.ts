@@ -94,6 +94,37 @@ describe("sandbox idle", () => {
     );
   });
 
+  it("logs and drops a sleep check the job queue rejects", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const harness = idleHarness({ billsWhileRunning: true, runningSince: new Date(0) });
+      let enqueued = 0;
+      // A vi.fn rejection is observed by the spy itself and could never go unhandled.
+      harness.deps.jobs.enqueue = () => {
+        enqueued += 1;
+        return Promise.reject(new Error("Background job publisher is closed"));
+      };
+
+      scheduleComputerSleep(harness.deps.jobs, harness.computer.id);
+      await expect(touchRunningComputer(harness.deps, harness.computer)).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(enqueued).toBe(2);
+      expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(
+        sink.events.filter(
+          (event) => event.level === "warn" && event.message === "computer.sleep_schedule_failed",
+        ),
+      ).toHaveLength(2);
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
   it("keeps a computer alive without suspending it while a run is active", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockResolvedValueOnce({ id: "run" });

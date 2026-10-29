@@ -274,7 +274,10 @@ export function scheduleComputerSleep(
     notAfter ? Math.min(idleAt, notAfter.getTime()) : idleAt,
     notBefore?.getTime() ?? 0,
   );
-  void jobs.enqueue(computerSleepJob(computerId, new Date(at)));
+  jobs.enqueue(computerSleepJob(computerId, new Date(at))).catch((error) => {
+    // The idle sweeper queues a fresh check for every running computer.
+    getLogger().warn("computer.sleep_schedule_failed", { "computer.id": computerId, error });
+  });
 }
 
 /** When a rate-limited provider said it takes requests again. */
@@ -320,9 +323,7 @@ export async function touchRunningComputer(
     activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince) &&
     !activeControl
   ) {
-    if (computerIdleSleepEnabled()) {
-      void deps.jobs.enqueue(computerSleepJob(computer.id, new Date(Date.now())));
-    }
+    scheduleComputerSleep(deps.jobs, computer.id, new Date(Date.now()));
     return;
   }
   scheduleComputerSleep(deps.jobs, computer.id);
