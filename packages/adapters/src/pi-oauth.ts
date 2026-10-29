@@ -195,8 +195,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
 export const OAUTH_ACCOUNT_CHANGED_ERROR =
   "The ChatGPT account changed during sign-in refresh. Connect the provider again.";
 
-/** Shown when a rejected subscription sign-in can no longer be used. */
-export const OAUTH_RECONNECT_REQUIRED_ERROR = "Connect that model provider again.";
+/** Worded so `isModelCredentialRejected` moves a run to its backup model. */
+export const OAUTH_RECONNECT_REQUIRED_ERROR =
+  "The sign-in token expired or was revoked. Connect that model provider again.";
 
 function nonBlankString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;

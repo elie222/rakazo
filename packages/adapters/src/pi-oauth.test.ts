@@ -1,5 +1,6 @@
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import { isModelCredentialRejected } from "@rakazo/adapter-kit";
 import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -443,6 +444,7 @@ describe("resolveModelAuth retirement", () => {
     );
     expect(persist).not.toHaveBeenCalled();
     expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
   });
 
   it("refuses a reconnect marker without calling the provider", async () => {
@@ -499,6 +501,7 @@ describe("resolveModelAuth retirement", () => {
       expect.objectContaining({ access: "old", refresh: "refresh-token", expires: 1 }),
     );
     expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
   });
 
   it("does not mark a refresh error retired when the delete was skipped", async () => {
@@ -512,6 +515,7 @@ describe("resolveModelAuth retirement", () => {
       }),
     ).rejects.toBe(failure);
     expect(isRetiredModelCredentialError(failure)).toBe(false);
+    expect(isModelCredentialRejected(new Error(OAUTH_RECONNECT_REQUIRED_ERROR))).toBe(true);
   });
 
   it("rethrows the refresh error when no retire hook is configured", async () => {

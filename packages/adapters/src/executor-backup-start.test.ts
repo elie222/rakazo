@@ -2,7 +2,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { serializeModelSecret } from "./pi-oauth.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
 import { withModelRoles } from "./testing/model-roles.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -119,6 +119,7 @@ async function runTurn({
         state.secrets = state.secrets.filter((row) => row.id !== args.where.id);
         return { count: 1 };
       }),
+      update: vi.fn(async () => null),
     },
   };
   let request: AgentRunRequest | undefined;
@@ -220,7 +221,8 @@ async function runTurn({
     billingEnabled: false,
     secretStore: {
       load: vi.fn(async (_ciphertext: string, secretId: string) => plaintexts[secretId]),
-      put: vi.fn(),
+      put: vi.fn(async () => ({ ciphertext: "sealed-marker" })),
+      delete: vi.fn(async () => undefined),
     },
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox: {
@@ -296,7 +298,7 @@ describe("a main model that cannot start runs on the member's backup", () => {
 
     expect(runtimeRun).not.toHaveBeenCalled();
     expect(finalizeRun).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: "failed", error: expect.stringMatching(/invalid_grant/) }),
+      expect.objectContaining({ outcome: "failed", error: OAUTH_RECONNECT_REQUIRED_ERROR }),
     );
   });
 });
