@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { BotAvatarSet } from "@rakazo/contracts";
-import { loadPeerHistory, peerConversations } from "@rakazo/core";
+import { chatUserBubbleColors, loadPeerHistory, peerConversations } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -68,6 +68,8 @@ export function PeerMessagesOverlay({
     return peerConversations(history.data).find((entry) => entry.peerBotId === peerBotId) ?? null;
   }, [history.data, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
+  const botBubble = chatUserBubbleColors(botColor, botId);
+  const peerBubble = chatUserBubbleColors(peerBotColor, peerBotId);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const followingEnd = useRef(true);
   // Opens at the latest message like the chat transcript, and follows a refresh while still there.
@@ -148,30 +150,49 @@ export function PeerMessagesOverlay({
             onScroll={(event) => {
               followingEnd.current = transcriptIsNearEnd(event.currentTarget);
             }}
-            className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+            className="rk-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
           >
-            {conversation.messages.map((peerMessage, index) => {
-              const sent = peerMessage.direction === "sent";
-              return (
-                <div
-                  key={`${peerMessage.messageId}-${index}`}
-                  className={`flex ${sent ? "justify-end" : "justify-start"}`}
-                >
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-2.5">
+              {conversation.messages.map((peerMessage, index) => {
+                const sent = peerMessage.direction === "sent";
+                const colors = sent ? botBubble : peerBubble;
+                return (
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-                      sent ? "bg-accent" : "bg-muted"
-                    }`}
+                    key={`${peerMessage.messageId}-${index}`}
+                    className={`flex ${sent ? "justify-end" : "justify-start"}`}
                   >
-                    <div className="mb-1 text-[12px] text-muted-foreground/70" dir="auto">
-                      {sent ? botName : peerBotName}
-                    </div>
-                    <div className="text-[14.5px] leading-[1.5] text-foreground/90" dir="auto">
-                      <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
+                    <div
+                      data-testid="peer-message-bubble"
+                      data-sender-id={sent ? botId : peerBotId}
+                      className="min-w-0 max-w-[min(84%,39rem)] rounded-[20px] bg-muted px-[18px] py-3"
+                      style={
+                        colors
+                          ? {
+                              backgroundColor: `color-mix(in srgb, ${colors.background} 18%, var(--muted))`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <div
+                        className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold text-foreground"
+                        dir="auto"
+                      >
+                        <BotAvatar
+                          avatarSet={sent ? botAvatarSet : peerBotAvatarSet}
+                          color={sent ? botColor : peerBotColor}
+                          identity={sent ? botId : peerBotId}
+                          size={22}
+                        />
+                        <span className="min-w-0 truncate">{sent ? botName : peerBotName}</span>
+                      </div>
+                      <div className="text-body1 text-foreground" dir="auto">
+                        <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
 
