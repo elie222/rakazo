@@ -238,12 +238,10 @@ describe("MCP connector managed stdio launch", () => {
       const [placeholder] = tools;
       expect(placeholder?.name).toBe("mcp__mail__unavailable");
       expect(placeholder?.description).toContain('"Mail" is assigned to you but is unavailable');
-      expect(placeholder?.description).toContain(
-        "auth failed for [redacted] as person@example.test",
-      );
+      expect(placeholder?.description).toContain("auth failed for [redacted] as [redacted]");
       const visible = JSON.stringify({ tools, health: healthWrites() });
       expect(visible).not.toContain("sk-live-0123456789abcdef");
-      expect(visible).toContain("person@example.test");
+      expect(visible).not.toContain("person@example.test");
 
       const events = await callTool(connector, placeholder!);
       expect(events).toEqual([

@@ -74,7 +74,6 @@ describe("secrets model-visibility conformance", () => {
           NODE_ENV: "production",
           AUTH_MODE: "oauth",
           SESSION_TIMEOUT: "3600",
-          COOKIE_DOMAIN: "example.test",
           SHORT_API_KEY: "ab12",
           ACCESS_TOKEN: "123456",
         },
@@ -117,7 +116,6 @@ describe("secrets model-visibility conformance", () => {
       expect(secrets).not.toContain("info");
       expect(secrets).not.toContain("oauth");
       expect(secrets).not.toContain("3600");
-      expect(secrets).not.toContain("example.test");
 
       const payload = {
         ok: true,
@@ -138,6 +136,24 @@ describe("secrets model-visibility conformance", () => {
       expect(JSON.stringify(redacted)).not.toContain("123456");
       expect(JSON.stringify(redacted)).toContain("production");
       expect(JSON.stringify(redacted)).toContain("oauth");
+    });
+
+    it("redacts env and header values under neutral names, but not short or common ones", () => {
+      const secrets = oauthMaterialSecrets({
+        env: { WORKSPACE: "ws-7f3a9c2e41b8", REGION: "us", VERBOSE: "true", PORT: "8080" },
+        headers: { "X-Workspace": "hdr-5d1e8b7a2c90" },
+      });
+      expect(secrets).toEqual(expect.arrayContaining(["ws-7f3a9c2e41b8", "hdr-5d1e8b7a2c90"]));
+      for (const value of ["us", "true", "8080"]) expect(secrets).not.toContain(value);
+
+      const result = redactConnectorPayload(
+        { text: "Connected to ws-7f3a9c2e41b8 in us" },
+        secrets,
+      );
+      expect(result).toEqual({ text: "Connected to [redacted] in us" });
+      expect(
+        sanitizeConnectorError(new Error("workspace hdr-5d1e8b7a2c90 not found"), secrets),
+      ).toBe("workspace [redacted] not found");
     });
 
     it("picks up rotated access tokens from the live material object", () => {
