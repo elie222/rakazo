@@ -1428,10 +1428,14 @@ def wait_for_action(client: CdpClient, session_id: str, ended: float, seconds: f
 
 
 def key_event(char: str) -> dict[str, Any] | None:
-    """CDP keyDown parameters for one printable ASCII character, or None to insert it as text."""
+    """CDP keyDown parameters for one character, or None for an ASCII control inserted as text."""
     if char == "\n":
         # Shift+Enter breaks the line; many chat boxes send their message on a plain Enter.
         return {"key": "Enter", "code": "Enter", "text": "\r", "windowsVirtualKeyCode": 13, "modifiers": 8}
+    # Unicode has no assumed physical key mapping. Dispatch each code point without IME composition;
+    # combining sequences and ZWJ emoji are neither normalized nor grouped.
+    if len(char) == 1 and ord(char) > 127:
+        return {"key": char, "text": char}
     if len(char) != 1 or not " " <= char <= "~":
         return None
     if char.isdigit():
