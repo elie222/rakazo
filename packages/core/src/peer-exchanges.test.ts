@@ -136,7 +136,6 @@ describe("peer exchanges", () => {
         peerBotName: "Renamed",
         count: 2,
         direction: "received",
-        receiptMessageIds: ["m1", "m3"],
       },
     ]);
     expect(projection.lineOf.get("m3")).toBe("m1");

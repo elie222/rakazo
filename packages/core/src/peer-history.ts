@@ -1,3 +1,5 @@
+import { requestDeadline, withAbort } from "./async.js";
+
 const PEER_HISTORY_PAGE_TIMEOUT_MS = 15_000;
 const PEER_HISTORY_TOTAL_TIMEOUT_MS = 60_000;
 
@@ -18,43 +20,23 @@ export async function loadPeerHistory<T>({
   pageTimeoutMs?: number;
   totalTimeoutMs?: number;
 }): Promise<T[]> {
-  const deadline = Date.now() + totalTimeoutMs;
+  const total = requestDeadline(totalTimeoutMs, "Peer history timed out.", signal);
   const collected: (readonly T[])[] = [];
   let before: number | undefined;
-  do {
-    if (signal.aborted) throw signal.reason ?? namedError("AbortError");
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw namedError("TimeoutError");
-    // Native AbortSignal implementations need not provide the static any/timeout helpers.
-    const request = new AbortController();
-    let rejectAborted: (reason: unknown) => void = () => undefined;
-    const aborted = new Promise<never>((_resolve, reject) => {
-      rejectAborted = reject;
-    });
-    const abort = (reason: unknown) => {
-      request.abort(reason);
-      rejectAborted(reason);
-    };
-    const onAbort = () => abort(signal.reason ?? namedError("AbortError"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(
-      () => abort(namedError("TimeoutError")),
-      Math.min(pageTimeoutMs, remaining),
-    );
-    try {
-      const page = await Promise.race([loadPage(before, request.signal), aborted]);
-      collected.push(page.messages);
-      before = page.olderCursor ?? undefined;
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-    }
-  } while (before !== undefined);
-  return collected.reverse().flat();
-}
-
-function namedError(name: "AbortError" | "TimeoutError"): Error {
-  const error = new Error(name);
-  error.name = name;
-  return error;
+  try {
+    do {
+      const page = requestDeadline(pageTimeoutMs, "Peer history page timed out.", total.signal);
+      try {
+        if (page.signal.aborted) throw page.signal.reason;
+        const result = await withAbort(loadPage(before, page.signal), page.signal);
+        collected.push(result.messages);
+        before = result.olderCursor ?? undefined;
+      } finally {
+        page.dispose();
+      }
+    } while (before !== undefined);
+    return collected.reverse().flat();
+  } finally {
+    total.dispose();
+  }
 }

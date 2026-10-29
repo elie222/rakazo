@@ -85,7 +85,7 @@ type MessageRowProps = {
   waitingForUser: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   mentions?: readonly ChildBotBlock[];
-  /** Set on a received marker whose peer run has folded replies. */
+  /** The adjacent receipts represented by this peer line. */
   peerExchange?: PeerExchange;
   activityBotId?: string;
   activityColor?: string;

@@ -5,7 +5,6 @@ import type { FoldedTranscript } from "./message-visibility.js";
 export type PeerExchange = {
   peerBotId: string;
   peerBotName: string;
-  receiptMessageIds: string[];
   count: number;
   direction: "sent" | "received";
 };
@@ -17,7 +16,7 @@ type Message = {
   blocks: readonly MessageBlock[];
 };
 
-export function peerReceipt(blocks: readonly MessageBlock[]) {
+function peerReceipt(blocks: readonly MessageBlock[]) {
   const block = blocks.find(
     (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
   );
@@ -103,11 +102,10 @@ export function peerExchangeLines<T extends Message>(transcript: FoldedTranscrip
       ).length + (unreturned.get(message.id)?.length ?? 0);
     if (previous?.peerBotId === receipt.peerBotId && firstId) {
       previous.peerBotName = receipt.peerBotName;
-      previous.receiptMessageIds.push(message.id);
       previous.count += count;
     } else {
       firstId = message.id;
-      previous = { ...receipt, count, receiptMessageIds: [message.id] };
+      previous = { ...receipt, count };
       lines.set(firstId, previous);
     }
     lineOf.set(message.id, firstId);

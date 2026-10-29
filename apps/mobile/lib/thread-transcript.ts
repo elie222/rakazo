@@ -86,7 +86,6 @@ export function useThreadTranscript(messages: MobileMessage[] | undefined, inGro
     showBotSenderName,
     peerTranscript,
     reactionView,
-    expandedPeerMarkers,
     setExpandedPeerMarkers,
     dismissChoice,
     exchanges,

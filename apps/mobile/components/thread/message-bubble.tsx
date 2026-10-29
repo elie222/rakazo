@@ -285,19 +285,15 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const sent = peerMessage.kind === "bot_message_sent";
     const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
     const peerBotId = sent ? peerMessage.toBotId : peerMessage.fromBotId;
-    const peerColor =
-      bots.find((bot) => bot.id === peerBotId)?.color ??
-      members?.find((member) => member.botId === peerBotId)?.color ??
-      tokens.mutedForeground;
+    const peerBot = bots.find((bot) => bot.id === peerBotId);
+    const peerMember = members?.find((member) => member.botId === peerBotId);
+    const peerColor = peerBot?.color ?? peerMember?.color ?? tokens.mutedForeground;
     return (
       <PeerReceiptLine
         peerBotId={peerBotId}
         peerBotName={peerExchange?.peerBotName ?? peer ?? t("Bot")}
         color={peerColor}
-        avatarSet={
-          bots.find((bot) => bot.id === peerBotId)?.avatarSet ??
-          members?.find((member) => member.botId === peerBotId)?.avatarSet
-        }
+        avatarSet={peerBot?.avatarSet ?? peerMember?.avatarSet}
         count={peerExchange?.count ?? 1}
         direction={sent ? "sent" : "received"}
         actionProps={actionProps}

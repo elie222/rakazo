@@ -268,7 +268,6 @@ it("opens one counted peer line without an inline reply toggle", () => {
         peerBotName: "Researcher",
         count: 3,
         direction: "sent",
-        receiptMessageIds: ["message", "receipt"],
       },
       onOpenPeerMessages: open,
     },
