@@ -296,20 +296,6 @@ describe("reviewing submissions", () => {
     expect(rows[0]!.status).toBe("pending");
   });
 
-  it("refuses a plugin whose skill would clash with a built-in one", async () => {
-    const { deps } = await submitted();
-    preview.mockResolvedValue({
-      source: { gitUrl: "https://github.com/acme/plugins" },
-      resolvedSha: SHA,
-      mcpServers: [],
-      skills: [{ name: "Interrogate" }],
-      skipped: [],
-    });
-    await expect(
-      reviewPluginSubmission(deps, { id: "sub-1", decision: "approve" }),
-    ).rejects.toThrow("Plugin skill conflicts with a built-in skill");
-  });
-
   it("keeps a plugin that would install only in part pending", async () => {
     const { deps, rows } = await submitted();
     preview.mockResolvedValue({

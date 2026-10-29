@@ -19,7 +19,6 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
-import { hasBuiltinSkillName } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
 import { windowCounter } from "./window-counter.js";
 
@@ -199,11 +198,6 @@ export async function reviewPluginSubmission(
     }
     if (!preview.skills.length && !preview.mcpServers.length) {
       throw new ORPCError("BAD_REQUEST", { message: "This plugin has no skills or MCP servers" });
-    }
-    if (hasBuiltinSkillName(preview.skills)) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Plugin skill conflicts with a built-in skill",
-      });
     }
     listing = {
       pinnedSource: sourceString(preview.source, preview.resolvedSha),
