@@ -20,6 +20,7 @@ import {
   probeProviderTranscribe,
   resolveVoiceCallPlan,
 } from "./voice-call-entry";
+import { onShortcutVoiceChat, takeShortcutVoiceChat } from "./voice-chat-intent";
 
 const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
 
@@ -265,8 +266,14 @@ export function useThreadVoiceCall({
   }
 
   useEffect(() => {
+    if (!botId) return;
     const session = currentSessionGeneration();
-    if (botId && takeRingOnArrival(botId, session)) void startVoiceCall(true, session);
+    if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
+      void startVoiceCall(true, session);
+    }
+    return onShortcutVoiceChat(() => {
+      if (takeShortcutVoiceChat(botId)) void startVoiceCall(true);
+    });
   }, [botId]);
 
   return { startVoiceCall, openBotChat };
