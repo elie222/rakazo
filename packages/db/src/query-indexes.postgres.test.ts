@@ -35,6 +35,12 @@ const hotQueries = [
       ORDER BY "updatedAt", id LIMIT 100`,
   },
   {
+    name: "a bot thread's latest run",
+    index: "runs_threadId_createdAt_id_idx",
+    sql: `SELECT id FROM runs WHERE "threadId" = $1 AND trigger NOT IN ('bot_message', 'tickets')
+      ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
+  },
+  {
     name: "a thread's messages after a cursor",
     index: "messages_threadId_seq_key",
     sql: `SELECT id FROM messages WHERE "threadId" = $1 AND seq > 0 ORDER BY seq LIMIT 100`,
