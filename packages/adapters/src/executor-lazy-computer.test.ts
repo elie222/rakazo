@@ -5,6 +5,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+import * as runMessages from "./run-messages.js";
 
 const sink = createTestSink();
 
@@ -29,6 +30,7 @@ async function runRoutine(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
   options: {
     takeover?: boolean;
+    takeoverReleased?: boolean;
     native?: boolean;
     nativeUnavailable?: boolean;
     toolFailure?: "abort" | "recover";
@@ -256,7 +258,9 @@ async function runRoutine(
       { id: "steering-1", messageId: "message-2", text: "Look at this", blocks: [attachment] },
     ]),
     finalizeRun,
-    pauseRunForTakeover: vi.fn(async () => false),
+    pauseRunForTakeover: vi.fn(async () =>
+      options.takeoverReleased ? { continuationRunId: run.id } : false,
+    ),
   };
   const executorInput = {
     prisma: withEmptyModels(prisma),
@@ -549,6 +553,22 @@ describe("run computer provisioning", () => {
     await runRoutine([], { takeover: true });
 
     expect(provisionComputer).toHaveBeenCalledOnce();
+  });
+
+  it("queues the continuation when release wins the race with the takeover pause", async () => {
+    const publish = vi.spyOn(runMessages, "publishMessage").mockResolvedValue(null);
+    try {
+      const { enqueue, finalizeRun } = await runRoutine([], {
+        takeover: true,
+        takeoverReleased: true,
+      });
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+      );
+      expect(finalizeRun).not.toHaveBeenCalled();
+    } finally {
+      publish.mockRestore();
+    }
   });
 
   it("restarts the idle timer when it asks the user to take over", async () => {

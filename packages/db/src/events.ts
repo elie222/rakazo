@@ -104,7 +104,7 @@ export interface ThreadEvents {
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
-  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
+  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
@@ -1338,9 +1338,17 @@ export async function pauseRunForTakeover(
   prisma: PrismaClient,
   input: PauseRunForTakeover,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<boolean | { continuationRunId: string }> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Release and pause both lock computer, then thread, then run.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { checkpoint: true },
+    });
+    const released = run?.checkpoint === "takeover" || run?.checkpoint === "takeover-skipped";
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -1352,10 +1360,10 @@ export async function pauseRunForTakeover(
         leaseFence: input.leaseFence,
       },
       data: {
-        status: "waiting_takeover",
+        status: released ? "queued" : "waiting_takeover",
         leaseOwner: null,
         leaseExpiresAt: null,
-        checkpoint: null,
+        checkpoint: released ? run.checkpoint : null,
       },
     });
     if (paused.count !== 1) return null;
@@ -1367,14 +1375,21 @@ export async function pauseRunForTakeover(
         fence: input.leaseFence,
         status: "running",
       },
-      data: { status: "waiting_takeover", finishedAt: new Date() },
+      data: { status: released ? "interrupted" : "waiting_takeover", finishedAt: new Date() },
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    // A release can finish while the runtime is still preparing its pause. Keep its
+    // checkpoint and continue instead of recreating a wait with no control lease.
+    if (released) {
+      const seq = await settleReleasedTakeoverCardsInTransaction(tx, {
+        ...input,
+        reason: run.checkpoint === "takeover-skipped" ? "skipped" : "done",
+      });
+      return { threadId: input.threadId, seq, continuationRunId: input.runId };
+    }
+
     const now = new Date();
-    // Serialize with concurrent computer/takeover grants that mutate the same row.
-    await tx.$queryRaw`
-      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     const computer = await tx.computer.findFirst({
       where: { id: input.computerId, spaceId: input.spaceId },
       select: {
@@ -1431,12 +1446,14 @@ export async function pauseRunForTakeover(
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId: null };
   });
 
   if (!committed) return false;
-  await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return true;
+  if (committed.seq !== null) {
+    await notifyRealtime(realtime, committed.threadId, committed.seq);
+  }
+  return committed.continuationRunId ? { continuationRunId: committed.continuationRunId } : true;
 }
 
 export async function finalizeComputerControlRelease(
@@ -1446,6 +1463,29 @@ export async function finalizeComputerControlRelease(
 ): Promise<FinalizeComputerControlReleaseResult | false> {
   if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    // The same lease can acquire a run binding while provider revocation is in flight.
+    // Fence by lease identity, then finalize the current binding under the row lock.
+    const computer = await tx.computer.findFirst({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      select: { controlRunId: true },
+    });
+    const controlRunId = input.leaseId ? (computer?.controlRunId ?? null) : input.runId;
+    let waiting = controlRunId
+      ? await tx.run.findUnique({
+          where: { id: controlRunId },
+          select: { threadId: true, status: true },
+        })
+      : null;
+    const runThreadId = waiting?.threadId ?? null;
+    if (runThreadId) {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
+      waiting = await tx.run.findUnique({
+        where: { id: controlRunId! },
+        select: { threadId: true, status: true },
+      });
+    }
     const cleared = await tx.computer.updateMany({
       where: input.leaseId
         ? {
@@ -1453,7 +1493,7 @@ export async function finalizeComputerControlRelease(
             spaceId: input.spaceId,
             controlBotId: input.botId,
             controlLeaseId: input.leaseId,
-            controlRunId: input.runId,
+            controlRunId,
           }
         : {
             id: input.computerId,
@@ -1461,7 +1501,7 @@ export async function finalizeComputerControlRelease(
             controlHolder: "none",
             controlBotId: null,
             controlLeaseId: null,
-            controlRunId: input.runId,
+            controlRunId,
           },
       data: {
         controlHolder: input.holder,
@@ -1475,10 +1515,10 @@ export async function finalizeComputerControlRelease(
 
     const checkpoint =
       input.reason === "skipped" || input.reason === "expired" ? "takeover-skipped" : "takeover";
-    const resumed = input.runId
+    const resumed = controlRunId
       ? await tx.run.updateMany({
           where: {
-            id: input.runId,
+            id: controlRunId,
             spaceId: input.spaceId,
             botId: input.botId,
             status: "waiting_takeover",
@@ -1492,10 +1532,10 @@ export async function finalizeComputerControlRelease(
     // A steered continue may already hold the run as leased/running. Stamp the
     // checkpoint without stealing the lease so the worker can restore tools.
     const stamped =
-      input.runId && resumed.count !== 1
+      controlRunId && resumed.count !== 1
         ? await tx.run.updateMany({
             where: {
-              id: input.runId,
+              id: controlRunId,
               spaceId: input.spaceId,
               botId: input.botId,
               status: { in: ["leased", "running"] },
@@ -1503,7 +1543,7 @@ export async function finalizeComputerControlRelease(
             data: { checkpoint },
           })
         : { count: 0 };
-    const runId = resumed.count === 1 || stamped.count === 1 ? input.runId : null;
+    const runId = resumed.count === 1 || stamped.count === 1 ? controlRunId : null;
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId },
@@ -1511,29 +1551,15 @@ export async function finalizeComputerControlRelease(
     });
     if (!bot?.thread) return { threadId: null, seq: null, runId };
 
-    // The card lives on the run thread, which for a group run is not the bot's own thread.
-    // Lock it after the computer row: chat send releases its thread lock before it calls
-    // release, so computer-then-thread cannot deadlock against it.
-    let runThreadId: string | null = null;
-    if (input.runId) {
-      const waiting = await tx.run.findUnique({
-        where: { id: input.runId },
-        select: { threadId: true, status: true },
+    // Group cards live on the run's thread. Stopped runs cannot write history.
+    if (controlRunId && runThreadId && waiting?.status !== "cancelled") {
+      await settleReleasedTakeoverCardsInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: runThreadId,
+        botId: input.botId,
+        runId: controlRunId,
+        reason: input.reason,
       });
-      runThreadId = waiting?.threadId ?? null;
-      if (runThreadId) {
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
-      }
-      // A stopped run cannot write history, and the release must still clear the lease.
-      if (runThreadId && waiting?.status !== "cancelled") {
-        await settleReleasedTakeoverCardsInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: runThreadId,
-          botId: input.botId,
-          runId: input.runId,
-          reason: input.reason,
-        });
-      }
     }
 
     const event = await appendEventInTransaction(tx, {

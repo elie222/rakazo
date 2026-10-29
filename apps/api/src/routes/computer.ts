@@ -324,23 +324,7 @@ export function computerRoutes(ctx: RouterContext) {
           };
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
-          const previousBotId = bot.computer.controlBotId!;
-          await revokeScreenControl(
-            deps,
-            bot.computer,
-            computerContext(context.actor, previousBotId, "screen.release"),
-            bot.computer.controlLeaseId ?? undefined,
-          );
-          await deps.prisma.computer.updateMany({
-            where: { id: bot.computer.id, controlLeaseId: bot.computer.controlLeaseId },
-            data: {
-              controlHolder: "none",
-              controlLeaseId: null,
-              controlLeaseExpiresAt: null,
-              controlBotId: null,
-              controlRunId: null,
-            },
-          });
+          await releaseComputerControl(deps, context.actor, bot.computer.controlBotId!, "skipped");
           bot = await repos.getBot(context.actor, input.botId);
           if (!bot.computer) throw new IsolationError();
         }

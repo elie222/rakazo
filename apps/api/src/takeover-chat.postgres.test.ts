@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { AgentRunRequest, JobPublisher } from "@rakazo/adapter-kit";
+import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import {
   createRunExecutor,
   EncryptedSecretStore,
@@ -12,7 +13,12 @@ import {
   ScriptedAgentRuntime,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { stuckWorkStatusMessage, TAKEOVER_WAIT_EXPIRE_AFTER_MS } from "@rakazo/core";
+import {
+  stuckWorkStatusMessage,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+  TAKEOVER_COMPUTER_SKIPPED_STATE,
+  TAKEOVER_WAIT_EXPIRE_AFTER_MS,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -231,6 +237,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       computer,
       sandbox,
       events,
+      deps,
       jobs,
       enqueue,
       queuedStates,
@@ -240,6 +247,131 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       leaseId,
     };
   }
+
+  it.each(["waiting", "pause-during-revoke", "pause-after-handoff"] as const)(
+    "skips the previous bot's takeover on a shared screen (%s)",
+    async (timing) => {
+      const fixture = await setup();
+      const card = await system.message.create({
+        data: {
+          threadId: fixture.thread.id,
+          botId: fixture.bot.id,
+          runId: fixture.run.id,
+          seq: 1,
+          role: "bot",
+          blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Fixture" }],
+        },
+      });
+      const preparePause = async () => {
+        const attempt = await system.attempt.create({
+          data: { runId: fixture.run.id, fence: 1, status: "running" },
+        });
+        await system.run.update({
+          where: { id: fixture.run.id },
+          data: { status: "running", leaseOwner: "fixture-worker", leaseFence: 1 },
+        });
+        return () =>
+          runAsSystem("test takeover pause", () =>
+            fixture.events.pauseRunForTakeover({
+              spaceId: fixture.actor.spaceId,
+              threadId: fixture.thread.id,
+              botId: fixture.bot.id,
+              runId: fixture.run.id,
+              attemptId: attempt.id,
+              leaseOwner: "fixture-worker",
+              leaseFence: 1,
+              reason: "Fixture",
+              computerId: fixture.computer.id,
+            }),
+          );
+      };
+      const pause = timing === "waiting" ? null : await preparePause();
+      if (timing === "pause-during-revoke") {
+        // The route has already read the lease without a run binding when pause commits.
+        await system.computer.update({
+          where: { id: fixture.computer.id },
+          data: { controlRunId: null },
+        });
+        const revoke = fixture.sandbox.setScreenControl.bind(fixture.sandbox);
+        vi.spyOn(fixture.sandbox, "setScreenControl").mockImplementationOnce(async (...args) => {
+          expect(await pause!()).toBe(true);
+          return revoke(...args);
+        });
+      }
+
+      const other = await system.bot.create({
+        data: {
+          spaceId: fixture.actor.spaceId,
+          userId: fixture.actor.userId,
+          name: "Other fixture",
+          color: "test",
+          computerId: fixture.computer.id,
+        },
+      });
+      const { response } = await new RPCHandler(createRouter(fixture.deps)).handle(
+        new Request("http://127.0.0.1/rpc/computer/takeover", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: other.id } }),
+        }),
+        { prefix: "/rpc", context: { actor: fixture.actor } },
+      );
+      expect(response?.status).toBe(200);
+      if (timing === "pause-after-handoff") {
+        // The runtime can publish its card after release has already settled earlier cards.
+        await system.message.update({
+          where: { id: card.id },
+          data: {
+            blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Fixture" }],
+          },
+        });
+        expect(await pause!()).toEqual({ continuationRunId: fixture.run.id });
+      }
+
+      // An old release delivery must not revoke the replacement lease or duplicate history.
+      expect(
+        await runAsSystem("test stale release", () =>
+          fixture.events.finalizeComputerControlRelease({
+            spaceId: fixture.actor.spaceId,
+            computerId: fixture.computer.id,
+            botId: fixture.bot.id,
+            runId: fixture.run.id,
+            leaseId: fixture.leaseId,
+            holder: "bot",
+            reason: "skipped",
+          }),
+        ),
+      ).toBe(false);
+      expect(await fixture.control()).toMatchObject({
+        controlHolder: "user",
+        controlBotId: other.id,
+        controlRunId: null,
+      });
+      expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+        status: "queued",
+        checkpoint: "takeover-skipped",
+      });
+      expect(
+        await system.event.findMany({
+          where: { runId: fixture.run.id, type: "computer.takeover.released" },
+        }),
+      ).toEqual([
+        expect.objectContaining({ payload: expect.objectContaining({ reason: "skipped" }) }),
+      ]);
+      expect(await system.message.findUniqueOrThrow({ where: { id: card.id } })).toMatchObject({
+        blocks: [{ kind: "computer", state: TAKEOVER_COMPUTER_SKIPPED_STATE, text: "Fixture" }],
+      });
+      expect(fixture.queuedStates).toEqual([
+        expect.objectContaining({
+          status: timing === "pause-after-handoff" ? "running" : "queued",
+          checkpoint: "takeover-skipped",
+        }),
+      ]);
+      expect(fixture.jobs.cancel).toHaveBeenCalledWith(
+        computerControlExpireJobKey(fixture.computer.id, fixture.leaseId!),
+      );
+    },
+  );
 
   it("releases the screen before either continuation is queued and executes the steering once", async () => {
     const fixture = await setup();

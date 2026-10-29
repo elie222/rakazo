@@ -437,6 +437,12 @@ async function pauseForTakeover(ctx: RunContext, event: RuntimeEvent<"takeover">
     computerId: ctx.computer.stored.id,
   });
   if (!paused) return;
+  if (typeof paused === "object") {
+    await deps.jobs
+      .enqueue(runContinueJob(paused.continuationRunId))
+      .catch((error) => getLogger().error("takeover continuation enqueue", error));
+    return;
+  }
   ctx.state.lease.retainComputer = true;
   await notifyRun(deps, run, {
     kind: "takeover",
