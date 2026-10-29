@@ -701,9 +701,15 @@ export class BoatSandboxProvider implements SandboxProvider {
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     if (computer.kind !== "boat") return false;
     try {
+      // Its caller retries an unread status itself, so a rate limit's wait is cut short here.
       const { sandbox } = await this.client.get(
         { sandboxId: this.id(computer) },
-        { signal: context.signal },
+        {
+          signal: AbortSignal.any([
+            context.signal,
+            AbortSignal.timeout(BOAT_GONE_CHECK_TIMEOUT_MS),
+          ]),
+        },
       );
       return RUNNABLE_STATES.has(sandbox.state);
     } catch (error) {

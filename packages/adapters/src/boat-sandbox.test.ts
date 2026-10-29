@@ -906,6 +906,29 @@ describe("BoatSandboxProvider", () => {
       expect(resume).not.toHaveBeenCalled();
     });
 
+    it("bounds a running check by its own deadline as well as the caller's", async () => {
+      const get = vi.spyOn(FakeBoatApi.prototype, "get");
+      const { provider, computer } = await boat();
+      const timeout = vi.spyOn(AbortSignal, "timeout");
+      const statusRead = async () => {
+        const deadline = new AbortController();
+        const caller = new AbortController();
+        timeout.mockReturnValueOnce(deadline.signal);
+        await provider.isRunning(computer, { ...context, signal: caller.signal });
+        const [, init] = get.mock.calls.at(-1) as unknown[];
+        return { deadline, caller, signal: (init as RequestInit).signal };
+      };
+      const byDeadline = await statusRead();
+      expect(timeout).toHaveBeenLastCalledWith(10_000);
+      expect(byDeadline.signal?.aborted).toBe(false);
+      byDeadline.deadline.abort();
+      expect(byDeadline.signal?.aborted).toBe(true);
+      const byCaller = await statusRead();
+      expect(byCaller.signal?.aborted).toBe(false);
+      byCaller.caller.abort();
+      expect(byCaller.signal?.aborted).toBe(true);
+    });
+
     it("is reported stopped without being started", async () => {
       const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
       const { api, provider, computer } = await boat();
