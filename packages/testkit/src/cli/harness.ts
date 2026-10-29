@@ -128,55 +128,18 @@ async function main() {
         "packages/testkit/src/connections.test.ts",
         "packages/testkit/src/bot-secrets.test.ts",
       ];
-      // Each app reconciles all durable work in its database, including intentionally
-      // unfinished fixture runs. Clone the pristine migrated schema so one suite
-      // cannot execute another suite's backlog or wait for it during shutdown.
-      const template = container.getDatabase().replaceAll('"', '""');
-      const databaseCommand = async (statement: string) => {
-        const result = await container.exec([
-          "psql",
-          "-U",
-          container.getUsername(),
-          "-d",
-          "postgres",
-          "-v",
-          "ON_ERROR_STOP=1",
-          "-c",
-          statement,
-        ]);
-        if (result.exitCode !== 0)
-          throw new Error("Isolated integration database operation failed");
-      };
-      // Run every suite, then fail with the full list, so one run shows every break.
-      const failed: string[] = [];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;
       if (!selected.length) throw new Error(`No integration suite matches ${e2eSpec}`);
-      for (const [index, suite] of selected.entries()) {
-        const database = `integration_${index}`;
-        await databaseCommand(`CREATE DATABASE "${database}" TEMPLATE "${template}"`);
-        const suiteMigrationUrl = new URL(migrationUrl);
-        suiteMigrationUrl.pathname = `/${database}`;
-        const suiteUrl = new URL(databaseUrl);
-        suiteUrl.pathname = `/${database}`;
-        try {
-          await runProcess("pnpm", ["exec", "vitest", "run", suite], {
-            ...process.env,
-            DATABASE_URL: suiteUrl.toString(),
-            DATABASE_MIGRATION_URL: suiteMigrationUrl.toString(),
-            REALTIME_DATABASE_URL: suiteUrl.toString(),
-            OPENROUTER_API_KEY: "",
-            MODEL_API_KEY: "",
-            // A developer .env may say development, which changes defaults such as encryption.
-            NODE_ENV: "test",
-          });
-        } catch {
-          failed.push(suite);
-        } finally {
-          await databaseCommand(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
-        }
-      }
-      if (failed.length) throw new Error(`Integration suites failed:\n${failed.join("\n")}`);
+      // Files run in parallel, each on its own copy of the migrated database (pin-test-env.ts).
+      await runProcess("pnpm", ["exec", "vitest", "run", ...selected], {
+        ...process.env,
+        COPY_TEST_DATABASE: "1",
+        OPENROUTER_API_KEY: "",
+        MODEL_API_KEY: "",
+        // A developer .env may say development, which changes defaults such as encryption.
+        NODE_ENV: "test",
+      });
       await writeSummary(reportDir, {
         ok: true,
         mode,
