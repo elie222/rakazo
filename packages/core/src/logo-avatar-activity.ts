@@ -1,4 +1,4 @@
-import { hasThinkingActivityMarker } from "@rakazo/contracts";
+import { hasThinkingActivityMarker, parseBotAvatarValue } from "@rakazo/contracts";
 import { isBackgroundRunTrigger, isRunWaitingOnUser, isRunWorking } from "./run-state.js";
 
 /** Minimal public stream fields used by web and native activity projections. */
@@ -21,6 +21,25 @@ export type LogoAvatarActivity =
   | "working"
   | "waiting"
   | "error";
+
+/** Logo activity displayed by the selected avatar. */
+export function botAvatarActivity(
+  bot: { avatarSet?: string; color: string; archivedAt?: string | null },
+  activity: LogoAvatarActivity,
+): LogoAvatarActivity {
+  if (bot.archivedAt || !usesLogoAvatar(bot)) return "idle";
+  return activity;
+}
+
+export function usesLogoAvatar(bot: { avatarSet?: string; color: string }): boolean {
+  const parsed = parseBotAvatarValue(bot.color);
+  return bot.avatarSet === "rakazo" && parsed.kind !== "image" && parsed.kind !== "shape";
+}
+
+export function logoAvatarNeedsAttention(activity: LogoAvatarActivity): boolean {
+  "worklet";
+  return activity === "waiting";
+}
 
 export interface LogoAvatarSignals {
   botId: string;
