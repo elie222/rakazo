@@ -302,6 +302,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Delete…": "Verwijderen…",
   Denied: "Geweigerd",
   Done: "Klaar",
+  "Needs you": "Heeft jou nodig",
+  Skipped: "Overgeslagen",
   Failed: "Mislukt",
   "Failed to refresh": "Vernieuwen mislukt",
   "Failed to send message": "Bericht verzenden mislukt",

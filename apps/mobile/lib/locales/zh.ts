@@ -439,6 +439,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Description: "描述",
   "Don’t have an account?": "还没有账户？",
   Done: "完成",
+  "Needs you": "需要接管",
+  Skipped: "已跳过",
   "Disconnect {name}?": "断开 {name}？",
   Disconnect: "断开",
   "Disconnect Self-hosted": "断开自托管连接",

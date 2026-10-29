@@ -307,6 +307,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Delete…": "Löschen…",
   Denied: "Abgelehnt",
   Done: "Fertig",
+  "Needs you": "Wartet auf dich",
+  Skipped: "Übersprungen",
   Failed: "Fehlgeschlagen",
   "Failed to refresh": "Aktualisieren fehlgeschlagen",
   "Failed to send message": "Nachricht konnte nicht gesendet werden",

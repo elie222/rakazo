@@ -289,6 +289,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Delete…": "削除…",
   Denied: "拒否",
   Done: "完了",
+  "Needs you": "対応が必要",
+  Skipped: "スキップ済み",
   Failed: "失敗",
   "Failed to refresh": "更新できませんでした",
   "Failed to send message": "メッセージを送信できませんでした",

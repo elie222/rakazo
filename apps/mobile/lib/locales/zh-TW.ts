@@ -431,6 +431,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Description: "描述",
   "Don’t have an account?": "還沒有帳號？",
   Done: "完成",
+  "Needs you": "需要你處理",
+  Skipped: "已跳過",
   "Disconnect {name}?": "中斷 {name}？",
   Disconnect: "中斷",
   "Disconnect Self-hosted": "中斷自架服務的連線",

@@ -468,6 +468,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Description: "Описание",
   "Don’t have an account?": "Нет аккаунта?",
   Done: "Готово",
+  "Needs you": "Требуется ваше участие",
+  Skipped: "Пропущено",
   "Disconnect {name}?": "Отключить {name}?",
   Disconnect: "Отключить",
   "Disconnect Self-hosted": "Отключить собственный сервер",
