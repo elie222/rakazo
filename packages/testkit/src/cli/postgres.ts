@@ -3,6 +3,15 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 const ATTEMPTS = 4;
 
+/**
+ * Every database URL the app and Prisma read, pointed at one disposable database.
+ * Prisma migrates DATABASE_MIGRATION_URL first and reloads `.env`, so an inherited
+ * one must be overwritten, not deleted.
+ */
+export function disposableDatabaseEnv(url: string) {
+  return { DATABASE_URL: url, DATABASE_MIGRATION_URL: url, REALTIME_DATABASE_URL: url };
+}
+
 /** A disposable Postgres; image registries rate-limit shared CI runners per minute, so pulls are retried. */
 export async function startPostgres(signal?: AbortSignal) {
   for (let attempt = 1; ; attempt += 1) {

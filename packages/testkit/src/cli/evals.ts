@@ -26,7 +26,7 @@ import {
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
-import { startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
   const { values } = parseArgs({
@@ -429,8 +429,7 @@ async function main() {
     postgres = await startPostgres(stop.signal);
     const databaseUrl = postgres.getConnectionUri();
     Object.assign(process.env, {
-      DATABASE_URL: databaseUrl,
-      REALTIME_DATABASE_URL: databaseUrl,
+      ...disposableDatabaseEnv(databaseUrl),
       WAKEUP_DRIVER: "memory",
       BETTER_AUTH_SECRET: "synthetic-eval-auth-secret-at-least-32-characters",
       ENCRYPTION_KEY: "synthetic-eval-encryption-key-at-least-32-characters",
