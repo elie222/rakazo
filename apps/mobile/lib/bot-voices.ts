@@ -1,3 +1,4 @@
+import { type SpeechLocale, speechLocaleTag } from "@rakazo/core";
 import { File, Paths } from "expo-file-system";
 import { getLocales } from "expo-localization";
 import type * as ExpoSpeech from "expo-speech";
@@ -87,15 +88,16 @@ function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
   return NOVELTY_VOICE_NAMES.has(noveltyKey(voice));
 }
 
-const PRIMARY_LOCALES: Readonly<Record<string, string>> = {
-  en: "en-us",
-  de: "de-de",
-  ru: "ru-ru",
-  zh: "zh-cn",
-  fr: "fr-fr",
-  es: "es-es",
-  ja: "ja-jp",
-};
+/** Languages whose main regional voice is a good fallback when the device's own has none. */
+const PRIMARY_VOICE_LOCALES = [
+  "en",
+  "de",
+  "ru",
+  "fr",
+  "es",
+  "ja",
+  "zh-CN",
+] as const satisfies readonly SpeechLocale[];
 
 /** Lowercase voice locales to fall back on, best first, when the device's own has no voice. */
 function primaryLocales(locale: string, region: string | undefined): string[] {
@@ -103,8 +105,8 @@ function primaryLocales(locale: string, region: string | undefined): string[] {
   // Outside Spain a Latin American voice sounds closer than Castilian. iOS ships Mexico's,
   // Android the United States'.
   if (language === "es" && country && country !== "es") return ["es-mx", "es-us", "es-es"];
-  const primary = PRIMARY_LOCALES[language];
-  return primary ? [primary] : [];
+  const primary = PRIMARY_VOICE_LOCALES.find((code) => code.split("-")[0] === language);
+  return primary ? [speechLocaleTag(primary).toLowerCase()] : [];
 }
 
 export async function deviceVoices(): Promise<Voice[]> {

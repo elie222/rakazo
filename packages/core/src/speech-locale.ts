@@ -1,5 +1,3 @@
-import { matchUiLocale } from "./ui-locale.js";
-
 /** Speech recognizers need regional BCP-47 tags for the app's UI locale codes. */
 const SPEECH_LOCALE_TAGS = {
   en: "en-US",
@@ -19,8 +17,8 @@ const SPEECH_LOCALE_TAGS = {
 } as const;
 
 /**
- * Recognizers name countries, not Latin America as a whole. Mexico's Spanish is the closest,
- * and every recognizer ships it.
+ * Recognizers name countries, not Latin America as a whole. Mexico's Spanish is the default
+ * regional fallback for Latin American Spanish.
  */
 const LATIN_AMERICAN_SPANISH = "es-MX";
 
@@ -31,30 +29,23 @@ export function speechLocaleTag(locale: SpeechLocale): string {
 }
 
 /**
- * The language a recognizer listens in, given the app's locale, the speaker's own browser or
- * device language, and the locales this surface ships catalogs for.
- *
- * The speaker's country wins when they speak the app's language (`es-CL`, `en-GB`): a Chilean
- * caller should not be heard as Castilian. English is also the app's fallback for a language
- * it ships no catalog for, so an English app keeps such a speaker's language outright; someone
- * who picked English over a language the app has keeps English. Chinese keeps the app's tag,
- * whose region picks the script.
+ * English UI follows the browser or device language, regardless of shipped catalogs.
+ * Other UI languages use the speaker's region when the language matches; Chinese
+ * keeps the app's tag to preserve its script. Known languages without a region use
+ * the shared default for that language.
  */
-export function recognitionLocaleTag<L extends SpeechLocale>(
-  locale: L,
+export function recognitionLocaleTag(
+  locale: SpeechLocale,
   speaker: string | null | undefined,
-  uiLocales: readonly L[],
 ): string {
   const appTag = speechLocaleTag(locale);
-  const spoken = speakerTag(speaker);
-  if (!spoken || locale.startsWith("zh") || matchUiLocale(spoken, uiLocales) !== locale) {
-    return appTag;
-  }
-  const [spokenLanguage, region] = spoken.split("-");
-  if (spokenLanguage === appTag.split("-")[0]) {
-    return region && /^[A-Z]{2}$/.test(region) ? spoken : appTag;
-  }
-  return locale === "en" ? spoken : appTag;
+  const normalized = speakerTag(speaker);
+  const spoken = normalized === "es-419" ? LATIN_AMERICAN_SPANISH : normalized;
+  if (!spoken || locale.startsWith("zh")) return appTag;
+  const [language, region] = spoken.split("-");
+  if (locale !== "en" && language !== appTag.split("-")[0]) return appTag;
+  if (region) return spoken;
+  return Object.values(SPEECH_LOCALE_TAGS).find((tag) => tag.startsWith(`${language}-`)) ?? spoken;
 }
 
 /** `es_ar`, `en-US-u-mu-celsius`, `zh-Hant-TW` → `es-AR`, `en-US`, `zh-TW`. */
@@ -65,7 +56,6 @@ function speakerTag(raw: string | null | undefined): string | null {
   if (!match?.[1]) return null;
   const language = match[1].toLowerCase();
   const region = match[2]?.toUpperCase();
-  if (language === "es" && region === "419") return LATIN_AMERICAN_SPANISH;
   return region ? `${language}-${region}` : language;
 }
 
@@ -76,7 +66,7 @@ function speakerTag(raw: string | null | undefined): string | null {
  * recognizer does not say, so `wanted` stays.
  */
 export function supportedSpeechTag(wanted: string, supported: readonly string[]): string {
-  const key = (tag: string) => tag.replace(/_/g, "-").toLowerCase();
+  const key = (tag: string) => speakerTag(tag)?.toLowerCase() ?? "";
   const [language = "", region] = key(wanted).split("-");
   const home =
     language === "es" && region && region !== "es"

@@ -40,7 +40,6 @@ import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
-import { UI_LOCALES } from "./ui-locale";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
 import { createSpeechOwner, speakText, stopSpeaking } from "./voice";
@@ -667,7 +666,7 @@ function productionDeps(): CallDeps {
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
-  const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage(), UI_LOCALES);
+  const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
   await dictation.listen({ ...handlers, signal, lang });
   return true;
 }

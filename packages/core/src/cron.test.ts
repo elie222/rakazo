@@ -198,6 +198,15 @@ describe("resolveRoutineNextRunAt", () => {
 });
 
 describe("localizedClock", () => {
+  it.each(["invalid", "25:00", "9:60 PM", "0:30 AM", "13:00 PM", ""])(
+    "preserves invalid input %j",
+    (time) => {
+      expect(localizedClock(time, "es")).toBe(time);
+    },
+  );
+  it("preserves the clock for an invalid locale", () => {
+    expect(localizedClock("9:00 PM", "_")).toBe("9:00 PM");
+  });
   it("writes a schedule time the way the language does", () => {
     expect(localizedClock("9:00 PM", "es")).toBe("21:00");
     expect(localizedClock("12:00 AM", "es")).toBe("0:00");

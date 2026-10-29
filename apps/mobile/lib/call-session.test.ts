@@ -914,10 +914,13 @@ describe("mobile call speech locales", () => {
     ["zh-CN", "ios", "en-US", "zh-CN"],
     // The app ships no Spanish, so a Spanish phone runs it in English.
     ["en", "ios", "es-CL", "es-CL"],
+    ["en", "ios", "es-ES", "es-ES"],
+    ["en", "ios", "es-419", "es-MX"],
+    ["en", "android", "it-IT", "it-IT"],
     ["en", "ios", "es-AR", "es-MX"],
     ["en", "android", "es-AR", "es-AR"],
     ["de", "ios", "de-AT", "de-AT"],
-    ["en", "ios", "ru-RU", "en-US"],
+    ["en", "ios", "ru-RU", "ru-RU"],
   ] as const)(
     "recognizes a %s call on an %s %s phone with %s and sends its live transcript after silence",
     async (locale, os, phone, lang) => {

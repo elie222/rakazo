@@ -64,6 +64,22 @@ afterEach(() => {
 });
 
 describe("mobile dictation", () => {
+  it("uses the supported iOS regional fallback", async () => {
+    const locales = vi.fn(async () => ({ locales: ["es-ES", "es-MX"] }));
+    fake.recognizer.getSupportedLocales = locales;
+    await listen({ lang: "es-AR", onFinal: vi.fn() });
+    expect(locales).toHaveBeenCalledWith({});
+    expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-MX" }));
+  });
+
+  it("keeps the requested locale when the supported list fails", async () => {
+    fake.recognizer.getSupportedLocales = async () => {
+      throw new Error("Unavailable");
+    };
+    await listen({ lang: "es-CL", onFinal: vi.fn() });
+    expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
+  });
+
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {
     const onFinal = vi.fn();
     const interims: string[] = [];

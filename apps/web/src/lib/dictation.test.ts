@@ -922,8 +922,14 @@ describe("Dictation web speech", () => {
     expect(instances[0]?.lang).toBe("es-ES");
   });
 
-  it("keeps English for someone who picked it over the browser's language", async () => {
-    vi.stubGlobal("navigator", { language: "es-CL" });
+  it.each([
+    ["es-CL", "es-CL"],
+    ["es-ES", "es-ES"],
+    ["es-419", "es-MX"],
+    ["es_AR", "es-AR"],
+    ["it-IT", "it-IT"],
+  ])("follows browser %s as %s when the UI is English", async (browser, expected) => {
+    vi.stubGlobal("navigator", { language: browser });
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => (key === "rakazo.uiLocale" ? "en" : null),
       setItem: () => undefined,
@@ -934,7 +940,7 @@ describe("Dictation web speech", () => {
     const dictation = new Dictation();
     await dictation.listen({ mode: "hold", onFinal: () => undefined });
 
-    expect(instances[0]?.lang).toBe("en-US");
+    expect(instances[0]?.lang).toBe(expected);
   });
 
   it("keeps the browser language when the app has no catalog for it", async () => {

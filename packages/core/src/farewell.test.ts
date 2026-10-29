@@ -38,3 +38,8 @@ describe("isFarewell", () => {
     expect(isFarewell(text)).toBe(false);
   });
 });
+
+it("rejects an opening question mark alone or before a farewell", () => {
+  expect(isFarewell("¿")).toBe(false);
+  expect(isFarewell("¿adiós")).toBe(false);
+});

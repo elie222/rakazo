@@ -291,6 +291,13 @@ describe("spokenDecision", () => {
     expect(spokenDecision(said)).toBe(decision);
   });
 
+  it.each(["¿No?", "No?", "¿Sí", "si", "sí uno dos tres cuatro cinco seis"])(
+    "does not approve or reject %j",
+    (text) => expect(spokenDecision(text)).toBeNull(),
+  );
+
+  it("accepts accented sí", () => expect(spokenDecision("sí")).toBe("yes"));
+
   it("does not hear a yes in a Spanish condition, question or instruction", () => {
     expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
     expect(spokenDecision("sino revisa el deploy")).toBeNull();

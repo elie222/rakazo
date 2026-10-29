@@ -52,15 +52,6 @@ export function useI18n(): { locale: UiLocale; t: typeof t } {
   return { locale, t };
 }
 
-function readDeviceLanguage(): string | null {
-  try {
-    const IntlRef = globalThis.Intl;
-    return IntlRef?.DateTimeFormat().resolvedOptions().locale || null;
-  } catch {
-    return null;
-  }
-}
-
 export function activateUiLocale(locale: UiLocale): UiLocale {
   activeLocale = locale;
   emit();
@@ -88,7 +79,12 @@ export async function deviceLanguage(): Promise<string | null> {
   } catch {
     // Keep Intl fallback.
   }
-  return readDeviceLanguage();
+  try {
+    const IntlRef = globalThis.Intl;
+    return IntlRef?.DateTimeFormat().resolvedOptions().locale || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function bootstrapI18n(): Promise<UiLocale> {

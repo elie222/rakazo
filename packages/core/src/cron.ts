@@ -569,10 +569,18 @@ function parseClock(time: string): { hour: number; minute: number } {
  * the English form as their value.
  */
 export function localizedClock(time: string, locale: string): string {
+  if (!/^\d{1,2}:\d{2}(?:\s[AP]M)?$/i.test(time)) return time;
   const { hour, minute } = parseClock(time);
-  return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(
-    new Date(2000, 0, 1, hour, minute),
-  );
+  const rawHour = Number(time.split(":")[0]);
+  if (minute > 59 || hour > 23 || (/[AP]M/i.test(time) && (rawHour < 1 || rawHour > 12)))
+    return time;
+  try {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(
+      new Date(2000, 0, 1, hour, minute),
+    );
+  } catch {
+    return time;
+  }
 }
 
 function formatClock(hour: number, minute: number): string {

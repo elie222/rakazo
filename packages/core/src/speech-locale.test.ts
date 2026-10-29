@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SpeechLocale } from "./speech-locale.js";
 import { recognitionLocaleTag, speechLocaleTag, supportedSpeechTag } from "./speech-locale.js";
-
-const WEB: SpeechLocale[] = ["en", "de", "es", "fr", "nl", "pt-BR", "ru", "zh-CN", "zh-TW"];
-const WITHOUT_SPANISH: SpeechLocale[] = ["en", "de", "ru"];
 
 describe("speechLocaleTag", () => {
   it("maps an app locale to a tag the recognizer accepts", () => {
@@ -25,38 +21,40 @@ describe("recognitionLocaleTag", () => {
     ["es", "es-ES"],
     ["es-ES", "es-ES"],
   ])("hears a Spanish speaker on %j as %j", (speaker, tag) => {
-    expect(recognitionLocaleTag("es", speaker, WEB)).toBe(tag);
+    expect(recognitionLocaleTag("es", speaker)).toBe(tag);
   });
 
   it("keeps the app's language when the speaker's is another one", () => {
-    expect(recognitionLocaleTag("es", "en-US", WEB)).toBe("es-ES");
-    expect(recognitionLocaleTag("nl", "de-DE", WEB)).toBe("nl-NL");
-    expect(recognitionLocaleTag("es", undefined, WEB)).toBe("es-ES");
-    expect(recognitionLocaleTag("es", " ", WEB)).toBe("es-ES");
+    expect(recognitionLocaleTag("es", "en-US")).toBe("es-ES");
+    expect(recognitionLocaleTag("nl", "de-DE")).toBe("nl-NL");
+    expect(recognitionLocaleTag("es", undefined)).toBe("es-ES");
+    expect(recognitionLocaleTag("es", " ")).toBe("es-ES");
   });
 
   it("keeps the speaker's country for other languages too", () => {
-    expect(recognitionLocaleTag("pt-BR", "pt-PT", WEB)).toBe("pt-PT");
-    expect(recognitionLocaleTag("nl", "nl-BE", WEB)).toBe("nl-BE");
-    expect(recognitionLocaleTag("en", "en-US-u-mu-celsius", WEB)).toBe("en-US");
-    expect(recognitionLocaleTag("en", "EN-gb", WEB)).toBe("en-GB");
+    expect(recognitionLocaleTag("pt-BR", "pt-PT")).toBe("pt-PT");
+    expect(recognitionLocaleTag("nl", "nl-BE")).toBe("nl-BE");
+    expect(recognitionLocaleTag("en", "en-US-u-mu-celsius")).toBe("en-US");
+    expect(recognitionLocaleTag("en", "EN-gb")).toBe("en-GB");
   });
 
   it("keeps the app's Chinese script over the speaker's region", () => {
-    expect(recognitionLocaleTag("zh-TW", "zh-HK", WEB)).toBe("zh-TW");
-    expect(recognitionLocaleTag("zh-CN", "zh-Hans-SG", WEB)).toBe("zh-CN");
+    expect(recognitionLocaleTag("zh-TW", "zh-HK")).toBe("zh-TW");
+    expect(recognitionLocaleTag("zh-CN", "zh-Hans-SG")).toBe("zh-CN");
   });
 
-  it("follows a speaker the English app only falls back for", () => {
-    expect(recognitionLocaleTag("en", "it-IT", WEB)).toBe("it-IT");
-    expect(recognitionLocaleTag("en", "es-CL", WITHOUT_SPANISH)).toBe("es-CL");
-    expect(recognitionLocaleTag("en", "es-419", WITHOUT_SPANISH)).toBe("es-MX");
-    expect(recognitionLocaleTag("en", null, WEB)).toBe("en-US");
+  it("follows the speaker whenever the UI is English", () => {
+    expect(recognitionLocaleTag("en", "it-IT")).toBe("it-IT");
+    expect(recognitionLocaleTag("en", "es-CL")).toBe("es-CL");
+    expect(recognitionLocaleTag("en", "es-419")).toBe("es-MX");
+    expect(recognitionLocaleTag("en", null)).toBe("en-US");
   });
 
-  it("keeps English for a speaker who picked it over a language the app has", () => {
-    expect(recognitionLocaleTag("en", "ru-RU", WEB)).toBe("en-US");
-    expect(recognitionLocaleTag("en", "es-CL", WEB)).toBe("en-US");
+  it("follows browser languages even when the app ships their catalogs", () => {
+    expect(recognitionLocaleTag("en", "es-ES")).toBe("es-ES");
+    expect(recognitionLocaleTag("en", "es-419")).toBe("es-MX");
+    expect(recognitionLocaleTag("en", "ru-RU")).toBe("ru-RU");
+    expect(recognitionLocaleTag("en", "es-CL")).toBe("es-CL");
   });
 });
 

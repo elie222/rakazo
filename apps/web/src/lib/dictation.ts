@@ -10,7 +10,6 @@ import { desktopBridge } from "./desktop.js";
 import { DesktopSpeechRecognition } from "./desktop-speech.js";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
-import { UI_LOCALES } from "./ui-locale.js";
 import { errorText, voiceAccountErrorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
@@ -101,9 +100,9 @@ const RESTART_BACKOFF_AFTER = 2;
 const RESTART_BACKOFF_MS = 900;
 const RESTART_GIVE_UP_AFTER = 4;
 
-/** The language the recognizer listens in: the app's, in the browser's regional variant. */
+/** English UI follows the browser; other UI languages keep matching regional variants. */
 export function recognitionLanguage(): string {
-  return recognitionLocaleTag(getActiveUiLocale(), navigator.language, UI_LOCALES);
+  return recognitionLocaleTag(getActiveUiLocale(), navigator.language);
 }
 
 /**
