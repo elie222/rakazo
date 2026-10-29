@@ -250,6 +250,9 @@ model BillingAccount {
   endedAt             DateTime?
   subscribedAt        DateTime?
   syncedAt            DateTime?
+  /// Held while a recurring checkout opens, so only one opens per organization at a time.
+  checkoutLeaseId     String?
+  checkoutLeaseExpiresAt DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 

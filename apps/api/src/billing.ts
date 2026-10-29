@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { ORPCError } from "@orpc/server";
 import type {
   BillingPrice,
@@ -11,6 +12,7 @@ import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
+  claimCheckoutLease,
   createBillingAccount,
   creditAccount,
   expireModelCredits,
@@ -22,6 +24,7 @@ import {
   organizationSeatCount,
   ownedBillingAccounts,
   reconcileCreditPurchase,
+  releaseCheckoutLease,
   replaceBillingCustomer,
   syncBillingSnapshot,
 } from "@rakazo/db";
@@ -30,6 +33,8 @@ import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
+const CHECKOUT_LEASE_MS = 120_000;
+const CHECKOUT_LEASE_POLL_MS = 250;
 /** Stripe returns here after checkout; served by the API through the web origin. */
 export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 
@@ -205,15 +210,21 @@ export function createBillingService(deps: {
     serialize: boolean,
     call: (customerId: string) => Promise<{ url: string }>,
   ) {
-    return prisma.$transaction(
-      async (tx) => {
-        // Opening another recurring checkout expires the old one.
-        if (serialize)
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`model-credit-checkout:${account.organizationId}`}, 0))`;
-        return withLiveCustomer(actor, account, call);
-      },
-      { timeout: 120_000 },
-    );
+    if (!serialize) return withLiveCustomer(actor, account, call);
+    // Opening another recurring checkout expires the old one.
+    const { organizationId } = account;
+    const deadline = Date.now() + CHECKOUT_LEASE_MS;
+    let leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
+    while (!leaseId) {
+      if (Date.now() > deadline) throw new ORPCError("CONFLICT");
+      await sleep(CHECKOUT_LEASE_POLL_MS);
+      leaseId = await claimCheckoutLease(prisma, organizationId, CHECKOUT_LEASE_MS);
+    }
+    try {
+      return await withLiveCustomer(actor, account, call);
+    } finally {
+      await releaseCheckoutLease(prisma, organizationId, leaseId);
+    }
   }
 
   async function billingAccountFor(actor: Actor, organizationId: string) {
