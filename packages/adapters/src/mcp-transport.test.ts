@@ -460,7 +460,15 @@ describe("MCP transport seam", () => {
       access_token: "fresh-access",
       refresh_token: "rotated-refresh",
     });
-    expect(persisted).toHaveLength(1);
+    // The SDK records the issuer on the stored client first, then the rotation lands once.
+    expect(persisted).toMatchObject([
+      { oauth: { clientInformation: { issuer: "https://auth.example.test" } } },
+      {
+        oauth: {
+          tokens: { refresh_token: "rotated-refresh", issuer: "https://auth.example.test" },
+        },
+      },
+    ]);
     await session.close();
   });
 
