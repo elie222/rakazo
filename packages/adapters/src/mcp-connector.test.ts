@@ -1556,6 +1556,123 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it("reconnects with the rotated secret when a session expires during refresh", async () => {
+    const state = {
+      failNext: false,
+      initializations: 0,
+      sessionNotFound: 0,
+      headers: [] as Record<string, string>[],
+    };
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+    let current = "old";
+    const materials = {
+      old: { oauth: { tokens: { access_token: "old-token", token_type: "Bearer" } } },
+      new: { oauth: { tokens: { access_token: "new-token", token_type: "Bearer" } } },
+    };
+    const fetch = mcpFetch(state);
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (state.sessionNotFound && request.method === "POST") current = "new";
+      return fetch(input, init);
+    });
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn().mockResolvedValue([assignment]),
+        findFirst: vi.fn().mockResolvedValue(assignment),
+      },
+      mcpServer: { findFirst: vi.fn(async () => ({ secretId: current })) },
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+          where.id === current ? { id: current, ciphertext: current } : null,
+        ),
+      },
+    };
+    const oauth = {
+      providerFor: vi.fn(
+        async (_server: unknown, _context: unknown, loaded: { material: OAuthMaterial }) =>
+          loaded.material.oauth
+            ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined)
+            : undefined,
+      ),
+    };
+    const connector = new McpConnector(
+      prisma as never,
+      {
+        load: vi.fn(async (ref: keyof typeof materials) => JSON.stringify(materials[ref])),
+      } as never,
+      { network: TEST_NETWORK },
+      oauth as unknown as McpOAuthBroker,
+    );
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const call = {
+      tool: "mcp__demo__echo",
+      args: {},
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "echo" },
+    } as never;
+    try {
+      await connector.discoverTools(context);
+      state.sessionNotFound = 1;
+      const events: unknown[] = [];
+      for await (const event of connector.execute(call, context)) events.push(event);
+      expect(events).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(2);
+      expect(state.headers.at(-1)?.authorization).toBe("Bearer new-token");
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it.each(["changed configuration", "missing replacement secret"])(
+    "does not connect with a stale server when the %s prevents loading credentials",
+    async (scenario) => {
+      const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+      const network = { ...TEST_NETWORK, fetch: vi.fn() };
+      const load = vi.fn();
+      const prisma = {
+        mcpServer: {
+          findFirst: vi.fn(async ({ where }: { where: { revision: number } }) =>
+            scenario === "changed configuration" && where.revision === 1
+              ? null
+              : { secretId: "new" },
+          ),
+        },
+        secret: { findFirst: vi.fn().mockResolvedValue(null) },
+      };
+      const connector = new McpConnector(prisma as never, { load } as never, { network });
+      const context = {
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never;
+      try {
+        await expect(
+          (
+            connector as unknown as {
+              connectSession: (
+                server: unknown,
+                context: unknown,
+                onRef: () => void,
+              ) => Promise<unknown>;
+            }
+          ).connectSession(assignment.server, context, () => undefined),
+        ).rejects.toThrow("MCP server secret is unavailable");
+        expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ revision: 1 }) }),
+        );
+        expect(load).not.toHaveBeenCalled();
+        expect(network.fetch).not.toHaveBeenCalled();
+      } finally {
+        await connector.close();
+      }
+    },
+  );
+
   it("retries concurrent calls on an expired session without closing in-flight requests", async () => {
     const state = { failNext: false, initializations: 0, calls: [] as string[] };
     const fetch = mcpFetch(state);

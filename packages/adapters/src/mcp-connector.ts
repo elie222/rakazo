@@ -991,11 +991,24 @@ export class McpConnector implements ConnectorProvider {
     let material: OAuthMaterial | undefined;
     // What the process was handed; its stderr can echo any of it.
     try {
-      const secret = server.secretId
+      let secret = server.secretId
         ? await this.prisma.secret.findFirst({
             where: { id: server.secretId, ...itemSecretIn(context) },
           })
         : null;
+      if (server.secretId && !secret) {
+        // OAuth refresh replaces the secret without updating this run's server snapshot.
+        const current = await this.prisma.mcpServer.findFirst({
+          where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+          select: { secretId: true },
+        });
+        if (current?.secretId) {
+          secret = await this.prisma.secret.findFirst({
+            where: { id: current.secretId, ...itemSecretIn(context) },
+          });
+        }
+        if (!secret) throw new Error("MCP server secret is unavailable; retry");
+      }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
       if (secret) onRef(secret.ciphertext, secret.id);
