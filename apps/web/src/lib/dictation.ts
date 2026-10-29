@@ -1,4 +1,6 @@
 import { cancelResponseBody, readJsonObjectWithin, speechLocaleTag, withAbort } from "@rakazo/core";
+import { desktopBridge } from "./desktop.js";
+import { DesktopSpeechRecognition } from "./desktop-speech.js";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
 import { errorText, voiceAccountErrorText } from "./user-error.js";
@@ -38,11 +40,14 @@ export const TRANSCRIPTION_RESPONSE_TIMEOUT_MS = 70_000;
 export const MAX_TRANSCRIPTION_RESPONSE_BYTES = 64 * 1024;
 const ENDPOINT_UNSUPPORTED =
   "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.";
+/** macOS asks only once; after a refusal, only System Settings can allow it again. */
+const DESKTOP_NOT_ALLOWED =
+  "Allow Rakazo to use Speech Recognition and the microphone in System Settings.";
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
 const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
 
 export function webSpeechAvailable(): boolean {
-  return Boolean(speechRecognitionCtor()) && !electronSpeechHost();
+  return Boolean(speechRecognitionCtor());
 }
 
 /**
@@ -154,6 +159,9 @@ export function combineTranscript(prefix: string, speechText: string): string {
 
 function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
   if (typeof window === "undefined") return undefined;
+  // The desktop app listens through the operating system's recognizer instead.
+  if (desktopBridge()?.speech) return DesktopSpeechRecognition;
+  if (electronSpeechHost()) return undefined;
   const host = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
     webkitSpeechRecognition?: SpeechRecognitionCtor;
@@ -329,7 +337,12 @@ export class Dictation {
       live = false;
       this.set({
         ...IDLE,
-        error: event.error ? `Dictation failed: ${event.error}` : "Dictation failed.",
+        error:
+          event.error === "not-allowed" && desktopBridge()?.speech
+            ? DESKTOP_NOT_ALLOWED
+            : event.error
+              ? `Dictation failed: ${event.error}`
+              : "Dictation failed.",
       });
     };
     rec.onend = () => {

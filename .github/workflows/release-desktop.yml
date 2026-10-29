@@ -261,6 +261,14 @@ jobs:
           lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
           lipo "$native/@oxc-parser/binding-darwin-x64/parser.darwin-x64.node" -verify_arch x86_64
           lipo "$native/@oxc-parser/binding-darwin-arm64/parser.darwin-arm64.node" -verify_arch arm64
+          # Dictation's system recognizer captures audio itself, so it needs the microphone entitlement too.
+          speech="$app/Contents/Resources/speech/rakazo-speech"
+          lipo "$speech" -verify_arch x86_64 arm64
+          entitlements="$(mktemp)"
+          codesign -d --entitlements :- "$speech" > "$entitlements" 2>/dev/null
+          test "$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements")" = true
+          rm -f "$entitlements"
+          "$speech" xx < /dev/null | grep -Fq '"language-not-supported"'
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
             const { createRequire } = require("node:module");
             const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);

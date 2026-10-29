@@ -758,6 +758,14 @@ describe("dictation engine choice", () => {
     expect(webSpeechAvailable()).toBe(true);
   });
 
+  it("listens through the desktop app's system recognizer when it offers one", () => {
+    vi.stubGlobal("window", {
+      webkitSpeechRecognition: class {},
+      rakazoDesktop: { platform: "darwin", speech: {} },
+    });
+    expect(webSpeechAvailable()).toBe(true);
+  });
+
   it("treats Electron as having no usable Web Speech", () => {
     vi.stubGlobal("window", {
       webkitSpeechRecognition: class {},

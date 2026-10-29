@@ -118,6 +118,40 @@ describe("desktop preload bridge", () => {
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.oauth.callback", expect.any(Function));
   });
+
+  it.each(["win32", "linux"])("offers system speech only on macOS (%s)", (platform) => {
+    const { exposeInMainWorld } = runPreload("preload.cjs", {}, platform);
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    expect(bridge.speech).toBeUndefined();
+  });
+
+  it("bridges macOS system speech without leaking the IPC event", async () => {
+    const listeners: Array<(event: unknown, payload: unknown) => void> = [];
+    const on = vi.fn((_channel: string, handler: (event: unknown, payload: unknown) => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { invoke, exposeInMainWorld } = runPreload("preload.cjs", { on, off }, "darwin");
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    const speech = bridge.speech!;
+
+    await speech.start("es-CL", 3);
+    await speech.stop(3);
+    await speech.abort(3);
+    expect(invoke.mock.calls).toEqual([
+      ["desktop.speech.start", "es-CL", 3],
+      ["desktop.speech.stop", 3],
+      ["desktop.speech.abort", 3],
+    ]);
+
+    const received: unknown[] = [];
+    const unsubscribe = speech.onEvent((event) => received.push(event));
+    expect(on).toHaveBeenCalledWith("desktop.speech.event", expect.any(Function));
+    listeners[0]?.({ sender: "ipc-event" }, { session: 3, type: "end" });
+    expect(received).toEqual([{ session: 3, type: "end" }]);
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.speech.event", expect.any(Function));
+  });
 });
 
 describe("setup preload bridge", () => {

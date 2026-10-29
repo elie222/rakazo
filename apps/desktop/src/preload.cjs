@@ -23,6 +23,23 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
   passkeys: {
     rpIds: () => ipcRenderer.invoke("desktop.passkeys.rpIds"),
   },
+  // Only macOS ships a system recognizer helper; elsewhere dictation keeps its provider path.
+  ...(process.platform === "darwin"
+    ? {
+        speech: {
+          start: (language, session) =>
+            ipcRenderer.invoke("desktop.speech.start", language, session),
+          stop: (session) => ipcRenderer.invoke("desktop.speech.stop", session),
+          abort: (session) => ipcRenderer.invoke("desktop.speech.abort", session),
+          onEvent: (listener) => {
+            // The IpcRendererEvent stays in the preload: the renderer only sees the payload.
+            const handler = (_event, payload) => listener(payload);
+            ipcRenderer.on("desktop.speech.event", handler);
+            return () => ipcRenderer.off("desktop.speech.event", handler);
+          },
+        },
+      }
+    : {}),
   window: {
     close: () => ipcRenderer.invoke("desktop.window.close"),
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),
