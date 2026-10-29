@@ -200,7 +200,7 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     sha: "abcdef1234567890",
   };
 
-  it("names NEW frames with direct PNG links and keeps gallery links secondary", () => {
+  it("shows NEW frames inline and keeps gallery links secondary", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
       changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
@@ -218,13 +218,12 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     expect(body).toContain("### Playwright screenshots");
     expect(body).toContain("Feature frames for this PR:");
     expect(body).toContain(
-      "- [shell live collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live-collapsed-desktop-1440x900.png) (new)",
+      "**shell live collapsed desktop 1440x900** (new)\n\n![shell live collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live-collapsed-desktop-1440x900.png)",
     );
     expect(body).toContain(
       "[Open screenshot gallery](https://example.com/playwright/prs/452/index.html) · [Dashboard](https://example.com/playwright/index.html) · [CI run](https://github.com/example/rakazo/actions/runs/1)",
     );
     expect(body).toContain("Updated for commit `abcdef1`.");
-    expect(body).not.toContain("![");
     expect(body).not.toContain("—");
   });
 
@@ -258,11 +257,9 @@ describe("buildPlaywrightPrScreenshotComment", () => {
       ],
     });
 
-    expect(body).toContain(
-      "- [shell live](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live.png) (new)",
-    );
-    expect(body).toContain(
-      "- [complete collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/020-complete-collapsed-desktop-1440x900.png) (changed)",
+    expect(body.indexOf("**shell live** (new)")).toBeGreaterThan(-1);
+    expect(body.indexOf("**complete collapsed desktop 1440x900** (changed)")).toBeGreaterThan(
+      body.indexOf("**shell live** (new)"),
     );
     expect(body).not.toContain("onboarding");
   });
@@ -304,10 +301,10 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     });
 
     expect(body).toContain(
-      "- [frame 8](https://example.com/playwright/runs/1-1/screenshots/images/008-frame.png) (new)",
+      "![frame 8](https://example.com/playwright/runs/1-1/screenshots/images/008-frame.png)",
     );
     expect(body).not.toContain("frame 9");
-    expect(body).toContain("- +2 more in the gallery");
+    expect(body).toContain("+2 more in the gallery");
   });
 
   it("neutralizes Markdown and HTML syntax in contributor-controlled titles", () => {
@@ -324,8 +321,11 @@ describe("buildPlaywrightPrScreenshotComment", () => {
       ],
     });
 
+    const label =
+      "evil\\] \\*\\*bold\\*\\* \\`code\\` \\_em\\_ \\#heading \\[link\\] &lt;details&gt;&amp;";
+    expect(body).toContain(`**${label}** (new)`);
     expect(body).toContain(
-      "- [evil\\] \\*\\*bold\\*\\* \\`code\\` \\_em\\_ \\#heading \\[link\\] &lt;details&gt;&amp;](https://example.com/playwright/runs/1-1/screenshots/images/010-crafted.png) (new)",
+      `![${label}](https://example.com/playwright/runs/1-1/screenshots/images/010-crafted.png)`,
     );
     expect(body).not.toContain("\n**bold**");
     expect(body).not.toContain("`code`");

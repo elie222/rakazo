@@ -90,10 +90,11 @@ export function buildPlaywrightPrScreenshotComment(input: {
           "Feature frames for this PR:",
           ...frames.map((frame) => {
             const imageUrl = new URL(frame.fileName, galleryBaseUrl).toString();
-            return `- [${escapeMarkdownLinkLabel(frame.title)}](${imageUrl}) (${frame.kind})`;
+            const label = escapeMarkdownLinkLabel(frame.title);
+            return `**${label}** (${frame.kind})\n\n![${label}](${imageUrl})`;
           }),
-          ...(omittedCount > 0 ? [`- +${omittedCount} more in the gallery`] : []),
-        ].join("\n");
+          ...(omittedCount > 0 ? [`+${omittedCount} more in the gallery`] : []),
+        ].join("\n\n");
 
   return [
     PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,
