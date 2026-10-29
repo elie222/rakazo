@@ -22,13 +22,14 @@ import type {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import { LinuxDesktop } from "./linux-desktop.js";
+import { LinuxDesktop, onBotScreen } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindExpression,
 } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const DEFAULT_NAMESPACE = "rakazo-sandboxes";
 // Same default as the Compose stack. Pin a digest with KUBERNETES_SANDBOX_COMPUTER_IMAGE in
 // production so every pod runs the image the API was tested against.
@@ -107,7 +108,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         homeDir: WORKSPACE,
         workspaceDir: WORKSPACE,
         browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-        displayStart: 20,
+        displayStart: DISPLAY_START,
         portStart: DESKTOP_PORT_START,
         // The relay must use the address family the web pod connects to.
         bindHost: pod?.status?.podIP?.includes(":") ? "::" : "0.0.0.0",
@@ -259,9 +260,10 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };

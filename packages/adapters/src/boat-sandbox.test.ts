@@ -10,6 +10,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -213,7 +214,7 @@ describe("BoatSandboxProvider", () => {
       .find((request) => request?.command.includes("hello"));
     expect(executeRequest?.command).not.toContain("works");
     expect(parse(executeRequest?.command ?? "").at(-1)).toMatch(
-      /; 'env' '-u' 'FAILED' '--' 'echo' 'hello'$/,
+      /; 'env' '-u' 'FAILED' '--' 'sh' '-c' '.*' 'sh' 'echo' 'hello'$/s,
     );
     expect(executeRequest?.cwd).toBe("rakazo-home/notes");
 
@@ -264,7 +265,7 @@ describe("BoatSandboxProvider", () => {
     // The same command opens, deletes, and loads the file before running argv.
     const run = parse(commands.find((text) => text.includes(envFile)) ?? "").at(-1);
     expect(run).toBe(
-      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; . /dev/fd/3 || exit 1; exec 3<&-; 'printenv' 'FAKE_TOKEN'`,
+      `exec 3< '${envFile}' || exit 1; rm -f -- '${envFile}'; . /dev/fd/3 || exit 1; exec 3<&-; ${screenDisplayArgv(["printenv", "FAKE_TOKEN"], context.botId, 20).map(shellQuote).join(" ")}`,
     );
     expect(api.files(computer.id).has(envFile)).toBe(false);
   });

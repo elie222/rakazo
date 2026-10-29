@@ -46,7 +46,12 @@ import {
 } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
-import { LinuxDesktop, PREPARE_LINUX_DESKTOP, VERIFY_LINUX_DESKTOP } from "./linux-desktop.js";
+import {
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+  VERIFY_LINUX_DESKTOP,
+} from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
@@ -57,6 +62,7 @@ import {
   workspaceSaveFindExpression,
 } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const BOAT_API_BASE = "https://boat.dev/api/v1";
 const BOAT_WORKSPACE = "/home/user/rakazo-home";
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
@@ -148,7 +154,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       homeDir: "/home/user",
       workspaceDir: BOAT_WORKSPACE,
       browserProfilesDir: BOAT_BROWSER_PROFILES,
-      displayStart: 20,
+      displayStart: DISPLAY_START,
       portStart: 6100,
       // The provider port proxy reaches the isolated sandbox through its network interface.
       bindHost: "0.0.0.0",
@@ -464,9 +470,10 @@ export class BoatSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };

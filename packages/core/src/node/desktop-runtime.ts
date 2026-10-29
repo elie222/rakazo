@@ -791,6 +791,20 @@ print(index)
   ].join("\n");
 }
 
+/**
+ * Run `argv` with DISPLAY on the screen assigned to `screenId`, so screen tools in a bot's
+ * shell see its own desktop. Without an assignment the inherited DISPLAY stays.
+ */
+export function screenDisplayArgv(argv: readonly string[], screenId: string, displayStart: number) {
+  const slot = `${REGISTRY}/${browserKeyForScreen(screenId)}.slot`;
+  const program = [
+    `index=$(sed -n 1p ${shellQuote(slot)} 2>/dev/null)`,
+    `case "$index" in ''|*[!0-9]*) ;; *) DISPLAY=:$((index + ${displayStart})); export DISPLAY ;; esac`,
+    'exec "$@"',
+  ].join("\n");
+  return ["sh", "-c", program, "sh", ...argv];
+}
+
 /** Tear down before freeing a slot; failed teardown leaves it reserved for retry. */
 export function releaseDesktopCommand(
   screenId: string,
