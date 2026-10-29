@@ -1,13 +1,16 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBusyError, provisionComputer, replaceComputer } from "./computer-lifecycle.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import type { StoredHome } from "./home-object-store.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
 
@@ -81,18 +84,35 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
   return { deps, row, computer, first, root };
 }
 
+/** An object-backed home store over an in-memory bucket; `revision` is the home's stored one. */
+function objectHome(root: string, revision: string | null = null) {
+  const stored: StoredHome = {
+    storageId: "home",
+    revision,
+    key: { id: "key", spaceId: "space", version: 1, key: randomBytes(32) },
+  };
+  return new ObjectAgentHomeStore(path.join(root, "object-homes"), new MemoryObjectStorage(), {
+    load: async () => stored,
+    create: async () => stored,
+    advance: async (_homeKey, _storageId, from, to) => {
+      if (stored.revision !== from) return false;
+      stored.revision = to;
+      return true;
+    },
+    revisions: async () => new Map(),
+    kinds: async () => new Map(),
+  });
+}
+
 describe("computer recovery preserves live work", () => {
-  it("brings an object-stored home into the local cache before a computer boots on it", async () => {
+  it("brings an object-stored home into the local cache before a Docker computer boots on it", async () => {
     const { deps, row, root } = await fixture();
     row.state = "stopped";
     row.providerRef = null;
-    const home = new ObjectAgentHomeStore(path.join(root, "homes"), new MemoryObjectStorage(), {
-      load: async () => undefined,
-      create: async () => undefined,
-      advance: async () => false,
-      revisions: async () => new Map(),
-      kinds: async () => new Map(),
-    });
+    // Host access was turned off, so a computer that last ran on this Mac now boots in Docker.
+    row.kind = "desktop";
+    deps.sandbox.provisionKind = async () => "docker";
+    const home = objectHome(root);
     const hydrate = vi.spyOn(home, "hydrate");
     const provision = vi.spyOn(deps.sandbox, "provision");
 
@@ -102,6 +122,144 @@ describe("computer recovery preserves live work", () => {
     expect(hydrate.mock.invocationCallOrder[0]).toBeLessThan(
       provision.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("downloads the home before boot when the provider's own kind mounts it, whatever the row last ran on", async () => {
+    const { deps, row, root } = await fixture();
+    row.state = "stopped";
+    row.providerRef = null;
+    row.kind = "e2b";
+    const own = deps.sandbox.describe();
+    vi.spyOn(deps.sandbox, "describe").mockReturnValue({ ...own, id: "docker" });
+    const home = objectHome(root);
+    const hydrate = vi.spyOn(home, "hydrate");
+    const provision = vi.spyOn(deps.sandbox, "provision");
+
+    await provisionComputer({ ...deps, home }, row.id, context);
+
+    expect(hydrate).toHaveBeenCalledWith("bot");
+    expect(hydrate.mock.invocationCallOrder[0]).toBeLessThan(
+      provision.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("fails a start that mounts a home it chose not to download, and downloads on the next", async () => {
+    const { deps, row, root, first } = await fixture();
+    await deps.sandbox.destroy(first, context);
+    row.state = "stopped";
+    row.providerRef = null;
+    // Host access is turned off between choosing the kind and provisioning.
+    deps.sandbox.provisionKind = async () => "desktop";
+    const provisionFake = deps.sandbox.provision.bind(deps.sandbox);
+    vi.spyOn(deps.sandbox, "provision").mockImplementation(async (request, ctx) => ({
+      ...(await provisionFake(request, ctx)),
+      kind: "docker",
+    }));
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+    const home = objectHome(root);
+    const hydrate = vi.spyOn(home, "hydrate");
+
+    await expect(provisionComputer({ ...deps, home }, row.id, context)).rejects.toThrow(
+      "Computer host changed while it was starting",
+    );
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(row.state).toBe("error");
+
+    deps.sandbox.provisionKind = async () => "docker";
+    await provisionComputer({ ...deps, home }, row.id, context);
+    expect(hydrate).toHaveBeenCalledOnce();
+    expect(row).toMatchObject({ state: "running", kind: "docker" });
+  });
+
+  it("stops a resumed computer that mounts a home it chose not to download", async () => {
+    const { deps, row, root, first } = await fixture();
+    row.state = "suspended";
+    deps.sandbox.provisionKind = async () => "desktop";
+    const provisionFake = deps.sandbox.provision.bind(deps.sandbox);
+    vi.spyOn(deps.sandbox, "provision").mockImplementation(async (request, ctx) => ({
+      ...(await provisionFake(request, ctx)),
+      kind: "docker",
+    }));
+    const stop = vi.spyOn(deps.sandbox, "stop");
+    const destroy = vi.spyOn(deps.sandbox, "destroy");
+
+    await expect(
+      provisionComputer({ ...deps, home: objectHome(root) }, row.id, context),
+    ).rejects.toThrow("Computer host changed while it was starting");
+    expect(stop).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ kind: "docker", fresh: false }),
+      context,
+    );
+    expect(destroy).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "error", providerRef: first.providerRef });
+  });
+
+  it("fails a start whose automatic recovery mounts a home it chose not to download", async () => {
+    const { deps, row, root } = await fixture();
+    row.state = "suspended";
+    // Host access is turned off while the damaged computer is stopped and started again.
+    deps.sandbox.provisionKind = async () => "desktop";
+    const provisionFake = deps.sandbox.provision.bind(deps.sandbox);
+    const provision = vi
+      .spyOn(deps.sandbox, "provision")
+      .mockImplementationOnce(provisionFake)
+      .mockImplementationOnce(async (request, ctx) => ({
+        ...(await provisionFake(request, ctx)),
+        kind: "docker",
+      }));
+    vi.spyOn(deps.sandbox, "prepare").mockRejectedValueOnce(new SandboxDamagedError());
+    const stop = vi.spyOn(deps.sandbox, "stop");
+    const home = objectHome(root);
+    const hydrate = vi.spyOn(home, "hydrate");
+
+    await expect(provisionComputer({ ...deps, home }, row.id, context)).rejects.toThrow(
+      "Computer host changed while it was starting",
+    );
+    expect(provision).toHaveBeenCalledTimes(2);
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "docker" }), context);
+    expect(row.state).toBe("error");
+  });
+
+  it("resumes a suspended computer without downloading its stored home", async () => {
+    const { deps, row, root, first } = await fixture();
+    row.state = "suspended";
+    // The stored object cannot be read; resuming the provider's own disk does not need it.
+    const home = objectHome(root, "unreadable");
+    const hydrate = vi.spyOn(home, "hydrate");
+    const provision = vi.spyOn(deps.sandbox, "provision");
+
+    const resumed = await provisionComputer({ ...deps, home }, row.id, context);
+
+    expect(provision).toHaveBeenCalledOnce();
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(resumed, "notes.txt", context)),
+    ).toBe("live work");
+  });
+
+  it("downloads the stored home only when a replacement restores it", async () => {
+    const { deps, row, root, first } = await fixture();
+    await deps.sandbox.destroy(first, context);
+    row.state = "suspended";
+    const home = objectHome(root);
+    await home.writeFile("bot", "notes.txt", "saved", context);
+    await home.evictCache("bot");
+    const hydrate = vi.spyOn(home, "hydrate");
+    const provision = vi.spyOn(deps.sandbox, "provision");
+
+    const replaced = await provisionComputer({ ...deps, home }, row.id, context);
+
+    expect(replaced.fresh).toBe(true);
+    expect(hydrate).toHaveBeenCalledOnce();
+    expect(hydrate.mock.invocationCallOrder[0]).toBeGreaterThan(
+      provision.mock.invocationCallOrder[0]!,
+    );
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(replaced, "notes.txt", context)),
+    ).toBe("saved");
   });
 
   it("blocks competing maintenance and boots while an update owns the computer", async () => {

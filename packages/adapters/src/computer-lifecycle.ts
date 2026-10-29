@@ -29,6 +29,7 @@ import {
   checkpointComputerWorkspace,
   deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
+  mountsServerHome,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
@@ -329,9 +330,16 @@ export async function provisionComputer(
   if (claimed.count !== 1) throw new ComputerBusyError();
   let provisioned: ComputerRef | undefined;
   try {
-    // Docker mounts the cached directory, so it must hold the stored revision before boot.
-    if (!reconnecting && deps.home instanceof ObjectAgentHomeStore)
-      await deps.home.hydrate(existing.homeKey);
+    // On a start that is not a reconnect, a computer that mounts the server's home boots on the
+    // object store's cached copy, so that copy must hold the stored revision before provision.
+    // The kind is the one provision will produce; any other computer downloads the revision
+    // only if a replacement restores it below.
+    const cache =
+      !reconnecting && deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
+    const hydrated =
+      cache !== undefined &&
+      mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
+    if (hydrated) await cache.hydrate(existing.homeKey);
     await onProgress?.("recreating");
     const provision = () =>
       getLogger().withContext(
@@ -384,6 +392,10 @@ export async function provisionComputer(
         operation: ref.fresh ? "replaced" : "resumed",
       });
     }
+    // Provision chooses its kind again, so a host change since the check above can mount a cache
+    // that was not brought up to date. Failing rolls this computer back; the next start downloads.
+    if (cache && !hydrated && mountsServerHome(ref.kind))
+      throw new Error("Computer host changed while it was starting");
     const replacement =
       ref.fresh === true ||
       !existing.providerRef ||

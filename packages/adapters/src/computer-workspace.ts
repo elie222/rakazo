@@ -93,6 +93,11 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   );
 }
 
+/** Docker computers mount the server's home directory, whichever store keeps it. */
+export function mountsServerHome(kind: string) {
+  return kind === "docker";
+}
+
 /** The computer already reads and writes the server's home directory, so there is nothing to copy. */
 async function homeIsMounted(
   home: AgentHomeStore,
@@ -101,7 +106,7 @@ async function homeIsMounted(
   context: AdapterContext,
 ) {
   if (!(home instanceof LocalAgentHomeStore)) return false;
-  if (computer.kind === "docker") return true;
+  if (mountsServerHome(computer.kind)) return true;
   // Object-backed homes must hydrate and export even when a claim was configured.
   if (home.describe().id !== "local-fs") return false;
   return (
