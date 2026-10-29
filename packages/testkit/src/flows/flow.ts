@@ -15,6 +15,8 @@ export type TranscriptEntry = {
   text: string;
   /** The routine wake that produced this bot message, counted from 1. */
   wake?: number;
+  /** Set on the person's answer to a card asking to approve one of the bot's tool calls. */
+  toolApproval?: boolean;
   at: string;
 };
 
@@ -62,6 +64,8 @@ export type Flow<World = unknown> = {
   observe(computer: FlowComputer, world: World): Promise<unknown>;
   grade(evidence: FlowEvidence<World>): Criterion[];
   judge?(evidence: FlowEvidence<World>): JudgeInput;
+  /** Reviewed judge inputs with the expected verdict; the judge must agree before it grades. */
+  judgeCalibration?: Array<{ input: JudgeInput; pass: boolean }>;
 };
 
 export const check = (id: string, pass: boolean, detail?: string): Criterion => ({

@@ -51,21 +51,11 @@ export const SCRIPTED_AUTO_REVIEW_PROVIDER = "scripted";
 export const DEFAULT_JEV_MODEL = "jev-latest";
 export const DEFAULT_AUTO_REVIEW_MIN_CONFIDENCE = 0.5;
 
-function envFlag(env: NodeJS.ProcessEnv, name: string): boolean {
-  const value = env[name]?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
-}
-
 function localModelIds(env: NodeJS.ProcessEnv): string[] {
   return (env.RAKAZO_LOCAL_MODELS ?? "")
     .split(",")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
-}
-
-/** Deployment default for the user toggle when no preference row exists. */
-export function deploymentAutoReviewDefault(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlag(env, "RAKAZO_AUTO_REVIEW");
 }
 
 export function autoReviewTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
@@ -423,7 +413,7 @@ export type LlmAutoReviewOptions = {
   timeoutMs?: number;
 };
 
-/** Existing JSON-text LLM checker, behind the same Auto Review interface as Jev. */
+/** JSON-text LLM checker, behind the same Auto Review interface as Jev. */
 export class LlmAutoReviewProvider implements AutoReviewProvider {
   constructor(private readonly options: LlmAutoReviewOptions) {}
 

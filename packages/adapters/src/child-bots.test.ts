@@ -21,6 +21,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { createRepos, PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -63,7 +64,7 @@ const context = {
 
 function noGroupMemberships() {
   return {
-    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
     chatGroup: {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -78,7 +79,6 @@ describe("spawned bot creation", () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       thread: { id: "thread-1" },
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -108,7 +108,7 @@ describe("spawned bot creation", () => {
         runId: "run-retry",
         spawnKey: "tool-call-1",
         name: " Scout ",
-        title: "Ignored on a retry",
+        description: "Ignored on a retry",
         prompt: "Do not enqueue this twice",
       },
     );
@@ -127,7 +127,6 @@ describe("spawned bot creation", () => {
       duplicate: true,
       botId: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       threadId: "thread-1",
     });
     expect(enqueue).toHaveBeenCalledOnce();
@@ -137,7 +136,6 @@ describe("spawned bot creation", () => {
     const createBot = vi.fn().mockResolvedValue({
       id: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
@@ -179,7 +177,6 @@ describe("spawned bot creation", () => {
       ok: true,
       botId: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     createReposSpy.mockRestore();
@@ -296,7 +293,7 @@ describe("destroyBot", () => {
     const deleteArtifacts = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        $queryRaw: vi.fn().mockResolvedValue([]),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -380,11 +377,58 @@ describe("destroyBot", () => {
     expect(removeArtifact).toHaveBeenCalledWith("stored-artifact", context);
   });
 
+  it("leaves the deletion to a concurrent removal that already deleted the bot", async () => {
+    const createDeletion = vi.fn();
+    const deleteBot = vi.fn();
+    const removeArtifact = vi.fn();
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        artifact: { findMany: vi.fn(), deleteMany: vi.fn() },
+        botDeletion: { create: createDeletion },
+        bot: { delete: deleteBot },
+      }),
+    );
+    const prisma = {
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+
+    await destroyBot(
+      {
+        prisma,
+        sandbox: {} as SandboxProvider,
+        home: {} as AgentHomeStore,
+        jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        artifacts: { remove: removeArtifact } as unknown as ArtifactStore,
+      },
+      {
+        id: "bot-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        name: "Researcher",
+        archivedAt: null,
+      },
+      context,
+      { deleteMemories: false },
+    );
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(createDeletion).not.toHaveBeenCalled();
+    expect(deleteBot).not.toHaveBeenCalled();
+    expect(removeArtifact).not.toHaveBeenCalled();
+  });
+
   it("deletes the waiting one-time answer of a run it cancels", async () => {
     const deleteSecrets = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        $queryRaw: vi.fn().mockResolvedValue([]),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -436,7 +480,12 @@ describe("destroyBot", () => {
     );
 
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
   });
 
@@ -864,7 +913,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["e2b", "createos"])(
+  it.each(["e2b", "novita", "createos"])(
     "removes the deleted bot's profile from a %s sandbox after the browser stops",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-remote-delete-"));
@@ -1160,6 +1209,61 @@ describe("destroyBot", () => {
         access(path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"))),
       ).rejects.toThrow();
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("treats releasing the screen of a Team Computer whose sandbox is gone as done", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-profile-gone-"));
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const home = new LocalAgentHomeStore(root);
+      const teamHome = home.pathFor("team-workspace-1");
+      await seedProfile(teamHome, "bot-1", "stored-gone");
+      const gone = Object.assign(new Error("Boat sandbox sandbox-1 is gone"), {
+        name: "SandboxNotFoundError",
+      });
+      const team = {
+        id: "team-computer",
+        homeKey: "team-workspace-1",
+        kind: "boat",
+        providerRef: "sandbox-1",
+        scope: "team",
+        state: "running",
+      };
+
+      await destroyBot(
+        {
+          prisma: deletionPrisma(team),
+          sandbox: {
+            releaseScreen: vi.fn().mockRejectedValue(gone),
+            execute: vi.fn().mockRejectedValue(gone),
+          } as unknown as SandboxProvider,
+          home,
+          jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          id: "bot-1",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          name: "Researcher",
+          archivedAt: null,
+          computerId: team.id,
+        },
+        context,
+        { deleteMemories: true },
+      );
+
+      expect(sink.events.map((event) => event.message)).not.toContain("team screen release");
+      expect(sink.events.map((event) => event.message)).not.toContain(
+        "team browser profile cleanup",
+      );
+      await expect(
+        access(path.join(teamHome, ".browser-profiles", profileDirectory("bot-1"))),
+      ).rejects.toThrow();
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -1940,7 +2044,12 @@ describe("archiveBot", () => {
     expect(groupCleanup.chatGroupMember.deleteMany).not.toHaveBeenCalled();
     // The archived bot's cancelled run never reads a waiting one-time answer.
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
     expect(cancel).toHaveBeenCalledWith("run:run-1");
   });
@@ -2065,6 +2174,42 @@ describe("archiveBot", () => {
     });
   });
 
+  it.each(["running", "quarantined"])(
+    "archives a bot whose dedicated computer is damaged without clearing %s state",
+    async (state) => {
+      const stop = vi.fn().mockResolvedValue(undefined);
+      const updates = { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() };
+      const computer = { id: "c-1", homeKey: "bot-1", providerRef: "p-1", state };
+      const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
+      Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
+      const prisma = {
+        computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
+        run: { findMany: vi.fn().mockResolvedValue([]) },
+        routine: { findMany: vi.fn().mockResolvedValue([]) },
+        $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
+      const exportWorkspace = async function* () {
+        throw new SandboxDamagedError();
+      };
+      const sandbox = { exportWorkspace, stop } as unknown as SandboxProvider;
+      const jobs = { cancel: vi.fn() } as unknown as JobPublisher;
+      const bot = { id: "bot-1", spaceId: "s-1", userId: "u-1", name: "R", archivedAt: null };
+
+      await archiveBot({ prisma, sandbox, home: {} as AgentHomeStore, jobs }, bot, context);
+      expect(updates.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "c-1", state: { notIn: ["running", "quarantined"] } },
+          data: { state: "stopped" },
+        }),
+      );
+
+      if (state === "running")
+        expect(stop).toHaveBeenCalledWith(expect.anything(), context, { discardUnsaved: true });
+      else expect(stop).not.toHaveBeenCalled();
+    },
+  );
+
   it("releases the archived bot's screen and keeps its browser profile", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-archive-"));
     try {
@@ -2178,7 +2323,7 @@ function runInWorkspace(cwd: string, argv: readonly string[]) {
 function deletionPrisma(team: { id: string }) {
   const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback({
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "bot-1" }]),
       chatGroup: {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),

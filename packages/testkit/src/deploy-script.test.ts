@@ -16,7 +16,10 @@ const rolloutSteps = (revision: string) => [
   `${COMPOSE} config --quiet`,
   `${COMPOSE} config`,
   `${COMPOSE} build --build-arg GIT_SHA=${revision}`,
-  ...["api", "web"].flatMap((service) => [
+  // Only this container gets the database owner login; the old API keeps serving meanwhile.
+  `${COMPOSE} config --services`,
+  `${COMPOSE} run --rm -T migrate`,
+  ...["api", "web", "worker"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
     `${COMPOSE} ps --all --quiet ${service}`,
@@ -65,7 +68,9 @@ function rollout(commands: string[]) {
     .map((line) => line.split(" @ ")[0] ?? line)
     .filter(
       (line) =>
-        / (config|build|up|ps) /.test(`${line} `) || /^docker (inspect|stop|rm) /.test(line),
+        / (config|build|up|ps) /.test(`${line} `) ||
+        line.endsWith(" run --rm -T migrate") ||
+        /^docker (inspect|stop|rm) /.test(line),
     );
 }
 
@@ -104,6 +109,11 @@ if [[ "$*" == *" ps --quiet api" && -z "\${FRESH:-}" ]]; then echo api-old; fi
 if [[ "$*" == *" run --rm --no-deps -T --entrypoint sh postgres "* && -n "\${POSTGRES_16:-}" ]]; then
   echo upgrade
 fi
+if [[ "$*" == *" config --services" ]]; then
+  echo api
+  [[ "$(cat revision.txt)" == "\${NO_MIGRATE_REVISION:-}" ]] || echo migrate
+fi
+if [[ "$*" == *" run --rm -T migrate" && ( -n "\${FAIL_MIGRATE:-}" || "$(cat revision.txt)" == "\${NO_MIGRATE_REVISION:-}" ) ]]; then exit 1; fi
 if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
@@ -442,6 +452,29 @@ describe("production deploy script", () => {
     expect(commands).toContain(`${COMPOSE} up -d --wait api`);
     expect(commands).toContain(`${COMPOSE} up -d --wait web`);
     expect(commands.some((line) => line.includes("--scale"))).toBe(false);
+  });
+
+  it("starts no new container and keeps the old one serving when migrations fail", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ FAIL_MIGRATE: "1" }).status).toBe(1);
+    const commands = rollout(deploy.commands());
+    expect(commands).toContain(`${COMPOSE} run --rm -T migrate`);
+    expect(commands.some((line) => line.includes(" up "))).toBe(false);
+    expect(commands.some((line) => line.startsWith("docker stop"))).toBe(false);
+    expect(deploy.head()).toBe(deploy.first);
+  });
+
+  it("rolls back to a release whose API still migrates on start", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "unhealthy");
+    const result = deploy.run({ FAIL_HEALTH: "1", NO_MIGRATE_REVISION: "first" });
+    expect(result.status).toBe(1);
+    expect(deploy.head()).toBe(deploy.first);
+    const commands = rollout(deploy.commands());
+    expect(commands.filter((line) => line.endsWith(" run --rm -T migrate"))).toHaveLength(1);
+    // The rollback still replaces the failed release's containers.
+    expect(commands.filter((line) => line === "docker stop --time 30 api-old")).toHaveLength(2);
   });
 
   it("keeps the old container serving when the new one fails its health check", () => {

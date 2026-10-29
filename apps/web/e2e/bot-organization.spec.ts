@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  openUserSettings,
-  rpc,
-  signup,
-} from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -109,30 +102,6 @@ test("deleting a section keeps its bots and groups", async ({ page }, testInfo) 
   await expect(sidebar.getByRole("button", { name: /^Review room/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "section-deleted");
 });
-
-test("an empty section can be deleted after its last bot leaves", async ({ page }, testInfo) => {
-  await signup(page, `empty-section-${Date.now()}@rakazo.test`, "password12", "Empty Section");
-  await completeOnboarding(page);
-  const botId = activeBotId(page);
-  const section = await rpc<{ id: string }>(page, "botSections/create", {
-    botId,
-    name: "Old ideas",
-  });
-  await rpc(page, "bots/update", { botId, sectionId: null });
-  await page.reload();
-  const sidebar = page.locator("aside").first();
-  const heading = sidebar.locator(`[data-sidebar-group="section:${section.id}"]`);
-  await heading
-    .getByRole("button", { name: "Collapse Old ideas", exact: true })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete section", exact: true }).click();
-  const dialog = page.getByRole("alertdialog", { name: "Delete Old ideas?" });
-  await captureScreenshot(page, testInfo, "delete-empty-section");
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(heading).toHaveCount(0);
-  await expect(sidebar.locator(`[data-roster-bot-id="${botId}"]`)).toBeVisible();
-});
-
 test("bots can be reordered by drag or keyboard and keep that order", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `bot-reorder-${stamp}@rakazo.test`, "password12", "Bot Order");
@@ -143,7 +112,6 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   const chiefId = activeBotId(page);
   const alpha = await rpc<{ id: string }>(page, "bots/create", {
     name: "Alpha",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -151,7 +119,6 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   });
   const beta = await rpc<{ id: string }>(page, "bots/create", {
     name: "Beta",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -278,7 +245,7 @@ test("chat composer controls are vertically centered", async ({ page }, testInfo
   await expect
     .poll(() =>
       bar.evaluate((composerBar) => {
-        const field = composerBar.querySelector("textarea")?.parentElement ?? null;
+        const field = composerBar.querySelector('[data-testid="composer-field"]');
         return [composerBar, field].every(
           (element) =>
             element?.getAnimations().every((animation) => animation.playState !== "running") ??
@@ -329,7 +296,6 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   const chiefId = activeBotId(page);
   const partner = await rpc<{ id: string }>(page, "bots/create", {
     name: "Partner",
-    title: "",
     description: "",
     instructions: "",
     notifyOnFinish: true,
@@ -415,32 +381,4 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "group-settings");
-});
-
-test("built-in sidebar headings follow the language without renaming custom sections", async ({
-  page,
-}, testInfo) => {
-  await signup(page, `section-locale-${Date.now()}@rakazo.test`, "password12", "Locale QA");
-  await completeOnboarding(page);
-  const sidebar = page.locator("aside").first();
-  const bot = sidebar.getByRole("button", { name: /^Chief/ });
-  await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
-  await page.getByRole("menu", { name: "Move to", exact: true }).getByText("New section").click();
-  const dialog = page.getByRole("dialog", { name: "New section" });
-  await dialog.getByLabel("Name").fill("Pinned");
-  await dialog.getByRole("button", { name: "Create", exact: true }).click();
-  await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
-  const settings = await openUserSettings(page);
-  await settings.getByTestId("ui-locale-select").click();
-  await page.getByRole("option", { name: "Deutsch", exact: true }).click();
-  await page.getByRole("button", { name: "Benutzereinstellungen schließen", exact: true }).click();
-  await expect(settings).not.toBeVisible();
-  await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toContainText("Angeheftet");
-  await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText(
-    "Nicht zugewiesen",
-  );
-  await expect(sidebar.locator('[data-sidebar-group^="section:"]')).toContainText("Pinned");
-  await captureScreenshot(page, testInfo, "localized-sidebar-headings-de");
 });

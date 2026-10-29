@@ -1,13 +1,25 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { writeSaved } from "@rakazo/core/query";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
-import { useSpaceQueries, writeSaved } from "../lib/query";
+import { VaultSettings } from "../components/VaultSettings";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
@@ -31,8 +43,17 @@ export function SpaceSettingOverrides({
   const overrides = useQuery(queries.spaceSettings.overrides.queryOptions());
   const [pending, setPending] = useState<SpaceSetting | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState<SpaceSetting | null>(null);
+  // A credential still saving would land in the vault a reset is deleting.
+  const [vaultBusy, setVaultBusy] = useState(false);
 
-  const settings: { id: SpaceSetting; label: string; panel: () => ReactNode }[] = [
+  const settings: {
+    id: SpaceSetting;
+    label: string;
+    panel: () => ReactNode;
+    resetConfirmation?: string;
+    busy?: boolean;
+  }[] = [
     {
       id: "models",
       label: t`Models`,
@@ -55,6 +76,14 @@ export function SpaceSettingOverrides({
       label: t`Approvals`,
       panel: () => <ApprovalRulesSettings scope="space" />,
     },
+    {
+      id: "credentials",
+      label: t`Vault`,
+      panel: () => <VaultSettings scope="space" onBusyChange={setVaultBusy} />,
+      busy: vaultBusy,
+      // Going back to the defaults deletes the Space's own credentials.
+      resetConfirmation: t`Delete this Space's credentials?`,
+    },
   ];
 
   async function setOverride(setting: SpaceSetting, enabled: boolean) {
@@ -69,6 +98,7 @@ export function SpaceSettingOverrides({
         models: [queries.models.key(), queries.me.key()],
         voice: [queries.voice.key()],
         confirmations: [queries.approvalRules.key(), queries.autoReview.key()],
+        credentials: [queries.vault.key()],
       };
       for (const queryKey of affected[setting]) void queryClient.invalidateQueries({ queryKey });
     } catch (err) {
@@ -89,11 +119,12 @@ export function SpaceSettingOverrides({
     ) : null;
   }
   const customized = overrides.data;
+  const confirmTitle = settings.find(({ id }) => id === confirmingReset)?.resetConfirmation;
 
   return (
     <div className="space-y-3">
       <SettingsGroup data-testid="space-setting-overrides">
-        {settings.map(({ id, label, panel }) => {
+        {settings.map(({ id, label, panel, resetConfirmation, busy }) => {
           const custom = customized.includes(id);
           return (
             <div key={id} data-testid={`space-setting-${id}`}>
@@ -112,8 +143,12 @@ export function SpaceSettingOverrides({
                     size="sm"
                     className="rounded-full"
                     aria-label={custom ? t`Use defaults for ${label}` : t`Customize ${label}`}
-                    disabled={pending !== null}
-                    onClick={() => void setOverride(id, !custom)}
+                    disabled={pending !== null || busy}
+                    onClick={() =>
+                      custom && resetConfirmation
+                        ? setConfirmingReset(id)
+                        : void setOverride(id, !custom)
+                    }
                   >
                     {custom ? t`Use defaults` : t`Customize`}
                   </Button>
@@ -129,6 +164,33 @@ export function SpaceSettingOverrides({
         <p role="alert" className="text-[12.5px] text-destructive">
           {actionError}
         </p>
+      ) : null}
+      {confirmingReset && confirmTitle ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !pending) setConfirmingReset(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+              <AlertDialogDescription>{t`This can't be undone.`}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pending !== null}>{t`Cancel`}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={pending !== null}
+                onClick={() =>
+                  void setOverride(confirmingReset, false).then(() => setConfirmingReset(null))
+                }
+              >
+                {t`Delete`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : null}
     </div>
   );

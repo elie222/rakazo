@@ -40,9 +40,9 @@ export function reportClientError(
 
 /** Runs before the application imports, so module evaluation failures are captured too. */
 export function installEarlyErrorReporting(target: Window = window): void {
+  // An event without an error is a cross-origin script or a ResizeObserver loop: nothing to trace.
   const error = (event: ErrorEvent) => {
-    if (!sentry)
-      reportClientError(event.error ?? new Error("Application startup failed"), "react.render");
+    if (!sentry && event.error != null) reportClientError(event.error, "react.render");
   };
   const rejection = (event: PromiseRejectionEvent) => {
     if (!sentry) reportClientError(event.reason, "react.render");

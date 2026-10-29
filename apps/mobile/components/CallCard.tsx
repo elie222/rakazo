@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { MobileMe } from "../lib/api";
 import { rpc } from "../lib/api";
 import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
@@ -58,7 +57,7 @@ export function CallCard() {
 
   useEffect(() => {
     if (!onCall || cachedInitial !== null) return;
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then((me) => {
         cachedInitial = accountDisplay(me, t("You")).initial ?? "";
         setInitial(cachedInitial);
@@ -134,7 +133,13 @@ export function CallCard() {
     >
       {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
       <View style={styles.row}>
-        <BotAvatar color={call.botColor} identity={call.botId} size={28} motion="live" />
+        <BotAvatar
+          color={call.botColor}
+          avatarSet={call.botAvatarSet}
+          identity={call.botId}
+          size={28}
+          motion="live"
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("On a call with {name}", { name: call.botName })}

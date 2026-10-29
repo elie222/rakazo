@@ -2,6 +2,7 @@ name: release-android-apk
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

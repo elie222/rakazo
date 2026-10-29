@@ -216,6 +216,7 @@ function ApprovalShot() {
 
 const subscriptionMe: Me = {
   ticketBoardEnabled: false,
+  navLinks: [],
   phoneCallsEnabled: false,
   userId: "user-demo",
   email: "ada@example.test",
@@ -230,6 +231,7 @@ const subscriptionMe: Me = {
   computerHost: "docker",
   canChooseHostComputer: true,
   sandboxProvider: "docker",
+  mcpStdioEnabled: false,
   avatarStyle: "organic",
   billingEnabled: false,
 };

@@ -4,6 +4,24 @@ import type { RunErrorTranslator } from "@rakazo/core";
 /** Static descriptors keep shared run-error messages in Lingui extraction. */
 export const translateRunError: RunErrorTranslator = (message, values) => {
   switch (message) {
+    case "This connection's request limit is too small. Choose another model.":
+      return i18n._({
+        id: "This connection's request limit is too small. Choose another model.",
+        message: "This connection's request limit is too small. Choose another model.",
+        values,
+      });
+    case "Image input is not configured for this model.":
+      return i18n._({
+        id: "Image input is not configured for this model.",
+        message: "Image input is not configured for this model.",
+        values,
+      });
+    case "This model cannot read images. Choose a model that supports images.":
+      return i18n._({
+        id: "This model cannot read images. Choose a model that supports images.",
+        message: "This model cannot read images. Choose a model that supports images.",
+        values,
+      });
     case "Your OpenRouter":
       return i18n._({ id: "Your OpenRouter", message: "Your OpenRouter", values });
     case "Your OpenAI":
@@ -12,6 +30,18 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
       return i18n._({ id: "Your Anthropic", message: "Your Anthropic", values });
     case "Your model provider":
       return i18n._({ id: "Your model provider", message: "Your model provider", values });
+    case "Connect a model in Settings before running bots.":
+      return i18n._({
+        id: "Connect a model in Settings before running bots.",
+        message: "Connect a model in Settings before running bots.",
+        values,
+      });
+    case "Connect your own API key in Models or choose Rakazo credits in Billing.":
+      return i18n._({
+        id: "Connect your own API key in Models or choose Rakazo credits in Billing.",
+        message: "Connect your own API key in Models or choose Rakazo credits in Billing.",
+        values,
+      });
     case "The model provider returned an error.":
       return i18n._({
         id: "The model provider returned an error.",
@@ -36,10 +66,10 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} rejected the API key. Check your connection settings.",
         values,
       });
-    case "{provider} could not find the requested model.":
+    case "{provider} can't run this model.":
       return i18n._({
-        id: "{provider} could not find the requested model.",
-        message: "{provider} could not find the requested model.",
+        id: "{provider} can't run this model.",
+        message: "{provider} can't run this model.",
         values,
       });
     case "{provider} denied access to this model.":
@@ -52,6 +82,12 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
       return i18n._({
         id: "The model returned an unusable response. Try again.",
         message: "The model returned an unusable response. Try again.",
+        values,
+      });
+    case "The model hit its output limit before finishing its reply.":
+      return i18n._({
+        id: "The model hit its output limit before finishing its reply.",
+        message: "The model hit its output limit before finishing its reply.",
         values,
       });
     case "This model's context window is too small. Choose another model.":

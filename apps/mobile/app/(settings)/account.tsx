@@ -2,6 +2,7 @@ import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity, UsageSummary } from "@rakazo/contracts";
 import { accountDisplay, displayName } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
+import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -20,6 +21,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
+import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
 import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
@@ -50,6 +52,7 @@ import {
   mobileTokens,
   setAppearancePreference,
 } from "../../lib/appearance";
+import { useApprovalSettings } from "../../lib/approval-settings";
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { promptAccountDeletion } from "../../lib/delete-account-prompt";
@@ -87,12 +90,17 @@ import {
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
+import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
+import {
+  loadTrustedLinkSites,
+  removeTrustedLinkSite,
+  useTrustedLinkSites,
+} from "../../lib/trusted-link-sites";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
-/** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
   const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
@@ -117,7 +125,7 @@ export default function Account() {
     t,
     errorText,
     updateAccountName,
-    refresh: () => rpc<MobileMe>("me"),
+    refresh: () => rpc("me"),
     onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
     onRefreshed: setMe,
     setNameDraft,
@@ -164,6 +172,7 @@ export default function Account() {
     }
   }, [t]);
   const colorScheme = useResolvedAppearance();
+  const trustedSites = useTrustedLinkSites();
   const [archivedCount, setArchivedCount] = useState(0);
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
@@ -186,12 +195,26 @@ export default function Account() {
   const versionInfo = getAppVersionInfo();
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
+  const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
+  const settingsLink = ({ title, href }: { title: string; href: Extract<Href, string> }) => (
+    <SettingsRow
+      key={href}
+      accessibilityRole="button"
+      chevron="right"
+      disabled={pending}
+      // Artifacts lives on the root stack, so it closes the sheet before opening.
+      onPress={() =>
+        isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+      }
+      title={title}
+    />
+  );
 
   useEffect(() => {
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<UsageSummary>("usage/summary")
+    void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
     if (Platform.OS === "android") {
@@ -257,6 +280,12 @@ export default function Account() {
       return () => {
         active = false;
       };
+    }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadTrustedLinkSites().catch(() => undefined);
     }, []),
   );
 
@@ -379,6 +408,12 @@ export default function Account() {
         },
       ]);
     }
+  }
+
+  function removeTrustedSite(site: string) {
+    void removeTrustedLinkSite(site).catch((cause: unknown) =>
+      Alert.alert(t("Could not continue"), errorText(cause, t("Try again."))),
+    );
   }
 
   function closeDeletePrompt() {
@@ -567,6 +602,22 @@ export default function Account() {
           </SettingsGroup>
         ) : null}
 
+        {trustedSites.length > 0 ? (
+          <SettingsGroup accessibilityLabel={t("Trusted sites")} label={t("Trusted sites")}>
+            {trustedSites.map((site) => (
+              <MenuView
+                key={site}
+                actions={[{ id: "remove", title: t("Remove"), attributes: { destructive: true } }]}
+                colorScheme={colorScheme}
+                onPressAction={() => removeTrustedSite(site)}
+                title={site}
+              >
+                <SettingsRow accessible accessibilityRole="button" title={site} />
+              </MenuView>
+            ))}
+          </SettingsGroup>
+        ) : null}
+
         <View accessibilityLabel={t("Appearance")} style={styles.section}>
           <SettingsLabel>{t("Appearance")}</SettingsLabel>
           <NativeSegmentedControl
@@ -664,24 +715,29 @@ export default function Account() {
               { title: t("Artifacts"), href: "/artifacts" },
               { title: t("Models"), href: "/models" },
               { title: t("Voice"), href: "/voice" },
-              { title: t("Approvals"), href: "/approvals" },
+            ] as const
+          ).map(settingsLink)}
+          <ApprovalModeRow key="approvals" approvals={approvals} disabled={pending} />
+          {approvals.ruleCount ? (
+            <ApprovalRulesRow
+              key="approval-rules"
+              count={approvals.ruleCount}
+              disabled={pending}
+              onPress={() => router.push("/approvals")}
+            />
+          ) : null}
+          {(
+            [
+              { title: t("Vault"), href: "/vault" },
+              ...(me?.paymentWalletProvider
+                ? [{ title: t("Wallet"), href: "/wallet" } as const]
+                : []),
               { title: t("Integrations"), href: "/integrations" },
+              { title: t("Skills"), href: "/skills" },
               { title: t("Messaging"), href: "/messaging" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
-          ).map(({ title, href }) => (
-            <SettingsRow
-              key={href}
-              accessibilityRole="button"
-              chevron="right"
-              disabled={pending}
-              // Artifacts lives on the root stack, so it closes the sheet before opening.
-              onPress={() =>
-                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
-              }
-              title={title}
-            />
-          ))}
+          ).map(settingsLink)}
         </SettingsGroup>
 
         <SettingsGroup>

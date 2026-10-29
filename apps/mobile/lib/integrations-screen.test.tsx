@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -9,6 +10,8 @@ import { ConnectorIcon } from "../components/connector-icon";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
+  marketplace: vi.fn(),
+  push: vi.fn(),
   read: vi.fn(),
   write: vi.fn(),
   current: true,
@@ -18,13 +21,24 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: state.push, setParams: vi.fn() }),
+  useLocalSearchParams: () => ({}),
+  useNavigation: () => ({ setOptions: vi.fn() }),
   useFocusEffect: (callback: () => undefined | (() => void)) => {
     useEffect(() => {
       if (state.focused) return callback();
     }, [callback, state.focused]);
   },
 }));
-vi.mock("./api", () => ({ rpc: state.rpc }));
+// The plugin catalog has its own seam so app-catalog tests keep their own rpc fakes.
+vi.mock("./api", () => ({
+  rpc: (proc: string, ...args: unknown[]) =>
+    proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
+}));
+vi.mock("../components/plugin-icon", () => ({
+  PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
+}));
+vi.mock("../components/menu-picker", () => ({ MenuPicker: () => null }));
 vi.mock("./integrations-cache", () => ({
   integrationsCacheScope: state.scope,
   persistedIntegrationsCacheScope: state.persisted,
@@ -34,7 +48,16 @@ vi.mock("./integrations-cache", () => ({
 }));
 vi.mock("./last-bot", () => ({ loadLastBotId: async () => "" }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
-vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
+vi.mock("./native", () => ({
+  native: {},
+  useResolvedAppearance: () => "light",
+  useThemedStyles: (factory: () => unknown) => factory(),
+}));
+vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({
   t: (text: string) => text,
   useI18n: () => ({ t: (text: string) => text }),
@@ -59,8 +82,11 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 vi.mock("react-native-svg", () => ({
-  SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) =>
-    createElement("svg", { "data-uri": uri, onClick: onError }),
+  SvgUri: ({ uri, onError }: { uri: string; onError: () => void }) => {
+    if (uri.includes("unrenderable"))
+      throw new SyntaxError('Expected transform functions but "t" found.');
+    return createElement("svg", { "data-uri": uri, onClick: onError });
+  },
 }));
 vi.mock("react-native", () => {
   const View = ({ children, testID }: { children?: ReactNode; testID?: string }) => (
@@ -134,6 +160,10 @@ beforeEach(() => {
   state.persisted.mockReset().mockResolvedValue(null);
   state.read.mockReset().mockReturnValue(null);
   state.write.mockReset();
+  state.push.mockReset();
+  state.marketplace
+    .mockReset()
+    .mockResolvedValue({ entries: [], unavailableRegistries: [], skippedEntries: 0 });
   const pending = new Promise<(typeof item)[]>((resolve, reject) => {
     resolveCatalog = resolve;
     rejectCatalog = reject;
@@ -222,6 +252,18 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
+it("falls back when SVG artwork throws while rendering", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    await render(<ConnectorIcon name="Example" logo="https://example.test/unrenderable.svg" />);
+    expect(container.textContent).toBe("E");
+    expect(container.querySelector("svg")).toBeNull();
+    await render(<ConnectorIcon name="Example" logo="https://example.test/new.svg" />);
+    expect(container.querySelector("svg")).not.toBeNull();
+  } finally {
+    error.mockRestore();
+  }
+});
 it("retries extensionless artwork as SVG before falling back", async () => {
   const logo = "https://logos.example.test/api/gmail";
   await render(<ConnectorIcon name="Example" logo={logo} />);
@@ -398,11 +440,9 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
   await act(async () =>
     [...container.querySelectorAll("button")].find((b) => b.textContent === "Back")?.click(),
   );
-  await act(async () =>
-    [...container.querySelectorAll("button")].find((b) => b.textContent === "Advanced")?.click(),
+  expect(container.querySelector('[data-testid="tool-source"]')?.textContent).toContain(
+    "Installed source",
   );
-  expect(container.textContent).toContain("Installed source");
-  expect(container.textContent).not.toContain("No custom sources installed.");
   expect([...container.querySelectorAll("button")].some((b) => b.textContent === "Remove")).toBe(
     true,
   );
@@ -544,15 +584,173 @@ it("shows registered MCP servers with connector initials and sentence case statu
   state.rpc.mockImplementation((proc: string) =>
     proc === "mcp/servers/list"
       ? Promise.resolve([
-          { id: "saved", name: "Saved server", enabled: true, hasSecret: true },
-          { id: "open", name: "Open server", enabled: true, hasSecret: false },
+          { id: "saved", name: "Saved server", enabled: true, hasSecret: true, health: {} },
+          { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
+          {
+            id: "client",
+            name: "Client server",
+            enabled: true,
+            hasSecret: false,
+            oauthClientId: null,
+            health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+          },
         ])
       : fallback?.(proc),
   );
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(3);
   expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
   expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
+  expect(rows[2]?.textContent).toBe("CClient serverNeeds an OAuth client ID");
   for (const row of rows) expect(row.querySelector("button")).toBeNull();
+
+  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      search,
+      "saved",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
+  expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverCredential saved"]);
+  expect(container.textContent).not.toContain("No apps match your search.");
+});
+
+const plugin = {
+  id: "cursor:calcom",
+  name: "calcom",
+  displayName: "Calcom",
+  description: "Scheduling",
+  keywords: ["cal.com"],
+  category: "productivity",
+  logo: null,
+  homepage: "https://cal.com",
+  domains: ["cal.com"],
+  registry: "Cursor",
+  source: "https://github.com/acme/plugins#calcom",
+  installedSource: "https://github.com/acme/plugins#calcom",
+  hasConnector: true,
+  skillCount: 1,
+};
+
+it("lists plugins by category, hides ones named like a managed app, and opens one", async () => {
+  state.marketplace.mockResolvedValue({
+    entries: [
+      plugin,
+      { ...plugin, id: "dup", displayName: "Example app", installedSource: "dup" },
+      { ...plugin, id: "sentry", displayName: "Sentry", category: "ops" },
+    ],
+    unavailableRegistries: [],
+    skippedEntries: 0,
+  });
+  await render();
+  await act(async () => resolveCatalog([item]));
+  const sections = container.querySelectorAll('[data-testid="plugin-section"]');
+  expect([...sections].map((section) => section.textContent)).toEqual([
+    "ProductivityCCalcomScheduling",
+    "Security & OpsSSentryScheduling",
+  ]);
+  const calcom = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Calcom"),
+  );
+  await act(async () => calcom?.click());
+  expect(state.push).toHaveBeenCalledWith({
+    pathname: "/plugin",
+    params: {
+      source: plugin.source,
+      installedSource: plugin.installedSource,
+      name: "Calcom",
+      description: "Scheduling",
+      site: "https://cal.com",
+    },
+  });
+});
+
+it("opens a managed app's brand plugin as one page and keeps skill packs out", async () => {
+  state.marketplace.mockResolvedValue({
+    entries: [
+      { ...plugin, id: "brand", name: "example-app", displayName: "Example app", skillCount: 3 },
+      { ...plugin, id: "pack", displayName: "Teaching", hasConnector: false, skillCount: 2 },
+    ],
+    unavailableRegistries: [],
+    skippedEntries: 0,
+  });
+  await render();
+  await act(async () => resolveCatalog([{ ...item, connected: false }]));
+  expect(container.textContent).not.toContain("Teaching");
+  expect(container.querySelectorAll('[data-testid="plugin-section"]')).toHaveLength(0);
+  const tile = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.includes("Example app") && button.textContent !== "Add",
+  );
+  await act(async () => tile?.click());
+  expect(state.push).toHaveBeenCalledWith({
+    pathname: "/plugin",
+    params: expect.objectContaining({
+      name: "Example app",
+      managedConnectorId: item.connectorId,
+      managedSlug: item.slug,
+    }),
+  });
+});
+
+it("lists a plugin connector under Apps, with its servers kept under the plugin", async () => {
+  state.marketplace.mockResolvedValue({
+    entries: [plugin],
+    unavailableRegistries: [],
+    skippedEntries: 0,
+  });
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string) =>
+    proc === "capabilities/list"
+      ? Promise.resolve([
+          {
+            id: "install-a",
+            kind: "plugin",
+            name: "calcom",
+            source: plugin.installedSource,
+            config: {
+              format: "grok",
+              name: "calcom",
+              version: null,
+              description: "",
+              author: null,
+              homepage: null,
+              repository: null,
+              license: null,
+              keywords: [],
+              resolvedSha: "a".repeat(40),
+              digest: `sha256:${"b".repeat(64)}`,
+              skills: [
+                { name: "book", description: "" },
+                { name: "cancel", description: "" },
+              ],
+              mcpServers: [],
+              skipped: [],
+            },
+          },
+        ])
+      : proc === "mcp/servers/list"
+        ? Promise.resolve([
+            {
+              id: "owned",
+              installId: "install-a",
+              name: "calcom: calcom",
+              enabled: true,
+              hasSecret: false,
+              oauthStatus: "none",
+              health: { status: "unknown" },
+            },
+          ])
+        : fallback?.(proc),
+  );
+  await render();
+  await act(async () => resolveCatalog([item]));
+  // An install from before parts could be chosen has both; its skills are listed in Skills.
+  expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
+    "AppsCCalcom1 connectorSign in",
+  );
+  expect(container.querySelector('[data-testid="connected-skills"]')).toBeNull();
+  expect(container.querySelectorAll('[data-testid="registered-mcp-server"]')).toHaveLength(0);
 });

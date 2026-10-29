@@ -20,6 +20,7 @@ vi.mock("./settings-sheet", () => ({
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { loadSessionToken } from "./api";
+import { threadRouteId } from "./notification-open";
 import { openNotificationResponse } from "./open-notification";
 import { closeSettingsSheet } from "./settings-sheet";
 
@@ -62,10 +63,10 @@ describe("opening a notification tap", () => {
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(false);
     expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: "/thread",
-      params: { botId: "bot-1", threadId: "thread-1" },
-    });
+    expect(router.push).toHaveBeenCalledWith(
+      { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
+      { dangerouslySingular: threadRouteId },
+    );
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
   });
 
@@ -125,10 +126,10 @@ describe("opening a notification tap", () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     await expect(openNotificationResponse(newer)).resolves.toBe(true);
     expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: "/thread",
-      params: { botId: "bot-2", threadId: "thread-2" },
-    });
+    expect(router.push).toHaveBeenCalledWith(
+      { pathname: "/thread", params: { botId: "bot-2", threadId: "thread-2" } },
+      { dangerouslySingular: threadRouteId },
+    );
   });
 
   it("treats two deliveries that share a request identifier as different taps", async () => {

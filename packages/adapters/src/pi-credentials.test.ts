@@ -6,6 +6,7 @@ import { PiRuntimeCredentialStore } from "./pi-credentials.js";
 import {
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
+  OAUTH_RECONNECT_REQUIRED_ERROR,
   RetiredModelCredentialError,
   serializeModelSecret,
 } from "./pi-oauth.js";
@@ -171,6 +172,26 @@ describe("PiRuntimeCredentialStore", () => {
     );
   });
 
+  it("drops the rejected token after a confirmed terminal refresh", async () => {
+    const retire = vi.fn(async () => true);
+    const store = new PiRuntimeCredentialStore("openai-codex", credential(), undefined, retire);
+    const failure = new Error(
+      'refresh failed (400): {"error":"invalid_grant","access":"access-token"}',
+    );
+
+    await expect(
+      store.modify("openai-codex", async () => {
+        throw failure;
+      }),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof RetiredModelCredentialError &&
+        error.message === OAUTH_RECONNECT_REQUIRED_ERROR,
+    );
+    expect(await store.read("openai-codex")).toBeUndefined();
+    expect(store.accessToken).toBeUndefined();
+  });
+
   it("persists a mid-run refresh that returns the same account", async () => {
     const retire = vi.fn(async () => undefined);
     let persisted: OAuthCredential | undefined;
@@ -218,9 +239,9 @@ describe("PiRuntimeCredentialStore", () => {
       // The stored credential state whose refresh produced the foreign account.
       expect.objectContaining({ access: "access-token", refresh: "refresh-token" }),
     );
-    // The account-B token is never persisted or adopted in memory.
+    // Neither the other account's token nor the rejected one stays readable.
     expect(persist).not.toHaveBeenCalled();
-    expect(await store.read("openai-codex")).toMatchObject({ access: "access-token" });
+    expect(await store.read("openai-codex")).toBeUndefined();
   });
 
   it("settles account-change retirement before the error surfaces", async () => {
@@ -283,11 +304,8 @@ describe("PiRuntimeCredentialStore", () => {
   });
 
   it("passes the stored credential state so a stale account-change retire skips a rotated row", async () => {
-    // The caller wires the failed state into a matchesFailedSecret predicate
-    // over the secret row's current ciphertext. The row was rewritten by a
-    // concurrent successful refresh, so the stale account-change failure must
-    // not delete the newer credential — and without the failed state the
-    // fence is absent and the delete would proceed.
+    // The row was rewritten by a concurrent successful refresh, so the stale
+    // account-change failure must not delete the newer credential.
     const stored = credential({ refresh: "refresh-token", expires: 1, accountId: "acct-a" });
     const rotated = serializeModelSecret({
       kind: "oauth",

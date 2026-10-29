@@ -3,11 +3,15 @@ import type { ComputerStatus } from "./computer.js";
 import {
   controlLabel,
   embeddableScreenUrl,
+  fromScreenPage,
+  isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_RENEW_MS,
+  screenPageState,
+  screenPageStatus,
   screenRenewReadAt,
   screenStreamKey,
 } from "./computer.js";
@@ -272,5 +276,108 @@ describe("readScreenUrl", () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
     await expect(readScreenUrl(request, { attempts: 2, sleep })).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("screen page states", () => {
+  it("takes only the exact state message a screen page posts", () => {
+    expect(screenPageState('{"rakazoScreen":"connected"}')).toBe("connected");
+    expect(screenPageState('{"rakazoScreen":"disconnected"}')).toBe("disconnected");
+    expect(screenPageState('{"rakazoScreen":"connected","detail":"text"}')).toBeNull();
+    expect(screenPageState('{"rakazoScreen":"reconnect"}')).toBeNull();
+    expect(screenPageState('["connected"]')).toBeNull();
+    expect(screenPageState('"connected"')).toBeNull();
+    expect(screenPageState("null")).toBeNull();
+    expect(screenPageState("not json")).toBeNull();
+  });
+});
+
+describe("screen page status", () => {
+  it("reads only the status of the screen page", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const text = vi.fn(async () => "Invalid or expired screen capability");
+    const fetchImpl = vi.fn(
+      async () => ({ status: 503, body: { cancel }, text }) as unknown as Response,
+    );
+    await expect(screenPageStatus("https://app.example.test/novnc/x", fetchImpl)).resolves.toBe(
+      503,
+    );
+    expect(text).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledWith("https://app.example.test/novnc/x", {
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "manual",
+    });
+    await expect(
+      screenPageStatus("https://app.example.test/novnc/x", async () => {
+        throw new TypeError("Network request failed");
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("screen page redirects and origin", () => {
+  it("counts an answer from anywhere but the probe as no page, as React Native follows redirects", async () => {
+    // React Native ignores `redirect: "manual"`, follows the redirect and leaves `redirected`
+    // unset; only the final URL tells.
+    const followed = vi.fn(
+      async () =>
+        ({
+          status: 200,
+          url: "https://api.example.test/elsewhere",
+          type: "default",
+        }) as unknown as Response,
+    );
+    await expect(
+      screenPageStatus("https://app.example.test/novnc/x?rakazo_probe=1", followed),
+    ).resolves.toBe(0);
+    const same = vi.fn(
+      async () =>
+        ({
+          status: 204,
+          url: "https://app.example.test/novnc/x?rakazo_probe=1",
+          type: "default",
+        }) as unknown as Response,
+    );
+    await expect(
+      screenPageStatus("https://app.example.test/novnc/x?rakazo_probe=1", same),
+    ).resolves.toBe(204);
+    const redirected = vi.fn(
+      async () => ({ status: 200, redirected: true, type: "basic" }) as unknown as Response,
+    );
+    await expect(screenPageStatus("https://app.example.test/novnc/x", redirected)).resolves.toBe(0);
+    const manual = vi.fn(
+      async () => ({ status: 0, redirected: false, type: "opaqueredirect" }) as unknown as Response,
+    );
+    await expect(screenPageStatus("https://app.example.test/novnc/x", manual)).resolves.toBe(0);
+  });
+
+  it("hears only the screen's own origin", () => {
+    const screen = "https://app.example.test/novnc/session/control/1.t/vnc.html";
+    expect(
+      fromScreenPage("https://app.example.test/novnc/session/control/1.t/vnc.html", screen),
+    ).toBe(true);
+    expect(fromScreenPage("https://elsewhere.example.test/", screen)).toBe(false);
+    expect(fromScreenPage(undefined, screen)).toBe(false);
+    expect(fromScreenPage("not a url", screen)).toBe(false);
+  });
+
+  it("keeps one stream key across a renewed link for the same screen", () => {
+    expect(screenStreamKey("https://app.example.test/novnc/session/control/1.aaa/websockify")).toBe(
+      screenStreamKey("https://app.example.test/novnc/session/control/2.bbb/websockify"),
+    );
+    expect(
+      screenStreamKey("https://app.example.test/novnc/session/control/1.aaa/websockify"),
+    ).not.toBe(screenStreamKey("https://app.example.test/novnc/session/view/1.aaa/websockify"));
+  });
+});
+
+describe("proxied screen pages", () => {
+  it("probes only screens served through the web server's screen proxy", () => {
+    expect(isProxiedScreenPage("https://app.example.test/novnc/session/view/1.t/vnc.html")).toBe(
+      true,
+    );
+    expect(isProxiedScreenPage("https://screen.example.test/embed")).toBe(false);
+    expect(isProxiedScreenPage("not a url")).toBe(false);
   });
 });

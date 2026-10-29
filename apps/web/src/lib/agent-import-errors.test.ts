@@ -14,11 +14,11 @@ beforeEach(() => {
 describe("an import the server refused", () => {
   it("is shown in the app's own words, by its reason", () => {
     const error = new ORPCError("CONFLICT", {
-      message: "Instructions changed; review the current instructions first.",
-      data: { reason: "instructions_changed" },
+      message: "A skill with that name was just added. Try again.",
+      data: { reason: "name_just_taken" },
     });
     expect(agentImportErrorText(error)).toBe(
-      "Its instructions changed. Review them, then try again.",
+      "Something with the same name was just added. Try again.",
     );
     expect(
       agentImportErrorText(new ORPCError("BAD_REQUEST", { data: { reason: "model_needs_key" } })),
@@ -53,7 +53,7 @@ describe("an import the server refused", () => {
         "{provider} rejected the API key. Check your connection settings.",
         "An imported API key could not be checked. Try again.",
         "An imported API key could not be used. Untick it and try again.",
-        "Its instructions changed. Review them, then try again.",
+        "Something with the same name was just added. Try again.",
       ]) {
         const entry = catalog
           .split("\n\n")

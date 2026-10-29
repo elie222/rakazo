@@ -35,10 +35,14 @@ export function groqRequestContextWindow(
       limit < 1
     )
       return;
-    // Leave room for provider tokenizer differences; output retains its usual quarter-window cap.
-    const window = Math.floor(limit * 0.85);
-    return window > 0 && window < currentWindow ? window : undefined;
+    return reducedContextWindow(limit, currentWindow);
   } catch {
     return;
   }
+}
+
+/** Leave room for provider tokenizer differences; output retains its usual quarter-window cap. */
+export function reducedContextWindow(limit: number, currentWindow: number): number | undefined {
+  const window = Math.floor(limit * 0.85);
+  return window > 0 && window < currentWindow ? window : undefined;
 }

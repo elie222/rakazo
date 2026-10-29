@@ -28,6 +28,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
 
       return {
         computerKeys: desktop?.computer ? Object.keys(desktop.computer).sort() : [],
+        deviceKeys: desktop?.device ? Object.keys(desktop.device).sort() : [],
         bridgeKeys: desktop ? Object.keys(desktop).sort() : [],
         windowKeys: desktop ? Object.keys(desktop.window).sort() : [],
         updateKeys: desktop ? Object.keys(desktop.update).sort() : [],
@@ -47,6 +48,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     expect(renderer.bridgeKeys).toEqual([
       "badge",
       "computer",
+      "device",
       "oauth",
       "passkeys",
       "platform",
@@ -61,6 +63,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       "requestAccess",
       "revokeAccess",
     ]);
+    expect(renderer.deviceKeys).toEqual(["setAllowed", "state"]);
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
     expect(renderer.badgeKeys).toEqual(["set"]);

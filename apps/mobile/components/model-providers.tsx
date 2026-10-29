@@ -36,7 +36,15 @@ export function ModelProviders({
     .map((credential) => {
       const provider = providerName(credential);
       const name = connectionDisplayName(credential, provider);
-      return { credential, name, detail: name.startsWith(provider) ? undefined : provider };
+      return {
+        credential,
+        name,
+        detail: credential.reconnectRequired
+          ? t("Sign in again")
+          : name.startsWith(provider)
+            ? undefined
+            : provider,
+      };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 

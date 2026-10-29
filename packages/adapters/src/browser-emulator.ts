@@ -1,10 +1,7 @@
-import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
+import type { FakeBrowserProviderOptions } from "./fake-browser.js";
+import { FakeBrowserProvider } from "./fake-browser.js";
 
-/**
- * Offline emulator for the page-browser adapter slot. Same behavior as fake;
- * distinct id so conformance can cover the emulator path without a hosted
- * browser vendor or Playwright/Puppeteer product dependency.
- */
+/** Same behavior as fake; a distinct id so conformance covers the emulator path. */
 export class EmulatorBrowserProvider extends FakeBrowserProvider {
   constructor(options: FakeBrowserProviderOptions = {}) {
     super(options);

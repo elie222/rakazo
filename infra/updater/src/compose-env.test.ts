@@ -36,6 +36,9 @@ const SOURCES = {
   worker: ["apps/worker/src", ...SHARED_SOURCES],
 } as const;
 
+const KUBERNETES_SANDBOX =
+  "SANDBOX_PROVIDER=kubernetes runs the api and worker in a cluster, not Compose";
+
 /** Read by code but never passed to the api or worker containers, with the reason. */
 const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
@@ -53,22 +56,35 @@ const NOT_PASSED: Record<string, string> = {
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
+  KUBERNETES_SANDBOX_COMPUTER_IMAGE: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_HOME_CLAIM: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_CPU_LIMIT: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_MEMORY_LIMIT: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_NAMESPACE: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_POD_ANNOTATIONS: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_POD_LABELS: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_READY_TIMEOUT_MS: KUBERNETES_SANDBOX,
+  KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME: KUBERNETES_SANDBOX,
 };
 
 /**
- * Shared-package reads the worker must not receive. Only the API signs sessions and talks to
- * the identity provider, so the worker resolves no auth secret. Only the API's start command
- * migrates, so the worker never holds the owner database login.
+ * Shared-package reads a process must not receive. Only the API signs sessions and talks to
+ * the identity provider, so the worker resolves no auth secret. Only the migrate container
+ * gets the owner database login, so neither process holds one that bypasses row-level security.
  */
-const WORKER_DENIED = new Set(["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"]);
+const DENIED = {
+  api: ["DATABASE_MIGRATION_URL"],
+  worker: ["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"],
+} as const;
 
 /** Reads a source scan cannot see: names held in constants or read by third-party SDKs. */
 const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
-    // adapters/auto-review.ts and pi-local-provider.ts read these through small helpers.
-    "RAKAZO_AUTO_REVIEW",
+    // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",
     // The OTLP exporter reads its standard settings itself.
@@ -152,7 +168,7 @@ function expectedKeys(service: "api" | "worker"): string[] {
     ...INDIRECT[service],
   ]);
   for (const key of Object.keys(NOT_PASSED)) keys.delete(key);
-  if (service === "worker") for (const key of WORKER_DENIED) keys.delete(key);
+  for (const key of DENIED[service]) keys.delete(key);
   return [...keys].sort();
 }
 
@@ -197,7 +213,7 @@ describe("api and worker environment allowlists", () => {
   it("only excludes settings the code still reads", () => {
     const read = scanEnvReads([...SOURCES.api, ...SOURCES.worker]);
     expect(Object.keys(NOT_PASSED).filter((key) => !read.has(key))).toEqual([]);
-    expect([...WORKER_DENIED].filter((key) => !read.has(key))).toEqual([]);
+    expect([...DENIED.api, ...DENIED.worker].filter((key) => !read.has(key))).toEqual([]);
   });
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
@@ -212,7 +228,7 @@ describe("api and worker environment allowlists", () => {
   );
 
   it.each(STACKS.map((files) => [files.join(" + "), files] as const))(
-    "%s keeps auth and database superuser secrets out of the worker",
+    "%s keeps auth and database owner secrets out of the worker and API",
     (_name, files) => {
       const worker = stackEnvironment(files, "worker");
       for (const key of [
@@ -228,6 +244,12 @@ describe("api and worker environment allowlists", () => {
       expect(stackEnvironment(files, "api")).not.toHaveProperty("RAKAZO_UPDATER_TOKEN");
       // The database password reaches both processes only inside DATABASE_URL.
       expect(stackEnvironment(files, "api")).not.toHaveProperty("POSTGRES_PASSWORD");
+      // The owner login goes only to the migrate container, which gets nothing else.
+      expect(stackEnvironment(files, "api")).not.toHaveProperty("DATABASE_MIGRATION_URL");
+      expect(Object.keys(stackEnvironment(files, "migrate")).sort()).toEqual([
+        "DATABASE_MIGRATION_URL",
+        "DATABASE_URL",
+      ]);
     },
   );
 

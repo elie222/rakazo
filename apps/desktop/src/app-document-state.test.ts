@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from "vitest";
-import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { APP_DOCUMENT_STATE_SCRIPT, waitForMountedAppDocument } from "./app-document-state.js";
 
 function stateOf(html: string) {
   document.body.innerHTML = html;
@@ -36,5 +36,44 @@ describe("app document state", () => {
         '<div id="root"><div data-rakazo-app-state="failed"><p>Something went wrong. Try again.</p><button>Refresh</button></div></div>',
       ),
     ).toBe("failed");
+  });
+});
+
+describe("waiting for the app document", () => {
+  const disposed = () => Promise.reject(new Error("Render frame was disposed"));
+
+  it("keeps waiting when a reload disposes the frame mid-check", async () => {
+    const executeJavaScript = vi
+      .fn()
+      .mockImplementationOnce(disposed)
+      .mockResolvedValueOnce("pending")
+      .mockResolvedValue("ready");
+    await expect(
+      waitForMountedAppDocument({
+        executeJavaScript,
+        isCrashed: () => false,
+        isDestroyed: () => false,
+      }),
+    ).resolves.toBe("ready");
+    expect(executeJavaScript).toHaveBeenCalledTimes(3);
+  });
+
+  it("still times out when every check fails", async () => {
+    await expect(
+      waitForMountedAppDocument(
+        { executeJavaScript: disposed, isCrashed: () => false, isDestroyed: () => false },
+        200,
+      ),
+    ).rejects.toThrow("did not become ready");
+  });
+
+  it("gives up at once when the window is gone", async () => {
+    await expect(
+      waitForMountedAppDocument({
+        executeJavaScript: disposed,
+        isCrashed: () => false,
+        isDestroyed: () => true,
+      }),
+    ).rejects.toThrow("Render frame was disposed");
   });
 });

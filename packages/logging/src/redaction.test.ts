@@ -3,6 +3,41 @@ import { describe, expect, it } from "vitest";
 import { redactBindings, redactSensitiveText } from "./redaction.js";
 
 describe("redaction", () => {
+  it("preserves numeric request budgets without exposing token values or content", () => {
+    expect(
+      redactBindings({
+        requestedMaxTokens: 2048,
+        nested: { effective_max_tokens: 512 },
+        items: [{ effectiveMaxTokens: 0, accessToken: 1234 }],
+        token: 1234,
+        prompt: "fixture content",
+      }),
+    ).toEqual({
+      requestedMaxTokens: 2048,
+      nested: { effective_max_tokens: 512 },
+      items: [{ effectiveMaxTokens: 0, accessToken: "[Redacted]" }],
+      token: "[Redacted]",
+      prompt: "[Redacted]",
+    });
+  });
+
+  it.each([
+    "fixture-secret",
+    { apiKey: "fixture-secret" },
+    ["fixture-secret"],
+    null,
+    -1,
+    0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])("redacts non-count values in budget fields: %j", (value) => {
+    expect(redactBindings({ requestedMaxTokens: value, effectiveMaxTokens: value })).toEqual({
+      requestedMaxTokens: "[Redacted]",
+      effectiveMaxTokens: "[Redacted]",
+    });
+  });
+
   it("handles a full-envelope-sized failed email candidate without blocking", () => {
     const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
     // A child deadline also catches synchronous regex stalls that block the test runner's timers.
@@ -186,5 +221,17 @@ describe("redaction", () => {
     expect(redacted).toContain('"password":"[Redacted]"');
     expect(redacted).toContain('"token":"[Redacted]"');
     expect(redacted).toContain('"authorization":"[Redacted]"');
+  });
+
+  it("redacts user profile paths in free text", () => {
+    expect(redactSensitiveText("cannot open /home/example-user/app.db")).toBe(
+      "cannot open /[user]/app.db",
+    );
+    expect(redactSensitiveText("cannot open /Users/example-user/app.db")).toBe(
+      "cannot open /[user]/app.db",
+    );
+    expect(redactSensitiveText("cannot open C:\\Users\\example-user\\app.db")).toBe(
+      "cannot open [user]\\app.db",
+    );
   });
 });

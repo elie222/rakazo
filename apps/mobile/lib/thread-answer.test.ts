@@ -1,55 +1,83 @@
-import { readFileSync } from "node:fs";
-import ts from "typescript";
+import type { LoginFieldInput } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import type { ThreadAnswerContext } from "./thread-answer";
+import { answerThreadMessage } from "./thread-answer";
 
-// Exercise the screen's actual answer handler without importing its native dependencies.
-const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-const handler = source.slice(
-  source.indexOf("  const answerMessage = useCallback("),
-  source.indexOf("  const openBot = useCallback("),
-);
-
-function setup(refresh: () => Promise<void>) {
-  const scope = {
-    useCallback: <T>(callback: T) => callback,
+function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerContext> = {}) {
+  const rpc = vi.fn(async (_proc: string, _body: Record<string, unknown>) => undefined as unknown);
+  const spies = { rpc, refresh: vi.fn(refresh), markRead: vi.fn() };
+  const context: ThreadAnswerContext = {
     botId: "bot-1",
     groupId: undefined,
     readOnly: false,
-    rpc: vi.fn(async () => undefined),
     isCurrentTarget: () => true,
-    refresh: vi.fn(refresh),
-    setReadBoundary: vi.fn(),
-    readVisit: { current: { visit: 1 } },
+    ...spies,
+    ...overrides,
   };
-  const compiled = ts.transpileModule(`${handler}\nreturn answerMessage;`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const answerMessage = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as (
-    message: { id: string; runId: string },
-    answer: string,
-    username?: string,
-    dismiss?: boolean,
-  ) => Promise<void>;
-  return { ...scope, answerMessage };
+  return {
+    ...spies,
+    answerMessage: (
+      message: { id: string; runId?: string },
+      answer: string,
+      fields?: readonly LoginFieldInput[],
+      dismiss?: boolean,
+      remember?: false,
+    ) => answerThreadMessage(context, message, answer, fields, dismiss, remember),
+  };
 }
 
+const message = { id: "message-1", runId: "run-1" };
+
 describe("mobile ask answers", () => {
-  it("sends the answer and username unchanged", async () => {
+  it("sends a login's fields unchanged with an empty answer and no username", async () => {
     const h = setup(async () => undefined);
-    await h.answerMessage({ id: "message-1", runId: "run-1" }, "example-password", "ada");
+    const fields = [
+      { label: "Username", value: " ada ", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
+    ];
+    await h.answerMessage(message, "", fields);
+    expect(h.markRead).toHaveBeenCalledTimes(1);
     expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
       botId: "bot-1",
       runId: "run-1",
       messageId: "message-1",
-      answer: "example-password",
-      username: "ada",
+      answer: "",
+      fields,
     });
+    expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("username");
+    // Saved to the Vault unless the person turned that off.
+    expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("remember");
     expect(h.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends remember false for a login used for this run only", async () => {
+    const h = setup(async () => undefined);
+    const fields = [{ label: "Password", value: "example-password", hidden: true }];
+    await h.answerMessage(message, "", fields, undefined, false);
+    expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
+      botId: "bot-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answer: "",
+      fields,
+      remember: false,
+    });
+  });
+
+  it("targets the group in a group thread", async () => {
+    const h = setup(async () => undefined, { botId: undefined, groupId: "group-1" });
+    await h.answerMessage(message, "yes");
+    expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
+      groupId: "group-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answer: "yes",
+    });
   });
 
   it("sends a dismissal with an empty answer and no username", async () => {
     const h = setup(async () => undefined);
-    await h.answerMessage({ id: "message-1", runId: "run-1" }, "", undefined, true);
+    await h.answerMessage(message, "", undefined, true);
     expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
       botId: "bot-1",
       runId: "run-1",
@@ -67,12 +95,7 @@ describe("mobile ask answers", () => {
         throw new Error("offline");
       });
       await expect(
-        h.answerMessage(
-          { id: "message-1", runId: "run-1" },
-          dismiss ? "" : "example-password",
-          undefined,
-          dismiss,
-        ),
+        h.answerMessage(message, dismiss ? "" : "example-password", undefined, dismiss),
       ).resolves.toBeUndefined();
       expect(h.refresh).toHaveBeenCalledTimes(1);
     },
@@ -81,9 +104,25 @@ describe("mobile ask answers", () => {
   it("still fails when the server doesn't accept the answer", async () => {
     const h = setup(async () => undefined);
     h.rpc.mockRejectedValueOnce(new Error("offline"));
-    await expect(
-      h.answerMessage({ id: "message-1", runId: "run-1" }, "example-password", "ada"),
-    ).rejects.toThrow("offline");
+    await expect(h.answerMessage(message, "example-password")).rejects.toThrow("offline");
     expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it("skips the refresh after the viewer has moved to another thread", async () => {
+    const h = setup(async () => undefined, { isCurrentTarget: () => false });
+    await h.answerMessage(message, "yes");
+    expect(h.rpc).toHaveBeenCalledTimes(1);
+    expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["read-only", { readOnly: true }, message],
+    ["targetless", { botId: undefined }, message],
+    ["runless", {}, { id: "message-1" }],
+  ] as const)("sends nothing for a %s answer", async (_name, overrides, target) => {
+    const h = setup(async () => undefined, overrides);
+    await h.answerMessage(target, "yes");
+    expect(h.rpc).not.toHaveBeenCalled();
+    expect(h.markRead).not.toHaveBeenCalled();
   });
 });

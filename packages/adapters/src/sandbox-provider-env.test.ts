@@ -13,9 +13,25 @@ describe("resolveSandboxProvider", () => {
 
   it("falls back to none when a remote provider key is missing", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "e2b" })).toBe("none");
+    expect(
+      resolveSandboxProvider({ SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }),
+    ).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "daytona" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "createos" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boat" })).toBe("none");
+  });
+
+  it("loads Novita credentials and the shared template setting", () => {
+    const env = {
+      SANDBOX_PROVIDER: "novita",
+      NOVITA_API_KEY: " test-novita-key ",
+      SANDBOX_TEMPLATE: " custom-desktop ",
+    };
+    expect(resolveSandboxProvider(env)).toBe("novita");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      novitaApiKey: "test-novita-key",
+      sandboxTemplate: "custom-desktop",
+    });
   });
 
   it("requires both Railway credentials and an environment", () => {
@@ -44,6 +60,13 @@ describe("resolveSandboxProvider", () => {
         CREATEOS_SANDBOX_API_KEY: "test-createos-key",
       }),
     ).toBe("createos");
+  });
+
+  it("keeps Kubernetes without any provider key", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kubernetes" })).toBe("kubernetes");
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kubernetes", NODE_ENV: "production" })).toBe(
+      "kubernetes",
+    );
   });
 
   it("falls back to none in production when Docker has no supervisor token", () => {
@@ -92,6 +115,70 @@ describe("sandboxProviderOptionsFromEnv", () => {
   it.each(["", "  "])("leaves a blank Railway sandbox region unset: %j", (region) => {
     expect(
       sandboxProviderOptionsFromEnv({ RAILWAY_SANDBOX_REGION: region }).railwaySandboxRegion,
+    ).toBeUndefined();
+  });
+
+  it("loads Kubernetes settings and parses labels, annotations and the ready timeout", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        KUBERNETES_SANDBOX_NAMESPACE: " rakazo-computers ",
+        KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME: "kata",
+        KUBERNETES_SANDBOX_COMPUTER_IMAGE: "ghcr.io/elie222/rakazo/computer@sha256:abc",
+        KUBERNETES_SANDBOX_CPU_LIMIT: "2",
+        KUBERNETES_SANDBOX_MEMORY_LIMIT: "4Gi",
+        KUBERNETES_SANDBOX_POD_LABELS: '{"team":"bots"}',
+        KUBERNETES_SANDBOX_POD_ANNOTATIONS: '{"example.test/owner":"rakazo"}',
+        KUBERNETES_SANDBOX_READY_TIMEOUT_MS: "90000",
+      }),
+    ).toMatchObject({
+      kubernetesNamespace: "rakazo-computers",
+      kubernetesRuntimeClassName: "kata",
+      kubernetesComputerImage: "ghcr.io/elie222/rakazo/computer@sha256:abc",
+      kubernetesCpuLimit: "2",
+      kubernetesMemoryLimit: "4Gi",
+      kubernetesPodLabels: { team: "bots" },
+      kubernetesPodAnnotations: { "example.test/owner": "rakazo" },
+      kubernetesReadyTimeoutMs: 90_000,
+    });
+    expect(sandboxProviderOptionsFromEnv({}).kubernetesNamespace).toBeUndefined();
+  });
+
+  it("loads the Kubernetes home claim and its pod-affinity target", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        KUBERNETES_SANDBOX_HOME_CLAIM: "rakazo-data",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE: "rakazo",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: '{"app":"rakazo-api"}',
+      }),
+    ).toMatchObject({
+      kubernetesHomeClaim: "rakazo-data",
+      kubernetesHomeColocateNamespace: "rakazo",
+      kubernetesHomeColocateLabels: { app: "rakazo-api" },
+    });
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: "rakazo-api" }),
+    ).toThrow("KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS must be a JSON object of string values");
+  });
+
+  it("rejects malformed Kubernetes label maps and timeouts", () => {
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_POD_LABELS: '["bots"]' }),
+    ).toThrow("KUBERNETES_SANDBOX_POD_LABELS must be a JSON object of string values");
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" }),
+    ).toThrow("KUBERNETES_SANDBOX_POD_ANNOTATIONS must be a JSON object of string values");
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_READY_TIMEOUT_MS: "0" }),
+    ).toThrow("KUBERNETES_SANDBOX_READY_TIMEOUT_MS must be a positive integer");
+  });
+  it("keeps object-backed Kubernetes homes on the copy path", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        OBJECT_STORAGE_BUCKET: "test-homes",
+        KUBERNETES_SANDBOX_HOME_CLAIM: "data",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE: "test",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: '{"app":"api"}',
+      }).kubernetesHomeClaim,
     ).toBeUndefined();
   });
 });

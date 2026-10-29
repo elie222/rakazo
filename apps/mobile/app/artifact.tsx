@@ -1,5 +1,5 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
-import type { ArtifactVersion } from "@rakazo/contracts";
+import type { ArtifactVersion, ArtifactWithContent } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -20,7 +20,6 @@ import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";
-import type { MobileArtifactWithContent } from "../lib/artifacts";
 import {
   artifactThreadTarget,
   getArtifactById,
@@ -44,7 +43,7 @@ type PreviewContent =
 type ContentState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; artifact: MobileArtifactWithContent; file: File; preview: PreviewContent };
+  | { status: "ready"; artifact: ArtifactWithContent; file: File; preview: PreviewContent };
 
 async function computePreview(mimeType: string, file: File): Promise<PreviewContent> {
   if (mimeType === "text/html") return { kind: "html", html: await file.text() };

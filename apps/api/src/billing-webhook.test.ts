@@ -92,6 +92,14 @@ describe("billing checkout return", () => {
     expect(syncForActor).toHaveBeenCalledWith(actor);
   });
 
+  it("hands a mobile checkout back to the app without a session", async () => {
+    const { app, syncForActor } = mount(() => null, { actor: null });
+    const res = await app.request(`${BILLING_RETURN_PATH}?client=mobile`);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("rakazo://billing");
+    expect(syncForActor).not.toHaveBeenCalled();
+  });
+
   it("sends a signed-out visitor to the web origin", async () => {
     const { app, syncForActor } = mount(() => null, { actor: null });
     const res = await app.request(BILLING_RETURN_PATH);

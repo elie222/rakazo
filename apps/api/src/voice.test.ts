@@ -6,6 +6,7 @@ import * as db from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
   fishSpeechModelValue,
@@ -13,11 +14,11 @@ import {
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
   persistVoiceCredential,
+  prepareVoice,
   synthesizeVoice,
   toVoiceCredential,
   toVoiceStatus,
   updateVoiceSpeechModel,
-  type VoiceDeps,
   voiceChoicesChanged,
   voiceCredentialPlaintext,
   voiceCredentialServer,
@@ -438,6 +439,101 @@ describe("updateVoiceSpeechModel", () => {
   });
 });
 
+describe("prepareVoice", () => {
+  const long = "The deploy finished and every check passed. ".repeat(20);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function depsWith(summarize?: ReturnType<typeof vi.fn>) {
+    const prisma = {
+      bot: { findFirst: vi.fn().mockResolvedValue({ voiceId: "voice-1" }) },
+      spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
+      userVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: true,
+          voiceId: "voice-1",
+          speechModel: "",
+          credential: {
+            id: "cred-1",
+            userId: actor.userId,
+            provider: "elevenlabs",
+            secretId: "secret-1",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "c" }) },
+    };
+    return {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("key"), put: vi.fn() },
+      speechSummary: summarize ? { summarize, minChars: 600 } : undefined,
+    } as unknown as VoiceDeps;
+  }
+
+  it("reads a long bot reply as the bot model's summary", async () => {
+    const summarize = vi.fn().mockResolvedValue("Deploy done. Next, the release notes.");
+    const result = await prepareVoice(depsWith(summarize), actor, { text: long, botId: "bot-1" });
+    expect(summarize).toHaveBeenCalledWith(actor, "bot-1", long, undefined);
+    expect(result).toEqual({
+      ready: true,
+      utterances: ["Deploy done.", "Next, the release notes."],
+    });
+  });
+
+  it.each([
+    ["Chinese", "中".repeat(2400)],
+    ["Japanese", "あ".repeat(2400)],
+  ])("synthesizes long %s replies in full without a summary", async (_name, text) => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+
+    for (const summarize of [undefined, vi.fn().mockResolvedValue(null)]) {
+      const deps = depsWith(summarize);
+      const result = await prepareVoice(deps, actor, { text, botId: "bot-1" });
+      expect(result.ready).toBe(true);
+      const app = new Hono();
+      mountVoiceHttpRoutes(app, deps, async () => actor);
+      synthesize.mockClear();
+
+      for (const utterance of result.utterances) {
+        const response = await app.request("/api/voice/speak", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: utterance, botId: "bot-1" }),
+        });
+        expect(response.status).toBe(200);
+      }
+
+      expect(result.utterances.length).toBeGreaterThan(1);
+      expect(result.utterances.join("")).toBe(text);
+      expect(synthesize.mock.calls.map(([request]) => request.text)).toEqual(result.utterances);
+    }
+  });
+
+  it("reads short replies, and replies when summarizing fails or is not enabled, in full", async () => {
+    const failing = vi.fn().mockResolvedValue(null);
+    const short = await prepareVoice(depsWith(failing), actor, { text: "Done.", botId: "bot-1" });
+    expect(short.utterances).toEqual(["Done."]);
+    expect(failing).not.toHaveBeenCalled();
+
+    const failed = await prepareVoice(depsWith(failing), actor, { text: long, botId: "bot-1" });
+    expect(failed.utterances.join(" ")).toContain("every check passed");
+
+    const unspeakable = vi.fn().mockResolvedValue("🎉");
+    const empty = await prepareVoice(depsWith(unspeakable), actor, { text: long, botId: "bot-1" });
+    expect(empty.utterances.join(" ")).toContain("every check passed");
+
+    const off = await prepareVoice(depsWith(), actor, { text: long, botId: "bot-1" });
+    expect(off.utterances.join(" ")).toContain("every check passed");
+  });
+});
+
 describe("synthesizeVoice", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -563,6 +659,7 @@ describe("synthesizeVoice", () => {
   it.each([
     ["VOICE_OUT_OF_CREDIT", 402],
     ["VOICE_KEY_REJECTED", 403],
+    [undefined, 403],
   ] as const)("answers %s from the provider with HTTP %i and a warning", async (code, status) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
@@ -626,6 +723,11 @@ describe("voiceCredentialPlaintext", () => {
     );
   });
 
+  it("ignores any pasted key for a keyless provider", () => {
+    expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "" })).toBe("macos");
+    expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "sk-test-key" })).toBe("macos");
+  });
+
   it("stores a self-hosted server's address and models without a key", () => {
     const plaintext = voiceCredentialPlaintext({
       provider: "openai-compatible",
@@ -658,14 +760,19 @@ describe("voiceCredentialPlaintext", () => {
   });
 
   it("rejects a public server address as a bad request", () => {
-    expect(() =>
-      voiceCredentialPlaintext({
-        provider: "openai-compatible",
-        allowPrivateEndpoint: true,
-        plaintext: "",
-        baseUrl: "https://speech.example.com",
-      }),
-    ).toThrow(/Public model endpoints are blocked/);
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
+    try {
+      expect(() =>
+        voiceCredentialPlaintext({
+          provider: "openai-compatible",
+          allowPrivateEndpoint: true,
+          plaintext: "",
+          baseUrl: "https://speech.example.com",
+        }),
+      ).toThrow(/Public model endpoints are disabled/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

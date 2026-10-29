@@ -6,12 +6,8 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 
 /**
- * Compact Teach a task control for the computer chrome bar above the screen
- * (not painted on the framebuffer, and not in the agent sidepanel).
- *
- * Mount with key={botId} from Shell so a bot switch remounts clean state.
- * Async completions still check botIdRef so a late response from bot A cannot
- * mutate bot B if the instance is reused.
+ * Mount with key={botId} so a bot switch remounts clean state. Async completions still check
+ * botIdRef so a late response from bot A cannot mutate bot B if the instance is reused.
  */
 export function TeachComputerOverlayControl({
   botId,
@@ -45,9 +41,8 @@ export function TeachComputerOverlayControl({
   const startLocked = needsRefresh || syncingRecording;
   const recoveryVisible = !goalOpen && needsRefresh && recoveryOpen;
 
-  // Re-seed the lock from server state on mount / bot change. Local needsRefresh
-  // is lost on remount and can leak across bots if not cleared when idle.
-  // Lock immediately while the probe runs so a remount cannot start twice.
+  // Local needsRefresh is lost on remount and can leak across bots, so re-seed it from the
+  // server, locked while the probe runs so a remount cannot start twice.
   useEffect(() => {
     let cancelled = false;
     const probeBotId = botId;
@@ -138,7 +133,6 @@ export function TeachComputerOverlayControl({
       await rpc.computer.boot({ botId: requestBotId });
       await rpc.skills.start({ botId: requestBotId, goal: requestGoal });
       if (botIdRef.current !== requestBotId) return;
-      // Recording has started. Keep Start locked; only refresh the view.
       setGoalOpen(false);
       setNeedsRefresh(true);
       try {
@@ -186,7 +180,6 @@ export function TeachComputerOverlayControl({
         }
         if (syncingRecording) return;
         if (needsRefresh) {
-          // Keep Start recording locked; only reopen refresh recovery.
           setRecoveryOpen(true);
           return;
         }

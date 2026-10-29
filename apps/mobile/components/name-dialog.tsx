@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import type { TextInputProps } from "react-native";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -37,8 +38,52 @@ export function NameDialog(props: NameDialogProps) {
 
 function FallbackNameDialog({ draft, error, saving, onChange, onSave, onClose }: NameDialogProps) {
   const { t } = useI18n();
+  return (
+    <TextFieldDialog
+      title={t("Edit name")}
+      label={t("Name")}
+      submitLabel={t("Save")}
+      value={draft}
+      error={error}
+      saving={saving}
+      input={{ autoComplete: "name", maxLength: 80, selectTextOnFocus: true }}
+      onChange={onChange}
+      onSubmit={onSave}
+      onClose={onClose}
+    />
+  );
+}
+
+/** A single-field dialog for platforms without a system text prompt. */
+export function TextFieldDialog({
+  title,
+  label,
+  submitLabel,
+  value,
+  error,
+  saving,
+  input,
+  extraAction,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  title: string;
+  label: string;
+  submitLabel: string;
+  value: string;
+  error: string | null;
+  saving: boolean;
+  input?: Omit<TextInputProps, "value" | "onChangeText">;
+  /** One more button beside Cancel and submit. */
+  extraAction?: { label: string; onPress: () => void };
+  onChange: (value: string) => void;
+  onSubmit: (value: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
-  const disabled = saving || !draft.trim();
+  const disabled = saving || !value.trim();
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay}>
@@ -50,24 +95,22 @@ function FallbackNameDialog({ draft, error, saving, onChange, onSave, onClose }:
         />
         <View accessibilityViewIsModal style={styles.dialog}>
           <Text accessibilityRole="header" style={styles.title}>
-            {t("Edit name")}
+            {title}
           </Text>
           <View style={[styles.field, !!error && styles.fieldError]}>
-            <Text style={styles.label}>{t("Name")}</Text>
+            <Text style={styles.label}>{label}</Text>
             <TextInput
-              accessibilityLabel={t("Name")}
-              autoComplete="name"
+              accessibilityLabel={label}
               autoFocus
               editable={!saving}
-              maxLength={80}
+              returnKeyType="done"
+              {...input}
               onChangeText={onChange}
               onSubmitEditing={() => {
-                if (!disabled) onSave(draft);
+                if (!disabled) onSubmit(value);
               }}
-              returnKeyType="done"
-              selectTextOnFocus
               style={styles.input}
-              value={draft}
+              value={value}
             />
           </View>
           {error ? (
@@ -84,13 +127,25 @@ function FallbackNameDialog({ draft, error, saving, onChange, onSave, onClose }:
             >
               <Text style={[styles.actionText, saving && styles.disabled]}>{t("Cancel")}</Text>
             </Pressable>
+            {extraAction ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={saving}
+                onPress={extraAction.onPress}
+                style={styles.action}
+              >
+                <Text style={[styles.actionText, saving && styles.disabled]}>
+                  {extraAction.label}
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               disabled={disabled}
-              onPress={() => onSave(draft)}
+              onPress={() => onSubmit(value)}
               style={styles.action}
             >
-              <Text style={[styles.actionText, disabled && styles.disabled]}>{t("Save")}</Text>
+              <Text style={[styles.actionText, disabled && styles.disabled]}>{submitLabel}</Text>
             </Pressable>
           </View>
         </View>

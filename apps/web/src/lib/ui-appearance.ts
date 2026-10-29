@@ -1,7 +1,6 @@
+import type { AppearancePreference, ResolvedAppearance } from "@rakazo/ui-tokens";
 import {
-  type AppearancePreference,
   persistAppearancePreference,
-  type ResolvedAppearance,
   resolveAppearance,
   resolveAppearancePreference,
   webTokensForAppearance,

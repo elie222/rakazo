@@ -48,6 +48,26 @@ function reposFor(memoryScope: string | null) {
 }
 
 describe("createRepos.listBots", () => {
+  it.each([undefined, "organic", "rakazo"])(
+    "preserves appearance metadata on reload (set=%s)",
+    async (avatarSet) => {
+      const rows = ["#8B5CF6", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="].map(
+        (color, index) => ({ ...baseBot, id: `bot-${index}`, color, avatarSet }),
+      );
+      const prisma = {
+        bot: { findMany: vi.fn(async () => rows) },
+        run: { findMany: vi.fn(async () => []) },
+        $queryRaw: vi.fn(async () => []),
+      };
+      const bots = await createRepos(prisma as unknown as PrismaClient).listBots(actor);
+      expect(
+        bots.map((bot) => ({ id: bot.id, color: bot.color, avatarSet: bot.avatarSet })),
+      ).toEqual(
+        rows.map((row) => ({ id: row.id, color: row.color, avatarSet: avatarSet ?? "organic" })),
+      );
+    },
+  );
+
   it("surfaces a failed foreground run and clears the signal after recovery", async () => {
     const findMany = vi.fn(async () => [baseBot]);
     const queryRaw = vi.fn(async () => [] as unknown[]);
@@ -240,6 +260,57 @@ describe("createRepos.listBots", () => {
     ]);
   });
 
+  it("uses text from the same window after a chart-only peer relay", async () => {
+    const messageFindMany = vi.fn(async () => [
+      { seq: 1, blocks: [{ kind: "text", text: "Earlier-window answer" }] },
+    ]);
+    const prisma = {
+      bot: { findMany: vi.fn(async () => [baseBot]) },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer", trigger: "bot_message" }]) },
+      $queryRaw: vi.fn(async () => [
+        {
+          id: "chart-reply",
+          threadId: "thread-1",
+          seq: 4,
+          role: "bot",
+          runId: "run-peer",
+          blocks: [{ kind: "chart", name: "Results", spec: {}, data: [] }],
+        },
+        {
+          id: "relay-receipt",
+          threadId: "thread-1",
+          seq: 3,
+          role: "bot",
+          runId: "run-peer",
+          replyToMessageId: "sent",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Coder",
+              text: "Peer result",
+              intent: "result",
+            },
+          ],
+        },
+        {
+          id: "answer",
+          threadId: "thread-1",
+          seq: 2,
+          role: "bot",
+          runId: null,
+          blocks: [{ kind: "text", text: "Current-window answer" }],
+        },
+      ]),
+      message: { findMany: messageFindMany },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ preview: "Current-window answer" }),
+    ]);
+    expect(messageFindMany).not.toHaveBeenCalled();
+  });
+
   it("scans older messages when the newest window is only peer output", async () => {
     const messageFindMany = vi.fn(async () => [
       { seq: 1, runId: "run-user", blocks: [{ kind: "text", text: "Older visible answer" }] },
@@ -370,8 +441,8 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         id: "bot-2",
         spaceId: "ws-2",
         name: "Support",
-        title: "Customer support",
         color: "#123456",
+        avatarSet: "organic",
         notifyOnFinish: false,
         pinned: true,
         sectionId: null,
@@ -412,8 +483,9 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         id: "bot-2",
         spaceId: "ws-2",
         name: "Support",
-        title: "Customer support",
+        title: "",
         color: "#123456",
+        avatarSet: "organic",
         notifyOnFinish: false,
         pinned: true,
         sectionId: null,

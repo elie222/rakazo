@@ -3,9 +3,11 @@ import { access, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkpointAndStopComputer,
   checkpointComputerWorkspace,
   deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
@@ -169,6 +171,78 @@ describe("provider-neutral computer workspace", () => {
   });
 });
 
+describe("mounted Kubernetes homes", () => {
+  function kubernetesSandbox(persistentHome: boolean, mountedHome = persistentHome) {
+    const importWorkspace = vi.fn(async () => undefined);
+    const exportWorkspace = vi.fn(async function* () {});
+    const sandbox = {
+      describe: () => ({
+        id: "kubernetes",
+        contractVersion: "1",
+        adapterVersion: "test",
+        capabilities: {
+          graphical: true,
+          pty: true,
+          snapshots: true,
+          takeover: true,
+          persistentHome,
+          multiScreen: true,
+        },
+      }),
+      hasMountedHome: vi.fn(async () => mountedHome),
+      importWorkspace,
+      exportWorkspace,
+    } as unknown as SandboxProvider;
+    return { sandbox, importWorkspace, exportWorkspace };
+  }
+  const computer: ComputerRef = {
+    id: "pod",
+    botId: "bot-1",
+    kind: "kubernetes",
+    providerRef: "pod",
+  };
+
+  it("skips the copy when the pod mounts the local home", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const { sandbox, importWorkspace, exportWorkspace } = kubernetesSandbox(true);
+
+    await restoreComputerWorkspace(home, sandbox, "bot-1", computer, context);
+    const revision = await checkpointComputerWorkspace(home, sandbox, "bot-1", computer, context);
+
+    expect(importWorkspace).not.toHaveBeenCalled();
+    expect(exportWorkspace).not.toHaveBeenCalled();
+    expect(revision).toMatch(/^rev-/);
+  });
+
+  it("saves a legacy pod even after persistent homes have been enabled", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const { sandbox, exportWorkspace } = kubernetesSandbox(true, false);
+    exportWorkspace.mockImplementation(async function* () {
+      yield { path: "latest.txt", content: Buffer.from("latest bytes") };
+    } as never);
+    await checkpointComputerWorkspace(home, sandbox, "bot-1", computer, context);
+    expect(await home.readFile("bot-1", "latest.txt", context)).toBe("latest bytes");
+    expect(exportWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("copies the home in and out when the pod has no mounted home", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const { sandbox, importWorkspace, exportWorkspace } = kubernetesSandbox(false);
+
+    await restoreComputerWorkspace(home, sandbox, "bot-1", computer, context);
+    await checkpointComputerWorkspace(home, sandbox, "bot-1", computer, context);
+
+    expect(importWorkspace).toHaveBeenCalledOnce();
+    expect(exportWorkspace).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Team run checkpoints", () => {
   it("defers a remote export when another run prevents an exclusive checkpoint", async () => {
     const { checkpointRunComputerWorkspace } = await import("./computer-workspace.js");
@@ -227,6 +301,58 @@ describe("Team run checkpoints", () => {
       where: { id: "team", providerRef: "remote", state: "suspending" },
       data: { state: "running" },
     });
+  });
+});
+
+describe("checkpointAndStopComputer", () => {
+  const record = { id: "computer-1", homeKey: "home-1", scope: "dedicated", spaceId: "space-1" };
+  const ref: ComputerRef = { id: "boat-1", providerRef: "boat-1", kind: "boat", botId: "home-1" };
+
+  function sandboxFailingWith(error: Error) {
+    return {
+      // biome-ignore lint/correctness/useYield: the export fails before its first file
+      exportWorkspace: async function* () {
+        throw error;
+      },
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("saves a healthy computer, then stops it as before", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const sandbox = { exportWorkspace: async function* () {}, stop };
+    const commit = vi.fn().mockResolvedValue("revision-1");
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const deps = { sandbox, home: { commit }, prisma: { computer: { updateMany } } };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(commit).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1" },
+      data: { homeRevision: "revision-1", homeRevisionAt: expect.any(Date) },
+    });
+    expect(stop.mock.calls).toEqual([[ref, context]]);
+    expect(stop.mock.calls[0]).toHaveLength(2);
+  });
+
+  it("stops a damaged computer without its save", async () => {
+    const sandbox = sandboxFailingWith(new SandboxDamagedError());
+    const deps = { sandbox, home: {}, prisma: {} };
+
+    await checkpointAndStopComputer(deps as never, record, ref, context);
+
+    expect(sandbox.stop).toHaveBeenCalledWith(ref, context, { discardUnsaved: true });
+  });
+
+  it("leaves a computer whose save fails for another reason running", async () => {
+    const sandbox = sandboxFailingWith(new Error("export failed"));
+    const deps = { sandbox, home: {}, prisma: {} };
+
+    await expect(checkpointAndStopComputer(deps as never, record, ref, context)).rejects.toThrow(
+      "export failed",
+    );
+    expect(sandbox.stop).not.toHaveBeenCalled();
   });
 });
 

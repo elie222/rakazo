@@ -167,8 +167,39 @@ minutes, so run `content-encryption reencrypt` again after that.
 
 ## External key management
 
-The master keys sit behind the `KeyProvider` interface in
-`@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`). An adapter for a key
-management service or secret manager implements it and is passed to
-`createDb(url, { keyProvider })` in the composition roots. The provider only
-wraps 32-byte data keys, so it is called once per space key, not per value.
+`MASTER_KEY_PROVIDER=aws-kms` wraps space keys with an AWS KMS key instead of
+master keys held by the API and worker. The key never leaves KMS, and a process
+needs KMS each time it loads a space key (cached for up to ten minutes), so a
+copy of the database and environment stops being decryptable once that access
+is revoked. Set on the API and worker:
+
+```dotenv
+MASTER_KEY_PROVIDER=aws-kms
+AWS_KMS_KEY_ARN=arn:aws:kms:<region>:<account>:key/<key id>
+AWS_KMS_ACCESS_KEY_ID=replace-with-access-key-id
+AWS_KMS_SECRET_ACCESS_KEY=replace-with-secret-access-key
+```
+
+Use a symmetric key and its key ARN, not an alias. Allow the credentials only
+`kms:Encrypt` and `kms:Decrypt` on that key, and add an `aws:SourceIp` condition
+so leaked credentials do not work from elsewhere. Each wrap carries the space id
+and key version as encryption context, so CloudTrail records which space every
+unwrap was for.
+
+To move existing keys, deploy with these settings (keys wrapped by local master
+keys keep unwrapping), run `content-encryption rotate`, and check that `status`
+lists every space key under `aws-kms:<key id>`. Keep `ENCRYPTION_KEY`: stored
+credentials still use it ([Infisical](./infisical-secrets.md) moves those out),
+and backups from before the rotation still unwrap with it.
+
+To replace the KMS key, point `AWS_KMS_KEY_ARN` at the new one, keep
+`kms:Decrypt` on the old key, and run `rotate` again.
+
+While KMS is unreachable, a process cannot read or write content in a space
+whose key it has not cached. Startup logs master keys it cannot unwrap.
+
+Other key managers implement the `KeyProvider` interface in
+`@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`), pass the shared suite in
+`packages/adapters/src/key-provider-conformance.test.ts`, and are selected in
+`contentKeyProviderFromEnv`. A provider only wraps 32-byte data keys, so it is
+called once per space key, not per value.

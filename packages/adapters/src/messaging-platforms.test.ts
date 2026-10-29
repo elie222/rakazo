@@ -1,14 +1,14 @@
-import { WhatsAppApiError } from "@chat-adapter/whatsapp";
+import { splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
@@ -415,10 +415,22 @@ describe("splitOutboundBody", () => {
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
   });
 
+  it.each([
+    ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
+    ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
+  ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
+    const parts = splitOutboundBody("whatsapp", body);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(body);
+    expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
   it("keeps the existing WhatsApp splitting and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
     expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
+    const words = `${"word ".repeat(3000)}\n${"line ".repeat(3000)}`;
+    expect(splitOutboundBody("whatsapp", words)).toEqual(splitMessage(words));
     expect(splitOutboundBody("sendblue", long)).toEqual([long]);
   });
 });

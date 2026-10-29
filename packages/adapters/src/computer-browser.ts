@@ -13,7 +13,8 @@ import type {
   PageBrowserResult,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
+import type { FakeBrowserProviderOptions } from "./fake-browser.js";
+import { FakeBrowserProvider } from "./fake-browser.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 
@@ -232,7 +233,7 @@ function formatTree(elements: BrowserSnapshotNode[]): string {
     .map((el) => {
       const value =
         el.value !== undefined && el.value !== "" ? ` value=${JSON.stringify(el.value)}` : "";
-      return `- ${el.role} "${el.name}" [${el.ref}]${value}`;
+      return `- ${el.role} ${JSON.stringify(el.name)} [${el.ref}]${value}`;
     })
     .join("\n");
 }

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@ronradtke/react-native-markdown-display": "9.0.3",

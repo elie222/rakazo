@@ -50,6 +50,7 @@ function handlers(): BackgroundJobHandlers {
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "purchase.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
   };
 }
@@ -319,7 +320,8 @@ describe("reserved Graphile workloads", () => {
     const host = createReservedGraphileJobWorkerHost({} as Pool, { concurrency: 4 });
     await host.start(handlers());
     const configurations = run.mock.calls.map(([options]) => options);
-    expect(configurations.map(({ concurrency }) => concurrency)).toEqual([4, 1, 1]);
+    expect(configurations.map(({ concurrency }) => concurrency)).toEqual([4, 1, 100]);
+    expect(configurations[2].preset).toEqual({ worker: { localQueue: { size: 10 } } });
     expect(Object.keys(configurations[0].taskList)).toEqual(["run.interactive"]);
     expect(Object.keys(configurations[1].taskList)).toEqual(["run.continue"]);
     expect(Object.keys(configurations[2].taskList)).not.toContain("run.continue");
@@ -385,10 +387,13 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
       heap_size_limit: 1024 ** 3,
     } as ReturnType<typeof getHeapStatistics>);
     vi.spyOn(process, "availableMemory").mockReturnValue(8 * 1024 ** 3);
+    // Keep the host's real cgroup file cache out of admission.
+    vi.spyOn(process, "constrainedMemory").mockReturnValue(0);
   });
   afterEach(() => {
     run.mockReset();
     vi.mocked(process.availableMemory).mockRestore();
+    vi.mocked(process.constrainedMemory).mockRestore();
     vi.useRealTimers();
   });
 

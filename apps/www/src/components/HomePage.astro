@@ -6,7 +6,9 @@ import Header from "./Header.astro";
 import { LandingBotAvatar } from "./LandingBotAvatar";
 import PhoneMockup from "./PhoneMockup.astro";
 import { ProductDemo } from "./ProductDemo";
+import { demoMessages, getDemoBots } from "../i18n/demo";
 import FeatureIllustration from "./FeatureIllustration.astro";
+import CapabilityIllustration from "./CapabilityIllustration.astro";
 import RepoCard from "./RepoCard.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
 import type { Locale } from "../i18n/locales";
@@ -16,7 +18,16 @@ import grokLogo from "./provider-logos/grok.svg?raw";
 import lmStudioLogo from "./provider-logos/lmstudio.svg?raw";
 import ollamaLogo from "./provider-logos/ollama.svg?raw";
 import openRouterLogo from "./provider-logos/openrouter.svg?raw";
-import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
+import imessageLogo from "./brand-logos/imessage.svg?raw";
+import slackLogo from "./brand-logos/slack.svg?raw";
+import telegramLogo from "./brand-logos/telegram.svg?raw";
+import whatsappLogo from "./brand-logos/whatsapp.svg?raw";
+import {
+  HOME_CHANNELS,
+  HOME_FEATURE_KINDS,
+  HOME_MODEL_PROVIDERS,
+  getHomeCopy,
+} from "../i18n/home";
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -70,6 +81,13 @@ const PROVIDER_LOGOS: Record<string, string> = {
   Ollama: ollamaLogo,
   "LM Studio": lmStudioLogo,
 };
+const CHANNEL_LOGOS: Record<(typeof HOME_CHANNELS)[number]["id"], string> = {
+  slack: slackLogo,
+  imessage: imessageLogo,
+  whatsapp: whatsappLogo,
+  telegram: telegramLogo,
+};
+const selfHostOnlyHref = `${SELF_HOST_GUIDE_PATH}#self-host-only`;
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = homeStructuredData({
@@ -125,8 +143,6 @@ const structuredData = homeStructuredData({
       </script>
 
       <section class="hero">
-        {/* Hidden while the headline already says open source. */}
-        {/* <a class="hero__pill" href="#open-source">{copy.hero.eyebrow}</a> */}
         <h1>{copy.hero.heading}</h1>
         <p class="lead">
           {copy.hero.lead}
@@ -157,7 +173,7 @@ const structuredData = homeStructuredData({
       </section>
 
       <section id="demo">
-        <ProductDemo locale={locale} client:load />
+        <ProductDemo bots={getDemoBots(locale)} strings={demoMessages(locale)} client:load />
       </section>
 
       <section id="roster" class="section">
@@ -175,6 +191,63 @@ const structuredData = homeStructuredData({
                 <RosterBotAvatar color={bot.color} name={bot.name} />
                 <h3>{bot.name}</h3>
                 <p>{bot.desc}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section id="channels" class="section channels">
+        <div class="channels__intro">
+          <h2 class="section-heading">{copy.channels.heading}</h2>
+          <p class="section-copy">{copy.channels.copy}</p>
+          <ul class="channel-list">
+            {
+              HOME_CHANNELS.map((channel) => (
+                <li class="channel-tile">
+                  <span class="channel-tile__logo"><Fragment set:html={CHANNEL_LOGOS[channel.id]} /></span>
+                  <span class="channel-tile__name">{channel.name}</span>
+                  {channel.selfHosted && (
+                    <a class="self-host-tag" href={selfHostOnlyHref}>{copy.selfHost.heading}</a>
+                  )}
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+        <div class="slack-mock" aria-hidden="true">
+          <div class="slack-mock__bar">
+            <span class="slack-mock__logo"><Fragment set:html={slackLogo} /></span>
+            <b># sales</b>
+          </div>
+          <div class="slack-mock__message">
+            <span class="slack-mock__person">AK</span>
+            <div>
+              <div class="slack-mock__name">Avery Kim <time>9:41</time></div>
+              <p><mark>@Sales Outbound</mark> {copy.channels.mock.ask}</p>
+            </div>
+          </div>
+          <div class="slack-mock__message">
+            <img src="/brand/job-bots/sales-outbound.webp" alt="" width="36" height="36" loading="lazy" />
+            <div>
+              <div class="slack-mock__name">Sales Outbound <span class="slack-mock__app">APP</span> <time>9:41</time></div>
+              <p>{copy.channels.mock.reply}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="section-intro">
+          <h2 class="section-heading">{copy.features.heading}</h2>
+        </div>
+        <div class="card-grid-3 capability-grid">
+          {
+            HOME_FEATURE_KINDS.map((kind) => (
+              <article class="feature-card">
+                <CapabilityIllustration kind={kind} labels={copy.features.mock} />
+                <h3>{copy.features.items[kind].title}</h3>
+                <p>{copy.features.items[kind].body}</p>
               </article>
             ))
           }
@@ -243,7 +316,10 @@ const structuredData = homeStructuredData({
               {copy.selfHost.copy}
             </p>
           </div>
-          <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
+          <div class="selfhost__actions">
+            <Button href={GITHUB_URL} external data-attr="selfhost-github">{copy.hero.viewOnGithub}</Button>
+            <Button href="/docs/self-host/" variant="secondary">{copy.openSource.readTheDocs}</Button>
+          </div>
         </div>
         <div class="card-grid-3">
           {
@@ -391,6 +467,7 @@ const structuredData = homeStructuredData({
 </BaseLayout>
 
 <script>
+  import "../support-chat";
   const setupCopy = document.querySelector<HTMLButtonElement>("[data-setup-copy]");
   const setupCopyLabel = setupCopy?.querySelector<HTMLElement>(".setup-copy__label");
 

@@ -3,7 +3,7 @@ import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
 import { DEFAULT_LOCALE, localeHomePath } from "../i18n/locales";
 import type { Locale } from "../i18n/locales";
-import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { APP_URL, GITHUB_URL } from "../site";
 import Logo from "./Logo.astro";
 
 type Props = {
@@ -19,7 +19,8 @@ const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
 const NAV_LINKS = [
-  { href: SELF_HOST_GUIDE_PATH, label: copy.docs },
+  { href: "/docs/", label: copy.docs },
+  { href: "/integrations/", label: copy.integrations },
   { href: "/blog/", label: copy.blog },
 ];
 
@@ -51,7 +52,7 @@ function isCurrent(href: string): boolean {
       class="star-pill"
       href={GITHUB_URL}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener"
       aria-label={copy.github}
       data-attr="header-github"
     >
@@ -83,7 +84,7 @@ function isCurrent(href: string): boolean {
             </a>
           ))
         }
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer" data-attr="menu-github">{copy.github}</a>
+        <a href={GITHUB_URL} target="_blank" rel="noopener" data-attr="menu-github">{copy.github}</a>
       </nav>
     </details>
   </div>

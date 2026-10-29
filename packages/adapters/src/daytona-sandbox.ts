@@ -50,7 +50,6 @@ const DAYTONA_POLL_MS = 1_000;
 /** How long a cached handle is trusted before Daytona is asked whether the sandbox still runs. */
 const DAYTONA_HANDLE_PROBE_MS = 60_000;
 
-/** The slice of a Daytona sandbox this adapter uses. */
 export type DaytonaSandbox = Pick<
   Sandbox,
   | "id"
@@ -221,6 +220,20 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     this.boxes.set(sandbox.id, sandbox);
     this.checkedAt.set(sandbox.id, Date.now());
     return this.ref(sandbox, request.botId, true, false);
+  }
+
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "daytona") return false;
+    try {
+      const sandbox = await withAbort(
+        this.client.get(computer.providerRef || computer.id),
+        context.signal,
+      );
+      return sandbox.state === SandboxState.STARTED;
+    } catch (error) {
+      if (isDaytonaSandboxMissing(error)) return false;
+      throw error;
+    }
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {

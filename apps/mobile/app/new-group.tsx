@@ -19,6 +19,7 @@ import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { addToSearchInbox, searchInboxSession } from "../lib/search-inbox";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
@@ -46,7 +47,7 @@ export default function NewGroup() {
     else router.replace("/");
   }
   useEffect(() => {
-    void rpc<MobileBot[]>("bots/list")
+    void rpc("bots/list")
       .then((nextBots) => setBots(nextBots.filter((bot) => !bot.archivedAt)))
       .catch(() => undefined);
   }, []);
@@ -64,11 +65,13 @@ export default function NewGroup() {
     creating.current = true;
     setPending(true);
     setError(null);
+    const askedIn = searchInboxSession();
     try {
-      const group = await rpc<{ id: string; name: string }>("groups/create", {
+      const group = await rpc("groups/create", {
         name: name.trim() || defaultGroupName(picked.map((bot) => bot.name)),
         botIds: selected,
       });
+      addToSearchInbox({ kind: "group", group }, askedIn);
       router.replace({
         pathname: "/group-thread",
         params: { groupId: group.id, name: group.name },
@@ -164,7 +167,9 @@ export default function NewGroup() {
               <View style={{ alignItems: "center", marginTop: 24, marginBottom: 32 }}>
                 <GroupAvatar
                   size={120}
-                  members={picked.slice(0, 3).map((bot) => ({ botId: bot.id, color: bot.color }))}
+                  members={picked
+                    .slice(0, 3)
+                    .map((bot) => ({ botId: bot.id, color: bot.color, avatarSet: bot.avatarSet }))}
                 />
               </View>
               <TextInput

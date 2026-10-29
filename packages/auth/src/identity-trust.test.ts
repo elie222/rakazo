@@ -2,7 +2,7 @@ import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from "
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_IP_HEADER, createAuth } from "./index.js";
 
 // Exercise Better Auth's real routing, password hashing, verification and
@@ -10,8 +10,22 @@ import { CLIENT_IP_HEADER, createAuth } from "./index.js";
 vi.mock("better-auth/adapters/prisma", async () => {
   const { memoryAdapter } = await import("better-auth/adapters/memory");
   return {
-    prismaAdapter: (prisma: { authData: Record<string, unknown[]> }) =>
-      memoryAdapter(prisma.authData),
+    prismaAdapter: (prisma: { authData: Record<string, { id?: unknown }[]> }) => {
+      const factory = memoryAdapter(prisma.authData);
+      // Postgres rejects a duplicate primary key, which first-writer-wins reservations rely on.
+      return (options: Parameters<typeof factory>[0]) => {
+        const adapter = factory(options);
+        return {
+          ...adapter,
+          create: (async (input: { model: string; data: { id?: unknown } }) => {
+            const id = input.data.id;
+            if (id !== undefined && prisma.authData[input.model]?.some((row) => row.id === id))
+              throw new Error("duplicate key");
+            return adapter.create(input as never);
+          }) as typeof adapter.create,
+        };
+      };
+    },
   };
 });
 vi.mock("@rakazo/db", async (original) => ({
@@ -582,6 +596,154 @@ describe("session credentials", () => {
   });
 });
 
+describe("identity confirmation", () => {
+  afterEach(() => vi.useRealTimers());
+  const confirmed = async (f: ReturnType<typeof fixture>, token: string) => {
+    const current = await f.sessionFor(token);
+    return f.auth.hasRecentIdentityConfirmation({
+      sessionId: current!.session.id,
+      userId: current!.user.id,
+    });
+  };
+  const codeAccount = async (f: ReturnType<typeof fixture>) => {
+    await f.sendCode();
+    return ((await (await f.codeSignIn(f.lastCode())).json()) as { token: string }).token;
+  };
+  const wrongCode = (code: string) => (code === "000000" ? "111111" : "000000");
+
+  it("confirms a password session for five minutes, and only that session", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const other = ((await (await f.signin()).json()) as { token: string }).token;
+    expect(await confirmed(f, token)).toBe(false);
+    for (const body of [{}, { password: "" }, { password: "wrong-password12" }]) {
+      const response = await f.request("/confirm-identity", body, token);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "INVALID_PASSWORD" });
+    }
+    expect(await confirmed(f, token)).toBe(false);
+    expect(
+      (await f.request("/confirm-identity", { password: "offline-password12" }, token)).status,
+    ).toBe(200);
+    expect(await confirmed(f, token)).toBe(true);
+    expect(await confirmed(f, other)).toBe(false);
+    expect(recordSecurityEvent).toHaveBeenCalledWith({
+      type: "auth.identity.confirmed",
+      userId: f.data.user![0]!.id,
+      metadata: { method: "password" },
+    });
+    vi.setSystemTime(Date.now() + 5 * 60_000);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("refuses a session that is not signed in", async () => {
+    const f = fixture({ delivery: false });
+    expect((await f.request("/confirm-identity", { password: "offline-password12" })).status).toBe(
+      401,
+    );
+  });
+
+  it("locks password confirmation after five wrong passwords", async () => {
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const wrong = { password: "wrong-password12" };
+      expect((await f.request("/confirm-identity", wrong, token)).status).toBe(400);
+    }
+    const locked = await f.request("/confirm-identity", { password: "offline-password12" }, token);
+    expect(locked.status).toBe(429);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("counts every parallel password guess toward the limit", async () => {
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const statuses = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        f
+          .request("/confirm-identity", { password: "wrong-password12" }, token)
+          .then((response) => response.status),
+      ),
+    );
+    expect(statuses.filter((status) => status === 400)).toHaveLength(5);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(7);
+    const locked = await f.request("/confirm-identity", { password: "offline-password12" }, token);
+    expect(locked.status).toBe(429);
+  });
+
+  it("frees password attempts once the lockout window passes, and clears them on success", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const attempt = (password: string) =>
+      f.request("/confirm-identity", { password }, token).then((response) => response.status);
+    for (let index = 0; index < 5; index += 1) await attempt("wrong-password12");
+    expect(await attempt("offline-password12")).toBe(429);
+    vi.setSystemTime(Date.now() + 15 * 60_000 + 1);
+    for (let index = 0; index < 4; index += 1) await attempt("wrong-password12");
+    expect(await attempt("offline-password12")).toBe(200);
+    expect(await attempt("wrong-password12")).toBe(400);
+    expect(await attempt("offline-password12")).toBe(200);
+  });
+
+  it("confirms an account without a password by a single-use emailed code", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    expect((await f.request("/request-identity-code", {}, token)).status).toBe(200);
+    expect(f.messages.at(-1)).toMatchObject({
+      to: "approved@example.test",
+      subject: "Your Rakazo confirmation code",
+    });
+    const code = f.lastCode();
+    expect(JSON.stringify(f.data.verification)).not.toContain(code);
+    const wrong = await f.request("/confirm-identity", { code: wrongCode(code) }, token);
+    expect(await wrong.json()).toMatchObject({ code: "INVALID_OTP" });
+    expect(await confirmed(f, token)).toBe(false);
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(200);
+    expect(await confirmed(f, token)).toBe(true);
+    expect(recordSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "auth.identity.confirmed", metadata: { method: "email" } }),
+    );
+    const reused = await f.request("/confirm-identity", { code }, token);
+    expect(await reused.json()).toMatchObject({ code: "OTP_EXPIRED" });
+  });
+
+  it("binds an emailed code to the session that requested it", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    await f.sendCode();
+    const other = ((await (await f.codeSignIn(f.lastCode())).json()) as { token: string }).token;
+    await f.request("/request-identity-code", {}, token);
+    const code = f.lastCode();
+    expect((await f.request("/confirm-identity", { code }, other)).status).toBe(400);
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(200);
+    expect(await confirmed(f, other)).toBe(false);
+  });
+
+  it("locks an emailed code after three wrong attempts", async () => {
+    const f = fixture();
+    const token = await codeAccount(f);
+    await f.request("/request-identity-code", {}, token);
+    const code = f.lastCode();
+    for (const expected of ["INVALID_OTP", "INVALID_OTP", "TOO_MANY_ATTEMPTS"]) {
+      const response = await f.request("/confirm-identity", { code: wrongCode(code) }, token);
+      expect(await response.json()).toMatchObject({ code: expected });
+    }
+    expect((await f.request("/confirm-identity", { code }, token)).status).toBe(400);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+
+  it("keeps password accounts on their password", async () => {
+    const f = fixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    const requested = await f.request("/request-identity-code", {}, token);
+    expect(await requested.json()).toMatchObject({ code: "EMAIL_CODE_UNAVAILABLE" });
+    expect((await f.request("/confirm-identity", { code: "123456" }, token)).status).toBe(400);
+    expect(await confirmed(f, token)).toBe(false);
+  });
+});
+
 describe("verification email without blocking", () => {
   it("signs an open password signup in at once and lets the emailed link mark it verified", async () => {
     const f = fixture();
@@ -872,6 +1034,30 @@ describe("passkeys", () => {
     const f = fixture({ webOrigin: "http://web.example.test" });
     expect(f.auth.passkeyRpId).toBeNull();
     expect((await f.request("/passkey/generate-authenticate-options")).status).toBe(404);
+  });
+});
+
+describe("account export tokens", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("names the issuing user once, and stores only a hash", async () => {
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    const other = await f.auth.issueAccountExportToken("user-b");
+    expect(JSON.stringify(f.data.verification)).not.toContain(token);
+    expect(await f.auth.consumeAccountExportToken(token)).toBe("user-a");
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
+    expect(await f.auth.consumeAccountExportToken(other)).toBe("user-b");
+    expect(await f.auth.consumeAccountExportToken("")).toBeNull();
+    expect(await f.auth.consumeAccountExportToken("made-up")).toBeNull();
+  });
+
+  it("expires after a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
   });
 });
 

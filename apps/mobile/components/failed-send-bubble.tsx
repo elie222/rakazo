@@ -33,31 +33,56 @@ export function FailedSendBubble({
   // A missing model isn't fixed by retrying, so the caption names the cause instead.
   const caption = sending
     ? t("Sending…")
-    : modelRequired
-      ? t("Not sent. No model")
-      : retryable
-        ? t("Not sent. Tap to retry")
-        : t("Not sent");
+    : attempt.imageConfirmation
+      ? t("Not sent. Tap for options")
+      : modelRequired
+        ? t("Not sent. No model")
+        : retryable
+          ? t("Not sent. Tap to retry")
+          : t("Not sent");
   const messageLabel = [payload.displayText, ...payload.attachments.map(({ name }) => name)]
     .filter(Boolean)
     .join(", ");
   const color = sending ? tokens.mutedForeground : tokens.destructive;
 
-  function showActions() {
+  function showActions(manage = true) {
     const actions = [
       ...(modelRequired ? [{ text: t("Add Model"), onPress: openModelSettings }] : []),
+      ...(attempt.imageConfirmation
+        ? [
+            {
+              text: t("Send as file"),
+              onPress: () => {
+                attempt.imageHandling = "file";
+                onRetry();
+              },
+            },
+          ]
+        : []),
       // Retrying can't help until a model is added; tapping the bubble still retries.
-      ...(retryable && !modelRequired ? [{ text: t("Try Again"), onPress: onRetry }] : []),
-      { text: t("Delete"), style: "destructive" as const, onPress: onDelete },
+      ...(retryable && !modelRequired && !attempt.imageConfirmation
+        ? [{ text: t("Try Again"), onPress: onRetry }]
+        : []),
+      ...(attempt.imageConfirmation && !manage
+        ? [{ text: t("Try Again"), onPress: onRetry }]
+        : [{ text: t("Delete"), style: "destructive" as const, onPress: onDelete }]),
     ];
     // No header for a missing-model failure: Add Model says it, and once connected it's stale.
-    const message = isModelRequiredSendError(attempt.error) ? undefined : attempt.error;
+    // A file choice must not suggest the model will understand the picture.
+    const message = isModelRequiredSendError(attempt.error)
+      ? undefined
+      : attempt.imageConfirmation
+        ? [attempt.error, t("The bot can use the file but won't see the picture.")]
+            .filter(Boolean)
+            .join("\n\n")
+        : attempt.error;
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           message,
           options: [...actions.map((action) => action.text), t("Cancel")],
-          destructiveButtonIndex: actions.length - 1,
+          destructiveButtonIndex:
+            attempt.imageConfirmation && !manage ? undefined : actions.length - 1,
           cancelButtonIndex: actions.length,
         },
         (index) => actions[index]?.onPress(),
@@ -77,8 +102,10 @@ export function FailedSendBubble({
       accessibilityHint={sending ? undefined : t("Long press to delete")}
       accessibilityState={{ disabled: sending }}
       disabled={sending}
-      onPress={retryable ? onRetry : undefined}
-      onLongPress={showActions}
+      onPress={
+        attempt.imageConfirmation ? () => showActions(false) : retryable ? onRetry : undefined
+      }
+      onLongPress={() => showActions()}
       style={{ alignSelf: "flex-end", maxWidth: "90%", marginTop: 12, gap: 4 }}
     >
       <View

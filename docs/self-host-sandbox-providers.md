@@ -10,7 +10,8 @@ for the sharing and persistence contract.
 | --- | --- | --- |
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
-| Managed remote desktop | `e2b` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| Managed remote desktop | `e2b` / `novita` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -59,6 +60,64 @@ pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are di
 policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
 
+## `kubernetes`
+
+Each computer is one pod in a namespace you choose, created from the published computer image.
+The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
+`KUBECONFIG`), so they normally run in the same cluster. No supervisor or Docker socket is involved.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `KUBERNETES_SANDBOX_NAMESPACE` | `rakazo-sandboxes` | Namespace for computer pods; it must exist |
+| `KUBERNETES_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a digest in production |
+| `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME` | unset | For example `kata` or `gvisor` for a VM or user-space kernel boundary |
+| `KUBERNETES_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` | unset | Container limits, such as `2` and `4Gi` |
+| `KUBERNETES_SANDBOX_POD_LABELS` / `_POD_ANNOTATIONS` | unset | JSON objects of strings, merged into every pod |
+| `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
+
+Each pod runs the image's own user (uid 1000) with no service account token and no service links,
+and is labelled `app.kubernetes.io/name=rakazo-computer` and `rakazo-bot-id=<bot id>`. Commands,
+file transfers and workspace save and restore go through `pods/exec`; save and restore stream the
+home as one tar archive. Screens use the image's desktop gateway on the pod IP, so the API, the
+worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
+display ports from `6100` upward. Pods are ephemeral: the
+saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+
+### Mounted home (optional)
+
+By default each computer's home is copied in when it starts and saved back when it stops. Set
+`KUBERNETES_SANDBOX_HOME_CLAIM` to the PersistentVolumeClaim that holds the API's `DATA_DIR` to
+mount `homes/<home key>` from it at the workspace instead, so the home is never copied, like a
+local Docker computer. The claim must be in the computer namespace, so in practice the computers
+run in the API's namespace. Because a ReadWriteOnce volume is attached to one node,
+`KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE` and `KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS` (a JSON
+object) are required with it and become a required pod affinity to the pods that hold the volume,
+for example `{"app":"rakazo-api"}`. The pod gets `fsGroup: 1000`. An existing pod without the home
+volume keeps copying its files until it is stopped; its next fresh pod mounts the saved home. This applies only to the local home store; with
+`OBJECT_STORAGE_BUCKET` set, the home claim is ignored and homes are copied as usual.
+
+The API and worker service account needs this in the computer namespace:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rakazo-computers
+  namespace: rakazo-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+```
+
+Bind it to the service account the API and worker run as with a `RoleBinding`. A NetworkPolicy
+that admits only the API, worker and web pods to the computer pods, and denies their egress to
+private ranges, is recommended.
+
 ## `none`
 
 Runs API/web without provisioning bot computers.
@@ -70,6 +129,7 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | Value | Credential | Notes |
 | --- | --- | --- |
 | `e2b` | `E2B_API_KEY` | Hosted sandboxes |
+| `novita` | `NOVITA_API_KEY` | Build the desktop template first; optional `SANDBOX_TEMPLATE` |
 | `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
 | `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
 
@@ -160,6 +220,40 @@ E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
 Until it exists, new computers use the stock desktop template. Existing computers keep
 the size they were created with until they are replaced.
 
+### Novita computer template
+
+Set `SANDBOX_PROVIDER=novita` and `NOVITA_API_KEY` on both the API and worker.
+Build the desktop template once in the account that owns that key:
+
+```bash
+NOVITA_API_KEY=<deployment-key> pnpm sandbox:novita-template
+```
+
+The `rakazo-computer` template uses Novita's desktop image at 2 vCPU and 4 GB.
+The provider requires this template and does not fall back to the larger stock desktop.
+To use another desktop template, set `SANDBOX_TEMPLATE` to the same name when building
+and on both services. Rebuild when the template definition changes; existing computers
+keep their original template and resources.
+
+Computers pause on idle timeout and on stop, preserving files, browser profiles, and
+running-process memory. Reconnecting resumes the same computer. Destruction deletes
+it without resuming it. Stop retries pause requests and checks the remote state. Command
+cancellation and deadlines retry termination; if termination cannot be confirmed, the
+adapter attempts to pause the computer and reports that the command may remain suspended.
+An unconfirmed command stop also quarantines the computer in the shared database, so
+API heartbeats, worker jobs, and restarts cannot silently resume it. Use the existing
+Recover or Reset action to replace it from saved work; the paused guest is preserved
+until that explicit action. Normal reads and heartbeats do not resume a paused Novita
+computer.
+An outage can prevent both operations; the configured idle timeout remains the final
+auto-pause boundary. This recovery does not delete the saved computer. Paused storage remains subject to Novita's storage billing
+and retention terms. This provider uses the shared Linux desktop runtime for screens,
+takeover, terminal, and portable workspace transfer.
+
+A missing key disables computers without preventing startup. A present but invalid key,
+a missing template, or a quota failure surfaces when a computer starts; an authentication
+or network error does not authorize replacing an existing computer.
+
 ### Boat computer snapshot
 
 Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
@@ -186,7 +280,7 @@ docker compose --env-file .env -f docker-compose.images.yml up -d
 curl -fsS http://127.0.0.1:3100/internal/health
 ```
 
-Confirm `sandbox` equals the intended provider (`e2b`, `daytona`, or `boat`).
+Confirm `sandbox` equals the intended provider (`e2b`, `novita`, `daytona`, or `boat`).
 HTTP 200 alone does not verify a remote provider: a missing API key falls back to `sandbox: "none"`.
 A present but invalid key still reports the selected provider. Open a bot's computer to verify
 provisioning and desktop access.

@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { ResponseError } from "@boatdev/sdk";
+import { FetchError, ResponseError } from "@boatdev/sdk";
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -13,8 +13,35 @@ export class BoatApiError extends ResponseError {
     response: Response,
     message: string,
     readonly code: string | undefined,
+    /** How long Boat asked to wait before the next request, on a 429 that said. */
+    readonly retryAfterMs?: number,
   ) {
     super(response, message);
+  }
+}
+
+/** Boat's limit on API requests per minute from one IP address, across every endpoint. */
+const BOAT_IP_RATE_LIMIT = "IP_RATE_LIMIT_EXCEEDED";
+/** Boat counts requests and starts over a rolling minute. */
+const BOAT_RATE_WINDOW_MS = 60_000;
+/** Bounds a wait Boat names, so a malformed answer cannot hold every request for long. */
+const BOAT_MAX_RETRY_AFTER_MS = 5 * 60_000;
+
+/**
+ * Every Boat call from one provider waits here after Boat refuses this host's address for
+ * sending too many requests, so parallel callers stop spending the shared budget until it refills.
+ */
+export class BoatRequestGate {
+  private openAt = 0;
+
+  async wait(signal?: AbortSignal): Promise<void> {
+    for (let ms = this.openAt - Date.now(); ms > 0; ms = this.openAt - Date.now()) {
+      await delay(ms, undefined, { signal });
+    }
+  }
+
+  close(ms: number): void {
+    this.openAt = Math.max(this.openAt, Date.now() + ms);
   }
 }
 
@@ -34,20 +61,33 @@ const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
  * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.
  * A brief Boat outage is retried once: any call whose request never arrived, and an
  * `idempotent` call that Boat failed on its side. A sandbox that took the request and did not
- * answer in time would only time out again, so that is never resent.
+ * answer in time would only time out again, so that is never resent. A server error that
+ * remains is an outage at Boat, reported as unresponsive like a connection Boat never answered.
  */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
   apiKey: string,
   idempotent = false,
+  gate?: BoatRequestGate,
 ): (...args: Args) => Promise<Result> {
   const attempt = async (...args: Args): Promise<Result> => {
+    await gate?.wait(callerSignal(args[1]));
     try {
       return await call(...args);
     } catch (error) {
+      // The connection to Boat failed without an answer. The request may have arrived, so it
+      // is not resent unless it never left; background work tries again on its next pass.
+      if (error instanceof FetchError && !aborted(error, callerSignal(args[1]))) {
+        throw new SandboxUnresponsiveError("Boat could not be reached", { cause: error });
+      }
       if (!(error instanceof ResponseError)) throw error;
-      const wrapped = await boatResponseError(error.response, apiKey);
-      if (error.response.status === 429) throw new SandboxRateLimitError({ cause: wrapped });
+      const wrapped =
+        error instanceof BoatApiError ? error : await boatResponseError(error.response, apiKey);
+      if (error.response.status === 429) {
+        const { retryAfterMs } = wrapped;
+        if (wrapped.code === BOAT_IP_RATE_LIMIT && retryAfterMs) gate?.close(retryAfterMs);
+        throw new SandboxRateLimitError({ cause: wrapped, retryAfterMs });
+      }
       // Boat's proxy reached the sandbox but gave up waiting for its answer.
       if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
         throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
@@ -55,13 +95,23 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       throw wrapped;
     }
   };
-  return async (...args) => {
+  const attemptWithRetry = async (...args: Args): Promise<Result> => {
     try {
       return await attempt(...args);
     } catch (error) {
       if (!unsent(error) && !(idempotent && failedAtBoat(error))) throw error;
       await delay(BOAT_RETRY_DELAY_MS, undefined, { signal: callerSignal(args[1]) });
       return attempt(...args);
+    }
+  };
+  return async (...args) => {
+    try {
+      return await attemptWithRetry(...args);
+    } catch (error) {
+      if (failedAtBoat(error)) {
+        throw new SandboxUnresponsiveError(error.message, { cause: error });
+      }
+      throw error;
     }
   };
 }
@@ -82,12 +132,20 @@ function unsent(error: unknown): boolean {
   for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
     const code = (current as { code?: unknown }).code;
     if (typeof code === "string" && UNSENT_CODES.has(code)) return true;
+    // Reset during the TLS handshake, before any of the request was written.
+    if (code === "ECONNRESET" && /before secure TLS connection/.test(current.message)) return true;
     current = current.cause;
   }
   return false;
 }
 
-function failedAtBoat(error: unknown): boolean {
+/** A fetch the caller cancelled or that ran out of time, rather than one the network lost. */
+function aborted(error: FetchError, signal: AbortSignal | undefined): boolean {
+  const name = error.cause instanceof Error ? error.cause.name : undefined;
+  return signal?.aborted === true || name === "AbortError" || name === "TimeoutError";
+}
+
+function failedAtBoat(error: unknown): error is BoatApiError {
   return error instanceof BoatApiError && TRANSIENT_STATUSES.has(error.response.status);
 }
 
@@ -116,7 +174,34 @@ export async function boatResponseError(
       [apiKey],
     ),
     code,
+    response.status === 429 ? retryAfterMs(response, body) : undefined,
   );
+}
+
+/**
+ * The wait a 429 names: `retryAfter` seconds in the body or the `Retry-After` header on the
+ * per-IP limit, or a start limit's `window` when that is the minute. Hour and day windows only
+ * clear by starting less, so they name no wait.
+ */
+function retryAfterMs(
+  response: Response,
+  body: Record<string, unknown> | undefined,
+): number | undefined {
+  const header = response.headers.get("Retry-After")?.trim();
+  const seconds =
+    typeof body?.retryAfter === "number"
+      ? body.retryAfter
+      : header && /^\d+$/.test(header)
+        ? Number(header)
+        : header
+          ? (Date.parse(header) - Date.now()) / 1_000
+          : Number.NaN;
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(Math.ceil(seconds * 1_000), BOAT_MAX_RETRY_AFTER_MS);
+  }
+  return body?.code === BOAT_IP_RATE_LIMIT || body?.window === "minute"
+    ? BOAT_RATE_WINDOW_MS
+    : undefined;
 }
 
 function safeIdentifier(value: unknown): string | undefined {

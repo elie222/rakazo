@@ -6,21 +6,19 @@ export const SLASH_ACTIONS = [
 
 export type SlashActionId = (typeof SLASH_ACTIONS)[number]["id"];
 
-/** Serialize composer chips + draft into the prompt text sent to the agent. */
-export function serializeComposerPrompt(
-  draft: string,
-  skill: { name: string } | null,
-  mentions: Array<{ name: string }>,
-): string {
+/** Keep inline mentions in the draft; only a selected skill adds a prefix. */
+export function serializeComposerPrompt(draft: string, skill: { name: string } | null): string {
   const body = draft.replace(/^\s+/, "");
-  const mentionPrefix = mentions.map((member) => `@${member.name}`).join(" ");
-  const afterSkill = [mentionPrefix, body].filter((part) => part.trim().length > 0).join(" ");
-  if (!skill) return afterSkill.trimEnd();
-  return afterSkill.trim().length > 0 ? `/${skill.name}\n${afterSkill}` : `/${skill.name}`;
+  if (!skill) return body.trimEnd();
+  return body.trim().length > 0 ? `/${skill.name}\n${body}` : `/${skill.name}`;
 }
 
 export function truncateSlashDescription(value: string, max = 72): string {
   const text = value.replace(/\s+/g, " ").trim();
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1).trimEnd()}…`;
+  const codePoints = Array.from(text);
+  if (codePoints.length <= max) return text;
+  return `${codePoints
+    .slice(0, max - 1)
+    .join("")
+    .trimEnd()}…`;
 }

@@ -42,7 +42,8 @@ import {
   linkFaviconOrigin,
   linkifyExplicitUrls,
   linkLabel,
-  markdownLinkRequiresConfirmation,
+  markdownLinkNeedsPrompt,
+  markdownLinkSite,
   markdownMentionId,
   markRemoteImageLoaded,
   plainTextLinkParts,
@@ -53,7 +54,11 @@ import {
   useLinkFavicon,
 } from "./markdown";
 
-import { useMarkdownLinkAppOrigin, useMarkdownLinkCopy } from "./markdown-link-prompt";
+import {
+  useMarkdownLinkAppOrigin,
+  useMarkdownLinkCopy,
+  useMarkdownLinkTrust,
+} from "./markdown-link-prompt";
 import { isMermaidFence } from "./mermaid";
 
 function keepMarkdownLinkToken(_url: string) {
@@ -220,7 +225,6 @@ function markdownStyles(palette: ColorTokens) {
       color: palette.foreground,
       fontFamily: MONO_FONT,
     },
-    // Quotes read as secondary text behind a faint bar.
     blockquote: {
       backgroundColor: "transparent",
       color: palette.mutedForeground,
@@ -231,7 +235,6 @@ function markdownStyles(palette: ColorTokens) {
     bullet_list_icon: {
       color: palette.faintForeground,
     },
-    // Tables are rules only: secondary-text cells under a primary-text header.
     table: {
       borderColor: palette.input,
       borderWidth: StyleSheet.hairlineWidth,
@@ -338,20 +341,33 @@ const OpenLinkContext = createContext<(url: string) => void>(() => undefined);
 function useNativeLinkConfirm() {
   const appOrigin = useMarkdownLinkAppOrigin();
   const copy = useMarkdownLinkCopy();
+  const { sites, trust } = useMarkdownLinkTrust();
   return useCallback(
     (raw: string) => {
       const url = sanitizeMarkdownUrl(raw);
       if (!url) return;
-      if (!markdownLinkRequiresConfirmation(url, appOrigin)) {
+      if (!markdownLinkNeedsPrompt(url, appOrigin, sites)) {
         void openSafeLink(url);
         return;
       }
+      const site = trust ? markdownLinkSite(url) : undefined;
       // Keep the actual host visible even when userinfo or the path is very long.
       Alert.alert(
         copy.title,
         `${new URL(url).host}\n\n${url}`,
         [
           { text: copy.cancel, style: "cancel" },
+          ...(trust && site
+            ? [
+                {
+                  text: copy.alwaysOpen(site),
+                  onPress: () => {
+                    void openSafeLink(url);
+                    trust(url);
+                  },
+                },
+              ]
+            : []),
           {
             text: copy.open,
             onPress: () => {
@@ -362,7 +378,7 @@ function useNativeLinkConfirm() {
         { cancelable: true },
       );
     },
-    [appOrigin, copy],
+    [appOrigin, copy, sites, trust],
   );
 }
 

@@ -1,3 +1,4 @@
+import type { BotAvatarSet } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
 import { resolvePersonaColorDef } from "@rakazo/core";
 import type { ColorTokens } from "@rakazo/ui-tokens";
@@ -13,11 +14,13 @@ const ICON_SIZE = 16;
 export function BotMention({
   block,
   color,
+  avatarSet,
   tokens,
   onOpenBot,
 }: {
   block: ChildBotBlock;
   color: string | undefined;
+  avatarSet?: BotAvatarSet;
   tokens: ColorTokens;
   onOpenBot: (botId: string, name: string) => void;
 }) {
@@ -34,7 +37,7 @@ export function BotMention({
       {/* An inline view sits on the baseline; this lowers it to centre on the capitals. */}
       <View style={{ width: ICON_SIZE + 5, height: ICON_SIZE, transform: [{ translateY: 3 }] }}>
         {live ? (
-          <BotAvatar color={color} identity={block.botId} size={ICON_SIZE} />
+          <BotAvatar color={color} avatarSet={avatarSet} identity={block.botId} size={ICON_SIZE} />
         ) : (
           <NativeSymbol
             ios="person"
@@ -53,12 +56,14 @@ export function BotMention({
 export function MessageMentions({
   mentions,
   colorOf,
+  avatarSetOf,
   tokens,
   onOpenBot,
   children,
 }: {
   mentions: readonly ChildBotBlock[];
   colorOf: (botId: string) => string | undefined;
+  avatarSetOf?: (botId: string) => BotAvatarSet | undefined;
   tokens: ColorTokens;
   onOpenBot: (botId: string, name: string) => void;
   children: ReactNode;
@@ -66,7 +71,13 @@ export function MessageMentions({
   const render = (id: string) => {
     const block = mentions.find((mention) => mention.botId === id);
     return block ? (
-      <BotMention block={block} color={colorOf(id)} tokens={tokens} onOpenBot={onOpenBot} />
+      <BotMention
+        block={block}
+        color={colorOf(id)}
+        avatarSet={avatarSetOf?.(id)}
+        tokens={tokens}
+        onOpenBot={onOpenBot}
+      />
     ) : undefined;
   };
   return (

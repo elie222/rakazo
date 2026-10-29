@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type { createApp } from "@rakazo/api/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { computerTestSandbox } from "./computer-test-config.js";
 import { sessionCookieHeader } from "./index.js";
 
@@ -14,7 +14,7 @@ describeLive("real model and sandbox computer journey", () => {
   let dataDir: string | undefined;
   let handles: Awaited<ReturnType<typeof createApp>>;
   let computer: ComputerRef | undefined;
-  let sandboxProvider: "boat" | "e2b";
+  let sandboxProvider: "boat" | "e2b" | "novita";
   let botId: string | undefined;
   let runId: string | undefined;
 
@@ -30,13 +30,15 @@ describeLive("real model and sandbox computer journey", () => {
       if (!process.env[key]) throw new Error(`${key} is required for pnpm test:computer`);
     }
     dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-computer-e2e-"));
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
       sandboxProvider,
       agentRuntime: "pi",
       e2bApiKey: process.env.E2B_API_KEY,
+      novitaApiKey: process.env.NOVITA_API_KEY,
+      sandboxTemplate: process.env.SANDBOX_TEMPLATE,
       boatApiKey: process.env.BOAT_API_KEY,
       boatApiUrl: process.env.BOAT_API_URL,
       openRouterKey: process.env.OPENROUTER_API_KEY,

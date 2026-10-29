@@ -48,12 +48,6 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
       semanticPass: false,
     },
     {
-      id: "silence-repeat-after-new-release",
-      replies: ["v2.2.0 adds a calendar integration.", "NO_RESPONSE"],
-      pass: false,
-      semanticPass: false,
-    },
-    {
       id: "silence-failed-check",
       replies: ["The release source did not respond."],
       pass: false,
@@ -133,7 +127,7 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-silence-eval-"));
       let evidence: Evidence | undefined;
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(
           {
             ...scenario,

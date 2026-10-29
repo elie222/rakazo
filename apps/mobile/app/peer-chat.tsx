@@ -3,10 +3,9 @@ import type { PeerConversation } from "@rakazo/core";
 import { displayName, loadPeerHistory, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { glassHeaderOptions } from "../components/glass-title";
-import type { MobileMessagePage } from "../lib/api";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -34,6 +33,8 @@ export default function PeerChat() {
   >({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const scrollRef = useRef<ScrollView>(null);
+  const userScrolled = useRef(false);
 
   useEffect(() => {
     if (!botId || !peerBotId) return;
@@ -42,11 +43,7 @@ export default function PeerChat() {
     void loadPeerHistory({
       signal: abort.signal,
       loadPage: (before, signal) =>
-        rpc<MobileMessagePage>(
-          "threads/messages",
-          { botId, before, includePeerRuns: true },
-          { signal },
-        ),
+        rpc("threads/messages", { botId, before, includePeerRuns: true }, { signal }),
     })
       .then((messages) => {
         if (abort.signal.aborted) return;
@@ -67,6 +64,14 @@ export default function PeerChat() {
   const peerName = displayName(chat?.peerBotName ?? params.peerBotName, t("Bot"));
   return (
     <ScrollView
+      ref={scrollRef}
+      // Opens at the latest message like a chat; older ones are above.
+      onContentSizeChange={() => {
+        if (!userScrolled.current) scrollRef.current?.scrollToEnd({ animated: false });
+      }}
+      onScrollBeginDrag={() => {
+        userScrolled.current = true;
+      }}
       style={[styles.screen, sideInsets]}
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"

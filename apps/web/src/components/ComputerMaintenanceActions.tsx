@@ -21,16 +21,18 @@ import { computerUpdates } from "../lib/computer-updates";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
-type Action = "recover" | "reset" | "update";
+type Action = "stop" | "recover" | "reset" | "update";
 
 export function ComputerMaintenanceActions({
   botId,
   computer,
   onChanged,
+  visibleRecover = false,
 }: {
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
+  visibleRecover?: boolean;
 }) {
   const { t } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,22 +49,29 @@ export function ComputerMaintenanceActions({
     computer.state === "suspended" ||
     computer.state === "stopped";
   const showReset = showRecover;
+  const showStop = computer.state === "running";
   const showUpdate = computer.canUpdate;
-  const hasActions = showRecover || showReset || showUpdate;
+  const hasActions = showStop || showRecover || showReset || showUpdate;
   if (!hasActions) return null;
 
   async function run(action: Action) {
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await computerUpdates.start(botId, "recover");
+      if (action === "stop") await rpc.computer.stop({ botId });
+      else if (action === "recover") await computerUpdates.start(botId, "recover");
       else if (action === "reset") await rpc.computer.reset({ botId });
       else await computerUpdates.start(botId);
       setConfirmAction(null);
       setMenuOpen(false);
       await onChanged();
     } catch (err) {
-      setError(errorText(err, t`Could not update computer`));
+      setError(
+        errorText(
+          err,
+          action === "stop" ? t`Could not stop computer` : t`Could not update computer`,
+        ),
+      );
     } finally {
       setPending(null);
     }
@@ -127,6 +136,21 @@ export function ComputerMaintenanceActions({
     </AlertDialog>
   );
 
+  if (visibleRecover)
+    return (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || pending !== null}
+          onClick={() => openConfirm("recover")}
+        >
+          <Trans>Recover computer</Trans>
+        </Button>
+        {confirmationDialog}
+      </>
+    );
+
   return (
     <>
       <DropdownMenu
@@ -149,6 +173,15 @@ export function ComputerMaintenanceActions({
           data-testid="computer-more-menu"
           className="w-auto min-w-44"
         >
+          {showStop ? (
+            <DropdownMenuItem
+              closeOnClick={false}
+              disabled={busy || pending !== null}
+              onClick={() => void run("stop")}
+            >
+              {pending === "stop" ? <Trans>Stopping…</Trans> : <Trans>Stop computer</Trans>}
+            </DropdownMenuItem>
+          ) : null}
           {showRecover ? (
             <DropdownMenuItem
               closeOnClick={false}

@@ -11,7 +11,7 @@
 // Setting WEB_PORT or API_PORT, in the shell or `.env`, turns off port selection. A relative
 // DATA_DIR resolves in the main checkout, so checkouts sharing the database share its files.
 // Branch databases, and their copied files, are dropped once the branch is deleted or merged.
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   constants,
@@ -26,6 +26,7 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runPnpm, spawnPnpm } from "./pnpm.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dbPackage = path.join(root, "packages/db");
@@ -355,7 +356,7 @@ function generateClientIfStale(env) {
   const schema = path.join(dbPackage, "prisma/schema.prisma");
   if (existsSync(client) && statSync(client).mtimeMs >= statSync(schema).mtimeMs) return;
   log("Generating the Prisma client");
-  execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {
+  runPnpm(["--filter", "@rakazo/db", "generate"], {
     cwd: root,
     env,
     stdio: "inherit",
@@ -397,14 +398,13 @@ const migrationLock = new Client({ connectionString: shared.migrationUrl });
 await migrationLock.connect();
 try {
   await migrationLock.query("SELECT pg_advisory_lock(hashtext('rakazo dev migrate'))");
-  execFileSync("pnpm", ["db:migrate"], { cwd: root, env, stdio: "inherit" });
+  runPnpm(["db:migrate"], { cwd: root, env, stdio: "inherit" });
 } finally {
   await migrationLock.end();
 }
 
 if (ports) log(`Open http://127.0.0.1:${ports.web}`);
-const turbo = spawn(
-  "pnpm",
+const turbo = spawnPnpm(
   ["exec", "turbo", "dev", "--env-mode=loose", ...SERVICES.map((name) => `--filter=${name}`)],
   { cwd: root, env, stdio: "inherit" },
 );

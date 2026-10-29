@@ -2,7 +2,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRunExecutor } from "./executor.js";
 import { modelCredentialAuthKindsForSpace } from "./model-selection.js";
-import { serializeModelSecret } from "./pi-oauth.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR, serializeModelSecret } from "./pi-oauth.js";
 
 const SCOPE = { userId: "user-1", spaceId: "ws-1" };
 const PROVIDER = "openai-codex";
@@ -83,6 +83,12 @@ function oauthPrisma() {
         state.secrets = state.secrets.filter((row) => row.id !== args.where.id);
         return { count: before - state.secrets.length };
       }),
+      update: vi.fn(async (args: { where: { id: string }; data: { ciphertext: string } }) => {
+        const row = state.secrets.find((secret) => secret.id === args.where.id);
+        if (!row) throw new Error("missing secret");
+        row.ciphertext = args.data.ciphertext;
+        return row;
+      }),
     },
   };
   const prisma = {
@@ -128,6 +134,7 @@ function expiredOAuthPlaintext() {
   return serializeModelSecret({
     kind: "oauth",
     credential: { type: "oauth", access: "access-token", refresh: "refresh-token", expires: 1 },
+    maxTokens: 4096,
   });
 }
 
@@ -145,13 +152,24 @@ function rotatedOAuthPlaintext() {
 
 function oauthExecutor(
   prisma: PrismaClient,
-  load: (ciphertext: string, secretId: string) => string = () => expiredOAuthPlaintext(),
+  load: (ciphertext: string, secretId: string) => string = (ciphertext) =>
+    ciphertext.startsWith("sealed:") ? ciphertext.slice("sealed:".length) : expiredOAuthPlaintext(),
 ) {
-  return createRunExecutor({
+  const secretStore = {
+    load: vi.fn(load),
+    put: vi.fn(async (plaintext: string) => ({
+      id: "secret-codex",
+      ref: `sealed:${plaintext}`,
+      ciphertext: `sealed:${plaintext}`,
+    })),
+    delete: vi.fn(async () => undefined),
+  };
+  const executor = createRunExecutor({
     billingEnabled: false,
     prisma,
-    secretStore: { load: vi.fn(load), put: vi.fn() },
+    secretStore,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
+  return { executor, secretStore };
 }
 
 describe("OAuth credential retirement on terminal refresh rejection", () => {
@@ -159,7 +177,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     vi.unstubAllGlobals();
   });
 
-  it("deletes the credential and leaves the provider disconnected after invalid_grant", async () => {
+  it("keeps the credential and drops the rejected tokens after invalid_grant", async () => {
     // The real pi codex refresh posts to the token endpoint; a 400 body with a
     // terminal marker surfaces in the thrown error's message.
     const fetchMock = vi.fn(
@@ -170,31 +188,37 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { prisma, state } = oauthPrisma();
-    const executor = oauthExecutor(prisma);
+    const { executor, secretStore } = oauthExecutor(prisma);
 
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(
-      /invalid_grant/,
+      OAUTH_RECONNECT_REQUIRED_ERROR,
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
-    expect(state.secrets).toEqual([]);
+    // The connection and model choices stay so signing in again renews them.
+    // The rejected access and refresh tokens are replaced and are not sent again.
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(1);
+    expect(state.secrets).toHaveLength(1);
+    const stored = state.secrets[0]?.ciphertext ?? "";
+    expect(stored.startsWith("sealed:")).toBe(true);
+    const marker = stored.slice("sealed:".length);
+    expect(marker).not.toContain("access-token");
+    expect(marker).not.toContain("refresh-token");
+    expect(JSON.parse(marker)).toEqual({ kind: "oauth", reconnectRequired: true, maxTokens: 4096 });
+    expect(secretStore.delete).toHaveBeenCalledExactlyOnceWith("cipher-codex", "secret-codex");
 
-    // Catalog machinery reports the provider as disconnected, and the next run
-    // gets the readable not-connected error instead of another refresh crash.
-    const auth = await modelCredentialAuthKindsForSpace(prisma, { load: vi.fn() }, SCOPE);
-    expect(auth.byProvider[PROVIDER]).toBeUndefined();
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(
-      "Connect that model provider first",
+      OAUTH_RECONNECT_REQUIRED_ERROR,
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the credential when the refresh failure is transient", async () => {
     const fetchMock = vi.fn(async () => new Response("upstream exploded", { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
     const { prisma, state } = oauthPrisma();
-    const executor = oauthExecutor(prisma);
+    const { executor } = oauthExecutor(prisma);
 
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(/500/);
 
@@ -220,7 +244,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const { prisma, state } = oauthPrisma();
-    const executor = oauthExecutor(prisma);
+    const { executor } = oauthExecutor(prisma);
 
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(/502/);
 
@@ -244,7 +268,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
       .fn()
       .mockImplementationOnce(() => expiredOAuthPlaintext())
       .mockImplementation(() => rotatedOAuthPlaintext());
-    const executor = oauthExecutor(prisma, load);
+    const { executor, secretStore } = oauthExecutor(prisma, load);
 
     await expect(executor.resolveConnectedModel(SCOPE, PROVIDER, MODEL_ID)).rejects.toThrow(
       /invalid_grant/,
@@ -252,7 +276,14 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
 
     expect(state.credentials).toHaveLength(1);
     expect(state.preferences).toHaveLength(1);
-    expect(state.secrets).toHaveLength(1);
+    expect(state.secrets).toEqual([
+      expect.objectContaining({ id: "secret-codex", ciphertext: "cipher-codex" }),
+    ]);
+    // The marker sealed for the skipped replacement is not left behind.
+    expect(secretStore.delete).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/^sealed:.*reconnectRequired/),
+      "secret-codex",
+    );
     const auth = await modelCredentialAuthKindsForSpace(
       prisma,
       { load: vi.fn(async () => rotatedOAuthPlaintext()) },

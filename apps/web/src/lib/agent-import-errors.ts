@@ -10,7 +10,7 @@ function errorProvider(error: unknown): string {
     : translateRunError("Your model provider");
 }
 
-/** Localized copy for a refused import or Undo; undefined for other errors. */
+/** Localized copy for a refused import; undefined for other errors. */
 export function agentImportErrorText(error: unknown): string | undefined {
   switch (agentImportErrorReason(error)) {
     case "selection_mismatch":
@@ -23,18 +23,8 @@ export function agentImportErrorText(error: unknown): string | undefined {
       return t`Instructions are too long. Untick some files.`;
     case "import_reused":
       return t`This import was already used. Choose the files again.`;
-    case "name_required":
-      return t`Name this bot`;
-    case "first_bot_exists":
-      return t`Your first bot already exists.`;
-    case "instructions_changed":
-      return t`Its instructions changed. Review them, then try again.`;
     case "name_just_taken":
       return t`Something with the same name was just added. Try again.`;
-    case "not_imported":
-      return t`This bot was not imported.`;
-    case "import_changed":
-      return t`This import changed. Try again.`;
     case "key_rejected":
       // The same words, and translations, as when a connected key is rejected in a chat.
       return translateRunError("{provider} rejected the API key. Check your connection settings.", {
@@ -45,7 +35,6 @@ export function agentImportErrorText(error: unknown): string | undefined {
     case "key_check_failed":
       return t`An imported API key could not be used. Untick it and try again.`;
     default:
-      // `first_bot_new_only` cannot come from this app's forms.
       return undefined;
   }
 }

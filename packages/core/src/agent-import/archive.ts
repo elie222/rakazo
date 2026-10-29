@@ -141,8 +141,6 @@ function mayBeRead(path: string): boolean {
 
 const NESTED_ARCHIVE = /\.(?:zip|tar|tgz|gz|bz2|xz|7z|rar)$/i;
 
-// ---------------------------------------------------------------------------------- zip
-
 function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   let end = -1;
@@ -260,8 +258,6 @@ function inflateCapped(body: Uint8Array, cap: number): Uint8Array {
   feed(body, (chunk, final) => inflate.push(chunk, final));
   return concat(parts, total);
 }
-
-// ------------------------------------------------------------------------------ tar.gz
 
 /**
  * Inflates a gzip stream and parses the tar inside as it arrives (ustar, pax and GNU long
@@ -467,8 +463,6 @@ function ascii(bytes: Uint8Array): string {
   return new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end));
 }
 
-// ----------------------------------------------------------------------------- layout
-
 /**
  * Maps archive paths to `.openclaw/...` or `.hermes/...`, or null outside the agent's home.
  *
@@ -540,7 +534,14 @@ function openClawRoots(
     for (const asset of parsed.assets) {
       if (!asset.archivePath) continue;
       const declared = inArchive(asset.archivePath);
-      if (!declared || !paths.some((path) => path.startsWith(`${declared}/`))) throw unreadable();
+      if (
+        !declared ||
+        !paths.some(
+          (path) =>
+            path.startsWith(`${declared}/`) || (asset.kind === "config" && path === declared),
+        )
+      )
+        throw unreadable();
     }
     const workspace = parsed.assets
       .filter((asset) => asset.kind === "workspace" && asset.archivePath)
@@ -552,8 +553,6 @@ function openClawRoots(
     return null;
   }
 }
-
-// ---------------------------------------------------------------------------- helpers
 
 /** Pushes data in small chunks, so a cap is noticed before much is inflated. */
 function feed(data: Uint8Array, push: (chunk: Uint8Array, final: boolean) => void): void {

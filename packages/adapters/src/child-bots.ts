@@ -14,6 +14,7 @@ import {
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
   clearEndedRunState,
@@ -22,8 +23,6 @@ import {
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
-  type Prisma,
-  type PrismaClient,
   recordComputerRunEnd,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -31,7 +30,7 @@ import { getLogger } from "@rakazo/logging";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
 import { toComputerRef } from "./computer-support.js";
 import {
-  checkpointAndRecordComputerWorkspace,
+  checkpointAndStopComputer,
   isTeamBotFolderName,
   removeComputerWorkspaceDirectories,
   teamBrowserProfileName,
@@ -39,6 +38,7 @@ import {
 } from "./computer-workspace.js";
 import { removeAgentHome, removeAgentHomeFolders } from "./home.js";
 import { removePiBotSessions } from "./pi-session.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -65,7 +65,6 @@ export async function spawnBot(
     runId: string;
     spawnKey: string;
     name: string;
-    title?: string;
     description?: string;
     instructions?: string;
     prompt?: string;
@@ -82,11 +81,10 @@ export async function spawnBot(
     isDeploymentOwner: false,
   };
   let duplicate = false;
-  let created: Pick<Bot, "id" | "name" | "title" | "threadId">;
+  let created: Pick<Bot, "id" | "name" | "threadId">;
   try {
     created = await createRepos(deps.prisma).createBot(actor, {
       name,
-      title: (input.title ?? "").trim(),
       description: (input.description ?? "").trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
       instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
       notifyOnFinish: true,
@@ -116,7 +114,6 @@ export async function spawnBot(
     created = {
       id: existing.id,
       name: existing.name,
-      title: existing.title,
       threadId: existing.thread.id,
     };
   }
@@ -142,7 +139,6 @@ export async function spawnBot(
     ...(duplicate ? { duplicate: true as const } : {}),
     botId: created.id,
     name: created.name,
-    title: created.title,
     threadId: created.threadId,
   };
 }
@@ -344,7 +340,7 @@ export async function archiveBot(
     });
     if (dedicated) {
       await tx.computer.updateMany({
-        where: { id: dedicated.id, state: { not: "running" } },
+        where: { id: dedicated.id, state: { notIn: ["running", "quarantined"] } },
         data: { state: "stopped" },
       });
     }
@@ -363,8 +359,7 @@ export async function archiveBot(
     : null;
   if (currentDedicated?.providerRef && currentDedicated.state === "running") {
     const ref = toComputerRef(currentDedicated);
-    await checkpointAndRecordComputerWorkspace(deps, currentDedicated, ref, context);
-    await deps.sandbox.stop(ref, context);
+    await checkpointAndStopComputer(deps, currentDedicated, ref, context);
     await deps.prisma.computer.updateMany({
       where: {
         id: currentDedicated.id,
@@ -383,8 +378,6 @@ export async function destroyBot(
   context: AdapterContext,
   options: {
     deleteMemories: boolean;
-    /** Runs in the deletion transaction once the bot row is locked; may set `deleteMemories`. */
-    within?: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
     /** Fail before deleting anything when the provider cannot confirm the sandbox is gone,
      * so the computer row keeps its handle for a retry. */
     strictTeardown?: boolean;
@@ -435,8 +428,11 @@ export async function destroyBot(
         WHERE id = ${bot.id} AND "spaceId" = ${bot.spaceId}
         FOR UPDATE
       `;
+      // A concurrent removal of the same bot committed while this one waited for the lock;
+      // it owns the deletion and the cleanup that follows.
+      if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
-      const deleteMemories = (await options.within?.(tx))?.deleteMemories ?? options.deleteMemories;
+      const { deleteMemories } = options;
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
         select: { storageKey: true },
@@ -489,6 +485,7 @@ export async function destroyBot(
       };
     }),
   );
+  if (!deletion) return;
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );
@@ -668,6 +665,8 @@ async function releaseTeamComputerScreen(
       ...(options?.cancelRunWork ? { cancelRunWork: true } : {}),
     });
   } catch (error) {
+    // No browser runs on a sandbox that is gone, so only its stored profile is left to remove.
+    if (isSandboxGoneError(error)) return { ...computer, providerRef: null };
     getLogger().error("team screen release", error);
     if (error instanceof BrowserStoppedReleaseError) return computer;
     return null;
@@ -686,7 +685,23 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos"]);
+const REMOTE_TEAM_SANDBOX_KINDS = new Set([
+  "e2b",
+  "novita",
+  "daytona",
+  "boat",
+  "createos",
+  "kubernetes",
+]);
+
+/**
+ * Whether only the server writes this computer's stored home. A Kubernetes computer that
+ * mounts the server's home directory writes it itself, like a Docker computer.
+ */
+function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
+  if (!REMOTE_TEAM_SANDBOX_KINDS.has(kind)) return false;
+  return !(kind === "kubernetes" && sandbox.describe().capabilities.persistentHome);
+}
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
 
@@ -721,7 +736,7 @@ async function removeTeamBrowserProfile(
       getLogger().error("team browser profile cleanup", error);
     });
   }
-  if (!REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) return;
+  if (!serverOwnsTeamHome(deps.sandbox, computer.kind)) return;
   await removeAgentHomeFolders(
     deps.home,
     computer.homeKey,
@@ -806,7 +821,7 @@ async function removeTeamBotWorkspace(
  * saved; bot_deletions keeps the ids, so the caller can retry.
  */
 export async function removeDeletedBotsFromLegacyTeamHome(
-  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "dataDir">,
+  deps: Pick<BotLifecycleDeps, "prisma" | "home" | "sandbox" | "dataDir">,
   spaceId: string,
   botIds: readonly string[],
 ) {
@@ -814,7 +829,7 @@ export async function removeDeletedBotsFromLegacyTeamHome(
     where: { homeKey: legacyTeamHomeKey(spaceId) },
   });
   // Only a remote provider's stored copy is written by the server alone; see removeBotFolders.
-  if (legacy?.scope !== "team" || !REMOTE_TEAM_SANDBOX_KINDS.has(legacy.kind)) return;
+  if (legacy?.scope !== "team" || !serverOwnsTeamHome(deps.sandbox, legacy.kind)) return;
   const folders = botIds.filter(isTeamBotFolderName);
   const profiles = botIds.flatMap((id) => teamBrowserProfileName(id) ?? []);
   if (folders.length)
@@ -839,7 +854,7 @@ async function removeBotFolders(
   // Remote providers keep a stored copy that only the server writes, and replacement computers
   // restore from it. Any other home may be mounted by a running computer, where a bot could
   // swap bots/ for a symlink between the checks and rm, so it is only cleaned inside the computer.
-  if (REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) {
+  if (serverOwnsTeamHome(deps.sandbox, computer.kind)) {
     for (const [parent, name] of folders) {
       await removeAgentHomeFolders(deps.home, computer.homeKey, parent, [name], deps.dataDir).catch(
         (error) => {

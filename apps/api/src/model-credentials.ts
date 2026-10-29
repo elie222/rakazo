@@ -316,11 +316,9 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           try {
             previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
           } catch (error) {
-            // Explicit key replacement must still succeed when the prior
-            // ciphertext is unreadable. For OpenAI-compatible connections,
-            // omit visionModelIds so a partial one-model list does not wipe
-            // other enabled models; DB supportsImages + defaultModel remain
-            // the legacy fallback.
+            // Explicit key replacement must still succeed when the prior ciphertext is
+            // unreadable. Omitting visionModelIds keeps a partial one-model list from
+            // wiping other enabled models.
             if (input.apiKey === undefined) throw error;
             if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
               omitVisionModelIds = true;
@@ -344,6 +342,22 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           deps.modelConnectionFetch,
           signal,
         );
+        const saved = parseModelSecret(plaintext);
+        const modelId =
+          usableModelId(input.modelId) ?? defaultCatalogModelId(input.provider, plaintext);
+        if (saved.kind === "api_key" && modelId && deps.modelConnectionCheck) {
+          await deps.modelConnectionCheck(
+            {
+              provider: input.provider,
+              id: modelId,
+              apiKey: saved.key,
+              accountId: saved.accountId,
+              gatewayId: saved.gatewayId,
+              maxTokens: saved.maxTokens,
+            },
+            { fetch: deps.modelConnectionFetch, signal },
+          );
+        }
       }
     } catch (error) {
       throw new ORPCError("BAD_REQUEST", {
@@ -351,11 +365,9 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
       });
     }
     if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-      // Limits: this runs before persistModelCredential's transaction. A pin saved in
-      // between can fall outside the stored list and then fails at run time with
-      // "Unknown model for that provider". Closing it needs every pin write (bots,
-      // routines, backups) serializable. Concurrent saves of the same connection are
-      // last-write-wins, as before this list existed, so one save's ticks can be dropped.
+      // Known race: this runs before persistModelCredential's transaction, so a pin saved in
+      // between can fall outside the stored list and fail at run time. Concurrent saves of
+      // the same connection are last-write-wins.
       const saved = parseModelSecret(plaintext);
       if (credential)
         await assertNoDanglingModelPins(deps, actor, credential, saved, input.modelId ?? "");

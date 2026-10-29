@@ -55,4 +55,16 @@ describe.each(Object.entries(factories))("%s transactional email contract", (_na
       expect(sent[0]!.html).toBe(html);
     },
   );
+
+  it("passes message headers through", async () => {
+    const sent: TransactionalEmail[] = [];
+    const email = create((message) => sent.push(message));
+    const headers = {
+      "List-Unsubscribe": "<https://app.example.test/unsubscribe?token=fake>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    };
+    await email.send({ to: "user@example.test", subject: "Update", text: "Body", headers });
+    await email.drain?.();
+    expect(sent[0]!.headers).toEqual(headers);
+  });
 });

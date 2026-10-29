@@ -115,12 +115,11 @@ tags:
     visible: "Search apps"
     timeout: 10000
 - takeScreenshot: "13-integrations"
-- tapOn:
-    id: "integrations-advanced"
-- scrollUntilVisible:
-    element: "Add MCP server"
-    direction: DOWN
-- assertVisible: "Add MCP server"
+- tapOn: "Add custom"
+- tapOn: "MCP server"
+- extendedWaitUntil:
+    visible: "Remote MCP server"
+    timeout: 10000
 - takeScreenshot: "14-integrations-advanced"
 
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"

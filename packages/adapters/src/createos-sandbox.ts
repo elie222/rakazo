@@ -456,6 +456,16 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     return this.ref(created.id, request.botId, true);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "createos") return false;
+    try {
+      return (await this.getSandbox(computer.providerRef, context)).status === "running";
+    } catch (error) {
+      if (isCreateOSSandboxGone(error)) return false;
+      throw error;
+    }
+  }
+
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const profile = createosChromiumProfile(screenSessionKey(context));
     await this.executeChecked(
@@ -1094,11 +1104,18 @@ print(json.dumps(out))
       return;
     }
     if (action.kind === "scroll") {
+      if (action.direction === "left" || action.direction === "right") {
+        throw new Error("CreateOS computers can only scroll up or down");
+      }
+      // Given a point, the pointer moves there first, so the wheel scrolls what is under it.
+      if (action.x !== undefined && action.y !== undefined) {
+        await this.postJson(`${root}/mouse/move?${query}`, { x: action.x, y: action.y }, context);
+      }
       await this.postJson(
         `${root}/mouse/scroll?${query}`,
         {
           direction: action.direction,
-          amount: clampRounded(action.amount ?? 3, 1, 100),
+          amount: clampRounded(action.amount ?? 3, 1, 20),
         },
         context,
       );

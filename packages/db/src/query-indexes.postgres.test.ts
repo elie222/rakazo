@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const enabled = process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL;
 const postgres = enabled ? describe : describe.skip;
 
-// Hot reads that scanned whole tables in production before their index existed.
+// Hot reads, each pinned to the index that serves it in production.
 // Sequential scans are disabled so the planner must reach for an index on a small test table.
 const hotQueries = [
   {
@@ -26,6 +26,23 @@ const hotQueries = [
     name: "live execution leases for woken bots",
     index: "computer_execution_leases_botId_expiresAt_idx",
     sql: `SELECT "computerId" FROM computer_execution_leases WHERE "botId" = ANY(ARRAY[$1]) AND "expiresAt" > now()`,
+  },
+  {
+    name: "bot-message outcomes still to return",
+    index: "runs_bot_outcome_pending_idx",
+    sql: `SELECT id FROM runs WHERE trigger = 'bot_message' AND "botOutcomeReturnedAt" IS NULL
+      AND (status IN ('completed', 'failed') OR (status = 'cancelled' AND error = $1))
+      ORDER BY "updatedAt", id LIMIT 100`,
+  },
+  {
+    name: "a thread's messages after a cursor",
+    index: "messages_threadId_seq_key",
+    sql: `SELECT id FROM messages WHERE "threadId" = $1 AND seq > 0 ORDER BY seq LIMIT 100`,
+  },
+  {
+    name: "a thread's events after a cursor",
+    index: "events_threadId_seq_key",
+    sql: `SELECT id FROM events WHERE "threadId" = $1 AND seq > 0 ORDER BY seq LIMIT 100`,
   },
 ];
 

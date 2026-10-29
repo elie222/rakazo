@@ -56,6 +56,8 @@ const OFFLINE = [
   "enetunreach",
   "net::err_",
   "getaddrinfo",
+  // GitHub's release CDN refusing a signed download link that lapsed in transit.
+  "jwt:expired",
 ];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
@@ -335,22 +337,25 @@ export class DesktopUpdateController {
   }
 
   check(userInitiated: boolean) {
-    if (userInitiated) this.checkWasRequested = true;
-    if (this.checkPromise !== null) return this.checkPromise;
-    const checking = this.runCheck().finally(() => {
+    if (this.checkPromise !== null) {
+      if (userInitiated) this.checkWasRequested = true;
+      return this.checkPromise;
+    }
+    const checking = this.runCheck(userInitiated).finally(() => {
       if (this.checkPromise === checking) this.checkPromise = null;
     });
     this.checkPromise = checking;
     return checking;
   }
 
-  private async runCheck() {
+  private async runCheck(userInitiated: boolean) {
     const checkOptions = {
-      userInitiated: this.checkWasRequested,
+      userInitiated,
       environmentSupportsUpdates: updaterSupport(this.environment).supported,
     };
     let now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
+    this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
       this.current = {

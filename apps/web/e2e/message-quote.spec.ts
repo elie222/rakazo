@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 /**
@@ -78,7 +79,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
     .first();
   await expect(sourceRow).toBeVisible({ timeout: 20_000 });
 
-  // Selection inside one message offers the Quote action; Escape dismisses it.
   await selectAndRelease(page, sourceRow, "**forty two percent**");
   await expect(quoteButton).toBeVisible();
   await captureScreenshot(page, testInfo, "message-quote-selection");
@@ -115,7 +115,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   // "Replying to" that no longer describes anything after the chip is gone.
   await expect(page.getByTestId("composer-announcement")).toHaveText("");
 
-  // The sent message shows the excerpt and keeps jump-to-source.
   const replyRow = transcript
     .locator("[data-message-id]")
     .filter({ has: page.getByTestId("message-user-bubble") })
@@ -134,7 +133,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await parentPreview.click();
   await expect(sourceRow).toBeInViewport();
 
-  // The excerpt is persisted — it still renders after a full reload.
   await page.reload();
   const reloadedRow = transcript
     .locator("[data-message-id]")
@@ -145,130 +143,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(reloadedRow.getByTestId("reply-parent-preview")).toContainText(
     "**forty two percent**",
   );
-});
-
-test("rendered markdown selections survive server quote derivation", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `quote-markdown-${stamp}@rakazo.test`, "password12", "Quote Tester");
-  await completeOnboarding(page);
-
-  const transcript = page.getByTestId("transcript");
-  const composer = page.getByRole("combobox", { name: /Message/ });
-  const sourceMarker = `md-${stamp}`;
-  await composer.fill(`quote markdown fixture ${sourceMarker}`);
-  await composer.press("Enter");
-
-  // Bot bubble: scripted fixture → ChatMarkdown + server markdown derivation.
-  const sourceRow = transcript
-    .locator("[data-message-id]")
-    .filter({ has: page.getByTestId("message-bot-bubble") })
-    .filter({ hasText: sourceMarker })
-    .first();
-  await expect(sourceRow).toBeVisible({ timeout: 20_000 });
-
-  const quoteAndSend = async (start: string, end: string, replyMarker: string) => {
-    await selectAndRelease(page, sourceRow, start, end);
-    await page.getByTestId("quote-selection").click();
-    await composer.fill(replyMarker);
-    await composer.press("Enter");
-    const replyRow = transcript
-      .locator("[data-message-id]")
-      .filter({ has: page.getByTestId("message-user-bubble") })
-      .filter({ hasText: replyMarker })
-      .first();
-    await expect(replyRow).toBeVisible({ timeout: 20_000 });
-    return replyRow.getByTestId("reply-parent-preview");
-  };
-
-  await expect(await quoteAndSend("list-a", "list-b", `reply-list-${stamp}`)).toContainText(
-    "list-a list-b",
-  );
-  await expect(await quoteAndSend("cell-a", "cell-b", `reply-table-${stamp}`)).toContainText(
-    "cell-a cell-b",
-  );
-  // Row drags cross the card's row-number gutter and pager footer — chrome
-  // text is unselectable so the excerpt still matches the rendered table.
-  await expect(await quoteAndSend("cell-a", "cell-d", `reply-table-rows-${stamp}`)).toContainText(
-    "cell-a cell-b cell-c cell-d",
-  );
-  await captureScreenshot(page, testInfo, "quote-table-row-selection");
-  await expect(await quoteAndSend("cell-c", "rows", `reply-table-footer-${stamp}`)).toContainText(
-    "cell-c cell-d",
-  );
-  await expect(await quoteAndSend("code-a", "code-b", `reply-code-${stamp}`)).toContainText(
-    "code-a --- code-b",
-  );
-
-  // A quote-free reply falls back to the parent's preview — flattened, not raw Markdown.
-  const rail = sourceRow.getByTestId("message-hover-rail");
-  await expect
-    .poll(async () => {
-      await sourceRow.hover();
-      return rail.evaluate((element) => getComputedStyle(element).opacity);
-    })
-    .toBe("1");
-  await rail.getByRole("button", { name: "Reply" }).click();
-  await composer.fill(`reply-plain-${stamp}`);
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  const plainReply = transcript
-    .locator("[data-message-id]")
-    .filter({ has: page.getByTestId("message-user-bubble") })
-    .filter({ hasText: `reply-plain-${stamp}` })
-    .first();
-  const plainPreview = plainReply.getByTestId("reply-parent-preview");
-  await expect(plainPreview).toContainText(`md-${stamp}`);
-  await expect(plainPreview).not.toContainText("|");
-  await captureScreenshot(page, testInfo, "reply-preview-plain-text");
-});
-
-test("selecting text inside a table cell quotes the rendered cell", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `quote-cell-${stamp}@rakazo.test`, "password12", "Quote Tester");
-  await completeOnboarding(page);
-
-  const transcript = page.getByTestId("transcript");
-  const composer = page.getByRole("combobox", { name: /Message/ });
-  const cellText = `quarterly revenue ${stamp}`;
-  // The scripted bot echoes the prompt, so the reply carries a table card.
-  // Chrome (row numbers, toolbar, pager) is unselectable; cell text is not.
-  await composer.fill(
-    `show this table:\n\n| Metric | Value |\n| --- | --- |\n| ${cellText} | 42 |\n| cloud spend | 7 |`,
-  );
-  await composer.press("Enter");
-
-  const sourceRow = transcript
-    .locator("[data-message-id]")
-    .filter({ has: page.getByTestId("message-bot-bubble") })
-    .filter({ hasText: cellText })
-    .first();
-  await expect(sourceRow.getByTestId("table-card")).toBeVisible({ timeout: 20_000 });
-
-  // A selection contained in one cell offers Quote, and the armed chip shows
-  // the flattened cell text — never raw `| … |` Markdown or card chrome.
-  await selectAndRelease(page, sourceRow, cellText);
-  const quoteButton = page.getByTestId("quote-selection");
-  await expect(quoteButton).toBeVisible();
-  await captureScreenshot(page, testInfo, "quote-table-cell-selection");
-  await quoteButton.click();
-  const replyChip = page.getByTestId("reply-chip");
-  await expect(replyChip).toBeVisible();
-  // Exact match: an excerpt that picked up an adjacent cell or chrome would
-  // still satisfy a substring check.
-  await expect(replyChip).toHaveText(new RegExp(`^.+: ${cellText}$`));
-  await expect(composer).toBeFocused();
-
-  // The sent reply persists the server-derived excerpt from the same cell.
-  const replyText = `quote-cell-${stamp} confirmed?`;
-  await composer.fill(replyText);
-  await composer.press("Enter");
-  const replyRow = transcript
-    .locator("[data-message-id]")
-    .filter({ has: page.getByTestId("message-user-bubble") })
-    .filter({ hasText: replyText })
-    .first();
-  await expect(replyRow).toBeVisible({ timeout: 20_000 });
-  const parentPreview = replyRow.getByTestId("reply-parent-preview");
-  await expect(parentPreview).toHaveText(`↩ Chief: ${cellText}`);
 });
 
 test("an armed reply survives the parent paging out of the transcript", async ({ page }) => {

@@ -1,13 +1,27 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
+import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
   it("translates sign-out failures in every supported language", () => {
-    for (const locale of ["de", "es", "fr", "hi", "ja", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of [
+      "de",
+      "es",
+      "fr",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -33,10 +47,12 @@ describe("lingui catalogs", () => {
       "Your Anthropic",
       "Your model provider",
       "The model provider returned an error.",
+      "Connect a model in Settings before running bots.",
+      "Connect your own API key in Models or choose Rakazo credits in Billing.",
       "{provider} is rate limiting requests. Try again shortly.",
       "{summary} Resets {date}.",
       "{provider} rejected the API key. Check your connection settings.",
-      "{provider} could not find the requested model.",
+      "{provider} can't run this model.",
       "{provider} took too long to respond. Try again.",
       "{provider} is overloaded right now. Try again in a moment.",
       "{provider} couldn't be reached. Check that it's running.",
@@ -56,6 +72,7 @@ describe("lingui catalogs", () => {
       "ru",
       "tr",
       "zh-CN",
+      "zh-TW",
     ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
@@ -89,15 +106,10 @@ describe("lingui catalogs", () => {
         "Notifications",
         "When it finishes or needs input",
         "Model",
-        "Add a label",
         "Add open work",
-        "Can edit and organise bots it creates",
         "Disable a tool",
-        "Edit label",
         "Edit name",
         "Enable {0}",
-        "Encrypted and never shown again",
-        "How other bots see it",
         "Model connections",
         "Permissions",
         "Skills",
@@ -122,9 +134,11 @@ describe("lingui catalogs", () => {
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Command variable",
-      "Available to this bot's shell commands as {commandVariable}",
+      "Available to shell commands as {commandVariable}",
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
-      "Encrypted and never shown again",
+      "Show",
+      "Hide",
+      "Could not show the credential",
     ];
     for (const locale of [
       "en",
@@ -140,6 +154,7 @@ describe("lingui catalogs", () => {
       "ru",
       "tr",
       "zh-CN",
+      "zh-TW",
     ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
@@ -158,7 +173,21 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "he", "hi", "ja", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = [
+      "de",
+      "es",
+      "fr",
+      "he",
+      "hi",
+      "ja",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+      "zh-TW",
+    ];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -222,4 +251,27 @@ describe("lingui catalogs", () => {
       }
     }
   });
+});
+
+it("keeps source placeholders and JSX markers in Traditional Chinese translations", async () => {
+  const readCatalog = async (locale: string) => {
+    const filename = fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url));
+    return formatter().parse(readFileSync(filename, "utf8"), {
+      locale,
+      sourceLocale: "en",
+      filename,
+    });
+  };
+  const source = await readCatalog("en");
+  const translated = await readCatalog("zh-TW");
+  expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
+  const markers = (value: string) =>
+    [...new Set(value.match(/\{\w+(?=\s*[,}])|<\/?\d+\s*\/?>/g) ?? [])].sort();
+  for (const [id, entry] of Object.entries(source)) {
+    const message = entry.message ?? entry.translation ?? id;
+    // Untranslated entries fall back to English, as in every other catalog.
+    const translation = translated[id]?.translation;
+    if (!translation?.trim()) continue;
+    expect(markers(translation), message).toEqual(markers(message));
+  }
 });

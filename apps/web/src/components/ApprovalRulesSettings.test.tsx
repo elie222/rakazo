@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const rpcMock = vi.hoisted(() => ({
-  approvalRules: { list: vi.fn(), set: vi.fn(), remove: vi.fn() },
+  approvalRules: { list: vi.fn(), set: vi.fn(), remove: vi.fn(), preview: vi.fn() },
   autoReview: { get: vi.fn(), set: vi.fn() },
 }));
 vi.mock("../lib/rpc", () => ({
@@ -27,6 +27,7 @@ vi.mock("@rakazo/ui-web", async () => {
     onValueChange: () => undefined,
   });
   return {
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
     Button: ({
       variant: _variant,
       size: _size,
@@ -88,6 +89,59 @@ const button = (container: HTMLElement, name: string, within = "") =>
   [...container.querySelectorAll<HTMLButtonElement>(`${within} button`)].find(
     (candidate) => candidate.textContent === name,
   );
+
+it("clears a preview and ignores old responses when another saved rule changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    { id: "tool", effect: "always_allow", matchKind: "tool", matchValue: "gmail_send_email" },
+    { id: "connector", effect: "deny", matchKind: "connector", matchValue: "gmail" },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  rpcMock.approvalRules.preview.mockResolvedValue({ before: "deny", after: "deny" });
+  rpcMock.approvalRules.remove.mockResolvedValue({ ok: true });
+  rpcMock.approvalRules.set.mockResolvedValue({
+    id: "connector",
+    effect: "always_allow",
+    matchKind: "connector",
+    matchValue: "gmail",
+  });
+  const { container, root } = await render();
+  try {
+    await vi.waitFor(() => expect(button(container, "Preview")).toBeDefined());
+    await act(async () => button(container, "Preview")!.click());
+    await act(async () => button(container, "Test rule")!.click());
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    const connectorRow =
+      container.querySelector('[aria-label="Gmail"]')!.parentElement!.parentElement!;
+    await act(async () =>
+      [...connectorRow.querySelectorAll("button")]
+        .find((entry) => entry.textContent === "Allow")!
+        .click(),
+    );
+    await vi.waitFor(() => expect(container.querySelector('[role="status"]')).toBeNull());
+
+    let finish!: (value: { before: string; after: string }) => void;
+    rpcMock.approvalRules.preview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => button(container, "Test rule")!.click());
+    await act(async () =>
+      [...connectorRow.querySelectorAll("button")]
+        .find((entry) => entry.textContent === "Remove")!
+        .click(),
+    );
+    await vi.waitFor(() => expect(container.querySelector('[aria-label="Gmail"]')).toBeNull());
+    await act(async () => finish({ before: "deny", after: "deny" }));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("sets the mode, and lists Auto only when an approval model is there", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -168,8 +222,21 @@ it("shows what older rules do, including email and purchase ones", async () => {
   try {
     await vi.waitFor(() => expect(container.textContent).toContain("Send email"));
     expect(button(container, "Ask", rules)?.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(rules)?.textContent).toContain("EmailAskRemove");
-    expect(container.querySelector(rules)?.textContent).toContain("PurchaseAllowRemove");
+    for (const [name, effect] of [
+      ["Email", "Ask"],
+      ["Purchase", "Allow"],
+    ]) {
+      const label = [...container.querySelectorAll(`${rules} .text-foreground`)].find(
+        (entry) => entry.textContent === name,
+      );
+      const row = label?.parentElement?.parentElement;
+      expect(row?.textContent).toContain(effect);
+      expect(row?.querySelector("[aria-pressed]")).toBeNull();
+      expect([...row!.querySelectorAll("button")].map((entry) => entry.textContent)).toEqual([
+        "Preview",
+        "Remove",
+      ]);
+    }
     await act(async () => root.unmount());
   } finally {
     container.remove();

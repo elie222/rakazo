@@ -17,7 +17,12 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  cancelResponseBody,
+  requestDeadline,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
 import {
   boundedComputerActions,
@@ -48,14 +53,6 @@ async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
     return new TextDecoder().decode(bytes).slice(0, 200);
   } catch {
     return "";
-  }
-}
-
-function cancelResponseBody(res: Response): void {
-  try {
-    void Promise.resolve(res.body?.cancel()).catch(() => undefined);
-  } catch {
-    // Error diagnostics are best-effort and must not delay the operation failure.
   }
 }
 
@@ -571,11 +568,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(
-        `sandbox destroy failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
-    }
+    if (res.ok) return;
+    const body = await safeBody(res, context.signal);
+    // Only the supervisor's missing-computer answer means already deleted.
+    if (res.status === 404 && body.includes("computer not found")) return;
+    throw new Error(`sandbox destroy failed: ${res.status} ${body}`.trim());
   }
 
   private async *walkWorkspace(
@@ -625,13 +622,12 @@ async function* readNdjsonProcessEvents(
   try {
     while (!sawExit) {
       if (signal.aborted) throw signal.reason ?? new Error("command aborted");
-      const { done, value } = await reader.read();
+      const { done, value } = await withAbort(reader.read(), signal);
       if (done) break;
       bytes += value.byteLength;
       if (bytes > MAX_SANDBOX_SUCCESS_RESPONSE_BYTES) {
         yield { type: "stderr", data: "exec failed: response too large\n" };
         yield { type: "exit", code: 1 };
-        await reader.cancel().catch(() => undefined);
         return;
       }
       buffer += decoder.decode(value, { stream: true });
@@ -652,6 +648,7 @@ async function* readNdjsonProcessEvents(
     }
     if (!sawExit) yield { type: "exit", code: 1 };
   } finally {
+    void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }
@@ -688,17 +685,6 @@ function parseProcessLine(line: string): ProcessEvent | undefined {
     return { type: "exit", code: record.code };
   }
   return undefined;
-}
-
-function requestDeadline(timeoutMs: number, message: string) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
-  return {
-    signal: controller.signal,
-    dispose() {
-      clearTimeout(timer);
-    },
-  };
 }
 
 function dockerCwd(cwd: string | undefined) {

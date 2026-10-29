@@ -1,4 +1,5 @@
-import type { AvatarMotionMode } from "@rakazo/core";
+import type { BotAvatarSet } from "@rakazo/contracts";
+import type { AvatarMotionMode, LogoAvatarActivity } from "@rakazo/core";
 import {
   AVATAR_LID_CLOSE,
   AVATAR_MOTION_UNITS,
@@ -18,7 +19,8 @@ import {
   SHIPPED_BOT_AVATAR_CENTER,
   SHIPPED_BOT_AVATAR_VIEWBOX,
 } from "@rakazo/core";
-import { memo } from "react";
+import { botEyeColor } from "@rakazo/ui-tokens";
+import { memo, useSyncExternalStore } from "react";
 import { Image, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedProps,
@@ -30,7 +32,9 @@ import type { AvatarLife } from "../lib/avatar-life";
 import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-life";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { useMobileTokens } from "../lib/native";
+import { LogoAvatar } from "./logo-avatar";
 import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -104,7 +108,121 @@ function eyeState(life: AvatarLife) {
   return { x: frame.eyeX, y: frame.eyeY, lid: frame.lid, hidden: grow >= 0.5 };
 }
 
-export const BotAvatar = memo(function BotAvatar({
+export interface BotAvatarProps {
+  color: string;
+  size?: number;
+  status?: string;
+  identity?: string;
+  avatarSet?: BotAvatarSet;
+  activity?: LogoAvatarActivity;
+  muted?: boolean;
+  motion?: AvatarMotionMode;
+  composing?: boolean;
+  pokeable?: boolean;
+}
+
+/** Missing set metadata deliberately preserves every existing avatar. */
+export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
+  const parsed = mobileBotAvatarPresentation(props.color);
+  if (props.avatarSet === "rakazo" && parsed.kind !== "image" && parsed.kind !== "shape") {
+    return <RakazoBotAvatar {...props} />;
+  }
+  return <LegacyBotAvatar {...props} />;
+});
+
+function RakazoBotAvatar({
+  color,
+  identity,
+  size = 54,
+  status,
+  activity,
+  composing = false,
+  muted = false,
+  motion = "static",
+  pokeable = false,
+}: BotAvatarProps) {
+  const liveActivity = useSyncExternalStore(
+    mobileLogoAvatarActivity.subscribe,
+    () => mobileLogoAvatarActivity.getActivity(identity ?? "", status),
+    (): LogoAvatarActivity => "idle",
+  );
+  const resolved =
+    activity ??
+    (composing && (liveActivity === "working" || liveActivity === "idle")
+      ? "writing"
+      : liveActivity);
+  const working = isRunWorking(status) && resolved !== "writing" && motion !== "running";
+  return (
+    <View style={{ width: size, height: size }}>
+      <LogoAvatar
+        color={color}
+        identity={identity}
+        size={size}
+        activity={resolved}
+        motion={motion}
+        pokeable={pokeable}
+      />
+      {working ? <WorkingDot size={size} muted={muted} /> : null}
+      {muted ? <MutedBadge size={size} /> : null}
+    </View>
+  );
+}
+
+function WorkingDot({ size, muted }: { size: number; muted: boolean }) {
+  const tokens = useMobileTokens();
+  const { t } = useI18n();
+  const dot = avatarWorkingDot(size);
+  return (
+    <View
+      accessibilityLabel={t("Working")}
+      style={{
+        position: "absolute",
+        right: muted ? undefined : dot.inset - dot.ring,
+        left: muted ? dot.inset - dot.ring : undefined,
+        bottom: dot.inset - dot.ring,
+        width: dot.diameter + dot.ring * 2,
+        height: dot.diameter + dot.ring * 2,
+        borderRadius: size,
+        borderWidth: dot.ring,
+        borderColor: tokens.background,
+        backgroundColor: tokens.workingDot,
+      }}
+    />
+  );
+}
+
+function MutedBadge({ size }: { size: number }) {
+  const tokens = useMobileTokens();
+  const { t } = useI18n();
+  return (
+    <View
+      accessible
+      accessibilityLabel={t("Notifications silenced")}
+      style={{
+        position: "absolute",
+        right: -2,
+        bottom: -2,
+        width: Math.max(14, Math.round(size * 0.34)),
+        height: Math.max(14, Math.round(size * 0.34)),
+        borderRadius: size,
+        borderWidth: 2,
+        borderColor: tokens.background,
+        backgroundColor: tokens.secondary,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <NativeSymbol
+        ios="bell.slash.fill"
+        android="notifications-off"
+        size={Math.max(8, Math.round(size * 0.17))}
+        color={tokens.foreground}
+      />
+    </View>
+  );
+}
+
+function LegacyBotAvatar({
   color,
   size = 54,
   status,
@@ -139,8 +257,6 @@ export const BotAvatar = memo(function BotAvatar({
   // The working dot marks a bot at work, not one writing its reply; a running avatar is
   // itself that sign, so it carries none.
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
-  // The ring sits outside the disc, so the disc keeps its place.
-  const dot = avatarWorkingDot(size);
   const parsed = mobileBotAvatarPresentation(color);
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
@@ -166,6 +282,8 @@ export const BotAvatar = memo(function BotAvatar({
           height: size,
           borderRadius: size / 2,
           overflow: "hidden",
+          // A plain circle holds the photo's place while it loads, or if it fails to.
+          backgroundColor: tokens.secondary,
         }}
       >
         <Image source={{ uri: parsed.imageUrl }} style={{ width: size, height: size }} />
@@ -194,23 +312,7 @@ export const BotAvatar = memo(function BotAvatar({
       {parsed.kind !== "image" && clock !== "still" ? (
         <ThinkingDots color={fillColor} size={size} life={life} />
       ) : null}
-      {isWorking ? (
-        <View
-          accessibilityLabel={t("Working")}
-          style={{
-            position: "absolute",
-            right: muted ? undefined : dot.inset - dot.ring,
-            left: muted ? dot.inset - dot.ring : undefined,
-            bottom: dot.inset - dot.ring,
-            width: dot.diameter + dot.ring * 2,
-            height: dot.diameter + dot.ring * 2,
-            borderRadius: size,
-            borderWidth: dot.ring,
-            borderColor: tokens.background,
-            backgroundColor: tokens.workingDot,
-          }}
-        />
-      ) : null}
+      {isWorking ? <WorkingDot size={size} muted={muted} /> : null}
       {muted ? (
         <View
           accessible
@@ -247,7 +349,7 @@ export const BotAvatar = memo(function BotAvatar({
   ) : (
     avatar
   );
-});
+}
 
 /** The three typing dots a writing bot's avatar turns into; the middle one is its body. */
 function ThinkingDots({ color, size, life }: { color: string; size: number; life: AvatarLife }) {
@@ -360,8 +462,8 @@ function OrganicAvatar({
       <Svg width={size} height={size} viewBox="-60 -60 120 120">
         <Path d={organicAvatarPath(seed)} fill={color} />
         <G transform={`rotate(${(seed % 9) - 4})`}>
-          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill="#101014" />
-          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill="#101014" />
+          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill={botEyeColor} />
+          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill={botEyeColor} />
         </G>
       </Svg>
     </Animated.View>

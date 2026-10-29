@@ -7,7 +7,9 @@ import {
   linkifyExplicitUrls,
   linkLabel,
   markdownLinkDisplayParts,
+  markdownLinkNeedsPrompt,
   markdownLinkRequiresConfirmation,
+  markdownLinkSite,
   markdownMentionId,
   plainTextLinkParts,
   sanitizeMarkdownImageUrl,
@@ -181,6 +183,46 @@ describe("markdownLinkRequiresConfirmation", () => {
   });
 });
 
+describe("markdownLinkNeedsPrompt", () => {
+  const origin = "https://app.example.test";
+
+  it("opens a trusted site and its subdomains without asking", () => {
+    const trusted = ["example.com"];
+    expect(markdownLinkNeedsPrompt("https://example.com/a", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("https://docs.example.com/a?b=1", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("http://WWW.Example.com.", origin, trusted)).toBe(false);
+  });
+
+  it("still asks for any other site", () => {
+    const trusted = ["example.com"];
+    expect(markdownLinkNeedsPrompt("https://example.org/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com.evil.test/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com@evil.test/a", origin, trusted)).toBe(true);
+    expect(markdownLinkNeedsPrompt("https://example.com/a", origin)).toBe(true);
+  });
+
+  it("keeps each tenant of a shared host its own site", () => {
+    const trusted = ["alice.github.io"];
+    expect(markdownLinkNeedsPrompt("https://alice.github.io/a", origin, trusted)).toBe(false);
+    expect(markdownLinkNeedsPrompt("https://bob.github.io/a", origin, trusted)).toBe(true);
+  });
+
+  it("leaves links that never ask unchanged", () => {
+    expect(markdownLinkNeedsPrompt("https://app.example.test/threads/1", origin, [])).toBe(false);
+    expect(markdownLinkNeedsPrompt("mailto:hello@example.test", origin, [])).toBe(false);
+    expect(markdownLinkNeedsPrompt("/threads/1", origin, [])).toBe(false);
+  });
+});
+
+describe("markdownLinkSite", () => {
+  it("names the registrable domain, or the tenant on a shared host", () => {
+    expect(markdownLinkSite("https://docs.example.co.uk/a")).toBe("example.co.uk");
+    expect(markdownLinkSite("https://alice.github.io/")).toBe("alice.github.io");
+    expect(markdownLinkSite("http://192.0.2.1:8080/a")).toBe("192.0.2.1");
+    expect(markdownLinkSite("mailto:hello@example.test")).toBeUndefined();
+  });
+});
+
 describe("markdownLinkDisplayParts", () => {
   it("emphasizes the host, including a port, and leaves userinfo outside it", () => {
     expect(markdownLinkDisplayParts("https://evil.example:8443/a?b=1#c")).toEqual({
@@ -289,6 +331,17 @@ describe("link labels", () => {
     expect(
       linkLabel("https://example.com/\u202Etxt.exe", "https://example.com/%E2%80%AEtxt.exe"),
     ).toBe("example.com/txt.exe");
+  });
+
+  it("does not split a surrogate pair at the path truncation boundary", () => {
+    const prefix = "a".repeat(26);
+    const href = `https://example.com/${prefix}\u{1F600}tail`;
+    expect(linkLabel(href, href)).toBe(`example.com/${prefix}…`);
+
+    const fits = `https://example.com/${"a".repeat(25)}\u{1F600}tail`;
+    expect(linkLabel(fits, fits)).toBe(`example.com/${"a".repeat(25)}\u{1F600}…`);
+    const short = "https://example.com/\u{1F600}";
+    expect(linkLabel(short, short)).toBe("example.com/\u{1F600}");
   });
 
   it("never cuts the host, however long, and trims only the path", () => {

@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -37,7 +39,7 @@ export function embeddableScreenUrl(url: string | null): string | null {
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
       return null;
@@ -115,7 +117,7 @@ export function screenFrameStarted(message: ScreenFrameMessage): boolean {
 /** The error a frame report means for the screen, or null while it is fine. */
 export function screenFrameError(message: ScreenFrameMessage, fallback: string): string | null {
   if (message.rakazoScreen !== "failed" && message.rakazoScreen !== "disconnected") return null;
-  return message.detail ?? fallback;
+  return message.rakazoScreen === "disconnected" ? t`The screen connection closed.` : fallback;
 }
 
 /**
@@ -134,15 +136,61 @@ export async function probeScreen(
       redirect: "manual",
     });
     if (response.ok) return null;
-    if (response.type === "opaqueredirect") return fallback;
-    const contentType = response.headers?.get("content-type") ?? "";
-    const body = (await response.text().catch(() => "")).trim();
-    // Only the proxy's own short plain-text reasons are worth showing; an upstream HTML error
-    // page would read as raw markup in the alert.
-    const isHtml = /html/i.test(contentType) || /<[a-z!/]/i.test(body);
-    const text = isHtml ? "" : body.slice(0, 200);
-    return text || `${fallback} (HTTP ${response.status})`;
+    // The proxy couldn't reach the API to check the screen: that's a connection problem.
+    if (response.type === "opaqueredirect" || response.status === 503) return fallback;
+    if (response.status === 403) return t`The screen link expired.`;
+    const body = await response.text().catch(() => "");
+    if (response.status === 502 && body.trim() === "Screen unavailable (upstream_timeout)") {
+      return t`The screen did not respond.`;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
+}
+
+/**
+ * The screen page's status through the proxy's access check, or null if it couldn't be asked.
+ * Only the status is read; the body is dropped unread.
+ */
+export async function probeScreenStatus(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  try {
+    const response = await fetchImpl(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+      signal,
+    });
+    void response.body?.cancel().catch(() => undefined);
+    return response.type === "opaqueredirect" ? 0 : response.status;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a reconnected screen takes the keyboard back: only a screen that had it when it
+ * dropped, and only if the user hasn't moved on. Focus anywhere else in the app, or the screen
+ * failing, forgets it, and it happens at most once per drop.
+ */
+export function createScreenRefocus() {
+  let pending = false;
+  return {
+    dropped(hadFocus: boolean) {
+      pending = hadFocus;
+    },
+    forget() {
+      pending = false;
+    },
+    /** On a reconnected screen's "connected": whether to give it the keyboard now. */
+    connected(active: Element | null, frame: Element, body: Element | null): boolean {
+      if (!pending) return false;
+      pending = false;
+      return !active || active === body || active === frame;
+    },
+  };
 }

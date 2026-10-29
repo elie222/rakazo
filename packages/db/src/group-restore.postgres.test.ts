@@ -27,7 +27,6 @@ describePostgres("archived groups and their bots (PostgreSQL)", () => {
   async function bot(name: string) {
     const created = await createRepos(prisma).createBot(actor, {
       name,
-      title: "",
       description: "",
       instructions: "",
       notifyOnFinish: true,

@@ -6,7 +6,10 @@ import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-san
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import type { KubernetesSandboxOptions } from "./kubernetes-sandbox.js";
+import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
+import { NovitaSandboxProvider } from "./novita-sandbox.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 export interface SandboxProviderOptions {
@@ -15,6 +18,9 @@ export interface SandboxProviderOptions {
   supervisorUrl?: string;
   supervisorToken?: string;
   e2bApiKey?: string;
+  novitaApiKey?: string;
+  sandboxTemplate?: string;
+  onUnsafeStop?: (providerRef: string) => Promise<void>;
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
@@ -28,11 +34,22 @@ export interface SandboxProviderOptions {
   railwaySandboxRegion?: string;
   boatApiKey?: string;
   boatApiUrl?: string;
+  kubernetesNamespace?: string;
+  kubernetesRuntimeClassName?: string;
+  kubernetesComputerImage?: string;
+  kubernetesCpuLimit?: string;
+  kubernetesMemoryLimit?: string;
+  kubernetesPodAnnotations?: KubernetesSandboxOptions["podAnnotations"];
+  kubernetesPodLabels?: KubernetesSandboxOptions["podLabels"];
+  kubernetesReadyTimeoutMs?: number;
+  kubernetesHomeClaim?: string;
+  kubernetesHomeColocateNamespace?: string;
+  kubernetesHomeColocateLabels?: KubernetesSandboxOptions["homeColocateLabels"];
   dataDir?: string;
 }
 
 function missingRemoteKey(
-  provider: "e2b" | "daytona" | "createos" | "boat" | "railway",
+  provider: "novita" | "e2b" | "daytona" | "createos" | "boat" | "railway",
   envName: string,
 ): SandboxProvider {
   return new NoneSandboxProvider(
@@ -48,6 +65,13 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
     case "e2b":
       if (!opts.e2bApiKey?.trim()) return missingRemoteKey("e2b", "E2B_API_KEY");
       return new E2BSandboxProvider(opts.e2bApiKey);
+    case "novita":
+      if (!opts.novitaApiKey?.trim()) return missingRemoteKey("novita", "NOVITA_API_KEY");
+      return new NovitaSandboxProvider({
+        apiKey: opts.novitaApiKey,
+        template: opts.sandboxTemplate,
+        onUnsafeStop: opts.onUnsafeStop,
+      });
     case "daytona":
       if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");
       return new DaytonaSandboxProvider({
@@ -77,6 +101,20 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         maxWorkspaceFileBytes: opts.railwayMaxWorkspaceFileBytes,
         region: opts.railwaySandboxRegion,
       });
+    case "kubernetes":
+      return new KubernetesSandboxProvider({
+        namespace: opts.kubernetesNamespace,
+        runtimeClassName: opts.kubernetesRuntimeClassName,
+        computerImage: opts.kubernetesComputerImage,
+        cpuLimit: opts.kubernetesCpuLimit,
+        memoryLimit: opts.kubernetesMemoryLimit,
+        podAnnotations: opts.kubernetesPodAnnotations,
+        podLabels: opts.kubernetesPodLabels,
+        readyTimeoutMs: opts.kubernetesReadyTimeoutMs,
+        homeClaim: opts.kubernetesHomeClaim,
+        homeColocateNamespace: opts.kubernetesHomeColocateNamespace,
+        homeColocateLabels: opts.kubernetesHomeColocateLabels,
+      });
     case "docker":
       return new DockerSandboxProvider(
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
@@ -91,7 +129,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | railway | kubernetes | desktop | fake.`,
       );
   }
 }

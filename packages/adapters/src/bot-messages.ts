@@ -9,14 +9,14 @@ import {
   nextBotMessageHop,
   resolveBotAddress,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -97,7 +97,7 @@ export async function messageBot(
 
   const candidates = await deps.prisma.bot.findMany({
     where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-    select: { id: true, name: true, title: true, thread: { select: { id: true } } },
+    select: { id: true, name: true, thread: { select: { id: true } } },
   });
   const target = resolveBotAddress(candidates, {
     botId: input.bot_id,

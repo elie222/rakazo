@@ -35,12 +35,13 @@ export const DEFAULT_DESKTOP_ENV: DesktopEnvironment = {
   preservePrimaryDisplay: true,
 };
 function gatewayHost(host = "127.0.0.1") {
-  if (host !== "localhost" && !isIPv4(host)) throw new Error("invalid screen gateway bind host");
+  if (host !== "localhost" && host !== "::" && !isIPv4(host))
+    throw new Error("invalid screen gateway bind host");
   return host;
 }
 
 function gatewayProbeHost(host: string) {
-  return host === "0.0.0.0" ? "127.0.0.1" : host;
+  return host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
 }
 
 export function screenPorts(index: number, env = DEFAULT_DESKTOP_ENV) {

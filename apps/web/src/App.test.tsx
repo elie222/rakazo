@@ -53,6 +53,9 @@ vi.mock("./components/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({ ShellPage: () => <div>Shell</div> }));
+vi.mock("./components/markdown-link-prompt", () => ({
+  MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("./pages/Board", () => {
   capability.boardLoaded();
   return { BoardPage: () => <div>Board page</div> };

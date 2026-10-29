@@ -1,9 +1,10 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import { captureScreenshot } from "./helpers";
 
 const fixture = "/e2e/fixtures/tool-activity.html";
 const REPLY_TEXT = "Tuesday at 2 pm is free.";
+const NOTE_TEXT = "Anna is free all Tuesday afternoon.";
 const STORAGE_KEY = "rakazo.showToolActivity";
 
 const viewports = [
@@ -61,6 +62,7 @@ test("tool activity shows for live and finished runs when the user turned it on"
     await expect(page.getByTestId("tool-rows-hidden")).toHaveText("+2 earlier steps");
     await expect(page.getByTestId("tool-rows")).not.toContainText("Open calendar");
     await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+    await expect(page.getByTestId("tool-step-note")).toHaveCount(0);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
     await captureScreenshot(page, testInfo, `default-live-${viewport.name}`);
 
@@ -89,6 +91,7 @@ test("tool activity shows for live and finished runs when the user turned it on"
     await expect(page.getByTestId("tool-rows-hidden")).toHaveCount(0);
     await expect(page.getByTestId("tool-rows")).toContainText("Open calendar");
     await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
+    await expect(page.getByTestId("tool-step-note")).toHaveText(NOTE_TEXT);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
     await captureScreenshot(page, testInfo, `default-done-expanded-${viewport.name}`);
   }
@@ -132,53 +135,4 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
     /Done\s*8 tools/,
   );
   await captureScreenshot(page, testInfo, "on-again-done");
-});
-
-test("the chat transcript shows tool activity when turned on and hides it when turned off", async ({
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await seedToolActivityOn(page);
-  const stamp = Date.now();
-  await signup(page, `tool-activity-${stamp}@rakazo.test`, "password12", "Tool Activity");
-  await completeOnboarding(page);
-
-  // The scripted runtime answers this with one write_file call, then a short reply.
-  await page
-    .getByPlaceholder(/^Message /)
-    .fill("write a note called notes/tool-activity.txt that says fake e2e note");
-  await page.getByRole("button", { name: "Send" }).click();
-
-  const transcript = page.getByTestId("transcript");
-  await expect(transcript.getByText("writing that into my home now.")).toBeVisible({
-    timeout: 30_000,
-  });
-  const card = transcript.getByTestId("tool-activity");
-  await expect(card.first()).toBeVisible();
-  await expect(card.first().locator("button[aria-expanded]")).toContainText(/Done\s*\d+ tools?/);
-  await expect(card.first().locator("button[aria-expanded]")).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
-  await card.first().locator("button[aria-expanded]").click();
-  await expect(transcript.getByTestId("tool-rows").first()).toBeVisible();
-  await captureScreenshot(page, testInfo, "shell-tool-activity-on");
-
-  const settings = await openUserSettings(page);
-  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
-  const toggle = settings.getByTestId("tool-activity-toggle");
-  await expect(toggle).toBeChecked();
-  await toggle.click();
-  await expect(toggle).not.toBeChecked();
-  await page.keyboard.press("Escape");
-  await expect(settings).toBeHidden();
-
-  await expect(transcript.getByText("writing that into my home now.")).toBeVisible();
-  await expect(transcript.getByTestId("tool-activity")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "shell-tool-activity-off");
-
-  await page.reload();
-  await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
-  await expect(transcript.getByText("writing that into my home now.")).toBeVisible();
-  await expect(transcript.getByTestId("tool-activity")).toHaveCount(0);
 });

@@ -14,6 +14,14 @@ const memoryApi = vi.hoisted(() => ({
   remove: vi.fn(),
   update: vi.fn(),
 }));
+// One space, so no "Available in" choice appears.
+vi.mock("../components/integrations/space-availability", () => ({
+  AvailabilityControl: () => null,
+  AvailabilityLabel: () => null,
+  reachesOtherSpaces: () => false,
+  useOwnSpaces: () => [],
+}));
+
 vi.mock("../lib/rpc", () => {
   const client = { agentSkills: api, memory: memoryApi };
   return {
@@ -46,7 +54,7 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { spaceQueries } from "../lib/query";
-import { KnowledgeSection } from "./KnowledgeSection";
+import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 let queryClient = newClient();
@@ -93,7 +101,7 @@ it("disables skill rows while a completed save is refreshing the catalog", async
     return found;
   };
   try {
-    await show(root, <KnowledgeSection botId="bot-fixture" skillsOnly />);
+    await show(root, <AgentSkills />);
     await act(async () => button("New skill").click());
     await act(async () => button("Save").click());
     expect(api.create).toHaveBeenCalledOnce();
@@ -115,7 +123,7 @@ it("disables skill rows while a completed save is refreshing the catalog", async
   }
 });
 
-it("labels the skills group and badges built-in and plugin skills", async () => {
+it("badges built-in skills and leaves plugin skills to their plugin", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const catalog: AgentSkillCatalogEntry[] = [
     {
@@ -159,10 +167,10 @@ it("labels the skills group and badges built-in and plugin skills", async () => 
     return found;
   };
   try {
-    await show(root, <KnowledgeSection botId="bot-fixture" skillsOnly />);
-    expect(container.textContent).toContain("Skills");
+    await show(root, <AgentSkills />);
     expect(button("Interrogate").textContent).toContain("Built-in");
-    expect(button("Triage mail").textContent).toContain("Plugin");
+    // Plugin skills are listed by their plugin in the Skills dialog, not one by one here.
+    expect(container.textContent).not.toContain("Triage mail");
     expect(button("greeting").textContent).not.toContain("Built-in");
     expect(button("greeting").textContent).not.toContain("Plugin");
     await act(async () => button("Interrogate").click());
@@ -403,7 +411,7 @@ it("opens skills from the composer's cached list and saves back into it", async 
   const button = (text: string) =>
     [...host.querySelectorAll("button")].find((node) => node.textContent?.includes(text));
   try {
-    await show(root, <KnowledgeSection botId="fixture" skillsOnly />);
+    await show(root, <AgentSkills />);
     expect(button("cached-skill")).toBeTruthy();
     expect(api.list).toHaveBeenCalledTimes(1);
     await act(async () => button("New skill")!.click());

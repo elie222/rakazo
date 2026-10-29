@@ -9,8 +9,9 @@ import { CallCard } from "../components/CallCard";
 import type { CallDeps } from "./call-session";
 import { endCall, startCall } from "./call-session";
 
-const { activeTags, startBackground, stopBackground, useKeepAwake } = vi.hoisted(() => ({
+const { activeTags, platform, startBackground, stopBackground, useKeepAwake } = vi.hoisted(() => ({
   activeTags: new Set<string>(),
+  platform: { OS: "android", Version: 35 },
   startBackground: vi.fn(async () => false),
   stopBackground: vi.fn(async () => undefined),
   useKeepAwake: vi.fn(),
@@ -56,7 +57,7 @@ vi.mock("react-native", () => {
       timing: vi.fn(),
       delay: vi.fn(),
     },
-    Platform: { OS: "android", Version: 35 },
+    Platform: platform,
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
@@ -78,6 +79,7 @@ vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-file-system", () => ({ File: class {} }));
 vi.mock("./voice", () => ({
+  createSpeechOwner: () => Symbol("SpeechOwner"),
   speakText: vi.fn(),
   stopSpeaking: vi.fn(),
   setVoiceBackgroundPlayback: vi.fn(),
@@ -119,6 +121,7 @@ describe("CallCard background lifetime", () => {
       }, [tag]);
     });
     activeTags.clear();
+    platform.OS = "android";
     startBackground.mockReset();
     startBackground.mockResolvedValue(false);
     stopBackground.mockReset();
@@ -164,5 +167,18 @@ describe("CallCard background lifetime", () => {
 
     await act(async () => endCall());
     expect(stopBackground).toHaveBeenCalled();
+  });
+
+  it("keeps the screen awake on iOS without the Android call service", async () => {
+    platform.OS = "ios";
+    act(() => root.render(<CallCard />));
+
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await Promise.resolve();
+    });
+
+    expect(startBackground).not.toHaveBeenCalled();
+    expect(activeTags.has("rakazo-call")).toBe(true);
   });
 });

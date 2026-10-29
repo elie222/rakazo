@@ -1,9 +1,11 @@
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import type { BackgroundJob, BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { messagingDeliverJob, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createDeadJobPruner,
   createReservedGraphileJobWorkerHost,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -37,6 +39,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "purchase.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
     ...overrides,
   };
@@ -152,6 +155,65 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await host.stop();
       await publisher.close();
       await legacy.close();
+    }
+  });
+
+  it("starts due maintenance jobs while others are still running", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = createReservedGraphileJobWorkerHost(testPool(), { pollInterval: 25 });
+    const release = deferred();
+    const sleeping: string[] = [];
+    const woken: string[] = [];
+    try {
+      await host.start(
+        handlers({
+          "computer.sleep": async ({ computerId }) => {
+            sleeping.push(computerId);
+            await release.promise;
+          },
+          "routine.wakeup": async ({ routineId }) => {
+            woken.push(routineId);
+          },
+        }),
+      );
+      for (const computerId of ["computer-a", "computer-b", "computer-c"]) {
+        await publisher.enqueue({ name: "computer.sleep", payload: { computerId } });
+      }
+      await waitFor(() => expect(sleeping).toHaveLength(3));
+      await publisher.enqueue(routineWakeupJob("routine-due", new Date()));
+      await waitFor(() => expect(woken).toEqual(["routine-due"]));
+    } finally {
+      release.resolve();
+      await host.stop();
+      await publisher.close();
+    }
+  });
+
+  it("delivers outgoing messages one drain at a time", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = createReservedGraphileJobWorkerHost(testPool(), { pollInterval: 25 });
+    const release = deferred();
+    const draining: string[] = [];
+    try {
+      await host.start(
+        handlers({
+          "messaging.deliver": async ({ runId }) => {
+            draining.push(runId ?? "drain");
+            await release.promise;
+          },
+        }),
+      );
+      await publisher.enqueue(messagingDeliverJob("run-first"));
+      await waitFor(() => expect(draining).toEqual(["run-first"]));
+      await publisher.enqueue(messagingDeliverJob("run-second"));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(draining).toEqual(["run-first"]);
+      release.resolve();
+      await waitFor(() => expect(draining).toEqual(["run-first", "run-second"]));
+    } finally {
+      release.resolve();
+      await host.stop();
+      await publisher.close();
     }
   });
 
@@ -597,6 +659,51 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
       await publisher.close();
       await appPool.end();
       await workerPool.end();
+    }
+  });
+
+  it("prunes only exhausted jobs past retention, keeping retry notices and live jobs", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const prefix = `contract:prune:${Date.now()}`;
+    const jobs = {
+      oldDead: { name: "computer.sleep", payload: { computerId: "old-dead" } },
+      recentDead: { name: "computer.sleep", payload: { computerId: "recent-dead" } },
+      lockedDead: { name: "computer.sleep", payload: { computerId: "locked-dead" } },
+      oldLive: { name: "computer.sleep", payload: { computerId: "old-live" } },
+      notice: { name: "routine.retry", payload: { runId: "notice" } },
+    } as const;
+    const keys = Object.keys(jobs).map((name) => `${prefix}:${name}`);
+    try {
+      for (const [name, job] of Object.entries(jobs)) {
+        await publisher.enqueue({ ...job, replaceKey: `${prefix}:${name}` } as BackgroundJob);
+      }
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = case when key = $2 then 1 else max_attempts end,
+             locked_at = case when key = $3 then now() else null end,
+             locked_by = case when key = $3 then 'contract-worker' else null end,
+             updated_at = case when key = $4 then now() else now() - interval '8 days' end
+         where key = any($1::text[])`,
+        [keys, `${prefix}:oldLive`, `${prefix}:lockedDead`, `${prefix}:recentDead`],
+      );
+
+      await createDeadJobPruner(testPool())();
+
+      const remaining = await testPool().query<{ key: string }>(
+        "select key from graphile_worker._private_jobs where key = any($1::text[]) order by key",
+        [keys],
+      );
+      expect(remaining.rows.map((row) => row.key.slice(prefix.length + 1)).sort()).toEqual([
+        "lockedDead",
+        "notice",
+        "oldLive",
+        "recentDead",
+      ]);
+    } finally {
+      await testPool().query("delete from graphile_worker._private_jobs where key = any($1)", [
+        keys,
+      ]);
+      await publisher.close();
     }
   });
 

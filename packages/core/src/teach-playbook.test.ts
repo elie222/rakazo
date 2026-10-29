@@ -3,6 +3,7 @@ import {
   buildPlaybookFromRecording,
   promptInvokesSkill,
   sanitizeTeachRecordingEvent,
+  scrollDirection,
 } from "./teach-playbook.js";
 
 describe("promptInvokesSkill", () => {
@@ -82,6 +83,51 @@ describe("buildPlaybookFromRecording", () => {
     expect(playbook.steps).toEqual(['Type "hi there".']);
   });
 
+  it.each(["    print(1)", "print(1)   ", "   "])(
+    "preserves ordinary typed input verbatim: %j",
+    (text) => {
+      const playbook = buildPlaybookFromRecording(
+        "Type text",
+        Array.from(text, (key) => ({
+          at: "2026-01-01T00:00:00.000Z",
+          kind: "key" as const,
+          key,
+        })),
+      );
+      expect(playbook.steps).toEqual([`Type ${JSON.stringify(text)}.`]);
+    },
+  );
+
+  it.each(["    print(1)", "print(1)   ", "   "])(
+    "preserves ordinary clipboard input verbatim: %j",
+    (text) => {
+      const playbook = buildPlaybookFromRecording("Paste text", [
+        { at: "2026-01-01T00:00:00.000Z", kind: "clipboard", text },
+      ]);
+      expect(playbook.steps).toEqual([`Paste or type: ${text}.`]);
+    },
+  );
+
+  it.each(["  PaSsWoRd  ", "  secret  ", "  token  ", "  api_key  ", "  api-key  ", "  apikey  "])(
+    "still redacts padded credential-like input: %j",
+    (text) => {
+      const typed = buildPlaybookFromRecording(
+        "Type text",
+        Array.from(text, (key) => ({
+          at: "2026-01-01T00:00:00.000Z",
+          kind: "key" as const,
+          key,
+        })),
+      );
+      expect(typed.steps).toEqual(['Type "[redacted input]".']);
+
+      const pasted = buildPlaybookFromRecording("Paste text", [
+        { at: "2026-01-01T00:00:00.000Z", kind: "clipboard", text },
+      ]);
+      expect(pasted.steps).toEqual(["Paste or type: [redacted input]."]);
+    },
+  );
+
   it("collapses a run of protected keystrokes into one redacted step", () => {
     const playbook = buildPlaybookFromRecording("Sign in", [
       { at: "2026-01-01T00:00:00.000Z", kind: "key", key: "u" },
@@ -157,6 +203,17 @@ describe("buildPlaybookFromRecording", () => {
     ]);
     expect(playbook.steps).toEqual(["Scroll down 3 times."]);
   });
+
+  it("says where a demo scrolled, when the recording has the point", () => {
+    const playbook = buildPlaybookFromRecording("Scroll the list", [
+      { at: "2026-01-01T00:00:00.000Z", kind: "scroll", type: "down", text: "3", x: 600, y: 420 },
+      { at: "2026-01-01T00:00:01.000Z", kind: "scroll", type: "left", text: "1", x: 40, y: 300 },
+    ]);
+    expect(playbook.steps).toEqual([
+      "Scroll down 3 times at (600, 420).",
+      "Scroll left at (40, 300).",
+    ]);
+  });
 });
 
 describe("sanitizeTeachRecordingEvent", () => {
@@ -186,5 +243,18 @@ describe("sanitizeTeachRecordingEvent", () => {
       text: "weekly-export.csv",
     };
     expect(sanitizeTeachRecordingEvent(event)).toEqual(event);
+  });
+});
+
+describe("scrollDirection", () => {
+  it("scrolls up, down, left or right, and down for anything else", () => {
+    expect(["up", "down", "left", "right", "sideways", undefined].map(scrollDirection)).toEqual([
+      "up",
+      "down",
+      "left",
+      "right",
+      "down",
+      "down",
+    ]);
   });
 });

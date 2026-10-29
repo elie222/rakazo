@@ -7,21 +7,17 @@ import type {
 } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
+import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import {
   buildPlaybookFromRecording,
   computerInputForDomKey,
-  type SkillPlaybook,
   sanitizeTeachRecordingEvent,
-  type TeachRecordingEvent,
-  type TeachSnapshot,
 } from "@rakazo/core";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
-  type Prisma,
-  type PrismaClient,
-  type ThreadEvents,
 } from "@rakazo/db";
 import { revokeScreenControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
@@ -52,7 +48,13 @@ type TeachRecording = {
 
 export type TeachComputerInput = (
   | ComputerInput
-  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | {
+      kind: "scroll";
+      direction: "up" | "down" | "left" | "right";
+      amount?: number;
+      x?: number;
+      y?: number;
+    }
 ) & {
   sensitive?: boolean;
   skillId?: string;
@@ -518,7 +520,16 @@ export async function applyTeachingDesktopInput(
     await sandbox.act(
       toComputerRef(computer),
       {
-        actions: [{ kind: "scroll", direction: mapped.direction, amount: mapped.amount }],
+        actions: [
+          {
+            kind: "scroll",
+            direction: mapped.direction,
+            amount: mapped.amount,
+            ...(mapped.x !== undefined && mapped.y !== undefined
+              ? { x: mapped.x, y: mapped.y }
+              : {}),
+          },
+        ],
         observe: false,
       },
       context,
@@ -563,7 +574,13 @@ export async function recordTeachingInputEvent(
       : mapped.kind === "clipboard"
         ? { text: mapped.text }
         : mapped.kind === "scroll"
-          ? { type: mapped.direction, text: String(mapped.amount ?? 3) }
+          ? {
+              type: mapped.direction,
+              text: String(mapped.amount ?? 3),
+              ...(mapped.x !== undefined && mapped.y !== undefined
+                ? { x: mapped.x, y: mapped.y }
+                : {}),
+            }
           : {
               x: mapped.x,
               y: mapped.y,

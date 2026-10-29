@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RoutineWatchSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { accountVault, fakeDatabase } from "./bot-secrets.test-support.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import type { RoutineWatchTickDeps } from "./routine-watch.js";
 import {
@@ -241,6 +242,24 @@ describe("tickRoutineWatch", () => {
     },
   );
 
+  it("refuses a batch tool even when it is declared read-only", async () => {
+    const { deps, routine } = setup({ data: "ok" });
+    vi.mocked(deps.connector!.discoverTools).mockResolvedValue([
+      {
+        name: "brain_changed",
+        readOnly: true,
+        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+        description: "Run actions",
+        inputSchema: {},
+      },
+    ]);
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow("can change data");
+    expect(deps.connector!.execute).not.toHaveBeenCalled();
+    await expect(
+      validateRoutineWatch(deps, RoutineWatchSchema.parse(routine.watch), routine),
+    ).rejects.toThrow("can change data");
+  });
+
   it.each([false, undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
     const { deps, routine } = setup({ data: "ok" });
     vi.mocked(deps.connector!.discoverTools).mockResolvedValue([]);
@@ -425,6 +444,11 @@ describe("tickRoutineWatch on a computer", () => {
     watch: Record<string, unknown>,
     exec: { stdout?: string; stderr?: string; code?: number } = {},
     computer = { id: "computer-1", scope: "team", kind: "vm" },
+    options?: {
+      vault?: ReturnType<typeof fakeDatabase>;
+      secretStore?: { load(ciphertext: string, recordId: string): Promise<string> };
+      shell?: { platform: string; shell: string; home: string };
+    },
   ) {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const messages: unknown[] = [];
@@ -443,6 +467,7 @@ describe("tickRoutineWatch on a computer", () => {
       if (exec.stderr) yield { type: "stderr", data: exec.stderr };
       yield { type: "exit", code: exec.code ?? 0 };
     });
+    const environment = options?.shell ? vi.fn(async () => options.shell) : undefined;
     const deps = {
       prisma: {
         routine: { updateMany },
@@ -453,8 +478,19 @@ describe("tickRoutineWatch on a computer", () => {
           })),
         },
         $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
+        ...(options?.vault
+          ? {
+              vaultCredential: options.vault.prisma.vaultCredential,
+              spaceSettingOverride: options.vault.prisma.spaceSettingOverride,
+            }
+          : {}),
       },
-      sandbox: { execute, describe: () => ({ capabilities: { graphical: true } }) },
+      ...(options?.secretStore ? { secretStore: options.secretStore } : {}),
+      sandbox: {
+        execute,
+        describe: () => ({ capabilities: { graphical: true } }),
+        ...(environment ? { environment } : {}),
+      },
       events: { notify: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       commandRefusal: (command: string) =>
@@ -469,7 +505,7 @@ describe("tickRoutineWatch on a computer", () => {
       watch,
       watchState: { checkedAt: "x", outcome: "unchanged", fingerprint: "old", detail: null },
     };
-    return { deps, routine, updateMany, messages, execute };
+    return { deps, routine, updateMany, messages, execute, environment };
   }
 
   it.each(["team", "dedicated"])("checks files in a %s desktop workspace", async (scope) => {
@@ -531,6 +567,326 @@ describe("tickRoutineWatch on a computer", () => {
       { argv: ["sh", "-lc", "ls inbox"], cwd: "bots/bot-1", timeoutMs: 60_000 },
       expect.anything(),
     );
+  });
+
+  it("gives a command watch the vault's command credentials", async () => {
+    const secret = "ghp_fakefakeRoutineWatchToken";
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "stripe-api-key",
+        ...accountVault,
+        name: "stripe-api-key",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-stripe",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine, execute, environment } = setupComputer(
+      { kind: "command", command: "gh api user" },
+      { stdout: "ok\n" },
+      { id: "computer-1", scope: "team", kind: "vm" },
+      {
+        vault,
+        secretStore: {
+          async load(ciphertext) {
+            if (ciphertext === "cipher-gh") return secret;
+            throw new Error("unreadable");
+          },
+        },
+        // Present on purpose: a vm must not switch to this shell.
+        shell: { platform: "win32", shell: "powershell.exe", home: "C:\\Users\\rakazo" },
+      },
+    );
+    await checkRoutineWatch(deps, routine);
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        argv: ["sh", "-lc", "gh api user"],
+        cwd: "bots/bot-1",
+        timeoutMs: 60_000,
+        env: { GH_TOKEN: secret },
+        unsetEnv: ["STRIPE_API_KEY"],
+      },
+      expect.anything(),
+    );
+    expect(environment).not.toHaveBeenCalled();
+  });
+
+  it("does not read the vault when watching files", async () => {
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine, execute } = setupComputer(
+      { kind: "files", paths: ["inbox"] },
+      { stdout: "inbox/note.txt\t3\t1.25\n" },
+      { id: "computer-1", scope: "team", kind: "vm" },
+      {
+        vault,
+        secretStore: {
+          async load() {
+            return "ghp_fakefakeRoutineWatchToken";
+          },
+        },
+      },
+    );
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.entries).toEqual({ "inbox/note.txt": "3:1.25" });
+    expect(vault.prisma.vaultCredential.findMany).not.toHaveBeenCalled();
+    expect(vault.prisma.spaceSettingOverride.findUnique).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ env: expect.anything() }),
+      expect.anything(),
+    );
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({ unsetEnv: expect.anything() }),
+      expect.anything(),
+    );
+  });
+
+  it("scrubs vault secrets from command output before the routine can see them", async () => {
+    const secret = "ghp_fakefakeRoutineWatchToken";
+    const encoded = Buffer.from(secret).toString("base64");
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    const secretStore = {
+      async load(ciphertext: string) {
+        if (ciphertext === "cipher-gh") return secret;
+        throw new Error("unreadable");
+      },
+    };
+    const line = `[{"id":"1","title":"Issue ${secret}","state":"${encoded}"}]`;
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const watched = setupComputer(
+      { kind: "command", command: "gh issue list", track: ["id", "state"] },
+      { stdout: `${line}\n` },
+      undefined,
+      { vault, secretStore },
+    );
+    watched.routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: {},
+      detail: null,
+    } as never;
+    const result = await checkRoutineWatch(watched.deps, watched.routine);
+    const scrubbed = `${line.replaceAll(secret, "[redacted]").replaceAll(encoded, "[redacted]")}\n`;
+    expect(result.state.detail).toBe("New: Issue [redacted]");
+    expect(result.state.fingerprint).toBe(readItems(scrubbed, ["id", "state"]).fingerprint);
+    expect(JSON.stringify(result.state)).not.toContain(secret);
+    expect(JSON.stringify(result.state)).not.toContain(encoded);
+    expect(result.state.entries?.["1"]).toContain("[redacted]");
+
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const failed = setupComputer(
+      { kind: "command", command: "gh issue list" },
+      { stderr: `auth failed: ${secret}`, code: 1 },
+      undefined,
+      { vault, secretStore },
+    );
+    await tickRoutineWatch(failed.deps, failed.routine, target, scheduledAt);
+    const saved = (
+      failed.updateMany.mock.calls[0] as unknown as [{ data: { watchState: { detail: string } } }]
+    )[0].data.watchState.detail;
+    expect(saved).toBe("The check command exited with 1: auth failed: [redacted]");
+    expect(JSON.stringify(failed.messages)).toContain("auth failed: [redacted]");
+    expect(JSON.stringify(failed.messages)).not.toContain(secret);
+    expect(saved).not.toContain(secret);
+  });
+
+  it("scrubs a quote and backslash inside tracked command JSON", async () => {
+    const secret = 'ghp_quote"slash\\secretToken';
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine } = setupComputer(
+      { kind: "command", command: "gh issue list --json", track: ["id", "status"] },
+      {
+        stdout: JSON.stringify([{ id: "1", title: `Issue ${secret}`, status: secret }]),
+      },
+      undefined,
+      {
+        vault,
+        secretStore: {
+          async load(ciphertext: string) {
+            if (ciphertext === "cipher-gh") return secret;
+            throw new Error("unreadable");
+          },
+        },
+      },
+    );
+    routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: {},
+      detail: null,
+    } as never;
+    const result = await checkRoutineWatch(deps, routine);
+    expect(result.state.detail).toBe("New: Issue [redacted]");
+    const entry = result.state.entries?.["1"];
+    expect(entry).toContain("[redacted]");
+    expect(entry).not.toContain("ghp_quote");
+    expect(result.state.detail).not.toContain(secret);
+    expect(JSON.stringify(result.state)).not.toContain("ghp_quote");
+  });
+
+  it("tracks command JSON that contains a content array", async () => {
+    const secret = 'ghp_quote"slash\\secretToken';
+    const vault = fakeDatabase();
+    await vault.prisma.vaultCredential.create({
+      data: {
+        id: "gh-token",
+        ...accountVault,
+        name: "gh-token",
+        origin: "",
+        auth: { type: "command" },
+        ciphertext: "cipher-gh",
+      },
+    });
+    vi.mocked(provisionComputer).mockResolvedValueOnce({
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake",
+    });
+    const { deps, routine, updateMany, messages } = setupComputer(
+      { kind: "command", command: "cat doc.json", track: ["id"] },
+      {
+        stdout: JSON.stringify({
+          id: "doc-1",
+          title: `Note ${secret}`,
+          content: [{ type: "text", text: "Hello" }],
+        }),
+      },
+      undefined,
+      {
+        vault,
+        secretStore: {
+          async load(ciphertext: string) {
+            if (ciphertext === "cipher-gh") return secret;
+            throw new Error("unreadable");
+          },
+        },
+      },
+    );
+    routine.watchState = {
+      checkedAt: "x",
+      outcome: "unchanged",
+      fingerprint: "old",
+      entries: {},
+      detail: null,
+    } as never;
+    const tick = await tickRoutineWatch(deps, routine, target, scheduledAt);
+    expect(tick.run).toBe(true);
+    if (!tick.run) return;
+    expect(tick.state.entries).toHaveProperty("doc-1");
+    expect(tick.state.detail).toBe("New: Note [redacted]");
+    expect(tick.state.detail).not.toContain(secret);
+    expect(JSON.stringify(tick.state)).not.toContain("ghp_quote");
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(JSON.stringify(messages)).not.toContain("paused");
+  });
+
+  it("runs a desktop command with the computer's shell", async () => {
+    const command = "gh api user";
+    const shells = [
+      {
+        shell: { platform: "win32", shell: "powershell.exe", home: "C:\\Users\\rakazo" },
+        argv: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      },
+      {
+        shell: { platform: "linux", shell: "/bin/bash", home: "/home/rakazo" },
+        argv: ["/bin/bash", "-lc", command],
+      },
+    ];
+    for (const { shell, argv } of shells) {
+      const computer = {
+        id: "desktop-computer-1",
+        botId: "computer-home",
+        kind: "desktop" as const,
+        providerRef: "/tmp/watch-fixture/desktop-computers/computer-home",
+      };
+      vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
+      const { deps, routine, execute } = setupComputer(
+        { kind: "command", command },
+        { stdout: "ok\n" },
+        { id: "computer-1", scope: "team", kind: "desktop" },
+        { shell },
+      );
+      await checkRoutineWatch(deps, routine);
+      expect(execute).toHaveBeenCalledWith(
+        computer,
+        expect.objectContaining({ argv, cwd: "bots/bot-1" }),
+        expect.anything(),
+      );
+    }
   });
 
   it("retries in a minute without pausing when the computer is busy", async () => {

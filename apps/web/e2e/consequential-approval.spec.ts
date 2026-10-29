@@ -9,7 +9,7 @@ import {
   signup,
 } from "./helpers";
 
-test("Ask mode asks before a change, and approvals settings shape what asks", async ({
+test("A change asks without an approval model, and approvals settings shape what asks", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -68,14 +68,13 @@ test("Ask mode asks before a change, and approvals settings shape what asks", as
   await expectComposerReady(page);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
 
-  // The allowed tool is listed in Approvals, where it can be blocked.
   const settings = await openUserSettings(page);
   await expect(settings).toHaveAttribute("role", "dialog");
   await expect(settings).toBeFocused();
   await settings.getByTestId("settings-nav-confirmations").click();
   await expect(settings.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
   const mode = settings.getByTestId("approval-mode");
-  await expect(mode.getByRole("button", { name: "Ask", exact: true })).toHaveAttribute(
+  await expect(mode.getByRole("button", { name: "Auto", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -86,6 +85,17 @@ test("Ask mode asks before a change, and approvals settings shape what asks", as
     "true",
   );
   await captureScreenshot(page, testInfo, "52-approvals-settings");
+  await rules.getByRole("button", { name: "Preview", exact: true }).click();
+  const preview = rules.locator("form");
+  await preview.getByRole("button", { name: "Block", exact: true }).click();
+  await preview.getByRole("button", { name: "Test rule", exact: true }).click();
+  await expect(preview.getByRole("status")).toHaveText("Current: Allow rule → Preview: Block rule");
+  const savedRules = await rpc<Array<{ effect: string }>>(page, "approvalRules/list", {
+    scope: "account",
+  });
+  expect(savedRules.map((rule) => rule.effect)).toEqual(["always_allow"]);
+  await captureScreenshot(page, testInfo, "approval-rule-preview");
+  await rules.getByRole("button", { name: "Preview", exact: true }).click();
   await rules.getByRole("button", { name: "Block", exact: true }).click();
   await expect(rules.getByRole("button", { name: "Block", exact: true })).toHaveAttribute(
     "aria-pressed",
