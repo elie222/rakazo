@@ -13,7 +13,7 @@ export type McpOauthResult =
 
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
- * broadcasts completion or the popup is closed without finishing.
+ * broadcasts completion or the attempt times out.
  *
  * The BroadcastChannel (not window.opener) is the completion signal because
  * provider login pages with COOP sever the opener link. */
@@ -38,20 +38,15 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
   return await new Promise<McpOauthResult>((resolve) => {
     const channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
     let settled = false;
-    let pollTimer = 0;
     let timeoutTimer = 0;
     const finish = (result: McpOauthResult) => {
       if (settled) return;
       settled = true;
-      window.clearInterval(pollTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
       resolve(result);
     };
-    pollTimer = window.setInterval(() => {
-      if (!popup.closed) return;
-      finish("cancelled");
-    }, 500);
+    // COOP may make the popup appear closed while authorization continues.
     timeoutTimer = window.setTimeout(() => {
       popup.close();
       finish("cancelled");
