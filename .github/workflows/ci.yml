@@ -234,7 +234,6 @@ jobs:
           )" || published="unknown"
           # A published update this checkout has no object for cannot anchor the diff either.
           if [[ -n "$published" && "$published" != "unknown" ]] &&
-            ! git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null &&
             ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
             published="unknown"
           fi
