@@ -23,7 +23,12 @@ export async function prepareHostComputer(userDataDir: string) {
   try {
     server = await startHostComputerServer({ ...options, port });
   } catch (error) {
-    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "EADDRINUSE")
+    if (
+      !error ||
+      typeof error !== "object" ||
+      !("code" in error) ||
+      (error.code !== "EADDRINUSE" && error.code !== "EACCES")
+    )
       throw error;
     // A listener on the old port may have received the old credential from a still-running backend.
     token = randomBytes(32).toString("hex");

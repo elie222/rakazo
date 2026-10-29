@@ -79,7 +79,14 @@ const SPAWN_ENV_ALLOWLIST = [
   "DOCKER_CERT_PATH",
   "DOCKER_TLS_VERIFY",
 ];
-const WIN32_ENV_ALLOWLIST = ["SystemRoot", "SystemDrive", "APPDATA", "LOCALAPPDATA", "ProgramData"];
+const WIN32_ENV_ALLOWLIST = [
+  "SystemRoot",
+  "SystemDrive",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "ProgramFiles",
+];
 
 /**
  * Compose interpolates the process environment into the stack, so only what docker
@@ -281,7 +288,14 @@ const ADDRESS_POOL_EXHAUSTED = [
   "all predefined address pools have been fully subnetted",
   "could not find an available, non-overlapping ipv4 address pool",
 ];
-const PORT_IN_USE = ["address already in use", "port is already allocated", "bind for 127.0.0.1"];
+const PORT_IN_USE = [
+  "address already in use",
+  "port is already allocated",
+  "bind for 127.0.0.1",
+  "bind: only one usage of each socket address",
+  "bind: an attempt was made to access a socket in a way forbidden by its access permissions",
+  "ports are not available",
+];
 
 /** Docker output can contain paths and hostnames, so callers map kinds to fixed messages. */
 export function classifyDockerFailure(output: string): DockerFailureKind {
