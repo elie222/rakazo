@@ -85,6 +85,7 @@ export default function PeerChat() {
         options={{
           ...glassHeaderOptions(""),
           headerBackVisible: false,
+          headerTitleAlign: "center",
           headerLeft: () => <SheetCloseButton onPress={() => router.back()} />,
           headerTitle: () => (
             <View style={styles.pill}>

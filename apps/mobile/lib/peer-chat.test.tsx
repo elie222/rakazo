@@ -41,8 +41,18 @@ vi.mock("expo-router", () => ({
     Screen: ({
       options,
     }: {
-      options: { headerTitle: () => ReactNode; headerLeft: () => ReactNode };
-    }) => createElement("header", null, options.headerTitle(), options.headerLeft()),
+      options: {
+        headerTitle: () => ReactNode;
+        headerLeft: () => ReactNode;
+        headerTitleAlign?: string;
+      };
+    }) =>
+      createElement(
+        "header",
+        { "data-title-align": options.headerTitleAlign },
+        options.headerTitle(),
+        options.headerLeft(),
+      ),
   },
   useRouter: () => ({ back }),
   useLocalSearchParams: () => ({ botId: "chief", botName: "Chief", peerBotId: "peer" }),
@@ -150,6 +160,7 @@ it("leaves the position alone once the reader scrolls", async () => {
 it("names both bots in the header and closes the read-only chat", async () => {
   const screen = await open();
   expect(screen.textContent).toContain("Chief⇄Researcher");
+  expect(screen.querySelector("header")?.dataset.titleAlign).toBe("center");
   const close = screen.querySelector<HTMLButtonElement>('header button[aria-label="Close"]');
   expect(close).not.toBeNull();
   expect(close?.getAttribute("role")).toBe("button");

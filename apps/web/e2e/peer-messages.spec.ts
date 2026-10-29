@@ -101,7 +101,19 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   const titleBox = await view.getByRole("heading").boundingBox();
   expect(closeBox).not.toBeNull();
   expect(titleBox).not.toBeNull();
-  expect(closeBox!.x).toBeGreaterThanOrEqual(titleBox!.x + titleBox!.width);
+  const assertTitleCentered = async () => {
+    const viewBox = await view.boundingBox();
+    const headingBox = await view.getByRole("heading").boundingBox();
+    const buttonBox = await close.boundingBox();
+    expect(viewBox).not.toBeNull();
+    expect(headingBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+    expect(
+      Math.abs(headingBox!.x + headingBox!.width / 2 - (viewBox!.x + viewBox!.width / 2)),
+    ).toBeLessThanOrEqual(1);
+    expect(headingBox!.x + headingBox!.width).toBeLessThanOrEqual(buttonBox!.x);
+  };
+  await assertTitleCentered();
   expect(closeBox!.y).toBeLessThan(24);
   expect(closeBox!.x + closeBox!.width).toBeGreaterThan(350);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
@@ -153,9 +165,10 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   await chip.scrollIntoViewIfNeeded();
   await chip.click();
   await expect(view).toBeVisible();
+  await assertTitleCentered();
   const avatarsLeft = await view
-    .locator('[aria-hidden="true"].app-drag')
-    .evaluate((spacer) => spacer.nextElementSibling!.getBoundingClientRect().left);
+    .getByRole("heading")
+    .evaluate((heading) => heading.getBoundingClientRect().left);
   // macOS draws the traffic lights from x=16 to about x=68 in the window's top-left corner.
   expect(avatarsLeft).toBeGreaterThan(80);
   await captureScreenshot(page, testInfo, "peer-view-only-macos-desktop");
