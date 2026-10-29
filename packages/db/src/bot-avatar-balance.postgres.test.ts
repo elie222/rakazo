@@ -1,5 +1,6 @@
 import { BOT_COLORS } from "@rakazo/contracts";
 import {
+  newClientId,
   ORGANIC_AVATAR_HEART_FAMILY,
   organicAvatarFamily,
   organicAvatarLook,
@@ -111,15 +112,13 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
     expect(after).toEqual(expect.arrayContaining(before));
   });
 
-  it("defaults only new creation to Rakazo and reloads explicit original sets without altering photos or shapes", async () => {
+  it("defaults new creation to Original and reloads explicit sets without altering photos or shapes", async () => {
     const repos = createRepos(prisma);
     const created = await runAsTenant(owner, () =>
-      repos.createBot(actor(), botInput("Logo default")),
+      repos.createBot(actor(), botInput("Original default")),
     );
-    expect(created.avatarSet).toBe("rakazo");
-    expect(created.color).toBe(seededLogoAvatarColor(created.id));
-    const restored = await runAsTenant(owner, () => repos.getBot(actor(), created.id));
-    expect(restored.color).toBe(seededLogoAvatarColor(restored.id));
+    expect(created.avatarSet).toBe("organic");
+    expect(BOT_COLORS).toContain(created.color);
     for (const color of ["#8B5CF6", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="]) {
       const original = await runAsTenant(owner, () =>
         repos.createBot(actor(), { ...botInput("Original look"), avatarSet: "organic", color }),
@@ -134,6 +133,86 @@ describePostgres("new bot avatars (PostgreSQL)", () => {
         avatarSet: "rakazo",
         color,
       });
+    }
+  });
+
+  it("persists the preview seed and colour through a lost response and retry", async () => {
+    const repos = createRepos(prisma);
+    for (const explicit of [undefined, "#123456"]) {
+      const id = `c${newClientId().replaceAll("-", "").slice(0, 24)}`;
+      const input = { ...botInput("Preview"), id, avatarSet: "rakazo" as const, color: explicit };
+      const [first, retry] = await runAsTenant(owner, () =>
+        Promise.all([repos.createBot(actor(), input), repos.createBot(actor(), input)]),
+      );
+      expect(first).toMatchObject({ id, color: explicit ?? seededLogoAvatarColor(id) });
+      expect(retry).toMatchObject({ id: first.id, color: first.color, threadId: first.threadId });
+      expect(await runAsTenant(owner, () => repos.getBot(actor(), id))).toMatchObject({
+        id,
+        color: first.color,
+      });
+      const system = asSystem(prisma);
+      expect(await system.thread.count({ where: { botId: id } })).toBe(1);
+      await system.bot.update({ where: { id }, data: { archivedAt: new Date() } });
+      await expect(runAsTenant(owner, () => repos.createBot(actor(), input))).rejects.toThrow();
+      expect(await system.bot.findUnique({ where: { id } })).toMatchObject({
+        color: first.color,
+        spawnKey: id,
+        archivedAt: expect.any(Date),
+      });
+    }
+  });
+
+  it("rejects identity collisions instead of changing or returning another bot", async () => {
+    const repos = createRepos(prisma);
+    const id = `c${newClientId().replaceAll("-", "").slice(0, 24)}`;
+    const original = await runAsTenant(owner, () =>
+      repos.createBot(actor(), {
+        ...botInput("Keep me"),
+        id,
+        spawnKey: "different-key",
+        color: "#123456",
+      }),
+    );
+    await expect(
+      runAsTenant(owner, () =>
+        repos.createBot(actor(), {
+          ...botInput("Collision"),
+          id,
+          color: "#654321",
+        }),
+      ),
+    ).rejects.toThrow();
+    const otherAddress = `${address}1`;
+    const other = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider, address: otherAddress },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    try {
+      await expect(
+        runAsTenant(other, () =>
+          repos.createBot(
+            { ...actor(), ...other },
+            {
+              ...botInput("Foreign collision"),
+              id,
+              spawnKey: "different-key",
+            },
+          ),
+        ),
+      ).rejects.toThrow();
+      expect(await runAsTenant(owner, () => repos.getBot(actor(), id))).toMatchObject({
+        id: original.id,
+        name: "Keep me",
+        color: "#123456",
+      });
+    } finally {
+      const system = asSystem(prisma, "test fixture cleanup");
+      await system.messagingIdentity.deleteMany({ where: { provider, address: otherAddress } });
+      await system.organization.deleteMany({ where: { id: other.spaceId } });
+      await system.user.deleteMany({ where: { id: other.userId } });
     }
   });
 

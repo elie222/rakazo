@@ -1,8 +1,11 @@
 import { EventEmitter, once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { connect } from "node:net";
+import type { Duplex } from "node:stream";
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
@@ -166,6 +169,7 @@ async function collect<T>(iterable: AsyncIterable<T>) {
 afterEach(async () => {
   await Promise.all(hubs.splice(0).map((hub) => hub.close()));
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("device tokens", () => {
@@ -489,6 +493,113 @@ describe("device socket upgrade", () => {
         collect(devices.request("user-1", environment, new AbortController().signal)),
       ).resolves.toEqual(["hi"]);
       ws.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  /** Serves the hub and sends a raw upgrade, keeping the server's end of the socket. */
+  async function rawUpgrade(hub: UserDeviceHub, path: string, token: string) {
+    const server = createServer((_request, response) => response.end("ok"));
+    let serverSide!: { socket: Duplex; closed: Promise<void> };
+    const accepted = new Promise<typeof serverSide>((resolve) => {
+      server.on("upgrade", (_request, socket: Duplex) => {
+        // A close listener, not events.once, which would add an error listener and hide a crash.
+        const closed = new Promise<void>((done) => socket.on("close", () => done()));
+        serverSide = { socket, closed };
+        resolve(serverSide);
+      });
+    });
+    server.on("upgrade", hub.handleUpgrade);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const client = connect(port, "127.0.0.1");
+    client.on("error", () => undefined);
+    client.write(
+      `GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nAuthorization: Bearer ${token}\r\n\r\n`,
+    );
+    const stop = async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    };
+    return { port, client, accepted, stop };
+  }
+
+  const upgradeSocketError = ["user device upgrade socket error", expect.anything()] as const;
+
+  it.each([
+    ["404", "/other", "a".repeat(64)],
+    ["401", USER_DEVICE_CONNECT_PATH, "c".repeat(64)],
+  ])("survives a client that resets after its %s", async (status, path, token) => {
+    const { hub } = setup();
+    const warn = vi.spyOn(getLogger(), "warn");
+    const { port, client, accepted, stop } = await rawUpgrade(hub, path, token);
+    try {
+      const [response] = (await once(client, "data")) as [Buffer];
+      expect(String(response)).toMatch(new RegExp(`^HTTP/1.1 ${status} `));
+      const { closed } = await accepted;
+      client.resetAndDestroy();
+      await closed;
+      expect(warn).toHaveBeenCalledWith(...upgradeSocketError);
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    } finally {
+      await stop();
+    }
+  });
+
+  it("abandons the upgrade when the client resets while its token is checked", async () => {
+    const { hub, prisma, deviceRows, devices } = setup();
+    const warn = vi.spyOn(getLogger(), "warn");
+    const authenticate = vi.spyOn(hub, "authenticate");
+    let release = () => {};
+    const lookup = vi.spyOn(prisma.userDevice, "findUnique").mockImplementationOnce(
+      (() =>
+        new Promise((resolve) => {
+          release = () => resolve(deviceRows.get(device.id));
+        })) as never,
+    );
+    const { port, client, accepted, stop } = await rawUpgrade(
+      hub,
+      USER_DEVICE_CONNECT_PATH,
+      "a".repeat(64),
+    );
+    try {
+      const { closed } = await accepted;
+      await vi.waitFor(() => expect(lookup).toHaveBeenCalled());
+      client.resetAndDestroy();
+      await closed;
+      expect(warn).toHaveBeenCalledWith(...upgradeSocketError);
+      release();
+      await expect(authenticate.mock.results[0]!.value).resolves.toMatchObject({ id: device.id });
+      expect(await devices.connected("user-1")).toBeNull();
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    } finally {
+      await stop();
+    }
+  });
+
+  it("leaves socket errors to ws once it holds the socket", async () => {
+    const { hub, devices } = setup();
+    const warn = vi.spyOn(getLogger(), "warn");
+    const server = createServer();
+    const sockets: Duplex[] = [];
+    server.on("upgrade", (_request, socket: Duplex) => sockets.push(socket));
+    server.on("upgrade", hub.handleUpgrade);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}${USER_DEVICE_CONNECT_PATH}`, {
+        headers: { authorization: `Bearer ${"a".repeat(64)}` },
+      });
+      ws.on("error", () => undefined);
+      await once(ws, "open");
+      await vi.waitFor(async () => expect(await devices.connected("user-1")).not.toBeNull());
+      const socket = sockets[0]!;
+      const closed = new Promise<void>((resolve) => socket.on("close", () => resolve()));
+      socket.destroy(new Error("socket failed"));
+      await closed;
+      expect(warn).not.toHaveBeenCalledWith(...upgradeSocketError);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

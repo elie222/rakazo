@@ -1,8 +1,9 @@
+import type { ToolBatch } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
-  composioBatchActions,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -36,7 +37,7 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string; summary?: FleetCardSummary },
+  options?: { reviewReason?: string; summary?: FleetCardSummary; batch?: ToolBatch },
 ): MessageBlock {
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
@@ -122,8 +123,8 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const summary = describeApprovalAction(toolName, args);
-  const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
+  const summary = describeApprovalAction(toolName, args, options?.batch);
+  const detail = formatApprovalDetail(toolName, args, options?.reviewReason, options?.batch);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -166,10 +167,16 @@ function webFetchSite(toolName: string, args: Record<string, unknown>): string |
     : undefined;
 }
 
-function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
-  // A Composio batch is named by the actions it runs; "…" stands for an entry that names none.
-  const batch = composioBatchActions(toolName, args);
-  if (batch?.slugs.length) return [...batch.slugs, ...(batch.complete ? [] : ["…"])].join(", ");
+function describeApprovalAction(
+  toolName: string,
+  args: Record<string, unknown>,
+  batchShape: ToolBatch | undefined,
+): string {
+  // A batch is named by the actions it runs; "…" stands for an entry that names none.
+  const batch = batchShape && batchActions(batchShape, args);
+  if (batch?.actions.length) {
+    return [...batch.actions, ...(batch.complete ? [] : ["…"])].join(", ");
+  }
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
@@ -185,7 +192,8 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
 function formatApprovalDetail(
   toolName: string,
   args: Record<string, unknown>,
-  reviewReason?: string,
+  reviewReason: string | undefined,
+  batch: ToolBatch | undefined,
 ): string | undefined {
   const lines: string[] = [];
   if (reviewReason?.trim()) {
@@ -207,12 +215,13 @@ function formatApprovalDetail(
       lines.push(`${key}: ${String(value)}`);
     }
   };
-  if (composioBatchActions(toolName, args)) {
-    for (const item of args.tools as unknown[]) {
+  const items = batch ? args[batch.items] : undefined;
+  if (batch && Array.isArray(items)) {
+    for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-      const slug = typeof entry.tool_slug === "string" && entry.tool_slug.trim();
-      lines.push(slug || "…");
-      pushArgs(objectArguments(entry.arguments));
+      const action = entry[batch.action];
+      lines.push((typeof action === "string" && action.trim()) || "…");
+      pushArgs(objectArguments(entry[batch.arguments]));
     }
   } else {
     pushArgs(args);
@@ -221,7 +230,7 @@ function formatApprovalDetail(
   return lines.join("\n");
 }
 
-/** A batch entry's arguments, which Composio accepts as an object or a JSON string. */
+/** A batch entry's arguments, as an object or a JSON string. */
 function objectArguments(value: unknown): Record<string, unknown> {
   let parsed = value;
   if (typeof value === "string") {

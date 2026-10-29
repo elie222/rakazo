@@ -63,11 +63,11 @@ export function BotLookPicker({
         }
       >
         <TabsList className="w-full" aria-label={t`Icon set`}>
-          <TabsTrigger value="rakazo" className="flex-1">
-            <Trans>Rakazo</Trans>
-          </TabsTrigger>
           <TabsTrigger value="organic" className="flex-1">
             <Trans>Original</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="rakazo" className="flex-1">
+            <Trans>Rakazo</Trans>
           </TabsTrigger>
         </TabsList>
       </Tabs>

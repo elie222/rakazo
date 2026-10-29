@@ -445,27 +445,20 @@ describe("BotSettings disabled tools", () => {
 
 it("omits projected identity values on unrelated saves but commits explicit inline edits", async () => {
   const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave, { ...bot, name: "Бот", title: "" });
+  await renderSettings(onSave, { ...bot, name: "Бот" });
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[id$="-notify-finish"]')!.click(),
   );
   expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("name");
-  expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("title");
-  for (const [label, edit, value] of [
-    ["Name", "Edit name", "SupportBot2026"],
-    ["Title", "Edit label", "Support"],
-  ]) {
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>(`[aria-label="${edit}"]`)!.click(),
-    );
-    const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-    await act(async () => setField(input, value!));
-    await act(async () =>
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-    );
-  }
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
+  );
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
+  await act(async () => setField(input, "SupportBot2026"));
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
   expect(onSave.mock.calls[1]?.[0]).toMatchObject({ name: "SupportBot2026" });
-  expect(onSave.mock.calls[2]?.[0]).toMatchObject({ title: "Support" });
 });
 
 it("uses section headings without repeating notification or model row labels", async () => {

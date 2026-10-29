@@ -173,3 +173,29 @@ it("retains genuine thinking across duplicate owners, resets on fresh snapshots 
   s.clear();
   expect(s.getActivity("bot-a")).toBe("idle");
 });
+
+it("lets an idle observed chat retain generic work reported elsewhere", () => {
+  const s = createLogoAvatarActivityStore();
+  s.hydrate("idle-dm", { threadId: "dm", botId: "bot-a", cursor: 0, run: null });
+  expect(s.getActivity("bot-a", "running")).toBe("working");
+  expect(s.getActivity("bot-a", "waiting_input")).toBe("waiting");
+  expect(s.getActivity("bot-a", "failed")).toBe("error");
+  expect(s.getActivity("bot-a", "idle")).toBe("idle");
+  s.hydrate("group", snapshot(0));
+  s.apply("group", event(1, "agent.tool.called", { name: "read_file", executionId: "read" }));
+  expect(s.getActivity("bot-a", "running")).toBe("reading");
+  s.apply("group", event(2, "run.completed"));
+  expect(s.getActivity("bot-a", "running")).toBe("working");
+  expect(s.getActivity("bot-a", "idle")).toBe("idle");
+});
+
+it("publishes a background-only fallback change without exposing its activity", () => {
+  const s = createLogoAvatarActivityStore();
+  s.apply("chat", event(1, "run.started", { trigger: "tickets" }));
+  expect(s.getActivity("bot-a", "running")).toBe("idle");
+  let notifications = 0;
+  s.subscribe(() => notifications++);
+  s.hydrate("chat", { ...snapshot(2), run: null });
+  expect(s.getActivity("bot-a", "running")).toBe("working");
+  expect(notifications).toBe(1);
+});

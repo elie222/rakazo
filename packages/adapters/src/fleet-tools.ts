@@ -446,7 +446,6 @@ const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and
 type FleetBot = {
   id: string;
   name: string;
-  title: string;
   description: string;
   section: string | null;
   pinned: boolean;
@@ -503,7 +502,6 @@ export async function listFleet(
       select: {
         id: true,
         name: true,
-        title: true,
         description: true,
         pinned: true,
         section: { select: { name: true } },
@@ -534,7 +532,6 @@ export async function listFleet(
     bots: listedBots.map((bot) => ({
       id: bot.id,
       name: singleLine(bot.name),
-      title: singleLine(bot.title),
       description: bot.description,
       section: bot.section ? singleLine(bot.section.name) : null,
       pinned: bot.pinned,
@@ -799,9 +796,11 @@ export async function updateChildBot(
   if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
     return { error: "artifact_id and use_attached_image work only on yourself." };
   }
+  if (argumentGiven(args.instructions)) {
+    return { error: "Change another bot's instructions with set_child_instructions." };
+  }
   const profile = {
     name: argumentGiven(args.name) ? args.name : undefined,
-    title: argumentGiven(args.title) ? args.title : undefined,
     description: argumentGiven(args.description) ? args.description : undefined,
     notifyOnFinish: argumentGiven(args.notifyOnFinish)
       ? args.notifyOnFinish
@@ -810,7 +809,7 @@ export async function updateChildBot(
         : undefined,
   };
   const credential = credentialField(
-    { name: profile.name, title: profile.title, description: profile.description },
+    { name: profile.name, description: profile.description },
     deps.runSecrets,
   );
   if (credential) return { error: credential };
@@ -823,7 +822,7 @@ export async function updateChildBot(
 
   let patch: UpdateBotPatch = {};
   if (Object.values(profile).some((value) => value !== undefined)) {
-    const parsed = parseUpdateBotPatch(profile, child.name);
+    const parsed = parseUpdateBotPatch(profile);
     if ("error" in parsed) return parsed;
     patch = parsed.patch;
   }
@@ -838,7 +837,7 @@ export async function updateChildBot(
   }
   if (Object.keys(patch).length === 0) {
     return {
-      error: "Provide at least one of name, title, description, notify_on_finish, or color.",
+      error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
   await commitBotUpdate({
@@ -1288,7 +1287,7 @@ export async function updateOwnBotFromTool(
   args: Record<string, unknown>,
   context: AdapterContext,
 ) {
-  const parsed = parseUpdateBotPatch(args, bot.name);
+  const parsed = parseUpdateBotPatch(args);
   if ("error" in parsed) return parsed;
   const patch = parsed.patch;
   const wantsImage = args.artifact_id !== undefined || args.use_attached_image === true;
@@ -1328,7 +1327,7 @@ export async function updateOwnBotFromTool(
   if (Object.keys(patch).length === 0) {
     return {
       error:
-        "Provide at least one of name, title, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
+        "Provide at least one of name, description, notifyOnFinish, color, artifact_id, or use_attached_image.",
     };
   }
   const updated = await deps.prisma.bot.update({
@@ -1337,7 +1336,6 @@ export async function updateOwnBotFromTool(
     select: {
       id: true,
       name: true,
-      title: true,
       description: true,
       color: true,
       notifyOnFinish: true,
@@ -1353,7 +1351,6 @@ export async function updateOwnBotFromTool(
       payload: {
         botId: updated.id,
         name: updated.name,
-        title: updated.title,
         description: updated.description,
       },
     });
@@ -1364,7 +1361,6 @@ export async function updateOwnBotFromTool(
     ok: true,
     botId: updated.id,
     name: updated.name,
-    title: updated.title,
     description: updated.description,
     avatar: updated.color.startsWith("data:image/") ? "image" : updated.color,
     notifyOnFinish: updated.notifyOnFinish,

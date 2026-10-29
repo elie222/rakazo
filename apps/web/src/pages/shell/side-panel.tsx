@@ -6,7 +6,6 @@ import type {
   Group,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import type { AgentImportReader } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Monitor, Settings, X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
@@ -37,7 +36,6 @@ export function ShellSidePanel({
   refreshBots,
   refreshThread,
   refreshGroupThread,
-  refreshActiveThread,
   computer,
   computerOpen,
   booting,
@@ -45,10 +43,6 @@ export function ShellSidePanel({
   routineEditorProps,
   openBot,
   openCreatedBot,
-  droppedAgent,
-  setDroppedAgent,
-  importFromDialog,
-  setCreateBotOpen,
   modelFocusRequest,
   openSettings,
   memoryProviderConfigured,
@@ -68,7 +62,6 @@ export function ShellSidePanel({
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
-  refreshActiveThread: () => Promise<void>;
   computer: ComputerStatus | null;
   computerOpen: boolean;
   booting: boolean;
@@ -76,10 +69,6 @@ export function ShellSidePanel({
   routineEditorProps: ComponentProps<typeof RoutineEditor> | null;
   openBot: (botId: string) => void;
   openCreatedBot: (bot: Bot) => void;
-  droppedAgent: AgentImportReader | null;
-  setDroppedAgent: (agent: AgentImportReader | null) => void;
-  importFromDialog: boolean;
-  setCreateBotOpen: (open: boolean) => void;
   modelFocusRequest: number;
   openSettings: (section: SettingsSection) => void;
   memoryProviderConfigured: boolean;
@@ -193,23 +182,10 @@ export function ShellSidePanel({
           ) : null}
           {panel === "import-agent" ? (
             <AgentImportForm
-              bots={bots.filter((bot) => !bot.archivedAt)}
-              initialSource={droppedAgent ?? undefined}
-              onBack={() => {
-                setDroppedAgent(null);
-                setPanel(null);
-                if (importFromDialog) setCreateBotOpen(true);
-              }}
-              onCancel={() => {
-                setDroppedAgent(null);
-                setPanel(null);
-              }}
+              onClose={() => setPanel(null)}
               onCreated={(bot) => {
-                setDroppedAgent(null);
                 openCreatedBot(bot);
-                // An import into an existing bot changes it and its chat.
                 void refreshBots().catch(() => undefined);
-                if (bot.id === active?.id) void refreshActiveThread();
               }}
             />
           ) : null}
@@ -246,12 +222,6 @@ export function ShellSidePanel({
                 URL.revokeObjectURL(url);
               }}
               onClear={() => onClearBot(active)}
-              onUndoImport={() => {
-                setPanel(null);
-                void refreshBots(true);
-                // An import into an existing bot is undone without removing the bot.
-                void refreshActiveThread().catch(() => undefined);
-              }}
             />
           ) : null}
           {panel === "routine" && routineEditorProps ? (

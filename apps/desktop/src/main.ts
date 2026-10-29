@@ -13,11 +13,12 @@ import {
   Menu,
   net,
   safeStorage,
+  screen,
   session,
   shell,
 } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
-import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
+import { waitForMountedAppDocument } from "./app-document-state.js";
 import { createAppOpener } from "./app-opener.js";
 import type { ElectronAutoUpdater } from "./auto-update.js";
 import { DesktopUpdateController, LAUNCH_CHECK_DELAY_MS, updaterSupport } from "./auto-update.js";
@@ -85,10 +86,13 @@ const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 /** Test hook: where the app-managed stack answers. Mode `new` still requires loopback. */
 const LOCAL_WEB_URL = process.env.RAKAZO_LOCAL_WEB_URL?.trim() || DEFAULT_LOCAL_WEB_URL;
 const PROBE_TIMEOUT_MS = 8_000;
-const APP_DOCUMENT_READY_TIMEOUT_MS = 20_000;
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 let mainWindow: BrowserWindow | null = null;
+
+/** The server or the network refused the page; the setup window says so and the server logs its side. */
+class ServerUnavailable extends Error {}
+
 const appWindowTargets = new WeakMap<BrowserWindow, string>();
 let setupWindow: BrowserWindow | null = null;
 const bundledRendererInstallations = new Set<string>();
@@ -280,7 +284,7 @@ function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
   const win = new BrowserWindow({
-    ...browserWindowOptions(process.platform),
+    ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -444,7 +448,7 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
       }
       if (mainStatus !== undefined && mainStatus >= 400) {
         contents.removeListener("render-process-gone", onGone);
-        reject(new Error(`The server answered with HTTP ${mainStatus}.`));
+        reject(new ServerUnavailable(`The server answered with HTTP ${mainStatus}.`));
         return;
       }
       void waitForMountedAppDocument(contents)
@@ -469,7 +473,7 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
       _validatedURL: string,
       isMainFrame: boolean,
     ) => {
-      if (isMainFrame) settle(new Error(errorDescription || "Page failed to load."));
+      if (isMainFrame) settle(new ServerUnavailable(errorDescription || "Page failed to load."));
     };
     const onGone = (_event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
       settle(new Error(`Renderer stopped (${details.reason}).`));
@@ -487,25 +491,10 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
         settle();
       },
       (error: unknown) => {
-        settle(error instanceof Error ? error : new Error(String(error)));
+        settle(new ServerUnavailable(error instanceof Error ? error.message : String(error)));
       },
     );
   });
-}
-
-async function waitForMountedAppDocument(
-  contents: Electron.WebContents,
-): Promise<AppDocumentState> {
-  const deadline = Date.now() + APP_DOCUMENT_READY_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
-    const state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as
-      | AppDocumentState
-      | "pending";
-    if (state !== "pending") return state;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error("The server page did not become ready.");
 }
 
 async function installBundledRenderer(
@@ -570,7 +559,7 @@ function oauthPopupWindowOptions(partition: string | null) {
 function createSetupWindow() {
   const icon = developmentIcon();
   const win = new BrowserWindow({
-    ...setupWindowOptions(process.platform),
+    ...setupWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "setup-preload.cjs"),
@@ -924,7 +913,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
   try {
     const documentError = await probeDocument(targetUrl);
     if (documentError !== null) {
-      throw new Error(documentError);
+      throw new ServerUnavailable(documentError);
     }
     await installBundledRenderer(
       targetUrl,
@@ -948,7 +937,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     if (pendingPreviousWindow !== null) pendingPreviousWindow.hide();
     return true;
   } catch (error) {
-    reportDesktopError(error, "desktop.startup");
+    if (!(error instanceof ServerUnavailable)) reportDesktopError(error, "desktop.startup");
     pendingPreviousWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
     if (previous !== null && !previous.isDestroyed()) mainWindow = previous;

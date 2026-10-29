@@ -8,10 +8,10 @@ import {
 } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
-import { runSecretKind, withTransactionRetry } from "@rakazo/db";
+import { runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import { resolveDuplicateEffectGate } from "./approval-effect.js";
-import { prepareBotSecret } from "./bot-secrets.js";
+import { encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
 export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
@@ -165,24 +165,30 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
           });
         const plaintext = login ? encodeLoginSecret(login) : input.answer;
         const scope = { userId: run.userId, spaceId: input.spaceId, botId: run.botId };
-        const prepared = ask.credential
-          ? await prepareBotSecret({
-              prisma,
-              secretStore,
-              scope,
-              destination: ask.credential,
-              plaintext,
-            })
-          : await secretStore.put(
-              plaintext,
-              {
-                operationId: input.runId,
-                traceId: input.runId,
-                ...scope,
-                signal: new AbortController().signal,
-              },
-              { ephemeral: true },
-            );
+        // With "Save to Vault" off, the login stays with this run, bound to the card's site.
+        const runLogin =
+          ask.credential?.auth.type === "login" && input.remember === false
+            ? ask.credential
+            : undefined;
+        const prepared =
+          ask.credential && !runLogin
+            ? await prepareBotSecret({
+                prisma,
+                secretStore,
+                scope,
+                destination: ask.credential,
+                plaintext,
+              })
+            : await secretStore.put(
+                runLogin ? encodeRunLogin(runLogin.origin, plaintext) : plaintext,
+                {
+                  operationId: input.runId,
+                  traceId: input.runId,
+                  ...scope,
+                  signal: new AbortController().signal,
+                },
+                { ephemeral: true },
+              );
         return persistPreparedSecret(prisma, secretStore, prepared, () =>
           commit({
             async store(value) {
@@ -190,9 +196,20 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 value.userId !== run.userId ||
                 value.botId !== run.botId ||
                 value.plaintext !== plaintext ||
+                value.remember !== !runLogin ||
                 JSON.stringify(value.credential) !== JSON.stringify(ask.credential)
               )
                 throw new Error("Secret request changed; retry");
+              // Answering a login card again, saved or not, replaces this run's unsaved one.
+              if (ask.credential?.auth.type === "login") {
+                await value.tx.secret.deleteMany({
+                  where: {
+                    userId: run.userId,
+                    spaceId: input.spaceId,
+                    kind: runLoginKind(input.runId, ask.credential.name),
+                  },
+                });
+              }
               if ("store" in prepared) await prepared.store(value.tx);
               else
                 await value.tx.secret.create({
@@ -200,7 +217,9 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                     id: prepared.id,
                     userId: run.userId,
                     spaceId: input.spaceId,
-                    kind: runSecretKind(input.runId),
+                    kind: runLogin
+                      ? runLoginKind(input.runId, runLogin.name)
+                      : runSecretKind(input.runId),
                     ciphertext: prepared.ciphertext,
                   },
                 });

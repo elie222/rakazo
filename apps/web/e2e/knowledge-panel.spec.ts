@@ -176,9 +176,12 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  // Skills belong to the person in this space, so they open from the sidebar, not bot settings.
+  // Skills belong to the person in this space, so they open from the account menu, not bot settings.
   await expect(settings.getByTestId("bot-knowledge-skills")).toHaveCount(0);
-  const openSkills = () => page.getByRole("button", { name: "Skills", exact: true }).click();
+  const openSkills = async () => {
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Skills", exact: true }).click();
+  };
   const skillsDialog = page.getByRole("dialog", { name: "Skills", exact: true });
   const closeSkills = () =>
     skillsDialog.getByRole("button", { name: "Close skills", exact: true }).click();
@@ -306,7 +309,7 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
       ),
   );
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Edit label" })).toHaveText("Add a label");
+  await expect(settings.getByRole("button", { name: "Edit name" })).toHaveText("Researcher");
   await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
 });

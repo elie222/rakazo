@@ -650,8 +650,8 @@ function decodeAudioBase64(value: string): Uint8Array {
   }
 }
 
-/** Spent credit is 402; a rejected key is 403, never 401, which clients read as a lost session. */
-export function voiceAccountErrorStatus(code: VoiceAccountErrorCode) {
+/** Spent credit is 402; any other refusal is 403, never 401, which clients read as a lost session. */
+export function voiceAccountErrorStatus(code: VoiceAccountErrorCode | undefined) {
   return code === "VOICE_OUT_OF_CREDIT" ? 402 : 403;
 }
 
@@ -671,7 +671,7 @@ function voiceHttpError(c: Context, error: unknown) {
   if (error instanceof VoiceAccountError) {
     getLogger().warn("voice provider account rejected the request", {
       route: c.req.path,
-      reason: error.code,
+      reason: error.code ?? error.message,
     });
     return c.json({ error: error.message, code: error.code }, voiceAccountErrorStatus(error.code));
   }

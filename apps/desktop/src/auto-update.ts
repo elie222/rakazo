@@ -56,6 +56,8 @@ const OFFLINE = [
   "enetunreach",
   "net::err_",
   "getaddrinfo",
+  // GitHub's release CDN refusing a signed download link that lapsed in transit.
+  "jwt:expired",
 ];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 

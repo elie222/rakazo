@@ -49,6 +49,7 @@ export type MessageRowActions = {
     answer: string,
     fields?: readonly LoginFieldInput[],
     dismiss?: boolean,
+    remember?: false,
   ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;

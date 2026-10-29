@@ -20,6 +20,7 @@ import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   isConversationalRun,
+  messageBypassesTakeoverWait,
   messageReaction,
   projectMessages,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -900,8 +901,10 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        const holdingRuns = activeRuns.filter((run) =>
-          QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+        const holdingRuns = activeRuns.filter(
+          (run) =>
+            QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
+            !messageBypassesTakeoverWait(run),
         );
         const active = holdingRuns.find(steersUserMessage) ?? holdingRuns[0];
         if (active) {
@@ -1071,7 +1074,7 @@ export async function sendThreadMessage(
           }
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status)) continue;
+        if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
         const current = activeByBotId.get(run.botId);
         if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
           activeByBotId.set(run.botId, run);

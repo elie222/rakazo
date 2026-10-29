@@ -69,7 +69,6 @@ export const MessageView = memo(function MessageView({
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
-  onOpenImport,
   showToolActivity,
   onReply,
   onMarkUnread,
@@ -87,6 +86,7 @@ export const MessageView = memo(function MessageView({
     text: string,
     fields?: LoginFieldInput[],
     dismiss?: boolean,
+    remember?: false,
   ) => Promise<void>;
   onOpenBot: (botId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
@@ -109,8 +109,6 @@ export const MessageView = memo(function MessageView({
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
-  /** Opens the agent importer (from Chief's first-run focus card). */
-  onOpenImport?: () => void;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
@@ -195,7 +193,8 @@ export const MessageView = memo(function MessageView({
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
       : textAnchorIndex;
-  const hoverActions = isPeerReceiptBlocks(message.blocks) ? null : (
+  const peerReceipt = isPeerReceiptBlocks(message.blocks);
+  const hoverActions = peerReceipt ? null : (
     <MessageHoverActions
       message={message}
       side={message.role === "user" ? "start" : "end"}
@@ -283,7 +282,12 @@ export const MessageView = memo(function MessageView({
   return (
     <>
       {messageContext}
-      <div className={cn("relative flex flex-col gap-2", message.role === "user" && "items-end")}>
+      <div
+        className={cn(
+          "relative flex flex-col gap-2",
+          message.role === "user" && !peerReceipt && "items-end",
+        )}
+      >
         {blocks.map((block, i) => {
           if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
             return (
@@ -406,15 +410,7 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "choice") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
             if (!botId) return null;
-            return (
-              <ChoiceCard
-                key={i}
-                botId={botId}
-                block={block}
-                onBotChanged={onBotChanged}
-                onImportAgent={onOpenImport}
-              />
-            );
+            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
           }
           if (block.kind === "app_connect") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
@@ -564,7 +560,9 @@ export const MessageView = memo(function MessageView({
                   block={block}
                   canAnswer={canAnswer}
                   canDismiss={canDismiss}
-                  onAnswer={(text, fields) => onAnswer(message, text, fields)}
+                  onAnswer={(text, fields, remember) =>
+                    onAnswer(message, text, fields, undefined, remember)
+                  }
                   onDismiss={() => onAnswer(message, "", undefined, true)}
                 />
                 {i === hoverAnchorIndex ? hoverActions : null}

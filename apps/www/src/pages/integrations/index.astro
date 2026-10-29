@@ -1,0 +1,128 @@
+---
+import IntegrationLogo from "../../components/IntegrationLogo.astro";
+import { PLUGIN_CATEGORIES } from "@rakazo/core";
+import SiteFrame from "../../components/SiteFrame.astro";
+import {
+  CATEGORY_LABELS,
+  INTEGRATIONS,
+  POPULAR_INTEGRATIONS,
+  categoryOf,
+  integrationCountLabel,
+  integrationPath,
+} from "../../integrations";
+
+const count = integrationCountLabel();
+const title = `Rakazo integrations: connect your AI bots to ${count} apps`;
+const description = `Gmail, Slack, Notion, GitHub, HubSpot and ${count} more apps your Rakazo bots can read and act in.`;
+---
+
+<SiteFrame title={title} description={description} markdownAlternate="/integrations.md" wide>
+  <section class="ix-hero">
+    <h1>Connect your bots to {count} apps</h1>
+    <label class="ix-search">
+      <span class="sr-only">Search apps</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="9" cy="9" r="5.5"></circle>
+        <path d="m13.5 13.5 3 3"></path>
+      </svg>
+      <input
+        type="search"
+        placeholder="Search apps"
+        autocomplete="off"
+        spellcheck="false"
+        data-ix-search
+      />
+      <kbd aria-hidden="true">/</kbd>
+    </label>
+  </section>
+
+  <div class="ix-filters" role="radiogroup" aria-label="Category">
+    <button type="button" role="radio" aria-checked="true" data-ix-category="">All</button>
+    {
+      PLUGIN_CATEGORIES.map((category) => (
+        <button type="button" role="radio" aria-checked="false" data-ix-category={category}>
+          {CATEGORY_LABELS[category]}
+        </button>
+      ))
+    }
+  </div>
+
+  <section class="ix-section" data-ix-popular>
+    <h2>Popular</h2>
+    <ul class="ix-featured">
+      {
+        POPULAR_INTEGRATIONS.map((integration) => (
+          <li>
+            <a class="ix-feature" href={integrationPath(integration.slug)}>
+              <IntegrationLogo integration={integration} size="lg" />
+              <span class="ix-feature__name">{integration.name}</span>
+              <span class="ix-feature__meta">{CATEGORY_LABELS[categoryOf(integration)]}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section class="ix-section">
+    <h2 data-ix-all-heading>All apps</h2>
+    <ul class="ix-grid" data-ix-grid>
+      {
+        INTEGRATIONS.map((integration) => (
+          <li
+            data-name={integration.name.toLowerCase()}
+            data-category={categoryOf(integration)}
+          >
+            <a class="ix-item" href={integrationPath(integration.slug)}>
+              <IntegrationLogo integration={integration} />
+              <span>{integration.name}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="ix-empty" data-ix-empty hidden>No apps match that search.</p>
+  </section>
+
+  <p class="ix-submit"><a href="/plugins/submit/">Submit a plugin</a></p>
+</SiteFrame>
+
+<script>
+  const search = document.querySelector<HTMLInputElement>("[data-ix-search]");
+  const popular = document.querySelector<HTMLElement>("[data-ix-popular]");
+  const heading = document.querySelector<HTMLElement>("[data-ix-all-heading]");
+  const empty = document.querySelector<HTMLElement>("[data-ix-empty]");
+  const items = [...document.querySelectorAll<HTMLLIElement>("[data-ix-grid] > li")];
+  const chips = [...document.querySelectorAll<HTMLButtonElement>("[data-ix-category]")];
+  let category = "";
+
+  function apply() {
+    const query = search?.value.trim().toLowerCase() ?? "";
+    let shown = 0;
+    for (const item of items) {
+      const match =
+        (!query || item.dataset.name?.includes(query)) &&
+        (!category || item.dataset.category === category);
+      item.hidden = !match;
+      if (match) shown += 1;
+    }
+    const filtered = Boolean(query || category);
+    if (popular) popular.hidden = filtered;
+    if (heading) heading.hidden = filtered;
+    if (empty) empty.hidden = shown > 0;
+  }
+
+  search?.addEventListener("input", apply);
+  for (const chip of chips) {
+    chip.addEventListener("click", () => {
+      category = chip.dataset.ixCategory ?? "";
+      for (const other of chips) other.setAttribute("aria-checked", String(other === chip));
+      apply();
+    });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "/" || event.target instanceof HTMLInputElement) return;
+    event.preventDefault();
+    search?.focus();
+  });
+</script>

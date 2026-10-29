@@ -70,14 +70,11 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     insertMcpServer: async () => {
       throw new Error("not used");
     },
-    inTransaction: async (run) => run(db),
     findBot: async () => bot,
     assertRoutineSchedule: () => undefined,
     routineNextRunAt: () => null,
     routineRowData: (_actor, input) => ({ ...input }) as never,
     announceRoutine: async () => undefined,
-    destroyBot: async () => undefined,
-    removeMcpServer: async () => undefined,
     notifyThread: async () => undefined,
     ...overrides,
   };
@@ -159,43 +156,6 @@ describe("the request digest", () => {
   });
 });
 
-describe("an import that committed", () => {
-  it("is reported as imported even if its record is removed right after the commit", async () => {
-    // The seed commits with the bot that is returned; afterwards its record is gone from
-    // what the rest of the app reads (an Undo, say), here a store separate from the seed's.
-    const committed = services({
-      createBot: async (_actor, request) => {
-        await request.seed(fakeDb(), bot.id);
-        return bot;
-      },
-    });
-    await expect(createImportedBot(committed, actor, input)).resolves.toBe(bot);
-  });
-});
-
-describe("an import whose attempt did not commit", () => {
-  it("is not reported as imported when a first bot made meanwhile wins", async () => {
-    const afterModelKey = vi.fn();
-    const announceRoutine = vi.fn(async () => undefined);
-    const winner = { id: "chief", threadId: "thread-chief", name: "Chief" } as Bot;
-    const attempt = services({
-      afterModelKey,
-      announceRoutine,
-      // The first attempt runs the import and is rolled back (its writes never commit);
-      // the retry finds the first bot already made and returns it without the import.
-      createBot: async (_actor, request) => {
-        await request.seed(fakeDb(), "rolled-back");
-        return winner;
-      },
-    });
-    await expect(
-      createImportedBot(attempt, actor, { ...input, spawnKey: "onboarding:first" }),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(afterModelKey).not.toHaveBeenCalled();
-    expect(announceRoutine).not.toHaveBeenCalled();
-  });
-});
-
 describe("reading an import's setup state", () => {
   it("reads each provider once, in one read of the actor's connections", async () => {
     const connectedProviders = vi.fn(async () => new Set(["openrouter"]));
@@ -221,8 +181,8 @@ describe("an imported stdio server's setup state", () => {
   it("cannot be verified when it needs a program, so it is never reported done", async () => {
     const created = {
       mcpServers: [
-        { id: "files", revision: 1, credentials: [], env: [], unverifiable: true },
-        { id: "docs", revision: 1, credentials: [], env: [] },
+        { id: "files", credentials: [], env: [], unverifiable: true },
+        { id: "docs", credentials: [], env: [] },
       ],
     };
     const prisma = {
@@ -249,7 +209,7 @@ describe("an imported stdio server's setup state", () => {
 describe("an imported server asked for twice", () => {
   it("is decrypted once", async () => {
     const created = {
-      mcpServers: [{ id: "docs", revision: 1, credentials: ["Authorization"], env: [] }],
+      mcpServers: [{ id: "docs", credentials: ["Authorization"], env: [] }],
     };
     const prisma = {
       mcpServer: { findMany: async () => [{ id: "docs", secretId: "secret-docs" }] },

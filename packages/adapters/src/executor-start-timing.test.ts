@@ -25,7 +25,9 @@ const lease = {
 };
 const sink = createTestSink();
 
-function fixture(options: { startedAt?: Date; switching?: boolean; dedicated?: boolean } = {}) {
+function fixture(
+  options: { startedAt?: Date; switching?: boolean; dedicated?: boolean; heldBy?: string } = {},
+) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -48,6 +50,9 @@ function fixture(options: { startedAt?: Date; switching?: boolean; dedicated?: b
         computerSwitching: options.switching ?? false,
         computer: { scope: options.dedicated ? "dedicated" : "team" },
       })),
+    },
+    computerExecutionLease: {
+      findFirst: vi.fn(async () => (options.heldBy ? { id: options.heldBy } : null)),
     },
     // Stop at attempt setup so the fixture exercises only the real startup path.
     attempt: {
@@ -93,6 +98,18 @@ describe("execution start timing", () => {
       expect(enqueue).toHaveBeenCalledOnce();
     },
   );
+
+  it("waits without a retry timer while another run of the bot holds the computer", async () => {
+    leases.acquire.mockRejectedValue(new ComputerBusyError());
+    const { prisma, enqueue, start } = fixture({ heldBy: "lease-of-run-0" });
+    await start();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "queued", wakeAt: null }),
+      }),
+    );
+  });
 
   it.each([undefined, new Date("2026-01-01T00:00:00Z")])(
     "stamps execution after acquiring the computer and preserves the first start (%s)",

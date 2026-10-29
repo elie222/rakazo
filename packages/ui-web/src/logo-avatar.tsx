@@ -58,6 +58,7 @@ export const LogoAvatar = memo(function LogoAvatar({
       height={size}
       className={cn("rakazo-logo-avatar shrink-0", className)}
       data-activity={activity}
+      data-working={activity !== "idle" && activity !== "error"}
       data-vector-body="true"
       data-motion={canMove}
       data-small={size < 24}

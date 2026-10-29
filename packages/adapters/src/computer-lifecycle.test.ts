@@ -16,6 +16,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  computerSupportsTerminal,
   computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
@@ -27,6 +28,7 @@ import {
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { SandboxUnsafeStopError } from "./sandbox-errors.js";
 
 const context = {
   operationId: "test",
@@ -1213,74 +1215,83 @@ describe("computer provisioning", () => {
     }
   });
 
-  it("retains a fresh provider reference when rollback also fails", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-prepare-rollback-failure-"));
-    const prepareError = new Error("provider preparation failed");
-    const rollbackError = new Error("provider deletion failed");
-    const ref = {
-      id: "new-provider-1",
-      botId: "bot-1",
-      kind: "e2b" as const,
-      providerRef: "new-provider-1",
-      fresh: true,
-    };
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: null,
-          kind: "e2b",
-          scope: "dedicated",
-          state: "stopped",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany,
-      },
-    } as unknown as PrismaClient;
-    const sandbox = {
-      provision: vi.fn().mockResolvedValue(ref),
-      prepare: vi.fn().mockRejectedValue(prepareError),
-      destroy: vi.fn().mockRejectedValue(rollbackError),
-    } as unknown as SandboxProvider;
+  it.each([
+    { unsafeStop: false, reconnecting: false },
+    { unsafeStop: true, reconnecting: false },
+    { unsafeStop: true, reconnecting: true },
+  ])(
+    "retains a fresh provider reference when rollback also fails (unsafe stop=$unsafeStop, reconnecting=$reconnecting)",
+    async ({ unsafeStop, reconnecting }) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-prepare-rollback-failure-"));
+      const prepareError = unsafeStop
+        ? new SandboxUnsafeStopError("provider preparation failed", new Error("stop unconfirmed"))
+        : new Error("provider preparation failed");
+      const rollbackError = new Error("provider deletion failed");
+      const ref = {
+        id: "new-provider-1",
+        botId: "bot-1",
+        kind: "e2b" as const,
+        providerRef: "new-provider-1",
+        fresh: true,
+      };
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const prisma = {
+        computer: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue({
+            id: "computer-1",
+            homeKey: "bot-1",
+            providerRef: reconnecting ? "old-provider" : null,
+            kind: "e2b",
+            scope: "dedicated",
+            state: reconnecting ? "running" : "stopped",
+            controlLeaseId: null,
+            updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+          }),
+          updateMany,
+        },
+      } as unknown as PrismaClient;
+      const sandbox = {
+        provision: vi.fn().mockResolvedValue(ref),
+        prepare: vi.fn().mockRejectedValue(prepareError),
+        destroy: vi.fn().mockRejectedValue(rollbackError),
+      } as unknown as SandboxProvider;
 
-    try {
-      const result = provisionComputer(
-        {
-          prisma,
-          sandbox,
-          home: {} as AgentHomeStore,
-          jobs: {} as JobPublisher,
-          events: {} as ThreadEvents,
-          dataDir,
-        },
-        "computer-1",
-        context,
-      );
-      await expect(result).rejects.toMatchObject({
-        errors: [prepareError, rollbackError],
-      });
-      expect(updateMany).toHaveBeenLastCalledWith({
-        where: {
-          maintenanceId: null,
-          id: "computer-1",
-          state: "booting",
-          providerRef: null,
-          kind: "e2b",
-          updatedAt: expect.any(Date),
-        },
-        data: {
-          state: "error",
-          providerRef: "new-provider-1",
-          kind: "e2b",
-        },
-      });
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-    }
-  });
+      try {
+        const result = provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        );
+        await expect(result).rejects.toMatchObject({
+          errors: [prepareError, rollbackError],
+        });
+        expect(updateMany).toHaveBeenLastCalledWith({
+          where: {
+            maintenanceId: null,
+            id: "computer-1",
+            state: "booting",
+            providerRef: reconnecting ? "old-provider" : null,
+            kind: "e2b",
+            updatedAt: expect.any(Date),
+          },
+          data: {
+            state: unsafeStop ? "quarantined" : "error",
+            providerRef: "new-provider-1",
+            kind: "e2b",
+          },
+        });
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([false, true])(
     "preserves a running computer's files on ordinary reconnect (prepare fails=%s)",
@@ -3443,3 +3454,10 @@ function replaceDeps(
     events: { append: vi.fn() } as unknown as ThreadEvents,
   };
 }
+
+describe("computer terminal capability", () => {
+  it("allows Novita terminals through the product capability gate", () => {
+    expect(computerSupportsTerminal("novita")).toBe(true);
+    expect(computerSupportsTerminal("unknown")).toBe(false);
+  });
+});

@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
+  OAuthError,
   ServerError,
   TemporarilyUnavailableError,
+  TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   AdapterContext,
@@ -28,6 +30,7 @@ import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "./approval-effect.js";
+import { composioToolBatch } from "./composio-batch.js";
 import {
   combineSignals,
   redactConnectorPayload,
@@ -59,7 +62,7 @@ import {
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
-import { recordMcpServerHealth } from "./mcp-server-health.js";
+import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { ConnectorRedirectError } from "./remote-mcp.js";
@@ -149,8 +152,15 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   }
   if (error instanceof ConnectorRedirectError) return "reconnect";
   // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
-  if (error instanceof ServerError || error instanceof TemporarilyUnavailableError)
+  if (
+    error instanceof ServerError ||
+    error instanceof TemporarilyUnavailableError ||
+    error instanceof TooManyRequestsError
+  )
     return "unreachable";
+  // The authorization server refused our client or grant, or cannot register a client at
+  // all; the user signs in again or enters a pre-registered client.
+  if (error instanceof OAuthError || needsMcpOAuthClient(error)) return "reconnect";
   const code = (error as { code?: unknown }).code;
   if (code === "ENOTFOUND") return "reconnect";
   if (typeof code === "string" && UNREACHABLE_CODES.has(code)) return "unreachable";
@@ -474,6 +484,7 @@ export class McpConnector implements ConnectorProvider {
               description: tool.description ?? tool.name,
               inputSchema: tool.inputSchema as Record<string, unknown>,
               readOnly: tool.annotations?.readOnlyHint,
+              batch: composioToolBatch(tool.name),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -980,11 +991,24 @@ export class McpConnector implements ConnectorProvider {
     let material: OAuthMaterial | undefined;
     // What the process was handed; its stderr can echo any of it.
     try {
-      const secret = server.secretId
+      let secret = server.secretId
         ? await this.prisma.secret.findFirst({
             where: { id: server.secretId, ...itemSecretIn(context) },
           })
         : null;
+      if (server.secretId && !secret) {
+        // OAuth refresh replaces the secret without updating this run's server snapshot.
+        const current = await this.prisma.mcpServer.findFirst({
+          where: { id: server.id, revision: server.revision, ...availableInSpace(context) },
+          select: { secretId: true },
+        });
+        if (current?.secretId) {
+          secret = await this.prisma.secret.findFirst({
+            where: { id: current.secretId, ...itemSecretIn(context) },
+          });
+        }
+        if (!secret) throw new Error("MCP server secret is unavailable; retry");
+      }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
       if (secret) onRef(secret.ciphertext, secret.id);

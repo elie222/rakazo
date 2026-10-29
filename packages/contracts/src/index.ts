@@ -1,3 +1,4 @@
+export * from "./account-export.js";
 export * from "./agent-import.js";
 export * from "./agent-import-setup.js";
 export * from "./ai-consent.js";
@@ -12,6 +13,7 @@ export * from "./bot-settings-layout.js";
 export * from "./builtin-tools.js";
 export * from "./client-build.js";
 export * from "./cloudflare-ai-gateway.js";
+export * from "./connector-errors.js";
 export * from "./desktop.js";
 export * from "./domain.js";
 export * from "./events.js";

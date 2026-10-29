@@ -7,7 +7,11 @@ import type {
   IntegrationCatalogSurface,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
-import { CONNECTION_LABEL_MAX_LENGTH, PluginPreviewSchema } from "@rakazo/contracts";
+import {
+  CONNECTION_LABEL_MAX_LENGTH,
+  PluginPreviewSchema,
+  SUBMIT_PLUGIN_URL,
+} from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
 import {
   buildFeaturedConnectorTiles,
@@ -50,7 +54,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
@@ -1799,6 +1803,19 @@ export function PluginsOverlay({
                   ) : null}
                 </>
               )}
+              {catalogLoaded && !category ? (
+                <div className="mt-10 flex justify-center">
+                  <a
+                    href={SUBMIT_PLUGIN_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+                  >
+                    <Trans>Submit a plugin</Trans>
+                    <ArrowUpRight size={14} />
+                  </a>
+                </div>
+              ) : null}
             </>
           )}
         </div>

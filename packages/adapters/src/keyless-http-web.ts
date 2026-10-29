@@ -8,7 +8,7 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import type { ResolveHostname } from "./web-ssrf.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
@@ -102,6 +102,7 @@ export class KeylessHttpWebProvider implements WebProvider {
 
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
     const { url, body } = await fetchSafeWebText(request.url, {
       fetch: this.fetchImpl,
       resolveHostname: this.resolveHostname,
@@ -112,14 +113,10 @@ export class KeylessHttpWebProvider implements WebProvider {
     });
     if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
     const extracted = extractReadableText(body, url);
-    const truncated = extracted.text.length > maxChars;
     return {
       url,
       title: extracted.title,
-      text: truncated
-        ? `${extracted.text.slice(0, maxChars)}\n\n[Content truncated]`
-        : extracted.text,
-      truncated,
+      ...pageWindow(extracted.text.slice(offset), maxChars, offset),
     };
   }
 }

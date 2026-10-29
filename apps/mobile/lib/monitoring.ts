@@ -33,6 +33,7 @@ let pendingStartupError: Error | undefined;
 let startupStorage: StartupErrorStorage | undefined;
 let nativeApplication: NativeApplication | undefined;
 let previousLaunch: { release?: string; dist?: string } | undefined;
+let screen = "other";
 
 /** Bound the time given to configuration and the native SDK before preserving RN's fatal path. */
 async function flushStartupError(): Promise<void> {
@@ -71,6 +72,12 @@ export function reportMobileError(
   // A request that lost its connection, timed out or was cancelled is the network, not a bug.
   if (operation === "rpc.transport" && isConnectionFailure(error)) return;
   errors.capture(error, operation, tags);
+}
+
+/** A coarse screen name, so an out-of-memory report says what was open; never route params. */
+export function setMobileMonitoringScreen(next: string | undefined): void {
+  screen = next ?? "other";
+  sdk?.setTag("screen", screen);
 }
 
 /** Clear account context synchronously, before a server/session change starts any I/O. */
@@ -200,6 +207,7 @@ export function configureMobileMonitoring(
       sdk = Sentry;
       configured = true;
       Sentry.setTag("surface", "mobile");
+      Sentry.setTag("screen", screen);
       if (Platform.OS === "ios" || Platform.OS === "android")
         Sentry.setTag("mobile.platform", Platform.OS);
       Sentry.setUser(userId ? { id: userId, ip_address: null } : null);

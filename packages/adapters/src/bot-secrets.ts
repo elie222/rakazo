@@ -25,8 +25,9 @@ import {
   sameLoginFieldLabel,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { lockSpaceSettings, settingsTarget, withTransactionRetry } from "@rakazo/db";
+import { lockSpaceSettings, runLoginKind, settingsTarget, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
@@ -279,8 +280,9 @@ export function loginFieldLabelsArgument(value: unknown): unknown {
 }
 
 /**
- * The field labels a login card asks for. Only labels: whether a field is hidden is the person's
- * choice on the card, so anything else the bot sends with a field is dropped.
+ * The field labels a login card asks for. Only labels: the card derives each field's starting
+ * state from its label, the person has the last word, and anything else the bot sends with a
+ * field is dropped.
  */
 export function requestedLoginFields(value: unknown): { labels?: string[]; error?: string } {
   if (value === undefined || value === null) return {};
@@ -853,25 +855,108 @@ export function findLoginField(fields: readonly LoginField[], name: string) {
   return undefined;
 }
 
+/** A login kept for one run only: its fields with the card's site, stored as one secret. */
+export function encodeRunLogin(origin: string, login: string): string {
+  return JSON.stringify({ origin, login });
+}
+
+const RunLoginValue = z.object({ origin: z.string(), login: z.string() });
+
+function decodeRunLogin(plaintext: string): LoginSecretValue & { origin: string } {
+  const { origin, login } = RunLoginValue.parse(JSON.parse(plaintext));
+  return { origin, ...decodeLoginSecret(login) };
+}
+
+/** This run's login under `name` that the person chose not to save, if any. */
+export async function findRunLogin(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+  name: string,
+): Promise<(LoginSecretValue & { origin: string }) | undefined> {
+  const row = await prisma.secret.findFirst({
+    where: { userId: scope.userId, spaceId: scope.spaceId, kind: runLoginKind(runId, name) },
+    select: { id: true, ciphertext: true },
+  });
+  return row ? decodeRunLogin(await secretStore.load(row.ciphertext, row.id)) : undefined;
+}
+
 /**
- * Resolve one field of a saved website login for a page fill. The caller must pass `origin` to
- * the page browser, which refuses to fill unless the page is still on that origin, and must type
- * a hidden field only into a password field.
+ * Redaction forms of this run's logins that weren't saved, from the start of the run: hidden
+ * fields as every run hides a saved login's, and every field as the run that fills one does.
+ */
+export async function loadRunLoginRedactions(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+): Promise<string[]> {
+  const rows = await prisma.secret.findMany({
+    where: {
+      userId: scope.userId,
+      spaceId: scope.spaceId,
+      kind: { startsWith: runLoginKind(runId, "") },
+    },
+    select: { id: true, ciphertext: true },
+  });
+  const forms = new Set<string>();
+  for (const row of rows) {
+    const { fields } = decodeRunLogin(await secretStore.load(row.ciphertext, row.id));
+    for (const form of loginFillRedactions(fields)) forms.add(form);
+    for (const field of fields) {
+      if (!field.hidden || field.value.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
+      for (const form of passwordRedactionForms(field.value)) forms.add(form);
+    }
+  }
+  return [...forms];
+}
+
+function loginFillRedactions(fields: readonly LoginField[]): string[] {
+  return [
+    ...new Set(
+      fields
+        .filter((entry) => entry.hidden || entry.value.length >= MIN_REDACTED_VISIBLE_VALUE)
+        .flatMap((entry) => [entry.value, encodeURIComponent(entry.value)]),
+    ),
+  ];
+}
+
+const HTTPS_ONLY = "Website logins can only be filled on an HTTPS origin.";
+
+/**
+ * Resolve one field of a website login for a page fill: this run's login that wasn't saved under
+ * the name first, since it is what the person just typed, then a saved one. The caller must pass
+ * `origin` to the page browser, which refuses to fill unless the page is still on that origin,
+ * and must type a hidden field only into a password field.
  */
 export async function resolveLoginFill(input: {
   prisma: PrismaClient;
   secretStore: SecretStore;
   scope: BotSecretScope;
+  runId: string;
   name: string;
   field: string;
 }): Promise<
   { text: string; hidden: boolean; origin: string; redactions: string[] } | { error: string }
 > {
-  const row = await input.prisma.vaultCredential.findFirst({
-    where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
-  });
-  if (!row) return { error: "Login is unavailable. Use request_secret to save it first." };
-  if (isCommandCredential(row.auth)) {
+  const runLogin = await findRunLogin(
+    input.prisma,
+    input.secretStore,
+    input.scope,
+    input.runId,
+    input.name,
+  );
+  const row = runLogin
+    ? undefined
+    : await input.prisma.vaultCredential.findFirst({
+        where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
+      });
+  const stored = runLogin
+    ? { name: input.name, origin: runLogin.origin, auth: { type: "login" } }
+    : row;
+  if (!stored) return { error: "Login is unavailable. Use request_secret to save it first." };
+  if (isCommandCredential(stored.auth)) {
     return {
       error: `${UNUSABLE_CREDENTIAL}. Command variables are only available to shell commands.`,
     };
@@ -879,21 +964,18 @@ export async function resolveLoginFill(input: {
   // Checked on the stored origin itself, so the private-LAN HTTP allowance cannot widen a login.
   let storedOrigin: URL;
   try {
-    storedOrigin = new URL(row.origin);
+    storedOrigin = new URL(stored.origin);
   } catch {
-    return { error: "Website logins can only be filled on an HTTPS origin." };
+    return { error: HTTPS_ONLY };
   }
-  if (storedOrigin.protocol !== "https:") {
-    return { error: "Website logins can only be filled on an HTTPS origin." };
-  }
-  const destination = normalizeSecretDestination(row);
+  if (storedOrigin.protocol !== "https:") return { error: HTTPS_ONLY };
+  const destination = normalizeSecretDestination(stored);
   if (destination.auth.type !== "login") {
     return { error: "This credential is not a website login." };
   }
-  if (destination.origin !== storedOrigin.origin) {
-    return { error: "Website logins can only be filled on an HTTPS origin." };
-  }
-  const { fields } = decodeLoginSecret(await input.secretStore.load(row.ciphertext, row.id));
+  if (destination.origin !== storedOrigin.origin) return { error: HTTPS_ONLY };
+  const { fields } =
+    runLogin ?? decodeLoginSecret(await input.secretStore.load(row!.ciphertext, row!.id));
   const field = findLoginField(fields, input.field);
   if (!field) {
     return {
@@ -904,12 +986,6 @@ export async function resolveLoginFill(input: {
     text: field.value,
     hidden: field.hidden,
     origin: destination.origin,
-    redactions: [
-      ...new Set(
-        fields
-          .filter((entry) => entry.hidden || entry.value.length >= MIN_REDACTED_VISIBLE_VALUE)
-          .flatMap((entry) => [entry.value, encodeURIComponent(entry.value)]),
-      ),
-    ],
+    redactions: loginFillRedactions(fields),
   };
 }

@@ -455,6 +455,11 @@ export interface BillingProvider {
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;
+  /**
+   * Credits the customer's account; future invoices draw it down before charging. Idempotent per
+   * `referenceId`, so a retry after an unknown outcome never credits twice.
+   */
+  grantBalanceCredit?(customerId: string, amountCents: number, referenceId: string): Promise<void>;
   describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;

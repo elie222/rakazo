@@ -22,6 +22,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   isLocalhostOrLoopbackIp,
+  MCP_OAUTH_CLIENT_REQUIRED,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -30,6 +31,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
@@ -244,6 +246,16 @@ export class McpOAuthServerMismatchError extends Error {
       "MCP OAuth authorization server differs from the one this client was first used with; reconfigure the server's OAuth client",
     );
     this.name = "McpOAuthServerMismatchError";
+  }
+}
+
+/** The authorization server cannot register a client, so the user must enter one. */
+export class McpOAuthClientRequiredError extends Error {
+  readonly code = MCP_OAUTH_CLIENT_REQUIRED;
+  /** @param revision The server revision the attempt used. */
+  constructor(readonly revision: number) {
+    super(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED);
+    this.name = "McpOAuthClientRequiredError";
   }
 }
 
@@ -1018,6 +1030,7 @@ export class McpOAuthBroker {
       }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
+      if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await networkFetch.close().catch(() => undefined);

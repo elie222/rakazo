@@ -62,7 +62,7 @@ describe("per-bot avatar sets", () => {
     expect(resolveBotAvatarSet("future-set")).toBe("organic");
     expect(resolveBotAvatarSet("organic")).toBe("organic");
     expect(resolveBotAvatarSet("rakazo")).toBe("rakazo");
-    expect(DEFAULT_NEW_BOT_AVATAR_SET).toBe("rakazo");
+    expect(DEFAULT_NEW_BOT_AVATAR_SET).toBe("organic");
   });
 
   it("accepts an explicit set on create/update and rejects unrecognised writes", () => {
@@ -72,6 +72,15 @@ describe("per-bot avatar sets", () => {
     }
     expect(CreateBotInput.safeParse({ name: "Scout", avatarSet: "other" }).success).toBe(false);
     expect(UpdateBotInput.safeParse({ botId: "bot-1", avatarSet: "other" }).success).toBe(false);
+  });
+
+  it("accepts a reserved creation seed without changing old-client inputs", () => {
+    const id = "c0123456789abcdef01234567";
+    expect(CreateBotInput.parse({ name: "Scout", id }).id).toBe(id);
+    expect(CreateBotInput.parse({ name: "Scout" }).id).toBeUndefined();
+    for (const invalid of ["", "existing-id", `${id}x`, id.toUpperCase()]) {
+      expect(CreateBotInput.safeParse({ name: "Scout", id: invalid }).success).toBe(false);
+    }
   });
 
   it("roundtrips the set and untouched photo or shape through portable profiles", () => {

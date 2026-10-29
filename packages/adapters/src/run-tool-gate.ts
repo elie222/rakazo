@@ -3,16 +3,19 @@ import type {
   AgentToolExecutionObserver,
   AutoReviewRequest,
   ConnectorCall,
+  ToolBatch,
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
-  composioBatchActions,
+  batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
+  decisiveActionApprovalRules,
   displayName,
+  humanizeToolName,
   newSiteOutcome,
   outboundSiteGate,
   planActionGate,
@@ -66,6 +69,12 @@ import { connectorTrustKeys } from "./run-trust.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
+
+type ApprovalCard = {
+  reviewReason: string | undefined;
+  summary: FleetCardSummary | undefined;
+  batch: ToolBatch | undefined;
+};
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
 export interface ToolCall {
@@ -129,16 +138,18 @@ export async function gateToolCall(
   // Declared effect of the operation this call dispatches (installed API method and
   // flag). Install config is immutable per route resource, so it cannot drift before
   // execute; a catalog call uses the tool it was just resolved to.
-  const declaredReadOnly = viaConnector
-    ? (resolvedTool ?? ctx.tools.connector.get(name))?.readOnly
-    : undefined;
-  // A Composio batch names its actions in tools[].tool_slug, so rules and the read/write
+  const connectorTool = viaConnector ? (resolvedTool ?? ctx.tools.connector.get(name)) : undefined;
+  const declaredReadOnly = connectorTool?.readOnly;
+  // A batch tool names the actions it runs in its arguments, so rules and the read/write
   // check look at each action, never the batch tool. An entry naming no action asks.
-  const composioBatch = composioBatchActions(name, args);
-  const unidentifiedAction = Boolean(composioBatch && !composioBatch.complete);
-  const approvalToolNames = composioBatch?.slugs.length ? composioBatch.slugs : [name];
+  const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
+  const unidentifiedAction = Boolean(batch && !batch.complete);
+  const approvalToolNames = batch?.actions.length ? batch.actions : [name];
+  // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
-    toolName === name ? declaredReadOnly : ctx.tools.connector.get(toolName)?.readOnly;
+    toolName === name || declaredReadOnly === false
+      ? declaredReadOnly
+      : ctx.tools.connector.get(toolName)?.readOnly;
   const requiresUnattendedApproval =
     (unidentifiedAction && run.trigger === "webhook") ||
     approvalToolNames.some((toolName) =>
@@ -165,8 +176,7 @@ export async function gateToolCall(
     effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
-    name,
-    args,
+    batch?.actions,
     connectorCall.route,
     connectorKind,
     connectorProviders,
@@ -226,7 +236,7 @@ export async function gateToolCall(
         toolName === name ? connectorKind : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
     })),
-    wrapper: composioBatch ? { name, connectorKind } : undefined,
+    wrapper: batch ? { name, connectorKind } : undefined,
     site: fetchSite,
     rules: await ctx.trust.loadApprovalRules(),
   });
@@ -288,7 +298,7 @@ export async function gateToolCall(
       result: {
         error:
           approvalResolved.decision === "deny"
-            ? `${name} is blocked in this space. Don't try it another way; tell the user it's blocked.`
+            ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
             : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
       },
     };
@@ -335,6 +345,7 @@ export async function gateToolCall(
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
+          batch && (batch.complete ? batch.actions : []),
         );
 
   const runAutoReview = async () => {
@@ -405,7 +416,7 @@ export async function gateToolCall(
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
   });
-  const card = { reviewReason, summary: request.fleetSummary };
+  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
@@ -485,6 +496,15 @@ export async function gateToolCall(
   return { call };
 }
 
+function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
+  const labels = decisiveActionApprovalRules(resolved).map((rule) => {
+    const value = rule.matchValue.trim().replace(/\s+/g, " ");
+    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
+  });
+  if (labels.length === 0) return "";
+  return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;
+}
+
 function createToolCall(
   ctx: RunContext,
   fields: Omit<ToolCall, "claimedEffect" | "persistEffectResult" | "finish" | "claimOrReturn">,
@@ -545,11 +565,7 @@ async function settleToolUncertainty(
 }
 
 /** Ask the owner through an approval card. Parallel calls share the first call's pause. */
-function requestApproval(
-  ctx: RunContext,
-  call: ToolCall,
-  card: { reviewReason: string | undefined; summary: FleetCardSummary | undefined },
-) {
+function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
   const { approval } = ctx.state;
   // Parallel calls can need approval at once. Only the first saves the turn and shows
   // its card; the others wait for that pause. Otherwise a later call's save could make
@@ -559,11 +575,7 @@ function requestApproval(
   return approval.request;
 }
 
-async function showApprovalCard(
-  ctx: RunContext,
-  call: ToolCall,
-  card: { reviewReason: string | undefined; summary: FleetCardSummary | undefined },
-) {
+async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
   const { deps, run, runId, bot, thread } = ctx;
   const { name, args, executionId, applied } = call;
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
@@ -625,10 +637,7 @@ async function reviewToolCall(
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
-    const botDescription = redactSecrets(
-      `${bot.name}: ${bot.title}\n${bot.description}`,
-      ctx.secrets,
-    );
+    const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
     // A new site is judged on the full URL and the owner's own words only: the task
     // prompt of a webhook or bot-started run carries text someone else wrote.
     const reviewRequest: AutoReviewRequest =

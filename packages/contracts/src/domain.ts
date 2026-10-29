@@ -8,6 +8,7 @@ import {
   isCloudflareAiGatewayProvider,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import {
@@ -92,10 +93,10 @@ export const BotSchema = z.object({
   id: Id,
   spaceId: Id,
   name: z.string(),
+  /** Always empty; installed mobile apps still read it. */
   title: z.string(),
   description: z.string(),
   instructions: z.string(),
-  selfUpdateInstructions: z.boolean().optional(),
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
   avatarSet: BotAvatarSetSchema.optional(),
@@ -368,20 +369,23 @@ export const SpaceNavigationSchema = z.object({
 export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
 export const BOT_NAME_MAX_LENGTH = 80;
-export const BOT_TITLE_MAX_LENGTH = 500;
 export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
 export const CreateBotInput = z.object({
+  /** Optional reserved identity so a creation preview uses the final bot seed. */
+  id: z
+    .string()
+    .regex(/^c[a-z0-9]{24}$/)
+    .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
-  title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
   fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
   avatarSet: BotAvatarSetSchema.optional(),
-  /** Organic body family (0-9) to draw the new bot with; the server picks an id that hashes to it. */
+  /** Organic body family (0-9); the server picks a matching id unless one is reserved. */
   avatarFamily: z.number().int().min(0).max(9).optional(),
   computerMode: ComputerModeSchema.default("team"),
   /** Idempotency key within a space (unique with spaceId). */
@@ -389,26 +393,14 @@ export const CreateBotInput = z.object({
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
-export function normalizeCreateBotProfile(
-  input: Pick<CreateBotInput, "name" | "title" | "description">,
-) {
-  const description = input.description.trim();
-  return {
-    name: input.name.trim().slice(0, BOT_NAME_MAX_LENGTH),
-    title: input.title.trim().slice(0, BOT_TITLE_MAX_LENGTH),
-    description: description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-    instructions: description.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
-  };
-}
-
 export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
     description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
     instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    /** Ignored; installed mobile apps may still send it. */
     selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
@@ -451,6 +443,7 @@ export const UpdateBotInput = z
       });
     }
   });
+export type UpdateBotInput = z.infer<typeof UpdateBotInput>;
 
 /**
  * A routine's model is optional, but provider and id only mean something together,
@@ -778,6 +771,12 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+export const ApprovalRulePreviewSchema = z.object({
+  before: z.enum(["always_allow", "require_approval", "deny", "default"]),
+  after: z.enum(["always_allow", "require_approval", "deny", "default"]),
+});
+export type ApprovalRulePreview = z.infer<typeof ApprovalRulePreviewSchema>;
+
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
@@ -880,6 +879,47 @@ export const PluginMarketplaceCatalogSchema = z.object({
   skippedEntries: z.number().int().nonnegative(),
 });
 export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
+
+export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+
+const HttpsUrlSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .url()
+  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+
+export const PluginSubmissionInputSchema = z.object({
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema.optional(),
+  logo: HttpsUrlSchema,
+  source: HttpsUrlSchema,
+  description: z.string().trim().min(1).max(2000),
+  testing: z.string().trim().min(1).max(4000),
+  tested: z.literal(true),
+});
+export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
+
+export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
+
+export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
+  id: z.string(),
+  website: z.string().nullable(),
+  status: PluginSubmissionStatusSchema,
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+  reviewedAt: z.string().nullable(),
+});
+export type PluginSubmission = z.infer<typeof PluginSubmissionSchema>;
+
+export const PluginSubmissionReviewSchema = z.discriminatedUnion("decision", [
+  z.object({ id: Id, decision: z.literal("approve") }),
+  z.object({ id: Id, decision: z.literal("reject"), reason: z.string().trim().min(1).max(1000) }),
+]);
+export type PluginSubmissionReview = z.infer<typeof PluginSubmissionReviewSchema>;
 
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
@@ -991,6 +1031,8 @@ export const McpServerHealthSchema = z.object({
   status: z.enum(["unknown", "installing", "ok", "error"]),
   /** Redacted, human-readable failure reason (stderr tail included for stdio). */
   message: z.string().nullable(),
+  /** A failure the user fixes in the server's settings, so clients can say how. */
+  code: z.enum([MCP_OAUTH_CLIENT_REQUIRED]).nullable().optional(),
   toolCount: z.number().int().nonnegative().nullable(),
   checkedAt: z.string().nullable(),
 });
@@ -1705,6 +1747,8 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions. */
+  isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
@@ -1803,6 +1847,11 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
+  /** Present once the organization has subscribed: its invite link and free months earned. */
+  referral: z
+    .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
+    .nullable()
+    .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
@@ -1822,7 +1871,7 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }).extend({
+  bot: BotSchema.pick({ name: true, description: true, instructions: true }).extend({
     color: z.string().optional(),
     avatarSet: BotAvatarSetSchema.optional(),
   }),

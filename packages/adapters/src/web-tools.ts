@@ -1,5 +1,5 @@
 import type { AdapterContext, WebFetchProvider, WebSearchProvider } from "@rakazo/adapter-kit";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset } from "./web-limits.js";
 
 export async function webSearchFromTool(
   search: WebSearchProvider,
@@ -35,6 +35,7 @@ export async function webFetchFromTool(
       {
         url,
         maxChars: clampMaxChars(args.maxChars),
+        offset: clampOffset(args.offset),
         signal: context.signal,
       },
       context,

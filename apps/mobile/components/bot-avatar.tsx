@@ -139,6 +139,7 @@ function RakazoBotAvatar({
   composing = false,
   muted = false,
   motion = "static",
+  pokeable = false,
 }: BotAvatarProps) {
   const liveActivity = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
@@ -159,6 +160,7 @@ function RakazoBotAvatar({
         size={size}
         activity={resolved}
         motion={motion}
+        pokeable={pokeable}
       />
       {working ? <WorkingDot size={size} muted={muted} /> : null}
       {muted ? <MutedBadge size={size} /> : null}

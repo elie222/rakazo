@@ -316,7 +316,10 @@ const structuredData = homeStructuredData({
               {copy.selfHost.copy}
             </p>
           </div>
-          <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
+          <div class="selfhost__actions">
+            <Button href={GITHUB_URL} external data-attr="selfhost-github">{copy.hero.viewOnGithub}</Button>
+            <Button href="/docs/self-host/" variant="secondary">{copy.openSource.readTheDocs}</Button>
+          </div>
         </div>
         <div class="card-grid-3">
           {

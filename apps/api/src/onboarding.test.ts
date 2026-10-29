@@ -76,7 +76,7 @@ describe("promptFocus", () => {
     const run = {
       findFirst: vi.fn(async () => (options.introRun ? { id: "intro" } : null)),
     };
-    Object.assign(tx, { run, agentImport: { findFirst: vi.fn(async () => null) } });
+    Object.assign(tx, { run });
     return { deps, actor, run };
   }
 

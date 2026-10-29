@@ -2,10 +2,11 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, DEFAULT_NEW_BOT_AVATAR_SET } from "@rakazo/contracts";
 import {
+  newClientId,
+  ORGANIC_AVATAR_HEART_FAMILY,
   ORGANIC_AVATAR_LOOKS,
   organicAvatarFamily,
   organicAvatarSampleIdentity,
-  seededLogoAvatarColor,
 } from "@rakazo/core";
 import {
   BOT_AVATAR_COLORS,
@@ -32,7 +33,9 @@ function pick<T>(options: readonly T[]): T {
 
 export interface CreateBotDialogInput {
   name: string;
-  color?: string;
+  color: string;
+  /** Reserve the logo preview's persistent seed through creation and retries. */
+  id?: string;
   avatarSet: BotAvatarSet;
   /** The organic family the preview drew; omitted when a studio shape is picked. */
   avatarFamily?: number;
@@ -42,26 +45,28 @@ export interface CreateBotDialogInput {
 export function CreateBotDialog({
   onCancel,
   onCreate,
-  onImport,
 }: {
   onCancel: () => void;
   onCreate: (input: CreateBotDialogInput) => Promise<void>;
-  onImport?: () => void;
 }) {
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
+  const [previewId] = useState(() => {
+    let id: string;
+    do {
+      id = `c${newClientId().replaceAll("-", "").slice(0, 24)}`;
+    } while (organicAvatarFamily(id) === ORGANIC_AVATAR_HEART_FAMILY);
+    return id;
+  });
   const [look, setLook] = useState(() => ({
     value: pick(BOT_AVATAR_COLORS),
     identity: pick(ORGANIC_IDENTITIES),
   }));
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>(DEFAULT_NEW_BOT_AVATAR_SET);
-  const [colorChosen, setColorChosen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = name.trim();
-  const color =
-    avatarSet === "rakazo" && !colorChosen ? seededLogoAvatarColor(look.identity) : look.value;
 
   async function create() {
     if (!trimmed || submitting) return;
@@ -71,7 +76,8 @@ export function CreateBotDialog({
     try {
       await onCreate({
         name: trimmed,
-        color,
+        color: look.value,
+        ...(avatarSet === "rakazo" ? { id: previewId } : {}),
         avatarSet,
         ...(organic ? { avatarFamily: organicAvatarFamily(look.identity) } : {}),
       });
@@ -108,7 +114,12 @@ export function CreateBotDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="flex justify-center py-2">
-            <BotAvatar color={color} identity={look.identity} size={96} avatarSet={avatarSet} />
+            <BotAvatar
+              color={look.value}
+              identity={avatarSet === "rakazo" ? previewId : look.identity}
+              size={96}
+              avatarSet={avatarSet}
+            />
           </div>
           <Input
             ref={nameRef}
@@ -125,8 +136,8 @@ export function CreateBotDialog({
             </p>
           ) : null}
           <BotLookPicker
-            value={color}
-            identity={look.identity}
+            value={look.value}
+            identity={avatarSet === "rakazo" ? previewId : look.identity}
             organicIdentities={ORGANIC_IDENTITIES}
             avatarSet={avatarSet}
             onAvatarSetChange={(set, value) => {
@@ -134,23 +145,10 @@ export function CreateBotDialog({
               setLook((current) => ({ ...current, value }));
             }}
             onChange={(value, identity) => {
-              setColorChosen(true);
               setLook((current) => ({ value, identity: identity ?? current.identity }));
             }}
           />
           <DialogFooter>
-            {onImport ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="sm:me-auto"
-                disabled={submitting}
-                data-testid="create-bot-import"
-                onClick={onImport}
-              >
-                <Trans>Import</Trans>
-              </Button>
-            ) : null}
             <Button type="button" variant="outline" disabled={submitting} onClick={onCancel}>
               <Trans>Cancel</Trans>
             </Button>

@@ -266,12 +266,22 @@ export function scheduleComputerSleep(
   jobs: JobPublisher,
   computerId: string,
   notAfter?: Date,
+  notBefore?: Date,
 ): void {
   if (!computerId || !computerIdleSleepEnabled()) return;
-  const at = Date.now() + sandboxIdleMs();
-  void jobs.enqueue(
-    computerSleepJob(computerId, new Date(notAfter ? Math.min(at, notAfter.getTime()) : at)),
+  const idleAt = Date.now() + sandboxIdleMs();
+  const at = Math.max(
+    notAfter ? Math.min(idleAt, notAfter.getTime()) : idleAt,
+    notBefore?.getTime() ?? 0,
   );
+  void jobs.enqueue(computerSleepJob(computerId, new Date(at)));
+}
+
+/** When a rate-limited provider said it takes requests again. */
+function rateLimitEnds(error: unknown): Date | undefined {
+  return error instanceof SandboxRateLimitError && error.retryAfterMs
+    ? new Date(Date.now() + error.retryAfterMs)
+    : undefined;
 }
 
 function activeLimitReached(
@@ -383,8 +393,13 @@ export async function sleepComputerIfIdle(
       await deps.sandbox.keepAlive?.(ref);
     } catch (error) {
       // The holding run or the next idle check recovers a computer whose sandbox is gone, and
-      // the next check sends the heartbeat a rate-limited provider refused.
-      if (!isSandboxGoneError(error) && !(error instanceof SandboxRateLimitError)) throw error;
+      // the next check sends the heartbeat a rate-limited or unreachable provider missed.
+      if (
+        !isSandboxGoneError(error) &&
+        !(error instanceof SandboxRateLimitError) &&
+        !(error instanceof SandboxUnresponsiveError)
+      )
+        throw error;
     }
     return;
   }
@@ -398,7 +413,7 @@ export async function sleepComputerIfIdle(
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
       executionRunId: null,
-      executionLeases: { none: { expiresAt: { gt: checkpointedAt } } },
+      executionLeases: await noBlockingExecutionLease(deps.prisma, computerId, checkpointedAt),
     },
     data: { state: "suspending", updatedAt: checkpointedAt },
   });
@@ -470,7 +485,7 @@ export async function sleepComputerIfIdle(
         where: suspensionClaim,
         data: { state: "running" },
       });
-      scheduleComputerSleep(deps.jobs, computerId);
+      scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
       if (deferSleep(error, computer)) return;
       throw error;
     }
@@ -521,7 +536,7 @@ export async function sleepComputerIfIdle(
       where: suspensionClaim,
       data: { state: "running" },
     });
-    scheduleComputerSleep(deps.jobs, computerId);
+    scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
     if (deferSleep(error, computer)) return;
     throw error;
   }
@@ -577,7 +592,7 @@ async function suspendStoppedComputer(
       providerRef: computer.providerRef,
       updatedAt: computer.updatedAt,
       executionRunId: null,
-      executionLeases: { none: { expiresAt: { gt: new Date() } } },
+      executionLeases: await noBlockingExecutionLease(deps.prisma, computer.id, new Date()),
     },
     data: {
       state: "suspended",
@@ -769,6 +784,33 @@ function findActiveRun(
     },
     select: { id: true },
   });
+}
+
+/**
+ * A live execution lease means a run is using the computer, except the one a run waiting for
+ * takeover keeps for up to a day so no other bot takes its screen. Once the idle check has
+ * found that the waiting run no longer holds the computer, that lease must not hold it either.
+ * The fence lets a run that resumes in the meantime block the claim again.
+ */
+async function noBlockingExecutionLease(prisma: PrismaClient, computerId: string, now: Date) {
+  const leases = await prisma.computerExecutionLease.findMany({
+    where: { computerId, expiresAt: { gt: now } },
+    select: { runId: true, fence: true },
+  });
+  const waiting =
+    leases.length === 0
+      ? []
+      : await prisma.run.findMany({
+          where: { id: { in: leases.map((lease) => lease.runId) }, status: "waiting_takeover" },
+          select: { id: true },
+        });
+  const heldForTakeover = leases.filter((lease) => waiting.some((run) => run.id === lease.runId));
+  return {
+    none: {
+      expiresAt: { gt: now },
+      ...(heldForTakeover.length > 0 ? { NOT: heldForTakeover } : {}),
+    },
+  };
 }
 
 /** When the newest takeover request of a run still waiting on this computer stops holding it. */

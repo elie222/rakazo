@@ -95,7 +95,11 @@ vi.mock("../components/AccountAccess", () => ({
   },
 }));
 
+vi.mock("../components/AccountDataSettings", () => ({ AccountDataSettings: () => null }));
 vi.mock("../components/ApprovalRulesSettings", () => ({ ApprovalRulesSettings: () => null }));
+vi.mock("../components/TrustedLinkSitesSettings", () => ({
+  TrustedLinkSitesSettings: () => null,
+}));
 vi.mock("../components/ai/primitives", () => ({ SuccessPop: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   ComputersUnavailableHint: () => null,

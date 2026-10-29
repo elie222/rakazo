@@ -43,8 +43,8 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
-      answer: (message, answer, fields, dismiss) =>
-        rowActionsRef.current.answer(message, answer, fields, dismiss),
+      answer: (message, answer, fields, dismiss, remember) =>
+        rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),

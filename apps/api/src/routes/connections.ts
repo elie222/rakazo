@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, ConnectorCatalogItem } from "@rakazo/adapter-kit";
+import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import {
   pickReusableConnection,
   planLiveConnectionSync,
@@ -462,6 +463,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             data: { status: "error" },
           });
           if (error instanceof ProviderTransactionBusyError) throw error;
+          if (error instanceof ConnectorAuthUnavailableError) {
+            getLogger().warn("connections.begin app has no usable auth config", {
+              connectorId: input.connectorId,
+              provider: input.provider,
+              reason: String(error.cause),
+            });
+            throw new ORPCError(error.code, { status: 400, message: error.message });
+          }
           throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
         }
       }),

@@ -130,6 +130,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** A login the user used for this run only instead of saving it. */
+    remembered: z.literal(false).optional(),
     actions: z
       .array(
         z.object({
@@ -227,7 +229,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("child_bot"),
     botId: z.string(),
     name: z.string(),
-    title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
@@ -273,7 +274,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("import_setup"),
     items: z.array(AgentImportSetupItemSchema),
-    /** Set by Undo, which also empties `items`; the checklist is then hidden. */
+    /** Set on checklists an earlier Undo retired, with `items` emptied; it is then hidden. */
     undone: z.boolean().optional(),
   }),
   z.object({

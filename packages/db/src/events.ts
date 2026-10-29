@@ -19,11 +19,11 @@ import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
-  composioBatchActions,
   instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  messageBypassesTakeoverWait,
   messageReaction,
   messagingChannelId,
   normalizeRunError,
@@ -36,7 +36,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
-import { saveApprovalRule } from "./approval-settings.js";
+import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -274,6 +274,8 @@ export interface AnswerRunInput {
   fields?: LoginFieldInput[];
   /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
   username?: string;
+  /** Only for a login card: false uses the login for this run only instead of saving it. */
+  remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
 }
@@ -322,6 +324,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** False for a login card answered with "Save to Vault" off. */
+    remember: boolean;
     runId: string;
     userId: string;
     spaceId: string;
@@ -511,12 +515,15 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true },
+              select: { id: true, taskId: true, trigger: true, status: true },
             })
           : [];
+      const holdingRuns = activeRuns.filter(
+        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+      );
       // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
-        activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
+        holdingRuns.find((run) => isConversationalRun(run.trigger)) ?? holdingRuns[0] ?? null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -831,9 +838,15 @@ async function commitAnswerRunInput(
   const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
   // Login fields belong only to a login card, which cannot be saved without them.
   if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
+  if (input.remember !== undefined && !loginAsk) return null;
   if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
     throw new AnswerTooLongError();
-  let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
+  let approvalEffect: {
+    id: string;
+    kind: string;
+    request: Prisma.JsonValue;
+    batchActions: Prisma.JsonValue;
+  } | null = null;
   let editedInstructions: string | undefined;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
@@ -954,10 +967,9 @@ async function commitAnswerRunInput(
       data: { status: allowed ? "approved" : "denied" },
     });
     // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
-    // Composio batch allows each action in it, never every action the batch tool can run.
+    // batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
-    const batch = composioBatchActions(approvalEffect!.kind, approvalEffect!.request);
-    const tools = batch ? (batch.complete ? batch.slugs : []) : [approvalEffect!.kind];
+    const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
       // Saved where the member's confirmations apply in this Space: the account or its override.
       for (const tool of site ? [site] : tools) {
@@ -984,6 +996,7 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
@@ -1026,6 +1039,7 @@ async function commitAnswerRunInput(
           status: "answered" as const,
           answer: recordedAnswer,
           ...(dismissed ? { dismissed: true as const } : {}),
+          ...(input.remember === false ? { remembered: false as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
@@ -2056,7 +2070,7 @@ async function notifyCommittedEvent(
   });
 }
 
-async function notifyRealtime(
+export async function notifyRealtime(
   realtime: RealtimeFanout | undefined,
   threadId: string,
   cursor: number,

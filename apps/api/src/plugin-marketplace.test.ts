@@ -10,7 +10,17 @@ const actor: Actor = {
   email: "fixture@example.test",
   isDeploymentOwner: false,
 };
-function setup() {
+const approved = {
+  name: "Notes",
+  description: "Reviewed notes.",
+  logo: "https://example.test/notes.svg",
+  website: null,
+  source: "https://github.com/xai-org/plugin-marketplace#notes",
+  pinnedSource: `https://github.com/xai-org/plugin-marketplace@${"b".repeat(40)}#notes`,
+  hasConnector: false,
+  skillCount: 1,
+};
+function setup(approvedRows: (typeof approved)[] = []) {
   const read = vi.fn(async (url: string) => {
     if (url.includes("/git/trees/"))
       return JSON.stringify({ tree: [{ path: "notes/skills/plan/SKILL.md", type: "blob" }] });
@@ -21,9 +31,17 @@ function setup() {
     throw new Error("Not found");
   });
   const router = createRouter({
-    prisma: {} as never,
+    prisma: {
+      pluginSubmission: { findMany: async () => approvedRows },
+      user: { findUnique: async () => ({ email: actor.email, emailVerified: true }) },
+    } as never,
     pluginMarketplaceRead: read,
-    env: { webOrigin: "http://localhost:5173", defaultProvider: "fake", defaultModel: "fake" },
+    env: {
+      webOrigin: "http://localhost:5173",
+      defaultProvider: "fake",
+      defaultModel: "fake",
+      adminEmails: ["admin@example.test"],
+    },
     dataDir: "/tmp/marketplace-rpc-test",
   } as unknown as RouterDeps);
   return {
@@ -47,5 +65,19 @@ describe("marketplace RPC", () => {
     const reads = read.mock.calls.length;
     expect((await client(actor).marketplace.catalog({ query: "missing" })).entries).toEqual([]);
     expect(read).toHaveBeenCalledTimes(reads);
+  });
+  it("lists reviewed submissions once, in place of the same plugin from another registry", async () => {
+    const { client } = setup([approved]);
+    const result = await client(actor).marketplace.catalog({ query: "notes" });
+    expect(result.entries.map((row) => [row.registry, row.description])).toEqual([
+      ["Rakazo", "Reviewed notes."],
+      ["Cursor", ""],
+    ]);
+  });
+  it("keeps submissions to admins", async () => {
+    const { client } = setup();
+    await expect(
+      client(actor).marketplace.submissions({ status: "pending" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

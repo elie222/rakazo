@@ -48,9 +48,7 @@ function MemberPicker({
   const visible = useMemo(() => {
     const base = expanded ? selectable : selectable.filter((bot) => everPicked.has(bot.id));
     if (!needle) return base;
-    return base.filter(
-      (bot) => bot.name.toLowerCase().includes(needle) || bot.title.toLowerCase().includes(needle),
-    );
+    return base.filter((bot) => bot.name.toLowerCase().includes(needle));
   }, [expanded, selectable, everPicked, needle]);
 
   function toggle(botId: string) {

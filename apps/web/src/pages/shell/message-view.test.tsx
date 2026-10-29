@@ -52,17 +52,16 @@ const planner = (status: "created" | "archived" | "deleted" = "created") => ({
   status,
 });
 
-function renderMessage(
+function renderView(
+  role: ThreadMessage["role"],
   blocks: ThreadMessage["blocks"],
-  peerBot: PeerBot,
-  mentions?: ReturnType<typeof planner>[],
+  props: Partial<ComponentProps<typeof MessageView>> = {},
 ) {
-  const onOpenBot = vi.fn();
   const message: ThreadMessage = {
     id: "message",
     threadId: "thread",
     seq: 1,
-    role: "bot",
+    role,
     createdAt: new Date().toISOString(),
     blocks,
   };
@@ -73,12 +72,11 @@ function renderMessage(
         canAnswer={false}
         canDismiss={false}
         message={message}
-        mentions={mentions}
         onAnswer={vi.fn()}
-        onOpenBot={onOpenBot}
+        onOpenBot={vi.fn()}
         onOpenPeerMessages={vi.fn()}
         onTogglePeerReplies={vi.fn()}
-        peerBot={peerBot}
+        peerBot={existingBot}
         onRefresh={vi.fn()}
         onBotChanged={vi.fn()}
         onAddRoutine={vi.fn()}
@@ -90,13 +88,35 @@ function renderMessage(
         onReply={vi.fn()}
         onMarkUnread={vi.fn()}
         onReact={vi.fn()}
+        {...props}
       />,
     ),
   );
+}
+
+function renderMessage(
+  blocks: ThreadMessage["blocks"],
+  peerBot: PeerBot,
+  mentions?: ReturnType<typeof planner>[],
+) {
+  const onOpenBot = vi.fn();
+  renderView("bot", blocks, { mentions, onOpenBot, peerBot });
   const mention = container.querySelector<HTMLElement>('[data-testid="bot-mention"]')!;
   act(() => mention.click());
   return { mention, onOpenBot };
 }
+
+it("keeps a received peer marker off the user's side while user replies align to the end", () => {
+  renderView("user", [
+    { kind: "bot_message_received", fromBotId: "peer", fromBotName: "Atlas", text: "Done." },
+  ]);
+  const chip = container.querySelector('[data-testid="peer-receipt-chip"]');
+  expect(chip?.textContent).toBe("Message from Atlas");
+  expect(chip?.closest(".items-end")).toBeNull();
+
+  renderView("user", [{ kind: "text", text: "Thanks." }]);
+  expect(container.querySelector(".items-end")?.textContent).toContain("Thanks.");
+});
 
 it("names a new bot inline in the reply, in its color", () => {
   const { mention, onOpenBot } = renderMessage(

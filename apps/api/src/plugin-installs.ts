@@ -97,8 +97,12 @@ function withPreparedServers<T>(
 
 const BUILTIN_SKILL_NAMES = new Set(BUILTIN_AGENT_SKILLS.map((skill) => skill.name.toLowerCase()));
 
+export function hasBuiltinSkillName(skills: ReadonlyArray<{ name: string }>): boolean {
+  return skills.some((skill) => BUILTIN_SKILL_NAMES.has(skill.name.toLowerCase()));
+}
+
 function assertNoBuiltinSkillNames(plugin: LoadedPlugin) {
-  if (plugin.skills.some((skill) => BUILTIN_SKILL_NAMES.has(skill.name.toLowerCase())))
+  if (hasBuiltinSkillName(plugin.skills))
     throw new ORPCError("CONFLICT", { message: "Plugin skill conflicts with a built-in skill" });
 }
 

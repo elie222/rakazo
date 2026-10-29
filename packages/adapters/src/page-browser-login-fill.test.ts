@@ -806,3 +806,51 @@ describe("live page helper upload targets", () => {
     expect(elements.filter((el) => el.role === "file upload")).toHaveLength(81);
   });
 });
+
+describe("live page helper referenced names", () => {
+  it("resolves label references in order, including hidden text, and falls back when empty", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://example.test/",
+      `
+      <span id="first" hidden>  Share </span><span id="second"> with   team </span><span id="empty"> </span>
+      <button aria-labelledby=" second missing first " aria-label="Other"></button>
+      <button aria-labelledby=" missing " aria-label="Fallback"></button>
+      <button aria-labelledby="   " aria-label="Whitespace fallback"></button>
+      <button aria-labelledby="empty" aria-label="Empty fallback"></button>
+    `,
+    );
+    expect(browser.snapshot().elements.map((element) => element.name)).toEqual([
+      "with team Share",
+      "Fallback",
+      "Whitespace fallback",
+      "Empty fallback",
+    ]);
+    domWindow.close();
+  });
+});
+
+describe("live page helper shadow-root names", () => {
+  it("resolves upload labels only within each input's root", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://example.test/",
+      `<span id="label">Outer label</span><span id="outer-only">Outer only</span><button aria-labelledby="inner-only" aria-label="Light fallback"></button><div id="host"></div>`,
+    );
+    const host = domWindow.document.getElementById("host")!;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <span id="label" hidden>Inner label</span><span id="inner-only">Inner only</span>
+      <input type="file" aria-labelledby="label" aria-label="Fallback one" />
+      <input type="file" aria-labelledby="outer-only" aria-label="Fallback two" />
+    `;
+    expect(
+      browser
+        .snapshot()
+        .elements.filter((element) => element.role === "file upload")
+        .map((element) => element.name),
+    ).toEqual(["Inner label", "Fallback two"]);
+    expect(browser.snapshot().elements.find((element) => element.role === "button")?.name).toBe(
+      "Light fallback",
+    );
+    domWindow.close();
+  });
+});

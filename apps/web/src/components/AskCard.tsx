@@ -14,9 +14,9 @@ import {
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, Input, Textarea } from "@rakazo/ui-web";
+import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
@@ -32,8 +32,9 @@ function formatAnsweredState(
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
   dismissed?: boolean,
+  remembered?: false,
 ): string {
-  if (secret) return dismissed ? t`Dismissed` : t`Saved`;
+  if (secret) return dismissed ? t`Dismissed` : remembered === false ? t`Sent` : t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return answer === "approved" ? t`Sent` : selectedAskActionLabel(answer, actions);
   if (outcome === "created") return t`Created`;
@@ -81,8 +82,8 @@ export function AskCard({
   block: AskBlock;
   canAnswer: boolean;
   canDismiss: boolean;
-  /** A login card answers with its fields and an empty `text`. */
-  onAnswer: (text: string, fields?: LoginFieldInput[]) => Promise<void>;
+  /** A login card answers with its fields and an empty `text`; `remember` false uses it once. */
+  onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
 }) {
@@ -91,9 +92,12 @@ export function AskCard({
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
   const [dismissed, setDismissed] = useState(false);
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
+  const [acceptedRemembered, setAcceptedRemembered] = useState<false>();
   const [undone, setUndone] = useState(false);
   const emptyLogin = () => loginCardFields(block.loginFields);
   const [login, setLogin] = useState(emptyLogin);
+  const [remember, setRemember] = useState(true);
+  const rememberId = useId();
   const [secretField, setSecretField] = useState<HTMLInputElement | null>(null);
   const [pastedLines, setPastedLines] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -102,6 +106,7 @@ export function AskCard({
   const answered = block.status === "answered" || acceptedAnswer !== undefined || dismissed;
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
   const displayedDismissed = block.status === "answered" ? block.dismissed : dismissed;
+  const displayedRemembered = block.status === "answered" ? block.remembered : acceptedRemembered;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const displayActions = block.instructionUpdate
@@ -114,24 +119,17 @@ export function AskCard({
     !approvalActions && !block.instructionUpdate && !secretInput && Boolean(askActions?.length);
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
-  // A reply typed instead of picked is shown in the user's words, so the card reads as answered.
+  // An edited draft is shown in the user's words, so the card reads as answered. A typed reply to
+  // options already shows as the user's message, so it only dims them.
   const typedAnswer =
     answered &&
+    !optionQuestion &&
     !approvalActions &&
     !secretInput &&
     !block.instructionUpdate &&
-    !chosenOption &&
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  const answerQuote = typedAnswer ? (
-    <blockquote
-      data-testid="ask-answer"
-      className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-[15px] leading-[1.5] text-muted-foreground"
-    >
-      {typedAnswer}
-    </blockquote>
-  ) : null;
   // A login or credential is saved for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
   const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
@@ -175,7 +173,9 @@ export function AskCard({
       setPastedLines(false);
     }
     try {
-      await onAnswer(submitValue, fields);
+      if (fields && !remember) await onAnswer(submitValue, fields, false);
+      else await onAnswer(submitValue, fields);
+      if (fields && !remember) setAcceptedRemembered(false);
       setAcceptedAnswer(secretInput ? "" : submitValue);
     } catch (err) {
       // A secret answer's failure may echo the secret, so never show its message.
@@ -319,10 +319,14 @@ export function AskCard({
               {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
             </OptionRow>
           ))}
-          {answerQuote}
         </div>
       ) : typedAnswer ? (
-        answerQuote
+        <blockquote
+          data-testid="ask-answer"
+          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-[15px] leading-[1.5] text-muted-foreground"
+        >
+          {typedAnswer}
+        </blockquote>
       ) : answered ? (
         <div className="mt-3.5 flex items-center gap-1.5 text-[13.5px] font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||
@@ -342,6 +346,7 @@ export function AskCard({
                 approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
                 displayedDismissed,
+                displayedRemembered,
               )}
         </div>
       ) : !canAnswer ? (
@@ -432,12 +437,36 @@ export function AskCard({
               <Trans>Clear</Trans>
             </Button>
           ) : null}
+          {loginInput ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Switch
+                id={rememberId}
+                size="sm"
+                checked={remember}
+                disabled={submitting}
+                onCheckedChange={setRemember}
+              />
+              <Label htmlFor={rememberId} className="text-[13px] font-normal text-muted-foreground">
+                <Trans>Save to Vault</Trans>
+              </Label>
+            </div>
+          ) : null}
           <div className="flex gap-2">
             <Button
               type="submit"
               disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
             >
-              {pendingAction === "submit" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+              {loginInput && !remember ? (
+                pendingAction === "submit" ? (
+                  <Trans>Sending…</Trans>
+                ) : (
+                  <Trans>Continue</Trans>
+                )
+              ) : pendingAction === "submit" ? (
+                <Trans>Saving…</Trans>
+              ) : (
+                <Trans>Save</Trans>
+              )}
             </Button>
             {canDismiss ? (
               <Button

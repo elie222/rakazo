@@ -982,6 +982,99 @@ describe("BoatSandboxProvider", () => {
     ).rejects.toBeInstanceOf(SandboxRateLimitError);
   });
 
+  it("holds every Boat request for the wait Boat names after refusing this host's request rate", async () => {
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.limitRequests(30);
+
+    const refused = await drain(
+      provider.execute(computer, { argv: ["echo", "first"] }, context),
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(SandboxRateLimitError);
+    expect(refused).toMatchObject({ retryAfterMs: 30_000 });
+
+    const refusedAt = Date.now();
+    api.requestTimes.length = 0;
+    await Promise.all([
+      drain(provider.execute(computer, { argv: ["echo", "second"] }, context)),
+      drain(provider.execute(computer, { argv: ["echo", "third"] }, context)),
+    ]);
+    expect(api.requestTimes.length).toBeGreaterThanOrEqual(2);
+    expect(Math.min(...api.requestTimes)).toBeGreaterThanOrEqual(refusedAt + 30_000);
+  });
+
+  it("follows a long command on Boat's output stream, reattaching where each connection ended", async () => {
+    const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
+    const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachReconnects = 2;
+
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["echo", "streamed output"], timeoutMs: 20 * 60_000 },
+      context,
+    )) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stdout", data: "streamed output\n" },
+      { type: "exit", code: 0 },
+    ]);
+    expect(attach.mock.calls.map(([request]) => request.stdoutOffset)).toEqual([0, 8, 12]);
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  it("keeps the same byte budget of streamed output that a status poll reads", async () => {
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+
+    let stdout = "";
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["echo", "é".repeat(600_000)], timeoutMs: 20 * 60_000 },
+      context,
+    )) {
+      if (event.type === "stdout") stdout += event.data;
+    }
+    expect(Buffer.byteLength(stdout)).toBeLessThanOrEqual(1_000_000);
+    expect(stdout).toMatch(/^é+\n$/);
+  });
+
+  it("polls a long command with backoff when the sandbox cannot stream its output", async () => {
+    const polledAt: number[] = [];
+    const commandStatus = FakeBoatApi.prototype.commandStatus;
+    vi.spyOn(FakeBoatApi.prototype, "commandStatus").mockImplementation(function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      polledAt.push(Date.now());
+      return commandStatus.call(this, request);
+    });
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachOutdated = true;
+    api.detachedRunMs = 10 * 60_000;
+
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 },
+      context,
+    )) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stdout", data: "polled\n" },
+      { type: "exit", code: 0 },
+    ]);
+    const gaps = polledAt.slice(1).map((at, index) => at - (polledAt[index] ?? 0));
+    expect(gaps.slice(0, 6)).toEqual([500, 1_000, 2_000, 4_000, 5_000, 5_000]);
+    // Ten minutes at a fixed 500 ms would be 1,200 polls.
+    expect(polledAt.length).toBeLessThanOrEqual(125);
+  });
+
   it("keeps the sandbox when Boat rejects the credentials", async () => {
     const { api, provider, computer } = await boat();
     api.unauthorized();
@@ -1663,6 +1756,7 @@ describe("BoatSandboxProvider", () => {
       { id: "boat-test", providerRef: "boat-test", botId: "bot-test", kind: "boat" },
       context,
     );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     deadline.abort(new DOMException("Timed out", "TimeoutError"));
 
     await expect(pending).rejects.toThrow("Boat boat-test was not deleted within 60 seconds");

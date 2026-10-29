@@ -10,7 +10,9 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
+import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { COMPOSIO_MULTI_EXECUTE_TOOL, composioToolBatch } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
   composioToolkitDirectory,
@@ -65,6 +67,7 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
       name,
       description: String(fn.description ?? name),
       inputSchema: asObject(fn.parameters) ?? { type: "object", properties: {} },
+      batch: composioToolBatch(name),
       route: { connectorId: "composio", toolName: name },
     };
   }
@@ -76,6 +79,7 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
     inputSchema: asObject(raw.inputParameters) ??
       asObject(raw.inputSchema) ??
       asObject(raw.parameters) ?? { type: "object", properties: {} },
+    batch: composioToolBatch(name),
     route: { connectorId: "composio", toolName: name },
   };
 }
@@ -141,7 +145,6 @@ export function executeSessionKey(
   return accountKey ? `${toolkitKey}|${accountKey}` : toolkitKey;
 }
 
-const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
 /** Connected-account listings are per user and toolkit; this bounds a runaway cursor. */
 const MAX_ACCOUNT_PAGES = 20;
 /** Folder listings treat a missing path as the account root. */
@@ -406,11 +409,6 @@ export class ComposioConnector implements ComposioProvider {
       accountIdsByToolkit.set(toolkit, ids);
     }
     const reconnect = [...pinnedToolkits].filter((toolkit) => !accountIdsByToolkit.has(toolkit));
-    if (reconnect.length > 0) {
-      getLogger().warn("composio connected accounts need reconnect", {
-        "composio.toolkits": reconnect.join(","),
-      });
-    }
     const toolkits = requested.filter((toolkit) => !reconnect.includes(toolkit));
     if (toolkits.length === 0) return { reconnect };
     const connectedAccounts: Record<string, string[]> = {};
@@ -528,6 +526,9 @@ export class ComposioConnector implements ComposioProvider {
       );
       const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit));
       if (stale) {
+        getLogger().warn("composio connected accounts need reconnect", {
+          "composio.toolkits": stale,
+        });
         yield {
           type: "error",
           message: `The ${stale} connection is no longer active. Ask the user to reconnect ${stale}.`,
@@ -603,6 +604,9 @@ export class ComposioConnector implements ComposioProvider {
     } catch (error) {
       if (isNoAuthToolkitError(error)) {
         return { authorizationUrl: null, state: request.provider };
+      }
+      if (isNoManagedAuthError(error)) {
+        throw new ConnectorAuthUnavailableError({ cause: sanitizeComposioError(error) });
       }
       throw new Error(sanitizeComposioError(error));
     }
@@ -952,6 +956,12 @@ export function isNoAuthToolkitError(error: unknown): boolean {
   return (
     message.includes("ToolkitsIsNoAuth") || message.includes("does not require authentication")
   );
+}
+
+/** Composio has no managed OAuth app for the toolkit and the project has no auth config of its own. */
+export function isNoManagedAuthError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("ToolRouterV2_NoManagedAuth");
 }
 
 /**

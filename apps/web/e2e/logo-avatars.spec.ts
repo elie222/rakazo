@@ -343,51 +343,6 @@ test("activity changes keep elapsed phase and interrupted fades settle to one la
   await expect(avatar).toHaveAttribute("data-activity", "computer");
 });
 
-test("activity crossfades start and finish with zero opacity velocity", async ({ page }) => {
-  await page.goto("/e2e/fixtures/logo-avatars.html");
-  const switcher = page
-    .getByRole("region", { name: "Transitions and runtime events" })
-    .locator("article")
-    .first();
-  await switcher
-    .getByRole("button", { name: "Writing", exact: true })
-    .evaluate((button: HTMLButtonElement) => button.click());
-  const proof = await switcher.locator(".rakazo-logo-avatar[role=img]").evaluate((element) =>
-    element
-      .getAnimations({ subtree: true })
-      .filter((animation) =>
-        (animation as CSSAnimation).animationName.startsWith("logo-avatar-layer-"),
-      )
-      .map((animation) => {
-        animation.pause();
-        const target = (animation.effect as KeyframeEffect).target!;
-        const duration = Number(animation.effect!.getTiming().duration);
-        const at = (time: number) => {
-          animation.currentTime = time;
-          return Number(getComputedStyle(target).opacity);
-        };
-        const h = 0.1,
-          start = at(0),
-          first = at(h),
-          last = at(duration - h),
-          end = at(duration);
-        return {
-          name: (animation as CSSAnimation).animationName,
-          start,
-          end,
-          startSpeed: (first - start) / h,
-          endSpeed: (end - last) / h,
-        };
-      }),
-  );
-  expect(proof).toHaveLength(2);
-  for (const fade of proof) {
-    expect(Math.abs(fade.startSpeed)).toBeLessThan(0.001);
-    expect(Math.abs(fade.endSpeed)).toBeLessThan(0.001);
-    expect(fade.end).toBe(fade.name.endsWith("-in") ? 1 : 0);
-  }
-});
-
 test("writing keeps the head level with a small vertical typing cadence at avatar sizes", async ({
   page,
 }) => {
@@ -859,4 +814,65 @@ test("seed colours persist through rerenders and reloads at actual avatar sizes"
     ).toEqual(before);
     await captureScreenshot(page, testInfo, `seeded-avatar-colours-${theme}`);
   }
+});
+
+test("new activity does not restart an existing outgoing fade", async ({ page }) => {
+  await page.goto("/e2e/fixtures/logo-avatars.html");
+  const switcher = page
+    .getByRole("region", { name: "Transitions and runtime events" })
+    .locator("article")
+    .first();
+  await switcher.scrollIntoViewIfNeeded();
+  await expect(switcher.locator(".rakazo-logo-avatar[role=img]")).toHaveAttribute(
+    "data-paused",
+    "false",
+  );
+  const proof = await switcher.evaluate(async (article) => {
+    const avatar = article.querySelector(".rakazo-logo-avatar[role=img]")!;
+    const change = (name: string, activity: string) =>
+      new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          observer.disconnect();
+          reject(new Error("Activity did not commit"));
+        }, 5000);
+        const observer = new MutationObserver(() => {
+          if (
+            avatar.querySelector(
+              `[data-logo-layer][data-outgoing="false"][data-activity="${activity}"]`,
+            )
+          ) {
+            observer.disconnect();
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+        observer.observe(avatar, { childList: true, subtree: true, attributes: true });
+        [...article.querySelectorAll("button")]
+          .find((button) => button.textContent === name)!
+          .click();
+      });
+    await change("Writing", "writing");
+    const outgoing = avatar.querySelector<SVGGElement>('[data-outgoing="true"]')!;
+    const fade = outgoing
+      .getAnimations()
+      .find((animation) => (animation as CSSAnimation).animationName === "logo-avatar-layer-out")!;
+    fade.pause();
+    await fade.ready;
+    fade.currentTime = 90;
+    const before = {
+      time: Number(fade.currentTime),
+      from: outgoing.style.getPropertyValue("--logo-exit-from"),
+    };
+    await change("Thinking", "thinking");
+    const after = {
+      time: Number(fade.currentTime),
+      from: outgoing.style.getPropertyValue("--logo-exit-from"),
+    };
+    const key = outgoing.dataset.logoLayer!;
+    fade.finish();
+    return { before, after, key };
+  });
+  expect(proof.after.time).toBeGreaterThanOrEqual(proof.before.time - 0.01);
+  expect(proof.after.from).toBe(proof.before.from);
+  await expect(switcher.locator(`[data-logo-layer="${proof.key}"]`)).toHaveCount(0);
 });

@@ -1,5 +1,6 @@
-import type { AvatarMotionMode, LogoAvatarActivity } from "@rakazo/core";
+import type { AvatarMotionMode, AvatarPoke, LogoAvatarActivity } from "@rakazo/core";
 import {
+  avatarPokeFrame,
   contrastRatio,
   LOGO_BODY_PATH,
   LOGO_LEFT_HAND_PATH,
@@ -10,11 +11,16 @@ import {
   logoAvatarTraits,
 } from "@rakazo/core";
 import { botEyeColor } from "@rakazo/ui-tokens";
-import { useId, useMemo } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useId, useMemo } from "react";
+import { Pressable } from "react-native";
 import Animated, {
+  cancelAnimation,
   useAnimatedProps,
+  useAnimatedStyle,
   useDerivedValue,
   useReducedMotion,
+  useSharedValue,
 } from "react-native-reanimated";
 import Svg, {
   ClipPath,
@@ -28,7 +34,7 @@ import Svg, {
   Rect,
   Stop,
 } from "react-native-svg";
-import { useAvatarOnScreen } from "../lib/avatar-life";
+import { useAvatarOnScreen, usePoke } from "../lib/avatar-life";
 import { useLogoAvatarClock } from "../lib/logo-avatar-clock";
 import { useMobileTokens } from "../lib/native";
 
@@ -44,12 +50,14 @@ export function LogoAvatar({
   size,
   activity,
   motion,
+  pokeable = false,
 }: {
   color: string;
   identity?: string;
   size: number;
   activity: LogoAvatarActivity;
   motion: AvatarMotionMode;
+  pokeable?: boolean;
 }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const tokens = useMobileTokens();
@@ -116,7 +124,7 @@ export function LogoAvatar({
   const selection = useAnimatedProps(() => ({ opacity: frame.value.selection }));
   const stroke = Math.max(2.4, 100 / Math.max(1, size));
   const compact = size <= 38;
-  return (
+  const artwork = (
     <Svg width={size} height={size} viewBox="0 0 100 100" accessible={false}>
       <Defs>
         <ClipPath id={`plate-${id}`}>
@@ -386,5 +394,51 @@ export function LogoAvatar({
       </G>
       <Rect width={100} height={100} rx={23} fill="none" stroke={tokens.border} strokeWidth={1} />
     </Svg>
+  );
+  return pokeable ? (
+    <PokeableLogoAvatar enabled={canMove && onScreen && !reduced} size={size}>
+      {artwork}
+    </PokeableLogoAvatar>
+  ) : (
+    artwork
+  );
+}
+
+/** Reuse the existing tap clips without allocating a second continuous clock. */
+function PokeableLogoAvatar({
+  enabled,
+  size,
+  children,
+}: {
+  enabled: boolean;
+  size: number;
+  children: ReactNode;
+}) {
+  const poke = useSharedValue<AvatarPoke | null>(null);
+  const pokeProgress = useSharedValue(1);
+  const play = usePoke({ poke, pokeProgress }, enabled);
+  const style = useAnimatedStyle(() => {
+    const extra = poke.value ? avatarPokeFrame(poke.value, pokeProgress.value) : null;
+    return {
+      transform: [
+        { translateY: (extra?.translateY ?? 0) * size },
+        { rotate: `${extra?.rotate ?? 0}deg` },
+        { scaleY: extra?.scaleY ?? 1 },
+      ],
+    };
+  });
+  useEffect(() => {
+    if (!enabled) {
+      cancelAnimation(pokeProgress);
+      poke.value = null;
+      pokeProgress.value = 1;
+    }
+    return () => cancelAnimation(pokeProgress);
+  }, [enabled, poke, pokeProgress]);
+  // Like the original avatar, this is a visual toy rather than an accessible action.
+  return (
+    <Pressable accessible={false} onPress={play}>
+      <Animated.View style={style}>{children}</Animated.View>
+    </Pressable>
   );
 }

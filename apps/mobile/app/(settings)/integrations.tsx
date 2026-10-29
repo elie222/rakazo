@@ -7,7 +7,11 @@ import type {
   PluginMarketplaceEntry,
   RpcOutput,
 } from "@rakazo/contracts";
-import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  CONNECTION_LABEL_MAX_LENGTH,
+  MCP_OAUTH_CLIENT_REQUIRED,
+  SUBMIT_PLUGIN_URL,
+} from "@rakazo/contracts";
 import type { PluginCategory } from "@rakazo/core";
 import {
   buildFeaturedConnectorTiles,
@@ -503,13 +507,15 @@ export default function Integrations() {
   function serverStatus(server: McpServer) {
     return !server.enabled
       ? t("Disabled")
-      : server.oauthStatus === "reconnect"
-        ? t("OAuth expired")
-        : server.oauthStatus === "connected"
-          ? t("OAuth connected")
-          : server.hasSecret
-            ? t("Credential saved")
-            : t("No auth");
+      : server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId
+        ? t("Needs an OAuth client ID")
+        : server.oauthStatus === "reconnect"
+          ? t("OAuth expired")
+          : server.oauthStatus === "connected"
+            ? t("OAuth connected")
+            : server.hasSecret
+              ? t("Credential saved")
+              : t("No auth");
   }
 
   function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
@@ -1419,6 +1425,16 @@ export default function Integrations() {
                 ) : null}
 
                 {renderPlugins()}
+                {pluginsState !== "loading" ? (
+                  <NativeActionButton
+                    fill={false}
+                    label={t("Submit a plugin")}
+                    onPress={() => void Linking.openURL(SUBMIT_PLUGIN_URL)}
+                    prominence="quiet"
+                    size="compact"
+                    variant="text"
+                  />
+                ) : null}
               </>
             )}
           </>

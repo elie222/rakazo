@@ -90,6 +90,7 @@ describe("Pi runtime errors", () => {
     "You have no credits remaining. Add credits to continue using the API.",
     'xai API error (400): 400 "Incorrect API key provided."',
     "Your authentication token has expired. Please try refreshing it.",
+    "Encountered invalidated oauth token for user, failing request",
     'Headers.append: "example key\nclient = Client(timeout=30, rate_limit=1)" is an invalid header value.',
     "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',

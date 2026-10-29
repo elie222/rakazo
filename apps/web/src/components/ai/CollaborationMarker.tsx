@@ -25,7 +25,7 @@ export function CollaborationMarker({
   replies?: { expanded: boolean; label: string; onToggle: () => void };
 }) {
   return (
-    <div className="flex min-w-0 max-w-full justify-start">
+    <div className="flex min-w-0 max-w-full justify-center">
       <button
         type="button"
         data-testid="peer-receipt-chip"

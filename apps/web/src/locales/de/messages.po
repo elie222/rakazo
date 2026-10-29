@@ -32,6 +32,11 @@ msgstr ""
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr ""
 
+#. placeholder {0}: referral.rewards
+#: src/components/InviteDialog.tsx
+msgid "{0, plural, one {# free month earned} other {# free months earned}}"
+msgstr "{0, plural, one {# Gratismonat verdient} other {# Gratismonate verdient}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -481,7 +486,6 @@ msgstr "Aktivität"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
-#: src/pages/shell/agent-import.tsx
 msgid "Add"
 msgstr "Hinzufügen"
 
@@ -497,10 +501,6 @@ msgstr "Füge einen auszuführenden Befehl hinzu"
 #: src/pages/RoutineEditor.tsx
 msgid "Add a file or folder to watch"
 msgstr "Füge eine zu überwachende Datei oder einen Ordner hinzu"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Add a label"
-msgstr "Label hinzufügen"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
@@ -592,10 +592,6 @@ msgstr ""
 msgid "Add skills"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
-msgid "Add to an existing bot"
-msgstr "Zu einem bestehenden Bot hinzufügen"
-
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "Zur Routine hinzufügen"
@@ -668,6 +664,7 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "Erlauben"
@@ -683,6 +680,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Einmal erlauben"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "Erlaubnisregel"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -719,6 +720,10 @@ msgstr "Dieses Tool immer erlauben"
 #: src/components/AskCard.tsx
 msgid "Always allowed"
 msgstr "Immer erlaubt"
+
+#: src/components/markdown-link-prompt.tsx
+msgid "Always open {site}"
+msgstr "Immer {site} öffnen"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
@@ -795,10 +800,6 @@ msgstr "API-Schlüssel-Header"
 msgid "API keys"
 msgstr "API-Schlüssel"
 
-#: src/pages/shell/agent-import-undo.tsx
-msgid "API keys stay connected."
-msgstr "API-Schlüssel bleiben verbunden."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Erscheinungsbild"
@@ -821,6 +822,7 @@ msgid "Approvals"
 msgstr "Freigaben"
 
 #: src/pages/MessagingSettingsPanel.tsx
+#: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "Genehmigen"
@@ -828,6 +830,14 @@ msgstr "Genehmigen"
 #: src/pages/shell/message-cards.tsx
 msgid "Approve this server to let your agent use its tools."
 msgstr "Genehmige diesen Server, damit dein Agent seine Tools verwenden kann."
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Approved"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Approving…"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -859,6 +869,10 @@ msgstr ""
 msgid "Ask"
 msgstr "Fragen"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "Nachfrageregel"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -867,10 +881,6 @@ msgstr "um {0}"
 #: src/pages/RoutineSchedule.tsx
 msgid "at {timeSelect}"
 msgstr "um {timeSelect}"
-
-#: src/pages/shell/composer.tsx
-msgid "Attach"
-msgstr "Anhängen"
 
 #: src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -948,6 +958,7 @@ msgstr "Avatar-Studio"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/NavLinkPage.tsx
@@ -984,9 +995,14 @@ msgstr "Bearer-Token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Blockieren"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "Sperrregel"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1010,7 +1026,6 @@ msgstr "Bot"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Bot"
@@ -1125,7 +1140,7 @@ msgstr "Kann keine Bilder lesen"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PaymentWalletSettingsPanel.tsx
-#: src/pages/shell/agent-import-undo.tsx
+#: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -1156,6 +1171,10 @@ msgstr "abgebrochen"
 #: src/pages/ActivityList.tsx
 msgid "Cancelled"
 msgstr "Abgebrochen"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "Vorgeschlagene Regel"
 
 #: src/pages/Artifacts.tsx
 msgid "Card view"
@@ -1256,10 +1275,6 @@ msgstr "Verbindung wird geprüft…"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
 msgstr ""
-
-#: src/pages/shell/agent-import.tsx
-msgid "Choose a bot"
-msgstr "Bot auswählen"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1501,8 +1516,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env."
-msgstr "Computer sind aus. Setze SANDBOX_PROVIDER=docker mit SANDBOX_SUPERVISOR_TOKEN, oder setze SANDBOX_PROVIDER auf e2b, daytona oder boat mit dem passenden API-Key. Stack nach der Änderung von .env neu erstellen."
+msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, novita, daytona, or boat with its API key. Recreate the stack after changing .env."
+msgstr "Computer sind aus. Setze SANDBOX_PROVIDER=docker mit SANDBOX_SUPERVISOR_TOKEN, oder setze SANDBOX_PROVIDER auf e2b, novita, daytona oder boat mit dem passenden API-Key. Stack nach der Änderung von .env neu erstellen."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1650,6 +1665,7 @@ msgstr "Enthält ausführbaren Code"
 msgid "Context limit"
 msgstr "Kontextlimit"
 
+#: src/components/AskCard.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/SignupSurvey.tsx
@@ -1678,6 +1694,7 @@ msgid "Conversations"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/InviteDialog.tsx
 #: src/components/markdown-copy.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -1686,6 +1703,7 @@ msgstr ""
 msgid "Copied"
 msgstr "Kopiert"
 
+#: src/components/InviteDialog.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1727,6 +1745,10 @@ msgstr "MCP-Server konnte nicht hinzugefügt werden"
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not add skills"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Could not approve plugin"
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx
@@ -1796,9 +1818,11 @@ msgid "Could not connect to the computer screen"
 msgstr ""
 
 #: src/components/AccountAccess.tsx
+#: src/components/AccountDataSettings.tsx
 #: src/components/ConfirmIdentityDialog.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/TrustedLinkSitesSettings.tsx
 #: src/lib/account-security.ts
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
@@ -1998,10 +2022,15 @@ msgstr "Testclip konnte nicht abgespielt werden"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "Regelvorschau fehlgeschlagen"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Der Modellserver war nicht erreichbar."
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/PasskeyOffer.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/computer-sandbox.ts
@@ -2014,6 +2043,10 @@ msgstr "Server konnte nicht erreicht werden"
 #: src/pages/shell/agent-import.tsx
 msgid "Could not read these files"
 msgstr "Diese Dateien konnten nicht gelesen werden"
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Could not reject plugin"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 #: src/lib/user-devices.ts
@@ -2174,10 +2207,6 @@ msgstr "Kontrolle konnte nicht übernommen werden"
 msgid "Could not test MCP server"
 msgstr "MCP-Server konnte nicht getestet werden"
 
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Could not undo the import"
-msgstr "Der Import konnte nicht rückgängig gemacht werden"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "Aktualisierung fehlgeschlagen"
@@ -2212,6 +2241,10 @@ msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Couldn't load submissions"
 msgstr ""
 
 #: src/pages/PaymentWalletSettingsPanel.tsx
@@ -2302,6 +2335,10 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron-Ausdruck"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "Aktuell"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2462,7 +2499,6 @@ msgstr "Ablehnen"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Beschreibung"
 
@@ -2574,6 +2610,7 @@ msgstr "Das Dokument wurde geändert. Öffne es erneut, um die neueste Version z
 msgid "Don’t have an account?"
 msgstr "Du hast noch kein Konto?"
 
+#: src/components/AccountDataSettings.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
@@ -2633,10 +2670,6 @@ msgstr "Bearbeiten"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "Zuerst bearbeiten"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Edit label"
-msgstr "Label bearbeiten"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Edit name"
@@ -2803,6 +2836,10 @@ msgstr "abgelaufen"
 msgid "Export"
 msgstr "Exportieren"
 
+#: src/components/AccountDataSettings.tsx
+msgid "Export data"
+msgstr "Daten exportieren"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "Exportiere die Liste dieser Woche aus dem CRM und lege sie im freigegebenen Ordner ab"
@@ -2960,6 +2997,10 @@ msgstr "Gateway-ID"
 msgid "General"
 msgstr "Allgemein"
 
+#: src/components/InviteDialog.tsx
+msgid "Get a free month for each friend who starts a trial."
+msgstr "Erhalte einen Gratismonat für jeden Freund, der eine Testphase startet."
+
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Mobile App herunterladen"
@@ -3087,6 +3128,10 @@ msgstr ""
 msgid "How often"
 msgstr "Wie oft"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "So sehen andere Bots ihn"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "So wird geprüft"
@@ -3124,20 +3169,14 @@ msgstr "Bildeingabe ist für dieses Modell nicht konfiguriert."
 msgid "Image upload area"
 msgstr "Bild-Upload-Bereich"
 
-#: src/pages/shell/composer.tsx
-#: src/pages/shell/create-bot-dialog.tsx
-msgid "Import"
-msgstr "Importieren"
-
-#: src/pages/Onboarding.tsx
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "Agent importieren"
 
-#: src/pages/shell/composer.tsx
-msgid "Import this agent as a bot?"
-msgstr "Diesen Agenten als Bot importieren?"
+#: src/components/AccountDataSettings.tsx
+msgid "Import data"
+msgstr "Daten importieren"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
@@ -3243,6 +3282,15 @@ msgstr "Intervalleinheit"
 msgid "Invalid code"
 msgstr "Ungültiger Code"
 
+#: src/components/InviteDialog.tsx
+#: src/components/SidebarFooter.tsx
+msgid "Invite friends"
+msgstr "Freunde einladen"
+
+#: src/components/InviteDialog.tsx
+msgid "Invite link"
+msgstr "Einladungslink"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
@@ -3260,26 +3308,6 @@ msgstr "Seine Bots und Gruppen bleiben erhalten und verlassen den Abschnitt."
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Seine Unterhaltung, Dateien und Routinen werden dauerhaft gelöscht. Von ihm erstellte Bots bleiben in deiner Liste."
 
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Its instructions changed since the import, so they stay."
-msgstr "Die Anweisungen wurden seit dem Import geändert und bleiben daher."
-
-#: src/lib/agent-import-errors.ts
-msgid "Its instructions changed. Review them, then try again."
-msgstr "Die Anweisungen wurden geändert. Prüfe sie und versuche es erneut."
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Its instructions go back to before the import."
-msgstr "Die Anweisungen werden auf den Stand vor dem Import zurückgesetzt."
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Its model changed since the import, so it stays."
-msgstr "Das Modell wurde seit dem Import geändert und bleibt daher."
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Its model goes back to before the import."
-msgstr "Das Modell wird auf den Stand vor dem Import zurückgesetzt."
-
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "Zur neuesten Nachricht springen"
@@ -3292,17 +3320,9 @@ msgstr "Zur beantworteten Nachricht springen: {excerpt}"
 msgid "just now"
 msgstr "gerade eben"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Keep its instructions"
-msgstr "Anweisungen behalten"
-
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
 msgstr "Erinnerungen behalten"
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Kept"
-msgstr "Behalten"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
@@ -3426,6 +3446,7 @@ msgstr "Stimmanbieter werden geladen…"
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
+#: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
 msgid "Loading…"
@@ -3819,7 +3840,6 @@ msgstr "Stummgeschaltet"
 msgid "Name"
 msgstr "Name"
 
-#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Name this bot"
 msgstr "Bot benennen"
@@ -3839,6 +3859,11 @@ msgstr ""
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
 msgstr ""
+
+#: src/components/McpServerHealthLine.tsx
+#: src/lib/user-error.ts
+msgid "Needs an OAuth client ID"
+msgstr "Benötigt eine OAuth-Client-ID"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
@@ -3866,7 +3891,6 @@ msgid "New"
 msgstr "Neu"
 
 #: src/pages/Shell.tsx
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "New bot"
@@ -3965,6 +3989,10 @@ msgstr ""
 msgid "No matching models"
 msgstr "Keine passenden Modelle"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "Keine passende Regel"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "Noch keine MCP-Server."
@@ -4014,6 +4042,10 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
 msgstr "Noch keine Skills"
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "No submissions"
+msgstr ""
 
 #: src/pages/Board.tsx
 msgid "No tickets yet"
@@ -4326,6 +4358,7 @@ msgid "Paused"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
+#: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
 msgstr ""
 
@@ -4391,6 +4424,10 @@ msgstr "Plugin"
 msgid "Plugin GitHub URL"
 msgstr ""
 
+#: src/pages/AdminPluginsPage.tsx
+msgid "Plugin submissions"
+msgstr ""
+
 #: src/components/integrations/skills-dialog.tsx
 msgid "Plugins"
 msgstr ""
@@ -4407,6 +4444,8 @@ msgstr ""
 msgid "Preferences"
 msgstr "Präferenzen"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4499,6 +4538,10 @@ msgstr "Antworten vorlesen"
 #: src/pages/shell/import-status.ts
 msgid "Ready"
 msgstr "Bereit"
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Reason"
+msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -4621,6 +4664,23 @@ msgstr ""
 msgid "Registration is closed"
 msgstr "Registrierung ist geschlossen"
 
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Reject"
+msgstr ""
+
+#. placeholder {0}: rejecting?.name
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Reject {0}"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Rejected"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Rejecting…"
+msgstr ""
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
 msgstr "Kontrolle abgeben"
@@ -4629,9 +4689,11 @@ msgstr "Kontrolle abgeben"
 msgid "Reload"
 msgstr "Neu laden"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
+#: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelRoleSettings.tsx
@@ -4655,6 +4717,10 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
 msgstr "{secretName} entfernen? Bots können es dann nicht mehr verwenden."
+
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Remove {site}"
+msgstr "{site} entfernen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove change trigger"
@@ -4701,10 +4767,6 @@ msgstr ""
 msgid "Remove webhook"
 msgstr ""
 
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Removed"
-msgstr "Entfernt"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "Entfernt, aber die Liste konnte nicht aktualisiert werden"
@@ -4735,10 +4797,6 @@ msgstr "Erneut öffnen"
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "API-Schlüssel ersetzen"
-
-#: src/pages/shell/agent-import.tsx
-msgid "Replace its instructions"
-msgstr "Anweisungen ersetzen"
 
 #: src/pages/shell/composer-error.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -4844,6 +4902,7 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "Erneut versuchen"
@@ -4973,6 +5032,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "Den Arbeitsbereich speichern und aktuelle Software installieren."
+
+#: src/components/AskCard.tsx
+msgid "Save to Vault"
+msgstr "Im Tresor speichern"
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -5513,6 +5576,10 @@ msgstr "Subagent"
 msgid "Submit"
 msgstr "Absenden"
 
+#: src/pages/PluginsOverlay.tsx
+msgid "Submit a plugin"
+msgstr ""
+
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
@@ -5610,18 +5677,22 @@ msgstr "API-Schlüssel testen"
 msgid "Test connection"
 msgstr "Verbindung testen"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "Regel testen"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
+msgstr ""
+
+#: src/pages/PluginSubmissionsPanel.tsx
+msgid "Testing"
 msgstr ""
 
 #: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Wird getestet…"
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "The bot and what its import added will be removed."
-msgstr "Der Bot und alles, was sein Import hinzugefügt hat, werden entfernt."
 
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
@@ -5694,6 +5765,10 @@ msgstr "Denkmodus"
 msgid "Thinking: {0}"
 msgstr "Denken: {0}"
 
+#: src/lib/user-error.ts
+msgid "This app needs its own sign-in setup to connect."
+msgstr "Diese App braucht eine eigene Anmeldeeinrichtung, um sich zu verbinden."
+
 #: src/pages/shell/agent-import.tsx
 msgid "This backup could not be read."
 msgstr "Dieses Backup konnte nicht gelesen werden."
@@ -5705,10 +5780,6 @@ msgstr "Dieser Bot"
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Dieser Bot wird auf diesem Computer und nicht auf einem Linux-Desktop ausgeführt. Shell und Dateien verwenden deinen persönlichen Ordner."
-
-#: src/lib/agent-import-errors.ts
-msgid "This bot was not imported."
-msgstr "Dieser Bot wurde nicht importiert."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5750,10 +5821,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
-
-#: src/lib/agent-import-errors.ts
-msgid "This import changed. Try again."
-msgstr "Dieser Import hat sich geändert. Versuche es erneut."
 
 #: src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
@@ -5842,7 +5909,6 @@ msgid "Timing may differ"
 msgstr "Der Zeitplan kann abweichen"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Titel"
 
@@ -5884,6 +5950,7 @@ msgstr "Toolargumente müssen ein JSON-Objekt sein"
 msgid "Tool arguments must be JSON"
 msgstr "Toolargumente müssen JSON sein"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Toolname"
@@ -5921,6 +5988,10 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
+#: src/components/TrustedLinkSitesSettings.tsx
+msgid "Trusted sites"
+msgstr "Vertrauenswürdige Websites"
+
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
 msgid "Try again"
@@ -5954,14 +6025,6 @@ msgstr "Nicht zugewiesen"
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Rückgängig"
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Undo import"
-msgstr "Import rückgängig machen"
-
-#: src/pages/shell/agent-import-undo.tsx
-msgid "Undo import?"
-msgstr "Import rückgängig machen?"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
@@ -6262,10 +6325,6 @@ msgstr "Welches Ergebnis wirst du vorführen?"
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
-#: src/pages/shell/agent-import-undo.tsx
-msgid "What the import added will be removed. The bot stays."
-msgstr "Was der Import hinzugefügt hat, wird entfernt. Der Bot bleibt."
-
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "Wofür dieser Bot gedacht ist"
@@ -6301,10 +6360,6 @@ msgstr "Einsatzzeitpunkt"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Wo sollen Bots ausgeführt werden?"
-
-#: src/pages/shell/agent-import.tsx
-msgid "Where to import"
-msgstr "Wohin importieren"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -6378,14 +6433,6 @@ msgstr "Deine Standards"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Deine E-Mail-Adresse"
-
-#: src/pages/Onboarding.tsx
-msgid "Your first bot already existed, so the agent was not imported."
-msgstr "Dein erster Bot existierte bereits, daher wurde der Agent nicht importiert."
-
-#: src/lib/agent-import-errors.ts
-msgid "Your first bot already exists."
-msgstr "Dein erster Bot existiert bereits."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
