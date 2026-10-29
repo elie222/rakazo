@@ -1,5 +1,14 @@
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { Component, createContext, memo, useCallback, useContext, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent, ReactNode, RefObject } from "react";
+import {
+  Component,
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -281,6 +290,33 @@ function useExternalLinkConfirm() {
   }, []);
   const dialog = url ? <ExternalLinkAlert url={url} onDismiss={() => setUrl(null)} /> : null;
   return { request, dialog };
+}
+
+/** Sends clicks on links drawn inside an element, such as a chart's SVG, through the prompt. */
+export function useLinkPrompt(container: RefObject<HTMLElement | null>): ReactNode {
+  const { request, dialog } = useExternalLinkConfirm();
+  const { sites } = useMarkdownLinkTrust();
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const hold = (event: globalThis.MouseEvent) => {
+      if (event.button !== 0 && event.button !== 1) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+      const href = anchor && element.contains(anchor) ? anchor.getAttribute("href") : null;
+      if (!href) return;
+      event.preventDefault();
+      const url = new URL(href, document.baseURI).href;
+      if (markdownLinkNeedsPrompt(url, pageOrigin(), sites)) request(url);
+      else openExternalLink(url);
+    };
+    element.addEventListener("click", hold);
+    element.addEventListener("auxclick", hold);
+    return () => {
+      element.removeEventListener("click", hold);
+      element.removeEventListener("auxclick", hold);
+    };
+  }, [container, request, sites]);
+  return dialog;
 }
 
 function ConfirmableAnchor({ href, ...props }: React.ComponentPropsWithoutRef<"a">) {

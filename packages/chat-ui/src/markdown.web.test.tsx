@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import {
   MarkdownCopyProvider,
   MarkdownLinkPromptProvider,
   RemoteImagesContext,
+  useLinkPrompt,
 } from "./markdown.web";
 
 describe("web markdown remote images", () => {
@@ -479,6 +480,44 @@ async function render(node: ReactNode) {
 }
 
 describe("web external link confirmation", () => {
+  it("asks before following a link drawn inside an SVG", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    function Drawing() {
+      const ref = useRef<HTMLDivElement>(null);
+      const dialog = useLinkPrompt(ref);
+      return (
+        <div ref={ref}>
+          <svg>
+            <a href="https://example.test/point">
+              <circle r={4} />
+            </a>
+          </svg>
+          {dialog}
+        </div>
+      );
+    }
+    const view = await render(<Drawing />);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => {
+      view.container.querySelector("circle")?.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(true);
+    expect(document.querySelector("[role='alertdialog']")?.textContent).toContain(
+      "https://example.test/point",
+    );
+    expect(open).not.toHaveBeenCalled();
+    await act(async () => {
+      buttonNamed(document, "Open")?.click();
+    });
+    expect(open).toHaveBeenCalledWith(
+      "https://example.test/point",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+    await view.cleanup();
+  });
+
   it("asks before an external bot link and opens it only after confirmation", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const view = await render(
