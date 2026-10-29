@@ -5,6 +5,7 @@ import {
   autoReviewTimeoutMs,
   buildAutoReviewPrompt,
   isAutoReviewCheckerConfigured,
+  LlmAutoReviewProvider,
   parseAutoReviewJudgeText,
   redactToolArgsForReview,
   resolveAutoReviewChecker,
@@ -276,7 +277,7 @@ describe("buildAutoReviewPrompt", () => {
       botDescription: "Helper",
       matchingRules: [],
     };
-    expect(buildAutoReviewPrompt(request)).not.toContain(url);
+    expect(buildAutoReviewPrompt(request)).not.toContain("site the run was not given");
     const prompt = buildAutoReviewPrompt({ ...request, newSite: true });
     expect(prompt).toContain(url);
     expect(prompt).toContain("site the run was not given");
@@ -298,6 +299,49 @@ describe("buildAutoReviewPrompt", () => {
     expect(taskBlock?.[1]).toBe(injection);
     expect(prompt.indexOf("untrusted data")).toBeLessThan(prompt.indexOf("<user_task>"));
     expect(prompt).toContain('"decision":"pass"|"ask"');
+  });
+});
+
+describe("LlmAutoReviewProvider", () => {
+  it("asks without running the checker when the arguments are too long to show in full", async () => {
+    const run = vi.fn(() =>
+      (async function* () {
+        yield { type: "done", text: '{"decision":"pass","reason":"fits"}' } as never;
+      })(),
+    );
+    const provider = new LlmAutoReviewProvider({
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run } as never,
+      checker: { provider: "openrouter", model: "x" },
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    const result = await provider.review(
+      {
+        toolName: "multi_execute",
+        connectorKind: "composio",
+        args: {
+          actions: [
+            { tool: "notes_create", body: "a".repeat(10_000) },
+            { tool: "gmail_send_email", to: "someone@else.test" },
+          ],
+        },
+        userTask: "Save a note",
+        botDescription: "Helper",
+        matchingRules: [],
+      },
+      {
+        operationId: "auto-review",
+        traceId: "auto-review",
+        spaceId: "ws",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result.decision).toBe("ask");
+    expect(run).not.toHaveBeenCalled();
   });
 });
 
