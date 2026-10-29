@@ -125,18 +125,41 @@ describe("sandbox idle", () => {
     }
   });
 
-  it("keeps a computer alive without suspending it while a run is active", async () => {
-    const harness = idleHarness();
-    harness.prisma.run.findFirst.mockResolvedValueOnce({ id: "run" });
+  it.each(["queued", "leased", "running"])(
+    "keeps a computer awake while a run is %s",
+    async (status) => {
+      const harness = idleHarness();
+      harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+        where.status.in.includes(status) ? { id: "run" } : null,
+      );
 
-    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
-    expect(harness.home.commit).not.toHaveBeenCalled();
-    expect(harness.sandbox.stop).not.toHaveBeenCalled();
-    expect(harness.sandbox.execute).not.toHaveBeenCalled();
-    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
-    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
-  });
+      expect(harness.home.commit).not.toHaveBeenCalled();
+      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.sandbox.execute).not.toHaveBeenCalled();
+      expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+      expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, false, true])(
+    "suspends a computer whose only active run is waiting_input (billsWhileRunning: %s)",
+    async (billsWhileRunning) => {
+      const harness = idleHarness({ billsWhileRunning });
+      harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+        where.status.in.includes("waiting_input") ? { id: "waiting-for-answer" } : null,
+      );
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.home.commit).toHaveBeenCalledOnce();
+      expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+      expect(harness.computer.state).toBe("suspended");
+      expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+      expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    },
+  );
 
   it("leaves a held computer whose heartbeat finds the sandbox gone to its recovery", async () => {
     const harness = idleHarness();

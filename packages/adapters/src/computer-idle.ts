@@ -12,7 +12,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -371,8 +371,8 @@ export async function sleepComputerIfIdle(
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl
-      ? [...ACTIVE_RUN_STATUSES]
-      : ACTIVE_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
+      ? [...QUEUE_HOLDING_RUN_STATUSES]
+      : QUEUE_HOLDING_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
   const runHolds = () => findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
   const backgroundHolds = () =>
     limitReached
@@ -780,7 +780,7 @@ function findActiveRun(
   return prisma.run.findFirst({
     where: {
       bot: { computerId },
-      status: { in: statuses as (typeof ACTIVE_RUN_STATUSES)[number][] },
+      status: { in: statuses as (typeof QUEUE_HOLDING_RUN_STATUSES)[number][] },
       ...(liveLeaseOnly ? { leaseExpiresAt: { gt: new Date(Date.now()) } } : {}),
     },
     select: { id: true },
