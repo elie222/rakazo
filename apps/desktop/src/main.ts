@@ -52,6 +52,7 @@ import {
   isRendererAssetMiss,
 } from "./renderer-assets.js";
 import { revealSecondInstanceWindow, secondInstanceWindow } from "./second-instance.js";
+import { installServerHeaders } from "./server-request-headers.js";
 import { installSessionPermissions } from "./session-permissions.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -147,15 +148,7 @@ if (PERFORMANCE_USER_DATA) {
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
 // Includes fresh partitions and popup-created sessions, before they load remote content.
-app.on("session-created", (value) => {
-  installSessionPermissions(value, permissionTarget);
-  // The selected server's headers ride on every request to it, page loads and websockets alike.
-  value.webRequest.onBeforeSendHeaders((details, callback) =>
-    callback({
-      requestHeaders: { ...serverHeadersFor(details.url, currentSetup), ...details.requestHeaders },
-    }),
-  );
-});
+app.on("session-created", (value) => installSessionPermissions(value, permissionTarget));
 
 const passkeyRpIds = associatedPasskeyRpIds({
   platform: process.platform,
@@ -411,6 +404,7 @@ async function probeDocument(url: string): Promise<string | null> {
   try {
     const response = await net.fetch(url, {
       method: "GET",
+      ...(currentSetup?.headers ? { headers: serverHeadersFor(url, currentSetup) } : {}),
       redirect: "manual",
       cache: "no-store",
       credentials: "omit",
@@ -917,9 +911,24 @@ function activateDesktopMonitoring(url: string | undefined, targetSession?: Sess
   });
 }
 
+let headerSession: Session | undefined;
+
+function configureHeaderSession(value: Session | undefined) {
+  if (headerSession) headerSession.webRequest.onBeforeSendHeaders(null);
+  headerSession = undefined;
+  if (!value || !currentSetup?.headers || Object.keys(currentSetup.headers).length === 0) return;
+  headerSession = value;
+  installServerHeaders(
+    value,
+    () => currentSetup,
+    () => mainWindow?.webContents.id,
+  );
+}
+
 async function openAppOnce(targetUrl: string, switching: boolean) {
   hostComputer?.activate(currentSetup?.mode === "new" && targetUrl === localStack.webUrl());
   const target = await resolveSessionForTarget(targetUrl);
+  configureHeaderSession(target.value);
   // A failed switch must leave telemetry with the window that remains selected.
   if (mainWindow === null) activateDesktopMonitoring(targetUrl, target.value);
   const previous = mainWindow;
@@ -1042,6 +1051,7 @@ function abandonPendingAppSwitch(
     if (failed !== null && !failed.isDestroyed() && failed !== previous) failed.destroy();
     mainWindow = previous;
     currentSetup = previousSetup;
+    configureHeaderSession(mainWindow?.webContents.session);
     currentTargetUrl = previousUrl;
     activateDesktopMonitoring(previousUrl ?? undefined, previous.webContents.session);
     syncHostComputerAccess();
@@ -1103,6 +1113,7 @@ async function recoverFromCrashedSave(
     if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.destroy();
     mainWindow = null;
     currentSetup = previousSetup;
+    configureHeaderSession(undefined);
     currentTargetUrl = previousUrl;
     if (previousUrl) {
       const restored = await resolveSessionForTarget(previousUrl);
@@ -1449,6 +1460,7 @@ app.whenReady().then(async () => {
       const opened = await appOpener.open(openSetup.serverUrl, { switching: true });
       if (!opened) {
         currentSetup = previousSetup;
+        configureHeaderSession(mainWindow?.webContents.session);
         syncHostComputerAccess();
         return {
           ok: false,
@@ -1554,7 +1566,7 @@ app.whenReady().then(async () => {
         showSetupWindow();
       }
     } else {
-      const reachability = await probeServer(target.url);
+      const reachability = await probeServer(target.url, undefined, currentSetup?.headers);
       if (reachability.ok) {
         if (await appOpener.open(target.url)) {
           commitPendingAppSwitch();

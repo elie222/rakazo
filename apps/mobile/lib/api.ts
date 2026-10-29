@@ -74,12 +74,7 @@ import {
 } from "./logo-avatar-activity";
 import { reportMobileError } from "./monitoring";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
-import {
-  loadServerHeaders,
-  saveServerHeaders,
-  serverHeaders,
-  serverHeadersForUrl,
-} from "./server-headers";
+import { fetchServer, loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -439,6 +434,7 @@ export async function saveApiBase(
   if (!parsed.ok) return parsed;
   if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
   const previous = currentApiBase();
+  const previousHeaders = serverHeaders(previous);
   let cleared:
     | {
         previousToken: string;
@@ -457,6 +453,7 @@ export async function saveApiBase(
   try {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
+    await saveServerHeaders(previous, previousHeaders);
     if (cleared) {
       await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
@@ -489,7 +486,11 @@ export async function resetApiBase(): Promise<EndpointResult> {
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
-  await saveServerHeaders(url, {});
+  if (!(await saveServerHeaders(url, {}))) {
+    await SecureStore.setItemAsync(ENDPOINT_KEY, previous).catch(() => undefined);
+    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    return { ok: false, error: t("Could not clear the custom server URL") };
+  }
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return { ok: true, url };
@@ -510,7 +511,6 @@ export async function authHeaders(
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
-    ...serverHeaders(currentApiBase()),
     ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
@@ -714,18 +714,6 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
   await maybeResume();
 }
 
-/** Adds the configured server headers to a request for that server, keeping the caller's own. */
-function withServerHeaders(
-  input: Parameters<typeof fetch>[0],
-  init: HeadersInit | undefined,
-): HeadersInit | undefined {
-  const extra = Object.entries(serverHeadersForUrl(String(input), currentApiBase()));
-  if (extra.length === 0) return init;
-  const headers = new Headers(init);
-  for (const [name, value] of extra) if (!headers.has(name)) headers.set(name, value);
-  return headers;
-}
-
 export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
@@ -735,11 +723,14 @@ export async function fetchMobileJson<T>(
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetch(input, {
-        ...init,
-        headers: withServerHeaders(input, init.headers),
-        signal: controller.signal,
-      }),
+      fetchServer(
+        input,
+        {
+          ...init,
+          signal: controller.signal,
+        },
+        currentApiBase(),
+      ),
       controller.signal,
       "Request timed out",
     ).catch((error: unknown) => {
@@ -770,12 +761,16 @@ export async function signOut() {
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
   try {
     await withAbort(
-      fetch(`${currentApiBase()}/api/auth/sign-out`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
-        body: "{}",
-        signal: controller.signal,
-      }),
+      fetchServer(
+        `${currentApiBase()}/api/auth/sign-out`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
+          body: "{}",
+          signal: controller.signal,
+        },
+        currentApiBase(),
+      ),
       controller.signal,
       "Request timed out",
     ).catch(() => undefined);
@@ -908,17 +903,21 @@ async function request(
     let res: Response;
     const correlation = clientCorrelationHeaders();
     try {
-      res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "rakazo://",
-          ...requestHeaders,
-          ...correlation,
+      res = await fetchServer(
+        `${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...requestHeaders,
+            ...correlation,
+          },
+          body: JSON.stringify({ json: body }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({ json: body }),
-        signal: controller.signal,
-      });
+        consentContext?.apiBase ?? currentApiBase(),
+      );
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException") and an unreachable server with a native stack
@@ -1324,17 +1323,21 @@ export async function subscribeThread(
   const current = () =>
     context.apiBase === currentApiBase() &&
     context.sessionGeneration === currentSessionGeneration();
-  const res = await fetch(`${context.apiBase}/rpc/threads/subscribe`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      origin: "rakazo://",
-      ...context.headers,
+  const res = await fetchServer(
+    `${context.apiBase}/rpc/threads/subscribe`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        origin: "rakazo://",
+        ...context.headers,
+      },
+      body: JSON.stringify({ json: { ...target, cursor } }),
+      signal,
     },
-    body: JSON.stringify({ json: { ...target, cursor } }),
-    signal,
-  }).catch((error: unknown) => {
+    context.apiBase,
+  ).catch((error: unknown) => {
     mobileLogoAvatarActivity.resetSource(activityFeed.source);
     if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
     throw error;

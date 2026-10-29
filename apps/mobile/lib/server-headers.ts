@@ -12,7 +12,11 @@ export function serverHeaders(apiBase: string): Record<string, string> {
 
 /** Headers for a request URL, only when it is on the server they were configured for. */
 export function serverHeadersForUrl(url: string, apiBase: string): Record<string, string> {
-  return url === apiBase || url.startsWith(`${apiBase}/`) ? serverHeaders(apiBase) : {};
+  try {
+    return new URL(url).origin === new URL(apiBase).origin ? serverHeaders(apiBase) : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function loadServerHeaders(apiBase: string): Promise<void> {
@@ -38,6 +42,9 @@ export async function saveServerHeaders(
   apiBase: string,
   headers: Record<string, string>,
 ): Promise<boolean> {
+  const parsed = parseServerHeaders(headers);
+  if (parsed === null) return false;
+  headers = parsed;
   try {
     if (Object.keys(headers).length === 0) {
       await SecureStore.deleteItemAsync(SERVER_HEADERS_KEY);
@@ -50,4 +57,19 @@ export async function saveServerHeaders(
   } catch {
     return false;
   }
+}
+
+/** Native fetch does not reliably strip custom headers on cross-origin redirects. */
+export function fetchServer(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  apiBase: string,
+  fetchImpl: typeof fetch = fetch,
+): ReturnType<typeof fetch> {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const extra = Object.entries(serverHeadersForUrl(url, apiBase));
+  if (extra.length === 0) return fetchImpl(input, init);
+  const headers = new Headers(init.headers);
+  for (const [name, value] of extra) headers.set(name, value);
+  return fetchImpl(input, { ...init, headers, redirect: "error" });
 }

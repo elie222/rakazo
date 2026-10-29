@@ -72,6 +72,7 @@ export async function probeApiBase(
     const res = await withAbort(
       fetchImpl(`${parsed.url}/rpc/health`, {
         method: "POST",
+        ...(Object.keys(headers).length ? { redirect: "error" as const } : {}),
         headers: { ...headers, "content-type": "application/json", origin: "rakazo://" },
         body: JSON.stringify({ json: {} }),
         signal: controller.signal,

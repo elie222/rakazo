@@ -24,6 +24,19 @@ describe("server request headers", () => {
     );
   });
 
+  it("rejects injection, duplicate names, reserved prefixes and oversized inputs", () => {
+    for (const name of ["a:b", "a b", "pRoXy-Test", "sEc-Test", "oRiGiN", "x-RAKAZO-test"]) {
+      expect(parseServerHeaders({ [name]: "secret" })).toBeNull();
+    }
+    for (const value of ["a\r", "a\n", "a\0", "a\t", "a\x7f", "a".repeat(1025)]) {
+      expect(parseServerHeaders({ "x-test": value })).toBeNull();
+    }
+    expect(parseServerHeaders({ "x-a": "1", "X-A": "2" })).toBeNull();
+    expect(
+      parseServerHeaders(Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`x-${i}`, "v"]))),
+    ).toBeNull();
+  });
+
   it("drops a damaged saved value", () => {
     expect(parseServerHeaders({ "x-a": "1" })).toEqual({ "x-a": "1" });
     expect(parseServerHeaders({ origin: "rakazo://" })).toBeNull();

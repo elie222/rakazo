@@ -4,7 +4,19 @@ import { ModelHeaderRowsSchema, ModelHeadersSchema } from "./model-headers.js";
 /** Rakazo names its own request headers; a configured header must not replace them. */
 function allowedServerHeaderName(name: string): boolean {
   const lower = name.trim().toLowerCase();
-  return lower !== "origin" && !lower.startsWith("x-rakazo-");
+  return (
+    ![
+      "origin",
+      "referer",
+      "cookie2",
+      "set-cookie",
+      "via",
+      "forwarded",
+      "x-forwarded-for",
+      "x-forwarded-host",
+      "x-forwarded-proto",
+    ].includes(lower) && !lower.startsWith("x-rakazo-")
+  );
 }
 
 /**

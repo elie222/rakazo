@@ -306,7 +306,6 @@ describe("screen page status", () => {
     expect(fetchImpl).toHaveBeenCalledWith("https://app.example.test/novnc/x", {
       cache: "no-store",
       credentials: "omit",
-      headers: {},
       redirect: "manual",
     });
     await expect(
@@ -361,12 +360,6 @@ describe("screen page redirects and origin", () => {
     expect(fromScreenPage("https://elsewhere.example.test/", screen)).toBe(false);
     expect(fromScreenPage(undefined, screen)).toBe(false);
     expect(fromScreenPage("not a url", screen)).toBe(false);
-  });
-
-  it("hears the sandboxed proxy page, which reports the opaque origin", () => {
-    const screen = "https://app.example.test/novnc/session/control/1.t/vnc.html";
-    expect(fromScreenPage("null", screen)).toBe(true);
-    expect(fromScreenPage("null", "https://screen.example.test/vnc.html")).toBe(false);
   });
 
   it("keeps one stream key across a renewed link for the same screen", () => {

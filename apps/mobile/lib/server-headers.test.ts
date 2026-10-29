@@ -11,7 +11,7 @@ import {
   saveApiBase,
 } from "./api.js";
 import { probeApiBase } from "./endpoint.js";
-import { serverHeaders, serverHeadersForUrl } from "./server-headers.js";
+import { fetchServer, serverHeaders, serverHeadersForUrl } from "./server-headers.js";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -46,10 +46,30 @@ afterEach(async () => {
 });
 
 describe("server request headers", () => {
+  it("preserves fetch options by default and prevents credentialed redirects only when configured", async () => {
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}"),
+    );
+    const init = { method: "POST", headers: { origin: "rakazo://" } };
+    await fetchServer(SERVER, init, SERVER, fetchImpl);
+    expect(fetchImpl.mock.calls[0]?.[1]).toBe(init);
+    await saveApiBase(SERVER, ACCESS);
+    await fetchServer(`${SERVER}/rpc/me`, { ...init, redirect: "follow" }, SERVER, fetchImpl);
+    expect(fetchImpl.mock.calls[1]?.[1]?.redirect).toBe("error");
+    expect(new Headers(fetchImpl.mock.calls[1]?.[1]?.headers).get("cf-access-client-secret")).toBe(
+      "secret",
+    );
+    await fetchServer("https://other.example/rpc", init, SERVER, fetchImpl);
+    expect(fetchImpl.mock.calls[2]?.[1]).toBe(init);
+    expect(serverHeadersForUrl("http://rakazo.example.test/rpc", SERVER)).toEqual({});
+    expect(serverHeadersForUrl(`${SERVER}:8443/rpc`, SERVER)).toEqual({});
+  });
+
   it("sends saved headers only to the server they were saved for", async () => {
     await expect(saveApiBase(SERVER, ACCESS)).resolves.toEqual({ ok: true, url: SERVER });
 
-    expect(await authHeaders(null)).toMatchObject(ACCESS);
+    expect(serverHeaders(currentApiBase())).toEqual(ACCESS);
+    expect(await authHeaders(null)).not.toHaveProperty("CF-Access-Client-Secret");
     expect(serverHeadersForUrl(`${SERVER}/rpc/me`, currentApiBase())).toEqual(ACCESS);
     expect(serverHeadersForUrl("https://rakazo.example.test.evil/rpc", SERVER)).toEqual({});
     expect(serverHeadersForUrl("https://other.example.test/rpc", SERVER)).toEqual({});
@@ -78,6 +98,30 @@ describe("server request headers", () => {
     await saveApiBase("https://second.example.test");
     expect(await authHeaders(null)).not.toHaveProperty("CF-Access-Client-Id");
     expect(store.has("rakazo.server_headers")).toBe(false);
+  });
+
+  it("restores headers if saving the endpoint fails", async () => {
+    await saveApiBase(SERVER, ACCESS);
+    vi.mocked(SecureStore.setItemAsync)
+      .mockImplementationOnce(async (key, value) => {
+        store.set(key, value);
+      })
+      .mockRejectedValueOnce(new Error("Storage unavailable"));
+    await expect(saveApiBase(SERVER, { "X-Access": "replacement" })).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(serverHeaders(SERVER)).toEqual(ACCESS);
+  });
+
+  it("does not claim to reset when deleting headers fails", async () => {
+    await saveApiBase(SERVER, ACCESS);
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.server_headers") throw new Error("Storage unavailable");
+      store.delete(key);
+    });
+    await expect(resetApiBase()).resolves.toMatchObject({ ok: false });
+    expect(currentApiBase()).toBe(SERVER);
+    expect(serverHeaders(SERVER)).toEqual(ACCESS);
   });
 
   it("ignores a damaged saved value", async () => {

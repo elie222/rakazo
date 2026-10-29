@@ -165,22 +165,9 @@ export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) 
   else observe();
 })();
 </script>`;
-  const withShim = html.includes("<head>")
+  return html.includes("<head>")
     ? html.replace("<head>", `<head>${shim}`)
     : html.replace(/<script\b/i, `${shim}<script`);
-  return withCredentialedModules(withShim);
-}
-
-/**
- * Module scripts from the sandboxed page omit cookies unless they ask for credentials, so an
- * access proxy in front of Rakazo would turn every import away.
- */
-function withCredentialedModules(html: string) {
-  return html.replace(/<script\b[^>]*\btype=["']?module["']?[^>]*>/gi, (tag) =>
-    tag
-      .replace(/\s+crossorigin(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/i, "")
-      .replace(/^<script\b/i, '<script crossorigin="use-credentials"'),
-  );
 }
 
 /** Read a noVNC document with a hard cap, and fail if the upstream ends without `end`. */
