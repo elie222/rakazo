@@ -15,7 +15,7 @@ x-logging: &logging
 x-app-environment: &app-environment
   # Runtime
   NODE_ENV: production
-  # The app's own login, subject to row-level security (docs/self-host.md#database-roles).
+  # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
   REALTIME_DATABASE_URL:
   DB_POOL_MAX:
@@ -26,9 +26,9 @@ x-app-environment: &app-environment
   AWS_KMS_KEY_ARN:
   AWS_KMS_ACCESS_KEY_ID:
   AWS_KMS_SECRET_ACCESS_KEY:
-  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
@@ -281,7 +281,7 @@ services:
       - postgres:/var/lib/postgresql
       # The Postgres 16 volume from earlier releases, read-only. While it holds data and no 18
       # cluster exists, the image refuses to start instead of creating an empty database; run
-      # upgrade-postgres.sh (docs/self-host.md#upgrading-to-postgres-18).
+      # upgrade-postgres.sh (docs/self-host-upgrading.md#upgrading-to-postgres-18).
       - pgdata:/var/lib/postgresql/16/docker:ro
     networks:
       - data
@@ -291,14 +291,14 @@ services:
       timeout: 5s
       retries: 20
 
-  # Optional point-in-time recovery (docs/self-host.md#point-in-time-recovery). Postgres keeps no
+  # Optional point-in-time recovery (docs/self-host-backups.md#point-in-time-recovery). Postgres keeps no
   # egress: this sidecar streams WAL from it over `data` with a replication-only login and uploads
   # encrypted copies over its own `backup` network. infra/compose/pitr.sh enable turns it on.
   pitr:
     profiles: [pitr]
     # Tagged with a hash of Dockerfile.pitr and pitr-agent.sh, so a deploy builds it once per change
     # instead of on every run (compose-service.test.ts checks the hash).
-    image: rakazo-pitr:946023c9df8ee532
+    image: rakazo-pitr:aa7cf1bde2aa8051
     build:
       context: .
       dockerfile: Dockerfile.pitr
@@ -419,7 +419,7 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
-      # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host.md.
+      # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-caddy}
       CLIENT_IP_HEADER:
       OIDC_ISSUER: ${OIDC_ISSUER:-}

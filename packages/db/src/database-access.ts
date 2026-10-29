@@ -28,7 +28,7 @@ function loginOf(url: string): string {
 }
 
 export const SINGLE_DATABASE_URL_WARNING =
-  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host.md#database-roles).";
+  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host-configuration.md#database-roles).";
 
 /**
  * Create or update the runtime login named in `runtimeUrl` and give it the
@@ -223,5 +223,5 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
   if (status.enforced) return undefined;
-  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host.md#database-roles).`;
+  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host-configuration.md#database-roles).`;
 }

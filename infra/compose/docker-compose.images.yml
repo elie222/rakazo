@@ -2,7 +2,7 @@
 # Drop this file and .env into any directory, then:
 #   docker compose --env-file .env -f docker-compose.images.yml up -d
 #
-# Tag contract matches docs/self-host.md (edge from main; release tags when published).
+# Tag contract matches docs/self-host-upgrading.md (edge from main; release tags when published).
 # Default is edge because that tag is published on every main build (linux/amd64 + linux/arm64).
 # Pin a published vX.Y.Z tag for a fixed version; `latest` moves to each new stable release.
 # Default SANDBOX_PROVIDER=docker boots a local computer via the in-stack supervisor (no E2B key).
@@ -16,7 +16,7 @@ name: rakazo
 x-app-environment: &app-environment
   # Runtime
   NODE_ENV: production
-  # The app's own login, subject to row-level security (docs/self-host.md#database-roles).
+  # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
   REALTIME_DATABASE_URL:
   DB_POOL_MAX:
@@ -27,9 +27,9 @@ x-app-environment: &app-environment
   AWS_KMS_KEY_ARN:
   AWS_KMS_ACCESS_KEY_ID:
   AWS_KMS_SECRET_ACCESS_KEY:
-  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
@@ -401,7 +401,7 @@ services:
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
       # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
-      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      # proxy and a reverse proxy on the host. See docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES:
       CLIENT_IP_HEADER:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
