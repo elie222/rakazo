@@ -302,25 +302,20 @@ export function ImageArtifactViewer({
           },
         ]}
       >
-        <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
-          {target.name}
-        </Text>
-        <View style={styles.headerActions}>
-          <GlassIconButton
-            accessibilityLabel={t("Share {name}", { name: target.name })}
-            ios="square.and.arrow.up"
-            android="share-social-outline"
-            iconSize={18}
-            onPress={share}
-          />
-          <GlassIconButton
-            accessibilityLabel={t("Close image")}
-            ios="xmark"
-            android="close"
-            iconSize={18}
-            onPress={close}
-          />
-        </View>
+        <GlassIconButton
+          accessibilityLabel={t("Close image")}
+          ios="xmark"
+          android="close"
+          iconSize={18}
+          onPress={close}
+        />
+        <GlassIconButton
+          accessibilityLabel={t("Share {name}", { name: target.name })}
+          ios="square.and.arrow.up"
+          android="share-social-outline"
+          iconSize={18}
+          onPress={share}
+        />
       </View>
       <View
         style={styles.stage}
@@ -360,10 +355,9 @@ const styles = StyleSheet.create({
     height: HEADER_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
   },
-  title: { flex: 1, fontSize: 15, fontWeight: "500" },
-  headerActions: { flexDirection: "row", gap: 8 },
   stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   message: { fontSize: 15, textAlign: "center", padding: 24 },
 });
