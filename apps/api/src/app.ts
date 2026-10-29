@@ -756,6 +756,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,
       maxUploadSizeBytes: env.maxUploadSizeBytes,
+      maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
       agentRuntime: env.agentRuntime,
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,

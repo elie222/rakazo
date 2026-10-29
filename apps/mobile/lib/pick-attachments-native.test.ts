@@ -54,6 +54,18 @@ function document(name: string, mimeType = "text/plain") {
 }
 
 describe("native attachment reads", () => {
+  it.each([1, 8])("reads only the configured number of documents (%s)", async (limit) => {
+    file.size = 1;
+    vi.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({
+      canceled: false,
+      assets: Array.from({ length: 9 }, (_, i) => document(`${i}.txt`)),
+    });
+    const result = await pickDocuments(0, 10, limit);
+    expect(result.attachments).toHaveLength(limit);
+    expect(result.skipped[0]?.reason).toBe(`max ${limit} attachments`);
+    expect(file.base64).toHaveBeenCalledTimes(limit);
+  });
+
   it("reads a file above 10 MiB when the server allows it", async () => {
     const result = await pickDocuments(
       0,

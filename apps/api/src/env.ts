@@ -14,6 +14,7 @@ import type { MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
+  attachmentCountFromEnv,
   phoneCallSettings,
   resolveAuthSecret,
   resolveContentEncryption,
@@ -66,6 +67,7 @@ export interface AppEnv {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
   sandboxSupervisorUrl: string;
@@ -241,6 +243,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:

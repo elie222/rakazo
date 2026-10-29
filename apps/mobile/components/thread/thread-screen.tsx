@@ -139,7 +139,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const history = useThreadSnapshot();
   const { snap, composingBots, showingSaved } = history;
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [uploadConfig, setUploadConfig] = useState<{ maxUploadSizeBytes?: number }>();
+  const [uploadConfig, setUploadConfig] = useState<{
+    maxUploadSizeBytes?: number;
+    maxAttachmentsPerMessage?: number;
+  }>();
   const [needsModel, setNeedsModel] = useState<boolean>();
   // Re-read on focus so returning from Models settings updates unsent missing-model messages.
   useFocusEffect(

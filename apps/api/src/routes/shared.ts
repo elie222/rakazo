@@ -6,7 +6,7 @@ import {
   resolveMemberMainModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
-import { attachmentMaxBytes, canonicalPiProviderId } from "@rakazo/contracts";
+import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
 import { isAdmin } from "../plugin-submissions.js";
 import type { RouterDeps } from "../router.js";
 
@@ -37,6 +37,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
+    maxAttachmentsPerMessage: attachmentMaxCount(deps.env),
     userId: actor.userId,
     email: user.email,
     name: user.name,

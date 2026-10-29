@@ -713,6 +713,7 @@ export async function sendThreadMessage(
     events: ThreadEvents;
     jobs: JobPublisher;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
+    maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
   },
   actor: Actor,
@@ -794,7 +795,7 @@ export async function sendThreadMessage(
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
         const { blocks: attachmentBlocks, artifacts } = await resolveSendAttachments(
-          { prisma: tx },
+          { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
           actor,
           target.botId,
           input.artifactIds,
@@ -995,7 +996,7 @@ export async function sendThreadMessage(
         explicitMentions: mentionTargets.botMentionIds,
       });
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
-        { prisma: tx },
+        { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
         target.groupId,
         memberBotIds,

@@ -1,6 +1,8 @@
 import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
 import {
+  ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
@@ -25,6 +27,23 @@ function isWellFormedBase64(value: string): boolean {
   const body = paddingLength > 0 ? value.slice(0, value.length - paddingLength) : value;
   if (body.includes("=")) return false;
   return /^[A-Za-z0-9+/]*$/.test(body);
+}
+
+export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
+  const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
+  if (!value) return ATTACHMENT_MAX_COUNT;
+  const count = Number(value);
+  if (
+    !/^\d+$/.test(value) ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    count > ATTACHMENT_COUNT_CEILING
+  ) {
+    throw new Error(
+      `MAX_ATTACHMENTS_PER_MESSAGE must be an integer from 1 to ${ATTACHMENT_COUNT_CEILING}`,
+    );
+  }
+  return count;
 }
 
 export function uploadSizeFromEnv(source: { MAX_UPLOAD_SIZE_MB?: string }): number {

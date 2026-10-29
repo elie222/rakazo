@@ -1,5 +1,5 @@
 import type { MenuAction } from "@expo/ui/community/menu";
-import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes } from "@rakazo/contracts";
+import { attachmentMaxBytes, attachmentMaxCount } from "@rakazo/contracts";
 import { attachmentsForThread } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -42,7 +42,7 @@ export function useThreadAttachments({
   botId?: string;
   groupId?: string;
   readOnly: boolean;
-  uploadConfig?: { maxUploadSizeBytes?: number };
+  uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
   const { t } = useI18n();
   const threadKey = groupId ?? botId;
@@ -72,6 +72,7 @@ export function useThreadAttachments({
     picker: (
       existingCount: number,
       maxBytes: number,
+      maxCount: number,
     ) => Promise<{
       attachments: PickedAttachment[];
       skipped: Array<{ name: string; reason: string }>;
@@ -79,13 +80,18 @@ export function useThreadAttachments({
   ) {
     const targetKey = groupId ?? botId;
     if (!targetKey) return;
-    const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
+    const result = await picker(
+      activePendingAttachments.length,
+      attachmentMaxBytes(uploadConfig),
+      attachmentMaxCount(uploadConfig),
+    );
     if ((groupId ?? botId) !== targetKey) return;
     // Two drops can overlap, so the room left is settled against the draft as it
     // is now, not as it was when this read began.
     const room = Math.max(
       0,
-      ATTACHMENT_MAX_COUNT - attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
+      attachmentMaxCount(uploadConfig) -
+        attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
     );
     const accepted = result.attachments.slice(0, room);
     if (accepted.length) {
@@ -101,7 +107,7 @@ export function useThreadAttachments({
       ...result.skipped,
       ...result.attachments.slice(room).map((attachment) => ({
         name: attachment.name,
-        reason: attachmentCountSkipReason(),
+        reason: attachmentCountSkipReason(attachmentMaxCount(uploadConfig)),
       })),
     ];
     setAttachmentNotice(
@@ -116,12 +122,14 @@ export function useThreadAttachments({
   useFileDrop(
     threadKey ?? null,
     ({ files, skipped }) => {
-      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes, skipped));
+      void addAttachments((count, maxBytes, maxCount) =>
+        readDroppedFiles(files, count, maxBytes, skipped, maxCount),
+      );
     },
     {
       enabled: !readOnly && Boolean(groupId ?? botId),
       maxBytes: attachmentMaxBytes(uploadConfig),
-      maxFiles: ATTACHMENT_MAX_COUNT,
+      maxFiles: attachmentMaxCount(uploadConfig),
     },
   );
 
@@ -151,7 +159,7 @@ export function useIncomingShareImport({
   composerRef: RefObject<ThreadComposerHandle | null>;
   readOnly: boolean;
   threadKey: string | undefined;
-  uploadConfig?: { maxUploadSizeBytes?: number };
+  uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
   const { importingShare, setShareImporting, setPendingAttachments, setAttachmentNotice } =
     attachments;
@@ -178,6 +186,7 @@ export function useIncomingShareImport({
           share.files,
           attachments.activePendingAttachments.length,
           attachmentMaxBytes(uploadConfig),
+          attachmentMaxCount(uploadConfig),
         );
         if (!active || !isIncomingShareCurrent(share)) {
           retryIncomingShare(share);

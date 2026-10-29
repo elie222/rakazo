@@ -564,6 +564,7 @@ describe("model setup gate", () => {
   function modelGateDeps(options: {
     agentRuntime: string;
     maxUploadSizeBytes?: number;
+    maxAttachmentsPerMessage?: number;
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
@@ -592,6 +593,7 @@ describe("model setup gate", () => {
       env: {
         agentRuntime: options.agentRuntime,
         maxUploadSizeBytes: options.maxUploadSizeBytes,
+        maxAttachmentsPerMessage: options.maxAttachmentsPerMessage,
         defaultProvider: "openrouter",
         defaultModel: "test-model",
         deploymentModelConfigured: options.deploymentModelConfigured,
@@ -622,6 +624,21 @@ describe("model setup gate", () => {
     );
     return response;
   }
+
+  it.each([undefined, 1, 8, 100])(
+    "advertises the effective attachment count (%s)",
+    async (maxAttachmentsPerMessage) => {
+      const { actor, handler } = modelGateDeps({
+        agentRuntime: "scripted",
+        maxAttachmentsPerMessage,
+      });
+      const response = await call(handler, actor, "me", null);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        json: { maxAttachmentsPerMessage: maxAttachmentsPerMessage ?? 4 },
+      });
+    },
+  );
 
   it.each([undefined, 25 * 1024 * 1024])(
     "advertises the effective upload limit in me (%s)",

@@ -10,7 +10,7 @@ const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_U
 const origin = "http://127.0.0.1:5173";
 
 it.skipIf(!databaseUrl)(
-  "applies the configured upload limit through the composed app",
+  "applies the configured upload and attachment count limits through the composed app",
   async () => {
     const maxUploadSizeBytes = 20 * 1024 * 1024;
     const dataDir = await mkdtemp(join(tmpdir(), "rakazo-upload-limit-"));
@@ -18,6 +18,7 @@ it.skipIf(!databaseUrl)(
       databaseUrl: databaseUrl!,
       dataDir,
       maxUploadSizeBytes,
+      maxAttachmentsPerMessage: 8,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
       wakeupDriver: "memory",
@@ -46,7 +47,9 @@ it.skipIf(!databaseUrl)(
 
       const me = await call("me");
       expect(me.status).toBe(200);
-      expect(await me.json()).toMatchObject({ json: { maxUploadSizeBytes } });
+      expect(await me.json()).toMatchObject({
+        json: { maxUploadSizeBytes, maxAttachmentsPerMessage: 8 },
+      });
 
       const bot = await call("bots/create", {
         name: "Upload fixture",
@@ -66,6 +69,21 @@ it.skipIf(!databaseUrl)(
         contentBase64: Buffer.alloc(12 * 1024 * 1024, "a").toString("base64"),
       });
       expect(upload.status).toBe(200);
+      const artifactIds: string[] = [];
+      for (let i = 0; i < 9; i++) {
+        const attachment = await call("artifacts/create", {
+          botId,
+          name: `${i}.txt`,
+          mimeType: "text/plain",
+          contentBase64: "YQ==",
+        });
+        expect(attachment.status).toBe(200);
+        artifactIds.push(((await attachment.json()) as { json: { id: string } }).json.id);
+      }
+      const tooMany = await call("threads/send", { botId, artifactIds });
+      expect(tooMany.status).toBe(400);
+      const accepted = await call("threads/send", { botId, artifactIds: artifactIds.slice(0, 8) });
+      expect(accepted.status).toBe(200);
     } finally {
       await handles.stop();
       await rm(dataDir, { recursive: true, force: true });
