@@ -131,7 +131,7 @@ describe("egress probe", () => {
     await verifyRestrictedEgress(docker, "computer:test", ["2606:4700::1111", "1.1.1.1"]);
     const script: string = raw.createContainer.mock.calls[0]?.[0].Entrypoint[2];
     expect(script).toBe(egressProbeScript("172.30.0.1", ["1.1.1.1"]));
-    expect(script).toMatch(/' 1\.1\.1\.1 2>\/dev\/null && exit 0\nexit 5$/);
+    expect(script).toMatch(/' 1\.1\.1\.1 2>\/dev\/null && exit 0; done\nexit 5$/);
     expect(egressProbeScript("172.30.0.1", ["2606:4700::1111"])).toBe(
       egressProbeScript("172.30.0.1"),
     );
@@ -163,6 +163,15 @@ describe("egress probe", () => {
       const reply = (query: Buffer) =>
         answer(0)(Buffer.concat([Buffer.from("XX"), query.subarray(2)]));
       expect(await runDnsProbe(["127.0.0.1"], reply)).toBe(5);
+    });
+
+    it("passes when a server answers a resent query after losing the first", {
+      timeout: 15_000,
+    }, async () => {
+      let received = 0;
+      const reply = (query: Buffer) => (received++ === 0 ? undefined : answer(0)(query));
+      expect(await runDnsProbe(["127.0.0.1"], reply)).toBe(0);
+      expect(received).toBe(2);
     });
 
     it("fails when no server replies", { timeout: 15_000 }, async () => {

@@ -29,7 +29,8 @@ const HOST_REACHABLE = 3;
 const METADATA_ADDRESS = "169.254.169.254";
 const METADATA_REACHABLE = 4;
 const DNS_UNREACHABLE = 5;
-const DNS_SECONDS = 5;
+// Each server gets two short tries, so one lost packet does not fail a start (18s for three).
+const DNS_SECONDS = 3;
 
 export const EGRESS_NOT_ENFORCED =
   "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host.md)";
@@ -61,7 +62,7 @@ export function egressProbeScript(gateway: string, dns: string[] = []) {
     .filter((server) => isIPv4(server))
     .map(
       (server) =>
-        `timeout ${DNS_SECONDS} bash -c 'exec 3<>/dev/udp/$0/53 && printf "RK\\1\\0\\0\\1\\0\\0\\0\\0\\0\\0\\7example\\3com\\0\\0\\1\\0\\1" >&3 && [ "$(head -c2 <&3)" = RK ]' ${server} 2>/dev/null && exit 0`,
+        `for _ in 1 2; do timeout ${DNS_SECONDS} bash -c 'exec 3<>/dev/udp/$0/53 && printf "RK\\1\\0\\0\\1\\0\\0\\0\\0\\0\\0\\7example\\3com\\0\\0\\1\\0\\1" >&3 && [ "$(head -c2 <&3)" = RK ]' ${server} 2>/dev/null && exit 0; done`,
     );
   const last = queries.length > 0 ? `exit ${DNS_UNREACHABLE}` : "exit 0";
   return [...attempts, metadata, ...queries, last].join("\n");
