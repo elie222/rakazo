@@ -313,10 +313,26 @@ export async function checkpointComputerWorkspace(
   homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
-  /** Read after the export, just before saving, so a deletion during the export still counts. */
-  excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
+  /** The computer saved; its deleted bots' folders are read after the export, just before saving. */
+  record?: {
+    prisma: Pick<PrismaClient, "botDeletion" | "computer">;
+    computer: { id: string; scope: string; spaceId: string };
+    /** Called once the export has finished, just before the files are stored. */
+    onExported?: () => void;
+  },
   saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
-): Promise<string> {
+): Promise<string | undefined> {
+  // A machine whose restore never finished holds only part of the home: save nothing from it,
+  // nor while a start that may still replace or restore it is under way. Every later start moves
+  // the row into booting, which changes its screen generation, so one that began or even
+  // finished during the export shows in the second read.
+  const lifecycle = () =>
+    record?.prisma.computer.findFirst({
+      where: { id: record.computer.id },
+      select: { state: true, restorePending: true, screenGeneration: true },
+    });
+  const before = await lifecycle();
+  if (before?.restorePending || before?.state === "booting") return undefined;
   if (
     home instanceof LocalAgentHomeStore &&
     (await homeIsMounted(home, sandbox, computer, context))
@@ -350,7 +366,10 @@ export async function checkpointComputerWorkspace(
       await use(FILE_DISK_OVERHEAD_BYTES);
       await writePortableFile(staging.path, file, count);
     }
-    for (const folder of (await excludedFolders?.()) ?? []) {
+    record?.onExported?.();
+    if ((await lifecycle())?.screenGeneration !== before?.screenGeneration) return undefined;
+    const excluded = record && (await deletedTeamBotFolders(record.prisma, record.computer));
+    for (const folder of excluded ?? []) {
       await rm(path.join(staging.path, folder), { recursive: true, force: true });
     }
     return await home.commit(homeKey, staging.path, context);
@@ -425,7 +444,7 @@ export async function checkpointAndRecordComputerWorkspace(
   computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
-): Promise<string> {
+): Promise<string | undefined> {
   const checkpointedAt = new Date();
   const revision = await checkpointComputerWorkspace(
     deps.home,
@@ -433,8 +452,9 @@ export async function checkpointAndRecordComputerWorkspace(
     computerRecord.homeKey,
     computer,
     context,
-    () => deletedTeamBotFolders(deps.prisma, computerRecord),
+    { prisma: deps.prisma, computer: computerRecord },
   );
+  if (revision === undefined) return undefined;
   await deps.prisma.computer.updateMany({
     where: { id: computerRecord.id },
     data: { homeRevision: revision, homeRevisionAt: checkpointedAt },

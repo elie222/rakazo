@@ -1555,6 +1555,11 @@ function idleHarness(
       }),
     },
     computer: {
+      findFirst: vi.fn(async () => ({
+        state: "running",
+        restorePending: false,
+        screenGeneration: 0,
+      })),
       findUnique: vi.fn(async () => ({ ...computer })),
       updateMany: vi.fn(async (args) => {
         if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())

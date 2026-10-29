@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointAndStopComputer,
   checkpointComputerWorkspace,
+  checkpointRunComputerWorkspace,
   deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
@@ -150,12 +151,15 @@ describe("provider-neutral computer workspace", () => {
       deleted.push({ id: "gone-too" });
     });
 
-    await checkpointComputerWorkspace(home, provider, "team", computer, context, () =>
-      deletedTeamBotFolders({ botDeletion: { findMany } } as never, {
-        scope: "team",
-        spaceId: "workspace",
-      }),
-    );
+    await checkpointComputerWorkspace(home, provider, "team", computer, context, {
+      prisma: {
+        botDeletion: { findMany },
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      } as never,
+      computer: { id: "computer-1", scope: "team", spaceId: "workspace" },
+    });
 
     const saved: string[] = [];
     for await (const file of home.exportHome("team", context)) saved.push(file.path);
@@ -177,6 +181,56 @@ describe("provider-neutral computer workspace", () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it.each([
+    { when: "marked before", first: { restorePending: true }, exported: false },
+    { when: "starting before", first: { state: "booting" }, exported: false },
+    { when: "started during", second: { screenGeneration: 1 }, exported: true },
+    { when: "marked before", first: { restorePending: true }, exported: false, kind: "docker" },
+  ])(
+    "saves nothing from a run's $kind computer $when the export",
+    async ({ first, second, exported, kind = "fake" }) => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-restoring-"));
+      roots.push(root);
+      const home = new LocalAgentHomeStore(root);
+      const provider = new FakeSandboxProvider();
+      const computer = {
+        ...(await provider.provision({ botId: "bot-1", homePath: "/ignored" }, context)),
+        // A Docker computer mounts the home, so its save only records a new revision.
+        kind: kind as ComputerRef["kind"],
+      };
+      await provider.writeFile(computer, { path: "a.txt", content: Buffer.from("a") }, context);
+      const exportWorkspace = vi.spyOn(provider, "exportWorkspace");
+      const commit = vi.spyOn(home, "commit");
+      const revise = vi.spyOn(home, "revise");
+      const running = { state: "running", restorePending: false, screenGeneration: 0 };
+      const findFirst = vi
+        .fn()
+        .mockResolvedValueOnce({ ...running, ...first })
+        .mockResolvedValue({ ...running, ...second });
+      const updateMany = vi.fn();
+
+      await expect(
+        checkpointRunComputerWorkspace(
+          {
+            sandbox: provider,
+            home,
+            prisma: {
+              botDeletion: { findMany: async () => [] },
+              computer: { findFirst, updateMany },
+            } as never,
+          },
+          { id: "computer-1", homeKey: "bot-1", scope: "dedicated", spaceId: "workspace" },
+          computer,
+          context,
+        ),
+      ).resolves.toBeUndefined();
+      expect(exportWorkspace).toHaveBeenCalledTimes(exported ? 1 : 0);
+      expect(commit).not.toHaveBeenCalled();
+      expect(revise).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalled();
+    },
+  );
 
   it("restores a checkpoint into a replacement provider machine", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
@@ -294,7 +348,13 @@ describe("Team run checkpoints", () => {
     const deps = {
       sandbox: { exportWorkspace },
       home: {},
-      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
     };
     const result = await checkpointRunComputerWorkspace(
       deps as never,
@@ -327,7 +387,13 @@ describe("Team run checkpoints", () => {
     const deps = {
       sandbox: { exportWorkspace },
       home: {},
-      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
     };
     await expect(
       checkpointRunComputerWorkspace(
@@ -366,7 +432,16 @@ describe("checkpointAndStopComputer", () => {
     const sandbox = { exportWorkspace: async function* () {}, stop };
     const commit = vi.fn().mockResolvedValue("revision-1");
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const deps = { sandbox, home: { commit }, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox,
+      home: { commit },
+      prisma: {
+        computer: {
+          updateMany,
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
 
     await checkpointAndStopComputer(deps as never, record, ref, context);
 
@@ -381,7 +456,15 @@ describe("checkpointAndStopComputer", () => {
 
   it("stops a damaged computer without its save", async () => {
     const sandbox = sandboxFailingWith(new SandboxDamagedError());
-    const deps = { sandbox, home: {}, prisma: {} };
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: {
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
 
     await checkpointAndStopComputer(deps as never, record, ref, context);
 
@@ -390,7 +473,15 @@ describe("checkpointAndStopComputer", () => {
 
   it("leaves a computer whose save fails for another reason running", async () => {
     const sandbox = sandboxFailingWith(new Error("export failed"));
-    const deps = { sandbox, home: {}, prisma: {} };
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: {
+        computer: {
+          findFirst: async () => ({ state: "running", restorePending: false, screenGeneration: 0 }),
+        },
+      },
+    };
 
     await expect(checkpointAndStopComputer(deps as never, record, ref, context)).rejects.toThrow(
       "export failed",

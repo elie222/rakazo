@@ -63,6 +63,11 @@ describe("Stop during a computer reconnect", () => {
         },
         computer: {
           findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+          findFirst: vi.fn(async () => ({
+            state: "running",
+            restorePending: false,
+            screenGeneration: 0,
+          })),
           updateMany: vi.fn(async ({ where, data }) => {
             // Model the atomic scalar predicates, including the lifecycle claim stamp.
             for (const key of [

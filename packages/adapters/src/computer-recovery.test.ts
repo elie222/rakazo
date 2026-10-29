@@ -57,6 +57,11 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
   // and the updatedAt claim stamp used for booting reclaim / end-of-boot writes.
   const computer = {
     findUniqueOrThrow: vi.fn(async () => ({ ...row })),
+    findFirst: vi.fn(async () => ({
+      state: "running",
+      restorePending: false,
+      screenGeneration: 0,
+    })),
     updateMany: vi.fn(async ({ where, data }) => {
       const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
         (key) => !(key in where) || where[key] === row[key as keyof typeof row],

@@ -22,7 +22,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
-import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
+import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -441,12 +441,19 @@ export async function sleepComputerIfIdle(
       computer.homeKey,
       ref,
       ctx,
-      () => deletedTeamBotFolders(deps.prisma, computer),
+      { prisma: deps.prisma, computer },
     );
-    const saved = await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
-      data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: checkpointedAt },
-    });
+    const saved =
+      revision === undefined
+        ? { count: 1 }
+        : await deps.prisma.computer.updateMany({
+            where: suspensionClaim,
+            data: {
+              homeRevision: revision,
+              homeRevisionAt: checkpointedAt,
+              updatedAt: checkpointedAt,
+            },
+          });
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,

@@ -192,7 +192,14 @@ async function runWithModel(
       findFirst: vi.fn(async () => null),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })) },
-    computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    computer: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      findFirst: vi.fn(async () => ({
+        state: "running",
+        restorePending: false,
+        screenGeneration: 0,
+      })),
+    },
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: {
       findFirst: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(

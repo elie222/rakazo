@@ -1313,6 +1313,9 @@ model Computer {
   /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
   /// until a later save shows the computer works again.
   autoRecoveredAt         DateTime?
+  /// The machine at `providerRef` came from a start whose restore never finished, so it holds no
+  /// full copy of the saved home: nothing is saved from it, and the next start restores it.
+  restorePending          Boolean                  @default(false)
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique

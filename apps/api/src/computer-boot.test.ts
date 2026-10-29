@@ -225,6 +225,9 @@ describe("computer stop", () => {
       computer: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         update: vi.fn().mockResolvedValue(computer),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
       },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
       computerExecutionLease: {

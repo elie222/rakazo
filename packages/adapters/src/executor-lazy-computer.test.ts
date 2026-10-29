@@ -200,7 +200,14 @@ async function runRoutine(
       count: vi.fn(async () => 0),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
-    computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    computer: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      findFirst: vi.fn(async () => ({
+        state: "running",
+        restorePending: false,
+        screenGeneration: 0,
+      })),
+    },
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
