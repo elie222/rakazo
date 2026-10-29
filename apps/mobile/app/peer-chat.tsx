@@ -21,7 +21,7 @@ import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
-import { isInlineImageMimeType } from "../lib/inline-image";
+import { isInlineImageBlock } from "../lib/inline-image";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
@@ -135,26 +135,36 @@ export default function PeerChat() {
         ) : (
           chat.messages.map((item, index) => {
             const sent = item.direction === "sent";
+            const hasInlineImages = item.blocks?.some(isInlineImageBlock);
+            const bubbleStyle = [styles.bubble, sent && styles.sentBubble];
             return (
               <View
                 key={`${item.messageId}-${index}`}
-                style={[styles.bubble, sent ? styles.sent : styles.received]}
+                style={[
+                  styles.message,
+                  sent ? styles.sent : styles.received,
+                  hasInlineImages ? { gap: 8 } : bubbleStyle,
+                ]}
               >
-                <Text
-                  style={[
-                    styles.speaker,
-                    { color: (sent ? params.botColor : params.peerBotColor) ?? tokens.foreground },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {sent ? botName : peerName}
-                </Text>
-                <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
-                  {item.text}
-                </ChatMarkdown>
+                <View style={hasInlineImages ? bubbleStyle : undefined}>
+                  <Text
+                    style={[
+                      styles.speaker,
+                      {
+                        color: (sent ? params.botColor : params.peerBotColor) ?? tokens.foreground,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {sent ? botName : peerName}
+                  </Text>
+                  <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+                    {item.text}
+                  </ChatMarkdown>
+                </View>
                 {item.blocks?.map((block, index) => {
                   if (block.kind !== "file" && block.kind !== "image") return null;
-                  if (block.kind === "image" && isInlineImageMimeType(block.mimeType))
+                  if (isInlineImageBlock(block))
                     return (
                       <InlineImageAttachment
                         key={index}
@@ -177,21 +187,25 @@ export default function PeerChat() {
                       />
                     );
                   return (
-                    <NativeActionButton
-                      key={index}
-                      label={block.name}
-                      prominence="plain"
-                      onPress={() =>
-                        void openMobileArtifact(
-                          { botId },
-                          block.artifactId,
-                          block.name,
-                          block.mimeType,
-                        ).catch((error) =>
-                          Alert.alert(t("Could not open file"), errorText(error, t("Try again."))),
-                        )
-                      }
-                    />
+                    <View key={index} style={hasInlineImages ? bubbleStyle : undefined}>
+                      <NativeActionButton
+                        label={block.name}
+                        prominence="plain"
+                        onPress={() =>
+                          void openMobileArtifact(
+                            { botId },
+                            block.artifactId,
+                            block.name,
+                            block.mimeType,
+                          ).catch((error) =>
+                            Alert.alert(
+                              t("Could not open file"),
+                              errorText(error, t("Try again.")),
+                            ),
+                          )
+                        }
+                      />
+                    </View>
                   );
                 })}
               </View>
@@ -230,9 +244,16 @@ function createStyles() {
     center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
     muted: { color: tokens.mutedForeground, ...typeScale.body, textAlign: "center" },
     retry: { color: tokens.link, ...typeScale.body },
-    bubble: { maxWidth: "85%", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
-    sent: { alignSelf: "flex-end", backgroundColor: tokens.accent },
-    received: { alignSelf: "flex-start", backgroundColor: tokens.muted },
+    message: { maxWidth: "85%" },
+    bubble: {
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+      backgroundColor: tokens.muted,
+    },
+    sent: { alignSelf: "flex-end" },
+    received: { alignSelf: "flex-start" },
+    sentBubble: { backgroundColor: tokens.accent },
     speaker: { color: tokens.mutedForeground, ...typeScale.footnote, marginBottom: 4 },
   });
 }

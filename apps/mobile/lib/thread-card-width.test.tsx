@@ -112,7 +112,11 @@ vi.mock("../components/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../components/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../components/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../components/ComputerCard", () => ({ ComputerCard: () => null }));
-vi.mock("../components/inline-image-attachment", () => ({ InlineImageAttachment: () => null }));
+vi.mock("../components/inline-image-attachment", () => ({
+  InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
+    <button type="button" aria-label={name} onClick={onOpen} />
+  ),
+}));
 vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
 
 import { McpApprovalCard } from "../components/McpApprovalCard";
@@ -187,13 +191,13 @@ describe("thread cards", () => {
   };
   const text = (value: string): MessageBlock => ({ kind: "text", text: value });
 
-  function renderBlocks(blocks: MessageBlock[], overrides = {}) {
+  function renderBlocks(blocks: MessageBlock[], overrides = {}, role: "bot" | "user" = "bot") {
     act(() =>
       root.render(
         <Bubble
           botId="bot-1"
           bots={[]}
-          message={{ id: "message-1", role: "bot", blocks }}
+          message={{ id: "message-1", role, blocks }}
           canAnswer={false}
           actionProps={{}}
           {...overrides}
@@ -201,6 +205,58 @@ describe("thread cards", () => {
       ),
     );
   }
+
+  it.each(["user", "bot"] as const)(
+    "keeps %s image attachments outside the caption and file bubbles",
+    (role) => {
+      const onPreviewImage = vi.fn();
+      renderBlocks(
+        [
+          text("Pictures"),
+          { kind: "image", artifactId: "image-1", name: "photo.png", mimeType: "image/png" },
+          { kind: "image", artifactId: "image-2", name: "screenshot.png", mimeType: "image/png" },
+          {
+            kind: "file",
+            artifactId: "file-1",
+            name: "notes.txt",
+            mimeType: "text/plain",
+            size: 10,
+          },
+        ],
+        { onPreviewImage },
+        role,
+      );
+      const outer = container.firstElementChild!;
+      for (const name of ["photo.png", "screenshot.png"]) {
+        const image = container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+        for (const frame of [image.parentElement, outer]) {
+          const style = styleOf(frame);
+          expect(style).not.toHaveProperty("backgroundColor");
+          expect(style).not.toHaveProperty("borderWidth");
+          expect(style).not.toHaveProperty("paddingHorizontal");
+          expect(style).not.toHaveProperty("paddingVertical");
+        }
+      }
+      expect(styleOf(outer.firstElementChild)).toMatchObject({
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+      });
+      expect(styleOf(outer.lastElementChild)).toMatchObject({
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+      });
+      act(() =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="screenshot.png"]')!.click(),
+      );
+      expect(onPreviewImage).toHaveBeenCalledWith({
+        artifactId: "image-2",
+        name: "screenshot.png",
+        mimeType: "image/png",
+      });
+    },
+  );
 
   it.each([
     [
