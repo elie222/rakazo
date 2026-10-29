@@ -1,8 +1,9 @@
 import type { ModelHeaderRow } from "@rakazo/contracts";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { useI18n } from "../lib/i18n";
-import { native, useThemedStyles } from "../lib/native";
-import { NativeActionButton } from "./native-action-button";
+import { useMobileTokens, useThemedStyles } from "../lib/native";
+import { NativeSymbol } from "./native-symbol";
+import { SettingsGroup, SettingsInputRow, SettingsRow } from "./settings-group";
 
 const MAX_HEADER_ROWS = 8;
 
@@ -20,31 +21,28 @@ export function HeaderRowsEditor({
   savedValuePlaceholder?: (row: ModelHeaderRow) => boolean;
 }) {
   const { t } = useI18n();
+  const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
   return (
-    <>
-      {rows.length > 0 ? <Text style={styles.sectionTitle}>{t("Headers")}</Text> : null}
+    <View style={styles.section}>
       {rows.map((row, index) => (
-        <View key={index} style={styles.row}>
-          <TextInput
+        <SettingsGroup key={index} label={index === 0 ? t("Headers") : undefined}>
+          <SettingsInputRow
             accessibilityLabel={t("Header name")}
             placeholder={t("Header name")}
-            placeholderTextColor={native.tertiaryLabel}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
             editable={!disabled}
             maxLength={256}
-            style={styles.input}
             value={row.name}
             onChangeText={(name) =>
               onChange(rows.map((entry, i) => (i === index ? { ...entry, name } : entry)))
             }
           />
-          <TextInput
+          <SettingsInputRow
             accessibilityLabel={t("Header value")}
             placeholder={savedValuePlaceholder?.(row) ? "••••••••" : t("Header value")}
-            placeholderTextColor={native.tertiaryLabel}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
@@ -53,51 +51,41 @@ export function HeaderRowsEditor({
             secureTextEntry
             editable={!disabled}
             maxLength={1024}
-            style={styles.input}
             value={row.value}
             onChangeText={(value) =>
               onChange(rows.map((entry, i) => (i === index ? { ...entry, value } : entry)))
             }
           />
-          <NativeActionButton
+          <SettingsRow
+            title={t("Remove header")}
             accessibilityLabel={t("Remove header")}
-            icon={{ ios: "xmark", android: "close" }}
-            prominence="plain"
+            destructive
+            dimmed={disabled}
             disabled={disabled}
             onPress={() => onChange(rows.filter((_, i) => i !== index))}
           />
-        </View>
+        </SettingsGroup>
       ))}
-      <NativeActionButton
-        label={t("Add header")}
-        prominence="secondary"
-        disabled={disabled || rows.length >= MAX_HEADER_ROWS}
-        onPress={() => onChange([...rows, { name: "", value: "" }])}
-      />
-    </>
+      <SettingsGroup>
+        <SettingsRow
+          title={t("Add header")}
+          accessibilityLabel={t("Add header")}
+          tinted
+          leading={<NativeSymbol ios="plus" android="add" color={tokens.link} />}
+          disabled={disabled || rows.length >= MAX_HEADER_ROWS}
+          dimmed={disabled || rows.length >= MAX_HEADER_ROWS}
+          onPress={() => onChange([...rows, { name: "", value: "" }])}
+        />
+      </SettingsGroup>
+    </View>
   );
 }
 
 function createStyles() {
   return StyleSheet.create({
-    sectionTitle: {
-      color: native.secondaryLabel,
-      fontSize: 14,
-      marginTop: 8,
-      marginBottom: 2,
-    },
-    row: {
-      marginTop: 4,
-    },
-    input: {
-      minHeight: 48,
-      borderRadius: 12,
-      backgroundColor: native.fill,
-      color: native.label,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginTop: 4,
-      fontSize: 16,
+    section: {
+      marginTop: 28,
+      gap: 16,
     },
   });
 }
