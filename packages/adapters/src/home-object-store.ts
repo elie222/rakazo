@@ -257,8 +257,12 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    * keeps its local copy, so homes from before object storage keep working until they are
    * migrated or next saved.
    */
-  async hydrate(botId: string): Promise<void> {
+  async hydrate(botId: string, { keepLiveCache = false } = {}): Promise<void> {
     await this.withBotWrite(botId, async () => {
+      // A running computer's mounted copy can be newer than any save, so it is never replaced.
+      // A folder whose revision was forgotten is not that copy, even once something recreates it.
+      if (keepLiveCache && (await this.localRevision(botId)) && (await this.hasCache(botId)))
+        return;
       const { stored, local } = await this.loadCacheRevision(botId);
       if (!stored?.revision) return;
       // A removed cache directory leaves its marker behind; only a present copy counts.
@@ -305,6 +309,19 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     // Never republish the old upload: it may have been swept during the outage.
     const { revision } = await this.upload(botId, { base: stored.revision });
     return { stored: { ...stored, revision }, local: revision };
+  }
+
+  /**
+   * Stops trusting the revision of a cached copy that is gone, so a folder recreated later (by a
+   * boot, the Docker supervisor or a failed start) is downloaded into rather than taken for that
+   * copy. Only the marker is cleared, never files: a read in another process may be restoring
+   * the folder meanwhile, and that copy is then merely downloaded again before the next boot.
+   */
+  async forgetMissingCache(botId: string): Promise<void> {
+    await this.withBotWrite(botId, async () => {
+      if (!(await this.hasCache(botId)) && (await this.localRevision(botId)))
+        await super.writeRevision(botId, "");
+    });
   }
 
   private async hasCache(botId: string) {

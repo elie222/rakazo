@@ -188,7 +188,6 @@ export async function provisionComputer(
     }
   }
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
-  await mkdir(homePath, { recursive: true });
 
   // Re-provisioning a live computer enters booting and revokes its screen URLs.
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
@@ -347,16 +346,22 @@ export async function provisionComputer(
   if (claimed.count !== 1) throw new ComputerBusyError();
   let provisioned: ComputerRef | undefined;
   try {
-    // On a start that is not a reconnect, a computer that mounts the server's home boots on the
-    // object store's cached copy, so that copy must hold the stored revision before provision.
-    // The kind is the one provision will produce; any other computer downloads the revision
-    // only if a replacement restores it below.
-    const cache =
-      !reconnecting && deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
+    // A computer that mounts the server's home boots on the object store's cached copy, so that
+    // copy must hold the stored revision before provision. The kind is the one provision will
+    // produce; any other computer downloads the revision only if a replacement restores it below.
+    // Only a Docker computer's own reconnect may find its live copy there.
+    const cache = deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
+    // Once this start holds the claim and before anything recreates the folder, so a deleted
+    // cache comes back downloaded, never as an empty folder taken for the stored revision.
+    await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
       mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
-    if (hydrated) await cache.hydrate(existing.homeKey);
+    if (hydrated)
+      await cache.hydrate(existing.homeKey, {
+        keepLiveCache: reconnecting && existing.kind === "docker",
+      });
+    await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
     const provision = () =>
       getLogger().withContext(

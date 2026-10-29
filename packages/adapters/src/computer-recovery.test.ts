@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
@@ -10,7 +10,7 @@ import { ComputerBusyError, provisionComputer, replaceComputer } from "./compute
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
-import type { StoredHome } from "./home-object-store.js";
+import type { AgentHomeRecords, StoredHome } from "./home-object-store.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
 
@@ -84,14 +84,18 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
   return { deps, row, computer, first, root };
 }
 
-/** An object-backed home store over an in-memory bucket; `revision` is the home's stored one. */
+/**
+ * An object-backed home store over an in-memory bucket; `revision` is the home's stored one.
+ * `otherHost` is another API or worker host with the same bucket and database.
+ */
 function objectHome(root: string, revision: string | null = null) {
   const stored: StoredHome = {
     storageId: "home",
     revision,
     key: { id: "key", spaceId: "space", version: 1, key: randomBytes(32) },
   };
-  return new ObjectAgentHomeStore(path.join(root, "object-homes"), new MemoryObjectStorage(), {
+  const storage = new MemoryObjectStorage();
+  const records: AgentHomeRecords = {
     load: async () => stored,
     create: async () => stored,
     advance: async (_homeKey, _storageId, from, to) => {
@@ -101,7 +105,45 @@ function objectHome(root: string, revision: string | null = null) {
     },
     revisions: async () => new Map(),
     kinds: async () => new Map(),
+  };
+  const host = (dir: string) => new ObjectAgentHomeStore(path.join(root, dir), storage, records);
+  return Object.assign(host("object-homes"), { otherHost: () => host("other-host") });
+}
+
+/**
+ * A computer that boots or reconnects on Docker, its home in object storage shared with another
+ * host, and the files its cached home held when provision mounted it.
+ */
+async function dockerBoot({
+  stopped = false,
+  kind = "docker",
+}: {
+  stopped?: boolean;
+  kind?: "docker" | "desktop";
+} = {}) {
+  const { deps, row, root } = await fixture();
+  row.kind = kind;
+  if (stopped) Object.assign(row, { state: "stopped", providerRef: null });
+  deps.sandbox.provisionKind = async () => "docker";
+  vi.spyOn(deps.sandbox, "isRunning").mockResolvedValue(false);
+  const boot = deps.sandbox.provision.bind(deps.sandbox);
+  let booted: string[] | undefined;
+  vi.spyOn(deps.sandbox, "provision").mockImplementation(async (request, ctx) => {
+    booted = (await readdir(request.homePath).catch(() => [])).sort();
+    return { ...(await boot(request, ctx)), kind: "docker" };
   });
+  const home = objectHome(root);
+  const otherHost = home.otherHost();
+  const save = async (store: ObjectAgentHomeStore, name: string) => {
+    const src = await mkdtemp(path.join(root, "staged-"));
+    await writeFile(path.join(src, name), name);
+    await store.commit("bot", src, context);
+  };
+  const start = async () => {
+    await provisionComputer({ ...deps, home }, row.id, context);
+    return booted;
+  };
+  return { home, otherHost, save, start };
 }
 
 describe("computer recovery preserves live work", () => {
@@ -118,7 +160,7 @@ describe("computer recovery preserves live work", () => {
 
     await provisionComputer({ ...deps, home }, row.id, context);
 
-    expect(hydrate).toHaveBeenCalledWith("bot");
+    expect(hydrate).toHaveBeenCalledWith("bot", { keepLiveCache: false });
     expect(hydrate.mock.invocationCallOrder[0]).toBeLessThan(
       provision.mock.invocationCallOrder[0]!,
     );
@@ -137,7 +179,7 @@ describe("computer recovery preserves live work", () => {
 
     await provisionComputer({ ...deps, home }, row.id, context);
 
-    expect(hydrate).toHaveBeenCalledWith("bot");
+    expect(hydrate).toHaveBeenCalledWith("bot", { keepLiveCache: false });
     expect(hydrate.mock.invocationCallOrder[0]).toBeLessThan(
       provision.mock.invocationCallOrder[0]!,
     );
@@ -151,12 +193,17 @@ describe("computer recovery preserves live work", () => {
     // Host access is turned off between choosing the kind and provisioning.
     deps.sandbox.provisionKind = async () => "desktop";
     const provisionFake = deps.sandbox.provision.bind(deps.sandbox);
-    vi.spyOn(deps.sandbox, "provision").mockImplementation(async (request, ctx) => ({
-      ...(await provisionFake(request, ctx)),
-      kind: "docker",
-    }));
+    let mounted: string[] | undefined;
+    vi.spyOn(deps.sandbox, "provision").mockImplementation(async (request, ctx) => {
+      // Like the Docker supervisor, which creates a missing home folder to mount it.
+      await mkdir(request.homePath, { recursive: true });
+      mounted = await readdir(request.homePath);
+      return { ...(await provisionFake(request, ctx)), kind: "docker" };
+    });
     const destroy = vi.spyOn(deps.sandbox, "destroy");
     const home = objectHome(root);
+    await home.writeFile("bot", "notes.txt", "saved", context);
+    await rm(home.pathFor("bot"), { recursive: true });
     const hydrate = vi.spyOn(home, "hydrate");
 
     await expect(provisionComputer({ ...deps, home }, row.id, context)).rejects.toThrow(
@@ -169,7 +216,51 @@ describe("computer recovery preserves live work", () => {
     deps.sandbox.provisionKind = async () => "docker";
     await provisionComputer({ ...deps, home }, row.id, context);
     expect(hydrate).toHaveBeenCalledOnce();
+    expect(mounted).toEqual(["notes.txt"]);
     expect(row).toMatchObject({ state: "running", kind: "docker" });
+  });
+
+  it("forgets a missing cache only once its start holds the claim", async () => {
+    const { deps, row, root, computer } = await fixture();
+    row.state = "stopped";
+    row.providerRef = null;
+    const home = objectHome(root);
+    // Another process on the same data directory may be restoring this home for the start
+    // that claimed it, so a start that lost the claim must not touch the cache.
+    const forget = vi.spyOn(home, "forgetMissingCache");
+    computer.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(provisionComputer({ ...deps, home }, row.id, context)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    expect(forget).not.toHaveBeenCalled();
+  });
+
+  it("downloads when a Docker computer reconnects after a failed reconnect recreated its deleted cache", async () => {
+    const { deps, row, root } = await fixture();
+    row.kind = "docker";
+    vi.spyOn(deps.sandbox, "isRunning").mockResolvedValue(false);
+    // Host access is on for the first reconnect, which fails after the folder is created.
+    deps.sandbox.provisionKind = async () => "desktop";
+    const provisionFake = deps.sandbox.provision.bind(deps.sandbox);
+    let mounted: string[] | undefined;
+    vi.spyOn(deps.sandbox, "provision")
+      .mockRejectedValueOnce(new Error("Local computer unavailable"))
+      .mockImplementation(async (request, ctx) => {
+        mounted = await readdir(request.homePath);
+        return { ...(await provisionFake(request, ctx)), kind: "docker" };
+      });
+    const home = objectHome(root);
+    await home.writeFile("bot", "notes.txt", "saved", context);
+    await rm(home.pathFor("bot"), { recursive: true });
+
+    await expect(provisionComputer({ ...deps, home }, row.id, context)).rejects.toThrow(
+      "Local computer unavailable",
+    );
+    expect(row).toMatchObject({ state: "running", kind: "docker" });
+    deps.sandbox.provisionKind = async () => "docker";
+    await provisionComputer({ ...deps, home }, row.id, context);
+    expect(mounted).toEqual(["notes.txt"]);
   });
 
   it("stops a resumed computer that mounts a home it chose not to download", async () => {
@@ -260,6 +351,71 @@ describe("computer recovery preserves live work", () => {
     expect(
       new TextDecoder().decode(await deps.sandbox.readFile(replaced, "notes.txt", context)),
     ).toBe("saved");
+  });
+
+  it("restores the saved home when a computer that does not mount it starts after its cache was deleted", async () => {
+    const { deps, row, root, first } = await fixture();
+    await deps.sandbox.destroy(first, context);
+    row.state = "stopped";
+    row.providerRef = null;
+    const home = objectHome(root);
+    await home.writeFile("bot", "notes.txt", "saved", context);
+    await rm(home.pathFor("bot"), { recursive: true });
+
+    const replaced = await provisionComputer({ ...deps, home }, row.id, context);
+
+    expect(
+      new TextDecoder().decode(await deps.sandbox.readFile(replaced, "notes.txt", context)),
+    ).toBe("saved");
+  });
+
+  it.each([
+    ["starts", true],
+    ["reconnects", false],
+  ])(
+    "downloads the saved home when a Docker computer %s after its cache was deleted",
+    async (_, stopped) => {
+      const { home, save, start } = await dockerBoot({ stopped });
+      await save(home, "saved.txt");
+      await home.hydrate("bot");
+      await rm(home.pathFor("bot"), { recursive: true });
+
+      expect(await start()).toEqual(["saved.txt"]);
+    },
+  );
+
+  it("downloads the saved home when a desktop computer reconnects on Docker", async () => {
+    const { home, otherHost, save, start } = await dockerBoot({ kind: "desktop" });
+    await save(home, "saved.txt");
+    await home.hydrate("bot");
+    await save(otherHost, "elsewhere.txt");
+
+    expect(await start()).toEqual(["elsewhere.txt"]);
+  });
+
+  it("downloads a newer saved home over the cache when a stopped Docker computer starts", async () => {
+    const { home, otherHost, save, start } = await dockerBoot({ stopped: true });
+    await save(home, "saved.txt");
+    await home.hydrate("bot");
+    await writeFile(path.join(home.pathFor("bot"), "live.txt"), "left behind");
+    await save(otherHost, "elsewhere.txt");
+
+    expect(await start()).toEqual(["elsewhere.txt"]);
+  });
+
+  it.each([
+    ["downloaded", false],
+    ["saved by the computer", true],
+  ])("keeps the live cache of a Docker computer reconnecting to itself, %s", async (_, saved) => {
+    const { home, otherHost, save, start } = await dockerBoot();
+    await save(home, "saved.txt");
+    await home.hydrate("bot");
+    // A save keeps its proposal as the cache's revision.
+    if (saved) await home.revise("bot");
+    await writeFile(path.join(home.pathFor("bot"), "live.txt"), "unsaved work");
+    await save(otherHost, "elsewhere.txt");
+
+    expect(await start()).toEqual(["live.txt", "saved.txt"]);
   });
 
   it("blocks competing maintenance and boots while an update owns the computer", async () => {

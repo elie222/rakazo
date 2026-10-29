@@ -273,6 +273,32 @@ describe("ObjectAgentHomeStore", () => {
     expect([...storage.objects.keys()]).toEqual([
       `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`,
     ]);
+
+    // A reconnecting computer's live cache is kept only while it is there.
+    await store.hydrate("bot-1", { keepLiveCache: true });
+    expect(await readFile(path.join(store.pathFor("bot-1"), "a.txt"), "utf8")).toBe("stored");
+  });
+
+  it("forgets a missing cache without deleting what a concurrent read restores", async () => {
+    const { root, storage, records, store } = await setup();
+    await store.commit("bot-1", await staged({ "saved.txt": "saved" }), context);
+    await store.hydrate("bot-1");
+    await rm(store.pathFor("bot-1"), { recursive: true });
+    // The API and the worker share the data directory: a files read in one restores the folder
+    // while the starting computer, in the other, is between seeing it missing and forgetting it.
+    const api = new ObjectAgentHomeStore(root, storage, records);
+    class Worker extends ObjectAgentHomeStore {
+      protected override async localRevision(botId: string) {
+        await api.readFile(botId, "saved.txt", context);
+        return super.localRevision(botId);
+      }
+    }
+
+    await new Worker(root, storage, records).forgetMissingCache("bot-1");
+
+    expect(await readdir(store.pathFor("bot-1"))).toEqual(["saved.txt"]);
+    // Only the revision is forgotten, so the computer's start downloads again before it boots.
+    expect(await readFile(path.join(root, "home-revisions", "bot-1.txt"), "utf8")).toBe("");
   });
 
   it("does not let a save that started before a newer one replace it", async () => {
