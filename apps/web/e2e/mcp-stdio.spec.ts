@@ -150,6 +150,9 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await expect(page.getByText("Invoices", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toHaveCount(0);
+  const advanced = page.getByRole("button", { name: "Advanced", exact: true });
+  await expect(advanced).toHaveAttribute("aria-expanded", "false");
+  await advanced.click();
   await expect(names).toHaveCount(1);
   await expect(names.nth(0)).toHaveValue("");
   await expect(values.nth(0)).toHaveValue("");
