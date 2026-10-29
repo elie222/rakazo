@@ -372,11 +372,17 @@ export async function gateToolCall(
         })
       ).flatMap((effect) =>
         effect.result == null
-          ? [boundDirectApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL)?.args ?? effect.request]
+          ? [
+              boundDirectApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL)?.args ??
+                effect.request,
+            ]
           : [],
       )
     : [];
-  if (applied && repeatsDeniedAction({ toolName: replayEffectToolName, args, denied: deniedEarlier })) {
+  if (
+    applied &&
+    repeatsDeniedAction({ toolName: replayEffectToolName, args, denied: deniedEarlier })
+  ) {
     await deps.prisma.externalEffect.updateMany({
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
