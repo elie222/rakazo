@@ -5,9 +5,18 @@ vi.mock("./fold-regions", () => ({ useFoldRegions: () => [] }));
 vi.mock("react-native", () => ({ useWindowDimensions: () => ({ width: 0, height: 0 }) }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 
-const { closesSplitPane, inboxPaneWidth, splitsWindow } = await import("./split-view");
+const { closesSplitPane, inboxPaneWidth, keepsInboxBesideRoute, splitsWindow } = await import(
+  "./split-view"
+);
 
 describe("split view", () => {
+  it("keeps the computer preview beside the inbox while immersive routes use the window", () => {
+    expect(keepsInboxBesideRoute("/computer")).toBe(true);
+    expect(keepsInboxBesideRoute("/thread")).toBe(true);
+    expect(keepsInboxBesideRoute("/image")).toBe(false);
+    expect(keepsInboxBesideRoute("/sign-in")).toBe(false);
+    expect(keepsInboxBesideRoute("/share")).toBe(false);
+  });
   it.each([
     "/thread",
     "/group-thread",

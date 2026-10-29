@@ -76,6 +76,7 @@ import {
   chooseInboxWidth,
   closesSplitPane,
   inboxPaneWidth,
+  keepsInboxBesideRoute,
   loadInboxWidth,
   setInboxHidden,
   useSplitView,
@@ -105,8 +106,6 @@ registerSessionDiskCache(() => void clearAppBadge());
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const DIVIDER_GRAB_WIDTH = 24;
-// Screens that take the whole window even when it is wide enough for the chat list beside them.
-const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer", "/share"]);
 
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
@@ -125,7 +124,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (home) setInboxHidden(false);
   }, [home]);
-  const showsInbox = split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname);
+  const showsInbox = split && (home || inboxShown) && keepsInboxBesideRoute(pathname);
   // Dragging resizes the list natively; the width is kept when the finger lifts.
   const paneWidth = useSharedValue(inboxWidth);
   const dragStart = useRef(inboxWidth);

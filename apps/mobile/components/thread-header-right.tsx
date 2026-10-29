@@ -21,6 +21,7 @@ export function threadHeaderRight({
   rowStyle,
   onGroupSettings,
   onBotActions,
+  onComputer,
   menuActions,
   computerLabel,
 }: {
@@ -32,6 +33,7 @@ export function threadHeaderRight({
   rowStyle?: object;
   onGroupSettings: () => void;
   onBotActions: () => void;
+  onComputer?: () => void;
   menuActions: readonly ThreadHeaderAction[];
   /** The menu action that gets the computer icon. */
   computerLabel?: string;
@@ -40,6 +42,18 @@ export function threadHeaderRight({
     ...(Platform.OS === "ios" && !readOnly && (!inGroup || iosAtLeast(26))
       ? {
           unstable_headerRightItems: () => [
+            ...(!inGroup && onComputer
+              ? [
+                  {
+                    type: "button" as const,
+                    label: t("Open computer"),
+                    accessibilityLabel: t("Open computer"),
+                    icon: { type: "sfSymbol" as const, name: "desktopcomputer" as const },
+                    disabled: !hasBot,
+                    onPress: onComputer,
+                  },
+                ]
+              : []),
             inGroup
               ? {
                   type: "button" as const,
@@ -81,6 +95,22 @@ export function threadHeaderRight({
         </Pressable>
       ) : (
         <View style={rowStyle}>
+          {!readOnly && onComputer ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Open computer")}
+              disabled={!hasBot}
+              hitSlop={8}
+              onPress={onComputer}
+            >
+              <NativeSymbol
+                ios="desktopcomputer"
+                android="desktop-outline"
+                size={21}
+                color={color}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("Bot actions")}
