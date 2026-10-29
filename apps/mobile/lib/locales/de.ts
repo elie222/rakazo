@@ -60,7 +60,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Next: "Weiter",
   "Ex: Project Falcon": "Z. B. Projekt Falcon",
   "Search bots": "Bots suchen",
-  "Close Chat": "Chat schließen",
   "{count} messages with {peer}": "{count} Nachrichten mit {peer}",
   "About {label}": "Über {label}",
   "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",

@@ -1,5 +1,4 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
-  "Close Chat": "關閉聊天",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",

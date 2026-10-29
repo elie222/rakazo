@@ -55,7 +55,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Next: "下一步",
   "Ex: Project Falcon": "例如：猎鹰计划",
   "Search bots": "搜索 Bot",
-  "Close Chat": "关闭聊天",
   "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
   "About {label}": "关于{label}",
   "Manage the bots it creates": "管理它创建的机器人",

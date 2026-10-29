@@ -137,9 +137,9 @@ tags:
 - tapOn:
     id: "peer-receipt-line"
 - assertVisible: "Draft the fixture launch note."
-- assertVisible: "Close Chat"
+- assertVisible: "Close"
 - takeScreenshot: "15f-thread-peer-chat"
-- tapOn: "Close Chat"
+- tapOn: "Close"
 - tapOn: "Message Researcher"
 - inputText: "Keyboard visibility check"
 - assertVisible: "Keyboard visibility check"

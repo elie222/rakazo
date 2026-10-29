@@ -579,6 +579,5 @@
   "Credentials are encrypted and never sent to the model.": "인증 정보는 암호화되며 모델에 전송되지 않습니다.",
   "Rename section": "섹션 이름 바꾸기",
   "Could not rename section": "섹션 이름을 바꿀 수 없습니다",
-  "Close Chat": "채팅 닫기",
   "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, other {{peer}님과 메시지 #개}}"
 }

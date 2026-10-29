@@ -57,7 +57,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Next: "Далее",
   "Ex: Project Falcon": "Например: проект «Сокол»",
   "Search bots": "Поиск ботов",
-  "Close Chat": "Закрыть чат",
   "{count} messages with {peer}": "{count} сообщения с {peer}",
   "About {label}": "О настройке «{label}»",
   "Manage the bots it creates": "Управлять созданными им ботами",

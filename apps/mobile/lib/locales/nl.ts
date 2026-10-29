@@ -57,7 +57,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Next: "Volgende",
   "Ex: Project Falcon": "Bijv. Project Falcon",
   "Search bots": "Bots zoeken",
-  "Close Chat": "Chat sluiten",
   "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
   "Manage the bots it creates": "De bots beheren die deze bot maakt",

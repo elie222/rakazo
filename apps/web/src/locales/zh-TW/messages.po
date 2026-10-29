@@ -1347,6 +1347,7 @@ msgstr "正在清空…"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/WindowChrome.tsx
@@ -1356,10 +1357,6 @@ msgstr "關閉"
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "關閉圖表"
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "Close Chat"
-msgstr "關閉聊天"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Close computer"

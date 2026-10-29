@@ -93,7 +93,17 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   await expect(view).toBeVisible();
   await expect(view.getByRole("heading", { name: /Chief\s*Researcher/ })).toBeVisible();
   await expect(transcript.getByTestId("peer-replies-toggle")).toHaveCount(0);
-  await expect(view.getByRole("button", { name: "Close Chat" })).toHaveCount(1);
+  const close = view.getByRole("button", { name: "Close", exact: true });
+  await expect(close).toHaveCount(1);
+  await expect(close.locator("svg")).toBeVisible();
+  await expect(close).toHaveText("");
+  const closeBox = await close.boundingBox();
+  const titleBox = await view.getByRole("heading").boundingBox();
+  expect(closeBox).not.toBeNull();
+  expect(titleBox).not.toBeNull();
+  expect(closeBox!.x).toBeGreaterThanOrEqual(titleBox!.x + titleBox!.width);
+  expect(closeBox!.y).toBeLessThan(24);
+  expect(closeBox!.x + closeBox!.width).toBeGreaterThan(350);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -109,7 +119,7 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
     .toBe(true);
   await captureScreenshot(page, testInfo, "peer-view-only");
 
-  await view.getByRole("button", { name: "Close Chat" }).click();
+  await view.getByRole("button", { name: "Close" }).click();
   await expect(view).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.evaluate(() => {
@@ -222,7 +232,7 @@ test(
     await expect(view).toBeVisible();
     await expect(view.getByText(foldedReplyText).first()).toBeVisible();
     await captureScreenshot(page, testInfo, "peer-line-read-only-chat");
-    await view.getByRole("button", { name: "Close Chat" }).click();
+    await view.getByRole("button", { name: "Close" }).click();
 
     // A search hit on a folded reply expands its marker and scrolls to it.
     await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });

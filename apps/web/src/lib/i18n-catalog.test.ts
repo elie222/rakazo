@@ -237,7 +237,7 @@ describe("lingui catalogs", () => {
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
       );
-      for (const id of [message, "Close Chat"]) {
+      for (const id of [message, "Close"]) {
         const entry = catalog
           .split("\n\n")
           .find((block) => block.includes(`msgid ${JSON.stringify(id)}\n`));

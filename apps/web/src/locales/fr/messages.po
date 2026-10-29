@@ -1346,6 +1346,7 @@ msgstr "Effacement en cours…"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/WindowChrome.tsx
@@ -1355,10 +1356,6 @@ msgstr "Fermer"
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "Fermer le graphique"
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "Close Chat"
-msgstr "Fermer le chat"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Close computer"

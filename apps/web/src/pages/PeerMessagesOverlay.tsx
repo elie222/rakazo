@@ -12,6 +12,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { desktopBridge } from "../lib/desktop";
@@ -116,10 +117,10 @@ export function PeerMessagesOverlay({
             </DialogTitle>
           </div>
           <DialogClose
-            aria-label={t`Close Chat`}
-            render={<Button variant="ghost" size="sm" className="app-no-drag" />}
+            aria-label={t`Close`}
+            render={<Button variant="ghost" size="icon-sm" className="app-no-drag" />}
           >
-            <Trans>Close Chat</Trans>
+            <XIcon />
           </DialogClose>
         </div>
 

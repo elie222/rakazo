@@ -13,10 +13,10 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { glassHeaderOptions } from "../components/glass-title";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { NativeActionButton } from "../components/native-action-button";
+import { SheetCloseButton } from "../components/sheet-close-button";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { openMobileArtifact } from "../lib/artifact-open";
@@ -29,7 +29,6 @@ import { errorText } from "../lib/user-error";
 /** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const sideInsets = useSideInsets();
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
@@ -85,6 +84,8 @@ export default function PeerChat() {
       <Stack.Screen
         options={{
           ...glassHeaderOptions(""),
+          headerBackVisible: false,
+          headerLeft: () => <SheetCloseButton onPress={() => router.back()} />,
           headerTitle: () => (
             <View style={styles.pill}>
               <Text
@@ -199,13 +200,6 @@ export default function PeerChat() {
           })
         )}
       </ScrollView>
-      <View style={[styles.close, { paddingBottom: Math.max(16, insets.bottom) }]}>
-        <NativeActionButton
-          label={t("Close Chat")}
-          onPress={() => router.back()}
-          prominence="quiet"
-        />
-      </View>
     </View>
   );
 }
@@ -224,7 +218,6 @@ function createStyles() {
       paddingVertical: 8,
     },
     name: { ...typeScale.footnote, fontWeight: "600", flexShrink: 1 },
-    close: { alignItems: "center", paddingTop: 16 },
     screen: { flex: 1, backgroundColor: native.page },
     content: { flexGrow: 1, paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },

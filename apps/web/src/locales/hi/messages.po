@@ -1346,6 +1346,7 @@ msgstr "साफ़ किया जा रहा है…"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/WindowChrome.tsx
@@ -1355,10 +1356,6 @@ msgstr "बंद करें"
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
 msgstr "चार्ट बंद करें"
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "Close Chat"
-msgstr "चैट बंद करें"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Close computer"
