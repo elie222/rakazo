@@ -303,6 +303,31 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("check").disabled).toBe(false);
   });
 
+  it("shows saved headers and saves them with the existing server", async () => {
+    const headers = { "CF-Access-Client-Id": "id.access", "CF-Access-Client-Secret": "secret" };
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example", headers });
+    expect(element<HTMLDetailsElement>("server-headers-section").open).toBe(true);
+    expect(element<HTMLTextAreaElement>("server-headers").value).toBe(
+      "CF-Access-Client-Id: id.access\nCF-Access-Client-Secret: secret",
+    );
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers }]);
+  });
+
+  it("refuses a header line without a name before saving", async () => {
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example" });
+    element<HTMLTextAreaElement>("server-headers").value = ": value";
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([]);
+    expect(element("status").textContent).toBe("Invalid custom headers");
+  });
+
   it("renders a current start and follows it until it saves the ready stack", async () => {
     const ui = await boot(null);
     selectMode("new");

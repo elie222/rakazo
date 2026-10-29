@@ -207,11 +207,13 @@ export async function screenPageStatus(
   url: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  headers: Record<string, string> = {},
 ): Promise<number | null> {
   try {
     const response = await fetchImpl(url, {
       cache: "no-store",
       credentials: "omit",
+      headers,
       redirect: "manual",
       signal,
     });
@@ -241,6 +243,8 @@ export function isProxiedScreenPage(url: string): boolean {
 /** Whether a WebView message came from the screen's own page, not a page it navigated to. */
 export function fromScreenPage(pageUrl: string | undefined, screenUrl: string): boolean {
   try {
+    // The proxy sandboxes its screen page, and a sandboxed page reports the opaque origin "null".
+    if (pageUrl === "null") return isProxiedScreenPage(screenUrl);
     return Boolean(pageUrl) && new URL(pageUrl!).origin === new URL(screenUrl).origin;
   } catch {
     return false;

@@ -99,6 +99,8 @@ export type DesktopInstanceMode = "new" | "existing";
 export interface DesktopSetup {
   mode: DesktopInstanceMode;
   serverUrl: string;
+  /** Sent with every request to an existing server, such as an access proxy's credentials. */
+  headers?: Record<string, string>;
 }
 
 export interface DesktopSetupState {
@@ -163,7 +165,7 @@ export interface RakazoSetup {
   /** Used only to reserve space for native window controls in the local setup UI. */
   platform: string;
   state: () => Promise<DesktopSetupState>;
-  test: (url: string) => Promise<DesktopReachability>;
+  test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
   /** Opens one of the Docker install pages in the system browser. */

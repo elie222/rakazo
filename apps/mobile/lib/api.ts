@@ -75,6 +75,12 @@ import {
 import { reportMobileError } from "./monitoring";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import {
+  loadServerHeaders,
+  saveServerHeaders,
+  serverHeaders,
+  serverHeadersForUrl,
+} from "./server-headers";
+import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
@@ -174,6 +180,7 @@ export async function loadApiBase() {
   } catch {
     // SecureStore is unavailable in some test / web hosts.
   }
+  await loadServerHeaders(apiBase);
   setCachedApiBase(apiBase);
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
@@ -424,10 +431,13 @@ async function recoverSpaceRollback(apiBase: string) {
   await clearStoredValue(SPACE_KEY);
 }
 
-export async function saveApiBase(input: string): Promise<EndpointResult> {
+export async function saveApiBase(
+  input: string,
+  headers: Record<string, string> = {},
+): Promise<EndpointResult> {
   const parsed = normalizeApiBase(input);
   if (!parsed.ok) return parsed;
-  if (parsed.url === defaultApiBase()) return resetApiBase();
+  if (parsed.url === defaultApiBase() && Object.keys(headers).length === 0) return resetApiBase();
   const previous = currentApiBase();
   let cleared:
     | {
@@ -439,6 +449,10 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     const result = await clearCredentialsForEndpointChange();
     if (!result.ok) return result.result;
     cleared = result;
+  }
+  if (!(await saveServerHeaders(parsed.url, headers))) {
+    if (cleared) await restoreCredentials(cleared.previousToken, cleared.previousSpace);
+    return { ok: false, error: t("Could not save the server URL") };
   }
   try {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
@@ -475,6 +489,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
+  await saveServerHeaders(url, {});
   setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return { ok: true, url };
@@ -495,6 +510,7 @@ export async function authHeaders(
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...serverHeaders(currentApiBase()),
     ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
@@ -698,6 +714,18 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
   await maybeResume();
 }
 
+/** Adds the configured server headers to a request for that server, keeping the caller's own. */
+function withServerHeaders(
+  input: Parameters<typeof fetch>[0],
+  init: HeadersInit | undefined,
+): HeadersInit | undefined {
+  const extra = Object.entries(serverHeadersForUrl(String(input), currentApiBase()));
+  if (extra.length === 0) return init;
+  const headers = new Headers(init);
+  for (const [name, value] of extra) if (!headers.has(name)) headers.set(name, value);
+  return headers;
+}
+
 export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
@@ -707,7 +735,11 @@ export async function fetchMobileJson<T>(
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetch(input, { ...init, signal: controller.signal }),
+      fetch(input, {
+        ...init,
+        headers: withServerHeaders(input, init.headers),
+        signal: controller.signal,
+      }),
       controller.signal,
       "Request timed out",
     ).catch((error: unknown) => {

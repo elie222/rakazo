@@ -213,7 +213,10 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
               "screen.retries": retries,
             });
           }
-          const responseHeaders = safeScreenProxyResponseHeaders(incoming.headers);
+          const responseHeaders = safeScreenProxyResponseHeaders(
+            incoming.headers,
+            req.headers.origin,
+          );
           if (shouldInjectNovncStorageShim(responseHeaders, target.path)) {
             const declaredLength = Number(incoming.headers["content-length"] ?? 0);
             if (Number.isFinite(declaredLength) && declaredLength > MAX_NOVNC_HTML_BYTES) {

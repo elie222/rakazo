@@ -4,6 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
 import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
+import { parseServerHeaders } from "@rakazo/contracts";
 import type { Session } from "electron";
 import {
   app,
@@ -65,6 +66,7 @@ import {
   readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
+  serverHeadersFor,
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
@@ -145,7 +147,15 @@ if (PERFORMANCE_USER_DATA) {
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
 // Includes fresh partitions and popup-created sessions, before they load remote content.
-app.on("session-created", (value) => installSessionPermissions(value, permissionTarget));
+app.on("session-created", (value) => {
+  installSessionPermissions(value, permissionTarget);
+  // The selected server's headers ride on every request to it, page loads and websockets alike.
+  value.webRequest.onBeforeSendHeaders((details, callback) =>
+    callback({
+      requestHeaders: { ...serverHeadersFor(details.url, currentSetup), ...details.requestHeaders },
+    }),
+  );
+});
 
 const passkeyRpIds = associatedPasskeyRpIds({
   platform: process.platform,
@@ -784,7 +794,11 @@ function fromSetupWindow(event: Electron.IpcMainInvokeEvent) {
   );
 }
 
-async function probeServer(rawUrl: string, signal?: AbortSignal): Promise<DesktopReachability> {
+async function probeServer(
+  rawUrl: string,
+  signal?: AbortSignal,
+  headers: Record<string, string> = {},
+): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
   if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
@@ -792,7 +806,7 @@ async function probeServer(rawUrl: string, signal?: AbortSignal): Promise<Deskto
   try {
     const response = await net.fetch(`${url}/rpc/health`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({ json: {} }),
       cache: "no-store",
       credentials: "omit",
@@ -1388,10 +1402,12 @@ app.whenReady().then(async () => {
     };
   });
 
-  ipcMain.handle("desktop.setup.test", async (event, url: unknown) => {
+  ipcMain.handle("desktop.setup.test", async (event, url: unknown, headers: unknown) => {
     if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
     if (typeof url !== "string") return { ok: false, error: "Enter a server address." };
-    return probeServer(url);
+    const parsedHeaders = parseServerHeaders(headers ?? {});
+    if (parsedHeaders === null) return { ok: false, error: "Invalid custom headers" };
+    return probeServer(url, undefined, parsedHeaders);
   });
 
   ipcMain.handle("desktop.setup.save", async (event, payload: unknown) => {
@@ -1425,7 +1441,7 @@ app.whenReady().then(async () => {
         openSetup = { mode: "new", serverUrl: managedUrl };
       }
 
-      const reachability = await probeServer(openSetup.serverUrl);
+      const reachability = await probeServer(openSetup.serverUrl, undefined, openSetup.headers);
       if (!reachability.ok) return { ok: false, error: reachability.error };
 
       // Open before persisting so a failed renderer load keeps the last working setup.
