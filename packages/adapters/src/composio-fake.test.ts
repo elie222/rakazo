@@ -1,5 +1,7 @@
 import type { ConnectedAccountStatus } from "@composio/core";
 import type { AdapterContext, ConnectorEvent } from "@rakazo/adapter-kit";
+import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
+import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { ComposioConnector, createConnectorStack } from "./composio-connector.js";
 import { FakeComposioClient } from "./composio-fake.js";
@@ -69,6 +71,27 @@ describe("ComposioConnector over the fake Composio client", () => {
     await expect(connector.catalog(context(), "git")).resolves.toEqual([
       expect.objectContaining({ slug: "GITHUB", name: "GitHub", connected: false }),
     ]);
+  });
+
+  it("fails connect with a typed error when Composio has no managed auth for the toolkit", async () => {
+    const { fake, connector } = setup();
+    const create = fake.create.bind(fake);
+    fake.create = async (userId, config) => ({
+      ...(await create(userId, config)),
+      authorize: async () => {
+        throw new Error(
+          '400 {"error":{"message":"Composio does not manage auth for toolkit twitter.","code":4308,"slug":"ToolRouterV2_NoManagedAuth","status":400}}',
+        );
+      },
+    });
+
+    const failure = await connector
+      .begin({ provider: "TWITTER", redirectUrl: "http://example.test/callback" }, context())
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ConnectorAuthUnavailableError);
+    expect(failure).toMatchObject({ code: CONNECTOR_AUTH_UNAVAILABLE });
+    expect((failure as Error).message).not.toContain("ToolRouterV2_NoManagedAuth");
   });
 
   it("isolates connections by user and deletes the account on revoke", async () => {

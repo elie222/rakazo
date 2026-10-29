@@ -73,6 +73,9 @@ const JSON_SECRET_FIELD =
   /"(password|passwd|secret|token|authorization|apikey|api_key|accesstoken|refreshtoken|email|cookie)"\s*:\s*"(?:\\.|[^"\\])*"/gi;
 const BARE_SECRET =
   /\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:ak_|ck_)[A-Za-z0-9]+)\b/g;
+// Profile paths leak the account name; leave later drive prefixes available for independent redaction.
+const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
+const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
 
 export function redactSensitiveText(text: string): string {
   return text
@@ -80,7 +83,9 @@ export function redactSensitiveText(text: string): string {
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)
-    .replace(BARE_SECRET, REDACTED);
+    .replace(BARE_SECRET, REDACTED)
+    .replace(WINDOWS_PROFILE, "[user]")
+    .replace(POSIX_PROFILE, "/[user]");
 }
 
 function shouldRedactKey(key: string, value: unknown): boolean {

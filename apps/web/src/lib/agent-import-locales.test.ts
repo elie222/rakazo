@@ -6,20 +6,12 @@ import { UI_LOCALES } from "./ui-locale";
 /** Agent import's own files; a string used only by these belongs to import. */
 const IMPORT_FILES = [
   "src/lib/agent-import-errors.ts",
-  "src/pages/onboarding-import.tsx",
   "src/pages/shell/agent-import.tsx",
-  "src/pages/shell/agent-import-undo.tsx",
   "src/pages/shell/import-setup-card.tsx",
   "src/pages/shell/import-status.ts",
 ];
 /** Import strings that live in shared files. */
-const SHARED_IMPORT_STRINGS = [
-  "Attach",
-  "Import",
-  "Import an agent",
-  "Import this agent as a bot?",
-  "Your first bot already existed, so the agent was not imported.",
-];
+const SHARED_IMPORT_STRINGS = ["Import an agent"];
 
 const localesDir = new URL("../locales/", import.meta.url);
 const catalog = (locale: string) =>
@@ -59,7 +51,7 @@ describe("agent import translations", () => {
           SHARED_IMPORT_STRINGS.includes(entry.id),
       )
       .map((entry) => entry.id);
-    expect(ids.length).toBeGreaterThan(70);
+    expect(ids.length).toBeGreaterThan(50);
     for (const locale of UI_LOCALES.filter((item) => item !== "en")) {
       const texts = new Map(catalog(locale).map((entry) => [entry.id, entry.text]));
       const blank = ids.filter((id) => !texts.get(id));

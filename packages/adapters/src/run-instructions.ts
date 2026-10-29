@@ -340,7 +340,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot updates this bot's own name (chat header / list label), description, avatar, and notifyOnFinish. Your description is the one-line public summary teammates see; your instructions are private and say how you do your job. When you have no instructions yet and your job becomes clear, set them with update_bot; after that, propose changes with propose_instructions_update. When the user asks you to rename yourself, change your description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -415,22 +415,10 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
     : { ...context, includeSemanticRecall: true };
 }
 
-/** Name, title, and description, skipping any part that is blank. */
-function publicProfile(
-  name: string,
-  title: string | null | undefined,
-  description: string,
-): string {
-  const trimmedTitle = title?.trim() ?? "";
-  const heading = trimmedTitle ? `${name}: ${trimmedTitle}` : name;
-  return description ? `${heading}\n${description}` : heading;
-}
-
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
   bot: {
     name: string;
-    title?: string | null;
     description?: string | null;
     instructions?: string | null;
   },
@@ -440,11 +428,9 @@ export function runIdentityInstruction(
   const rawInstructions = bot.instructions ?? "";
   const instructions = rawInstructions.trim();
   if (trigger !== "created") {
-    const identity = publicProfile(bot.name, bot.title, description);
+    const identity = description ? `${bot.name}\n${description}` : bot.name;
     // Older bots saved one text as both fields; do not repeat it.
-    if (!instructions || instructions === description) {
-      return instructions ? rawInstructions : identity;
-    }
+    if (!instructions || instructions === description) return identity;
     return [
       identity,
       "Teammates see only the profile above. These instructions are private to you:",
@@ -453,7 +439,6 @@ export function runIdentityInstruction(
   }
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
     `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");

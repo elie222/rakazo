@@ -9,25 +9,24 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 
+type Scope = { spaceId?: string; userId?: string; OR?: Array<{ spaceId?: string }> };
+/** The owner's rows here: added in this space (no fixture is available beyond one). */
+function inScope(row: Record<string, unknown>, where: Scope): boolean {
+  if (where.userId && row.userId !== where.userId) return false;
+  if (where.spaceId && row.spaceId !== where.spaceId) return false;
+  if (where.OR && !where.OR.some((branch) => branch.spaceId === row.spaceId)) return false;
+  return true;
+}
+
 function makePrisma(rows: Array<Record<string, unknown>> = []) {
   const store = [...rows];
   return {
     agentSkill: {
-      findMany: vi.fn(async ({ where }: { where?: Record<string, string> } = {}) =>
-        store
-          .filter((row) => {
-            if (!where) return true;
-            if (where.spaceId && row.spaceId !== where.spaceId) return false;
-            if (where.userId && row.userId !== where.userId) return false;
-            return true;
-          })
-          .map((row) => ({ ...row })),
+      findMany: vi.fn(async ({ where }: { where?: Scope } = {}) =>
+        store.filter((row) => !where || inScope(row, where)).map((row) => ({ ...row })),
       ),
-      findFirst: vi.fn(async ({ where }: { where: Record<string, string> }) => {
-        const row = store.find(
-          (item) =>
-            item.id === where.id && item.spaceId === where.spaceId && item.userId === where.userId,
-        );
+      findFirst: vi.fn(async ({ where }: { where: Scope & { id: string } }) => {
+        const row = store.find((item) => item.id === where.id && inScope(item, where));
         return row ? { files: row.files ?? null } : null;
       }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {

@@ -24,6 +24,11 @@ const seededPages = {
     html: `<!doctype html><html><head><title>Signup</title></head><body>
       <label>Email <input id="email" name="email" /></label>
       <button type="submit">Continue</button>
+      <span id="first" hidden>  Share </span><span id="second"> with   team </span><span id="empty"> </span>
+      <button aria-labelledby=" second missing first " aria-label="Other"></button>
+      <button aria-labelledby=" missing " aria-label="Fallback"></button>
+      <button aria-labelledby="   " aria-label="Whitespace fallback"></button>
+      <button aria-labelledby="empty" aria-label="Empty fallback"></button>
     </body></html>`,
   },
 };
@@ -53,6 +58,14 @@ async function assertBrowserConformance(provider: BrowserProvider) {
   const button = snap.elements.find((el) => el.name.toLowerCase().includes("continue"));
   expect(email?.ref).toBeTruthy();
   expect(button?.ref).toBeTruthy();
+  expect(snap.elements.map((el) => el.name)).toEqual(
+    expect.arrayContaining([
+      "with team Share",
+      "Fallback",
+      "Whitespace fallback",
+      "Empty fallback",
+    ]),
+  );
 
   const filled = await provider.act(
     computer,

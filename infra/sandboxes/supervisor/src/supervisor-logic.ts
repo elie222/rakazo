@@ -24,6 +24,7 @@ export {
 
 import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
@@ -293,6 +294,8 @@ export function releaseAssignedScreen(
   }
   if (slot.releasing) return slot.index;
   slot.releasing = true;
+  // Release stops the screen's viewer, so the next request sets the screen up again.
+  delete slot.ensuredAt;
   return slot.index;
 }
 
@@ -362,6 +365,42 @@ export interface ScreenAssignment {
   idleAt?: number;
   controlled?: boolean;
   controlToken?: string;
+  /** When the setup script last finished for this screen on the current boot. */
+  ensuredAt?: number;
+}
+
+/** The page helper reached no browser, before dispatching anything. */
+export function pageBrowserNotReady(result: { code: number; stdout: string }) {
+  if (result.code !== 0) return false;
+  try {
+    const output = JSON.parse(result.stdout) as {
+      ok?: unknown;
+      error?: unknown;
+      uncertain?: unknown;
+    };
+    return (
+      output.ok === false &&
+      output.uncertain !== true &&
+      typeof output.error === "string" &&
+      output.error.startsWith("CDP not ready")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** How long a page-browser request trusts the last setup instead of rerunning it. */
+export const SCREEN_REUSE_MS = 30_000;
+
+/** A screen set up moments ago on this boot still runs; a human-held one may need its viewer back. */
+export function screenRecentlyEnsured(slot: ScreenAssignment | undefined, now: number) {
+  return (
+    slot?.ensuredAt !== undefined &&
+    !slot.releasing &&
+    !slot.controlled &&
+    !slot.controlToken &&
+    now - slot.ensuredAt < SCREEN_REUSE_MS
+  );
 }
 
 /** Forget screen assignments and their boot marker together on every cleanup path. */
@@ -624,12 +663,14 @@ export interface DockerStreamChunk {
 export function createDockerStreamDemuxer() {
   let mode: "pending" | "raw" | "multiplex" = "pending";
   let buffer = Buffer.alloc(0);
+  // Docker splits output at arbitrary bytes, so a character can straddle two frames.
+  const decoders = { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") };
 
   const consume = (final: boolean): DockerStreamChunk[] => {
     const events: DockerStreamChunk[] = [];
     if (mode === "raw") {
       if (buffer.length === 0) return events;
-      events.push({ stream: "stdout", data: buffer.toString("utf8") });
+      events.push({ stream: "stdout", data: decoders.stdout.write(buffer) });
       buffer = Buffer.alloc(0);
       return events;
     }
@@ -641,7 +682,7 @@ export function createDockerStreamDemuxer() {
       if (!frameReady) {
         if (!final && headerReady) return events;
         mode = "raw";
-        events.push({ stream: "stdout", data: buffer.toString("utf8") });
+        events.push({ stream: "stdout", data: decoders.stdout.write(buffer) });
         buffer = Buffer.alloc(0);
         return events;
       }
@@ -651,10 +692,10 @@ export function createDockerStreamDemuxer() {
     while (offset + 8 <= buffer.length && isDockerFrameHeader(buffer, offset)) {
       const size = buffer.readUInt32BE(offset + 4);
       if (offset + 8 + size > buffer.length) break;
-      const payload = Buffer.from(buffer.subarray(offset + 8, offset + 8 + size));
+      const stream = buffer[offset] === 2 ? "stderr" : "stdout";
       events.push({
-        stream: buffer[offset] === 2 ? "stderr" : "stdout",
-        data: payload.toString("utf8"),
+        stream,
+        data: decoders[stream].write(buffer.subarray(offset + 8, offset + 8 + size)),
       });
       offset += 8 + size;
     }
@@ -669,7 +710,12 @@ export function createDockerStreamDemuxer() {
       return consume(false);
     },
     finish() {
-      return consume(true);
+      const events = consume(true);
+      for (const stream of ["stdout", "stderr"] as const) {
+        const rest = decoders[stream].end();
+        if (rest) events.push({ stream, data: rest });
+      }
+      return events;
     },
   };
 }

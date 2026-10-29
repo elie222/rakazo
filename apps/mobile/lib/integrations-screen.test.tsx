@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -583,16 +584,25 @@ it("shows registered MCP servers with connector initials and sentence case statu
   state.rpc.mockImplementation((proc: string) =>
     proc === "mcp/servers/list"
       ? Promise.resolve([
-          { id: "saved", name: "Saved server", enabled: true, hasSecret: true },
-          { id: "open", name: "Open server", enabled: true, hasSecret: false },
+          { id: "saved", name: "Saved server", enabled: true, hasSecret: true, health: {} },
+          { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
+          {
+            id: "client",
+            name: "Client server",
+            enabled: true,
+            hasSecret: false,
+            oauthClientId: null,
+            health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+          },
         ])
       : fallback?.(proc),
   );
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(3);
   expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
   expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
+  expect(rows[2]?.textContent).toBe("CClient serverNeeds an OAuth client ID");
   for (const row of rows) expect(row.querySelector("button")).toBeNull();
 
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;

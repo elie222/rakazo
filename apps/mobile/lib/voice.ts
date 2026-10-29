@@ -22,6 +22,14 @@ import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
+/** Who started a speech, so their Stop call reaches only their own playback. */
+export type SpeechOwner = symbol;
+
+/** A unique owner for the speech one surface is about to start, e.g. the current call. */
+export function createSpeechOwner(): SpeechOwner {
+  return Symbol("SpeechOwner");
+}
+
 type SpeechOptions = {
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
@@ -29,6 +37,8 @@ type SpeechOptions = {
   botId?: string;
   messageId?: string;
   speaker?: PlaybackSpeaker;
+  /** Tags this speech for its starter, so stopSpeaking(owner) cuts only this playback. */
+  owner?: SpeechOwner;
 };
 
 // Playback status lets a persistent mini-player show and control what's speaking, without every
@@ -90,7 +100,10 @@ export function stopVoicePlayback(): void {
 }
 
 /** Cuts the reply off mid-sentence, for a caller who talked over it. */
-export function stopSpeaking(): void {
+export function stopSpeaking(owner?: SpeechOwner): void {
+  // An owner's stop reaches only its own speech: a hang-up must not cut unrelated
+  // playback that has since replaced it.
+  if (owner !== undefined && activeSpeechOwner !== owner) return;
   stopVoicePlayback();
 }
 
@@ -112,14 +125,18 @@ export type SpeechQueueItem = SpeechOptions & { text: string };
 let speechQueue: SpeechQueueItem[] = [];
 /** Invalidates in-flight speak calls. Stop and a new speak or queue each bump it. */
 let playbackEpoch = 0;
+/** The owner of the speech holding the current epoch, replaced as each new speech begins. */
+let activeSpeechOwner: SpeechOwner | undefined;
 
 function isCurrentSpeech(epoch: number): boolean {
   return epoch === playbackEpoch;
 }
 
-function beginSpeech(): number {
+function beginSpeech(owner?: SpeechOwner): number {
   playbackEpoch += 1;
   speechQueue = [];
+  // Own the epoch before the first await, so a stale owner cannot stop this preparation.
+  activeSpeechOwner = owner;
   // Replacing activeControl leaves the previous player running.
   activeControl?.stop();
   return playbackEpoch;
@@ -156,11 +173,13 @@ async function advanceSpeechQueue(epoch: number): Promise<boolean> {
 }
 
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
-  return speakPrepared(text, opts, beginSpeech());
+  return speakPrepared(text, opts, beginSpeech(opts.owner));
 }
 
 async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): Promise<boolean> {
   if (!isCurrentSpeech(epoch)) return false;
+  // Each queued item owns the epoch while it prepares and plays.
+  activeSpeechOwner = opts.owner;
   announcedSpeaker =
     opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
   // Stop has to work before a player exists. Pause stays hidden until one does.

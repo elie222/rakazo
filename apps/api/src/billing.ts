@@ -26,6 +26,7 @@ import {
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
@@ -58,6 +59,7 @@ export interface BillingService {
   /** Pushes the organization's member count to the provider. Call when members change. */
   syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
+  claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
 /**
@@ -84,6 +86,7 @@ export function createBillingService(deps: {
   /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
+  const referrals = createReferrals(deps);
   let cachedPrice: { value: BillingPrice; expiresAt: number } | undefined;
 
   async function price(): Promise<BillingPrice | null> {
@@ -144,6 +147,8 @@ export function createBillingService(deps: {
       return;
     }
     const live = snapshot;
+    if (live && hasBillingAccess(live.status))
+      await referrals.settle(previous.organizationId, live.cardFingerprint);
     if (!modelCredits || !live) return;
     // A newly paid own-key plan becomes the funding, wherever its checkout returned.
     if (
@@ -359,6 +364,7 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
+          referral: await referrals.status(organizationId, isOwner),
         };
       }
       const { organizationId, isOwner } = await organization(actor);
@@ -448,6 +454,11 @@ export function createBillingService(deps: {
       if (account.seats === seats) return;
       await provider.updateSeats(account.customerId, seats);
       await sync(account.customerId);
+    },
+
+    async claimReferral(actor, code) {
+      const { organizationId, isOwner } = await organization(actor);
+      if (isOwner) await referrals.claim(organizationId, code);
     },
 
     async cancelForDeletedUser(userId) {

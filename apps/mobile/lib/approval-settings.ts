@@ -64,7 +64,8 @@ export function useApprovalSettings(target: SettingsTarget, enabled = true): App
           setLoadError(null);
         })
         .catch((err: unknown) => {
-          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
+          if (current && saves.current === savesAtRead)
+            setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
       return () => {
         current = false;

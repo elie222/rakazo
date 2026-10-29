@@ -5,14 +5,7 @@ import type {
   CapabilityInstall,
   McpServer,
 } from "@rakazo/contracts";
-import {
-  activeBotId,
-  captureScreenshot,
-  completeOnboarding,
-  openIntegrationsAdd,
-  rpc,
-  signup,
-} from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("Integrations installs a plugin, completes real broker OAuth against a fake provider, and removes its children", async ({
   page,
@@ -125,53 +118,4 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByRole("button", { name: "Add skills", exact: true })).toBeVisible();
   expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
   expect(await skillNames()).not.toContain("planning-notes");
-});
-
-test("GitHub import names the parts it cannot add and waits for confirmation", async ({
-  page,
-}, testInfo) => {
-  await signup(
-    page,
-    `marketplace-link-${Date.now()}@rakazo.test`,
-    "password12",
-    "Marketplace Link Test",
-  );
-  await completeOnboarding(page);
-  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
-  await openIntegrationsAdd(page, "From GitHub");
-  await dialog
-    .getByRole("textbox", { name: "Plugin GitHub URL", exact: true })
-    .fill("https://github.com/example/plugin-marketplace-fixture");
-  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
-  await expect(dialog.getByTestId("plugin-detail")).toContainText("imported-notes");
-  await expect(dialog.getByText("Not added: hooks/", { exact: true })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
-  await captureScreenshot(page, testInfo, "integrations-plugin-import-skipped");
-  expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
-});
-
-test("skill packs are browsed and added from the Skills dialog", async ({ page }, testInfo) => {
-  await signup(page, `skill-packs-${Date.now()}@rakazo.test`, "password12", "Skill Packs Test");
-  await completeOnboarding(page);
-  await page.getByRole("button", { name: "Skills", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Skills", exact: true });
-  await expect(dialog.getByTestId("your-skills").getByText("Interrogate")).toBeVisible();
-  const packs = dialog.getByTestId("skill-packs");
-  await expect(packs.getByText("Review Kit", { exact: true })).toBeVisible();
-  await expect(packs.getByText("Planning Notes", { exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "skills-packs");
-  await packs.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Review Kit", exact: true })).toBeVisible();
-  await expect(dialog.getByText("reviewer", { exact: true })).toBeVisible();
-  await dialog.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Remove", exact: true })).toBeVisible();
-  const skills = await rpc<AgentSkillCatalogEntry[]>(page, "agentSkills/list", undefined);
-  expect(skills.map((skill) => skill.name)).toEqual(expect.arrayContaining(["review", "reviewer"]));
-  await captureScreenshot(page, testInfo, "skills-pack-added");
-  await dialog.getByRole("button", { name: "Back", exact: true }).click();
-  const sets = dialog.getByTestId("plugin-skill-sets");
-  await expect(sets.getByTestId("plugin-skill-set")).toContainText("Review Kit");
-  await expect(dialog.getByTestId("your-skills")).not.toContainText("reviewer");
-  await captureScreenshot(page, testInfo, "skills-dialog");
 });

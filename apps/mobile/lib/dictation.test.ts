@@ -239,6 +239,17 @@ describe("mobile dictation", () => {
     expect(onFinal).not.toHaveBeenCalled();
   });
 
+  it("never starts the recognizer when the signal aborts during loading", async () => {
+    const onFinal = vi.fn();
+    const controller = new AbortController();
+    const listening = listen({ onFinal, signal: controller.signal });
+    controller.abort();
+    await listening;
+
+    expect(fake.start).not.toHaveBeenCalled();
+    expect(onFinal).not.toHaveBeenCalled();
+  });
+
   it("never finalizes an aborted session", async () => {
     const onFinal = vi.fn();
     const controller = new AbortController();

@@ -339,7 +339,20 @@ export type ActionApprovalResolved = {
   decision: "ask" | "allow" | "deny";
   source: ActionApprovalSource;
   matchingRules: ActionApprovalRule[];
+  /** The rules that produced this decision; broader matches remain in `matchingRules`. */
+  decisiveRules: ActionApprovalRule[];
 };
+
+/**
+ * The saved rules responsible for an ask or block. Broader rules that also matched
+ * are omitted so a refusal points at the decisive rule instead of every candidate.
+ */
+export function decisiveActionApprovalRules(
+  resolved: ActionApprovalResolved,
+): ActionApprovalRule[] {
+  if (resolved.source !== "require_approval" && resolved.source !== "deny") return [];
+  return resolved.decisiveRules.filter((rule) => rule.effect === resolved.source);
+}
 
 /**
  * Deterministic rule resolution. A block always wins, so a narrower allow cannot punch through it.
@@ -358,18 +371,31 @@ export function resolveActionApprovalDetail(input: {
     ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
   );
   if (matchingRules.length === 0) {
-    return { decision: "allow", source: "default", matchingRules };
+    return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
   }
-  if (matchingRules.some((rule) => rule.effect === "deny")) {
-    return { decision: "deny", source: "deny", matchingRules };
+  const denyingRules = matchingRules.filter((rule) => rule.effect === "deny");
+  if (denyingRules.length > 0) {
+    const highestSpecificity = Math.max(...denyingRules.map(ruleSpecificity));
+    return {
+      decision: "deny",
+      source: "deny",
+      matchingRules,
+      decisiveRules: denyingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity),
+    };
   }
 
   const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
   const winners = matchingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity);
-  if (winners.some((rule) => rule.effect === "require_approval")) {
-    return { decision: "ask", source: "require_approval", matchingRules };
+  const askingRules = winners.filter((rule) => rule.effect === "require_approval");
+  if (askingRules.length > 0) {
+    return {
+      decision: "ask",
+      source: "require_approval",
+      matchingRules,
+      decisiveRules: askingRules,
+    };
   }
-  return { decision: "allow", source: "always_allow", matchingRules };
+  return { decision: "allow", source: "always_allow", matchingRules, decisiveRules: [] };
 }
 
 export function resolveActionApproval(input: {
@@ -381,29 +407,29 @@ export function resolveActionApproval(input: {
   return resolveActionApprovalDetail(input).decision;
 }
 
-/** Composio sends every batch of actions through this one tool, naming each in `tools[].tool_slug`. */
-export const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
-
 /**
- * The actions a Composio batch runs, or undefined when the call is not a batch. `complete` is false
- * when an entry names no action: nothing can show what it does, so the call must ask.
+ * The actions a batch call runs, where `shape` says the call names each one at
+ * `args[items][i][action]`. `complete` is false when an entry names no action, or the call lists
+ * none: nothing can show what it does, so the call must ask.
  */
-export function composioBatchActions(
-  toolName: string,
+export function batchActions(
+  shape: { items: string; action: string },
   args: unknown,
-): { slugs: string[]; complete: boolean } | undefined {
-  if (toolName !== COMPOSIO_MULTI_EXECUTE_TOOL) return undefined;
-  const tools = args && typeof args === "object" ? (args as { tools?: unknown }).tools : undefined;
-  if (!Array.isArray(tools)) return undefined;
-  const slugs = new Set<string>();
-  let complete = tools.length > 0;
-  for (const item of tools) {
-    const slug =
-      item && typeof item === "object" ? (item as { tool_slug?: unknown }).tool_slug : undefined;
-    if (typeof slug === "string" && slug.trim()) slugs.add(slug.trim());
+): { actions: string[]; complete: boolean } {
+  const items =
+    args && typeof args === "object" ? (args as Record<string, unknown>)[shape.items] : undefined;
+  if (!Array.isArray(items)) return { actions: [], complete: false };
+  const actions = new Set<string>();
+  let complete = items.length > 0;
+  for (const item of items) {
+    const action =
+      item && typeof item === "object"
+        ? (item as Record<string, unknown>)[shape.action]
+        : undefined;
+    if (typeof action === "string" && action.trim()) actions.add(action.trim());
     else complete = false;
   }
-  return { slugs: [...slugs], complete };
+  return { actions: [...actions], complete };
 }
 
 /**
@@ -433,7 +459,44 @@ export function resolveActionApprovalForTools(input: {
     parts.find((part) => part.decision === "deny") ?? parts.find((part) => part.decision === "ask");
   if (strictest) return { ...strictest, matchingRules };
   const allAllowed = parts.length > 0 && parts.every((part) => part.source === "always_allow");
-  return { decision: "allow", source: allAllowed ? "always_allow" : "default", matchingRules };
+  return {
+    decision: "allow",
+    source: allAllowed ? "always_allow" : "default",
+    matchingRules,
+    decisiveRules: [],
+  };
+}
+
+/** Only rule matching, not runtime authorization or an approval-model prediction. */
+export function previewActionApprovalRule(
+  rules: ActionApprovalRule[],
+  rule: ActionApprovalRule,
+  effect: "always_allow" | "deny" | "remove",
+  sample: Omit<Parameters<typeof resolveActionApprovalForTools>[0], "rules">,
+) {
+  const connectorKinds = rules
+    .filter((entry) => entry.matchKind === "connector")
+    .map((entry) => entry.matchValue);
+  const context = {
+    ...sample,
+    tools: sample.tools.map((tool) => ({
+      ...tool,
+      connectorKind: tool.connectorKind ?? connectorKindFromToolName(tool.name, connectorKinds),
+    })),
+  };
+  const remaining = rules.filter(
+    (other) =>
+      other.matchKind !== rule.matchKind ||
+      other.matchValue.toLowerCase() !== rule.matchValue.toLowerCase(),
+  );
+  const next =
+    effect === "remove"
+      ? rules.filter((other) => other !== rule)
+      : [...remaining, { ...rule, effect }];
+  return {
+    before: resolveActionApprovalForTools({ ...context, rules }).source,
+    after: resolveActionApprovalForTools({ ...context, rules: next }).source,
+  };
 }
 
 /**

@@ -49,3 +49,31 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
 })()`;
 
 export type AppDocumentState = "ready" | "failed";
+
+type DocumentContents = Pick<
+  Electron.WebContents,
+  "executeJavaScript" | "isCrashed" | "isDestroyed"
+>;
+
+export async function waitForMountedAppDocument(
+  contents: DocumentContents,
+  timeoutMs = 20_000,
+): Promise<AppDocumentState> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
+    let state: AppDocumentState | "pending";
+    try {
+      state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as
+        | AppDocumentState
+        | "pending";
+    } catch (error) {
+      // A reload or redirect during startup disposes the frame being asked; ask the next document.
+      if (contents.isDestroyed()) throw error;
+      state = "pending";
+    }
+    if (state !== "pending") return state;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error("The server page did not become ready.");
+}

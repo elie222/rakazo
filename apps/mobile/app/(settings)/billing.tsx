@@ -7,7 +7,7 @@ import {
 } from "@rakazo/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert, AppState, ScrollView, StyleSheet } from "react-native";
+import { Alert, AppState, ScrollView, Share, StyleSheet } from "react-native";
 import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing";
@@ -81,6 +81,7 @@ export default function BillingScreen() {
   );
   // Owners can always top up, as on web; a top-up is how an own-key plan starts on credits.
   const credits = status.funding === "credits" || (status.balanceUsd ?? 0) > 0 || status.canManage;
+  const referral = status.referral;
   return (
     <ScrollView
       style={sideInsets}
@@ -116,6 +117,22 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
+      {referral ? (
+        <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
+          <SettingsRow
+            title={t("Invite friends")}
+            detail={
+              referral.rewards === 0
+                ? undefined
+                : referral.rewards === 1
+                  ? t("1 free month earned")
+                  : t("{count} free months earned", { count: referral.rewards })
+            }
+            chevron="right"
+            onPress={() => void Share.share({ message: referral.url }).catch(() => undefined)}
+          />
+        </SettingsGroup>
+      ) : null}
       {credits ? (
         <SettingsGroup
           label={t("Credits")}

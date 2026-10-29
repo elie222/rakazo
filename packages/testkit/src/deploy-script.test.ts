@@ -19,7 +19,7 @@ const rolloutSteps = (revision: string) => [
   // Only this container gets the database owner login; the old API keeps serving meanwhile.
   `${COMPOSE} config --services`,
   `${COMPOSE} run --rm -T migrate`,
-  ...["api", "web"].flatMap((service) => [
+  ...["api", "web", "worker"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
     `${COMPOSE} ps --all --quiet ${service}`,

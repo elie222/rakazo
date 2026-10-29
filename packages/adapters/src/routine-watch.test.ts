@@ -242,6 +242,24 @@ describe("tickRoutineWatch", () => {
     },
   );
 
+  it("refuses a batch tool even when it is declared read-only", async () => {
+    const { deps, routine } = setup({ data: "ok" });
+    vi.mocked(deps.connector!.discoverTools).mockResolvedValue([
+      {
+        name: "brain_changed",
+        readOnly: true,
+        batch: { items: "tools", action: "tool_slug", arguments: "arguments" },
+        description: "Run actions",
+        inputSchema: {},
+      },
+    ]);
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow("can change data");
+    expect(deps.connector!.execute).not.toHaveBeenCalled();
+    await expect(
+      validateRoutineWatch(deps, RoutineWatchSchema.parse(routine.watch), routine),
+    ).rejects.toThrow("can change data");
+  });
+
   it.each([false, undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
     const { deps, routine } = setup({ data: "ok" });
     vi.mocked(deps.connector!.discoverTools).mockResolvedValue([]);

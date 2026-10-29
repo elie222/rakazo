@@ -34,6 +34,12 @@ const sampleCredential = {
 };
 
 describe("request_secret parameters", () => {
+  it("tells the bot which login labels start visible, and that the user decides", () => {
+    const { description } = toolNamed("request_secret");
+    expect(description).toContain("ID, phone, email or username starts visible");
+    expect(description).toContain("The user decides which fields are hidden");
+  });
+
   it("exposes credential on the destination branch the executor persists", () => {
     const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
       (branch.required ?? []).includes("credential"),
@@ -48,6 +54,16 @@ describe("request_secret parameters", () => {
     const credential = credentialBranch?.properties?.credential?.properties ?? {};
     // normalizeSecretDestination rejects the call unless all three resolve.
     expect(Object.keys(credential).sort()).toEqual(["auth", "name", "origin"]);
+  });
+
+  it("tells the model what origin is for, since a command variable leaves it optional", () => {
+    const credentialBranch = oneOfBranches(requestSecretSchema()).find((branch) =>
+      (branch.required ?? []).includes("credential"),
+    );
+    const origin = credentialBranch?.properties?.credential?.properties?.origin as
+      | { description?: string }
+      | undefined;
+    expect(origin?.description).toBeTruthy();
   });
 
   it("exposes connectionId on the mutually exclusive alternative branch", () => {
@@ -370,5 +386,35 @@ describe("jsonField const handling", () => {
 
   it("leaves a plain string alone", () => {
     expect(JSON.stringify(jsonField({ type: "string" }))).not.toContain("const");
+  });
+});
+
+describe("request_secret login card arguments", () => {
+  const login = {
+    name: "example-login",
+    origin: "https://login.example.test",
+    auth: { type: "login" },
+  };
+
+  it("accepts a login without a password as labeled fields", () => {
+    const schema = requestSecretSchema();
+    expect(
+      parseConnectorToolArgs(schema, {
+        label: "Example sign-in",
+        purpose: "password",
+        credential: login,
+        fields: ["ID number", "Phone"],
+      }),
+    ).toMatchObject({ credential: login, fields: ["ID number", "Phone"] });
+  });
+
+  it("rejects a purpose outside the allowed values and an empty field list", () => {
+    const schema = requestSecretSchema();
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "c", purpose: "login", credential: login }),
+    ).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(schema, { label: "c", purpose: "otp", credential: login, fields: [] }),
+    ).toThrow();
   });
 });

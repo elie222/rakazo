@@ -14,12 +14,14 @@ import {
   accessibilityElement,
   accessibilityLabel,
   buttonStyle,
+  contentShape,
   disabled,
   foregroundStyle,
   frame,
   listRowInsets,
   listSectionMargins,
   listStyle,
+  shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import { PlatformColor } from "react-native";
@@ -119,7 +121,7 @@ export function ArchivedBotList({
           <List.ForEach>
             {bots.map((bot) => (
               <SwipeActions key={bot.id} modifiers={[disabled(pending)]}>
-                <ContextMenu>
+                <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
                   <ContextMenu.Trigger>
                     <Button onPress={() => onOpen(bot)} modifiers={[buttonStyle("plain")]}>
                       <HStack spacing={12}>
@@ -141,7 +143,7 @@ export function ArchivedBotList({
             ))}
             {groups.map((group) => (
               <SwipeActions key={`group-${group.id}`} modifiers={[disabled(pending)]}>
-                <ContextMenu>
+                <ContextMenu modifiers={[contentShape(shapes.rectangle())]}>
                   <ContextMenu.Trigger>
                     <HStack
                       spacing={12}

@@ -113,7 +113,6 @@ export async function provisionMessagingIdentity(
       },
       {
         name: "Assistant",
-        title: "",
         description: `Personal agent for ${address} (${provider}), auto-created on first message.`,
         instructions:
           "You are the owner's personal agent. The owner reaches you over chat; " +

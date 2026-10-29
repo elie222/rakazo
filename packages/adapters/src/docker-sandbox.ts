@@ -622,13 +622,12 @@ async function* readNdjsonProcessEvents(
   try {
     while (!sawExit) {
       if (signal.aborted) throw signal.reason ?? new Error("command aborted");
-      const { done, value } = await reader.read();
+      const { done, value } = await withAbort(reader.read(), signal);
       if (done) break;
       bytes += value.byteLength;
       if (bytes > MAX_SANDBOX_SUCCESS_RESPONSE_BYTES) {
         yield { type: "stderr", data: "exec failed: response too large\n" };
         yield { type: "exit", code: 1 };
-        await reader.cancel().catch(() => undefined);
         return;
       }
       buffer += decoder.decode(value, { stream: true });
@@ -649,6 +648,7 @@ async function* readNdjsonProcessEvents(
     }
     if (!sawExit) yield { type: "exit", code: 1 };
   } finally {
+    void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

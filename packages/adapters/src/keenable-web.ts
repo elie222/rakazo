@@ -10,12 +10,14 @@ import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 
 const ENDPOINT = "https://api.keenable.ai/mcp";
 const USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)";
 const MAX_SNIPPET_CHARS = 8_000;
+// Even escaped multibyte text stays inside the transport's 1 MB result limit.
+const KEENABLE_MAX_READ_CHARS = 100_000;
 const searchSchema = z.object({
   results: z.array(
     z.object({
@@ -84,7 +86,15 @@ export class KeenableWebProvider implements WebProvider {
   }
 
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
-    const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
+    // Keenable cannot skip, so the whole prefix has to stay inside the transport limit.
+    const room = KEENABLE_MAX_READ_CHARS - offset;
+    if (room <= 0) {
+      throw new Error(
+        `Keenable can read the first ${KEENABLE_MAX_READ_CHARS} characters of a page.`,
+      );
+    }
+    const maxChars = Math.min(clampMaxChars(request.maxChars), room);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -94,19 +104,17 @@ export class KeenableWebProvider implements WebProvider {
     // Ask for one extra character so a longer page keeps the truncation flag.
     const page = await this.call(
       "fetch_page_content",
-      { url: url.href, max_chars: maxChars + 1 },
+      { url: url.href, max_chars: offset + maxChars + 1 },
       signal,
       pageSchema,
     );
     const pageUrl = publicPageUrl(page.url);
     if (!pageUrl) throw new Error("Keenable returned an invalid page URL");
     if (!/\S/.test(page.content)) throw new Error("Keenable returned empty page content");
-    const truncated = page.content.length > maxChars;
     return {
       url: pageUrl,
       title: page.title?.trim().slice(0, 1_000) || pageUrl,
-      text: truncated ? `${page.content.slice(0, maxChars)}\n\n[Content truncated]` : page.content,
-      truncated,
+      ...pageWindow(page.content.slice(offset), maxChars, offset, KEENABLE_MAX_READ_CHARS - 1),
     };
   }
 

@@ -76,6 +76,30 @@ describe("desktop command execution", () => {
     }
   });
 
+  it("keeps UTF-8 characters split across output chunks intact", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
+    roots.push(root);
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "utf8", homePath: "/unused" }, ctx);
+    try {
+      const script = [
+        'const bytes = Buffer.from("é😀");',
+        "process.stdout.write(bytes.subarray(0, 1));",
+        "process.stderr.write(bytes.subarray(2, 4));",
+        "setTimeout(() => {",
+        "  process.stdout.write(bytes.subarray(1, 2));",
+        "  process.stderr.write(bytes.subarray(4));",
+        "}, 100);",
+      ].join("\n");
+      const result = await collect(
+        desktop.execute(computer, { argv: [process.execPath, "-e", script] }, ctx),
+      );
+      expect(result).toEqual({ code: 0, stdout: "é", stderr: "😀" });
+    } finally {
+      await desktop.destroy(computer, ctx);
+    }
+  });
+
   it("never starts an OS process for an already-cancelled command", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
     roots.push(root);

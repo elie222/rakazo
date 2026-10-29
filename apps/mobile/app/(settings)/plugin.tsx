@@ -31,6 +31,11 @@ import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
 import { PluginIcon } from "../../components/plugin-icon";
 import { SkillSymbol } from "../../components/skill-symbol";
+import {
+  reachesOtherSpaces,
+  SpaceAvailabilityPicker,
+  useOwnSpaces,
+} from "../../components/space-availability";
 import { rpc } from "../../lib/api";
 import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
@@ -129,6 +134,7 @@ export default function PluginScreen() {
       ? allServers.filter((server) => server.installId === install.id)
       : [];
   const installed = Boolean(install);
+  const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
   useEffect(() => {
     if (!loaded || installed) return;
     let cancelled = false;
@@ -187,7 +193,7 @@ export default function PluginScreen() {
       : parts.filter((value) => value !== part);
 
   const confirmRemove = (title: string, onConfirm: () => void) =>
-    Alert.alert(title, undefined, [
+    Alert.alert(everywhere ? t("Remove from every space?") : title, undefined, [
       { text: t("Cancel"), style: "cancel" },
       { text: t("Remove"), style: "destructive", onPress: onConfirm },
     ]);
@@ -380,6 +386,14 @@ export default function PluginScreen() {
         </View>
 
         {description ? <Text style={styles.description}>{description}</Text> : null}
+        {install ? (
+          <SpaceAvailabilityPicker
+            kind="install"
+            id={install.id}
+            availability={install.availability}
+            onChanged={load}
+          />
+        ) : null}
 
         {error ? (
           <View style={styles.errorRow}>

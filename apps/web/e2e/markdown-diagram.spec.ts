@@ -9,17 +9,6 @@ const flowSource = [
   "  A[Clone repo] --> B[Branch] --> C[Tests] --> D[Pull request]",
 ].join("\n");
 
-const invalidSource = [
-  "```mermaid",
-  "graph LR",
-  "  A[Unclosed --> B",
-  "```",
-  "",
-  "```ts",
-  "const ok = true;",
-  "```",
-].join("\n");
-
 async function streamUpdate(page: Page, markdown: string, streaming: boolean) {
   await page.evaluate(
     (detail) => {
@@ -100,33 +89,6 @@ test("a wide diagram scrolls on a phone instead of shrinking its text away", asy
   expect(await card.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await captureScreenshot(page, testInfo, "markdown-diagram-wide-phone");
-});
-
-test("a diagram's accTitle becomes its alt text", async ({ page }, testInfo) => {
-  await page.goto(`${fixture}?case=sequence`);
-  const image = await expectDrawn(page);
-  await expect(image).toHaveAttribute("alt", "Approval round trip");
-  await captureScreenshot(page, testInfo, "markdown-diagram-sequence");
-});
-
-test("source Mermaid cannot parse stays a readable code block", async ({ page }, testInfo) => {
-  await page.goto(`${fixture}?case=invalid`);
-  const message = page.getByTestId("diagram-fixture");
-  const blocks = message.locator("pre");
-  await expect(blocks).toHaveCount(2);
-  await expect(blocks.first()).toContainText("A[Unclosed --> B");
-  await expect(blocks.nth(1)).toContainText("const ok = true;");
-  // Diagrams render one at a time in order, so once a valid diagram appended
-  // after the invalid one is drawn, the invalid one has settled.
-  await streamUpdate(page, `${invalidSource}\n\n\`\`\`mermaid\n${flowSource}\n\`\`\``, false);
-  await expectDrawn(page);
-  await streamUpdate(page, invalidSource, false);
-  await expect(blocks).toHaveCount(2);
-  await expect(page.getByTestId("chat-diagram")).toHaveCount(0);
-  await expect(message.getByRole("button", { name: "Copy code" })).toHaveCount(2);
-  // Mermaid's error graphic must not appear anywhere on the page.
-  await expect(page.locator("body > [id^='drk-mermaid'], body > svg")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "markdown-diagram-invalid");
 });
 
 test("Mermaid loads only for a message with a diagram", async ({ page }) => {

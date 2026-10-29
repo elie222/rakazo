@@ -51,7 +51,7 @@ export function searchSheetRows(
       (bot): SearchSheetRow => ({
         key: `bot-${bot.id}`,
         title: bot.name,
-        preview: previewSnippet(bot.preview, 40) || bot.title || t("No messages yet"),
+        preview: previewSnippet(bot.preview, 40) || t("No messages yet"),
         label: t("Bot"),
         bot,
         kind: "conversation",

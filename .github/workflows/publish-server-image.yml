@@ -12,17 +12,19 @@ on:
   push:
     tags: ["v*"]
   workflow_call:
+  # Only what the image definitions consume directly. A source change that breaks the app's build
+  # fails ci.yml's production builds first, and main still builds every image before it deploys.
   pull_request:
     paths:
       - ".dockerignore"
+      - ".npmrc"
       - ".github/workflows/publish-server-image.yml"
       - ".github/actions/publish-image/**"
-      - "apps/**"
       - "infra/compose/**"
-      - "infra/sandboxes/computer/**"
+      - "infra/sandboxes/**"
       - "infra/updater/**"
-      - "packages/**"
-      - "package.json"
+      - "patches/**"
+      - "**/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   workflow_dispatch:

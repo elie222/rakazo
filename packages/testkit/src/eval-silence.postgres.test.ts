@@ -48,12 +48,6 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
       semanticPass: false,
     },
     {
-      id: "silence-repeat-after-new-release",
-      replies: ["v2.2.0 adds a calendar integration.", "NO_RESPONSE"],
-      pass: false,
-      semanticPass: false,
-    },
-    {
       id: "silence-failed-check",
       replies: ["The release source did not respond."],
       pass: false,

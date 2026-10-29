@@ -7,10 +7,8 @@ import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import {
   AgentImportCreateInput,
-  AgentImportInfoSchema,
   AgentImportPlanSchema,
   AgentImportPreviewInput,
-  AgentImportUndoInput,
 } from "./agent-import.js";
 import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
@@ -45,6 +43,7 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   AgentSecretInputSchema,
@@ -53,9 +52,11 @@ import {
   AgentSkillSchema,
   AppBootstrapSchema,
   ApprovalModeSchema,
+  ApprovalRulePreviewSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
+  AvailabilityKindSchema,
   AvatarStyleSchema,
   BillingClientSchema,
   BillingStatusSchema,
@@ -105,6 +106,9 @@ import {
   PluginMarketplaceCatalogSchema,
   PluginPartSchema,
   PluginPreviewSchema,
+  PluginSubmissionReviewSchema,
+  PluginSubmissionSchema,
+  PluginSubmissionStatusSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   ROUTINE_MENTION_BATCH_MAX,
@@ -117,6 +121,7 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
+  SpaceAvailabilitySchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -265,6 +270,10 @@ export const appContract = {
     portal: oc
       .input(z.object({ client: BillingClientSchema }).optional())
       .output(z.object({ url: z.string().url() })),
+    /** Records who invited this organization; ignored once it has subscribed. */
+    claimReferral: oc
+      .input(z.object({ code: z.string().min(1).max(64) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   preferences: {
     update: oc
@@ -420,9 +429,7 @@ export const appContract = {
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
-    importInfo: oc.input(botId).output(AgentImportInfoSchema.nullable()),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
-    importUndo: oc.input(AgentImportUndoInput).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -585,9 +592,18 @@ export const appContract = {
             fields: z.array(LoginFieldInput).min(1).max(LOGIN_FIELD_LIMIT).optional(),
             /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
             username: z.string().min(1).max(512).optional(),
+            /** Only for a login card: use the login for this run only instead of saving it. */
+            remember: z.literal(false).optional(),
             /** Turns down a pending secret request; `answer` is then empty. */
             dismiss: z.literal(true).optional(),
           })
+          .refine(
+            (input) => input.remember === undefined || Boolean(input.fields ?? input.username),
+            {
+              message: "Only a website login can be used without saving it",
+              path: ["remember"],
+            },
+          )
           .refine(
             (input) =>
               input.dismiss
@@ -856,10 +872,32 @@ export const appContract = {
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
+  availability: {
+    set: oc
+      .input(z.object({ kind: AvailabilityKindSchema, id: Id }).and(SpaceAvailabilitySchema))
+      .output(SpaceAvailabilitySchema),
+    /** The user's own skills, MCP servers, plugins and tool sources across their spaces. */
+    items: oc.output(z.array(AccountItemSchema)),
+    /** Make exactly the listed items available in a space, keeping each one's other spaces. */
+    chooseForSpace: oc
+      .input(
+        z.object({
+          spaceId: Id,
+          items: z.array(z.object({ kind: AvailabilityKindSchema, id: Id })).max(500),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+  },
   marketplace: {
     catalog: oc
       .input(z.object({ query: z.string().trim().max(200).default("") }))
       .output(PluginMarketplaceCatalogSchema),
+    /** Admins only. */
+    submissions: oc
+      .input(z.object({ status: PluginSubmissionStatusSchema.default("pending") }))
+      .output(z.array(PluginSubmissionSchema)),
+    /** Admins only. */
+    review: oc.input(PluginSubmissionReviewSchema).output(PluginSubmissionSchema),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
@@ -1071,6 +1109,33 @@ export const appContract = {
   },
   approvalRules: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
+    preview: oc
+      .input(
+        settingsScopeInput.extend({
+          id: Id,
+          effect: z.enum(["always_allow", "deny", "remove"]),
+          sample: z.object({
+            tools: z
+              .array(
+                z.object({
+                  name: z.string().trim().min(1).max(200),
+                  connectorKind: z.string().trim().min(1).max(200).optional(),
+                  readOnly: z.boolean().optional(),
+                }),
+              )
+              .min(1)
+              .max(20),
+            wrapper: z
+              .object({
+                name: z.string().trim().min(1).max(200),
+                connectorKind: z.string().trim().min(1).max(200).optional(),
+              })
+              .optional(),
+            site: z.string().trim().min(1).max(253).optional(),
+          }),
+        }),
+      )
+      .output(ApprovalRulePreviewSchema),
     set: oc
       .input(
         settingsScopeInput.extend({
@@ -1082,6 +1147,19 @@ export const appContract = {
       .output(ActionApprovalRuleSchema),
     remove: oc
       .input(settingsScopeInput.extend({ id: Id }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
+  /**
+   * Sites the signed-in user opens from chat links without the external-link prompt, in every
+   * space. The server computes each site from a link; bot fetches never read this list.
+   */
+  trustedLinkSites: {
+    list: oc.output(z.array(z.string())),
+    trust: oc
+      .input(z.object({ url: z.string().min(1).max(8192) }))
+      .output(z.object({ site: z.string() })),
+    remove: oc
+      .input(z.object({ site: z.string().min(1).max(253) }))
       .output(z.object({ ok: z.literal(true) })),
   },
   autoReview: {
@@ -1145,6 +1223,11 @@ export const appContract = {
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
+    /**
+     * A one-time token for `GET /api/account/export?token=`, which streams the account zip. Needs
+     * a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED).
+     */
+    accountToken: oc.output(z.object({ token: z.string() })),
   },
   notifications: {
     registerPush: oc

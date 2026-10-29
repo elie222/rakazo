@@ -1,7 +1,12 @@
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, IsolationError, withTransactionRetry } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  availableInSpace,
+  IsolationError,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { requireBotThread } from "./bot-thread.js";
 
 export type McpApprovalDeps = {
@@ -306,7 +311,7 @@ export async function queueMcpConnectedRun(
       select: { id: true },
     }),
     tx.mcpServer.findFirst({
-      where: { id: input.serverId, spaceId: actor.spaceId, userId: actor.userId },
+      where: { id: input.serverId, ...availableInSpace(actor) },
       select: { name: true },
     }),
   ]);

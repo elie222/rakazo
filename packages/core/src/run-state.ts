@@ -97,6 +97,19 @@ export function isConversationalRun(trigger: string | null | undefined): boolean
   return !NON_CONVERSATIONAL_RUN_TRIGGERS.has(trigger ?? "");
 }
 
+/**
+ * A takeover wait holds only a conversational message it can take as steering. Any other
+ * message passes it and gets its own run; the dispatcher then ends a wait the user has not
+ * acted on so that run can start. `steerable` is false for messages that never steer a run,
+ * such as webhook deliveries.
+ */
+export function messageBypassesTakeoverWait(
+  run: { status?: string; trigger?: string | null },
+  steerable = true,
+): boolean {
+  return run.status === "waiting_takeover" && !(steerable && isConversationalRun(run.trigger));
+}
+
 export function nextFence(current: number): number {
   return current + 1;
 }

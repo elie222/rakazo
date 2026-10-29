@@ -144,6 +144,7 @@ describe("command variables stay out of HTTP and page fills", () => {
     await save(db, "cli-token", "fake-cli-token-1");
     expect(
       await resolveLoginFill({
+        runId: "run-1",
         prisma: db.prisma,
         secretStore,
         scope,

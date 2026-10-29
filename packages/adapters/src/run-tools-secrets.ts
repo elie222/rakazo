@@ -1,7 +1,7 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runSecretKind } from "@rakazo/db";
+import { runLoginKind, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   completeExternalEffect,
@@ -15,6 +15,7 @@ import {
   botSecretToolView,
   findBotSecret,
   findCommandVariableConflict,
+  findRunLogin,
   forgetBotSecret,
   generateBotSecret,
   listBotSecrets,
@@ -48,10 +49,28 @@ export const secretTools: ToolHandlers = {
     const { args } = call;
     const parsed = BotSecretName.safeParse(args.name);
     if (!parsed.success) return call.finish({ error: "A valid credential name is required." });
+    // This run's unsaved login comes before a saved one of the name, as it does for fills.
+    const forgotten = await deps.prisma.secret.deleteMany({
+      where: { userId: run.userId, spaceId: run.spaceId, kind: runLoginKind(run.id, parsed.data) },
+    });
+    if (forgotten.count > 0) return call.finish({ removed: true });
     return call.finish(await forgetBotSecret(deps.prisma, run, parsed.data));
   },
   async generate_secret(ctx, call) {
     const { deps, run } = ctx;
+    // Fills would type this run's unsaved login instead of the generated one.
+    const held = await deps.prisma.secret.count({
+      where: {
+        userId: run.userId,
+        spaceId: run.spaceId,
+        kind: runLoginKind(run.id, String(call.args.name ?? "")),
+      },
+    });
+    if (held > 0) {
+      return call.finish({
+        error: "This run holds a login under this name that wasn't saved. Use another name.",
+      });
+    }
     const { result, redactions } = await generateBotSecret({
       prisma: deps.prisma,
       secretStore: deps.secretStore,
@@ -103,6 +122,22 @@ export const secretTools: ToolHandlers = {
           error: `Invalid credential destination — name: ${conflict} is already exported as the same variable. Choose another name.`,
         });
       }
+      // A login the person chose not to save stays with this run; the bot is told so it doesn't
+      // say it was saved. Field labels only, never values.
+      const runLogin =
+        destination.auth.type === "login"
+          ? await findRunLogin(deps.prisma, deps.secretStore, run, runId, destination.name)
+          : undefined;
+      const known =
+        runLogin && runLogin.origin === destination.origin
+          ? {
+              saved: false,
+              ...destination,
+              fields: runLogin.fields.map(({ label, hidden }) => ({ label, hidden })),
+            }
+          : existing
+            ? { saved: true, ...botSecretToolView(existing) }
+            : undefined;
       const submitted = botSecretSubmissionSchema({
         allowPrivateHttpOrigin: allowPrivateHttpSecretOrigins(),
       }).safeParse(applied?.effect.result).data;
@@ -110,15 +145,9 @@ export const secretTools: ToolHandlers = {
         submitted &&
         sameSecretDestination(normalizeSecretDestination(submitted.credentialSaved), destination)
       ) {
-        return call.finish(
-          existing
-            ? { saved: true, ...botSecretToolView(existing) }
-            : { error: "The saved credential is no longer available." },
-        );
+        return call.finish(known ?? { error: "The saved credential is no longer available." });
       }
-      if (existing && args.replace !== true) {
-        return call.finish({ saved: true, ...botSecretToolView(existing) });
-      }
+      if (known && args.replace !== true) return call.finish(known);
       // Action approval authorizes showing the card; it is not a credential submission.
       // Return the claim to intended so the answer transaction can approve the saved value.
       if (call.claimedEffect) {

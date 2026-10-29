@@ -1,3 +1,4 @@
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import {
   createSpaceForMember,
@@ -67,60 +68,81 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
   return archived;
 }
 
+/** Writes this bot's instructions and posts the change, with its undo, in the chat. */
+async function commitOwnInstructions(
+  ctx: RunContext,
+  input: {
+    instructions: string;
+    reason: string;
+    previousInstructions: string;
+    proposalRunId?: string;
+  },
+): Promise<{ ok: true } | { error: string }> {
+  const { deps, run, runId, bot, context } = ctx;
+  const committed = await deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR UPDATE`;
+    const live = await tx.run.findUnique({ where: { id: runId } });
+    if (!mayOpenModelStream(live, ctx.workerId, ctx.fence, context.signal.aborted)) {
+      throw new Error("Instruction update run is no longer active.");
+    }
+    let undoVersionId: string | null;
+    try {
+      undoVersionId = await writeBotInstructions(tx, {
+        botId: bot.id,
+        instructions: input.instructions,
+        reason: input.reason,
+        expectedInstructions: input.previousInstructions,
+        proposalRunId: input.proposalRunId,
+      });
+    } catch (error) {
+      if (!(error instanceof InstructionConflictError)) throw error;
+      if (input.proposalRunId)
+        await tx.bot.updateMany({
+          where: { id: bot.id, pendingInstructionsRunId: input.proposalRunId },
+          data: { pendingInstructionsRunId: null },
+        });
+      return { error: error.message };
+    }
+    if (!undoVersionId) return null;
+    return persistMessageInTransaction(tx, run, "bot", [
+      {
+        kind: "ask",
+        text: "Instructions updated",
+        status: "answered",
+        instructionUpdate: {
+          botId: bot.id,
+          before: redactSecrets(input.previousInstructions, ctx.secrets),
+          after: input.instructions,
+          reason: input.reason,
+          undoVersionId,
+        },
+      },
+    ]);
+  });
+  if (committed && "error" in committed) return committed;
+  if (committed)
+    await deps.events
+      .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
+      .catch((error) => getLogger().error("instruction update realtime notification", error));
+  return { ok: true };
+}
+
 /** Instruction proposals, Spaces and the bots this bot manages. */
 export const fleetTools: ToolHandlers = {
   async propose_instructions_update(ctx, call) {
-    const { deps, run, runId, bot, context } = ctx;
     const { name, args, nextApprovedTool, bypassApproval } = call;
     if ((nextApprovedTool !== name && !bypassApproval) || !call.claimedEffect) {
       return call.finish({ error: "Instruction updates require human approval." });
     }
-    const committed = await deps.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
-      await tx.$queryRaw`SELECT id FROM runs WHERE id = ${runId} FOR UPDATE`;
-      const live = await tx.run.findUnique({ where: { id: runId } });
-      if (!mayOpenModelStream(live, ctx.workerId, ctx.fence, context.signal.aborted)) {
-        throw new Error("Instruction update run is no longer active.");
-      }
-      let undoVersionId: string | null;
-      try {
-        undoVersionId = await writeBotInstructions(tx, {
-          botId: bot.id,
-          instructions: String(args.instructions),
-          reason: String(args.reason),
-          expectedInstructions: String(args.previousInstructions),
-          proposalRunId: runId,
-        });
-      } catch (error) {
-        if (!(error instanceof InstructionConflictError)) throw error;
-        await tx.bot.updateMany({
-          where: { id: bot.id, pendingInstructionsRunId: runId },
-          data: { pendingInstructionsRunId: null },
-        });
-        return { error: error.message };
-      }
-      if (!undoVersionId) return null;
-      return persistMessageInTransaction(tx, run, "bot", [
-        {
-          kind: "ask",
-          text: "Instructions updated",
-          status: "answered",
-          instructionUpdate: {
-            botId: bot.id,
-            before: redactSecrets(String(args.previousInstructions), ctx.secrets),
-            after: String(args.instructions),
-            reason: String(args.reason),
-            undoVersionId,
-          },
-        },
-      ]);
-    });
-    if (committed && "error" in committed) return call.finish(committed);
-    if (committed)
-      await deps.events
-        .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
-        .catch((error) => getLogger().error("instruction update realtime notification", error));
-    return call.finish({ ok: true });
+    return call.finish(
+      await commitOwnInstructions(ctx, {
+        instructions: String(args.instructions),
+        reason: String(args.reason),
+        previousInstructions: String(args.previousInstructions),
+        proposalRunId: ctx.runId,
+      }),
+    );
   },
   async create_space(ctx, call) {
     const { deps, run } = ctx;
@@ -166,7 +188,6 @@ export const fleetTools: ToolHandlers = {
       runId,
       spawnKey: effectKey,
       name: String(args.name ?? ""),
-      title: args.title ? String(args.title) : undefined,
       description: args.description ? String(args.description) : undefined,
       instructions: args.instructions ? String(args.instructions) : undefined,
       prompt: args.prompt ? String(args.prompt) : undefined,
@@ -180,7 +201,6 @@ export const fleetTools: ToolHandlers = {
           kind: "child_bot",
           botId: spawned.botId,
           name: spawned.name,
-          title: spawned.title,
           status: "created",
         },
       ]);
@@ -242,7 +262,30 @@ export const fleetTools: ToolHandlers = {
         await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
       );
     }
-    return call.finish(await updateOwnBotFromTool(deps, run, thread.id, bot, args, context));
+    const { instructions, ...profile } = args;
+    if (!argumentGiven(instructions))
+      return call.finish(await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context));
+    const first = String(instructions).trim();
+    if (first.length > BOT_INSTRUCTIONS_MAX_LENGTH)
+      return call.finish({
+        error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.`,
+      });
+    // The profile goes first, so a rejected field leaves the instructions unset for a retry.
+    const profileGiven = Object.values(profile).some(argumentGiven);
+    const updated = profileGiven
+      ? await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context)
+      : undefined;
+    if (updated && "error" in updated) return call.finish(updated);
+    const set = await commitOwnInstructions(ctx, {
+      instructions: first,
+      reason: "Set in chat",
+      previousInstructions: "",
+    });
+    if ("error" in set)
+      return call.finish({
+        error: `${updated ? "Your profile was updated, but you" : "You"} already have instructions; change them with propose_instructions_update.`,
+      });
+    return call.finish(updated ?? { ok: true });
   },
   archive_bot: archiveBot,
   delete_bot: archiveBot,

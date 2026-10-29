@@ -131,6 +131,64 @@ describePostgres("computer runs (PostgreSQL)", () => {
     expect((await o.runs()).map((run) => run.endReason)).toEqual(["idle", null]);
   });
 
+  it("sleeps past a run waiting for takeover, but not past a run using the computer", async () => {
+    const o = await owner();
+    await o.start();
+    const bot = await system.bot.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        name: "Waiting",
+        color: "ink",
+        computerId: o.id,
+        thread: { create: { spaceId: o.id, userId: o.id } },
+      },
+      include: { thread: true },
+    });
+    const threadId = bot.thread!.id;
+    const task = await system.task.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId,
+        prompt: "Log in",
+        status: "running",
+      },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "user_message",
+      },
+    });
+    await system.computerExecutionLease.create({
+      data: {
+        computerId: o.id,
+        botId: bot.id,
+        runId: run.id,
+        fence: 1,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+      },
+    });
+
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "running",
+    );
+
+    await system.run.update({ where: { id: run.id }, data: { status: "waiting_takeover" } });
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "suspended",
+    );
+  });
+
   it("ends the run when the provider has already lost the sandbox", async () => {
     const o = await owner();
     await o.start();

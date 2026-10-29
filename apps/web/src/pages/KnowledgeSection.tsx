@@ -8,6 +8,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/componen
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  AvailabilityControl,
+  AvailabilityLabel,
+  reachesOtherSpaces,
+  useOwnSpaces,
+} from "../components/integrations/space-availability";
 import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { useSpaceQueries } from "../lib/query";
@@ -331,9 +337,10 @@ export function AgentSkills() {
   const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const selection = useRef(0);
+  const spaceCount = useOwnSpaces().length;
 
   async function refresh() {
-    await fetchFresh(queryClient, list);
+    return fetchFresh(queryClient, list);
   }
 
   useEffect(
@@ -440,7 +447,10 @@ export function AgentSkills() {
                 >
                   {entry.name}
                 </span>
-                <SkillSourceBadge source={entry.source} />
+                <span className="flex shrink-0 items-center gap-2">
+                  <AvailabilityLabel availability={entry.availability} />
+                  <SkillSourceBadge source={entry.source} />
+                </span>
               </span>
               <span
                 className="mt-0.5 block truncate text-[12.5px] text-muted-foreground"
@@ -452,13 +462,36 @@ export function AgentSkills() {
           ))
         : null}
       {editorOpen ? (
-        <div className="px-2.5 pb-2">
+        <div className="pb-2">
           {open ? (
-            <div className="flex items-center gap-2 pb-1">
+            <div className="flex min-h-7 items-center gap-2">
               <div className="min-w-0 truncate text-[14px] font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
               <SkillSourceBadge source={open.source} />
+              {open.source === "user" ? (
+                <div className="ms-auto">
+                  <AvailabilityControl
+                    kind="skill"
+                    id={open.id}
+                    availability={open.availability}
+                    onChanged={async () => {
+                      // Another skill may have been opened while this was saving; leave it alone.
+                      const opened = selection.current;
+                      // Narrowed away from this space, the skill can no longer be read here.
+                      const here = (await refresh()).some((entry) => entry.id === open.id);
+                      if (selection.current !== opened) return;
+                      if (!here) {
+                        selection.current += 1;
+                        setOpen(null);
+                        return;
+                      }
+                      const fresh = await rpc.agentSkills.get({ skillId: open.id });
+                      if (selection.current === opened) setOpen(fresh);
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
           <Textarea
@@ -507,7 +540,15 @@ export function AgentSkills() {
                   confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >
-                {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                {confirmingDelete ? (
+                  reachesOtherSpaces(open.availability, spaceCount) ? (
+                    <Trans>Remove from every space?</Trans>
+                  ) : (
+                    <Trans>Confirm delete</Trans>
+                  )
+                ) : (
+                  <Trans>Delete</Trans>
+                )}
               </Button>
             ) : null}
           </div>

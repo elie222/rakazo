@@ -279,6 +279,14 @@ class ServiceHealthTests(unittest.TestCase):
         rows = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "exited", "health": ""}, {"service": "worker", "state": "running", "health": "healthy"}]
         self.assertEqual(service_health.service_failures(rows), [])
 
+    def test_point_in_time_recovery_is_checked_only_when_enabled(self):
+        healthy = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "running", "health": "healthy"}]
+        self.assertEqual(service_health.service_failures(healthy), [])
+        stalled = [*healthy, {"service": "pitr", "state": "running", "health": "unhealthy"}]
+        self.assertEqual(service_health.service_failures(stalled), ["pitr has no healthy running container"])
+        stalled[2]["health"] = "healthy"
+        self.assertEqual(service_health.service_failures(stalled), [])
+
 
 class AlertTests(unittest.TestCase):
     def test_change_dedup_recovery_and_failed_delivery(self):

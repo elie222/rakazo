@@ -21,6 +21,7 @@ import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
 import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
+import { MAX_WEB_FETCH_OFFSET } from "./web-limits.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
@@ -38,7 +39,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. If one is refused in another field, ask again with replace true so the user can make it visible. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true. For 2FA, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover instead.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the sign-in page's HTTPS origin, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Existing named credentials are reused unless replace is true. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a texted or emailed code, CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
     inputSchema: {
       oneOf: [
         {
@@ -328,13 +329,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_snapshot",
     description:
-      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. A dropdown lists its options, and a line says when page text or controls were cut off. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
     inputSchema: { type: "object", properties: {} },
     readOnly: true,
   },
   {
     name: "browser_act",
-    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on the site it was saved for; you never see the value. fill_card types an approved purchase's card details, only on its merchant site; leave out ref to find the field, including in a payment frame. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
+    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). click is a real mouse click, and fill on a dropdown takes one of its options' visible labels or values. The result shows the page after the action, and a snapshot covers the whole page, so scrolling is rarely needed. upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types one field of a login saved with request_secret, by its label, only on the site it was saved for; you never see the value. fill_card types an approved purchase's card details, only on its merchant site; leave out ref to find the field, including in a payment frame. fill_pay_token hands an approved purchase's pay token to its checkout; no ref. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -713,6 +714,12 @@ export const builtinAgentTools: ConnectorTool[] = [
         maxChars: {
           type: "number",
           description: "Max characters of body text (default 8000).",
+        },
+        offset: {
+          type: "number",
+          minimum: 0,
+          maximum: MAX_WEB_FETCH_OFFSET,
+          description: `Characters to skip, to read on after a truncated fetch (default 0, at most ${MAX_WEB_FETCH_OFFSET}).`,
         },
       },
       required: ["url"],
@@ -1335,7 +1342,6 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         name: { type: "string" },
-        title: { type: "string" },
         description: {
           type: "string",
           maxLength: BOT_DESCRIPTION_MAX_LENGTH,
@@ -1365,17 +1371,13 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "update_bot",
     description:
-      "Update this bot's own name (header and list label), title, description, avatar (profile picture or color/shape), or notifyOnFinish. Call this when the user asks you to rename yourself, change your title/description, change your profile picture, or turn finish notifications on or off. Do not claim you updated the profile without calling this tool.",
+      "Update this bot's own name (header and list label), description, first instructions, avatar (profile picture or color/shape), or notifyOnFinish. Call this when the user asks you to rename yourself, change your description, change your profile picture, or turn finish notifications on or off. Do not claim you updated the profile without calling this tool.",
     inputSchema: {
       type: "object",
       properties: {
         name: {
           type: "string",
           description: "Display name shown in the chat header and bot list.",
-        },
-        title: {
-          type: "string",
-          description: "Short role or headline shown in bot settings.",
         },
         description: {
           type: "string",
@@ -1400,6 +1402,12 @@ export const builtinAgentTools: ConnectorTool[] = [
         notifyOnFinish: {
           type: "boolean",
           description: "true notifies the user when this bot finishes a run; false silences that.",
+        },
+        instructions: {
+          type: "string",
+          maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
+          description:
+            "How you do your job: your private operating instructions. Only while you have none; to change them later, use propose_instructions_update.",
         },
         bot_id: {
           type: "string",

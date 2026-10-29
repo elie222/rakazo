@@ -1037,6 +1037,30 @@ describe("passkeys", () => {
   });
 });
 
+describe("account export tokens", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("names the issuing user once, and stores only a hash", async () => {
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    const other = await f.auth.issueAccountExportToken("user-b");
+    expect(JSON.stringify(f.data.verification)).not.toContain(token);
+    expect(await f.auth.consumeAccountExportToken(token)).toBe("user-a");
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
+    expect(await f.auth.consumeAccountExportToken(other)).toBe("user-b");
+    expect(await f.auth.consumeAccountExportToken("")).toBeNull();
+    expect(await f.auth.consumeAccountExportToken("made-up")).toBeNull();
+  });
+
+  it("expires after a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const f = fixture({ delivery: false });
+    const token = await f.auth.issueAccountExportToken("user-a");
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await f.auth.consumeAccountExportToken(token)).toBeNull();
+  });
+});
+
 function challengeCookie(response: Response): string {
   const cookie = response.headers.get("set-cookie") ?? "";
   const match = cookie.match(/(?:__Secure-)?better-auth\.better-auth-passkey=[^;]+/);

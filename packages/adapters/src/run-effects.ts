@@ -144,6 +144,7 @@ export async function recordEffect(
   request: unknown,
   legacyIdempotencyKey?: string,
   consumedIds?: Set<string>,
+  batchActions?: string[],
 ) {
   if (kind === RUN_TURN_CHECKPOINT_KIND) throw new Error("Unsupported tool effect kind");
   const existing = await deps.prisma.externalEffect.findUnique({
@@ -268,6 +269,7 @@ export async function recordEffect(
       idempotencyKey,
       status: "intended",
       request: request as never,
+      ...(batchActions ? { batchActions } : {}),
     },
   });
   consumedIds?.add(effect.id);

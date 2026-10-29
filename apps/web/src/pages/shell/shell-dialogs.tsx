@@ -107,7 +107,6 @@ export function ShellDialogs({
   openSpaceSettings,
   closeMobileSidebar,
   createBot,
-  onImportFromCreate,
   clearOpenThread,
   deleteRoutineDialogProps,
 }: {
@@ -125,7 +124,6 @@ export function ShellDialogs({
   openSpaceSettings: (spaceId: string) => void;
   closeMobileSidebar: () => void;
   createBot: (input: CreateBotDialogInput) => Promise<void>;
-  onImportFromCreate: () => void;
   clearOpenThread: () => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
 }) {
@@ -312,22 +310,25 @@ export function ShellDialogs({
       />
 
       {createBotOpen ? (
-        <CreateBotDialog
-          onCancel={() => setCreateBotOpen(false)}
-          onCreate={createBot}
-          onImport={onImportFromCreate}
-        />
+        <CreateBotDialog onCancel={() => setCreateBotOpen(false)} onCreate={createBot} />
       ) : null}
 
       {newSpaceOpen ? (
         <NewSpaceDialog
           onCancel={() => setNewSpaceOpen(false)}
-          onConfirm={async (name) => {
-            const space = await rpc.spaces.create({ name });
+          onCreate={async (name) => (await rpc.spaces.create({ name })).id}
+          loadItems={() => rpc.availability.items()}
+          chooseItems={async (spaceId, items) => {
+            await rpc.availability.chooseForSpace({
+              spaceId,
+              items: items.map(({ kind, id }) => ({ kind, id })),
+            });
+          }}
+          onDone={(spaceId) => {
             if (!alive.current) return;
-            if (!selectSpace(space.id)) {
+            if (!selectSpace(spaceId)) {
               setNewSpaceOpen(false);
-              await refreshBots();
+              void refreshBots();
               return;
             }
             window.location.assign("/onboarding");

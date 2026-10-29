@@ -14,7 +14,6 @@ import { abortableDelay } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { NumericSummary, PerformanceReport } from "../performance-report.js";
 import {
   PERFORMANCE_REPORT_SCHEMA_VERSION,
@@ -22,6 +21,7 @@ import {
   roundMetric,
   summarize,
 } from "../performance-report.js";
+import { startPostgres } from "./postgres.js";
 
 loadRootEnv();
 
@@ -48,7 +48,7 @@ const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const reportDirectory = path.join(root, ".context/performance");
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "rakazo-desktop-performance-"));
 
-const container = await new PostgreSqlContainer("postgres:18-alpine").start();
+const container = await startPostgres();
 let preview: ChildProcess | undefined;
 let server: ReturnType<typeof serve> | undefined;
 let handles: Awaited<ReturnType<typeof createApp>> | undefined;

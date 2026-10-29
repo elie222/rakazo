@@ -40,6 +40,7 @@ const fetcher = async () => ({
 function setup() {
   const prisma = {
     $executeRaw: vi.fn(),
+    $queryRaw: vi.fn().mockResolvedValue([{ bypass: null }]),
     capabilityInstall: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(async ({ data }) => ({ ...data, id: "install-test", createdAt: new Date(0) })),
@@ -55,10 +56,16 @@ function setup() {
     },
     agentSkill: {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(async ({ data }) => ({ ...data, id: "skill-test" })),
       deleteMany: vi.fn(),
     },
-    mcpServer: { create: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+    agentSkillSpace: { createMany: vi.fn() },
+    mcpServer: {
+      create: vi.fn(async ({ data }) => ({ ...data, id: "server-test" })),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    mcpServerSpace: { createMany: vi.fn() },
     secret: { create: vi.fn(), count: vi.fn().mockResolvedValue(1) },
     botSecret: { count: vi.fn().mockResolvedValue(0) },
     vaultCredential: { count: vi.fn().mockResolvedValue(0) },
@@ -101,6 +108,7 @@ describe("confirmed plugin installation", () => {
       data: expect.objectContaining({
         spaceId: actor.spaceId,
         userId: actor.userId,
+        allSpaces: true,
         source: "plugin",
         installId: "install-test",
         name: "example-skill",
@@ -113,10 +121,15 @@ describe("confirmed plugin installation", () => {
     expect(prisma.mcpServer.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         installId: "install-test",
+        allSpaces: true,
         secretId: "secret-test",
         headers: { "X-Tenant": true },
         transport: "streamable_http",
       }),
+    });
+    // A connector available in every space keeps its credential on the account.
+    expect(prisma.secret.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ id: "secret-test", spaceId: null, userId: actor.userId }),
     });
     expect(deps.assertEndpoint).toHaveBeenCalledWith("https://tools.example.test/mcp");
   });
@@ -149,7 +162,10 @@ describe("confirmed plugin installation", () => {
     await expect(installPlugin(deps, actor, await input())).rejects.toMatchObject({
       code: "CONFLICT",
     });
-    prisma.agentSkill.findFirst.mockResolvedValueOnce({ id: "existing-skill" } as never);
+    // A same-named skill in any of the user's spaces clashes, since the plugin reaches them all.
+    prisma.agentSkill.findMany.mockResolvedValueOnce([
+      { spaceId: "other-space", allSpaces: false, availableIn: [] },
+    ] as never);
     await expect(installPlugin(deps, actor, await input())).rejects.toMatchObject({
       code: "CONFLICT",
     });
@@ -266,6 +282,10 @@ describe("plugin RPC boundary", () => {
     const digest = (await input()).pluginDigest;
     const installed = {
       id: "install-test",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      allSpaces: true,
+      availableIn: [],
       kind: "plugin",
       source,
       version: sha,

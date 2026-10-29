@@ -1,0 +1,122 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { getCollection, render } from "astro:content";
+import Footer from "../../components/Footer.astro";
+import Header from "../../components/Header.astro";
+import { DOCS_NAV, DOCS_PAGES, DOCS_SLUGS, docsPath } from "../../docs";
+import { githubStarsLabel } from "../../github";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { GITHUB_URL } from "../../site";
+
+interface Props {
+  entry: CollectionEntry<"docs">;
+}
+
+export async function getStaticPaths() {
+  const entries = await getCollection("docs");
+  return entries.map((entry) => ({
+    params: { slug: entry.id === DOCS_SLUGS[0] ? undefined : entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const title = headings[0]?.text ?? entry.id;
+const labels = new Map(DOCS_PAGES.map((page) => [page.slug, page.label]));
+const toc = headings.filter((heading) => heading.depth === 2);
+const index = DOCS_SLUGS.indexOf(entry.id);
+const previous = DOCS_SLUGS[index - 1];
+const next = DOCS_SLUGS[index + 1];
+const starsLabel = await githubStarsLabel();
+const currentPath = docsPath(entry.id);
+---
+
+<BaseLayout
+  title={`${title} | Rakazo docs`}
+  description={`${title} in the Rakazo documentation.`}
+  localeAlternates={false}
+  markdownAlternate={currentPath === "/docs/" ? "/docs.md" : `${currentPath.slice(0, -1)}.md`}
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+  </div>
+  <div class="container docs">
+    <nav class="docs-nav" aria-label="Docs">
+      {
+        DOCS_NAV.map((section) => (
+          <div class="docs-nav__section">
+            <p>{section.title}</p>
+            <ul>
+              {section.pages.map((page) => (
+                <li>
+                  <a
+                    href={docsPath(page.slug)}
+                    aria-current={docsPath(page.slug) === currentPath ? "page" : undefined}
+                  >
+                    {page.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+      <div class="docs-nav__section">
+        <p>Reference</p>
+        <ul>
+          <li><a href="/integrations/">Integrations</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <main id="main" class="docs-main">
+      <article class="docs-prose">
+        <Content />
+      </article>
+      <footer class="docs-pager">
+        {
+          previous ? (
+            <a href={docsPath(previous)}>
+              <span>Previous</span>
+              {labels.get(previous)}
+            </a>
+          ) : (
+            <span />
+          )
+        }
+        {
+          next && (
+            <a class="docs-pager__next" href={docsPath(next)}>
+              <span>Next</span>
+              {labels.get(next)}
+            </a>
+          )
+        }
+      </footer>
+    </main>
+
+    <aside class="docs-toc" aria-label="On this page">
+      {
+        toc.length > 1 && (
+          <>
+            <p>On this page</p>
+            <ul>
+              {toc.map((heading) => (
+                <li>
+                  <a href={`#${heading.slug}`}>{heading.text}</a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+      <a class="docs-edit" href={`${GITHUB_URL}/edit/main/docs/${entry.id}.md`} target="_blank" rel="noopener">
+        Edit on GitHub
+      </a>
+    </aside>
+  </div>
+  <div class="container">
+    <Footer />
+  </div>
+</BaseLayout>

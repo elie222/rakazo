@@ -82,6 +82,7 @@ function executorFixture(
     },
     taughtSkill: { findMany: async () => [] },
     agentSecret: { findMany: async () => [] },
+    secret: { findMany: async () => [] },
     vaultCredential: { findMany: async () => [] },
     agentSkill: { findMany: async () => [] },
     scratchpadItem: { findMany: async () => [] },
@@ -200,7 +201,7 @@ describe("Parallel through the ordinary bot caller", () => {
                 request.messages.findLast((message) => message.role === "tool"),
               );
               expect(result).toContain("Page text");
-              expect(result).toContain("[Content truncated]");
+              expect(result).toContain("[Content truncated;");
               expect(result).not.toContain("Invalid Parallel MCP response");
               expect(result.length).toBeLessThan(1_000);
             },

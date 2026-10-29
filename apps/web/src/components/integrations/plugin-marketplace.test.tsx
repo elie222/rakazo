@@ -14,6 +14,14 @@ const api = vi.hoisted(() => ({
   skills: vi.fn(),
   skill: vi.fn(),
 }));
+// One space, so no "Available in" choice appears.
+vi.mock("./space-availability", () => ({
+  AvailabilityControl: () => null,
+  AvailabilityLabel: () => null,
+  reachesOtherSpaces: () => false,
+  useOwnSpaces: () => [],
+}));
+
 vi.mock("../../lib/rpc", () => ({
   rpc: {
     capabilities: { pluginPreview: api.preview, install: api.install, pluginParts: api.parts },

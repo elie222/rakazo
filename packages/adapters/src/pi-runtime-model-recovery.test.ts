@@ -880,3 +880,75 @@ describe("a reply cut off at the output limit", () => {
     expect(texts(events).join("")).toBe("Your login just");
   });
 });
+
+describe("coarse thinking lifecycle from real Pi stream events", () => {
+  it("emits explicit start/end without leaking thinking text into runtime events", async () => {
+    providerState.stream.mockImplementationOnce(() =>
+      stream(
+        message(reasoner, [{ type: "text", text: "Public answer." }], "stop"),
+        "private fixture reasoning",
+        "Public answer.",
+      ),
+    );
+    const events = await run(request(reasoner));
+    expect(events.filter((event) => event.type === "thinking")).toEqual([
+      { type: "thinking", active: true },
+      { type: "thinking", active: false },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("private fixture reasoning");
+    expect(events.findIndex((event) => event.type === "text")).toBeGreaterThan(
+      events.findIndex((event) => event.type === "thinking" && !event.active),
+    );
+  });
+  it("ends thinking before retry recovery and requires a fresh start on the next attempt", async () => {
+    providerState.stream.mockImplementationOnce(() => thinkingOnly(reasoner, "length"));
+    providerState.stream.mockImplementationOnce(() => reply(reasoner));
+    const events = await run(request(reasoner));
+    expect(events.filter((event) => event.type === "thinking")).toEqual([
+      { type: "thinking", active: true },
+      { type: "thinking", active: false },
+    ]);
+    expect(texts(events)).toContain("Recovered.");
+  });
+  it("does not invent a thinking signal for a text-only model", async () => {
+    providerState.stream.mockImplementationOnce(() => reply(plain));
+    expect((await run(request(plain))).filter((event) => event.type === "thinking")).toEqual([]);
+  });
+});
+
+it("stops the public thinking marker immediately when an active provider turn is aborted", async () => {
+  const controller = new AbortController();
+  providerState.stream.mockImplementationOnce(
+    (_model: unknown, _ctx: unknown, options: { signal?: AbortSignal }) => {
+      const pending = new AssistantMessageEventStream();
+      const empty = message(reasoner, [], "stop");
+      pending.push({ type: "start", partial: empty });
+      pending.push({ type: "thinking_start", contentIndex: 0, partial: empty });
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          const aborted = { ...empty, stopReason: "aborted" as const, errorMessage: "Aborted" };
+          pending.push({ type: "error", reason: "aborted", error: aborted });
+          pending.end(aborted);
+        },
+        { once: true },
+      );
+      return pending;
+    },
+  );
+  const observed: AgentRuntimeEvent[] = [];
+  try {
+    for await (const item of new PiAgentRuntime().run(request(reasoner), {
+      signal: controller.signal,
+    })) {
+      observed.push(item);
+      if (item.type === "thinking" && item.active) controller.abort();
+    }
+  } catch {
+    /* The original cancellation remains a runtime failure, never a completion. */
+  }
+  expect(observed.filter((item) => item.type === "thinking")).toEqual([
+    { type: "thinking", active: true },
+    { type: "thinking", active: false },
+  ]);
+});

@@ -18,6 +18,7 @@
     "@better-auth/expo": "1.7.12",
     "@better-auth/passkey": "1.7.12",
     "@rakazo/adapter-kit": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",

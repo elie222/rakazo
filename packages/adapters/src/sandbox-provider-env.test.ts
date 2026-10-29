@@ -13,9 +13,25 @@ describe("resolveSandboxProvider", () => {
 
   it("falls back to none when a remote provider key is missing", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "e2b" })).toBe("none");
+    expect(
+      resolveSandboxProvider({ SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }),
+    ).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "daytona" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "createos" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boat" })).toBe("none");
+  });
+
+  it("loads Novita credentials and the shared template setting", () => {
+    const env = {
+      SANDBOX_PROVIDER: "novita",
+      NOVITA_API_KEY: " test-novita-key ",
+      SANDBOX_TEMPLATE: " custom-desktop ",
+    };
+    expect(resolveSandboxProvider(env)).toBe("novita");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      novitaApiKey: "test-novita-key",
+      sandboxTemplate: "custom-desktop",
+    });
   });
 
   it("requires both Railway credentials and an environment", () => {

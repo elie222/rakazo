@@ -321,7 +321,6 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "spawn_bot") {
         return {
           name: String(raw.name ?? ""),
-          title: raw.title ? String(raw.title) : "",
           description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
