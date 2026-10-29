@@ -117,6 +117,10 @@ const REMOVE_CONTAINED_DIRECTORIES = [
   '    "$resolved_parent/$name") ;;',
   '    *) echo "folder escapes the team home" >&2; return 1 ;;',
   "  esac",
+  // Go's module cache has read-only folders. Only folders need write access to empty them; file
+  // modes stay, since a hard link can share a file with the rest of the home. find does not
+  // follow links.
+  '  find "$target" -type d ! -perm -0200 -exec chmod u+w {} + 2>/dev/null || true',
   '  rm -rf -- "$target"',
   "}",
   "status=0",

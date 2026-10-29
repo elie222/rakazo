@@ -1,5 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { access, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
@@ -492,6 +504,51 @@ describe("Team bot folder cleanup", () => {
       "not a folder",
     );
     await expect(access(path.join(workspace, "bots", "deleted-b"))).rejects.toThrow();
+  });
+
+  it("removes a deleted bot's folder that holds Go's read-only module cache", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-readonly-"));
+    roots.push(workspace);
+    const module = path.join(workspace, "bots/deleted-bot/go/pkg/mod/example.com/m@v1.0.0");
+    await mkdir(path.join(workspace, "outside"), { mode: 0o555 });
+    await seedFile(module, "go.mod", "module example.com/m\n");
+    await symlink(path.join(workspace, "outside"), path.join(module, "outside"));
+    await chmod(module, 0o555);
+    await chmod(path.dirname(module), 0o555);
+
+    await removeComputerWorkspaceDirectories(
+      localWorkspaceSandbox(workspace),
+      computer,
+      "bots",
+      ["deleted-bot"],
+      context,
+    );
+
+    await expect(access(path.join(workspace, "bots", "deleted-bot"))).rejects.toThrow();
+    expect((await stat(path.join(workspace, "outside"))).mode & 0o777).toBe(0o555);
+  });
+
+  it("leaves the mode of a file the deleted bot's folder links to", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-hardlink-"));
+    roots.push(workspace);
+    await seedFile(workspace, "shared/keep.txt", "keep");
+    await chmod(path.join(workspace, "shared/keep.txt"), 0o444);
+    await mkdir(path.join(workspace, "bots/deleted-bot"), { recursive: true });
+    await link(
+      path.join(workspace, "shared/keep.txt"),
+      path.join(workspace, "bots/deleted-bot/keep.txt"),
+    );
+
+    await removeComputerWorkspaceDirectories(
+      localWorkspaceSandbox(workspace),
+      computer,
+      "bots",
+      ["deleted-bot"],
+      context,
+    );
+
+    await expect(access(path.join(workspace, "bots", "deleted-bot"))).rejects.toThrow();
+    expect((await stat(path.join(workspace, "shared/keep.txt"))).mode & 0o777).toBe(0o444);
   });
 
   it("does not look up deletions when the Team Computer has no bot folders", async () => {

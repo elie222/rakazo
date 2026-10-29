@@ -94,7 +94,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const stopHeartbeat = keepFresh(staging);
     try {
       await fill(staging);
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
       if (await pathExists(dest)) await rename(dest, previous);
       try {
         await rename(staging, dest);
@@ -104,7 +104,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
         }
         throw error;
       }
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
     } finally {
       stopHeartbeat();
       await rm(staging, { recursive: true, force: true });
@@ -264,8 +264,8 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async removeCopy(botId: string) {
     const dir = this.botDir(botId);
     // The previous copy first, or a read in between would restore it as the home.
-    await rm(`${dir}.previous`, { recursive: true, force: true });
-    await rm(dir, { recursive: true, force: true });
+    await removeTree(`${dir}.previous`);
+    await removeTree(dir);
     await rm(this.revisionFile(botId), { force: true });
   }
 
@@ -345,7 +345,7 @@ export function resolveAgentHomePath(home: AgentHomeStore, homeKey: string, data
 /** Deletes the home of a deleted computer from this host. */
 export async function removeAgentHome(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
   if (home instanceof LocalAgentHomeStore) return home.remove(homeKey);
-  await rm(resolveAgentHomePath(home, homeKey, dataDir), { recursive: true, force: true });
+  await removeTree(resolveAgentHomePath(home, homeKey, dataDir));
 }
 
 /**
@@ -472,8 +472,43 @@ async function removeContainedDirectory(root: string, parent: string, name: stri
   ) {
     throw new Error("folder escapes the team home");
   }
-  await rm(resolvedTarget, { recursive: true, force: true });
+  await removeTree(resolvedTarget);
   return true;
+}
+
+/**
+ * Deletes a directory tree, including read-only directories its owner can change, such as Go's
+ * module cache: those without owner write get full owner access. Only directories whose opened
+ * handle is still inside the tree are changed; a parent swapped for a link during the walk stops it.
+ */
+async function removeTree(target: string) {
+  try {
+    await rm(target, { recursive: true, force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+    await makeWritable(target);
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function makeWritable(directory: string, root?: string) {
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  let tree = root;
+  try {
+    const opened = await fileHandlePath(handle.fd);
+    tree ??= opened;
+    assertContained(tree, opened);
+    const { mode } = await handle.stat();
+    if (!(mode & 0o200)) await handle.chmod((mode & 0o7777) | 0o700);
+  } finally {
+    await handle.close();
+  }
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeWritable(path.join(directory, entry.name), tree);
+  }
 }
 
 function isMissing(error: unknown): error is NodeJS.ErrnoException {
