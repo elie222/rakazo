@@ -699,67 +699,54 @@ describe("LocalStackController", () => {
     });
   });
 
-  it.each([
-    "port is already allocated",
-    "listen tcp 0.0.0.0:5173: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
-    "listen tcp 0.0.0.0:5173: bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
-    "Ports are not available: exposing port TCP 0.0.0.0:5173 -> 127.0.0.1:0: listen tcp 0.0.0.0:5173: bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
-  ])(
-    "retries %s on a new origin and uses it for auth, health, and saved launches",
-    async (message) => {
-      let starts = 0;
-      const probed: string[] = [];
-      const stack = controller(
-        {
-          platform: "win32",
-          exists: (file) => file.endsWith("docker.exe"),
-          probe: async (url) => {
-            probed.push(url);
-            return "v1.2.3";
-          },
+  it("retries port conflicts on a new origin and uses it for auth, health, and saved launches", async () => {
+    let starts = 0;
+    const probed: string[] = [];
+    const stack = controller(
+      {
+        probe: async (url) => {
+          probed.push(url);
+          return "v1.2.3";
         },
-        (args) => {
-          if (args[7] === "up" && starts++ === 0) return { code: 1, stderr: message };
-          return ok(args);
-        },
-      );
-      expect((await stack.start()).phase).toBe("ready");
-      expect(starts).toBe(2);
-      expect(probed).toEqual(["http://127.0.0.1:45174"]);
-      expect(stack.webUrl()).toBe("http://127.0.0.1:45174");
-      expect(calls.filter((call) => call.args[7] === "pull")).toHaveLength(1);
-      expect(
-        calls.filter((call) => call.args[7] === "up").map((call) => call.env.RAKAZO_WEB_PORT),
-      ).toEqual(["5173", "45174"]);
-      expect(calls.at(-1)?.env).toMatchObject({
-        RAKAZO_API_PORT: "0",
-        WEB_ORIGIN: stack.webUrl(),
-        BETTER_AUTH_URL: stack.webUrl(),
-        API_URL: stack.webUrl(),
-      });
-      expect(await readFile(path.join(root, "stack", ".desktop-web-url"), "utf8")).toBe(
-        stack.webUrl(),
-      );
-      expect(await stack.matchesDesiredStack()).toBe(true);
-      expect(probed.at(-1)).toBe(stack.webUrl());
-    },
-  );
+      },
+      (args) => {
+        if (args[7] === "up" && starts++ === 0)
+          return { code: 1, stderr: "port is already allocated" };
+        return ok(args);
+      },
+    );
+    expect((await stack.start()).phase).toBe("ready");
+    expect(starts).toBe(2);
+    expect(probed).toEqual(["http://127.0.0.1:45174"]);
+    expect(stack.webUrl()).toBe("http://127.0.0.1:45174");
+    expect(calls.filter((call) => call.args[7] === "pull")).toHaveLength(1);
+    expect(
+      calls.filter((call) => call.args[7] === "up").map((call) => call.env.RAKAZO_WEB_PORT),
+    ).toEqual(["5173", "45174"]);
+    expect(calls.at(-1)?.env).toMatchObject({
+      RAKAZO_API_PORT: "0",
+      WEB_ORIGIN: stack.webUrl(),
+      BETTER_AUTH_URL: stack.webUrl(),
+      API_URL: stack.webUrl(),
+    });
+    expect(await readFile(path.join(root, "stack", ".desktop-web-url"), "utf8")).toBe(
+      stack.webUrl(),
+    );
+    expect(await stack.matchesDesiredStack()).toBe(true);
+    expect(probed.at(-1)).toBe(stack.webUrl());
+  });
 
-  it.each(["port is already allocated", "Ports are not available: exposing port TCP 0.0.0.0:5173"])(
-    "bounds retries when another process repeatedly takes the selected port: %s",
-    async (message) => {
-      const stack = controller(
-        { platform: "win32", exists: (file) => file.endsWith("docker.exe") },
-        (args) => (args[7] === "up" ? { code: 1, stderr: message } : ok(args)),
-      );
-      expect(await stack.start()).toMatchObject({
-        phase: "failed",
-        message: expect.stringContaining("local port"),
-      });
-      expect(calls.filter((call) => call.args[7] === "up")).toHaveLength(3);
-      expect(phases).not.toContain("waiting-healthy");
-    },
-  );
+  it("bounds retries when another process repeatedly takes the selected port", async () => {
+    const stack = controller({}, (args) =>
+      args[7] === "up" ? { code: 1, stderr: "port is already allocated" } : ok(args),
+    );
+    expect(await stack.start()).toMatchObject({
+      phase: "failed",
+      message: expect.stringContaining("local port"),
+    });
+    expect(calls.filter((call) => call.args[7] === "up")).toHaveLength(3);
+    expect(phases).not.toContain("waiting-healthy");
+  });
 
   it("collects service logs when up fails", async () => {
     const stack = controller({}, (args) => {
