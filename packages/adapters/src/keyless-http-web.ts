@@ -103,7 +103,7 @@ export class KeylessHttpWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
     const offset = clampOffset(request.offset);
-    const { url, body } = await fetchSafeWebText(request.url, {
+    const { url, body, contentType } = await fetchSafeWebText(request.url, {
       fetch: this.fetchImpl,
       resolveHostname: this.resolveHostname,
       timeoutMs: this.fetchTimeoutMs,
@@ -112,7 +112,10 @@ export class KeylessHttpWebProvider implements WebProvider {
       signal: request.signal ?? context.signal,
     });
     if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
-    const extracted = extractReadableText(body, url);
+    const extracted =
+      contentType?.split(";", 1)[0]?.trim().toLowerCase() === "text/plain"
+        ? { title: "Untitled", text: body }
+        : extractReadableText(body, url);
     return {
       url,
       title: extracted.title,
