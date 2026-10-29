@@ -403,7 +403,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         } else if (policy) {
           requireEmailVerification = policy.allowlist.length > 0;
         }
-        const findSession = ctx.context.internalAdapter.findSession;
+        const { findSession, updateUser } = ctx.context.internalAdapter;
         // Return a request-local override; mutating the shared auth options
         // would leak a concurrent request's policy into another signup.
         return {
@@ -418,6 +418,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 : {}),
               internalAdapter: {
                 ...ctx.context.internalAdapter,
+                // Better Auth drops an unverified account's logins and sessions when a
+                // code proves the mailbox; credentials Rakazo stores elsewhere go too.
+                ...(ctx.path === CODE_SIGN_IN_PATH
+                  ? {
+                      updateUser: async (...args: Parameters<typeof updateUser>) => {
+                        if (args[1].emailVerified === true)
+                          await revokeUnprovenCredentials(prisma, args[0]);
+                        return updateUser(...args);
+                      },
+                    }
+                  : {}),
                 // Authorize at lookup: bearer conversion happens after before
                 // hooks, and auth mutations also read sessions through here.
                 findSession: async (token: string) => {
@@ -632,6 +643,18 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
+  await prisma.$transaction([
+    prisma.passkey.deleteMany({ where: { userId } }),
+    prisma.messagingIdentity.deleteMany({ where: { userId } }),
+    prisma.messagingLinkCode.deleteMany({ where: { userId } }),
+    prisma.userDevice.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+}
 
 /**
  * Changing the password with revokeOtherSessions deletes every session, then signs the
