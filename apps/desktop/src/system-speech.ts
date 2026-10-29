@@ -7,7 +7,7 @@ import { fromAppFrame } from "./app-frame.js";
 export const SPEECH_EVENT_CHANNEL = "desktop.speech.event";
 
 /** Language tags only: the value becomes the recognizer's argument. */
-const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,3}$/;
+const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 /** The Web Speech codes the page handles; the recognizer may report no others. */
 const ERROR_CODES = new Set([
   "aborted",
@@ -21,7 +21,12 @@ const ERROR_CODES = new Set([
 const MAX_LINE_CHARS = 64 * 1024;
 
 type InvokeEvent = Pick<IpcMainInvokeEvent, "sender" | "senderFrame">;
-type Listening = { sender: WebContents; session: number; child: ChildProcessWithoutNullStreams };
+type Listening = {
+  sender: WebContents;
+  session: number;
+  child: ChildProcessWithoutNullStreams;
+  cancel: () => void;
+};
 
 /**
  * One system recognizer at a time, for the app window only. Its JSON lines become
@@ -44,8 +49,10 @@ export function createSystemSpeech(
       ? active
       : null;
 
-  function close(listening: Listening) {
+  /** A page that is gone gets no more events; a replaced or aborted session still ends. */
+  function close(listening: Listening, pageGone = false) {
     if (active === listening) active = null;
+    if (pageGone) listening.cancel();
     listening.child.kill();
   }
 
@@ -54,6 +61,7 @@ export function createSystemSpeech(
       if (
         !fromAppFrame(getTarget(), event) ||
         typeof language !== "string" ||
+        language.length > 35 ||
         !LANGUAGE_TAG.test(language) ||
         !Number.isSafeInteger(session) ||
         (session as number) <= 0
@@ -62,14 +70,14 @@ export function createSystemSpeech(
       if (active) close(active);
       const sender = event.sender;
       const send = (message: RakazoDesktopSpeechEvent) => {
-        if (!sender.isDestroyed()) sender.send(SPEECH_EVENT_CHANNEL, message);
+        if (!ended && !sender.isDestroyed()) sender.send(SPEECH_EVENT_CHANNEL, message);
       };
       let ended = false;
       const end = (error?: string) => {
         if (ended) return;
-        ended = true;
         if (error) send({ session: session as number, type: "error", error });
         send({ session: session as number, type: "end" });
+        ended = true;
         if (active?.child === child) active = null;
       };
       let child: ChildProcessWithoutNullStreams;
@@ -80,12 +88,22 @@ export function createSystemSpeech(
         setImmediate(() => end("service-not-allowed"));
         return true;
       }
-      const listening: Listening = { sender, session: session as number, child };
+      const listening: Listening = {
+        sender,
+        session: session as number,
+        child,
+        cancel: () => {
+          ended = true;
+        },
+      };
       active = listening;
       if (!watched.has(sender)) {
         watched.add(sender);
+        sender.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+          if (isMainFrame && !isInPlace && active?.sender === sender) close(active, true);
+        });
         sender.once("destroyed", () => {
-          if (active?.sender === sender) close(active);
+          if (active?.sender === sender) close(active, true);
         });
       }
 
@@ -109,17 +127,20 @@ export function createSystemSpeech(
       };
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
+        if (ended || active !== listening) return;
         pending += chunk;
         let newline = pending.indexOf("\n");
         while (newline >= 0) {
+          if (newline > MAX_LINE_CHARS) break;
           read(pending.slice(0, newline));
           pending = pending.slice(newline + 1);
+          if (ended || active !== listening) return;
           newline = pending.indexOf("\n");
         }
         if (pending.length > MAX_LINE_CHARS) {
           pending = "";
-          close(listening);
           end("network");
+          close(listening);
         }
       });
       // Diagnostics only; an unread pipe would eventually block the recognizer.

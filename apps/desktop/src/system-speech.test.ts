@@ -73,7 +73,21 @@ describe("desktop system speech", () => {
     const { event, frame, speech, spawn } = setup();
     expect(speech.start({ ...event, sender: {} as WebContents }, "en-US", 1)).toBe(false);
     expect(speech.start({ ...event, senderFrame: null }, "en-US", 1)).toBe(false);
-    for (const language of ["", "e", "en US", "--help", "en-US;rm", "en-US\n", 42, null]) {
+    expect(
+      speech.start({ ...event, senderFrame: { ...frame } } as IpcMainInvokeEvent, "en-US", 1),
+    ).toBe(false);
+    for (const language of [
+      "",
+      "e",
+      "en US",
+      "--help",
+      "en-US;rm",
+      "en-US\n",
+      "en_US",
+      `en-${"a".repeat(100)}`,
+      42,
+      null,
+    ]) {
       expect(speech.start(event, language, 1)).toBe(false);
     }
     for (const session of [0, -1, 1.5, Number.NaN, "1", null]) {
@@ -144,10 +158,22 @@ describe("desktop system speech", () => {
     expect(children[2]!.kill).toHaveBeenCalledTimes(1);
   });
 
-  it("gives up on output that never ends a line", async () => {
+  it("stops on main-frame navigation and ignores late output", () => {
+    const { contents, event, speech, children, sent } = setup();
+    speech.start(event, "en-US", 1);
+    contents.emit("did-start-navigation", {}, "https://app.example.com/next", false, false);
+    expect(children[0]!.kill).not.toHaveBeenCalled();
+    contents.emit("did-start-navigation", {}, "https://app.example.com/next", false, true);
+    expect(children[0]!.kill).toHaveBeenCalledOnce();
+    children[0]!.stdout.write('{"type":"result","text":"late"}\n');
+    children[0]!.emit("close");
+    expect(sent()).toEqual([]);
+  });
+
+  it.each(["", "\n"])("rejects oversized output lines (%j)", async (ending) => {
     const { event, speech, children, sent } = setup();
     speech.start(event, "en-US", 5);
-    children[0]!.stdout.write("x".repeat(64 * 1024 + 1));
+    children[0]!.stdout.write("x".repeat(64 * 1024 + 1) + ending);
     await flush();
     expect(children[0]!.kill).toHaveBeenCalledTimes(1);
     expect(sent()).toEqual([

@@ -255,9 +255,13 @@ export class Dictation {
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
     const transcribe = Boolean(opts.transcribe);
+    // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (prefersServerDictation() && opts.transcribe !== false) {
+    if (
+      (prefersServerDictation() && opts.transcribe !== false) ||
+      (desktopBridge()?.speech && transcribe)
+    ) {
       await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
       return;
     }
