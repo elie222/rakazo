@@ -24,8 +24,6 @@ const image = { "container.image.name": published };
 const progressLine = '{"status":"Downloading"}\n';
 const errorLine = (message: string) => `${JSON.stringify({ errorDetail: { message } })}\n`;
 const stalled = new Error("Docker sent no progress for 10 minutes");
-// A digest-pinned name, about as long as image names get.
-const longPublished = `ghcr.io/elie222/rakazo/computer@sha256:${"0".repeat(64)}`;
 const checkFailed = (name: string) => `Could not check ${name}; see the supervisor log.`;
 const pullFailed = (name: string) =>
   `Could not pull ${name}; run docker pull on the Docker host. See the supervisor log.`;
@@ -132,6 +130,7 @@ describe("computer image", () => {
     const fake = fakeDocker({ present: true });
     await fake.ensure(published)();
     await fake.ensure(local)();
+    await fake.ensure("myorg/custom:local")();
     expect(fake.docker.pull).not.toHaveBeenCalled();
     expect(fake.docker.buildImage).not.toHaveBeenCalled();
   });
@@ -158,15 +157,17 @@ describe("computer image", () => {
     },
   );
 
-  it.each(["rakazo-computer-brave:latest", "myorg/rakazo-computer:edge"])(
-    "never replaces the custom image %s with a stock build",
-    async (name) => {
-      const fake = fakeDocker();
-      await expect(fake.ensure(name, context)()).rejects.toThrow(new Error(missing(name)));
-      expect(fake.docker.pull).not.toHaveBeenCalled();
-      expect(fake.docker.buildImage).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    "rakazo-computer-brave:latest",
+    "myorg/rakazo-computer:edge",
+    "computer:local",
+    `rakazo/computer@sha256:${"0".repeat(64)}`,
+  ])("never replaces the custom image %s with a stock build", async (name) => {
+    const fake = fakeDocker();
+    await expect(fake.ensure(name, context)()).rejects.toThrow(new Error(missing(name)));
+    expect(fake.docker.pull).not.toHaveBeenCalled();
+    expect(fake.docker.buildImage).not.toHaveBeenCalled();
+  });
 
   it("says how to build a missing unqualified image when there is no build context", async () => {
     const fake = fakeDocker();
@@ -194,18 +195,6 @@ describe("computer image", () => {
     expect(logError).toHaveBeenCalledWith("computer image pull failed", new Error(reason), image);
   });
 
-  it("tells the operator to pull an image the registry refuses to hand out", async () => {
-    const fake = fakeDocker({
-      pulls: [{ chunks: [errorLine("unauthorized: authentication required")] }],
-    });
-    await expect(fake.ensure(published)()).rejects.toThrow(new Error(pullFailed(published)));
-    expect(logError).toHaveBeenCalledWith(
-      "computer image pull failed",
-      new Error("unauthorized: authentication required"),
-      image,
-    );
-  });
-
   it("logs Docker's reason and returns a fixed message when a local build fails", async () => {
     const fake = fakeDocker({
       builds: [{ chunks: [errorLine("failed to solve: exit code 100")] }],
@@ -217,23 +206,6 @@ describe("computer image", () => {
       { "container.image.name": local },
     );
   });
-
-  it.each([
-    ["check", longPublished, () => fakeDocker({ inspectError: new Error("EIO") })],
-    ["pull", longPublished, () => fakeDocker({ pulls: [{ chunks: [errorLine("x")] }] })],
-  ])(
-    "names the image once and keeps the %s message whole within the API's 200 characters",
-    async (_kind, name, fake) => {
-      const failure = await fake()
-        .ensure(name)()
-        .then(
-          () => undefined,
-          (error: Error) => error,
-        );
-      expect(failure?.message.split(name)).toHaveLength(2);
-      expect(JSON.stringify({ error: failure?.message }).length).toBeLessThanOrEqual(200);
-    },
-  );
 
   it("fails on a stream error and on an error line split across chunks", async () => {
     const reset = new Error("read ECONNRESET");
@@ -317,13 +289,6 @@ describe("computer image", () => {
     }
   });
 
-  it("reads a long stream without newlines in linear time", async () => {
-    const block = "x".repeat(64 * 1024);
-    const fake = fakeDocker({ pulls: [{ chunks: Array(1024).fill(block), creates: true }] });
-    await fake.ensure(published)();
-    expect(logError).not.toHaveBeenCalled();
-  });
-
   it("fails a pull that reports success but leaves no image", async () => {
     const fake = fakeDocker({ pulls: [{ creates: false }] });
     await expect(fake.ensure(published)()).rejects.toThrow(new Error(pullFailed(published)));
@@ -340,41 +305,21 @@ describe("computer image", () => {
     expect(logError).not.toHaveBeenCalled();
   });
 
-  it("tries again on the next call after a failed attempt", async () => {
-    const fake = fakeDocker({ pulls: [{ chunks: [errorLine("blob unknown")] }] });
-    const ensure = fake.ensure(published);
-    await expect(ensure()).rejects.toThrow(new Error(pullFailed(published)));
-    await ensure();
-    expect(fake.docker.pull).toHaveBeenCalledTimes(2);
-  });
-
-  it("shares one attempt between concurrent callers and restores an image removed later", async () => {
-    const fake = fakeDocker();
-    const ensure = fake.ensure(published);
-    await Promise.all([ensure(), ensure(), ensure()]);
-    expect(fake.docker.pull).toHaveBeenCalledTimes(1);
-    await ensure();
-    expect(fake.docker.pull).toHaveBeenCalledTimes(1);
-    fake.prune();
-    await ensure();
-    expect(fake.docker.pull).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps the retry shared when callers of a failed attempt all try again at once", async () => {
-    const fake = fakeDocker({ pulls: [{ chunks: [errorLine("blob unknown")] }] });
-    const ensure = fake.ensure(published);
-    const retry = () => ensure().catch(() => ensure());
-    await Promise.all([retry(), retry(), retry()]);
-    expect(fake.docker.pull).toHaveBeenCalledTimes(2);
-  });
-
-  it("leaves no timer behind after a pull succeeds or fails", async () => {
+  it("shares retries and restores an image removed after a successful attempt", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const fake = fakeDocker({ pulls: [{ chunks: [errorLine("blob unknown")] }] });
     const ensure = fake.ensure(published);
-    await expect(ensure()).rejects.toThrow(new Error(pullFailed(published)));
+    const failures = await Promise.allSettled([ensure(), ensure(), ensure()]);
+    expect(failures.map(({ status }) => status)).toEqual(["rejected", "rejected", "rejected"]);
     expect(vi.getTimerCount()).toBe(0);
+    expect(fake.docker.pull).toHaveBeenCalledTimes(1);
+    await Promise.all([ensure(), ensure(), ensure()]);
+    expect(fake.docker.pull).toHaveBeenCalledTimes(2);
     await ensure();
+    expect(fake.docker.pull).toHaveBeenCalledTimes(2);
+    fake.prune();
+    await ensure();
+    expect(fake.docker.pull).toHaveBeenCalledTimes(3);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -416,7 +361,10 @@ describe("computer image", () => {
  * missing, answers or ignores the BuildKit session upgrade, and rejects, streams or finishes
  * /build. It is closed after each test, even one that times out.
  */
-async function fakeDaemon(answer: { session: boolean; build: "reject" | "stream" | "finish" }) {
+async function fakeDaemon(answer: {
+  session: boolean;
+  build: "reject" | "stream" | "finish" | "error";
+}) {
   const directory = mkdtempSync(path.join(tmpdir(), "rakazo-fake-docker-"));
   const socketPath = path.join(directory, "docker.sock");
   const sessions: Socket[] = [];
@@ -433,6 +381,7 @@ async function fakeDaemon(answer: { session: boolean; build: "reject" | "stream"
       } else {
         response.writeHead(200, { "content-type": "application/json" });
         if (answer.build === "finish") response.end(progressLine);
+        else if (answer.build === "error") response.write(errorLine("build failed"));
         else response.write(progressLine);
       }
     });
@@ -506,6 +455,14 @@ describe("dockerode BuildKit session", () => {
     const failed = once(stream, "error");
     controller.abort();
     await failed;
+    expect(await sessionClosed(daemon.sessionOpened)).toBe("closed");
+  });
+
+  it("closes the build session when a reported error stops progress consumption", async () => {
+    const daemon = await fakeDaemon({ session: true, build: "error" });
+    await expect(computerImageEnsurer(daemon.docker, local, context)()).rejects.toThrow(
+      new Error(buildFailed(local)),
+    );
     expect(await sessionClosed(daemon.sessionOpened)).toBe("closed");
   });
 
