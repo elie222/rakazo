@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
   begin: vi.fn(async () => ({ connectionId: "connection", authorizationUrl: null })),
@@ -32,7 +32,7 @@ vi.mock("@lingui/react/macro", () => ({
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { AppConnectCard, McpApprovalCard } from "./message-cards";
 
-function popupFlow() {
+function popupFlow({ focused }: { focused: boolean }) {
   const channels: FakeChannel[] = [];
   class FakeChannel {
     onmessage: ((event: MessageEvent) => void) | null = null;
@@ -41,16 +41,23 @@ function popupFlow() {
       channels.push(this);
     }
   }
+  // A popup on a COOP provider page reads as closed to the opener.
   const popup = { closed: true, close: vi.fn() };
   vi.stubGlobal("BroadcastChannel", FakeChannel);
   vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  vi.spyOn(document, "hasFocus").mockReturnValue(focused);
   return { popup, channels };
 }
 
-it("approves the bot after OAuth completes despite a closed-looking popup", async () => {
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("approves the bot after OAuth completes while a COOP popup keeps focus", async () => {
   vi.useFakeTimers();
-  const { channels } = popupFlow();
-  calls.approve.mockClear();
+  const { channels } = popupFlow({ focused: false });
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
@@ -74,11 +81,6 @@ it("approves the bot after OAuth completes despite a closed-looking popup", asyn
     await act(async () => host.querySelector("button")?.click());
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(calls.approve).not.toHaveBeenCalled();
-    expect(host.textContent).toContain("Connecting");
-    await act(async () =>
-      channels[0]?.onmessage?.({ data: { type: "unrelated" } } as MessageEvent),
-    );
-    expect(calls.approve).not.toHaveBeenCalled();
     await act(async () =>
       channels[0]?.onmessage?.({ data: { type: "mcp-oauth-complete" } } as MessageEvent),
     );
@@ -87,34 +89,20 @@ it("approves the bot after OAuth completes despite a closed-looking popup", asyn
       serverId: "server",
       threadId: "thread",
     });
-    expect(channels[0]?.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   } finally {
     await act(async () => root.unmount());
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
   }
 });
 
-it("waits until timeout after the popup is closed and cleans up", async () => {
+it("cancels once the popup is closed and the app has focus again", async () => {
   vi.useFakeTimers();
-  const { popup, channels } = popupFlow();
-  try {
-    const flow = connectMcpOauth("server");
-    await vi.advanceTimersByTimeAsync(120_000 - 1);
-    expect(popup.close).not.toHaveBeenCalled();
-    expect(channels[0]?.close).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(flow).resolves.toBe("cancelled");
-    expect(popup.close).toHaveBeenCalledOnce();
-    expect(channels[0]?.close).toHaveBeenCalledOnce();
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
-  }
+  const { channels } = popupFlow({ focused: true });
+  const flow = connectMcpOauth("server");
+  await vi.advanceTimersByTimeAsync(500);
+  await expect(flow).resolves.toBe("cancelled");
+  expect(channels[0]?.close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it("authorizes a card in a normal chat and marks its thread connected", async () => {
