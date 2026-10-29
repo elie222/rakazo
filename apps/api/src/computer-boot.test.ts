@@ -12,17 +12,22 @@ import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 
 const lifecycle = vi.hoisted(() => ({
+  realAcquire: undefined as typeof Adapters.acquireComputerExecutionLease | undefined,
   acquireComputerExecutionLease: vi.fn(),
   provisionComputer: vi.fn(),
   releaseComputerExecutionLease: vi.fn(),
 }));
 
-vi.mock("@rakazo/adapters", async (original) => ({
-  ...(await original<typeof Adapters>()),
-  acquireComputerExecutionLease: lifecycle.acquireComputerExecutionLease,
-  provisionComputer: lifecycle.provisionComputer,
-  releaseComputerExecutionLease: lifecycle.releaseComputerExecutionLease,
-}));
+vi.mock("@rakazo/adapters", async (original) => {
+  const adapters = await original<typeof Adapters>();
+  lifecycle.realAcquire = adapters.acquireComputerExecutionLease;
+  return {
+    ...adapters,
+    acquireComputerExecutionLease: lifecycle.acquireComputerExecutionLease,
+    provisionComputer: lifecycle.provisionComputer,
+    releaseComputerExecutionLease: lifecycle.releaseComputerExecutionLease,
+  };
+});
 
 const actor = {
   spaceId: "workspace-1",
@@ -74,6 +79,52 @@ beforeEach(() => {
 });
 
 describe("computer boot", () => {
+  it.each([false, true])("uses claimless lease acquisition when busy=%s", async (busy) => {
+    lifecycle.acquireComputerExecutionLease.mockImplementation(lifecycle.realAcquire!);
+    lifecycle.provisionComputer.mockRejectedValue(new Error("stop after the lease"));
+    const tx = {
+      computer: { findUniqueOrThrow: vi.fn().mockResolvedValue(stoppedBot.computer) },
+      computerExecutionLease: {
+        updateManyAndReturn: vi.fn().mockResolvedValue([]),
+        create: busy
+          ? vi.fn().mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }))
+          : vi.fn().mockResolvedValue({ fence: 1 }),
+        findUnique: vi.fn().mockResolvedValue({
+          runId: "run-1",
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+      },
+      run: { findUnique: vi.fn().mockResolvedValue({ status: "running" }) },
+    };
+    const prisma = {
+      ...tx,
+      bot: { findFirst: vi.fn().mockResolvedValue(stoppedBot) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    const response = await boot(prisma);
+
+    expect(tx.computerExecutionLease.updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          computerId: "computer-1",
+          botId: "bot-1",
+          OR: [{ expiresAt: { lt: expect.any(Date) } }],
+        },
+      }),
+    );
+    if (busy) {
+      expect(response?.status).toBe(409);
+      expect(lifecycle.provisionComputer).not.toHaveBeenCalled();
+    } else {
+      expect(lifecycle.provisionComputer).toHaveBeenCalledOnce();
+      expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ runId: expect.stringMatching(/^boot:/), fence: 1 }),
+      );
+    }
+  });
+
   it("waits for a finished run to let go of the computer", async () => {
     lifecycle.acquireComputerExecutionLease
       .mockRejectedValueOnce(new ComputerBusyError())

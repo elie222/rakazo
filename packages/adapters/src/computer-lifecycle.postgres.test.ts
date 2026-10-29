@@ -47,6 +47,31 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
 
   afterAll(async () => close?.());
 
+  it("lets API operations acquire new or expired leases without a worker claim", async () => {
+    const input = { computerId, botId: identity.botId, runId: "boot:fixture" };
+    const first = await acquireComputerExecutionLease(prisma, input);
+    expect(first).not.toBeNull();
+    await expect(holdComputerExecutionLeaseForTakeover(prisma, first)).resolves.toBe(true);
+
+    // Neither the same operation nor a different API operation may steal a live lease.
+    for (const runId of [input.runId, "teach:fixture", "reset:fixture"]) {
+      await expect(
+        acquireComputerExecutionLease(prisma, { ...input, runId }),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+    }
+    const held = await prisma.computerExecutionLease.findUniqueOrThrow({
+      where: { computerId_botId: { computerId, botId: identity.botId } },
+    });
+    expect(held.fence).toBe(first!.fence);
+    expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
+
+    await releaseComputerExecutionLease(prisma, first);
+    const next = await acquireComputerExecutionLease(prisma, { ...input, runId: "teach:fixture" });
+    expect(next).toMatchObject({ runId: "teach:fixture", fence: first!.fence + 1 });
+    await expect(renewComputerExecutionLease(prisma, first)).resolves.toBe(false);
+    await releaseComputerExecutionLease(prisma, next);
+  });
+
   it("recovers a hold written before waiting_takeover without letting another run steal it", async () => {
     const { spaceId, botId, threadId, userId } = identity;
     const task = await prisma.task.create({
@@ -93,6 +118,13 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     await expect(acquireComputerExecutionLease(prisma, otherInput)).rejects.toBeInstanceOf(
       ComputerBusyError,
     );
+
+    // API operations also cannot steal a live worker lease, even with its run id.
+    for (const runId of [run.id, "boot:fixture"]) {
+      await expect(
+        acquireComputerExecutionLease(prisma, { computerId, botId, runId }),
+      ).rejects.toBeInstanceOf(ComputerBusyError);
+    }
 
     // Simulate recovery claiming the expired run after a hard kill, before the pause committed.
     await prisma.run.update({

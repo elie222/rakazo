@@ -737,9 +737,7 @@ export async function acquireComputerExecutionLease(
     computerId: string;
     runId: string;
     botId: string;
-    workerId: string;
-    runFence: number;
-  },
+  } & ({ workerId: string; runFence: number } | { workerId?: never; runFence?: never }),
 ): Promise<ComputerExecutionLease | null> {
   const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
   if (computer.maintenanceId && computer.maintenanceId !== input.runId)
@@ -747,16 +745,17 @@ export async function acquireComputerExecutionLease(
   if (computer.scope !== "team") return null;
   if (isLiveSuspending(computer)) throw new ComputerBusyError();
   return prisma.$transaction(async (tx) => {
-    // Recovery may own the run before its takeover pause was committed. Lock the
-    // current claim so a stale worker cannot reclaim the screen from its successor.
-    await lockOwnedRun(tx, input);
+    // Only the locked current worker claim may reclaim a live same-run lease.
+    // API operations have no worker claim and may acquire only new or expired leases.
+    const ownsRun = input.workerId !== undefined;
+    if (ownsRun) await lockOwnedRun(tx, input);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
     const [reclaimed] = await tx.computerExecutionLease.updateManyAndReturn({
       where: {
         computerId: input.computerId,
         botId: input.botId,
-        OR: [{ expiresAt: { lt: now } }, { runId: input.runId }],
+        OR: [{ expiresAt: { lt: now } }, ...(ownsRun ? [{ runId: input.runId }] : [])],
       },
       data: {
         runId: input.runId,
