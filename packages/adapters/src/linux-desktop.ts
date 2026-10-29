@@ -62,7 +62,7 @@ export function onBotScreen(
   if (
     !context.botId ||
     !request.argv.length ||
-    request.env?.DISPLAY !== undefined ||
+    Object.hasOwn(request.env ?? {}, "DISPLAY") ||
     request.unsetEnv?.includes("DISPLAY")
   )
     return request;
