@@ -185,11 +185,16 @@ jobs:
 
   # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
   # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  test-integration:
-    name: Postgres journeys
+  # The suites are CPU-bound, so two runners finish in about half the time.
+  test-integration-shard:
+    name: Postgres journeys (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     concurrency:
-      group: ci-postgres-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+      group: ci-postgres-${{ matrix.shard }}-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -208,8 +213,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: steps.areas.outputs.server != 'false'
-      - run: pnpm test:integration
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
         if: steps.areas.outputs.server != 'false'
+
+  # The required check and the deploy gate, under one stable name.
+  test-integration:
+    name: Postgres journeys
+    needs: test-integration-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-integration-shard.result }}" = success
 
   test-postgres-upgrade:
     name: Postgres upgrade

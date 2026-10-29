@@ -21,7 +21,7 @@ const runtimeArg = process.argv.find((arg) => arg.startsWith("--runtime="));
 const sandboxProvider = sandboxArg?.slice("--sandbox=".length) ?? "fake";
 const e2eSpec = specArg?.slice("--spec=".length);
 const e2eGrep = grepArg?.slice("--grep=".length);
-const e2eShard = shardArg?.slice("--shard=".length);
+const shard = shardArg?.slice("--shard=".length);
 const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 
 if (Number(integration) + Number(e2e) !== 1) {
@@ -132,14 +132,18 @@ async function main() {
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;
       if (!selected.length) throw new Error(`No integration suite matches ${e2eSpec}`);
       // Files run in parallel, each on its own copy of the migrated database (pin-test-env.ts).
-      await runProcess("pnpm", ["exec", "vitest", "run", ...selected], {
-        ...process.env,
-        COPY_TEST_DATABASE: "1",
-        OPENROUTER_API_KEY: "",
-        MODEL_API_KEY: "",
-        // A developer .env may say development, which changes defaults such as encryption.
-        NODE_ENV: "test",
-      });
+      await runProcess(
+        "pnpm",
+        ["exec", "vitest", "run", ...(shard ? ["--shard", shard] : []), ...selected],
+        {
+          ...process.env,
+          COPY_TEST_DATABASE: "1",
+          OPENROUTER_API_KEY: "",
+          MODEL_API_KEY: "",
+          // A developer .env may say development, which changes defaults such as encryption.
+          NODE_ENV: "test",
+        },
+      );
       await writeSummary(reportDir, {
         ok: true,
         mode,
@@ -240,7 +244,7 @@ async function main() {
             "test",
             ...(e2eSpec ? [e2eSpec] : []),
             ...(e2eGrep ? ["--grep", e2eGrep] : []),
-            ...(e2eShard ? ["--shard", e2eShard] : []),
+            ...(shard ? ["--shard", shard] : []),
           ],
           {
             ...process.env,
