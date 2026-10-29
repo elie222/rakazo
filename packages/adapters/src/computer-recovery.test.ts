@@ -384,7 +384,7 @@ describe("computer recovery preserves live work", () => {
     ).toBe("live work");
   });
 
-  it.each(["running", "error", "stopped", "suspended"])(
+  it.each(["error", "stopped", "suspended"])(
     "reconnects desktop files after an adapter restart from %s without importing an old checkpoint",
     async (state) => {
       const { deps, row, root, first } = await fixture("desktop");
@@ -400,17 +400,38 @@ describe("computer recovery preserves live work", () => {
     },
   );
 
-  it("restores the checkpoint when a desktop workspace is actually absent after restart", async () => {
-    const { deps, row, root, first } = await fixture("desktop");
-    expect(first.fresh).toBe(true);
-    await rm(first.providerRef, { recursive: true });
+  it("reuses a running desktop computer another process started without revoking its screens", async () => {
+    const { deps, row, root, computer, first } = await fixture("desktop");
     deps.sandbox = new DesktopSandboxProvider({ root });
-    const reconnected = await provisionComputer(deps, row.id, context);
-    expect(reconnected).toMatchObject({ providerRef: first.providerRef, fresh: true });
+    const provision = vi.spyOn(deps.sandbox, "provision");
+
+    const reused = await provisionComputer(deps, row.id, context);
+
+    expect(provision).not.toHaveBeenCalled();
+    expect(reused.providerRef).toBe(first.providerRef);
     expect(
-      new TextDecoder().decode(await deps.sandbox.readFile(reconnected, "notes.txt", context)),
-    ).toBe("checkpoint");
+      new TextDecoder().decode(await deps.sandbox.readFile(reused, "notes.txt", context)),
+    ).toBe("live work");
+    expect(computer.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ state: "booting" }) }),
+    );
+    expect(row.state).toBe("running");
   });
+
+  it.each(["retained", "restarted"])(
+    "restores the checkpoint when a desktop workspace is actually absent with a %s provider",
+    async (provider) => {
+      const { deps, row, root, first } = await fixture("desktop");
+      expect(first.fresh).toBe(true);
+      await rm(first.providerRef, { recursive: true });
+      if (provider === "restarted") deps.sandbox = new DesktopSandboxProvider({ root });
+      const reconnected = await provisionComputer(deps, row.id, context);
+      expect(reconnected).toMatchObject({ providerRef: first.providerRef, fresh: true });
+      expect(
+        new TextDecoder().decode(await deps.sandbox.readFile(reconnected, "notes.txt", context)),
+      ).toBe("checkpoint");
+    },
+  );
 
   it.each([
     "Path notes.txt not found",

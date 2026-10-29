@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
@@ -8,6 +8,7 @@ import {
   routeFakeBoatDownloads,
 } from "./boat-sandbox.test-support.js";
 import { fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
+import { toComputerRef } from "./computer-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { emulatedNovita } from "./novita-sandbox.test-support.js";
@@ -282,6 +283,64 @@ describe("sandbox conformance", () => {
     expect(desktop.boxes.size).toBe(1);
 
     await desktop.destroy(second, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("reports a desktop machine running through the reference the computer row stores", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-running-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    // The API and the worker each build their own provider over the same data directory.
+    const otherProcess = new DesktopSandboxProvider({ root });
+    const first = await desktop.provision({ botId: "stable", homePath: "/unused" }, ctx);
+    const stored = toComputerRef({
+      homeKey: "stable",
+      kind: "desktop",
+      providerRef: first.providerRef!,
+    });
+    const never = toComputerRef({
+      homeKey: "other",
+      kind: "desktop",
+      providerRef: path.join(root, "desktop-computers", "other"),
+    });
+
+    expect(await desktop.isRunning(stored, ctx)).toBe(true);
+    expect(await otherProcess.isRunning(stored, ctx)).toBe(true);
+    expect(await otherProcess.isRunning({ ...stored, providerRef: root }, ctx)).toBe(false);
+    expect(await desktop.isRunning(never, ctx)).toBe(false);
+    await desktop.stop(stored, ctx);
+    expect(await desktop.isRunning(stored, ctx)).toBe(false);
+    expect(await otherProcess.isRunning(stored, ctx)).toBe(false);
+    await otherProcess.provision({ botId: "stable", homePath: "/unused" }, ctx);
+    expect(await desktop.isRunning(stored, ctx)).toBe(true);
+    rmSync(first.providerRef!, { recursive: true, force: true });
+    expect(await otherProcess.isRunning(stored, ctx)).toBe(false);
+    writeFileSync(first.providerRef!, "not a home");
+    expect(await otherProcess.isRunning(stored, ctx)).toBe(false);
+    // A stop it cannot record must fail rather than leave the computer reading as running.
+    const blocked = await desktop.provision({ botId: "blocked", homePath: "/unused" }, ctx);
+    mkdirSync(`${blocked.providerRef}.stopped`);
+    await expect(desktop.stop(blocked, ctx)).rejects.toThrow();
+    const gone = { ...never, providerRef: path.join(root, "missing", "gone") };
+    await expect(otherProcess.stop(gone, ctx)).resolves.toBeUndefined();
+    // A marker that cannot be read is not proof the computer is running.
+    const longKey = "k".repeat(250);
+    const longHome = path.join(root, "desktop-computers", longKey);
+    mkdirSync(longHome);
+    await expect(
+      otherProcess.isRunning({ ...never, botId: longKey, providerRef: longHome }, ctx),
+    ).rejects.toThrow();
+    // The marker itself counts, even as a link to nothing.
+    const linked = await desktop.provision({ botId: "linked", homePath: "/unused" }, ctx);
+    symlinkSync(path.join(root, "nowhere"), `${linked.providerRef}.stopped`);
+    const linkedRef = { ...never, botId: "linked", providerRef: linked.providerRef };
+    expect(await otherProcess.isRunning(linkedRef, ctx)).toBe(false);
+    const kept = await desktop.provision({ botId: "kept", homePath: "/unused" }, ctx);
+    await desktop.destroy(kept, ctx);
+    expect(
+      await otherProcess.isRunning({ ...never, botId: "kept", providerRef: kept.providerRef }, ctx),
+    ).toBe(false);
+
+    await desktop.destroy(first, ctx);
     rmSync(root, { recursive: true, force: true });
   });
 
