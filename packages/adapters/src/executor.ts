@@ -1703,7 +1703,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const providerOutage =
           setupError instanceof SandboxUnavailableError ||
           setupError instanceof SandboxUnresponsiveError;
-        if (providerOutage) {
+        // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
+        if (providerOutage || !lease.valid) {
           getLogger().warn("run setup failed", { error: reportedSetupError });
         } else if (!computerBusy) {
           getLogger().error("run setup failed", reportedSetupError);

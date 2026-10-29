@@ -319,7 +319,7 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledOnce();
   });
 
-  it("reports a Boat server error as unresponsive but keeps account errors as they are", async () => {
+  it("reports a Boat server error or unpaid account as unresponsive", async () => {
     const failing = (status: number, code: string) =>
       wrapBoatCall(async () => {
         throw new ResponseError(Response.json({ code, message: "upstream" }, { status }));
@@ -331,8 +331,13 @@ describe("Boat API errors", () => {
     expect((outage as Error).cause).toMatchObject({ response: { status: 500 } });
 
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
-    expect(billing).toBeInstanceOf(BoatApiError);
-    expect(billing).toMatchObject({ code: "billing_required" });
+    expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
+
+    const forbidden = await failing(403, "api_key_action_forbidden")().catch(
+      (failure: unknown) => failure,
+    );
+    expect(forbidden).toBeInstanceOf(BoatApiError);
   });
 
   it("retries once when the connection drops during the TLS handshake", async () => {

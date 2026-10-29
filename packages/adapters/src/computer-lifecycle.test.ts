@@ -9,7 +9,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import { SandboxDamagedError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -1622,6 +1622,62 @@ describe("computer provisioning", () => {
       }
     },
   );
+
+  it("reports only the start failure when the provider is also down for the rollback", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-rollback-outage-"));
+    const prepareError = new SandboxUnresponsiveError("provider unreachable");
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: null,
+          kind: "e2b",
+          scope: "dedicated",
+          state: "stopped",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue({
+        id: "new-provider-1",
+        botId: "bot-1",
+        kind: "e2b",
+        providerRef: "new-provider-1",
+        fresh: true,
+      }),
+      prepare: vi.fn().mockRejectedValue(prepareError),
+      destroy: vi.fn().mockRejectedValue(new SandboxUnresponsiveError("provider unreachable")),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).rejects.toBe(prepareError);
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: { state: "error", providerRef: "new-provider-1", kind: "e2b" },
+        }),
+      );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
 
   it.each([false, true])(
     "preserves a running computer's files on ordinary reconnect (prepare fails=%s)",

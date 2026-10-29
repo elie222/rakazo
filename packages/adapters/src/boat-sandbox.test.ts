@@ -1401,7 +1401,7 @@ describe("BoatSandboxProvider", () => {
           context,
         )
         .catch((error: unknown) => error);
-      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(SandboxUnresponsiveError);
       expect((error as Error).message).toBe(
         failure === "transport" ? "Boat file upload failed" : "Boat file upload failed (HTTP 503)",
       );
@@ -1743,6 +1743,7 @@ describe("BoatSandboxProvider", () => {
       const error = await provider
         .readFile(computer, "large.bin", context)
         .catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(SandboxUnresponsiveError);
       expect((error as Error).message).toBe(
         failure === "transport"
           ? "Boat file download failed"

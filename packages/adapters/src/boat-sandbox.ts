@@ -1032,10 +1032,10 @@ export class BoatSandboxProvider implements SandboxProvider {
       });
     } catch {
       if (signal.aborted) throw signal.reason;
-      throw new Error("Boat file upload failed");
+      throw new SandboxUnresponsiveError("Boat file upload failed");
     }
     await response.body?.cancel().catch(() => undefined);
-    if (!response.ok) throw new Error(`Boat file upload failed (HTTP ${response.status})`);
+    if (!response.ok) throw transferError("upload", response.status);
   }
 
   private async readRemoteFile(
@@ -1155,11 +1155,11 @@ export class BoatSandboxProvider implements SandboxProvider {
       });
     } catch {
       if (downloadSignal.aborted) throw downloadSignal.reason;
-      throw new Error("Boat file download failed");
+      throw new SandboxUnresponsiveError("Boat file download failed");
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Boat file download failed (HTTP ${response.status})`);
+      throw transferError("download", response.status);
     }
     return response;
   }
@@ -1397,6 +1397,12 @@ function logRecovery(
   reason?: string,
 ): void {
   getLogger().warn("sandbox.recover", { provider: "boat", step, ...(reason ? { reason } : {}) });
+}
+
+/** A signed transfer Boat failed on its side is an outage there, like any other Boat call. */
+function transferError(direction: "upload" | "download", status: number): Error {
+  const message = `Boat file ${direction} failed (HTTP ${status})`;
+  return status >= 500 ? new SandboxUnresponsiveError(message) : new Error(message);
 }
 
 /** Boat deletes a stopped sandbox's data after 14 days but keeps the record; it cannot resume. */

@@ -623,6 +623,33 @@ describe("run computer provisioning", () => {
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
 
+  it("does not report setup that a lost run lease aborted", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      provisionComputer.mockImplementation(
+        async (
+          deps: { prisma: { run: { updateMany: ReturnType<typeof vi.fn> } } },
+          _id: string,
+          context: { signal: AbortSignal },
+        ) => {
+          deps.prisma.run.updateMany.mockResolvedValueOnce({ count: 0 });
+          vi.advanceTimersByTime(60_000);
+          await new Promise((resolve) => context.signal.addEventListener("abort", resolve));
+          throw context.signal.reason;
+        },
+      );
+
+      await runRoutine([{ name: "list_files", args: { path: "" } }]).catch(() => undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "run setup failed" }),
+    );
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+  });
+
   it("fails the run instead of retrying once setup has failed too many times in a row", async () => {
     provisionComputer.mockRejectedValue(new Error("provider unavailable"));
 
