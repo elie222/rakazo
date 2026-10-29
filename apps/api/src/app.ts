@@ -902,16 +902,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   }
   if (messagingInstallations) {
-    app.get("/api/v1/messaging/install/slack/callback", async (c) => {
-      try {
-        await messagingInstallations.complete(
-          c.req.query("state") ?? "",
-          c.req.query("code") ?? "",
-        );
-        return c.redirect(new URL("/app?settings=messaging", env.webOrigin).toString());
-      } catch {
-        return c.text("Slack connection failed. Return to Rakazo and try again.", 400);
-      }
+    // Slack's registered redirect; the signed-in app finishes it so only the installer can.
+    app.get("/api/v1/messaging/install/slack/callback", (c) => {
+      const target = new URL("/messaging/slack/callback", env.webOrigin);
+      target.search = new URL(c.req.url).search;
+      return c.redirect(target.toString());
     });
   }
   app.use(

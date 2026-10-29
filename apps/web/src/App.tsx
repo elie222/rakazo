@@ -39,6 +39,7 @@ import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
+import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
 
 const AuthPage = lazyComponent(() => import("./pages/Auth").then((module) => module.AuthPage));
 const PasswordResetPage = lazyComponent(() =>
@@ -97,6 +98,7 @@ export function App() {
 }
 
 const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 
 function SessionApp() {
   const [searchParams] = useSearchParams();
@@ -105,7 +107,8 @@ function SessionApp() {
   const signInDestination =
     next === "/integrations/setup" ||
     next === "/admin/plugins" ||
-    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`)
+    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
+    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
       ? next
       : "/app";
   const ticketBoardEnabled = useSyncExternalStore(
@@ -200,6 +203,19 @@ function SessionApp() {
                 element={
                   user ? (
                     <McpOAuthCallbackPage />
+                  ) : (
+                    <Navigate
+                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}
+                      replace
+                    />
+                  )
+                }
+              />
+              <Route
+                path={SLACK_INSTALL_CALLBACK_PATH}
+                element={
+                  user ? (
+                    <SlackInstallCallbackPage />
                   ) : (
                     <Navigate
                       to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}

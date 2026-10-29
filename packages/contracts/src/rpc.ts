@@ -1075,6 +1075,9 @@ export const appContract = {
       list: oc.output(MessagingInstallationsStatusSchema),
       /** Without a bot, the workspace answers as the first bot in the user's default space. */
       start: oc.input(z.object({ botId: Id.optional() })).output(z.object({ url: z.string() })),
+      complete: oc
+        .input(z.object({ state: z.string().max(64), code: z.string().max(4096) }))
+        .output(z.object({ ok: z.literal(true) })),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
     status: oc.output(MessagingStatusSchema),
