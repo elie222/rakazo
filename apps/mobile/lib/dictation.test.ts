@@ -4,6 +4,7 @@ import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictat
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 type Listener = (payload: never) => void;
 
@@ -20,6 +21,7 @@ function fakeRecognizer() {
     abort,
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: async () => ({ granted: true }),
+    getSupportedLocales: async () => ({ locales: [] }),
     addListener: (event, listener) => {
       const set = listeners.get(event) ?? new Set();
       set.add(listener as Listener);

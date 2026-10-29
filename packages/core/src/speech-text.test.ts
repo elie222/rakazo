@@ -278,4 +278,23 @@ describe("spokenDecision", () => {
     expect(spokenDecision("I'm sure that's fine, go look at the logs")).toBeNull();
     expect(spokenDecision("")).toBeNull();
   });
+
+  it.each([
+    ["Sí", "yes"],
+    ["¡Sí, hazlo!", "yes"],
+    ["Vale", "yes"],
+    ["De acuerdo, adelante", "yes"],
+    ["No, gracias", "no"],
+    ["mejor no", "no"],
+    ["Cancélalo", "no"],
+  ])("hears the Spanish %j as %j", (said, decision) => {
+    expect(spokenDecision(said)).toBe(decision);
+  });
+
+  it("does not hear a yes in a Spanish condition, question or instruction", () => {
+    expect(spokenDecision("si puedes, revisa los logs")).toBeNull();
+    expect(spokenDecision("sino revisa el deploy")).toBeNull();
+    expect(spokenDecision("¿Sí? ¿Cuáles?")).toBeNull();
+    expect(spokenDecision("dale los permisos de admin")).toBeNull();
+  });
 });

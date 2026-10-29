@@ -97,6 +97,16 @@ const PRIMARY_LOCALES: Readonly<Record<string, string>> = {
   ja: "ja-jp",
 };
 
+/** Lowercase voice locales to fall back on, best first, when the device's own has no voice. */
+function primaryLocales(locale: string, region: string | undefined): string[] {
+  const [language = "", country = region] = locale.split("-");
+  // Outside Spain a Latin American voice sounds closer than Castilian. iOS ships Mexico's,
+  // Android the United States'.
+  if (language === "es" && country && country !== "es") return ["es-mx", "es-us", "es-es"];
+  const primary = PRIMARY_LOCALES[language];
+  return primary ? [primary] : [];
+}
+
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await loadSpeech();
   const locale = getLocales()[0]?.languageTag ?? getActiveUiLocale();
@@ -140,10 +150,10 @@ export function voiceForBot(botId: string): Promise<string | undefined> {
       const tag = voice.language.toLowerCase();
       return tag === locale || (region && tag.split("-").slice(1).includes(region));
     });
-    const primaryLocale = PRIMARY_LOCALES[locale.split("-")[0] ?? ""];
-    const primaryRegion = available.filter(
-      (voice) => voice.language.toLowerCase() === primaryLocale,
-    );
+    const primaryRegion =
+      primaryLocales(locale, region)
+        .map((tag) => available.filter((voice) => voice.language.toLowerCase() === tag))
+        .find((voices) => voices.length) ?? [];
     const candidates = sameLocale.length
       ? sameLocale
       : primaryRegion.length

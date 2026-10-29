@@ -10,6 +10,7 @@ import {
   formatCron,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  localizedClock,
   nextCronDate,
   nextCronDateAcross,
   nextCronDateAcrossStrict,
@@ -193,6 +194,15 @@ describe("resolveRoutineNextRunAt", () => {
   it("computes cron schedules for repeating routines", () => {
     const next = resolveRoutineNextRunAt("*/1 * * * *", new Date(), "UTC", null);
     expect(next?.getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("localizedClock", () => {
+  it("writes a schedule time the way the language does", () => {
+    expect(localizedClock("9:00 PM", "es")).toBe("21:00");
+    expect(localizedClock("12:00 AM", "es")).toBe("0:00");
+    expect(localizedClock("6:30 AM", "de")).toBe("6:30");
+    expect(localizedClock("9:00 PM", "en")).toMatch(/^9:00\sPM$/);
   });
 });
 

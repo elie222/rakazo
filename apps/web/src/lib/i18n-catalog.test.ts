@@ -36,6 +36,29 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("translates dictation and voice errors into Spanish", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/es/messages.po", import.meta.url)),
+      "utf8",
+    );
+    for (const message of [
+      "Allow Rakazo to use Speech Recognition and the microphone in System Settings.",
+      "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer.",
+      "Dictation failed: {code}",
+      "Transcription request timed out.",
+      "Add a voice provider key and pick a voice in Voice settings.",
+      "Voice request timed out.",
+    ]) {
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+      const translated = entry?.split("msgstr ")[1];
+      expect(translated, message).toBeTruthy();
+      expect(translated, message).not.toBe('""');
+      if (message.includes("{code}")) expect(translated).toContain("{code}");
+    }
+  });
+
   it("localizes provider error guidance and retains its placeholders", () => {
     const messages = [
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
@@ -123,6 +146,19 @@ describe("lingui catalogs", () => {
           message.match(/\{\w+\}/g) ?? [],
         );
       }
+    }
+  });
+
+  it("names a fixed minute every few hours in every locale", () => {
+    for (const locale of UI_LOCALES) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes('msgid "Every {n} hours at :{minute}"\n'));
+      expect(entry, locale).toMatch(/msgstr ".*\{n\}.*\{minute\}.*"/);
     }
   });
 
