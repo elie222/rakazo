@@ -363,4 +363,23 @@ describe("sandbox conformance", () => {
     await desktop.destroy(computer, ctx);
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("desktop file listings skip links that dangle or leave the workspace", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-list-links-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "list-links", homePath: "/unused" }, ctx);
+    const directory = path.join(computer.providerRef, "links");
+    mkdirSync(directory);
+    writeFileSync(path.join(root, "outside.txt"), "outside");
+    writeFileSync(path.join(directory, "kept.txt"), "inside");
+    symlinkSync(path.join(root, "outside.txt"), path.join(directory, "escape.txt"));
+    symlinkSync(path.join(directory, "missing.txt"), path.join(directory, "dangling.txt"));
+
+    expect(await desktop.listFiles(computer, "links", ctx)).toEqual([
+      { path: "links/kept.txt", kind: "file", size: 6 },
+    ]);
+
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
+  });
 });

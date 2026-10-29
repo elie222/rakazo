@@ -362,11 +362,13 @@ export class DesktopSandboxProvider implements SandboxProvider {
     const entries = await readdir(target, { withFileTypes: true });
     const listed = await Promise.all(
       entries.map(async (entry) => {
+        // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
         const child = await localWorkspaceTarget(
           box.home,
           relative ? `${relative}/${entry.name}` : entry.name,
           true,
-        );
+        ).catch(() => null);
+        if (!child) return null;
         const info = await stat(child);
         return {
           path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
@@ -376,7 +378,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
         };
       }),
     );
-    return listed;
+    return listed.filter((entry) => entry !== null);
   }
 
   async readFile(
