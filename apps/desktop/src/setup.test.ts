@@ -293,10 +293,13 @@ describe("setup", () => {
 
     expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers: {} }]);
     expect(field.disabled).toBe(true);
+    // Headers saved with this address must not change while the save is pending.
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(true);
 
     ui.resolveSave({ ok: false, error: "Server did not answer." });
     await flush();
     expect(field.disabled).toBe(false);
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(false);
     expect(element("status").textContent).toBe("Server did not answer.");
   });
 

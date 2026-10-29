@@ -84,6 +84,7 @@
   function lockChoice(locked) {
     for (const input of form.querySelectorAll('input[name="mode"]')) input.disabled = locked;
     serverUrl.disabled = locked;
+    serverHeaders.disabled = locked;
   }
 
   function syncPanels() {
