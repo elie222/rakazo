@@ -5,6 +5,7 @@ import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
 import { buildSkillMd, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
@@ -495,6 +496,8 @@ function collectMcpServers(
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const BUILTIN_SKILL_NAMES = new Set(BUILTIN_AGENT_SKILLS.map((skill) => skill.name.toLowerCase()));
+
 /** Pure parser; inputs are regular-file content already constrained by acquisition. */
 export function parsePluginDirectory(input: {
   files: PluginRepoFile[];
@@ -555,7 +558,10 @@ export function parsePluginDirectory(input: {
     ...collectSkills(files, skipped, names),
     ...collectAgents(files, skipped, names),
     ...collectCommands(files, names, skipped),
-  ].sort((a, b) => a.name.localeCompare(b.name));
+  ]
+    // A skill named like a built-in one repeats it; every user already has the built-in.
+    .filter((skill) => !BUILTIN_SKILL_NAMES.has(skill.name.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const canonical = [...files.entries()].sort(([a], [b]) => a.localeCompare(b));
   return {
     format,

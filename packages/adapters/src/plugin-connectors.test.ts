@@ -170,6 +170,18 @@ describe("portable plugin parser", () => {
       expect.objectContaining({ kind: "skill_invalid", name: `commands/${"x".repeat(81)}.md` }),
     );
   });
+  it("leaves out skills that repeat a built-in one, without marking the plugin partial", () => {
+    const preview = parse([
+      ...files(),
+      {
+        path: "skills/interrogate/SKILL.md",
+        content: "---\nname: interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
+      },
+      { path: "commands/INTERROGATE.md", content: "Review the diff" },
+    ]);
+    expect(preview.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(preview.skipped).toEqual([]);
+  });
   it("tells from a file list whether every part installs", () => {
     const remote = JSON.stringify({
       mcpServers: { tools: { type: "http", url: "https://tools.example.test/mcp" } },

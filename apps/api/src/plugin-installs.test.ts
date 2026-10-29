@@ -172,7 +172,7 @@ describe("confirmed plugin installation", () => {
     expect(prisma.capabilityInstall.create).not.toHaveBeenCalled();
     expect(prisma.agentSkill.create).not.toHaveBeenCalled();
   });
-  it("checks built-in names before opening a write transaction", async () => {
+  it("installs the other skills when one repeats a built-in skill", async () => {
     const { deps, prisma } = setup();
     const builtin = BUILTIN_AGENT_SKILLS[0]!;
     deps.fetcher = async () => ({
@@ -180,12 +180,32 @@ describe("confirmed plugin installation", () => {
       files: [
         { path: ".cursor-plugin/plugin.json", content: JSON.stringify({ name: "example-plugin" }) },
         { path: "skills/builtin/SKILL.md", content: builtin.content },
+        {
+          path: "skills/example/SKILL.md",
+          content: "---\nname: example-skill\ndescription: Example skill\n---\n\nUse it.\n",
+        },
+      ],
+    });
+    const digest = (await previewPluginInstall({ source, fetcher: deps.fetcher })).digest;
+    await installPlugin(deps, actor, { source, name: "Example", config: {}, pluginDigest: digest });
+    expect(prisma.agentSkill.create).toHaveBeenCalledTimes(1);
+    expect(prisma.agentSkill.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: "example-skill" }),
+    });
+  });
+  it("refuses a plugin whose only skill repeats a built-in one, before writing", async () => {
+    const { deps, prisma } = setup();
+    deps.fetcher = async () => ({
+      resolvedSha: sha,
+      files: [
+        { path: ".cursor-plugin/plugin.json", content: JSON.stringify({ name: "example-plugin" }) },
+        { path: "skills/builtin/SKILL.md", content: BUILTIN_AGENT_SKILLS[0]!.content },
       ],
     });
     const digest = (await previewPluginInstall({ source, fetcher: deps.fetcher })).digest;
     await expect(
       installPlugin(deps, actor, { source, name: "Example", config: {}, pluginDigest: digest }),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
   it("cleans prepared secret references when a later encryption fails", async () => {
