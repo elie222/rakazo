@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import type { AgentImportPlan } from "@rakazo/contracts";
+import type { AgentImportPlan, Bot } from "@rakazo/contracts";
 import type * as Core from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -17,8 +17,14 @@ vi.mock("@lingui/react/macro", () => {
 });
 
 const importPreview = vi.fn();
+const importCreate = vi.fn();
 vi.mock("../../lib/rpc", () => ({
-  rpc: { bots: { importPreview: (input: unknown) => importPreview(input) } },
+  rpc: {
+    bots: {
+      importPreview: (input: unknown) => importPreview(input),
+      importCreate: (input: unknown) => importCreate(input),
+    },
+  },
 }));
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
@@ -40,6 +46,7 @@ let container: HTMLDivElement | null = null;
 
 beforeEach(() => {
   importPreview.mockReset();
+  importCreate.mockReset();
   i18n.load("en", {});
   i18n.activate("en");
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -378,5 +385,63 @@ describe("an item whose text looks like it contains a key", () => {
       expect(summary.textContent).not.toContain(key);
     }
     expect(labels.join("\n")).not.toContain(key);
+  });
+});
+
+describe("creating a bot", () => {
+  function button(label: string) {
+    return [...container!.querySelectorAll("button")].find(
+      (item) => item.textContent === label || item.getAttribute("aria-label") === label,
+    ) as HTMLButtonElement;
+  }
+
+  async function openPreview() {
+    importPreview.mockResolvedValue(plan);
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(<AgentImportForm onClose={onClose} onCreated={onCreated} />);
+    });
+    const archive = container.querySelector<HTMLInputElement>(
+      '[data-testid="agent-import-archive"]',
+    )!;
+    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: () => Promise.resolve(new Uint8Array([2]).buffer),
+    });
+    await act(async () => {
+      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
+      archive.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    return { onClose, onCreated };
+  }
+
+  it("keeps the preview when Back is pressed while creation is running", async () => {
+    let finish!: (bot: Bot) => void;
+    importCreate.mockReturnValue(new Promise<Bot>((resolve) => (finish = resolve)));
+    const { onClose, onCreated } = await openPreview();
+    await act(async () => button("Create").click());
+    expect(button("Back").disabled).toBe(true);
+
+    await act(async () => button("Back").click());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+    expect(button("Creating…").disabled).toBe(true);
+
+    await act(async () => finish({ id: "bot-1" } as Bot));
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(importCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets Back leave the preview after creation fails", async () => {
+    importCreate.mockRejectedValue(new Error("nope"));
+    const { onClose } = await openPreview();
+    await act(async () => button("Create").click());
+    await act(async () => button("Back").click());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
   });
 });

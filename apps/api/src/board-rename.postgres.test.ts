@@ -121,6 +121,9 @@ describe.skipIf(!enabled).sequential("board prefix rename (PostgreSQL)", () => {
     await Promise.race([ticketInserted, creator]);
 
     const rename = client().boards.rename({ name: "Launch", ticketPrefix: "OPS" });
+    // The rename can reject as soon as the creator commits, before the assertion below
+    // attaches; handle it now so it never surfaces as an unhandled rejection.
+    rename.catch(() => undefined);
     try {
       // Deterministically wait for the rename's conditional update to sit on
       // the board row lock this creator holds: a Lock-waiting backend that

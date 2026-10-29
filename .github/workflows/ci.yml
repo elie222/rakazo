@@ -47,46 +47,6 @@ jobs:
       - id: areas
         run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
 
-  lint:
-    name: Lint
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - name: Check translation catalogs are current
-        run: |
-          pnpm --filter @rakazo/web intl:extract
-          git diff --exit-code -- apps/web/src/locales
-
-  check:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ci-typecheck-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
-        env:
-          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
-      - run: pnpm check
-
   build:
     name: Production builds
     needs: changes
@@ -118,36 +78,95 @@ jobs:
           path: apps/desktop/e2e/screenshots
           if-no-files-found: ignore
 
-  test:
-    name: Unit tests
+  # Lint, typecheck and unit tests share one runner so a run installs once. A deploy needs this job,
+  # so like Postgres journeys it checks its own changed areas to reach its main lock in push order.
+  # Pull requests typecheck and test only the packages their files touch and the packages that
+  # depend on them, unless a change sits outside the package graph; main always runs everything.
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     concurrency:
-      group: ci-unit-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+      group: ci-checks-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - id: areas
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Lint
+        if: github.event_name == 'pull_request'
+        run: pnpm lint
+      - name: Check translation catalogs are current
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm --filter @rakazo/web intl:extract
+          git diff --exit-code -- apps/web/src/locales
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      # Pull requests reuse main's typecheck results for packages whose inputs they leave unchanged.
+      # Main starts with an empty cache, so it typechecks everything before a deploy.
+      - name: Restore typecheck cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ github.sha }}
+          restore-keys: turbo-check-
+      - name: Typecheck
+        if: steps.areas.outputs.all_packages != 'false'
+        run: pnpm check
+      - name: Typecheck affected packages
+        if: steps.areas.outputs.all_packages == 'false'
+        run: pnpm check --affected
+        env:
+          TURBO_SCM_BASE: HEAD^1
+      - name: Save typecheck cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .turbo/cache
+          key: turbo-check-${{ github.sha }}
       - name: Install age for the encrypted backup round trip
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
-      - run: pnpm test
+      - name: Unit tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: pnpm test
+      - name: Unit tests for affected packages
+        if: steps.areas.outputs.all_packages == 'false'
+        env:
+          TURBO_SCM_BASE: HEAD^1
+        run: |
+          affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
+          mapfile -t packages < <(printf "%s" "$affected")
+          # These read other packages' files without importing them, so the package graph misses them.
+          pnpm exec vitest run "${packages[@]}" \
+            infra/updater/src/compose-env.test.ts \
+            packages/adapters/src/lark-lazy-loading.test.ts \
+            packages/testkit/src/ios-screenshot-catalog.test.ts
       - name: Host operations safety tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/compose/host-safeguards.test.py
       - name: Codex subscription auth safety tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/codex-subscription-auth.test.py
       - name: Dependency update patch safety tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/dependency-update-patch.test.py
       - name: Changed-area classification tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/changed-areas.test.py
       - name: App Store review submission tests
+        if: steps.areas.outputs.all_packages != 'false'
         run: node --test .github/scripts/app-store-review.test.mjs
 
   native-computer:
@@ -263,7 +282,7 @@ jobs:
   publish-mobile-update:
     name: Publish compatible mobile update
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [check, test, test-integration]
+    needs: [checks, test-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -473,7 +492,7 @@ jobs:
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     # The host pulls the image published for this commit; it builds only if that pull fails.
     # Only checks that catch a broken server gate the deploy; lint, E2E, and Docker drills report on their own.
-    needs: [check, test, test-integration, publish-server-image]
+    needs: [checks, test-integration, publish-server-image]
     runs-on: ubuntu-latest
     # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
     timeout-minutes: 45

@@ -98,6 +98,7 @@ export function AgentImportForm({
   const [reply, setReply] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   // Bumped by every new read, so a slower earlier one never lands over it.
   const latestRead = useRef(0);
   const [error, setError] = useState<string | null>(null);
@@ -351,6 +352,7 @@ export function AgentImportForm({
   async function create() {
     if (!plan || !ready || busy) return;
     setError(null);
+    setCreating(true);
     setBusy(true);
     try {
       const bot = await rpc.bots.importCreate({
@@ -380,6 +382,7 @@ export function AgentImportForm({
       onCreated(bot);
     } catch (err) {
       failure(err, t`Could not create bot`);
+      setCreating(false);
       setBusy(false);
     }
   }
@@ -498,6 +501,7 @@ export function AgentImportForm({
             variant="ghost"
             size="icon-sm"
             aria-label={t`Back`}
+            disabled={creating}
             onClick={() => {
               stopReading();
               if (plan) setPlan(null);

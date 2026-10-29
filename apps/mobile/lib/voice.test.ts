@@ -306,6 +306,75 @@ describe("hosted voice playback controls", () => {
     await expect(spoken).resolves.toBe(true);
   });
 
+  it("renders the next utterance while the current clip is still playing", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: unknown }) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    const spoken = speakText("Read this", { botId: "bot-1" });
+    await waitFor(() => ControllableAudio.instances.length === 1);
+    const firstAudio = ControllableAudio.instances[0]!;
+    await waitFor(() => firstAudio.paused === false);
+
+    await waitFor(() => requested.length === 2);
+    expect(requested).toEqual(["First", "Second"]);
+    expect(ControllableAudio.instances).toHaveLength(1);
+
+    firstAudio.onended?.();
+    await waitFor(() => ControllableAudio.instances.length === 2);
+    const secondAudio = ControllableAudio.instances[1]!;
+    await waitFor(() => secondAudio.paused === false);
+    secondAudio.onended?.();
+
+    await expect(spoken).resolves.toBe(true);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
+
+  it("surfaces a prefetched clip's failure when playback reaches it, with no unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) throw new Error("Offline.");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+
+    try {
+      const spoken = speakText("Read this", { botId: "bot-1" });
+      const outcome = spoken.then(
+        () => "spoken",
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      await waitFor(() => ControllableAudio.instances.length === 1);
+      const firstAudio = ControllableAudio.instances[0]!;
+      await waitFor(() => firstAudio.paused === false);
+      await waitFor(() => calls === 2);
+      expect(ControllableAudio.instances).toHaveLength(1);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+
+      firstAudio.onended?.();
+      await expect(outcome).resolves.toBe("Offline.");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      stopVoicePlayback();
+    }
+  });
+
   it("stops immediately and resolves the call without playing further utterances", async () => {
     const spoken = speakText("Read this", { botId: "bot-1" });
     await waitFor(() => ControllableAudio.instances.length > 0);
