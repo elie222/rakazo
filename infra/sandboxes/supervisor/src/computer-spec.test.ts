@@ -280,17 +280,42 @@ describe("graphical computer spec", () => {
       ReadOnly: false,
       BindOptions: { Propagation: "rslave" },
     };
-    const match = (mounts: unknown[] | undefined, want = desired) =>
-      computerMountsMatch(mounts as Parameters<typeof computerMountsMatch>[0], want);
+    // Labels as the computer was created with `created` mounts.
+    const labels = (created: typeof desired) =>
+      containerCreateOptions({
+        name: "rakazo-bot-x",
+        image: "img",
+        botId: "x",
+        spaceId: "s",
+        homePath: "/data/x",
+        mounts: created,
+      }).Labels;
+    const match = (mounts: unknown[] | undefined, want = desired, created = want) =>
+      computerMountsMatch(
+        {
+          Config: { Labels: labels(created) },
+          HostConfig: { Mounts: mounts },
+        } as unknown as Parameters<typeof computerMountsMatch>[0],
+        want,
+      );
     expect(match(undefined, [])).toBe(true);
     expect(match([home], [])).toBe(true);
     expect(match([home, shares, docs])).toBe(true);
+    // Docker Desktop stores its own VM path as the source of a bind beside a volume home.
+    const rewritten = "/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/Ubuntu/abc";
+    expect(match([home, { ...docs, Source: rewritten }, shares])).toBe(true);
     // A computer created before a mount was added, or after one was removed, is replaced.
     expect(match([home, docs])).toBe(false);
     expect(match([home, docs, shares], desired.slice(0, 1))).toBe(false);
-    // So is one whose mount changed access or propagation.
+    // So is one whose mount changed source, access or propagation.
+    const moved = resolveComputerMounts(
+      "/srv/other:/mnt/docs:ro,/srv/shares:/mnt/shares:rw:rslave",
+    );
+    expect(match([home, docs, shares], desired, moved)).toBe(false);
     expect(match([home, { ...docs, ReadOnly: false }, shares])).toBe(false);
     expect(match([home, docs, { ...shares, BindOptions: undefined }])).toBe(false);
+    // And one created before its sources were labeled, since its source cannot be read back.
+    expect(match([home, docs, shares], desired, [])).toBe(false);
   });
 
   it("mounts read-only unless rw is explicit", () => {

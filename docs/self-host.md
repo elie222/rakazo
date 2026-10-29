@@ -178,7 +178,9 @@ only): comma-separated `source:target[:option...]` entries, for example
 `/srv/team-docs:/mnt/team-docs`. Mounts are read-only unless the entry adds `rw`; `rslave` is the
 other option and requires `rw`, because mounts that reach the computer later keep their own
 write access. Both paths must be absolute without `..`, and targets must sit below `/mnt`,
-`/media` or `/srv`.
+`/media` or `/srv`. On Docker Desktop for Windows, write a source in its WSL form
+(`/mnt/c/Users/me/Docs` for `C:\Users\me\Docs`); Docker rejects the Windows form, and `rslave`
+does not work on these folders.
 
 The setting is deployment-wide: every bot in every Space sees every mount, and with `rw` any of
 them can change or delete what another Space's bots read. Mount only what all of them may see.

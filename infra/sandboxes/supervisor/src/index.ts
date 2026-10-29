@@ -297,7 +297,7 @@ app.post("/computers", async (c) => {
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
-          computerMountsMatch(info.HostConfig.Mounts, computerMounts) &&
+          computerMountsMatch(info, computerMounts) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
