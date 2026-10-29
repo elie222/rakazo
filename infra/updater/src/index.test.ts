@@ -155,6 +155,32 @@ describe("updater HTTP surface", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/\.env/) });
   });
+
+  it("refuses a failed plan without leaving a rejection that could stop the process", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const subject = createUpdaterApp(
+        resolveUpdaterConfig({
+          RAKAZO_DEPLOY_DIR: "/rakazo-updater-tests-no-such-directory",
+          RAKAZO_UPDATER_TOKEN: token,
+        }),
+      );
+      const input = { repoUrl: "https://github.com/elie222/rakazo", branch: "main" };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await request(subject, "/plan", input);
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+          error: expect.stringMatching(/\.env/),
+        });
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
 });
 
 describe("updater orchestration", () => {
