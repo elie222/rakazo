@@ -8,7 +8,11 @@ import {
   isNonPublicAddress,
 } from "@rakazo/contracts";
 import { Agent } from "undici";
-import { combineSignals } from "./connector-safety.js";
+import {
+  combineSignals,
+  redactConnectorPayload,
+  sanitizeConnectorError,
+} from "./connector-safety.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import { createAddressCheckedLookup } from "./network-address.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
@@ -322,7 +326,8 @@ async function withSerenityClient<T>(
   const client = new Client({ name: "rakazo", version: "0.1.0" }, { capabilities: {} });
   try {
     await client.connect(transport, { signal: requestSignal, timeout: SERENITY_TIMEOUT_MS });
-    return await run(client, requestSignal);
+    // A server or proxy may echo the bearer token it received; never hand it to the model.
+    return redactConnectorPayload(await run(client, requestSignal), [config.token]) as T;
   } finally {
     // Each verb opens its own MCP session; end it server-side instead of leaving it to expire.
     // The SDK's DELETE ignores our request signal, so bound it before closing.
@@ -373,7 +378,7 @@ export async function probeSerenity(
   } catch (error) {
     return {
       ok: false,
-      error: `Serenity is unreachable: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Serenity is unreachable: ${sanitizeConnectorError(error, [config.token])}`,
     };
   }
 }
@@ -419,7 +424,7 @@ export async function recallSerenity(
   } catch (error) {
     return {
       ok: false,
-      error: `Serenity recall failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Serenity recall failed: ${sanitizeConnectorError(error, [config.token])}`,
     };
   }
 }
@@ -490,7 +495,7 @@ export async function rememberSerenity(
   } catch (error) {
     return {
       ok: false,
-      error: `Serenity remember failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Serenity remember failed: ${sanitizeConnectorError(error, [config.token])}`,
     };
   }
 }
@@ -549,7 +554,7 @@ export async function forgetSerenity(
   } catch (error) {
     return {
       ok: false,
-      error: `Serenity forget failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Serenity forget failed: ${sanitizeConnectorError(error, [config.token])}`,
     };
   }
 }
