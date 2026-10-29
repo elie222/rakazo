@@ -148,7 +148,8 @@ export function computerRoutes(ctx: RouterContext) {
         const claimed = await deps.prisma.computer.updateMany({
           where: {
             id: bot.computer.id,
-            state: { notIn: ["suspending", "quarantined"] },
+            // Provision may resume the sandbox after Stop returns; let the boot finish first.
+            state: { notIn: ["booting", "suspending", "quarantined"] },
             providerRef: bot.computer.providerRef,
             kind: bot.computer.kind,
             maintenanceId: null,
@@ -160,7 +161,7 @@ export function computerRoutes(ctx: RouterContext) {
         });
         if (claimed.count !== 1) {
           throw new ORPCError("CONFLICT", {
-            message: "Other Team bots are still using this computer",
+            message: "Computer is busy",
           });
         }
         const otherRun = await deps.prisma.run.findFirst({
