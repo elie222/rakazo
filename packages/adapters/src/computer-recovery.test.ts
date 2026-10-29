@@ -358,4 +358,29 @@ describe("computer recovery preserves live work", () => {
     expect(provision).not.toHaveBeenCalled();
     expect(row.providerRef).toBe(first.providerRef);
   });
+
+  it("keeps the reference for a retry when Recover cannot delete the old sandbox", async () => {
+    const { deps, row, first } = await fixture();
+    const failure = new Error("sandbox destroy failed: 500");
+    const destroy = vi.spyOn(deps.sandbox, "destroy").mockRejectedValueOnce(failure);
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    await expect(replaceComputer(deps, row.id, "recover", context)).rejects.toBe(failure);
+    expect(provision).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ state: "error", providerRef: first.providerRef });
+
+    const recovered = await replaceComputer(deps, row.id, "recover", context);
+    expect(destroy).toHaveBeenCalledTimes(2);
+    expect(provision).toHaveBeenCalledOnce();
+    expect(row).toMatchObject({ state: "running", providerRef: recovered.providerRef });
+  });
+
+  it("recovers past teardown of a sandbox the provider reports gone", async () => {
+    const { deps, row } = await fixture();
+    const gone = Object.assign(new Error("gone"), { name: "SandboxNotFoundError" });
+    vi.spyOn(deps.sandbox, "destroy").mockRejectedValue(gone);
+    const provision = vi.spyOn(deps.sandbox, "provision");
+    const recovered = await replaceComputer(deps, row.id, "recover", context);
+    expect(provision).toHaveBeenCalledOnce();
+    expect(row).toMatchObject({ state: "running", providerRef: recovered.providerRef });
+  });
 });

@@ -431,6 +431,14 @@ describe("Docker sandbox", () => {
     await expect(provider.destroy(computer, context)).rejects.toThrow(
       "sandbox destroy failed: 500 boom",
     );
+
+    fetchMock.mockImplementation(async () => Response.json({ ok: true }));
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+    // A 404 that does not say the computer is missing could still leave it running.
+    fetchMock.mockImplementation(async () => new Response("404 Not Found", { status: 404 }));
+    await expect(provider.destroy(computer, context)).rejects.toThrow(
+      "sandbox destroy failed: 404 404 Not Found",
+    );
   });
 
   it("does not buffer an oversized supervisor error body", async () => {

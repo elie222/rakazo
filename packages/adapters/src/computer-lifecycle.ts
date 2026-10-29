@@ -1072,7 +1072,8 @@ export async function replaceComputer(
       try {
         await deps.sandbox.destroy(oldRef, context);
       } catch (error) {
-        if (mode !== "recover" && !isSandboxGoneError(error)) throw error;
+        // Recover too: dropping the reference would orphan a sandbox that may still run.
+        if (!isSandboxGoneError(error)) throw error;
       }
     }
     const stopped = await deps.prisma.computer.updateMany({

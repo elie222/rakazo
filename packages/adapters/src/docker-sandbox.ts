@@ -568,11 +568,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(
-        `sandbox destroy failed: ${res.status} ${await safeBody(res, context.signal)}`.trim(),
-      );
-    }
+    if (res.ok) return;
+    const body = await safeBody(res, context.signal);
+    // Only the supervisor's missing-computer answer means already deleted.
+    if (res.status === 404 && body.includes("computer not found")) return;
+    throw new Error(`sandbox destroy failed: ${res.status} ${body}`.trim());
   }
 
   private async *walkWorkspace(

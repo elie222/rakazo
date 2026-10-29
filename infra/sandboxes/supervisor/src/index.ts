@@ -1119,7 +1119,10 @@ app.delete("/computers/:id", async (c) => {
     return await withBotLifecycleLock(botId, async () => {
       const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
       await withComputerScreenLock(id, async () => {
-        await container.remove({ force: true }).catch(() => undefined);
+        await container.remove({ force: true }).catch((error) => {
+          // Already gone is deleted; any other failure may leave the computer running.
+          if ((error as { statusCode?: number })?.statusCode !== 404) throw error;
+        });
         clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
       });
       if (screenNetworkMode !== "internal") {
@@ -1127,8 +1130,12 @@ app.delete("/computers/:id", async (c) => {
       }
       return c.json({ ok: true });
     });
-  } catch {
-    return c.json({ error: "computer not found" }, 404);
+  } catch (error) {
+    if (error instanceof ComputerIdentityError)
+      return c.json({ error: "invalid computer identity" }, 403);
+    if ((error as { statusCode?: number })?.statusCode === 404)
+      return c.json({ error: "computer not found" }, 404);
+    return c.json({ error: "computer failed to delete" }, 500);
   }
 });
 
