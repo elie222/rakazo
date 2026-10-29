@@ -86,6 +86,9 @@ describe("MCP transport seam", () => {
         installedBin: { binPath: process.execPath },
       }),
     ).rejects.toThrow("not installed by Rakazo");
+    await expect(
+      session.connectStdio({ command: "npx", args: ["-c", "echo hi"], allowedCommands: ["npx"] }),
+    ).rejects.toThrow("npx only launches");
     // The launcher itself must still be allowlisted.
     await expect(
       session.connectStdio({

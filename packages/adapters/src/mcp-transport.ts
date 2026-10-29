@@ -10,7 +10,7 @@ import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
 
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
-import { isInstalledMcpBin } from "./mcp-package-installer.js";
+import { isInstalledMcpBin, isNpxCommand } from "./mcp-package-installer.js";
 
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
 import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
@@ -292,6 +292,9 @@ function stdioParams(options: McpStdioOptions): StdioServerParameters {
   }
   if (options.installedBin !== undefined && !isInstalledMcpBin(options.installedBin)) {
     throw new Error("MCP stdio bin was not installed by Rakazo");
+  }
+  if (options.installedBin === undefined && isNpxCommand(options.command)) {
+    throw new Error("npx only launches a package bin Rakazo installed");
   }
   const command = options.installedBin?.binPath ?? options.command.trim();
   const env: Record<string, string> = {};

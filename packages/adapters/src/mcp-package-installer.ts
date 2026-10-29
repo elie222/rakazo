@@ -78,14 +78,18 @@ export function registryPackageName(spec: string): string | undefined {
   return name;
 }
 
+export function isNpxCommand(command: string): boolean {
+  return /^npx(?:\.cmd)?$/.test(basename(command.trim()));
+}
+
 /**
  * Recognise `npx [-y|--yes] <spec> [args...]` and `npx [-y] -p|--package <spec> <bin> [args...]`
  * (with optional `--` separators). Anything else, including unknown npx flags and specs that
- * are not plain registry packages (paths, git or tarball URLs, aliases), returns undefined so
- * the command launches unchanged.
+ * are not plain registry packages (paths, git or tarball URLs, aliases), returns undefined and
+ * must not be launched.
  */
 export function parseNpxLaunch(command: string, args: readonly string[]): NpxLaunch | undefined {
-  if (!/^npx(?:\.cmd)?$/.test(basename(command.trim()))) return undefined;
+  if (!isNpxCommand(command)) return undefined;
   let spec: string | undefined;
   let index = 0;
   for (; index < args.length; index += 1) {
@@ -409,6 +413,7 @@ function installEnvironment(extra: Record<string, string>): Record<string, strin
 function runNpmInstall(plan: InstallPlan, prefix: string): Promise<void> {
   const args = [
     "install",
+    "--ignore-scripts",
     "--prefix",
     prefix,
     "--no-save",
@@ -428,7 +433,7 @@ function runNpmInstall(plan: InstallPlan, prefix: string): Promise<void> {
       child = spawn(plan.npmCommand, args, {
         env: installEnvironment(plan.env),
         stdio: ["ignore", "pipe", "pipe"],
-        // Own process group, so a timeout also stops install scripts npm started.
+        // Own process group, so a timeout also stops everything npm started.
         detached: process.platform !== "win32",
         windowsHide: true,
       });

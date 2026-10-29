@@ -203,6 +203,27 @@ describe("MCP connector managed stdio launch", () => {
     },
   );
 
+  it.each([
+    [["-c", "echo hi"]],
+    [["--call", "echo hi"]],
+    [["--shell", "sh"]],
+    [["-y", "./local-server"]],
+    [["-p", "a", "-p", "b", "bin"]],
+  ])("refuses an npx launch it can't reduce to a registry package: %j", async (args) => {
+    const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+    const installs = vi.spyOn(installer, "ensureMcpPackage");
+    const connector = connectorFor({ server: { ...SERVER, args } });
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+      expect(tools[0]?.description).toContain("This npx command isn't supported here");
+      expect(launches).not.toHaveBeenCalled();
+      expect(installs).not.toHaveBeenCalled();
+    } finally {
+      await connector.close();
+    }
+  });
+
   it("tells the model why an assigned server is unavailable, with secrets redacted", async () => {
     await publishPackage(root);
     env = {

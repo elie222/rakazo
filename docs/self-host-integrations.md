@@ -62,7 +62,9 @@ refuses to send it anywhere else afterwards. Replacing the client clears the bin
 Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP spec has them
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
 the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
-`MCP_STDIO_ALLOWED_COMMANDS`. When adding the server, enter the OAuth client, its
+`MCP_STDIO_ALLOWED_COMMANDS`. A stdio server runs inside the API and worker with their access,
+so enable stdio only where everyone who can add a server is trusted, never on a shared
+multi-user deployment. When adding the server, enter the OAuth client, its
 **Authorization server** (the issuer, for example `https://accounts.google.com`) and the
 **Scopes**, then click **Connect OAuth** as for a remote server. Some providers issue a refresh
 token only when asked through extra parameters: for Google, set **Authorization parameters** to
@@ -81,14 +83,15 @@ expires, so a long-running process never keeps a dead token. A process that only
 refresh token refreshes on its own. Temporary files are removed when the process stops.
 
 A server launched as `npx [-y] <package>[@version]` (or `npx -p <package> <bin>`) is not
-downloaded on every start. Rakazo installs the package once with `npm install` into
+downloaded on every start. Rakazo installs the package once, without running its install
+scripts, with `npm install` into
 `MCP_PACKAGES_DIR` (default `DATA_DIR/mcp-packages`, shared by the API and worker), then runs
 its bin directly; `npx` must still be in `MCP_STDIO_ALLOWED_COMMANDS`. The install has its own
 timeout, `MCP_STDIO_INSTALL_TIMEOUT_MS` (default 180000), separate from the handshake timeout
 `MCP_STDIO_STARTUP_TIMEOUT_MS` (default 30000). Pin a version so every start runs the same
 code; npm settings such as `NPM_CONFIG_REGISTRY` can be set in the server's environment
-variables. Local paths, git and tarball URLs, and unknown `npx` flags fall back to running the
-command as configured. Each server runs as one process per user in each of the API and worker,
+variables. Any other `npx` form (local paths, git and tarball URLs, unknown `npx` flags) is
+refused. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
