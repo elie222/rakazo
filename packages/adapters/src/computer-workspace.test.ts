@@ -18,7 +18,7 @@ import {
   teamBrowserProfileName,
 } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { LocalAgentHomeStore } from "./home.js";
+import { HomeSaveConflictError, LocalAgentHomeStore } from "./home.js";
 
 const context = {
   operationId: "workspace-test",
@@ -251,7 +251,13 @@ describe("Team run checkpoints", () => {
     const deps = {
       sandbox: { exportWorkspace },
       home: {},
-      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+      prisma: {
+        computer: {
+          updateMany,
+          findUnique: async () => ({ providerRef: "remote", kind: "boat", homeRevision: "empty" }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
     };
     const result = await checkpointRunComputerWorkspace(
       deps as never,
@@ -284,7 +290,13 @@ describe("Team run checkpoints", () => {
     const deps = {
       sandbox: { exportWorkspace },
       home: {},
-      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+      prisma: {
+        computer: {
+          updateMany,
+          findUnique: async () => ({ providerRef: "remote", kind: "boat", homeRevision: "empty" }),
+        },
+        botDeletion: { findMany: async () => [] },
+      },
     };
     await expect(
       checkpointRunComputerWorkspace(
@@ -323,22 +335,73 @@ describe("checkpointAndStopComputer", () => {
     const sandbox = { exportWorkspace: async function* () {}, stop };
     const commit = vi.fn().mockResolvedValue("revision-1");
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const deps = { sandbox, home: { commit }, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox,
+      home: { commit },
+      prisma: {
+        computer: { updateMany, findUnique: async () => ({ ...ref, homeRevision: "base" }) },
+      },
+    };
 
     await checkpointAndStopComputer(deps as never, record, ref, context);
 
     expect(commit).toHaveBeenCalledOnce();
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1" },
+      where: { id: "computer-1", providerRef: ref.providerRef, kind: ref.kind },
       data: { homeRevision: "revision-1", homeRevisionAt: expect.any(Date) },
     });
     expect(stop.mock.calls).toEqual([[ref, context]]);
     expect(stop.mock.calls[0]).toHaveLength(2);
   });
 
+  it("keeps the machine running when its stored home is newer", async () => {
+    const stop = vi.fn();
+    const commit = vi.fn().mockRejectedValue(new HomeSaveConflictError());
+    const deps = {
+      sandbox: { exportWorkspace: async function* () {}, stop },
+      home: { commit },
+      prisma: {
+        computer: {
+          findUnique: async () => ({ ...ref, homeRevision: "base" }),
+          updateMany: vi.fn(),
+        },
+      },
+    };
+    await expect(
+      checkpointAndStopComputer(deps as never, record, ref, context),
+    ).rejects.toBeInstanceOf(HomeSaveConflictError);
+    expect(commit).toHaveBeenCalledWith(record.homeKey, expect.any(String), context, {
+      base: "base",
+    });
+    expect(stop).not.toHaveBeenCalled();
+    expect(deps.prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a save from a replaced machine before exporting it", async () => {
+    const sandbox = { exportWorkspace: vi.fn(), stop: vi.fn() };
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: {
+        computer: {
+          findUnique: async () => ({ ...ref, providerRef: "replacement", homeRevision: "newer" }),
+        },
+      },
+    };
+    await expect(
+      checkpointAndStopComputer(deps as never, record, ref, context),
+    ).rejects.toBeInstanceOf(HomeSaveConflictError);
+    expect(sandbox.exportWorkspace).not.toHaveBeenCalled();
+    expect(sandbox.stop).not.toHaveBeenCalled();
+  });
+
   it("stops a damaged computer without its save", async () => {
     const sandbox = sandboxFailingWith(new SandboxDamagedError());
-    const deps = { sandbox, home: {}, prisma: {} };
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: { computer: { findUnique: async () => ({ ...ref, homeRevision: "base" }) } },
+    };
 
     await checkpointAndStopComputer(deps as never, record, ref, context);
 
@@ -347,7 +410,11 @@ describe("checkpointAndStopComputer", () => {
 
   it("leaves a computer whose save fails for another reason running", async () => {
     const sandbox = sandboxFailingWith(new Error("export failed"));
-    const deps = { sandbox, home: {}, prisma: {} };
+    const deps = {
+      sandbox,
+      home: {},
+      prisma: { computer: { findUnique: async () => ({ ...ref, homeRevision: "base" }) } },
+    };
 
     await expect(checkpointAndStopComputer(deps as never, record, ref, context)).rejects.toThrow(
       "export failed",

@@ -5,9 +5,21 @@ import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
-import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
+import {
+  ContentDecryptionError,
+  ContentKeyRing,
+  LocalKeyProvider,
+  legacyTeamHomeKey,
+} from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkpointComputerWorkspace, restoreComputerWorkspace } from "./computer-workspace.js";
+import { removeDeletedBotsFromLegacyTeamHome } from "./child-bots.js";
+import {
+  checkpointComputerWorkspace,
+  deletedTeamBotFolders,
+  removeDeletedBotWorkspaces,
+  restoreComputerWorkspace,
+} from "./computer-workspace.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
 import {
   createAgentHomeStore,
@@ -37,6 +49,7 @@ interface ComputerRow {
   homeStorageId: string | null;
   homeStorageKey: string | null;
   homeStorageRevision: string | null;
+  homeRevision: string;
   kind: string;
   updatedAt: Date;
 }
@@ -116,6 +129,7 @@ async function setup(homeKeys = ["bot-1"]) {
     homeStorageId: null,
     homeStorageKey: null,
     homeStorageRevision: null,
+    homeRevision: "empty",
     kind: "boat",
     updatedAt: new Date(0),
   }));
@@ -740,11 +754,12 @@ describe("ObjectAgentHomeStore", () => {
   });
 
   it("migrates local homes once, verifies them and keeps the local copy", async () => {
-    const { root, store, storage, otherHost } = await setup(["bot-1", "bot-2"]);
+    const { root, store, storage, otherHost, rows } = await setup(["bot-1", "bot-2"]);
     const plain = new LocalAgentHomeStore(root);
     await plain.commit("bot-1", await staged({ "a.txt": "local one" }), context);
     await plain.commit("bot-2", await staged({ "b.txt": "local two" }), context);
     await plain.commit("orphan", await staged({ "c.txt": "no computer" }), context);
+    for (const row of rows) row.homeRevision = await plain.revision(row.homeKey);
     expect(await store.localHomes()).toEqual(["bot-1", "bot-2", "orphan"]);
 
     expect(await store.migrateLocal("bot-1", { dryRun: true })).toBe("would-upload");
@@ -780,6 +795,7 @@ describe("ObjectAgentHomeStore", () => {
     expect(rows[0]!.homeStorageRevision).toBeNull();
     expect(storage.objects.size).toBe(0);
 
+    rows[0]!.homeRevision = await new LocalAgentHomeStore(root).revision("bot-1");
     const store = new ObjectAgentHomeStore(root, storage, records);
     expect(await store.migrateLocal("bot-1")).toBe("uploaded");
     expect(await store.migrateLocal("bot-1")).toBe("stored");
@@ -794,6 +810,162 @@ describe("ObjectAgentHomeStore", () => {
     );
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("local");
     expect(storage.objects.size).toBe(0);
+  });
+});
+
+describe("remote save bases", () => {
+  it("rejects a stale remote save and keeps the newer object", async () => {
+    const { store, otherHost, storage, records } = await setup();
+    const base = await store.commit("bot-1", await staged({ "a.txt": "original" }), context);
+    const other = await otherHost();
+    const newer = await other.commit("bot-1", await staged({ "a.txt": "newer" }), context);
+    const keys = [...storage.objects.keys()];
+    await expect(
+      store.commit("bot-1", await staged({ "a.txt": "stale" }), context, { base }),
+    ).rejects.toBeInstanceOf(HomeSaveConflictError);
+    expect((await records.load("bot-1"))?.revision).toBe(newer);
+    expect([...storage.objects.keys()]).toEqual(keys);
+    expect(await other.readFile("bot-1", "a.txt", context)).toBe("newer");
+  });
+
+  it("captures the cached restore base when storage advances after hydration", async () => {
+    const { store, otherHost, records } = await setup();
+    const base = await store.commit("bot-1", await staged({ "a.txt": "base" }), context);
+    await store.hydrate("bot-1");
+    const other = await otherHost();
+    const load = records.load.bind(records);
+    let reads = 0;
+    records.load = async (homeKey) => {
+      if (++reads === 2) await other.commit(homeKey, await staged({ "a.txt": "newer" }), context);
+      return load(homeKey);
+    };
+    expect(await store.revision("bot-1")).toBe(base);
+    expect((await load("bot-1"))?.revision).not.toBe(base);
+  });
+
+  it.each(["local", "object"])(
+    "saves a %s home after restore and after a previous save",
+    async (kind) => {
+      const setupHome = await setup();
+      const home = kind === "object" ? setupHome.store : new LocalAgentHomeStore(setupHome.root);
+      await home.commit("bot-1", await staged({ "a.txt": "original" }), context);
+      const sandbox = {
+        importWorkspace: async (_computer: unknown, files: AsyncIterable<PortableFile>) => {
+          for await (const _file of files) {
+          }
+        },
+        exportWorkspace: async function* () {
+          yield { path: "a.txt", content: Buffer.from("remote") };
+        },
+      } as unknown as SandboxProvider;
+      const computer = {
+        id: "remote",
+        providerRef: "remote",
+        botId: "bot-1",
+        kind: "e2b" as const,
+      };
+      const base = await restoreComputerWorkspace(home, sandbox, "bot-1", computer, context);
+      const next = await checkpointComputerWorkspace(
+        home,
+        sandbox,
+        "bot-1",
+        computer,
+        context,
+        undefined,
+        undefined,
+        base,
+      );
+      await checkpointComputerWorkspace(
+        home,
+        sandbox,
+        "bot-1",
+        computer,
+        context,
+        undefined,
+        undefined,
+        next,
+      );
+      await expect(
+        home.commit("bot-1", await staged({ "a.txt": "stale" }), context, { base: base! }),
+      ).rejects.toBeInstanceOf(HomeSaveConflictError);
+      expect(await home.readFile("bot-1", "a.txt", context)).toBe("remote");
+    },
+  );
+
+  it.each([false, true])("saves a migrated home with an existing revision: %s", async (saved) => {
+    const { store, root, rows, otherHost } = await setup();
+    const local = new LocalAgentHomeStore(root);
+    if (saved) await local.commit("bot-1", await staged({ "a.txt": "local" }), context);
+    else await mkdir(local.pathFor("bot-1"), { recursive: true });
+    rows[0]!.homeRevision = await local.revision("bot-1");
+    await store.migrateLocal("bot-1");
+    await store.commit("bot-1", await staged({ "a.txt": "remote" }), context, {
+      base: rows[0]!.homeRevision,
+    });
+    expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("remote");
+  });
+
+  it("retries an interrupted migration without losing the machine base", async () => {
+    const { store, rows, records } = await setup();
+    const advance = records.advance.bind(records);
+    records.advance = async () => {
+      throw new Error("database unavailable");
+    };
+    await expect(store.migrateLocal("bot-1")).rejects.toThrow("database unavailable");
+    records.advance = advance;
+    expect(await store.migrateLocal("bot-1")).toBe("stored");
+    expect(rows[0]!.homeRevision).toBe(rows[0]!.homeStorageRevision);
+    await store.commit("bot-1", await staged({ "a.txt": "remote" }), context, {
+      base: rows[0]!.homeRevision,
+    });
+  });
+
+  it("saves after a stopped remote machine restarts with pending folder deletions", async () => {
+    const homeKey = legacyTeamHomeKey("space-1");
+    const { store, records, otherHost } = await setup([homeKey]);
+    const base = await store.commit(
+      homeKey,
+      await staged({ "bots/gone/notes.txt": "gone", "shared/notes.txt": "keep" }),
+      context,
+    );
+    const sandbox = new FakeSandboxProvider();
+    const machine = await sandbox.provision({ botId: homeKey, homePath: "/ignored" }, context);
+    await restoreComputerWorkspace(store, sandbox, homeKey, machine, context);
+    await sandbox.stop(machine, context);
+    const retained = {
+      scope: "team",
+      homeKey,
+      kind: "boat",
+      providerRef: machine.providerRef,
+      state: "stopped",
+    };
+    const prisma = {
+      computer: { findUnique: async () => retained },
+      botDeletion: { findMany: async () => [{ id: "gone" }] },
+    } as unknown as PrismaClient;
+    await removeDeletedBotsFromLegacyTeamHome({ home: store, sandbox, prisma }, "space-1", [
+      "gone",
+    ]);
+    expect((await records.load(homeKey))?.revision).toBe(base);
+    const resumed = await sandbox.provision({ botId: homeKey, homePath: "/ignored" }, context);
+    await removeDeletedBotWorkspaces({ sandbox, prisma }, resumed, "space-1", context);
+    await checkpointComputerWorkspace(
+      store,
+      sandbox,
+      homeKey,
+      resumed,
+      context,
+      () => deletedTeamBotFolders(prisma, { scope: "team", spaceId: "space-1" }),
+      undefined,
+      base,
+    );
+    expect(await exported(await otherHost(), homeKey)).toEqual({ "shared/notes.txt": "keep" });
+  });
+
+  it("saves a never-stored home from the empty base", async () => {
+    const { store } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "first" }), context, { base: "empty" });
+    expect(await store.readFile("bot-1", "a.txt", context)).toBe("first");
   });
 });
 

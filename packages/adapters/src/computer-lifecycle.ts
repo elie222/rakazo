@@ -418,9 +418,16 @@ export async function provisionComputer(
       !existing.providerRef ||
       existing.providerRef !== ref.providerRef ||
       existing.kind !== ref.kind;
+    let restoredRevision: string | undefined;
     if (replacement) {
       await onProgress?.("restoring");
-      await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, ref, context);
+      restoredRevision = await restoreComputerWorkspace(
+        deps.home,
+        deps.sandbox,
+        existing.homeKey,
+        ref,
+        context,
+      );
     }
     await onProgress?.("reconnecting");
     await ensureComputerWorkspaceLayout(
@@ -455,6 +462,7 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
+        ...(restoredRevision !== undefined ? { homeRevision: restoredRevision } : {}),
         runningSince,
         ...(!reconnecting
           ? {
@@ -1130,6 +1138,8 @@ export async function replaceComputer(
             exported = true;
             return deletedTeamBotFolders(deps.prisma, existing);
           },
+          undefined,
+          existing.homeRevision,
         );
       } catch (error) {
         // A gone sandbox has nothing left to checkpoint; the replacement restores

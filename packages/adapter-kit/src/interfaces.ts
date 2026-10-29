@@ -340,7 +340,13 @@ export interface JobWorkerHost {
 export interface AgentHomeStore {
   describe(): AdapterDescriptor<{ revisions: boolean }>;
   checkout(botId: string, dest: string, context: AdapterContext): Promise<string>;
-  commit(botId: string, src: string, context: AdapterContext): Promise<string>;
+  /** Machine saves supply their base; authoritative imports may omit it. */
+  commit(
+    botId: string,
+    src: string,
+    context: AdapterContext,
+    options?: { base: string },
+  ): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
   /**
    * Paths are relative to `directory`; a missing or linked directory exports nothing.

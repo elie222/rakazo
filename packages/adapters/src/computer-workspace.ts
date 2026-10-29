@@ -18,7 +18,7 @@ import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
-import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
+import { createStagingDirectory, HomeSaveConflictError, LocalAgentHomeStore } from "./home.js";
 import { isSandboxDamagedError } from "./sandbox-errors.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
@@ -120,9 +120,12 @@ export async function restoreComputerWorkspace(
   homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
-): Promise<void> {
+): Promise<string | undefined> {
   if (await homeIsMounted(home, sandbox, computer, context)) return;
+  // Capture before reading: a concurrent save may make this base stale, never too new.
+  const revision = home instanceof LocalAgentHomeStore ? await home.revision(homeKey) : undefined;
   await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
+  return revision;
 }
 
 export async function ensureComputerWorkspaceLayout(
@@ -372,6 +375,7 @@ export async function checkpointComputerWorkspace(
   /** Read after the export, just before saving, so a deletion during the export still counts. */
   excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
   saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
+  baseRevision?: string,
 ): Promise<string> {
   if (
     home instanceof LocalAgentHomeStore &&
@@ -408,7 +412,12 @@ export async function checkpointComputerWorkspace(
     for (const folder of (await excludedFolders?.()) ?? []) {
       await rm(path.join(staging.path, folder), { recursive: true, force: true });
     }
-    return await home.commit(homeKey, staging.path, context);
+    return await home.commit(
+      homeKey,
+      staging.path,
+      context,
+      baseRevision === undefined ? undefined : { base: baseRevision },
+    );
   } finally {
     await staging.remove();
   }
@@ -481,6 +490,12 @@ export async function checkpointAndRecordComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string> {
+  const row = await deps.prisma.computer.findUnique({
+    where: { id: computerRecord.id },
+    select: { homeRevision: true, providerRef: true, kind: true },
+  });
+  if (!row || row.providerRef !== computer.providerRef || row.kind !== computer.kind)
+    throw new HomeSaveConflictError();
   const checkpointedAt = new Date();
   const revision = await checkpointComputerWorkspace(
     deps.home,
@@ -489,11 +504,14 @@ export async function checkpointAndRecordComputerWorkspace(
     computer,
     context,
     () => deletedTeamBotFolders(deps.prisma, computerRecord),
+    undefined,
+    row.homeRevision,
   );
-  await deps.prisma.computer.updateMany({
-    where: { id: computerRecord.id },
+  const recorded = await deps.prisma.computer.updateMany({
+    where: { id: computerRecord.id, providerRef: computer.providerRef, kind: computer.kind },
     data: { homeRevision: revision, homeRevisionAt: checkpointedAt },
   });
+  if (recorded.count !== 1) throw new HomeSaveConflictError();
   return revision;
 }
 

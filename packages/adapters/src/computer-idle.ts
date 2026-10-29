@@ -438,6 +438,8 @@ export async function sleepComputerIfIdle(
       ref,
       ctx,
       () => deletedTeamBotFolders(deps.prisma, computer),
+      undefined,
+      computer.homeRevision,
     );
     const saved = await deps.prisma.computer.updateMany({
       where: suspensionClaim,
@@ -765,6 +767,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseExpiresAt: true,
       controlBotId: true,
       runningSince: true,
+      homeRevision: true,
       homeRevisionAt: true,
       updatedAt: true,
     },

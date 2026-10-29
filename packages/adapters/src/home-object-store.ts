@@ -20,7 +20,7 @@ import {
   sealArtifact,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { LocalAgentHomeStore, newRevision } from "./home.js";
+import { HomeSaveConflictError, LocalAgentHomeStore, newRevision } from "./home.js";
 import type { HomeArchiveLimits } from "./home-archive.js";
 import {
   checkHomeArchive,
@@ -56,20 +56,21 @@ export interface AgentHomeRecords {
   load(homeKey: string): Promise<StoredHome | undefined>;
   /** Creates the storage id and data key on first save. Undefined when there is no computer. */
   create(homeKey: string): Promise<StoredHome | undefined>;
-  /** Moves the current revision from `from` to `to`; false when another save got there first. */
-  advance(homeKey: string, storageId: string, from: string | null, to: string): Promise<boolean>;
+  /** Moves from `from` to `to`; migration also rebases a machine still at `localRevision`. */
+  advance(
+    homeKey: string,
+    storageId: string,
+    from: string | null,
+    to: string,
+    localRevision?: string,
+  ): Promise<boolean>;
   /** The current revision of each storage id that still belongs to a home. */
   revisions(storageIds: readonly string[]): Promise<Map<string, string | null>>;
   /** The computer kind of each home that still has a computer. */
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
 }
 
-export class HomeSaveConflictError extends Error {
-  constructor() {
-    super("Agent home was saved elsewhere at the same time");
-    this.name = "HomeSaveConflictError";
-  }
-}
+export { HomeSaveConflictError } from "./home.js";
 
 /**
  * Homes whose source of truth is object storage, with `DATA_DIR/homes` as a local cache.
@@ -209,15 +210,34 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     });
   }
 
-  /**
-   * Saves a remote computer's exported files from `src` without copying them into the cache.
-   * A cached copy this makes stale is downloaded again when next read, and removed once idle.
-   */
-  override async commit(botId: string, src: string, _context: AdapterContext): Promise<string> {
-    return this.withBotWrite(
-      botId,
-      async () => (await this.upload(botId, { source: src })).revision,
-    );
+  /** The files a replacement will read, rather than a newer revision stored elsewhere. */
+  override async revision(botId: string): Promise<string> {
+    await this.hydrate(botId);
+    return this.withBotWrite(botId, async () => {
+      const { local } = await this.loadCacheRevision(botId);
+      return local ?? "empty";
+    });
+  }
+
+  /** Saves exported files against their machine's base; imports may omit the base. */
+  override async commit(
+    botId: string,
+    src: string,
+    _context: AdapterContext,
+    options?: { base: string },
+  ): Promise<string> {
+    return this.withBotWrite(botId, async () => {
+      const stored = await this.records.load(botId);
+      // Before the first object save, the machine may descend from a local revision.
+      if (
+        options &&
+        !stored?.revision &&
+        options.base !== ((await this.localRevision(botId)) ?? "empty")
+      )
+        throw new HomeSaveConflictError();
+      const base = options ? (stored?.revision ? options.base : null) : undefined;
+      return (await this.upload(botId, { source: src, base })).revision;
+    });
   }
 
   /**
@@ -303,7 +323,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     if (stored.revision === pending.revision) return { stored, local: pending.revision };
     // Still at the base: save the latest local bytes with the usual compare-and-swap.
     // Never republish the old upload: it may have been swept during the outage.
-    const { revision } = await this.upload(botId, { base: stored.revision });
+    const { revision } = await this.upload(botId, {
+      base: stored.revision,
+      localRevision: typeof pending.localRevision === "string" ? pending.localRevision : undefined,
+    });
     return { stored: { ...stored, revision }, local: revision };
   }
 
@@ -323,7 +346,12 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
    */
   private async upload(
     botId: string,
-    options: { base?: string | null; verify?: boolean; source?: string } = {},
+    options: {
+      base?: string | null;
+      verify?: boolean;
+      source?: string;
+      localRevision?: string;
+    } = {},
   ): Promise<{ revision: string }> {
     const stored = await this.records.create(botId);
     if (!stored) throw new Error("Agent home has no computer");
@@ -350,12 +378,18 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     // Publish the proposal atomically before the UPDATE. The API and worker share this
     // marker, so either can recover a lost reply without replacing the mounted directory.
     const previous = !options.source ? await this.localRevision(botId) : undefined;
-    const proposal = JSON.stringify({ version: 1, storageId: stored.storageId, base, revision });
+    const proposal = JSON.stringify({
+      version: 1,
+      storageId: stored.storageId,
+      base,
+      revision,
+      ...(options.localRevision !== undefined ? { localRevision: options.localRevision } : {}),
+    });
     if (!options.source) await super.writeRevision(botId, proposal);
     // Only a confirmed refusal discards the upload. An error may hide a committed update, so
     // that object is left for the sweep, which keeps whatever revision the home points at.
     const advanced = await this.records
-      .advance(botId, stored.storageId, base, revision)
+      .advance(botId, stored.storageId, base, revision, options.localRevision)
       .catch(async (error: unknown) => {
         const current = await this.records.load(botId).catch(() => undefined);
         if (current?.storageId === stored.storageId && current.revision === revision) return true;
@@ -454,8 +488,15 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     return this.withBotWrite(botId, async () => {
       if ((await this.records.load(botId))?.revision) return "stored";
       if (dryRun) return "would-upload";
+      const { stored, local } = await this.loadCacheRevision(botId);
+      if (stored?.revision) return "stored";
       if (!(await this.records.create(botId))) return "no-computer";
-      await this.upload(botId, { base: null, verify: true });
+      await this.upload(botId, {
+        base: null,
+        verify: true,
+        // The existing disk still descends from these bytes after storage changes.
+        localRevision: local ?? "empty",
+      });
       return "uploaded";
     });
   }
@@ -555,12 +596,22 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
     return this.load(homeKey);
   }
 
-  async advance(homeKey: string, storageId: string, from: string | null, to: string) {
+  async advance(
+    homeKey: string,
+    storageId: string,
+    from: string | null,
+    to: string,
+    localRevision?: string,
+  ) {
     return this.updateKeepingClaim(
       "record an agent home's saved revision",
       homeKey,
-      { homeStorageId: storageId, homeStorageRevision: from },
-      { homeStorageRevision: to },
+      {
+        homeStorageId: storageId,
+        homeStorageRevision: from,
+        ...(localRevision !== undefined ? { homeRevision: localRevision } : {}),
+      },
+      { homeStorageRevision: to, ...(localRevision !== undefined ? { homeRevision: to } : {}) },
     );
   }
 

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerBusyError, provisionComputer, replaceComputer } from "./computer-lifecycle.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { LocalAgentHomeStore } from "./home.js";
+import { HomeSaveConflictError, LocalAgentHomeStore } from "./home.js";
 import type { StoredHome } from "./home-object-store.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
@@ -50,7 +50,7 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
     controlHolder: "none",
     controlLeaseId: null,
     maintenanceId: null as string | null,
-    homeRevision: "saved",
+    homeRevision: "empty",
     updatedAt: new Date("2024-01-01T00:00:00.000Z"),
   };
   // Model the atomic scalar predicates used by claims, including stale references
@@ -253,7 +253,7 @@ describe("computer recovery preserves live work", () => {
     const replaced = await provisionComputer({ ...deps, home }, row.id, context);
 
     expect(replaced.fresh).toBe(true);
-    expect(hydrate).toHaveBeenCalledOnce();
+    expect(hydrate).toHaveBeenCalledTimes(2);
     expect(hydrate.mock.invocationCallOrder[0]).toBeGreaterThan(
       provision.mock.invocationCallOrder[0]!,
     );
@@ -433,7 +433,7 @@ describe("computer recovery preserves live work", () => {
       expect(row).toMatchObject({
         state: "running",
         providerRef: first.providerRef,
-        homeRevision: "saved",
+        homeRevision: "empty",
       });
     }
     expect(destroy).not.toHaveBeenCalled();
@@ -536,6 +536,29 @@ describe("computer recovery preserves live work", () => {
       new TextDecoder().decode(await deps.sandbox.readFile(recovered, "notes.txt", context)),
     ).toBe("live work");
   });
+
+  it.each(["update", "recover"] as const)(
+    "keeps the live disk when %s encounters a newer home",
+    async (mode) => {
+      const { deps, row, first, root } = await fixture();
+      const newer = path.join(root, "newer");
+      await mkdir(newer, { recursive: true });
+      await writeFile(path.join(newer, "notes.txt"), "newer saved work");
+      await deps.home.commit(row.homeKey, newer, context);
+      const destroy = vi.spyOn(deps.sandbox, "destroy");
+      const stop = vi.spyOn(deps.sandbox, "stop");
+      await expect(replaceComputer(deps, row.id, mode, context)).rejects.toBeInstanceOf(
+        HomeSaveConflictError,
+      );
+      expect(destroy).not.toHaveBeenCalled();
+      expect(stop).not.toHaveBeenCalled();
+      expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+      expect(await deps.home.readFile(row.homeKey, "notes.txt", context)).toBe("newer saved work");
+      expect(
+        new TextDecoder().decode(await deps.sandbox.readFile(first, "notes.txt", context)),
+      ).toBe("live work");
+    },
+  );
 
   it("keeps a computer running when its update is interrupted before teardown", async () => {
     const { deps, row, first } = await fixture();

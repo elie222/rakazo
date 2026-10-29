@@ -28,6 +28,13 @@ const STAGING_HEARTBEAT_MS = 30_000;
 /** A staging directory untouched this long belongs to a process that died. */
 export const STALE_STAGING_MS = 5 * 60_000;
 
+export class HomeSaveConflictError extends Error {
+  constructor() {
+    super("Agent home was saved elsewhere at the same time");
+    this.name = "HomeSaveConflictError";
+  }
+}
+
 export class LocalAgentHomeStore implements AgentHomeStore {
   private readonly botWrites = new Map<string, Promise<void>>();
 
@@ -63,11 +70,23 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return "working";
   }
 
-  async commit(botId: string, src: string, _context: AdapterContext): Promise<string> {
+  async revision(botId: string): Promise<string> {
+    await this.waitForBotWrite(botId);
+    return (await this.localRevision(botId)) ?? "empty";
+  }
+
+  async commit(
+    botId: string,
+    src: string,
+    _context: AdapterContext,
+    options?: { base: string },
+  ): Promise<string> {
     // Files staged on this volume by `createStaging` are moved into place, not copied, so a
     // save never needs room for two copies.
     const staged = path.dirname(path.resolve(src)) === path.resolve(this.root, "staging");
     return this.withBotWrite(botId, async () => {
+      if (options && options.base !== ((await this.localRevision(botId)) ?? "empty"))
+        throw new HomeSaveConflictError();
       await this.replaceHome(botId, async (staging) => {
         if (!staged) return copyDir(src, staging);
         await rm(staging, { recursive: true, force: true });

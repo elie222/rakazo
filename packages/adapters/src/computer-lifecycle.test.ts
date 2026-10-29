@@ -1156,6 +1156,7 @@ describe("computer provisioning", () => {
             state: "running",
             providerRef: next.providerRef,
             kind: next.kind,
+            homeRevision: "empty",
             runningSince: expect.any(Date),
           },
         });

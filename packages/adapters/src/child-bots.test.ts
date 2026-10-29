@@ -2135,7 +2135,7 @@ describe("archiveBot", () => {
     );
     const prisma = {
       computer: {
-        findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValueOnce(running),
+        findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValue(running),
         updateMany,
       },
       run: { findMany: vi.fn().mockResolvedValue([]) },
