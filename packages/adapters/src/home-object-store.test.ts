@@ -272,6 +272,39 @@ describe("ObjectAgentHomeStore", () => {
     expect(storage.objects.size).toBe(1);
   });
 
+  it.each([false, true])(
+    "recovers after a confirmed refusal (previous proposal: %s)",
+    async (previousProposal) => {
+      const { root, store, storage, records, otherHost } = await setup();
+      await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+      await store.hydrate("bot-1");
+      if (previousProposal) await store.revise("bot-1");
+      const advance = records.advance.bind(records);
+      records.advance = async (...args) => {
+        records.advance = advance;
+        await (await otherHost()).commit(
+          "bot-1",
+          await staged({ "a.txt": "winning writer" }),
+          context,
+        );
+        return advance(...args);
+      };
+      await expect(store.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
+      expect(storage.objects.size).toBe(1);
+      const restarted = new ObjectAgentHomeStore(root, storage, records);
+      await expect(restarted.revise("bot-1")).rejects.toThrow(/older than its stored revision/);
+      await restarted.hydrate("bot-1");
+      expect(await readFile(path.join(store.pathFor("bot-1"), "a.txt"), "utf8")).toBe(
+        "winning writer",
+      );
+      await writeFile(path.join(store.pathFor("bot-1"), "recent.txt"), "after recovery");
+      await restarted.revise("bot-1");
+      expect(await (await otherHost()).readFile("bot-1", "recent.txt", context)).toBe(
+        "after recovery",
+      );
+    },
+  );
+
   it("recognizes its own committed revision when the database reply is lost", async () => {
     const { root, storage, records, rows } = await setup();
     const store = new ObjectAgentHomeStore(root, storage, {
@@ -394,6 +427,36 @@ describe("ObjectAgentHomeStore", () => {
     },
   );
 
+  it("keeps an uncertain proposal when its recovery save is refused", async () => {
+    const { root, store, storage, records, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+    await store.hydrate("bot-1");
+    const advance = records.advance.bind(records);
+    records.advance = async () => {
+      throw new Error("connection terminated");
+    };
+    await expect(store.revise("bot-1")).rejects.toThrow("connection terminated");
+    const markerFile = path.join(root, "home-revisions/bot-1.txt");
+    const pending = await readFile(markerFile, "utf8");
+    const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+    await writeFile(recent, "after the lost reply");
+    records.advance = async (...args) => {
+      records.advance = advance;
+      await (await otherHost()).commit(
+        "bot-1",
+        await staged({ "a.txt": "winning writer" }),
+        context,
+      );
+      return advance(...args);
+    };
+    const restarted = new ObjectAgentHomeStore(root, storage, records);
+    await expect(restarted.hydrate("bot-1")).rejects.toThrow(HomeSaveConflictError);
+    expect(await readFile(markerFile, "utf8")).toBe(pending);
+    await expect(restarted.hydrate("bot-1")).rejects.toThrow(HomeSaveConflictError);
+    await expect(restarted.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
+    expect(await readFile(recent, "utf8")).toBe("after the lost reply");
+  });
+
   it("reads the marker after the database when another process saves during hydration", async () => {
     const { root, store, storage, records } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
@@ -437,40 +500,46 @@ describe("ObjectAgentHomeStore", () => {
     expect(await readFile(recent, "utf8")).toBe("after the checkpoint");
   });
 
-  it("does not overwrite a shared cache's newer marker when an older save finally replies", async () => {
-    const { root, store, storage, records, otherHost } = await setup();
-    await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
-    await store.hydrate("bot-1");
-    const advance = records.advance.bind(records);
-    let reply = () => {};
-    let updated = () => {};
-    const waiting = new Promise<void>((resolve) => {
-      updated = resolve;
-    });
-    const delayed = new Promise<void>((resolve) => {
-      reply = resolve;
-    });
-    records.advance = async (...args) => {
-      const result = await advance(...args);
-      updated();
-      await delayed;
-      return result;
-    };
-    const saving = store.revise("bot-1");
-    await waiting;
-    records.advance = advance;
-    const otherProcess = new ObjectAgentHomeStore(root, storage, records);
-    await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "newer checkpoint");
-    await otherProcess.revise("bot-1");
-    reply();
-    await saving;
-    const recent = path.join(store.pathFor("bot-1"), "recent.txt");
-    await writeFile(recent, "after both saves");
+  it.each([true, false])(
+    "keeps a shared cache's newer marker after a delayed reply (advanced: %s)",
+    async (advanced) => {
+      const { root, store, storage, records, otherHost } = await setup();
+      await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
+      await store.hydrate("bot-1");
+      const advance = records.advance.bind(records);
+      let reply = () => {};
+      let updated = () => {};
+      const waiting = new Promise<void>((resolve) => {
+        updated = resolve;
+      });
+      const delayed = new Promise<void>((resolve) => {
+        reply = resolve;
+      });
+      records.advance = async (...args) => {
+        const result = advanced ? await advance(...args) : undefined;
+        updated();
+        await delayed;
+        return result ?? advance(...args);
+      };
+      const saving = store.revise("bot-1");
+      await waiting;
+      records.advance = advance;
+      const otherProcess = new ObjectAgentHomeStore(root, storage, records);
+      await writeFile(path.join(store.pathFor("bot-1"), "a.txt"), "newer checkpoint");
+      await otherProcess.revise("bot-1");
+      reply();
+      if (advanced) await saving;
+      else await expect(saving).rejects.toThrow(HomeSaveConflictError);
+      const recent = path.join(store.pathFor("bot-1"), "recent.txt");
+      await writeFile(recent, "after both saves");
 
-    await new ObjectAgentHomeStore(root, storage, records).hydrate("bot-1");
-    expect(await readFile(recent, "utf8")).toBe("after both saves");
-    expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("newer checkpoint");
-  });
+      await new ObjectAgentHomeStore(root, storage, records).hydrate("bot-1");
+      expect(await readFile(recent, "utf8")).toBe("after both saves");
+      expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe(
+        "newer checkpoint",
+      );
+    },
+  );
 
   it("keeps only the current revision once a newer one is saved", async () => {
     const { store, storage, rows } = await setup();

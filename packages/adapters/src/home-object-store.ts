@@ -296,6 +296,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       throw new HomeSaveConflictError();
     if (!(await this.hasCache(botId))) return { stored, local: undefined };
     if (stored?.storageId !== pending.storageId) throw new HomeSaveConflictError();
+    // An unrelated revision cannot prove whether this save committed. Replacing the
+    // cache or uploading over that revision could destroy either writer's work.
     if (stored.revision !== pending.revision && stored.revision !== pending.base)
       throw new HomeSaveConflictError();
     if (stored.revision === pending.revision) return { stored, local: pending.revision };
@@ -347,11 +349,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       });
     // Publish the proposal atomically before the UPDATE. The API and worker share this
     // marker, so either can recover a lost reply without replacing the mounted directory.
-    if (!options.source)
-      await super.writeRevision(
-        botId,
-        JSON.stringify({ version: 1, storageId: stored.storageId, base, revision }),
-      );
+    const previous = !options.source ? await this.localRevision(botId) : undefined;
+    const proposal = JSON.stringify({ version: 1, storageId: stored.storageId, base, revision });
+    if (!options.source) await super.writeRevision(botId, proposal);
     // Only a confirmed refusal discards the upload. An error may hide a committed update, so
     // that object is left for the sweep, which keeps whatever revision the home points at.
     const advanced = await this.records
@@ -362,6 +362,14 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
         throw error;
       });
     if (!advanced) {
+      if (!options.source && (await this.localRevision(botId)) === proposal) {
+        // A confirmed refusal is an ordinary stale cache again. A previous proposal
+        // matching the base was confirmed by the pre-save read; otherwise it still
+        // represents an uncertain save and must keep protecting the live files.
+        const rollback =
+          previous?.startsWith("{") && JSON.parse(previous).revision === base ? base : previous;
+        await super.writeRevision(botId, rollback ?? "");
+      }
       await discard();
       throw new HomeSaveConflictError();
     }
