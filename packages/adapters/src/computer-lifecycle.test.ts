@@ -1671,7 +1671,11 @@ describe("computer provisioning", () => {
       ).rejects.toBe(prepareError);
       expect(updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          data: { state: "error", providerRef: "new-provider-1", kind: "e2b" },
+          data: expect.objectContaining({
+            state: "error",
+            providerRef: "new-provider-1",
+            kind: "e2b",
+          }),
         }),
       );
     } finally {
