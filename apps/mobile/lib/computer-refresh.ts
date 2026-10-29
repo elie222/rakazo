@@ -88,8 +88,11 @@ export function createComputerRefresh(options: {
           screenStatus = screenKey(status);
           screenReadAt = screenRenewReadAt(url, Date.now());
           options.onScreen(url);
-        } catch {
-          // Keep the last URL after a failed read; a successful null clears it.
+        } catch (error) {
+          // Keep the last URL after a transient failure; a successful null clears it. A
+          // refusal (401, 403, 404, 426...) is a verdict on the held capability, not a
+          // transient failure: stop serving it so the next refresh reads a fresh one.
+          if (!isRetryableError(error)) screenLoaded = false;
         }
       }
       if (!current()) return;
@@ -107,9 +110,11 @@ export function createComputerRefresh(options: {
 
   return {
     refresh: (input?: { screenAttempts?: number }) => refresh(input),
-    /** The viewer could not use the current URL: read a fresh one on the next poll. */
+    /** The viewer could not use the current URL: drop it and read a fresh one right away. */
     invalidateScreen() {
       screenLoaded = false;
+      if (active && !paused && activeActions === 0) void refresh().catch(() => undefined);
+      else schedule();
     },
     isActive: () => active,
     pause() {
