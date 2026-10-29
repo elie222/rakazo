@@ -3,7 +3,7 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import { isBackgroundRunTrigger, isConversationalRun, isOwnerStartedRun } from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -160,4 +160,23 @@ export function filterPageBrowserTools<T extends { name: string }>(
 /** The fleet tools this run was offered, the same decision as tool selection. */
 export function offeredFleetTools(tools: readonly { name: string }[]): string[] {
   return tools.map((tool) => tool.name).filter((name) => FLEET_TOOL_NAMES_SET.has(name));
+}
+
+const FOLLOW_UP_TOOL_NAMES = [
+  "scratchpad_add",
+  "scratchpad_complete",
+  "schedule_create",
+  "schedule_cancel",
+];
+
+/**
+ * Whether this run can set its own follow-ups. Only a run that is the user's conversation
+ * can tell what is still open with them; routines, webhooks, tickets and messages from
+ * other bots are not, and some of them would need approval for every schedule.
+ */
+export function followUpsOffered(tools: readonly { name: string }[], trigger: string): boolean {
+  return (
+    isConversationalRun(trigger) &&
+    FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
+  );
 }

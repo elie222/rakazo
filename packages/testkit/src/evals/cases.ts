@@ -13,7 +13,12 @@ export type Step =
   | { slack: string }
   | { clear: true }
   | { newWorkspace: true }
-  | { wakeRoutine: true; releases?: "unchanged" | "new" | "empty" };
+  | {
+      wakeRoutine: true;
+      releases?: "unchanged" | "new" | "empty";
+      /** Skip the wake when the bot has already cancelled the routine it authored. */
+      ifScheduled?: true;
+    };
 export type Evidence = {
   text: string;
   replies?: string[];
@@ -23,6 +28,8 @@ export type Evidence = {
   notes: EvalServices["notes"];
   calls: ServiceCall[];
   routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
+  /** Routines the bot created during the trial, including ones it later cancelled. */
+  routinesCreated?: number;
   memory: string;
   approvalPending: boolean;
   clarificationPending?: boolean;
@@ -50,6 +57,10 @@ export type EvalCase = {
   grade: (evidence: Evidence) => Criterion[];
   judge?: (evidence: Evidence) => JudgeInput;
 };
+/** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
+export const wakesRoutines = (scenario: EvalCase) =>
+  Boolean(scenario.routine) || scenario.steps.some((step) => "wakeRoutine" in step);
+
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 const read = (e: Evidence, name: string) =>
   e.calls.some((c) => c.tool === name && c.outcome === "read");

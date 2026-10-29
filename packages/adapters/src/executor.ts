@@ -164,6 +164,7 @@ import {
 } from "./run-routines.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
+  followUpsOffered,
   offeredFleetTools,
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
@@ -1531,6 +1532,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 replyGuidance: runReplyGuidance(run.trigger),
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
+                followUpsOffered: followUpsOffered(builtins, run.trigger),
                 userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))

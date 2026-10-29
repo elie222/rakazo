@@ -26,7 +26,7 @@ const checked = (run: RoutineEvidence) =>
       call.args.repo === "widget" &&
       call.outcome === "read",
   );
-const hasVisibleMessage = (run: RoutineEvidence) =>
+export const hasVisibleMessage = (run: RoutineEvidence) =>
   run.messages.some((blocks) => blocks.length === 0 || blocks.some((b) => !isToolActivityBlock(b)));
 
 export const SILENCE_JUDGE_VERSION = "silence-meaning-v1";

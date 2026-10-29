@@ -34,7 +34,11 @@ import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
 import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
-import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import {
+  followUpsOffered,
+  offeredFleetTools,
+  selectBuiltinToolsForRun,
+} from "./run-tool-selection.js";
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
   loadCurrentTurnImages,
@@ -448,6 +452,35 @@ describe("run tool selection", () => {
     );
     expect(toolNames("user")).toContain("schedule_create");
     expect(toolNames("user")).toContain("task_catalog");
+  });
+
+  it("offers self-set follow-ups only in the user's conversation, with tools to track them", () => {
+    const offered = (trigger: string, disabledBuiltinTools?: string[]) =>
+      followUpsOffered(
+        selectBuiltinToolsForRun({
+          graphicalToolsAllowed: true,
+          pageBrowserAllowed: true,
+          groupId: null,
+          trigger,
+          semanticMemoryEnabled: false,
+          messagingChannelRun: false,
+          disabledBuiltinTools,
+        }),
+        trigger,
+      );
+    expect(offered("user")).toBe(true);
+    expect(offered("follow_up")).toBe(true);
+    for (const trigger of ["routine", "webhook", "tickets", "bot_message", "created"]) {
+      expect(offered(trigger)).toBe(false);
+    }
+    for (const tool of [
+      "scratchpad_add",
+      "scratchpad_complete",
+      "schedule_create",
+      "schedule_cancel",
+    ]) {
+      expect(offered("user", [tool])).toBe(false);
+    }
   });
 
   it("offers bot management tools only with the switch on and only on runs the owner started", () => {
@@ -1451,6 +1484,32 @@ describe("userTurnInstructions", () => {
       expect(text).not.toContain("search_history");
       expect(text).not.toContain("read_history");
     }
+  });
+
+  it("asks for self-set follow-ups after the scratchpad guidance only when the run offers them", () => {
+    const toolLine = (followUpsOffered?: boolean) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        followUpsOffered,
+      }).filter(Boolean)[1];
+    const offered = toolLine(true);
+    expect(offered).toContain(
+      "(not reminders — those are schedule_*). Do not wait to be asked about open loops.",
+    );
+    expect(offered).toContain("stay silent if it is done or gone");
+    expect(offered).toContain("complete it and schedule_cancel its follow-up");
+    expect(toolLine(false)).toBe(computerLine);
+    expect(toolLine()).toBe(computerLine);
   });
 
   it("states bot management rules only when the run is offered bot management write tools", () => {

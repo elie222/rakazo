@@ -9,6 +9,7 @@ import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence } from "./cases.js";
+import { wakesRoutines } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -147,8 +148,11 @@ export async function runTrial(
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
-    if (scenario.routine && handles.notifications !== notifications)
-      throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
+    if (wakesRoutines(scenario) && handles.notifications !== notifications)
+      throw new EvalFailure(
+        "harness",
+        "Routine wake evals require the capturing notification provider",
+      );
     const trial = handles;
     const { app } = trial;
     const setupActor = async () => {
@@ -175,7 +179,7 @@ export async function runTrial(
         title: "",
         description: "",
         instructions: "",
-        notifyOnFinish: Boolean(scenario.routine),
+        notifyOnFinish: wakesRoutines(scenario),
       });
       botId = bot.id;
       const persistedBot = await prisma.bot.findUniqueOrThrow({
@@ -351,7 +355,8 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
-      if (scenario.routine) await rpc(app, cookie, "threads/markRead", { botId });
+      if (scenario.routine || "wakeRoutine" in step)
+        await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
       if ("ask" in step) {
@@ -398,6 +403,8 @@ export async function runTrial(
         );
       } else {
         const routines = await prisma.routine.findMany({ where: { botId } });
+        // A follow-up the bot cancelled once its loop closed has nothing left to wake.
+        if (step.ifScheduled && !routines.some((routine) => routine.active)) continue;
         if (routines.length !== 1)
           throw new EvalFailure("agent", "Expected exactly one authored routine");
         const routine = routines[0]!;
@@ -523,7 +530,7 @@ export async function runTrial(
         await waitForMessagingDelivery(prisma, runId, deadline);
       }
       // Completion is committed before notification delivery. Drain the executor before observing.
-      if (scenario.routine && handles.awaitIdle)
+      if (wakesRoutines(scenario) && handles.awaitIdle)
         await withinDeadline(handles.awaitIdle(), deadline);
       const snap = await rpc<{
         messages: Array<{
@@ -573,7 +580,7 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
-      if (scenario.routine && "wakeRoutine" in step) {
+      if ("wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
           select: { blocks: true },
@@ -620,6 +627,10 @@ export async function runTrial(
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
+    // schedule_cancel deletes the routine, but its creation event stays in the thread.
+    const routinesCreated = await prisma.event.count({
+      where: { botId, type: "routine.created" },
+    });
     await captureTools();
     const evidence: Evidence = {
       text: lastText,
@@ -630,6 +641,7 @@ export async function runTrial(
       notes: services.notes,
       calls: services.calls,
       routines,
+      routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
       approvalPending,
       clarificationPending,
@@ -650,7 +662,7 @@ export async function runTrial(
         ...(scenario.history && replies.length > 1
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
-        ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(routineRuns.length ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
