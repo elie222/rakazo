@@ -4297,7 +4297,8 @@ button.product-demo__dock-icon {
 
 .docs-nav {
   height: calc(100vh - var(--docs-top));
-  padding: 32px 12px 48px 0;
+  margin-left: -12px;
+  padding: 32px 12px 48px;
 }
 
 .docs-nav ul,
@@ -4321,10 +4322,13 @@ button.product-demo__dock-icon {
   font-weight: 600;
 }
 
+.docs-nav p {
+  padding-left: 12px;
+}
+
 .docs-nav a {
   display: block;
   padding: 6px 12px;
-  margin-left: -12px;
   border-radius: 10px;
   color: var(--muted-2);
   line-height: 1.35;
