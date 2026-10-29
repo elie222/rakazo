@@ -23,12 +23,12 @@ import {
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
+import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
+import { apiProxy } from "./src/api-proxy.js";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
-import { appendForwardedFor } from "./src/forwarded-for.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -293,7 +293,8 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   server.httpServer?.on("upgrade", async (req, socket, head) => {
     const path = novncRequestPath(req.url);
     // Node drops its own socket error handler on upgrade, so a client reset with no listener
-    // crashes the server. Other upgrades may be Vite's HMR, so only their errors are ignored.
+    // crashes the server. Other upgrades belong to Vite's HMR or the API proxy, so only their
+    // errors are ignored.
     if (!path) {
       socket.on("error", () => {});
       return;
@@ -462,28 +463,6 @@ export default defineConfig(({ command, mode }) => {
   const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
-  const apiProxy = Object.fromEntries(
-    [
-      "/api",
-      "/rpc",
-      // Native app domain association, served by the API from deployment settings.
-      "/.well-known/apple-app-site-association",
-      "/.well-known/assetlinks.json",
-    ].map((path) => [
-      path,
-      {
-        target: api,
-        changeOrigin: true,
-        // Append the hop this proxy saw, so the API never mistakes a caller's own header for its
-        // address. The API reads past this hop only when it is listed in TRUSTED_PROXIES.
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq, req) => {
-            proxyReq.setHeader("x-forwarded-for", appendForwardedFor(req));
-          });
-        },
-      } satisfies ProxyOptions,
-    ]),
-  );
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const allowedHosts = [
     previewHost,
@@ -492,6 +471,10 @@ export default defineConfig(({ command, mode }) => {
       .map((entry) => entry.trim())
       .filter(Boolean),
   ];
+  // Set by the server built from this config; reusing one config object for two servers would
+  // leave the last one's list.
+  let proxyHosts: readonly string[] | true = [];
+  const proxy = apiProxy(api, () => proxyHosts);
   const screenProxySecret = () =>
     resolveScreenProxySecret({
       ...process.env,
@@ -590,6 +573,16 @@ export default defineConfig(({ command, mode }) => {
         },
       },
       {
+        // The hosts the running server allows, as Vite resolved them, for proxied upgrades.
+        name: "rakazo-api-proxy-hosts",
+        configureServer: (server) => {
+          proxyHosts = server.config.server.allowedHosts;
+        },
+        configurePreviewServer: (server) => {
+          proxyHosts = server.config.preview.allowedHosts;
+        },
+      },
+      {
         name: "rakazo-novnc-proxy",
         configureServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
         configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
@@ -600,13 +593,13 @@ export default defineConfig(({ command, mode }) => {
       port: webPort,
       strictPort: true,
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
   };
 });
