@@ -938,8 +938,8 @@ async function* streamLocalCommand(
       finish(1);
     }
   });
-  child.on("close", (code) => {
-    finish(code ?? 0);
+  child.on("close", (code, exitSignal) => {
+    finish(code ?? 1, exitSignal ? `command terminated by ${exitSignal}` : undefined);
   });
   if (signal.aborted) abort();
   try {
