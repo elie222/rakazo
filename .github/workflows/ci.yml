@@ -311,7 +311,7 @@ jobs:
           # leave no body; neither may pass as "no published update", which would shrink the
           # comparison to this push only and let an earlier native change escape the diff.
           response="$(
-            curl -fsS https://api.expo.dev/graphql \
+            curl -fsS --max-time 30 https://api.expo.dev/graphql \
               -H "authorization: Bearer $EXPO_TOKEN" \
               -H "content-type: application/json" \
               --data "$(jq -n --arg id "$project" '{
