@@ -206,6 +206,19 @@ services:
 Then change `SANDBOX_COMPUTER_EGRESS` from `open` to `restricted` in `.env` and recreate the
 supervisor. Docker Desktop has not been tested this way.
 
+### Shared folder
+
+Set `SANDBOX_SHARED_FOLDER` to a folder on the Docker host and recreate the supervisor to
+mount it read-write at `/shared` in every bot computer. Each computer picks it up on its next
+provision; changing or clearing it replaces computers the same way, and their homes are kept.
+Give the path as the Docker daemon sees it: on Docker Desktop for Windows that is the WSL
+form, so `C:\Users\me\RakazoShare` becomes `/mnt/c/Users/me/RakazoShare`. Computers write as
+uid 1000, so on Linux the folder must be writable by that user.
+
+Every bot in the install can read, change and delete anything in the folder, so put only
+what bots should have there. `/shared` sits outside the bot home and is not part of home
+backups, exports or computer moves.
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` (`openssl rand -hex 16` each), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.

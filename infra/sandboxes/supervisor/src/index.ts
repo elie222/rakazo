@@ -49,6 +49,7 @@ import {
   resolveComputerEgressMode,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveSharedFolder,
   resolveSpaceComputerLimit,
   resolveTeamScreenLimit,
   SCREEN_HOST,
@@ -56,6 +57,7 @@ import {
   screenPorts,
   screenUrlFor,
   screenUrlWithToken,
+  sharedFolderMatches,
   xdotoolCommand,
 } from "./computer-spec.js";
 import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
@@ -122,6 +124,7 @@ const computerEgressSetting = resolveComputerEgressMode();
 let computerEgressMode: ComputerEgressMode =
   computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
+const sharedFolder = resolveSharedFolder();
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.
@@ -279,6 +282,8 @@ app.post("/computers", async (c) => {
           info.Config.User === computerUser &&
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
+          // Mounts are fixed too, so adding, moving or removing the shared folder replaces it.
+          sharedFolderMatches(info, sharedFolder) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -350,6 +355,7 @@ app.post("/computers", async (c) => {
               controlToken: randomUUID(),
               publishControlPort: controlViaLoopback,
               dns: computerDns,
+              sharedFolder,
             }),
           );
           await container.start();

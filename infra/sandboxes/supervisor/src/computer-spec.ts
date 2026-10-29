@@ -224,6 +224,47 @@ export function computerDnsMatches(current: string[] | null | undefined, desired
   return have.length === want.length && have.every((server, index) => server === want[index]);
 }
 
+/** Where the shared folder appears in every computer. Outside the home, so home exports skip it. */
+export const SHARED_FOLDER_TARGET = "/shared";
+
+/**
+ * A folder on the Docker host mounted read-write at /shared in every computer, from
+ * SANDBOX_SHARED_FOLDER. The path is the one the Docker daemon sees, which on Docker
+ * Desktop for Windows is the WSL form (/mnt/c/Users/...), not C:\Users\....
+ */
+export function resolveSharedFolder(value = process.env.SANDBOX_SHARED_FOLDER): string | undefined {
+  const folder = value?.trim();
+  if (!folder) return undefined;
+  // resolve() also drops a trailing slash, so the same folder always yields the same label.
+  const resolved = path.posix.resolve(folder);
+  if (!path.posix.isAbsolute(folder) || resolved === "/") {
+    throw new Error(
+      `SANDBOX_SHARED_FOLDER must be an absolute path on the Docker host, such as /mnt/c/Users/me/RakazoShare, received "${folder}"`,
+    );
+  }
+  return resolved;
+}
+
+/**
+ * Whether a container mounts the configured shared folder (none configured: none mounted).
+ * The folder is read from the label set at creation, because Docker Desktop rewrites a bind
+ * mount's Source to its own VM path, so the inspected Source never equals the setting.
+ */
+export function sharedFolderMatches(
+  info: Pick<Docker.ContainerInspectInfo, "Config" | "HostConfig">,
+  folder?: string,
+) {
+  const shared =
+    info.HostConfig.Mounts?.filter((mount) => mount.Target === SHARED_FOLDER_TARGET) ?? [];
+  if (!folder) return shared.length === 0;
+  return (
+    info.Config.Labels?.["rakazo.sharedFolder"] === folder &&
+    shared.length === 1 &&
+    shared[0]!.Type === "bind" &&
+    !shared[0]!.ReadOnly
+  );
+}
+
 /**
  * Host bridge interface name for a computer network. Linux caps interface names
  * at 15 bytes (IFNAMSIZ), so "rakazo-c" gets a 7-hex-char suffix derived from the
@@ -362,6 +403,7 @@ export interface ComputerCreateInput {
   networkMode?: string;
   publishControlPort?: boolean;
   dns?: string[];
+  sharedFolder?: string;
 }
 
 interface PointerInput {
@@ -379,6 +421,9 @@ export type SandboxInput =
 
 export function containerCreateOptions(input: ComputerCreateInput) {
   const ports = computerPortBindings(input.publishControlPort);
+  const sharedMounts = input.sharedFolder
+    ? [{ Type: "bind" as const, Source: input.sharedFolder, Target: SHARED_FOLDER_TARGET }]
+    : [];
   return {
     Image: input.image,
     name: input.name,
@@ -396,6 +441,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "rakazo.managed": "true",
       "rakazo.botId": input.botId,
       "rakazo.spaceId": input.spaceId,
+      ...(input.sharedFolder ? { "rakazo.sharedFolder": input.sharedFolder } : {}),
     },
     ExposedPorts: ports.ExposedPorts,
     HostConfig: {
@@ -413,9 +459,13 @@ export function containerCreateOptions(input: ComputerCreateInput) {
                   Subpath: input.homeVolume.subpath,
                 } as Docker.MountSettings["VolumeOptions"],
               },
+              ...sharedMounts,
             ],
           }
-        : { Binds: [`${input.homePath}:/home/rakazo`], Mounts: undefined }),
+        : {
+            Binds: [`${input.homePath}:/home/rakazo`],
+            Mounts: sharedMounts.length ? sharedMounts : undefined,
+          }),
       PortBindings: ports.PortBindings,
       ShmSize: 256 * 1024 * 1024,
       CapDrop: ["ALL"],

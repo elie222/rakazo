@@ -45,12 +45,14 @@ import {
   resolveComputerImage,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
+  resolveSharedFolder,
   resolveSpaceComputerLimit,
   resolveTeamScreenLimit,
   screenPeerNetworkConnectOptions,
   screenPorts,
   screenUrlFor,
   screenUrlWithToken,
+  sharedFolderMatches,
   xdotoolCommand,
 } from "./computer-spec.js";
 
@@ -211,6 +213,65 @@ describe("graphical computer spec", () => {
     expect(computerDnsMatches(null, ["1.1.1.1"])).toBe(false);
     expect(computerDnsMatches(["1.1.1.1"], undefined)).toBe(false);
     expect(computerDnsMatches(["1.0.0.1", "1.1.1.1"], ["1.1.1.1", "1.0.0.1"])).toBe(false);
+  });
+
+  it("parses the shared folder as an absolute path on the Docker host", () => {
+    expect(resolveSharedFolder(undefined)).toBeUndefined();
+    expect(resolveSharedFolder(" ")).toBeUndefined();
+    expect(resolveSharedFolder("/mnt/c/Users/me/Share/")).toBe("/mnt/c/Users/me/Share");
+    for (const value of ["C:\\Users\\me\\Share", "share", "/", "/a/.."])
+      expect(() => resolveSharedFolder(value)).toThrow(/SANDBOX_SHARED_FOLDER/);
+  });
+
+  it("mounts the shared folder read-write at /shared beside either home storage", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    const shared = { Type: "bind", Source: "/srv/share", Target: "/shared" };
+    expect(containerCreateOptions(base).HostConfig.Mounts).toBeUndefined();
+    expect(
+      containerCreateOptions({ ...base, sharedFolder: "/srv/share" }).HostConfig,
+    ).toMatchObject({ Binds: ["/data/x:/home/rakazo"], Mounts: [shared] });
+    const withVolume = containerCreateOptions({
+      ...base,
+      homeVolume: { name: "appdata", subpath: "x" },
+      sharedFolder: "/srv/share",
+    });
+    expect(withVolume.HostConfig.Mounts).toEqual([
+      expect.objectContaining({ Type: "volume", Target: "/home/rakazo" }),
+      shared,
+    ]);
+    expect(withVolume.Labels).toMatchObject({ "rakazo.sharedFolder": "/srv/share" });
+    expect(containerCreateOptions(base).Labels).not.toHaveProperty("rakazo.sharedFolder");
+  });
+
+  it("matches a computer's shared folder to the configured one by its creation label", () => {
+    const home = { Type: "volume" as const, Source: "appdata", Target: "/home/rakazo" };
+    // Docker Desktop reports its own VM path as the source, not the configured folder.
+    const shared = {
+      Type: "bind" as const,
+      Source: "/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/Ubuntu/abc",
+      Target: "/shared",
+    };
+    const computer = (mounts?: Docker.MountSettings[], folder?: string) =>
+      ({
+        Config: { Labels: folder ? { "rakazo.sharedFolder": folder } : {} },
+        HostConfig: { Mounts: mounts },
+      }) as Docker.ContainerInspectInfo;
+    expect(sharedFolderMatches(computer(undefined), undefined)).toBe(true);
+    expect(sharedFolderMatches(computer([home]), undefined)).toBe(true);
+    expect(sharedFolderMatches(computer([home, shared], "/srv/share"), "/srv/share")).toBe(true);
+    expect(sharedFolderMatches(computer([home]), "/srv/share")).toBe(false);
+    expect(sharedFolderMatches(computer([home, shared], "/srv/share"), undefined)).toBe(false);
+    expect(sharedFolderMatches(computer([shared], "/srv/share"), "/srv/other")).toBe(false);
+    expect(sharedFolderMatches(computer([home], "/srv/share"), "/srv/share")).toBe(false);
+    expect(
+      sharedFolderMatches(computer([{ ...shared, ReadOnly: true }], "/srv/share"), "/srv/share"),
+    ).toBe(false);
   });
 
   it("derives deterministic host bridge names within the 15-byte interface limit", () => {
