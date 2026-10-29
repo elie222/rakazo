@@ -1,18 +1,18 @@
 # MCP server plugin
 
-A minimal Rakazo plugin with a hosted MCP connection and a skill explaining when to use it.
-Copy this folder, replace `https://mcp.example.com/mcp` in `mcp.json` with your public HTTPS
-MCP endpoint, and publish it in a public GitHub repository. The example URL is a placeholder;
-this folder does not run or deploy a server. Local stdio servers are not supported in plugins.
+A manifest, a hosted MCP connection, and an optional skill teaching bots to use it.
 
-To try your copy, open **Integrations** in Rakazo, choose **+** → **From GitHub**, and paste
-your repository or plugin folder URL. Install the connector and skill, authenticate the server
-if needed, enable it for a bot, and ask the bot to search your documentation.
+1. Copy this folder into a public GitHub repository.
+2. Replace `https://mcp.example.com/mcp` in `mcp.json` with your public HTTPS MCP endpoint.
+   The example URL is a placeholder; this folder does not run or deploy a server.
+   Rakazo never runs repository code or local stdio servers from plugins.
+3. Open **Integrations** → **+** → **From GitHub**, paste your repository or folder URL,
+   and choose **Preview**, then **Connect**. Choose **Add skills** under Skills to try the companion skill.
+4. Sign in if needed, choose **Use in this bot** with a bot selected, and ask it to search your docs.
 
-Keep keys out of the repository. Users sign in with the server's OAuth flow or edit the
-installed connection under **Manage MCP servers** to supply their own bearer token or header.
-The `X-Docs-Collection` header is an example of static, non-secret configuration; adjust or
-remove it for your server. `${VAR}` placeholders do not prompt users for keys and are refused.
+Keep credentials out of the repository. OAuth uses server discovery and per-user sign-in.
+For a token or custom header, edit the installed server under **Manage MCP servers** → **Advanced**.
+`mcp.json` accepts optional static, non-secret `headers`; `${VAR}` placeholders are rejected.
 
-See [Add an MCP server](https://rakazo.com/docs/build-a-plugin/#add-an-mcp-server) for config,
-authentication, testing, and marketplace submission steps.
+Follow [Build a plugin](https://rakazo.com/docs/build-a-plugin/) for configuration and marketplace submission.
+For a plugin without tools, see [Hello world](../hello-world/README.md).

@@ -1,9 +1,10 @@
 ---
 import type { CollectionEntry } from "astro:content";
 import { getCollection, render } from "astro:content";
+import DocsNav from "../../components/DocsNav.astro";
 import Footer from "../../components/Footer.astro";
 import Header from "../../components/Header.astro";
-import { DOCS_NAV, DOCS_PAGES, DOCS_SLUGS, docsPath } from "../../docs";
+import { DOCS_PAGES, DOCS_SLUGS, docsPath } from "../../docs";
 import { githubStarsLabel } from "../../github";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { GITHUB_URL } from "../../site";
@@ -42,33 +43,11 @@ const currentPath = docsPath(entry.id);
     <Header starsLabel={starsLabel} />
   </div>
   <div class="container docs">
-    <nav class="docs-nav" aria-label="Docs">
-      {
-        DOCS_NAV.map((section) => (
-          <div class="docs-nav__section">
-            <p>{section.title}</p>
-            <ul>
-              {section.pages.map((page) => (
-                <li>
-                  <a
-                    href={docsPath(page.slug)}
-                    aria-current={docsPath(page.slug) === currentPath ? "page" : undefined}
-                  >
-                    {page.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))
-      }
-      <div class="docs-nav__section">
-        <p>Reference</p>
-        <ul>
-          <li><a href="/integrations/">Integrations</a></li>
-        </ul>
-      </div>
-    </nav>
+    <DocsNav currentPath={currentPath} class="docs-nav--desktop" />
+    <details class="docs-menu">
+      <summary>Docs menu</summary>
+      <DocsNav currentPath={currentPath} />
+    </details>
 
     <main id="main" class="docs-main">
       <article class="docs-prose">

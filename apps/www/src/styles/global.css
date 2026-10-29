@@ -4159,6 +4159,10 @@ button.product-demo__dock-icon {
   padding: 40px 0 120px;
 }
 
+.docs-menu {
+  display: none;
+}
+
 .docs-nav,
 .docs-toc {
   position: sticky;
@@ -4243,6 +4247,7 @@ button.product-demo__dock-icon {
 }
 
 .docs-main {
+  min-width: 0;
   max-width: 760px;
 }
 
@@ -4440,15 +4445,42 @@ button.product-demo__dock-icon {
 
 @media (max-width: 760px) {
   .docs {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 24px;
     padding-top: 16px;
   }
 
-  .docs-nav {
+  .docs-nav--desktop {
+    display: none;
+  }
+
+  .docs-menu {
+    display: block;
+    min-width: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .docs-menu summary {
+    padding: 0 0 16px;
+    color: var(--ink);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .docs-menu .docs-nav {
     position: static;
     max-height: none;
     padding-bottom: 20px;
-    border-bottom: 1px solid var(--line);
+  }
+
+  .docs-prose {
+    overflow-wrap: anywhere;
+  }
+
+  .docs-prose h2 {
+    margin-top: 36px;
+    padding-top: 24px;
+    font-size: 24px;
+    line-height: 1.25;
   }
 }

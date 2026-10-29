@@ -8,7 +8,7 @@ import {
   getHomeCopy,
 } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
-import { APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
+import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -194,7 +194,7 @@ List a plugin in the Rakazo marketplace. We review every submission and email th
 
 The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), \`.cursor-plugin/plugin.json\`, or \`.grok-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
 
-[Build a plugin](https://rakazo.com/docs/build-a-plugin/) covers building, testing, and review. To list a hosted server, start with [Add an MCP server](https://rakazo.com/docs/build-a-plugin/#add-an-mcp-server). The [hello world plugin](https://github.com/elie222/rakazo/tree/main/examples/plugins/hello-world) is a complete example.
+[Build a plugin](https://rakazo.com/docs/build-a-plugin/) starts with a hosted MCP server and covers configuration, testing, and marketplace submission. Copy the [MCP server example](${GITHUB_URL}/tree/main/examples/plugins/mcp-server) for hosted tools, or the [hello world example](${GITHUB_URL}/tree/main/examples/plugins/hello-world) for skills only.
 
 ## Submit with the API
 
