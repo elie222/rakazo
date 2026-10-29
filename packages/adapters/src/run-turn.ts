@@ -111,7 +111,7 @@ export async function consumeRunEvents(
         botId: bot.id,
         runId,
         type: "thread.meta",
-        activityLease: { owner: ctx.workerId, fence: ctx.fence },
+        lease: { owner: ctx.workerId, fence: ctx.fence },
         payload: { activity: { thinking: active } },
       });
     } catch (error) {

@@ -44,6 +44,7 @@ import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
 } from "./cross-space-communication.js";
+import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
   assertRunIsCancelled,
@@ -78,8 +79,8 @@ export interface AppendEventInput {
   runId?: string;
   /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
   allowCancelledRun?: boolean;
-  /** Internal attempt fence for transient activity; never serialized to clients. */
-  activityLease?: { owner: string; fence: number };
+  /** The executing attempt's lease; a superseded attempt cannot write. Never serialized. */
+  lease?: RunLease;
 }
 
 /** Exact transient lifecycle payloads only: unrelated thread metadata must survive. */
@@ -2013,7 +2014,7 @@ export async function appendEventInTransaction(
   const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
   if (activity) {
     ThreadActivityPayloadSchema.parse(input.payload);
-    if (!input.runId || !input.activityLease) throw new RunHistoryWriteError();
+    if (!input.runId || !input.lease) throw new RunHistoryWriteError();
   }
   const thread = await tx.thread
     .update({
@@ -2027,27 +2028,20 @@ export async function appendEventInTransaction(
       if (input.runId && isRecordNotFound(error)) throw new RunHistoryWriteError();
       throw error;
     });
-  if (activity) {
-    const active = await tx.run.findUnique({
-      where: { id: input.runId },
-      select: { status: true, leaseOwner: true, leaseFence: true },
-    });
-    if (
-      active?.status !== "running" ||
-      active.leaseOwner !== input.activityLease?.owner ||
-      active.leaseFence !== input.activityLease?.fence
-    )
-      throw new RunHistoryWriteError();
-  }
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
   let firstResponseAt: Date | null | undefined;
   if (input.type === "run.cancelled") {
     await assertRunIsCancelled(tx, input.runId);
   } else {
-    firstResponseAt = (
-      await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun })
-    )?.firstResponseAt;
+    const run = await assertRunCanWriteHistory(tx, input.runId, {
+      allowCancelled: input.allowCancelledRun,
+      lease: input.lease,
+    });
+    if (activity && (run?.status !== "running" || run.leaseOwner !== input.lease?.owner)) {
+      throw new RunHistoryWriteError();
+    }
+    firstResponseAt = run?.firstResponseAt;
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
   const payload = sanitizeJsonValue(input.payload);

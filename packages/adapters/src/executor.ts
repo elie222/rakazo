@@ -146,6 +146,7 @@ import {
   startNextWaitingRun,
   writeComputerRunRequeue,
 } from "./run-lifecycle.js";
+import { withRunLease } from "./run-messages.js";
 import {
   cloudflareRunFields,
   isTerminalModelSetupError,
@@ -204,22 +205,27 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
-export function createRunExecutor(deps: ExecutorDeps) {
-  const contextStrategy = deps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
-  const web = deps.web ?? createWebProvider();
-  const mediaGeneration = deps.mediaGeneration ?? createMediaGenerationProvider();
-  const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
-  const cloudAgent = deps.cloudAgent;
-  const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, deps);
+export function createRunExecutor(executorDeps: ExecutorDeps) {
+  const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
+  const web = executorDeps.web ?? createWebProvider();
+  const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const browser =
+    executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
+  const cloudAgent = executorDeps.cloudAgent;
+  const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
   return {
     resolveConnectedModel,
     contextStrategy,
-    resolveModel: resolveRunModel.bind(undefined, deps),
-    wakeRoutine: wakeRoutine.bind(undefined, deps),
-    notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(undefined, deps),
-    retryRoutineRun: retryRoutineRun.bind(undefined, deps),
+    resolveModel: resolveRunModel.bind(undefined, executorDeps),
+    wakeRoutine: wakeRoutine.bind(undefined, executorDeps),
+    notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(
+      undefined,
+      executorDeps,
+    ),
+    retryRoutineRun: retryRoutineRun.bind(undefined, executorDeps),
 
     async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
+      let deps = executorDeps;
       // A stopping process must not claim work it cannot finish. The row stays
       // queued or expired for a worker that is still running.
       if (deps.shutdownSignal?.aborted) return;
@@ -376,6 +382,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         throw error;
       }
 
+      // A newer claim of this run now rejects this attempt's history writes.
+      deps = withRunLease(deps, runId, { owner: workerId, fence });
       const lease: RunLeaseState = {
         valid: true,
         completed: false,
