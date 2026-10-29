@@ -4,6 +4,7 @@ import {
   DEV_ENCRYPTION_KEY_PLACEHOLDER,
   DEV_SCREEN_PROXY_SECRET_PLACEHOLDER,
   DEV_SUPERVISOR_TOKEN_PLACEHOLDER,
+  encryptionKeyWarning,
   hasValidBearerToken,
   resolveAuthSecret,
   resolveContentEncryption,
@@ -139,6 +140,22 @@ describe("secrets-guard", () => {
     expect(resolveEncryptionKey({ NODE_ENV: "production", ENCRYPTION_KEY: "existing-key" })).toBe(
       "existing-key",
     );
+  });
+
+  it("warns about a weak production encryption key without rejecting it", () => {
+    expect(
+      encryptionKeyWarning({ NODE_ENV: "production", ENCRYPTION_KEY: "existing-key" }),
+    ).toMatch(/ENCRYPTION_KEY/);
+    expect(
+      encryptionKeyWarning({
+        NODE_ENV: "production",
+        ENCRYPTION_KEY: "replace-with-64-random-hex-characters",
+      }),
+    ).toMatch(/ENCRYPTION_KEY/);
+    expect(
+      encryptionKeyWarning({ NODE_ENV: "production", ENCRYPTION_KEY: "a".repeat(64) }),
+    ).toBeUndefined();
+    expect(encryptionKeyWarning({ NODE_ENV: "development" })).toBeUndefined();
   });
 
   it("requires dedicated supervisor and screen-proxy credentials", () => {
