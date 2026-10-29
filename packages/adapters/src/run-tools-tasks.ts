@@ -231,7 +231,6 @@ export const taskTools: ToolHandlers = {
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
       ...(thread.groupId ? { threadId: thread.id } : {}),
     });
   },
@@ -241,7 +240,6 @@ export const taskTools: ToolHandlers = {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
-      userId: run.userId,
       ...(thread.groupId ? { threadId: thread.id } : {}),
       routineId: args.routineId ? String(args.routineId) : undefined,
       name: args.name ? String(args.name) : undefined,

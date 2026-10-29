@@ -496,13 +496,10 @@ export async function resolveRunModel(
     botId?: string;
   },
 ): Promise<AgentRunRequest["model"]> {
+  // The bot's model is shared config; the credential that runs it stays the run user's.
   const override = scope.botId
     ? await deps.prisma.bot.findFirst({
-        where: {
-          id: scope.botId,
-          userId: scope.userId,
-          spaceId: scope.spaceId,
-        },
+        where: { id: scope.botId, spaceId: scope.spaceId },
         select: { modelProvider: true, modelId: true, thinkingLevel: true },
       })
     : null;

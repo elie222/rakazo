@@ -578,7 +578,7 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
   expect(ui.swipeRows).toEqual(["bot:current-bot", "group:current-group"]);
 });
 
-it("offers every space heading's Settings, and Delete only where the member may delete it", () => {
+it("offers every space heading's Members and Settings, and Delete only where the member may delete it", () => {
   const confirmDeleteSpace = vi.fn();
   ui.push.mockReset();
   const heading = (id: string, name: string, canDelete: boolean) =>
@@ -596,9 +596,14 @@ it("offers every space heading's Settings, and Delete only where the member may 
     />,
   );
   expect(ui.menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
-    ["settings"],
-    ["settings", "delete"],
+    ["members", "settings"],
+    ["members", "settings", "delete"],
   ]);
+  act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "members" } }));
+  expect(ui.push).toHaveBeenLastCalledWith({
+    pathname: "/space-members",
+    params: { spaceId: "space-work", name: "Work" },
+  });
   // Settings open the Space's own page, which edits that Space even when another is selected.
   act(() => ui.menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
   expect(ui.push).toHaveBeenCalledWith({

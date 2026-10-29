@@ -1,9 +1,10 @@
 import type { AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
-import { blocksToAgentHistoryText } from "@rakazo/core";
+import { authorLabelledText, blocksToAgentHistoryText } from "@rakazo/core";
+import { loadMessageAuthors } from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { loadReplyContext } from "./reply-context.js";
+import { loadReplyContext, sharedSpaceAuthorName } from "./reply-context.js";
 import { currentTurnFilesInstruction, listCurrentTurnFiles } from "./thread-artifacts.js";
 
 const TURN_ATTACHMENT_UNAVAILABLE =
@@ -72,7 +73,6 @@ export async function loadCurrentTurnImages(
     where: {
       id: { in: imageBlocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -149,7 +149,6 @@ async function loadTurnImagesWithinBudget(
     where: {
       id: { in: imageBlocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
     select: { id: true, storageKey: true, size: true },
   });
@@ -372,10 +371,22 @@ export async function claimRunSteering(
   context: Parameters<typeof loadCurrentTurnImages>[2],
   pendingTurnFiles: MessageBlock[][],
   currentTurn: { messageId?: string; hasImages: boolean },
+  sharedSpaceAuthors?: Map<string, MessageAuthor>,
 ): Promise<AgentSteeringMessage[]> {
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
+  if (sharedSpaceAuthors) {
+    const unknown = steering.map((item) =>
+      sharedSpaceAuthors.has(item.authorUserId ?? "") ? undefined : item.authorUserId,
+    );
+    for (const [id, author] of await loadMessageAuthors(deps.prisma, unknown))
+      sharedSpaceAuthors.set(id, author);
+  }
   return Promise.all(
     steering.map(async (item) => {
+      const author = sharedSpaceAuthors
+        ? sharedSpaceAuthorName(true, sharedSpaceAuthors, { role: "user", ...item })
+        : undefined;
+      const historyText = author ? authorLabelledText(author, item.text) : item.text;
       const { images, files, unavailableInstruction } = await settleSteeringAttachmentLoads(
         loadCurrentTurnImages(deps, item.blocks, context),
         deps.artifacts ? listCurrentTurnFiles(deps, item.blocks, context) : Promise.resolve([]),
@@ -388,10 +399,10 @@ export async function claimRunSteering(
         id: item.id,
         messageId: item.messageId,
         origin: item.origin,
-        historyText: item.text,
+        historyText,
         text: [
           await loadReplyContext(deps.prisma, lease.threadId, item.messageId),
-          item.text,
+          historyText,
           filesInstruction,
           unavailableInstruction,
         ]

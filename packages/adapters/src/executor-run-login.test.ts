@@ -136,6 +136,7 @@ async function runTool(
     );
   const prisma = recordingPrisma(
     {
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {
         findUnique: async () => run,
         findUniqueOrThrow: async () => run,

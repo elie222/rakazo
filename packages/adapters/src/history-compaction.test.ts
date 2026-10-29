@@ -7,6 +7,7 @@ import type {
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { currentDbContext } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -225,6 +226,7 @@ type HarnessMessage = {
   seq: number;
   role: string;
   blocks: MessageBlock[];
+  authorUserId?: string;
 };
 
 function compactionHarness(
@@ -238,6 +240,8 @@ function compactionHarness(
     historyCompactionSummary?: string | null;
     historyCompactionGeneration?: number;
     wasCleared?: boolean;
+    threadCreatorLeft?: boolean;
+    spaceMembers?: number;
     resolveModel?: (scope: {
       userId: string;
       spaceId: string;
@@ -301,6 +305,18 @@ function compactionHarness(
     },
     event: {
       findFirst: vi.fn(async () => (options.wasCleared ? { seq: 0 } : null)),
+    },
+    spaceMember: {
+      findUnique: vi.fn(async () => (options.threadCreatorLeft ? null : { userId: "user-1" })),
+      count: vi.fn(async () => options.spaceMembers ?? 1),
+    },
+    user: {
+      findMany: vi.fn(async (args: { where: { id: { in: string[] } } }) =>
+        args.where.id.in.map((id) => ({ id, name: id === "user-1" ? "Ava" : "Ben" })),
+      ),
+    },
+    bot: {
+      findUnique: vi.fn(async () => ({ userId: "owner-1" })),
     },
     message: {
       findMany: vi.fn(
@@ -567,6 +583,28 @@ describe("compactHistory", () => {
     expect(request.prompt).toContain("[image: diagram.png]");
   });
 
+  it("names who wrote each line in a shared space", async () => {
+    const messages: HarnessMessage[] = Array.from({ length: 50 }, (_, i) => ({
+      seq: i,
+      role: i % 2 === 0 ? "user" : "bot",
+      blocks: [{ kind: "text", text: `message ${i}` }],
+      ...(i % 2 === 0 ? { authorUserId: i % 4 === 0 ? "user-1" : "user-2" } : {}),
+    }));
+    const shared = compactionHarness({ deploymentModelKey: "key", messages, spaceMembers: 2 });
+    await compactHistory(shared.deps, "thread-1");
+    const [sharedRequest] = shared.runtime.run.mock.calls[0]!;
+    expect(sharedRequest.prompt).toContain("user: [from Ava] message 0");
+    expect(sharedRequest.prompt).toContain("user: [from Ben] message 2");
+    expect(sharedRequest.prompt).toContain("bot: message 1");
+
+    const personal = compactionHarness({ deploymentModelKey: "key", messages });
+    await compactHistory(personal.deps, "thread-1");
+    const [personalRequest] = personal.runtime.run.mock.calls[0]!;
+    expect(personalRequest.prompt).toContain("user: message 0");
+    expect(personalRequest.prompt).not.toContain("[from ");
+    expect(personal.prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
   it("compacts locally without a semantic memory provider", async () => {
     const harness = compactionHarness({
       settings: {
@@ -617,6 +655,25 @@ describe("compactHistory", () => {
       provider: "anthropic",
       id: "claude-sonnet",
       apiKey: "user-model-key",
+    });
+  });
+
+  it("summarizes as the bot's creator once the thread's creator left the space", async () => {
+    let lookupContext: unknown;
+    const resolveModel = vi.fn(async () => {
+      lookupContext = currentDbContext();
+      return { provider: "anthropic", id: "claude-sonnet", apiKey: "owner-model-key" };
+    });
+    const harness = compactionHarness({ resolveModel, threadCreatorLeft: true });
+
+    await compactHistory(harness.deps, "thread-1");
+
+    // Their credentials are only readable as them, so the lookup runs as the owner.
+    expect(lookupContext).toEqual({ kind: "tenant", spaceId: "workspace-1", userId: "owner-1" });
+    expect(resolveModel).toHaveBeenCalledWith({
+      userId: "owner-1",
+      spaceId: "workspace-1",
+      botId: "bot-1",
     });
   });
 

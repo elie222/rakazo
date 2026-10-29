@@ -92,6 +92,7 @@ export function SettingsOverlays({
   spaces,
   renameSpace,
   removeSpace,
+  leftSpace,
   refreshSpaces,
   openAgentImport,
   alive,
@@ -115,6 +116,7 @@ export function SettingsOverlays({
   spaces: Space[];
   renameSpace: (spaceId: string, name: string) => Promise<void>;
   removeSpace: (spaceId: string) => Promise<void>;
+  leftSpace: (spaceId: string, activeSpaceId: string) => Promise<void>;
   refreshSpaces: () => Promise<void>;
   openAgentImport: () => void;
   alive: RefObject<boolean>;
@@ -145,6 +147,10 @@ export function SettingsOverlays({
           onDeleteSpace={async (spaceId) => {
             await removeSpace(spaceId);
             if (alive.current) setOverlay(null);
+          }}
+          onLeftSpace={(spaceId, activeSpaceId) => {
+            setOverlay(null);
+            void leftSpace(spaceId, activeSpaceId);
           }}
           onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
           name={user?.name ?? ""}

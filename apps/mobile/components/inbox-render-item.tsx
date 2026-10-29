@@ -121,6 +121,7 @@ export function useInboxRenderItem({
             {sharing ? null : (
               <MenuView
                 actions={[
+                  { id: "members", title: t("Members"), image: "person.2" },
                   { id: "settings", title: t("Settings"), image: "gearshape" },
                   ...(canDeleteInboxSpace(item.space)
                     ? [
@@ -142,7 +143,7 @@ export function useInboxRenderItem({
                   if (nativeEvent.event === "delete") confirmDeleteSpace(item.space);
                   else
                     router.push({
-                      pathname: "/space",
+                      pathname: nativeEvent.event === "members" ? "/space-members" : "/space",
                       params: { spaceId: item.space.id, name: item.space.name },
                     });
                 }}

@@ -95,6 +95,7 @@ async function runAfterFill(
     yield { type: "done" as const, text: reply };
   });
   const prisma = {
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),

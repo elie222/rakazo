@@ -39,6 +39,7 @@ function fixture(blocks: unknown[]) {
     prisma: {
       bot: { findFirst: vi.fn(async () => ({ id: "bot", thread: { id: "main-thread" } })) },
       thread: { findMany: vi.fn(async () => [{ id: "group-thread" }]) },
+      mcpServer: { findFirst: vi.fn(async () => ({ id: "srv-a" })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     events: { notify: vi.fn() },
@@ -95,7 +96,6 @@ describe("resolveMcpApprovalCards", () => {
       where: {
         id: "group-thread",
         spaceId: "space",
-        userId: "user",
         OR: [{ botId: "bot" }, { group: { members: { some: { botId: "bot" } } } }],
       },
       select: { id: true, botId: true },
@@ -127,7 +127,6 @@ describe("resolveMcpApprovalCards", () => {
       where: {
         id: "group-thread",
         spaceId: "space",
-        userId: "user",
         groupId: { not: null },
       },
       select: { id: true, botId: true },
@@ -217,7 +216,6 @@ describe("resolveMcpApprovalCards", () => {
     expect(deps.prisma.thread.findMany).toHaveBeenCalledWith({
       where: {
         spaceId: "space",
-        userId: "user",
         OR: [{ botId: "bot" }, { groupId: { not: null }, messages: { some: { botId: "bot" } } }],
       },
       select: { id: true, botId: true },
@@ -271,7 +269,7 @@ describe("resolveMcpApprovalCards", () => {
     expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();
     expect(tx.message.findMany).toHaveBeenCalledWith({
       where: {
-        thread: { spaceId: "space", userId: "user" },
+        thread: { spaceId: "space" },
         blocks: { array_contains: [{ kind: "mcp_approval", serverId: "srv-a" }] },
       },
       select: {
@@ -318,6 +316,24 @@ describe("resolveMcpApprovalCards", () => {
       status: "dismissed",
       threadId: "other-thread",
     });
+    expect(tx.message.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves a card for another member's server to that member", async () => {
+    const blocks = [{ kind: "mcp_approval", name: "A", serverId: "srv-a", status: "pending" }];
+    const { deps, actor, tx } = fixture(blocks);
+    deps.prisma.mcpServer.findFirst = vi.fn(async () => null);
+    await resolveMcpApprovalCards(deps, actor, {
+      botId: "bot",
+      serverId: "srv-a",
+      status: "dismissed",
+      threadId: "group-thread",
+    });
+    expect(deps.prisma.mcpServer.findFirst).toHaveBeenCalledWith({
+      where: { id: "srv-a", spaceId: "space", userId: "user" },
+      select: { id: true },
+    });
+    expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();
     expect(tx.message.update).not.toHaveBeenCalled();
   });
 });

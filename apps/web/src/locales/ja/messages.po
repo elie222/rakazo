@@ -215,6 +215,10 @@ msgstr "{hidden, plural, one {+#件の前のステップ} other {+#件の前の�
 msgid "{hours}h ago"
 msgstr "{hours}時間前"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
+
 #: src/components/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}、空"
@@ -418,6 +422,10 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "いろいろ少しずつ"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "コマンドの出力"
@@ -468,6 +476,10 @@ msgstr "{name}のアカウントメニュー"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0}の操作"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
 
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
@@ -1129,6 +1141,7 @@ msgstr "画像を読み取れません"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -1723,6 +1736,10 @@ msgstr "コードをコピー"
 msgid "Copy diagram source"
 msgstr "ダイアグラムのソースをコピー"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "プロンプトをコピー"
@@ -1840,6 +1857,10 @@ msgstr "ボットを作成できませんでした"
 msgid "Could not create group"
 msgstr "グループを作成できませんでした"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "セクションを作成できませんでした"
@@ -1929,6 +1950,10 @@ msgstr "コネクタをインストールできませんでした"
 msgid "Could not install plugin"
 msgstr ""
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/lib/user-devices.ts
@@ -1968,6 +1993,10 @@ msgstr "連携を読み込めませんでした"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCPサーバーを読み込めませんでした"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -2058,6 +2087,10 @@ msgstr "削除できませんでした"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "コネクタを削除できませんでした"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Could not remove plugin"
@@ -2807,6 +2840,10 @@ msgstr "毎月"
 msgid "Every week"
 msgstr "毎週"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone in this space sees all its chats, bots and memory."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "実行トークン"
@@ -3282,14 +3319,23 @@ msgstr "間隔の単位"
 msgid "Invalid code"
 msgstr "無効なコード"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
 #: src/components/InviteDialog.tsx
 #: src/components/SidebarFooter.tsx
 msgid "Invite friends"
 msgstr "友だちを招待"
 
 #: src/components/InviteDialog.tsx
+#: src/components/SpaceMembersSettings.tsx
 msgid "Invite link"
 msgstr "招待リンク"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3307,6 +3353,14 @@ msgstr "セクション内のボットとグループは削除されず、セク
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "会話、ファイル、ルーティンは完全に削除されます。作成したボットはリストに残ります。"
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3350,9 +3404,19 @@ msgstr "前回の確認 {0}: 変更なし"
 msgid "Later"
 msgstr "後で"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/components/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
@@ -3443,8 +3507,10 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3593,6 +3659,10 @@ msgstr "中"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "メンバー"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -4222,6 +4292,10 @@ msgstr "フルウィンドウで開く"
 msgid "Open navigation"
 msgstr "ナビゲーションを開く"
 
+#: src/pages/Invite.tsx
+msgid "Open Rakazo"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "未完了の作業"
@@ -4276,6 +4350,7 @@ msgstr "その他のモデル…"
 msgid "Output"
 msgstr "出力"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4693,6 +4768,7 @@ msgstr "再読み込み"
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/TrustedLinkSitesSettings.tsx
 #: src/components/VaultSettings.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4713,6 +4789,10 @@ msgstr "{0}を削除"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "{0}をグループから外す"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/components/VaultSettings.tsx
 msgid "Remove {secretName}? Bots will no longer be able to use it."
@@ -4895,6 +4975,7 @@ msgstr "ワークスペースを復元中"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5822,6 +5903,10 @@ msgstr "このファイルは有効なUTF-8テキストではありません。"
 msgid "This import was already used. Choose the files again."
 msgstr "このインポートはすでに使用されています。もう一度ファイルを選択してください。"
 
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "このMac"
@@ -6448,6 +6533,10 @@ msgstr "お使いのOpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "お使いのOpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private."
+msgstr ""
 
 #: src/components/integrations/skills-dialog.tsx
 msgid "Your skills"

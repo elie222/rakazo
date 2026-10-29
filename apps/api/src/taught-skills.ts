@@ -51,16 +51,23 @@ export interface TaughtSkillsDeps {
   dataDir: string;
 }
 
-function ownedSkillWhere(actor: Actor, skillId: string) {
-  return { id: skillId, spaceId: actor.spaceId, userId: actor.userId };
-}
-
+/**
+ * Taught skills are the space's. A live recording is driven by the member who
+ * holds the computer takeover, so only that member feeds it (`recorder`).
+ */
 async function getOwnedSkill(
   deps: TaughtSkillsDeps,
   actor: Actor,
   skillId: string,
+  options: { recorder?: boolean } = {},
 ): Promise<TaughtSkillRow> {
-  const skill = await deps.prisma.taughtSkill.findFirst({ where: ownedSkillWhere(actor, skillId) });
+  const skill = await deps.prisma.taughtSkill.findFirst({
+    where: {
+      id: skillId,
+      spaceId: actor.spaceId,
+      ...(options.recorder ? { userId: actor.userId } : {}),
+    },
+  });
   if (!skill) throw new IsolationError();
   return skill;
 }
@@ -301,7 +308,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
   return {
     async list(actor: Actor, botId: string): Promise<TaughtSkill[]> {
       const rows = await deps.prisma.taughtSkill.findMany({
-        where: { spaceId: actor.spaceId, botId, userId: actor.userId },
+        where: { spaceId: actor.spaceId, botId },
         orderBy: { updatedAt: "desc" },
       });
       return rows.map(mapTaughtSkill);
@@ -316,7 +323,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
 
     async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
       let bot = await deps.prisma.bot.findFirst({
-        where: { id: botId, spaceId: actor.spaceId, userId: actor.userId },
+        where: { id: botId, spaceId: actor.spaceId },
         include: { thread: true, computer: true },
       });
       if (!bot) throw new IsolationError();
@@ -386,7 +393,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       skillId: string,
       event: TeachRecordingEvent,
     ): Promise<TaughtSkill> {
-      await getOwnedSkill(deps, actor, skillId);
+      await getOwnedSkill(deps, actor, skillId, { recorder: true });
       await expireTeachingSessionIfNeeded(deps, skillId);
       const current = await deps.prisma.taughtSkill.findUniqueOrThrow({ where: { id: skillId } });
       if (current.status !== "recording") {
@@ -400,7 +407,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     },
 
     async snapshot(actor: Actor, skillId: string): Promise<TaughtSkill> {
-      await getOwnedSkill(deps, actor, skillId);
+      await getOwnedSkill(deps, actor, skillId, { recorder: true });
       await expireTeachingSessionIfNeeded(deps, skillId);
       const current = await deps.prisma.taughtSkill.findUniqueOrThrow({ where: { id: skillId } });
       if (current.status !== "recording") {
@@ -428,7 +435,9 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       }
       const row = await deps.prisma.taughtSkill.update({
         where: { id: skill.id },
+        // The editor owns the playbook now, so routines run it only on the editor's accounts.
         data: {
+          userId: actor.userId,
           name: input.name ?? skill.name,
           playbook: input.playbook as never,
           status: skill.status === "saved" ? "saved" : "draft",
@@ -450,6 +459,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       const row = await deps.prisma.taughtSkill.update({
         where: { id: skill.id },
         data: {
+          userId: actor.userId,
           status: "saved",
           name: name ?? (skill.name || skill.goal.slice(0, 80)),
         },

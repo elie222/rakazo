@@ -50,6 +50,10 @@ describe("history compaction with real Pi", () => {
     const create = vi.fn();
     const prisma = {
       thread: { findUniqueOrThrow: vi.fn(async () => thread), updateMany },
+      spaceMember: {
+        findUnique: vi.fn(async () => ({ userId: thread.userId })),
+        count: vi.fn(async () => 1),
+      },
       message: {
         findMany: vi.fn(async () => [
           {

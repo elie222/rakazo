@@ -196,3 +196,17 @@ it("includes the server-derived first line and author role for an id-only reply"
   expect(text).not.toContain("Second line");
   expect(text).toContain("Why?");
 });
+
+it("names the person on their own line, after the quoted reply target", () => {
+  const message = {
+    id: "reply",
+    threadId: "thread-1",
+    role: "user",
+    blocks: [{ kind: "text", text: "Why?" }],
+    replyToMessageId: target.id,
+    replyTo: target,
+  };
+  const labelled = messageToAgentHistoryText(message, "Ana");
+  expect(labelled.endsWith("\n\n[from Ana] Why?")).toBe(true);
+  expect(labelled.replace("[from Ana] ", "")).toBe(messageToAgentHistoryText(message));
+});

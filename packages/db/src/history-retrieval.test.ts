@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
 import { historyMessageText, readHistory, searchHistory } from "./history-retrieval.js";
 
-const scope = { spaceId: "space", userId: "user", threadId: "thread", botId: "bot" };
+const scope = { spaceId: "space", threadId: "thread", botId: "bot" };
 const row = (seq: number, text = "Use batch exports") => ({
   id: `message-${seq}`,
   seq,
@@ -37,7 +37,7 @@ describe("local history retrieval", () => {
     expect(result.untrusted).toBe(true);
     expect(sql(mock).sql).toContain("plainto_tsquery");
     expect(sql(mock).values).toEqual(
-      expect.arrayContaining(["space", "user", "bot", "thread", "exports", 20, 3]),
+      expect.arrayContaining(["space", "bot", "thread", "exports", 20, 3]),
     );
   });
   it("keeps an unfinished broad query actionable after an exhausted narrower query", async () => {
@@ -139,7 +139,7 @@ describe("local history retrieval", () => {
     expect(mock.run.findMany).not.toHaveBeenCalled();
     expect(mock.artifact.findMany).not.toHaveBeenCalled();
     expect(sql(mock).sql).toContain('t."spaceId" =');
-    expect(sql(mock).sql).toContain('t."userId" =');
+    expect(sql(mock).sql).not.toContain('"userId" =');
     expect(sql(mock).sql).toContain('t."botId" =');
   });
   it("reuses originals without inference and invalidates snapshots when content changes", async () => {

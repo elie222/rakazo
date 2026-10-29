@@ -10,7 +10,7 @@ import {
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
-import { bootstrapUserSpace, personalOrganizationIds, recordSecurityEvent } from "@rakazo/db";
+import { bootstrapUserSpace, prepareAccountDeletion, recordSecurityEvent } from "@rakazo/db";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -257,7 +257,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         enabled: true,
         beforeDelete: async (user) => {
           await env.beforeDeleteUser?.(user.id);
-          const organizationIds = await personalOrganizationIds(prisma, user.id);
+          const { ownedOrganizationIds } = await prepareAccountDeletion(prisma, user.id);
 
           await prisma.$transaction(async (tx) => {
             // Messaging identities are deliberately FK-free, so clear them
@@ -267,7 +267,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             });
             await tx.passkey.deleteMany({ where: { userId: user.id } });
             await tx.organization.deleteMany({
-              where: { id: { in: organizationIds } },
+              where: { id: { in: ownedOrganizationIds } },
             });
           });
         },

@@ -14,7 +14,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  lockSpaceGroup,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -38,14 +38,14 @@ export async function handoffToGroupBot(
   }
   const committed = await deps.prisma.$transaction(async (tx) => {
     try {
-      await lockOwnedGroup(tx, run, groupId);
+      await lockSpaceGroup(tx, run, groupId);
     } catch (error) {
       if (error instanceof IsolationError)
         return { error: "group is no longer available" } as const;
       throw error;
     }
     const group = await tx.chatGroup.findFirst({
-      where: { id: groupId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { id: groupId, spaceId: run.spaceId, archivedAt: null },
       include: {
         thread: { select: { id: true } },
         members: {
@@ -263,14 +263,13 @@ export async function loadGroupContext(
   );
 }
 
-/** Only the current bot's active groups in the same owner/space are discoverable. */
+/** Only the current bot's active groups in its space are discoverable. */
 export async function loadBotGroupDirectory(
   prisma: PrismaClient,
-  actor: { botId: string; userId: string; spaceId: string },
+  actor: { botId: string; spaceId: string },
 ): Promise<string | undefined> {
   const groups = await prisma.chatGroup.findMany({
     where: {
-      userId: actor.userId,
       spaceId: actor.spaceId,
       archivedAt: null,
       members: { some: { botId: actor.botId, bot: { archivedAt: null } } },

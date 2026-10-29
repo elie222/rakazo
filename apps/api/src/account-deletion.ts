@@ -8,6 +8,7 @@ import {
 import {
   claimSpacesLeavingWithAccount,
   deleteSpaceLeavingWithAccount,
+  prepareAccountDeletion,
   recordComputerRunEnd,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -27,6 +28,9 @@ export async function deleteAccountContent(deps: SpaceDeletionDeps, userId: stri
     ...(botId ? { botId } : {}),
     signal: new AbortController().signal,
   });
+  // Leave other people's Spaces first, so what this account made there passes to their owners
+  // instead of being torn down with it.
+  await prepareAccountDeletion(deps.prisma, userId);
   const leaving = await claimSpacesLeavingWithAccount(deps.prisma, userId);
   const bots = await deps.prisma.bot.findMany({
     where: { OR: [{ userId }, { spaceId: { in: leaving } }] },

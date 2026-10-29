@@ -185,9 +185,11 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
     (watchTick?.run ? watchTick.note : "");
   const claimed = await deps.prisma.$transaction(async (tx) => {
+    // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
     const updated = await tx.routine.updateMany({
       where: {
         id: routine.id,
+        userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
         bot: { archivedAt: null },

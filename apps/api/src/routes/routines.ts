@@ -40,7 +40,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: { in: input.botIds },
             spaceId: actor.spaceId,
-            userId: actor.userId,
             archivedAt: null,
           },
           select: { id: true },
@@ -50,7 +49,7 @@ export function routinesRoutes(ctx: RouterContext) {
         });
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map((row) => routineDto(row, actor)),
+          routines: rows.filter((row) => row.botId === bot.id).map(routineDto),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -90,7 +89,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             bot: { archivedAt: null },
           },
         });
@@ -236,6 +234,8 @@ export function routinesRoutes(ctx: RouterContext) {
                 : {}),
             },
             data: {
+              // A routine runs with its owner's accounts, so whoever edits it takes it over.
+              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
@@ -246,13 +246,14 @@ export function routinesRoutes(ctx: RouterContext) {
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline.
+              // A changed watch starts from a fresh baseline, and so does one that now reads
+              // a different person's accounts.
               ...(input.watch === undefined
                 ? {}
-                : {
-                    watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
-                    ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
-                  }),
+                : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
+              ...(watchChanged || existing.userId !== context.actor.userId
+                ? { watchState: Prisma.DbNull }
+                : {}),
               nextRunAt,
             },
           })
@@ -264,7 +265,6 @@ export function routinesRoutes(ctx: RouterContext) {
                   where: {
                     id: existing.id,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                     bot: { archivedAt: null },
                   },
                   select: { id: true },
@@ -314,7 +314,6 @@ export function routinesRoutes(ctx: RouterContext) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!routine) throw new IsolationError();

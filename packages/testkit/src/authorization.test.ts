@@ -78,7 +78,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it("batches routine mentions with the same user, space and archive isolation as per-bot reads", async () => {
+  it("batches routine mentions with the same space and archive isolation as per-bot reads", async () => {
     const owner = await signup(app, `routine-mentions-owner-${stamp}@rakazo.test`, "Owner");
     const peer = await signup(app, `routine-mentions-peer-${stamp}@rakazo.test`, "Peer");
     const ownerActor = await rpc<Actor>(app, owner, "me");
@@ -109,10 +109,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
     }
     await rpc(app, owner, "bots/archive", { botId: archived.id }, space.id);
     const botIds = [own.id, other.id, archived.id, cross.id, "missing-bot"];
+    // Members of one space share its bots and routines; archived and other-space bots stay out.
     const ownRows = await rpc<unknown[]>(app, owner, "routines/list", { botId: own.id }, space.id);
-    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual([
-      { botId: own.id, routines: ownRows },
-    ]);
     const peerRows = await rpc<unknown[]>(
       app,
       peer,
@@ -120,9 +118,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       { botId: other.id },
       space.id,
     );
-    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual([
+    const shared = [
+      { botId: own.id, routines: ownRows },
       { botId: other.id, routines: peerRows },
-    ]);
+    ];
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
+    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
     const crossRows = await rpc<unknown[]>(
       app,
       owner,
@@ -939,10 +940,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       }),
     ]);
 
-    // Owning a target in a different organization does not authorize a rename
-    // from the active organization.
+    // Space membership, not the active organization, authorizes a rename: the
+    // owner may rename their Space in another organization, a non-member may not.
+    const intruder = await signup(app, `spaces-intruder-${stamp}@rakazo.test`, "Intruder");
     await expect(
-      raw(app, cookie, "spaces/rename", { spaceId: otherWorkspaceId, name: "Wrong organization" }),
+      raw(app, intruder, "spaces/rename", { spaceId: otherWorkspaceId, name: "Stolen" }),
     ).resolves.toMatchObject({ status: 404 });
     await expect(
       handles.prisma.space.findUniqueOrThrow({
@@ -950,6 +952,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
         select: { name: true },
       }),
     ).resolves.toEqual({ name: "Other company space" });
+    await expect(
+      raw(app, cookie, "spaces/rename", { spaceId: otherWorkspaceId, name: "Other company" }),
+    ).resolves.toMatchObject({ status: 200 });
 
     const supportMe = await rpc<Actor>(app, cookie, "me", {}, support.id);
     expect(supportMe.spaceId).toBe(support.id);
@@ -984,8 +989,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
         }),
       ]),
     );
-    expect(navigation.spaces).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: otherWorkspaceId })]),
+    // Every Space the person belongs to is listed, across organizations.
+    expect(navigation.spaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: otherWorkspaceId, name: "Other company", bots: [] }),
+      ]),
     );
     const supportNavigation = await rpc<SpaceNavigation>(
       app,
@@ -1007,7 +1015,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       {},
       otherWorkspaceId,
     );
-    expect(otherOrganizationNavigation.spaces.map((space) => space.id)).toEqual([otherWorkspaceId]);
+    expect(otherOrganizationNavigation.current).toEqual(
+      expect.objectContaining({ id: otherWorkspaceId, bots: [] }),
+    );
+    expect(new Set(otherOrganizationNavigation.spaces.map((space) => space.id))).toEqual(
+      new Set([original.spaceId, support.id, otherWorkspaceId]),
+    );
 
     const storedBots = await asSystem(handles.prisma).bot.findMany({
       where: { id: { in: [originalBot.id, supportBot.id] } },
@@ -1019,8 +1032,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(storedSupport?.spaceId).toBe(support.id);
     expect(storedOriginal?.computerId).not.toBe(storedSupport?.computerId);
 
-    const intruder = await signup(app, `spaces-intruder-${stamp}@rakazo.test`, "Intruder");
     await expectDenied(app, intruder, "bots/list", {}, support.id);
+    await expectDenied(app, intruder, "bots/get", { botId: supportBot.id });
   });
 
   it("enforces the space limit across concurrent creation requests", async () => {

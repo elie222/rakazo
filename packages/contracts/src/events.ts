@@ -411,9 +411,14 @@ export const ProductEventSchema = z
   });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
+/** The person who wrote a user message, when known. */
+export const MessageAuthorSchema = z.object({ id: Id, name: z.string() });
+export type MessageAuthor = z.infer<typeof MessageAuthorSchema>;
+
 export const ReplyPreviewSchema = z.object({
   role: MessageRole,
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   text: z.string(),
   attachment: z
     .object({
@@ -433,6 +438,7 @@ export const ThreadMessageSchema = z.object({
   role: MessageRole,
   blocks: z.array(MessageBlock),
   botId: Id.optional(),
+  author: MessageAuthorSchema.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
   replyPreview: ReplyPreviewSchema.nullable().optional(),

@@ -39,7 +39,7 @@ function botSecretDeps(seed: Row[] = []) {
   const now = new Date("2026-09-01T00:00:00.000Z");
   const bots: Row[] = [
     { id: "bot-1", userId: "user-1", spaceId: "space-1", archivedAt: null },
-    { id: "bot-other", userId: "user-2", spaceId: "space-1", archivedAt: null },
+    { id: "bot-other", userId: "user-2", spaceId: "space-2", archivedAt: null },
   ];
   const rows: Row[] = seed.map((row) => ({ ...row }));
   const botSecret = {
@@ -182,7 +182,7 @@ describe("botSecrets router", () => {
     expect(prisma.vaultCredential.create).toHaveBeenCalledOnce();
   });
 
-  it("rejects another user's bot and a missing bot before any secret access", async () => {
+  it("rejects another space's bot and a missing bot before any secret access", async () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     const { prisma, secrets, call } = botSecretDeps();
     for (const botId of ["bot-other", "missing-bot"]) {
@@ -198,7 +198,7 @@ describe("botSecrets router", () => {
     }
     expect(prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ userId: "user-1", spaceId: "space-1", archivedAt: null }),
+        where: expect.objectContaining({ spaceId: "space-1", archivedAt: null }),
       }),
     );
     expect(secrets.put).not.toHaveBeenCalled();
@@ -425,7 +425,7 @@ describe("botSecrets router", () => {
     ]);
   });
 
-  it("removes a non-regex stored name for the owned bot and rejects another user's bot", async () => {
+  it("removes a non-regex stored name for the owned bot and rejects another space's bot", async () => {
     const owned = botSecretDeps();
     const removed = await owned.call("remove", { botId: "bot-1", name: "Legacy Name" });
     expect(removed.status).toBe(200);

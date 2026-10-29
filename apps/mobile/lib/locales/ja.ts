@@ -1240,4 +1240,16 @@ export const JA_MESSAGES: Record<string, string> = {
   "1 free month earned": "1か月分の無料期間を獲得",
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
+  Invite: "招待",
+  "Leave space": "スペースから退出",
+  "Everyone in this space sees all its chats, bots and memory.":
+    "このスペースの全員が、すべてのチャット、ボット、メモリーを見られます。",
+  "Your other spaces stay private.": "ほかのスペースは非公開のままです。",
+  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
+    "ボットはメッセージを送った人のアカウントを使い、ここにいる全員がその返信を読めます。",
+  "Leave {name}?": "{name}から退出しますか？",
+  "Could not load members": "メンバーを読み込めませんでした",
+  "Could not create invite link": "招待リンクを作成できませんでした",
+  "Could not remove member": "メンバーを削除できませんでした",
+  "Could not leave space": "スペースから退出できませんでした",
 };

@@ -264,14 +264,14 @@ export function computerRoutes(ctx: RouterContext) {
             status: { in: ["queued", "running", "interrupted", "failed"] },
             computer: {
               spaceId: context.actor.spaceId,
-              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              bots: { some: { archivedAt: null } },
             },
           },
           include: {
             computer: {
               include: {
                 bots: {
-                  where: { userId: context.actor.userId, archivedAt: null },
+                  where: { archivedAt: null },
                   select: { id: true, name: true },
                 },
               },
@@ -291,7 +291,7 @@ export function computerRoutes(ctx: RouterContext) {
             status: "failed",
             computer: {
               spaceId: context.actor.spaceId,
-              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              bots: { some: { archivedAt: null } },
             },
           },
           data: { status: "dismissed" },

@@ -121,7 +121,6 @@ async function storeOwnedArtifact(
     deps.prisma,
     {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       botId: input.botId,
       groupId: input.groupId,
       name: input.name,
@@ -205,7 +204,6 @@ export async function getOwnedArtifact(
       botId: input.botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -225,7 +223,6 @@ export async function getSpaceArtifact(
       id: input.artifactId,
       groupId: input.groupId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -245,7 +242,6 @@ export async function getSpaceArtifactById(
     where: {
       id: input.artifactId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   if (!row) throw new IsolationError();
@@ -383,7 +379,7 @@ export async function listSpaceArtifacts(
   const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
     WITH scoped AS (
       SELECT * FROM "artifacts"
-      WHERE "spaceId" = ${actor.spaceId} AND "userId" = ${actor.userId} ${botFilter}
+      WHERE "spaceId" = ${actor.spaceId} ${botFilter}
         AND "createdAt" <= ${asOf}
     ),
     latest AS (
@@ -445,7 +441,7 @@ export async function listArtifactVersions(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -453,7 +449,6 @@ export async function listArtifactVersions(
   const rows = await deps.prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [{ id: rootId }, { rootArtifactId: rootId }],
     },
     orderBy: { version: "desc" },
@@ -475,7 +470,7 @@ export async function deleteArtifactFamily(
   input: { familyId: string },
 ) {
   const anchor = await deps.prisma.artifact.findFirst({
-    where: { id: input.familyId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: input.familyId, spaceId: actor.spaceId },
     select: { id: true, rootArtifactId: true, botId: true },
   });
   if (!anchor) throw new IsolationError();
@@ -485,7 +480,6 @@ export async function deleteArtifactFamily(
     const members = await deps.prisma.artifact.findMany({
       where: {
         spaceId: actor.spaceId,
-        userId: actor.userId,
         OR: [{ id: rootId }, { rootArtifactId: rootId }],
       },
       select: { id: true, storageKey: true, botId: true },
@@ -629,7 +623,6 @@ export async function resolveSendAttachments(
       botId,
       groupId: null,
       spaceId: actor.spaceId,
-      userId: actor.userId,
     },
   });
   return toAttachmentResolution(ids, rows);
@@ -649,7 +642,6 @@ export async function resolveGroupSendAttachments(
     where: {
       id: { in: ids },
       spaceId: actor.spaceId,
-      userId: actor.userId,
       OR: [
         { groupId },
         // Uploads from before group ownership was stored, still tied to a current member.

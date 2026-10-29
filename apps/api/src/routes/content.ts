@@ -34,7 +34,6 @@ export function contentRoutes(ctx: RouterContext) {
             botId: input.botId,
             groupId: null,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         return rows.map((row) => ({

@@ -122,6 +122,7 @@ import {
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  SpaceOwnerRequiredError,
   securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
@@ -1492,6 +1493,9 @@ export function handleRpcError(
   if (error instanceof IsolationError) {
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  if (error instanceof SpaceOwnerRequiredError) {
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // The user's own voice account refused the request: theirs to fix.
   if (error instanceof VoiceAccountError) {

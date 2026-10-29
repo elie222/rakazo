@@ -1,9 +1,9 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { blocksToAgentHistoryText, escapePromptData } from "@rakazo/core";
+import { authorLabelledText, blocksToAgentHistoryText, escapePromptData } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage } from "@rakazo/db";
+import { loadMessageAuthors, recordUsage, runAsTenant } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -11,6 +11,7 @@ import type {
   ConfiguredMemoryProvider,
   MemoryProviderResolver,
 } from "./memory-provider-factory.js";
+import { sharedSpaceAuthorName } from "./reply-context.js";
 
 /**
  * Sentinel for "nothing compacted yet". Message `seq` is 0-based, so an exclusive lower bound of
@@ -214,6 +215,22 @@ export interface CompactHistoryDeps {
   }) => Promise<AgentRunRequest["model"]>;
 }
 
+async function compactionUserId(
+  prisma: PrismaClient,
+  thread: { spaceId: string; userId: string; botId: string },
+): Promise<string> {
+  const member = await prisma.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: thread.spaceId, userId: thread.userId } },
+    select: { userId: true },
+  });
+  if (member) return thread.userId;
+  const bot = await prisma.bot.findUnique({
+    where: { id: thread.botId },
+    select: { userId: true },
+  });
+  return bot?.userId ?? thread.userId;
+}
+
 export async function compactHistory(deps: CompactHistoryDeps, threadId: string): Promise<void> {
   const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } });
   if (!thread.botId) return;
@@ -236,7 +253,8 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   }
 
   let fromSeqExclusive = previousCursor ?? NOTHING_COMPACTED;
-  let batch: Array<{ seq: number; role: string; blocks: unknown }> = [];
+  let batch: Array<{ seq: number; role: string; blocks: unknown; authorUserId: string | null }> =
+    [];
   let bootstrappingLocalSummary = false;
   if (needsLocalBootstrap) {
     if (previousCursor < 0) {
@@ -247,7 +265,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       where: { threadId, seq: { lte: previousCursor } },
       orderBy: { seq: "desc" },
       take: LEGACY_HISTORY_WINDOW_SIZE + 1,
-      select: { seq: true, role: true, blocks: true },
+      select: { seq: true, role: true, blocks: true, authorUserId: true },
     });
     batch = bootstrapCandidates.reverse();
     if (batch.length > 0) {
@@ -276,7 +294,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       where: { threadId, seq: { gt: range.fromSeqExclusive } },
       orderBy: { seq: "asc" },
       take: range.take,
-      select: { seq: true, role: true, blocks: true },
+      select: { seq: true, role: true, blocks: true, authorUserId: true },
     });
     if (batch.some((message, index) => message.seq !== fromSeqExclusive + index + 1)) {
       logHistoryCompactPermanentFailure(threadId, "message_coverage_gap");
@@ -285,9 +303,20 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   }
   if (batch.length === 0) return;
 
-  const transcriptParts = batch.map(
-    (message) => `${message.role}: ${blocksToAgentHistoryText(message.blocks as MessageBlock[])}`,
-  );
+  // Name who wrote each line the way a run's history does, so the summary keeps it.
+  const sharedSpace =
+    (await deps.prisma.spaceMember.count({ where: { spaceId: thread.spaceId } })) > 1;
+  const authors = sharedSpace
+    ? await loadMessageAuthors(
+        deps.prisma,
+        batch.map((message) => message.authorUserId),
+      )
+    : new Map<string, { name: string }>();
+  const transcriptParts = batch.map((message) => {
+    const text = blocksToAgentHistoryText(message.blocks as MessageBlock[]);
+    const author = sharedSpaceAuthorName(sharedSpace, authors, message);
+    return `${message.role}: ${author && text ? authorLabelledText(author, text) : text}`;
+  });
   let transcript = transcriptParts.join("\n\n");
   if (transcript.length > MAX_TRANSCRIPT_CHARS) {
     if (bootstrappingLocalSummary) {
@@ -325,12 +354,18 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
   const deploymentFallback = resolveDeploymentModel();
-  const model = deps.resolveModel
-    ? await deps.resolveModel({
-        userId: thread.userId,
-        spaceId: thread.spaceId,
-        botId: thread.botId,
-      })
+  // In a shared space the thread's creator may have left; summarize as the bot's creator
+  // (reassigned to the space owner on departure) so the credential still belongs to a member.
+  const userId = await compactionUserId(deps.prisma, {
+    spaceId: thread.spaceId,
+    userId: thread.userId,
+    botId: thread.botId,
+  });
+  const resolveModel = deps.resolveModel;
+  const { spaceId, botId } = thread;
+  const model = resolveModel
+    ? // Their credentials are only readable as them, not as the thread's departed creator.
+      await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))
     : deps.deploymentModelConfigured
       ? {
           // Provider must come from the same resolver as the key, not a hardcoded one.
@@ -364,7 +399,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       onUsage: async (event) => {
         await recordUsage(deps.prisma, event, {
           spaceId: thread.spaceId,
-          userId: thread.userId,
+          userId,
           botId: thread.botId!,
           operationId: `compact:${threadId}:${fromSeqExclusive}`,
           operationKind: "compaction",
@@ -386,14 +421,14 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       operationId: `compact:${threadId}`,
       traceId: `compact:${threadId}`,
       spaceId: thread.spaceId,
-      userId: thread.userId,
+      userId,
       signal: AbortSignal.timeout(summarizeTimeoutMs(prompt.length)),
     },
   )) {
     if (event.type === "usage" && !event.accounted) {
       await recordUsage(deps.prisma, event, {
         spaceId: thread.spaceId,
-        userId: thread.userId,
+        userId,
         botId: thread.botId,
         operationId: `compact:${threadId}:${fromSeqExclusive}`,
         operationKind: "compaction",
@@ -446,7 +481,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
     operationId: `history-compact:${threadId}`,
     traceId: `history-compact:${threadId}`,
     spaceId: thread.spaceId,
-    userId: thread.userId,
+    userId,
     botId: thread.botId,
     signal: new AbortController().signal,
   };

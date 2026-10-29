@@ -38,7 +38,6 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     listSchedulesFromTool(deps, {
       spaceId: input.spaceId,
       botId: input.botId,
-      userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),
     }),
     deps.prisma.taughtSkill.findMany({
@@ -50,10 +49,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       select: { id: true, name: true, goal: true, status: true },
     }),
-    listAgentSkillRecords(deps.prisma, {
-      spaceId: input.spaceId,
-      userId: input.userId,
-    }),
+    listAgentSkillRecords(deps.prisma, { spaceId: input.spaceId, userId: input.userId }),
   ]);
 
   const seenTools = new Set<string>();

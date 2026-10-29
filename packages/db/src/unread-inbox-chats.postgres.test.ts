@@ -108,7 +108,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
     });
   }
 
-  it("matches the inbox across member Spaces without counting hidden or other users' chats", async () => {
+  it("matches the inbox across member Spaces, including chats other members made", async () => {
     for (const spaceId of spaceIds.slice(0, 2)) {
       await bot(spaceId);
       await group(spaceId, 2);
@@ -138,8 +138,7 @@ describePostgres("unread inbox chat count (PostgreSQL)", () => {
       },
     });
     await expect(
-      runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { spaceId, userId })),
-    ).resolves.toBe(4);
-    await expect(countUnreadInboxChats(prisma, { spaceId: spaceIds[2]!, userId })).resolves.toBe(1);
+      runAsTenant({ spaceId, userId }, () => countUnreadInboxChats(prisma, { userId })),
+    ).resolves.toBe(7);
   });
 });

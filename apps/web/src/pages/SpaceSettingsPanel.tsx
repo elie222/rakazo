@@ -2,21 +2,28 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
+import { SpaceMembersSettings } from "../components/SpaceMembersSettings";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 import type { SettingsSpace } from "./shell/dialogs";
 import { DeleteSpaceDialog } from "./shell/dialogs";
 
-/** One space's page: its name, the account settings it customizes, and deletion for its owner. */
+/**
+ * One space's page: its name, its members, the account settings it customizes, and deletion for
+ * its owner.
+ */
 export function SpaceSettingsPanel({
   space,
   onRename,
   onDelete,
+  onLeft,
   onClose,
   onBusyChange,
 }: {
   space: SettingsSpace;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  /** After leaving, with the space the server moved this person to. */
+  onLeft: (activeSpaceId: string) => void;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
 }) {
@@ -100,6 +107,7 @@ export function SpaceSettingsPanel({
           </SettingsRow>
         </SettingsGroup>
       ) : null}
+      <SpaceMembersSettings space={space} onLeft={onLeft} />
       <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
       {space.canDelete ? (
         <Button

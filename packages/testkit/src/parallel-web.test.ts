@@ -38,6 +38,7 @@ function executorFixture(
   };
   const prisma = {
     user: { findUnique: vi.fn<() => Promise<{ timezone: string } | null>>(async () => null) },
+    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     run: {
       findUnique: async () => run,
       findUniqueOrThrow: async () => run,

@@ -46,7 +46,7 @@ export async function assertThreadImageInput(
 ) {
   if (!blocks.some((block) => block.kind === "image")) return;
   const bot = await prisma.bot.findFirst({
-    where: { id: botId, userId: actor.userId, spaceId: actor.spaceId },
+    where: { id: botId, spaceId: actor.spaceId },
     select: { modelProvider: true, modelId: true, thinkingLevel: true },
   });
   if (!bot) return;

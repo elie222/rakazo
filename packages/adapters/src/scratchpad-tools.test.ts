@@ -123,7 +123,7 @@ describe("scratchpad tools store", () => {
       { spaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
     );
     expect(removed).toEqual({ ok: true, itemId: "item-1", title: "Draft" });
-    const scope = { id: "item-1", spaceId: "ws", botId: "bot", userId: "user" };
+    const scope = { id: "item-1", spaceId: "ws", botId: "bot" };
     expect(findFirst).toHaveBeenCalledWith({ where: scope });
     expect(updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({ where: scope }));
     expect(deleteMany).toHaveBeenCalledWith({ where: scope });

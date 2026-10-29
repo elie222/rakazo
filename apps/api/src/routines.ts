@@ -122,14 +122,12 @@ export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: str
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map((row) => routineDto(row, actor));
+  return rows.map(routineDto);
 }
 
-export function routineDto(
-  row: Parameters<typeof mapRoutine>[0] & { userId: string },
-  actor: Actor,
-) {
-  return { ...mapRoutine(row), editable: row.userId === actor.userId };
+/** Any member may change a routine; editing it hands it to them (see routines.update). */
+export function routineDto(row: Parameters<typeof mapRoutine>[0]) {
+  return { ...mapRoutine(row), editable: true };
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {

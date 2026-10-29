@@ -72,7 +72,7 @@ function harness() {
 }
 
 describe("routine mention batch endpoint", () => {
-  it("reads owned bots and their routines in two queries", async () => {
+  it("reads the space's bots and their routines in two queries", async () => {
     const h = harness();
     const ids = Array.from({ length: 100 }, (_, index) => `bot-${index}`);
     const response = await h.request(ids);
@@ -83,7 +83,7 @@ describe("routine mention batch endpoint", () => {
     expect(body[0].routines.map((row: { id: string }) => row.id)).toEqual(["bot-0-2", "bot-0-1"]);
     expect(body[0].routines[0].editable).toBe(true);
     expect(h.findBots).toHaveBeenCalledExactlyOnceWith({
-      where: { id: { in: ids }, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+      where: { id: { in: ids }, spaceId: actor.spaceId, archivedAt: null },
       select: { id: true },
     });
     expect(h.findRoutines).toHaveBeenCalledExactlyOnceWith({

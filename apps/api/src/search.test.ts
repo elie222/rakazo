@@ -51,7 +51,7 @@ describe("artifact search batching", () => {
     expect(group.text).toContain('t."groupId" = candidate."targetId"');
     for (const query of [direct, group]) {
       expect(query.values).toContain(actor.spaceId);
-      expect(query.values).toContain(actor.userId);
+      expect(query.values).not.toContain(actor.userId);
       expect(query.text).toContain('ORDER BY m."createdAt" DESC');
     }
   });
@@ -153,26 +153,26 @@ it("resolves active group eligibility once for names, artifacts, and messages", 
 
   const eligibility = prisma.$queryRaw.mock.calls[0]?.[0];
   expect(eligibility.text).toContain('g."spaceId" = $1');
-  expect(eligibility.text).toContain('g."userId" = $2');
   expect(eligibility.text).toContain('g."archivedAt" IS NULL');
   expect(eligibility.text).toContain("SELECT COUNT(*) FROM chat_group_members gm");
   expect(eligibility.text).toContain('INNER JOIN bots gb ON gb.id = gm."botId"');
   expect(eligibility.text).toContain('gm."groupId" = g.id AND gb."archivedAt" IS NULL');
-  expect(eligibility.text).toContain(") >= $3");
-  expect(eligibility.values).toEqual([actor.spaceId, actor.userId, GROUP_MEMBER_MIN]);
+  expect(eligibility.text).not.toContain('"userId"');
+  expect(eligibility.text).toContain(") >= $2");
+  expect(eligibility.values).toEqual([actor.spaceId, GROUP_MEMBER_MIN]);
 
   expect(prisma.chatGroup.findMany.mock.calls[0]?.[0]).toMatchObject({
-    where: { spaceId: actor.spaceId, userId: actor.userId, id: { in: ["group-test"] } },
+    where: { spaceId: actor.spaceId, id: { in: ["group-test"] } },
     take: 5,
   });
   expect(prisma.artifact.findMany.mock.calls[1]?.[0]).toMatchObject({
-    where: { spaceId: actor.spaceId, userId: actor.userId, groupId: { in: ["group-test"] } },
+    where: { spaceId: actor.spaceId, groupId: { in: ["group-test"] } },
     take: 25,
   });
   const [strings, ...values] = prisma.$queryRaw.mock.calls[2]!;
   const groupMessageQuery = Prisma.sql(strings, ...values);
-  expect(groupMessageQuery.text).toContain("AND g.id IN ($3)");
-  expect(groupMessageQuery.values[2]).toBe("group-test");
+  expect(groupMessageQuery.text).toContain("AND g.id IN ($2)");
+  expect(groupMessageQuery.values[1]).toBe("group-test");
 });
 
 it("applies group eligibility before name and artifact limits", async () => {

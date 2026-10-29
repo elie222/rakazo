@@ -31,6 +31,7 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
+  prepareAccountDeletion: vi.fn(async () => ({ ownedOrganizationIds: [] })),
   recordSecurityEvent: vi.fn(async () => undefined),
 }));
 

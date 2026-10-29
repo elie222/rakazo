@@ -199,7 +199,12 @@ describeAttachments("chat attachments", () => {
     )!;
     expect(reply.replyToMessageId).toBe(parent.id);
     expect(reply.replyQuote).toBe("Parent first line");
-    expect(reply.replyPreview).toEqual({ role: "user", text: "Parent first line" });
+    const me = await rpc<{ userId: string }>(app, cookie, "me");
+    expect(reply.replyPreview).toEqual({
+      role: "user",
+      author: { id: me.userId, name: "Reply User" },
+      text: "Parent first line",
+    });
     const event = await asSystem(botIntroHarness!.prisma).event.findFirst({
       where: {
         threadId: snapshot.threadId,

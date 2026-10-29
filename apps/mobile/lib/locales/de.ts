@@ -1038,6 +1038,18 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} brauchen Aufmerksamkeit",
   "{label}, above": "{label}, oben",
   "{label}, below": "{label}, unten",
+  Invite: "Einladen",
+  "Leave space": "Space verlassen",
+  "Everyone in this space sees all its chats, bots and memory.":
+    "Alle in diesem Space sehen alle Chats, Bots und Erinnerungen.",
+  "Your other spaces stay private.": "Deine anderen Spaces bleiben privat.",
+  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
+    "Ein Bot nutzt die Konten der Person, die ihm schreibt, und alle hier können seine Antwort lesen.",
+  "Leave {name}?": "{name} verlassen?",
+  "Could not load members": "Mitglieder konnten nicht geladen werden",
+  "Could not create invite link": "Einladungslink konnte nicht erstellt werden",
+  "Could not remove member": "Mitglied konnte nicht entfernt werden",
+  "Could not leave space": "Space konnte nicht verlassen werden",
   Work: "Arbeit",
   Both: "Beides",
   "How will you use Rakazo?": "Wie wirst du Rakazo nutzen?",

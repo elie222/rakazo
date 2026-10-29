@@ -332,6 +332,10 @@ describe("inbound webhook HTTP route", () => {
       body: JSON.stringify({ event: "ping" }),
     });
     expect(res.status).toBe(200);
+    // The delivery runs as the bot's creator, so another member's routine never rides on it.
+    expect(deps.findRoutines).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+    );
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         modelPin: {

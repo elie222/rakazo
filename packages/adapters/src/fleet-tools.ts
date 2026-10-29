@@ -511,7 +511,7 @@ export async function listFleet(
     }),
     visibleGroups(prisma, run),
     prisma.botSection.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId },
+      where: { spaceId: run.spaceId },
       select: { name: true },
       orderBy: { position: "asc" },
       take: FLEET_SECTION_LIMIT + 1,
@@ -521,7 +521,7 @@ export async function listFleet(
   // Only the listed bots need the creator flag, so this read is bounded by the bot cap.
   const children = await prisma.bot.findMany({
     where: {
-      ...createdByWhere({ botId: run.botId, userId: run.userId, spaceId: run.spaceId }),
+      ...createdByWhere({ botId: run.botId, spaceId: run.spaceId }),
       archivedAt: null,
       id: { in: listedBots.map((bot) => bot.id) },
     },
@@ -572,7 +572,7 @@ async function visibleGroups(prisma: PrismaClient, run: FleetRun): Promise<Fleet
   let cursor: string | undefined;
   for (;;) {
     const page = await prisma.chatGroup.findMany({
-      where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+      where: { spaceId: run.spaceId, archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -700,7 +700,7 @@ export async function createFleetGroup(
   const { name, botIds } = parsed.data;
   const wanted = new Set(botIds);
   const sameName = await deps.prisma.chatGroup.findMany({
-    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null, name },
+    where: { spaceId: run.spaceId, archivedAt: null, name },
     select: {
       id: true,
       name: true,
@@ -1150,7 +1150,7 @@ async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<stri
   );
 }
 
-/** One active group of the user, by `group_id` or exact `group_name`. Groups have no creator. */
+/** One active group of the space, by `group_id` or exact `group_name`. Groups have no creator. */
 async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.group_id);
   const name = text(args.group_name);
@@ -1159,7 +1159,6 @@ async function resolveGroup(prisma: PrismaClient, run: FleetRun, args: Record<st
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: run.spaceId,
-      userId: run.userId,
       archivedAt: null,
       ...(id ? { id } : { name }),
     },
@@ -1309,7 +1308,7 @@ export async function updateOwnBotFromTool(
     loadArtifact: async (id) => {
       if (!deps.artifacts) return null;
       const row = await deps.prisma.artifact.findFirst({
-        where: { id, spaceId: run.spaceId, userId: run.userId },
+        where: { id, spaceId: run.spaceId },
         select: { mimeType: true, storageKey: true },
       });
       if (!row || !isAttachmentImageMimeType(row.mimeType)) return null;

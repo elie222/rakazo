@@ -43,6 +43,7 @@ import {
   mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -1711,6 +1712,7 @@ export function applyMobileThreadEvent(
       callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
+      ...payloadAuthor(event.payload ?? {}, known),
       ...replyMetadata(event.payload ?? {}, known),
     };
     return {

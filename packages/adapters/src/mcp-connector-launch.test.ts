@@ -295,9 +295,10 @@ describe("MCP connector managed stdio launch", () => {
 
     it("is not retried on every turn, but is again after the backoff or once it works", async () => {
       await publishPackage(root);
-      env = { SILENT: "1" };
+      // Fails at once, so the healthy relaunch below keeps the default startup budget.
+      env = { FAIL_LOUDLY: "1" };
       const launches = vi.spyOn(McpSession.prototype, "connectStdio");
-      const connector = connectorFor({ startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      const connector = connectorFor({ discoveryTimeoutMs: 5_000 });
       try {
         expect(await connector.discoverTools(contextFor())).toMatchObject([
           { name: "mcp__mail__unavailable" },
@@ -325,12 +326,12 @@ describe("MCP connector managed stdio launch", () => {
 
     it("ends the backoff once another process records a successful check", async () => {
       await publishPackage(root);
-      env = { SILENT: "1" };
+      env = { FAIL_LOUDLY: "1" };
       const server: typeof SERVER & { healthStatus?: string; healthCheckedAt?: Date } = {
         ...SERVER,
       };
       const launches = vi.spyOn(McpSession.prototype, "connectStdio");
-      const connector = connectorFor({ server, startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      const connector = connectorFor({ server, discoveryTimeoutMs: 5_000 });
       try {
         expect(await connector.discoverTools(contextFor())).toMatchObject([
           { name: "mcp__mail__unavailable" },
@@ -370,7 +371,8 @@ describe("MCP connector managed stdio launch", () => {
           expiresAt: Date.now() + 60_000,
         }),
       );
-      const connector = connectorFor({ discoveryTimeoutMs: 300 });
+      // Also bounds the launch once installed, so leave room for a loaded machine.
+      const connector = connectorFor({ discoveryTimeoutMs: 2_000 });
       try {
         const tools = await connector.discoverTools(contextFor());
         expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);

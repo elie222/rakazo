@@ -14,7 +14,8 @@ import {
   createExternalConversationRepos,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  loadMessageAuthor,
+  lockSpaceGroup,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -272,6 +273,7 @@ export function threadsRoutes(ctx: RouterContext) {
             threadId: target.threadId,
             botId: target.botId,
             userId: context.actor.userId,
+            authorUserId: context.actor.userId,
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
@@ -293,7 +295,7 @@ export function threadsRoutes(ctx: RouterContext) {
             });
             if (existing) return null;
           }
-          await lockOwnedGroup(tx, context.actor, target.groupId);
+          await lockSpaceGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
             where: {
               id: target.groupId,
@@ -308,16 +310,18 @@ export function threadsRoutes(ctx: RouterContext) {
           const message = await createThreadMessageInTransaction(tx, {
             threadId: target.threadId,
             role: "user",
+            authorUserId: context.actor.userId,
             blocks,
             clientNonce: input.clientNonce,
           });
+          const author = await loadMessageAuthor(tx, context.actor.userId);
           const active = await tx.run.findFirst({
             where: {
               threadId: target.threadId,
               botId,
               status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
             },
-            select: { id: true },
+            select: { id: true, userId: true },
           });
           let run: { id: string } | null = null;
           if (!active) {
@@ -351,7 +355,8 @@ export function threadsRoutes(ctx: RouterContext) {
                 messageId: message.id,
                 botId,
                 userId: context.actor.userId,
-                runId: active.id,
+                // Another person's message waits for a run that acts with their accounts.
+                runId: active.userId === context.actor.userId ? active.id : null,
               },
             });
             await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
@@ -362,7 +367,7 @@ export function threadsRoutes(ctx: RouterContext) {
             botId,
             type: "thread.message.created",
             runId: run?.id ?? active?.id,
-            payload: { messageId: message.id, role: "user", blocks },
+            payload: { messageId: message.id, role: "user", blocks, author },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq, message };

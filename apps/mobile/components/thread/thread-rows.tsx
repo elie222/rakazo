@@ -4,6 +4,7 @@ import {
   dismissableAskMessageIds,
   groupVoiceChats,
   memberName,
+  otherAuthor,
   timeSeparatorIds,
   unreadDividerMessageId,
   voiceChatHoldsMessage,
@@ -125,7 +126,7 @@ export function useThreadRows({
       const replyBotId = message.replyPreview?.botId ?? parent?.botId;
       const replyAuthor =
         (message.replyPreview?.role ?? parent?.role) === "user"
-          ? t("You")
+          ? (otherAuthor(message.replyPreview?.author ?? parent?.author, userId)?.name ?? t("You"))
           : (memberName(snap?.members, replyBotId) ??
             mentionBots.find((bot) => bot.id === replyBotId)?.name ??
             displayName ??
@@ -164,6 +165,9 @@ export function useThreadRows({
           headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
           unreadDivider={message.id === unreadDividerId}
           markedUnread={message.id === markedUnreadMessageId}
+          authorName={
+            message.role === "user" ? otherAuthor(message.author, userId)?.name : undefined
+          }
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           waitingForUser={[...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some(
@@ -220,6 +224,7 @@ export function useThreadRows({
       unreadDividerId,
       markedUnreadMessageId,
       columnWidth,
+      userId,
       t,
       locale,
     ],

@@ -758,7 +758,6 @@ describe("schedule tool persistence", () => {
     await listSchedulesFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
     });
     expect(findMany).toHaveBeenCalledWith(
@@ -766,7 +765,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
         },
       }),
@@ -775,7 +773,6 @@ describe("schedule tool persistence", () => {
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       routineId: "routine-1",
     });
@@ -785,7 +782,6 @@ describe("schedule tool persistence", () => {
         where: {
           spaceId: "ws-1",
           botId: "bot-1",
-          userId: "user-1",
           threadId: "group-thread-1",
           id: "routine-1",
         },
@@ -793,10 +789,10 @@ describe("schedule tool persistence", () => {
     );
 
     findMany.mockClear();
-    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1", userId: "user-1" });
+    await listSchedulesFromTool(deps, { spaceId: "ws-1", botId: "bot-1" });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1" },
+        where: { spaceId: "ws-1", botId: "bot-1" },
       }),
     );
 
@@ -804,12 +800,11 @@ describe("schedule tool persistence", () => {
     await cancelScheduleFromTool(deps, {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       routineId: "routine-1",
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws-1", botId: "bot-1", userId: "user-1", id: "routine-1" },
+        where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1" },
       }),
     );
   });
@@ -899,7 +894,7 @@ describe("schedule_create with a watch", () => {
     expect(result).toMatchObject({ error: "Bot not found." });
     expect(d.prisma.bot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: base.botId, spaceId: base.spaceId, userId: base.userId, archivedAt: null },
+        where: { id: base.botId, spaceId: base.spaceId, archivedAt: null },
       }),
     );
     expect(create).not.toHaveBeenCalled();
@@ -943,7 +938,6 @@ describe("cancelScheduleFromTool", () => {
     const input = {
       spaceId: "ws-1",
       botId: "bot-1",
-      userId: "user-1",
       threadId: "group-thread-1",
       name: "Daily",
     };
@@ -957,7 +951,6 @@ describe("cancelScheduleFromTool", () => {
       where: {
         spaceId: "ws-1",
         botId: "bot-1",
-        userId: "user-1",
         threadId: "group-thread-1",
         id: "routine-1",
       },

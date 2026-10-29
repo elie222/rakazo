@@ -13,7 +13,6 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { name, args } = call;
   const scope = {
     spaceId: run.spaceId,
-    userId: run.userId,
     threadId: run.threadId,
     botId: run.botId,
     channelId: ctx.source.channelId,

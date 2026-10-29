@@ -1223,4 +1223,16 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "1 free month earned": "已獲得 1 個月免費",
   "{count} free months earned": "已獲得 {count} 個月免費",
   "Submit a plugin": "提交外掛程式",
+  Invite: "邀請",
+  "Leave space": "離開空間",
+  "Everyone in this space sees all its chats, bots and memory.":
+    "此空間中的每個人都能看到其中所有的聊天、機器人和記憶。",
+  "Your other spaces stay private.": "你的其他空間仍保持私密。",
+  "A bot uses the accounts of whoever messages it, and anyone here can read its reply.":
+    "機器人會使用傳訊息給它的人的帳號，這裡的每個人都能看到它的回覆。",
+  "Leave {name}?": "要離開 {name} 嗎？",
+  "Could not load members": "無法載入成員",
+  "Could not create invite link": "無法建立邀請連結",
+  "Could not remove member": "無法移除成員",
+  "Could not leave space": "無法離開空間",
 };

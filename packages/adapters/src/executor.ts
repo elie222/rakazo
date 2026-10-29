@@ -6,10 +6,11 @@ import {
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
-import type { MessageBlock, ModelRoleChoice, RunStatus } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock, ModelRoleChoice, RunStatus } from "@rakazo/contracts";
 import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   assertTransition,
+  authorLabelledText,
   botMessageAllowsSilence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -32,9 +33,13 @@ import {
   userTurnMessageForRun,
 } from "@rakazo/core";
 import {
+  appendEventInTransaction,
+  cancelRunsInTransaction,
+  createPendingSteeringRun,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
+  loadMessageAuthors,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   parseComputerMode,
@@ -109,7 +114,11 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
-import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  loadReplyContext,
+  messageToAgentHistoryText,
+  sharedSpaceAuthorName,
+} from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -180,6 +189,7 @@ import {
 } from "./run-turn-images.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
+import { loadSharedSpaceNote } from "./shared-space-note.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
 import {
   continueRunClaimFence,
@@ -231,6 +241,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
+      if (await cancelRunOfFormerMember(deps, run)) return;
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
         takeoverContinuePlan(run);
 
@@ -453,7 +464,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             where: { id: run.botId },
             include: { computer: true },
           }),
-          deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } }),
+          deps.prisma.thread.findUniqueOrThrow({
+            where: { id: run.threadId },
+            include: { space: { select: { _count: { select: { memberships: true } } } } },
+          }),
           loadRunHistoryMessages(deps.prisma, run, LEGACY_HISTORY_WINDOW_SIZE, channelId),
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
@@ -576,6 +590,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // Only a space several people share names who wrote each line; a personal
+        // space keeps the exact prompt it always had.
+        const sharedSpace = (thread.space?._count.memberships ?? 0) > 1;
+        const authors = sharedSpace
+          ? await loadMessageAuthors(
+              deps.prisma,
+              messages.map((message) => message.authorUserId),
+            )
+          : new Map<string, MessageAuthor>();
+        const authorName = (message: {
+          role: string;
+          authorUserId?: string | null;
+          blocks: unknown;
+        }) => sharedSpaceAuthorName(sharedSpace, authors, message);
         const threadContext = threadContextForRun(
           run.trigger,
           {
@@ -588,8 +616,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 | "assistant"
                 | "system",
               content: isPartialReplyClientNonce(m.clientNonce)
-                ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
-                : messageToAgentHistoryText(m),
+                ? `${messageToAgentHistoryText(m, authorName(m))}\n\n${PARTIAL_REPLY_NOTE}`
+                : messageToAgentHistoryText(m, authorName(m)),
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -1297,15 +1325,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
           agentSkills,
         );
-        const invokedSkill = savedSkills.find((skill) =>
-          promptInvokesSkill(taskPrompt, skill.name || skill.goal),
+        // Taught skills are the space's. Only a person's own message may pull in one someone
+        // else taught; any other run follows only those taught by the person whose accounts it uses.
+        const invokedSkill = savedSkills.find(
+          (skill) =>
+            (ownerStartedRun || skill.userId === run.userId) &&
+            promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
+        const turnSource = messages.find((message) => message.id === run.sourceMessageId);
+        const turnAuthorName = turnSource ? authorName(turnSource) : undefined;
+        const turnPrompt = turnAuthorName
+          ? authorLabelledText(turnAuthorName, taskPrompt)
+          : taskPrompt;
         const basePrompt = invokedSkill
           ? `${formatSkillRunPrompt(
               invokedSkill.name || invokedSkill.goal.slice(0, 80),
               parsePlaybook(invokedSkill.playbook),
-            )}\n\n${taskPrompt}`
-          : taskPrompt;
+            )}\n\n${turnPrompt}`
+          : turnPrompt;
         if (turnCheckpoint) {
           turnCheckpoint = restoreTurnCheckpointEffects(ctx, turnCheckpoint, {
             provider: runModelProvider,
@@ -1344,6 +1381,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             // Lateness is optional context; a lookup failure must not prevent a run.
           }
         }
+        const sharedSpaceNote = sharedSpace
+          ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
+          : undefined;
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -1354,6 +1394,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
           formatCurrentTimeInstruction(new Date(), userTimeZone),
           lateRoutineNote,
+          sharedSpaceNote,
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -1393,7 +1434,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : deps.prisma.bot.findMany({
                 where: {
                   spaceId: run.spaceId,
-                  userId: run.userId,
                   archivedAt: null,
                   id: { not: bot.id },
                   thread: { isNot: null },
@@ -1663,6 +1703,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     messageId: currentTurnMessage?.id,
                     hasImages: Boolean(currentTurnImages?.length),
                   },
+                  sharedSpace ? authors : undefined,
                 ),
             },
             context,
@@ -1787,4 +1828,42 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
   };
+}
+
+/**
+ * A run acts with its sender's accounts, so it must not start or resume once they have left
+ * the Space. Leaving cancels their runs; this closes the gap for anything that slipped past.
+ */
+async function cancelRunOfFormerMember(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
+): Promise<boolean> {
+  const member = await deps.prisma.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: run.spaceId, userId: run.userId } },
+    select: { id: true },
+  });
+  if (member) return false;
+  const cancelled = await deps.prisma.$transaction(async (tx) => {
+    const current = await tx.run.findUnique({
+      where: { id: run.id },
+      select: { id: true, taskId: true, userId: true, spaceId: true, status: true },
+    });
+    if (!current || isTerminal(current.status as RunStatus)) return null;
+    await cancelRunsInTransaction(tx, [current], new Date());
+    const event = await appendEventInTransaction(tx, {
+      spaceId: run.spaceId,
+      threadId: run.threadId,
+      botId: run.botId,
+      runId: run.id,
+      type: "run.cancelled",
+      payload: {},
+    });
+    // Remaining members' messages waited behind this run; give them their own.
+    const continuationId = await createPendingSteeringRun(tx, run);
+    return { seq: event.seq, continuationId };
+  });
+  if (!cancelled) return true;
+  await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
+  if (cancelled.continuationId) await deps.jobs.enqueue(runContinueJob(cancelled.continuationId));
+  return true;
 }

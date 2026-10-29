@@ -176,6 +176,7 @@ function fixture(
           historyCompactedUpToSeq: null,
         }),
       },
+      spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       deploymentSettings: {
         findUnique: async () => ({
           defaultModelProvider: model.provider,

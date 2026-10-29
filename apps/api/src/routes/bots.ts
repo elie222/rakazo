@@ -27,7 +27,7 @@ import type {
 } from "@rakazo/contracts";
 import { BotSecretAuth, resolveBotAvatarSet } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, displayName } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
+import type { createGroupRepos, Prisma, RunTeardownTarget } from "@rakazo/db";
 import {
   BotSectionNameConflictError,
   botProfileLabelsChanged,
@@ -52,6 +52,46 @@ import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
+
+/**
+ * After a transaction cancelled runs: drop their jobs and stop their screen work, then expire
+ * their leases. Only after teardown: while they were live, no other run could claim the screens.
+ */
+export async function stopCancelledRunWork(
+  deps: RouterDeps,
+  groupRepos: ReturnType<typeof createGroupRepos>,
+  actor: { spaceId: string; userId: string },
+  stopped: { cancelledRunIds: string[]; computers: RunTeardownTarget[] },
+): Promise<void> {
+  await Promise.all(
+    stopped.cancelledRunIds.map((runId) =>
+      deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+    ),
+  );
+  await Promise.all(
+    stopped.computers.map(async (computer) => {
+      if (!computer.providerRef) return;
+      const adapterContext = {
+        operationId: "stop",
+        traceId: "stop",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: computer.botId,
+        runId: computer.runId,
+        screenLeaseId: screenLeaseIdForRun(
+          { runId: computer.runId, fence: computer.fence },
+          computer.runId,
+        ),
+        cancelRunWork: true,
+        signal: new AbortController().signal,
+      };
+      const ref = toComputerRef(computer);
+      await cancelComputerRunWork(deps.sandbox, ref, computer.id, computer.runId, adapterContext);
+      await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
+    }),
+  );
+  await groupRepos.releaseArchivedRunLeases(stopped.cancelledRunIds);
+}
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
 function mapSpaceLifecycleError(error: unknown): unknown {
@@ -333,7 +373,6 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -515,7 +554,7 @@ export function botsRoutes(ctx: RouterContext) {
         try {
           if (bot.computer) {
             await restoreBotUnderComputerQuota(deps.prisma, {
-              userId: context.actor.userId,
+              userId: bot.userId,
               botId: bot.id,
               computerId: bot.computer.id,
             });
@@ -533,6 +572,8 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        // Webhook runs act as the bot's creator, so only the creator can issue its secret.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
         const plaintext = randomBytes(32).toString("base64url");
         const stored = await deps.secrets.put(plaintext, {
           operationId: "bots.rotateWebhookSecret",
@@ -617,7 +658,6 @@ export function botsRoutes(ctx: RouterContext) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -633,42 +673,7 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
         const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
-        await Promise.all(
-          archived.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
-        await Promise.all(
-          archived.computers.map(async (computer) => {
-            if (!computer.providerRef) return;
-            const adapterContext = {
-              operationId: "stop",
-              traceId: "stop",
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              botId: computer.botId,
-              runId: computer.runId,
-              screenLeaseId: screenLeaseIdForRun(
-                { runId: computer.runId, fence: computer.fence },
-                computer.runId,
-              ),
-              cancelRunWork: true,
-              signal: new AbortController().signal,
-            };
-            const ref = toComputerRef(computer);
-            await cancelComputerRunWork(
-              deps.sandbox,
-              ref,
-              computer.id,
-              computer.runId,
-              adapterContext,
-            );
-            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
-          }),
-        );
-        // Expire the leases only after teardown: while they were live, no other run could claim
-        // these screens.
-        await groupRepos.releaseArchivedRunLeases(archived.cancelledRunIds);
+        await stopCancelledRunWork(deps, groupRepos, context.actor, archived);
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
@@ -701,7 +706,9 @@ export function botsRoutes(ctx: RouterContext) {
         repos.listBotSections(context.actor),
       ),
       create: authed.botSections.create.handler(async ({ context, input }) =>
-        repos.createBotSection(context.actor, input),
+        repos.createBotSection(context.actor, input).catch((error: unknown) => {
+          throw mapSpaceLifecycleError(error);
+        }),
       ),
       update: authed.botSections.update.handler(async ({ context, input }) => {
         try {

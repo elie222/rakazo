@@ -188,6 +188,7 @@ export function messageReplyPreview(
   blocks: MessageBlock[],
   role: ReplyPreview["role"],
   botId?: string,
+  author?: ReplyPreview["author"],
 ): ReplyPreview {
   const attachment = replyAttachment(blocks);
   const caption = messageReplyExcerpt(
@@ -195,5 +196,11 @@ export function messageReplyPreview(
     role,
   );
   const text = caption || (attachment?.kind === "file" ? attachment.name : "");
-  return { role, botId, text, ...(attachment ? { attachment } : {}) };
+  return {
+    role,
+    botId,
+    ...(author ? { author } : {}),
+    text,
+    ...(attachment ? { attachment } : {}),
+  };
 }

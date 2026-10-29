@@ -12,7 +12,7 @@ const skills = vi.hoisted(() => ({
   save: vi.fn(async () => ({})),
   testRun: vi.fn(async () => ({ runId: "run" })),
 }));
-vi.mock("../../lib/rpc", () => ({ rpc: { skills } }));
+vi.mock("../../lib/rpc", () => ({ rpc: { skills, artifacts: { get: vi.fn() } } }));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -252,4 +252,52 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   act(() => render({ ...draft, skillId: "other", name: "Other", status: "saved" }));
   expect(input.value).toBe("Newer");
   expect(button().textContent).toBe("Saved");
+});
+
+const ana = { id: "user-a", name: "Ana" };
+const authored: ThreadMessage = {
+  id: "message",
+  threadId: "thread",
+  seq: 1,
+  role: "user",
+  author: ana,
+  blocks: [{ kind: "text", text: "Book the table" }],
+  createdAt: new Date().toISOString(),
+};
+
+function renderAuthored(message: ThreadMessage, meId = "user-b") {
+  renderView(message.role, message.blocks, { message, meId });
+  const bubble = container.querySelector<HTMLElement>('[data-testid="message-user-bubble"]');
+  if (!bubble?.parentElement) throw new Error("user bubble missing");
+  return { bubble, row: bubble.parentElement };
+}
+
+it("names someone else's message and keeps it on the people side", () => {
+  const { bubble, row } = renderAuthored(authored);
+
+  expect(container.textContent).toBe("AnaBook the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-muted");
+  expect(bubble.className).not.toContain("bg-chat-user");
+});
+
+it("keeps my own message unnamed on the right", () => {
+  const { bubble, row } = renderAuthored(authored, ana.id);
+
+  expect(container.textContent).toBe("Book the table");
+  expect(row.className).toContain("justify-end");
+  expect(bubble.className).toContain("bg-chat-user");
+});
+
+it("names the person a reply quotes instead of saying You", () => {
+  renderAuthored({
+    ...authored,
+    author: undefined,
+    replyToMessageId: "parent",
+    replyPreview: { role: "user", author: ana, text: "Find us a restaurant" },
+  });
+
+  expect(container.querySelector('[data-testid="reply-parent-preview"]')?.textContent).toContain(
+    "Ana: Find us a restaurant",
+  );
 });
