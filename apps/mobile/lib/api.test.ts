@@ -1,3 +1,5 @@
+import { getArtifactById } from "./artifacts";
+
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
 import type { RpcInput } from "@rakazo/contracts";
@@ -816,6 +818,56 @@ describe("mobile API authentication", () => {
     await vi.advanceTimersByTimeAsync(0);
     external.abort(new Error("screen closed"));
     await rejection;
+  });
+
+  it("reads a slowly delivered Files detail body", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const artifact = { id: "artifact-1", contentBase64: "aGVsbG8=" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        let timer: ReturnType<typeof setTimeout>;
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              timer = setTimeout(() => {
+                controller.enqueue(new TextEncoder().encode(JSON.stringify({ json: artifact })));
+                controller.close();
+              }, 20_000);
+            },
+            cancel() {
+              clearTimeout(timer);
+            },
+          }),
+        );
+      }),
+    );
+
+    const result = getArtifactById("artifact-1").then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await result).toEqual({ value: artifact });
+  });
+
+  it("times out and cancels a stalled Files detail body after the download budget", async () => {
+    vi.useFakeTimers();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    const cancel = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new ReadableStream({ cancel }))),
+    );
+
+    const pending = getArtifactById("artifact-1");
+    const rejection = expect(pending).rejects.toThrow("Request timed out");
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(cancel).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await rejection;
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("lets a call opt into a longer timeout", async () => {
