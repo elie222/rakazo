@@ -1516,6 +1516,24 @@ describe("MCP pre-registered OAuth client", () => {
     });
   });
 
+  it("rejects a credential in the endpoint query, which would be stored in plaintext", async () => {
+    const { client, prisma, secrets } = harness();
+
+    await expect(
+      client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "gmail",
+        name: "Gmail",
+        endpoint: "http://localhost:3100/mcp?region=us&api_key=sk-test-123",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Put api_key in a header instead of the server URL",
+    });
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(prisma.mcpServer.create).not.toHaveBeenCalled();
+  });
+
   describe("stdio server with host-managed OAuth", () => {
     const stdio = {
       transport: "stdio",

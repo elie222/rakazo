@@ -10,7 +10,7 @@ import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { mcpStdioRefusal } from "./mcp-transport.js";
 import { toStringRecord } from "./memory-provider-factory.js";
-import { assertSafeRemoteUrl } from "./remote-mcp.js";
+import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "./remote-mcp.js";
 import { isUniqueViolation, persistMessageInTransaction } from "./run-messages.js";
 
 export { deriveMcpSlug } from "@rakazo/core";
@@ -188,6 +188,7 @@ export async function addMcpServerFromTool(
       await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
         allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
       });
+      assertNoMcpEndpointCredential(parsed.endpoint);
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : "Invalid MCP endpoint",
