@@ -13,6 +13,14 @@ x-logging: &logging
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
 x-app-environment: &app-environment
+  # Account email and referral reminders run in the API and worker.
+  WEB_ORIGIN:
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
+  WELCOME_EMAIL_ENABLED:
   # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host.md#database-roles).
@@ -413,7 +421,6 @@ services:
       API_PORT:
       BETTER_AUTH_SECRET:
       BETTER_AUTH_URL:
-      WEB_ORIGIN:
       AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
@@ -434,12 +441,6 @@ services:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
-      WELCOME_EMAIL_ENABLED:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:

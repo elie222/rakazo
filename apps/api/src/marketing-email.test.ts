@@ -33,6 +33,19 @@ describe("marketing email unsubscribe", () => {
     });
   });
 
+  it("accepts worker-signed links while preserving existing welcome links", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const workerSecret = "test-product-email-signing-key";
+    const app = marketingEmailRoutes({ user: { updateMany } } as never, secret, workerSecret);
+    for (const signingKey of [secret, workerSecret]) {
+      const response = await app.request(unsubscribeUrl(origin, signingKey, "user-1"), {
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(updateMany).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ["another user's token", unsubscribeUrl(origin, secret, "user-2").replace("user-2", "user-1")],
     ["a token from another secret", unsubscribeUrl(origin, `${secret}-other`, "user-1")],

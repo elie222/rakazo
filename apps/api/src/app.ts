@@ -97,7 +97,12 @@ import {
   verifyModelServesAgents,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
+import {
+  createAuth,
+  createReferralEmailReconciler,
+  isBlockedAuthPath,
+  loopbackTwinOrigins,
+} from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
@@ -456,13 +461,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
+  const referralsEnabled = billing?.referralsEnabled ?? false;
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
     create: {
       id: "default",
       modelCreditsEnabled,
+      referralsEnabled,
     },
-    update: { modelCreditsEnabled },
+    update: { modelCreditsEnabled, referralsEnabled },
   });
   const installed = new InstalledConnectorProvider(
     prisma,
@@ -688,6 +695,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           prisma,
           securityEventRetentionDays(),
         ),
+        reconcileReferralEmails: createReferralEmailReconciler({
+          prisma,
+          email,
+          enabled: Boolean(env.welcomeEmailEnabled),
+          replyTo: env.emailReplyTo,
+          origin: env.webOrigin,
+          secret: env.encryptionKey,
+          onError: onEmailError,
+        }),
         reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
       })
     : undefined;
@@ -847,7 +863,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       onEmailError,
     }),
   );
-  app.route("/", marketingEmailRoutes(prisma, env.authSecret));
+  app.route("/", marketingEmailRoutes(prisma, env.authSecret, env.encryptionKey));
   mountApiRequestBodyLimits(app, env.maxUploadSizeBytes);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountDiagramScript(app);

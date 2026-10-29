@@ -43,6 +43,12 @@ import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
 export { passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
+export {
+  createReferralEmailReconciler,
+  UNSUBSCRIBE_PATH,
+  unsubscribeUrl,
+  validUnsubscribeToken,
+} from "./marketing-email.js";
 export type { OidcConfig } from "./oidc.js";
 export { passkeyRelyingParty } from "./passkey.js";
 export {
@@ -50,6 +56,7 @@ export {
   pluginSubmissionReceivedEmail,
   pluginSubmissionReviewedEmail,
 } from "./plugin-submission-email.js";
+export { referralEmail } from "./referral-email.js";
 export { welcomeEmail } from "./welcome-email.js";
 
 export interface AuthEnv {

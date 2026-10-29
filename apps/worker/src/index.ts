@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import { createReferralEmailReconciler } from "@rakazo/auth";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { startWorkerHealth } from "./health.js";
@@ -12,6 +13,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  configuredEmailProvider,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createArtifactStore,
@@ -332,6 +334,16 @@ async function main() {
     paymentWallet,
     notifications,
   });
+  const productEmailEnabled = process.env.WELCOME_EMAIL_ENABLED === "true";
+  const email = productEmailEnabled
+    ? configuredEmailProvider({
+        emailProvider: process.env.EMAIL_PROVIDER || undefined,
+        emailApiKey: process.env.EMAIL_API_KEY,
+        emailFrom: process.env.EMAIL_FROM,
+        emailReplyTo: process.env.EMAIL_REPLY_TO,
+        smtpUrl: process.env.SMTP_URL,
+      })
+    : undefined;
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -356,6 +368,15 @@ async function main() {
     ),
     reconcileHomeStorage: homeStorageSweeper(home),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileReferralEmails: createReferralEmailReconciler({
+      prisma,
+      email,
+      enabled: productEmailEnabled,
+      replyTo: process.env.EMAIL_REPLY_TO,
+      origin: process.env.WEB_ORIGIN ?? "http://127.0.0.1:5173",
+      secret: resolveEncryptionKey(process.env),
+      onError: (error) => logger.error("referral email delivery failed", error),
+    }),
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
   });
   let stopHealth: (() => Promise<void>) | undefined;
@@ -367,6 +388,7 @@ async function main() {
     try {
       await stopHealth?.();
       await reconciler.stop();
+      await email?.drain?.();
       await jobHost.stop();
       await jobs.close();
       await secrets.close();
