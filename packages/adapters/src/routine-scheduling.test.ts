@@ -54,6 +54,7 @@ function pendingTimerFixture(reuse = true) {
     run: {
       findMany: vi.fn(async () => (reuse ? [pending] : [])),
       updateMany: vi.fn(async () => ({ count: 1 })),
+      findUnique: vi.fn(async (): Promise<{ id: string } | null> => null),
       create: vi.fn(async () => ({ id: "new-1", taskId: "task-1" })),
       deleteMany: vi.fn(async () => ({ count: 1 })),
     },
@@ -114,5 +115,16 @@ describe("recurring routine catch-up", () => {
       expect.objectContaining({ type: "routine.fired", runId: "new-1" }),
     );
     expect(enqueue).toHaveBeenLastCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
+  });
+  it("advances past an occurrence that already fired instead of firing it again", async () => {
+    const { executor, tx, enqueue, append, scheduledAt } = pendingTimerFixture(false);
+    tx.run.findUnique.mockResolvedValueOnce({ id: "fired-1" });
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(tx.routine.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
   });
 });

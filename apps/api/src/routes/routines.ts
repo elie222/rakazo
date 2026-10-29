@@ -220,8 +220,10 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
         // Re-check the parent in the write itself so an archive that lands after the read wins.
-        // Model patches must also match the snapshot used to resolve omitted model fields.
+        // Model and schedule patches must also match the snapshot they were computed from, so a
+        // tick that fired after the read is not rewound onto an occurrence that already ran.
         const row = await deps.prisma.routine
           .update({
             where: {
@@ -234,6 +236,7 @@ export function routinesRoutes(ctx: RouterContext) {
                     thinkingLevel: existing.thinkingLevel,
                   }
                 : {}),
+              ...(writesSchedule ? { nextRunAt: existing.nextRunAt } : {}),
             },
             data: {
               name: input.name,
@@ -253,13 +256,13 @@ export function routinesRoutes(ctx: RouterContext) {
                     watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
                     ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
                   }),
-              nextRunAt,
+              ...(writesSchedule ? { nextRunAt } : {}),
             },
           })
           .catch(async (error: unknown) => {
             if (isRecordNotFound(error)) {
               if (
-                touchesModel &&
+                (touchesModel || writesSchedule) &&
                 (await deps.prisma.routine.findFirst({
                   where: {
                     id: existing.id,
@@ -270,7 +273,7 @@ export function routinesRoutes(ctx: RouterContext) {
                   select: { id: true },
                 }))
               ) {
-                throw new ORPCError("CONFLICT", { message: "Routine model changed; retry." });
+                throw new ORPCError("CONFLICT", { message: "Routine changed; retry." });
               }
               throw new ORPCError("NOT_FOUND");
             }
@@ -302,7 +305,11 @@ export function routinesRoutes(ctx: RouterContext) {
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
         const existing = await deps.prisma.routine.findFirst({
-          where: { id: input.routineId, spaceId: context.actor.spaceId },
+          where: {
+            id: input.routineId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });
