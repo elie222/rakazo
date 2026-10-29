@@ -421,11 +421,16 @@ function roleFor(win: DomWindow, el: DomElement): string {
 }
 
 function nameFor(win: DomWindow, el: DomElement): string {
+  const root = el.getRootNode();
   const labelledBy = (el.getAttribute("aria-labelledby") ?? "")
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .map((id) => el.ownerDocument.getElementById(id)?.textContent ?? "")
+    .map((id) =>
+      root instanceof win.Document || root instanceof win.ShadowRoot
+        ? (root.getElementById(id)?.textContent ?? "")
+        : "",
+    )
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();

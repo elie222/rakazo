@@ -709,9 +709,10 @@ EVAL_HELPERS = r"""
     return tag;
   }
   function nameOf(el) {
+    const root = el.getRootNode();
     const labelledBy = (el.getAttribute("aria-labelledby") || "")
       .trim().split(/\s+/).filter(Boolean)
-      .map(id => el.ownerDocument.getElementById(id)?.textContent || "")
+      .map(id => root.getElementById?.(id)?.textContent || "")
       .join(" ").replace(/\s+/g, " ").trim();
     return (
       labelledBy ||
