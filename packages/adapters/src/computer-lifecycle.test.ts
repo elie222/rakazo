@@ -9,6 +9,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -787,6 +788,146 @@ describe("computer provisioning", () => {
       await rm(dataDir, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    "confirmed",
+    "transient",
+    "unknown",
+    "refused",
+    "cancelled while unreachable",
+    "cancelled while paused",
+    "cancelled while damaged",
+  ] as const)(
+    "reuses a running Team Computer only when the provider confirms it runs: %s",
+    async (status) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-reuse-"));
+      const sandbox = new FakeSandboxProvider();
+      const ref = await sandbox.provision({ botId: "team-1", homePath: dataDir }, context);
+      const row = {
+        id: "computer-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        homeKey: "team-1",
+        providerRef: ref.providerRef as string | null,
+        kind: "fake",
+        scope: "team",
+        state: "running",
+        screenGeneration: 3,
+        maintenanceId: null,
+        controlLeaseId: null,
+        runningSince: new Date("2024-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      };
+      const states: string[] = [];
+      const updateMany = vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          const matches = Object.entries(where).every(
+            ([key, value]) => !(key in row) || row[key as keyof typeof row] === value,
+          );
+          if (!matches) return { count: 0 };
+          // The database trigger revokes screens on every state change except booting -> running.
+          if (
+            typeof data.state === "string" &&
+            data.state !== row.state &&
+            !(row.state === "booting" && data.state === "running")
+          )
+            row.screenGeneration++;
+          Object.assign(row, data);
+          states.push(row.state);
+          return { count: 1 };
+        },
+      );
+      const prisma = {
+        computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },
+        computerRun: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          createMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      } as unknown as PrismaClient;
+      const provision = vi.spyOn(sandbox, "provision");
+      const prepare = vi.spyOn(sandbox, "prepare");
+      const isRunning = vi.spyOn(sandbox, "isRunning");
+      if (status === "transient")
+        isRunning.mockRejectedValueOnce(new Error("503 Service Unavailable"));
+      const abort = new AbortController();
+      const checkedAt: number[] = [];
+      const cancel = () => abort.abort(new Error("run cancelled"));
+      if (status === "unknown" || status === "cancelled while unreachable")
+        isRunning.mockImplementation(async () => {
+          checkedAt.push(performance.now());
+          if (status !== "unknown") cancel();
+          throw new Error("503 Service Unavailable");
+        });
+      // A status read that ignores the signal answers after the run was cancelled.
+      if (status === "cancelled while paused")
+        isRunning.mockImplementation(async () => {
+          cancel();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return false;
+        });
+      if (status === "cancelled while damaged")
+        prepare.mockImplementation(async () => {
+          cancel();
+          throw new SandboxDamagedError();
+        });
+      if (status === "refused")
+        isRunning.mockRejectedValue(Object.assign(new Error("401 Unauthorized"), { status: 401 }));
+      const deps = {
+        prisma,
+        sandbox,
+        home: new LocalAgentHomeStore(dataDir),
+        jobs: {} as JobPublisher,
+        events: {} as ThreadEvents,
+        dataDir,
+      };
+
+      try {
+        if (status.startsWith("cancelled")) {
+          await expect(
+            provisionComputer(deps, "computer-1", { ...context, signal: abort.signal }),
+          ).rejects.toThrow("run cancelled");
+          expect(isRunning).toHaveBeenCalledOnce();
+          expect(provision).not.toHaveBeenCalled();
+          expect(states).toEqual(status === "cancelled while damaged" ? ["running"] : []);
+          expect(row.screenGeneration).toBe(3);
+          return;
+        }
+        await provisionComputer(deps, "computer-1", context);
+        if (status === "unknown") {
+          expect(checkedAt[1]! - checkedAt[0]!).toBeGreaterThanOrEqual(200);
+          expect(checkedAt[2]! - checkedAt[1]!).toBeGreaterThanOrEqual(600);
+        }
+        if (status === "unknown" || status === "refused") {
+          // Like before the check: one reconnect, which revokes screens once, and the run goes on.
+          // Asking again only helps when the provider could not answer.
+          expect(isRunning).toHaveBeenCalledTimes(status === "unknown" ? 3 : 1);
+          expect(provision).toHaveBeenCalledOnce();
+          expect(row.state).toBe("running");
+          expect(row.screenGeneration).toBe(4);
+          return;
+        }
+        await Promise.all(
+          ["bot-1", "bot-2"].map((botId) =>
+            provisionComputer(deps, "computer-1", { ...context, botId }),
+          ),
+        );
+
+        expect(isRunning).toHaveBeenCalledTimes(status === "transient" ? 4 : 3);
+        expect(provision).not.toHaveBeenCalled();
+        expect(prepare).toHaveBeenCalledTimes(3);
+        expect(states).toEqual(["running", "running", "running"]);
+        expect(row.screenGeneration).toBe(3);
+      } finally {
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([
     { stage: "prepare", rollbackFails: false },

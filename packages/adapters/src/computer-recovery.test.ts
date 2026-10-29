@@ -210,6 +210,8 @@ describe("computer recovery preserves live work", () => {
   it("preserves the reference and workspace through an uncertain reconnect and a retry", async () => {
     const { deps, row, first } = await fixture();
     const error = new Error("fetch failed");
+    // The provider cannot confirm the computer runs, so each attempt reconnects.
+    vi.spyOn(deps.sandbox as FakeSandboxProvider, "isRunning").mockResolvedValue(false);
     vi.spyOn(deps.sandbox, "provision").mockRejectedValueOnce(error);
     const restore = vi.spyOn(deps.sandbox, "importWorkspace");
     const destroy = vi.spyOn(deps.sandbox, "destroy");

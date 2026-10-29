@@ -8,7 +8,13 @@ import type {
 } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, parseScreenLeaseId, screenLeaseId } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  abortableDelay,
+  isRetryableError,
+  parseScreenLeaseId,
+  screenLeaseId,
+} from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   expireComputerExecutionLeases,
@@ -47,6 +53,7 @@ type ComputerUpdateProgress = (
 const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+const RUNNING_CHECK_RETRY_MS = [250, 750];
 /**
  * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
  * lower bound before reclaim/Reset may treat a lease-less claim as abandoned. Slow dedicated
@@ -186,7 +193,7 @@ export async function provisionComputer(
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
   if (existing.state === "running" && existing.providerRef && deps.sandbox.isRunning) {
     const ref = toComputerRef(existing);
-    if (await deps.sandbox.isRunning(ref, context)) {
+    if (await confirmedRunning(deps.sandbox, ref, context)) {
       context.signal.throwIfAborted();
       const runningSince = existing.runningSince ?? new Date();
       const retained = await deps.prisma.computer.updateMany({
@@ -204,20 +211,30 @@ export async function provisionComputer(
       });
       if (retained.count !== 1) throw new ComputerBusyError();
       await recordComputerRunStart(deps.prisma, existing, runningSince);
-      await deps.sandbox.prepare(ref, context);
-      await ensureComputerWorkspaceLayout(
-        deps.sandbox,
-        ref,
-        parseComputerMode(existing.scope),
-        context.botId,
-        context,
+      const damaged = await deps.sandbox.prepare(ref, context).then(
+        () => false,
+        (error: unknown) => {
+          // Only the reconnect claim below can stop a damaged system back to its last good copy.
+          if (!isSandboxDamagedError(error)) throw error;
+          return true;
+        },
       );
-      log.info("computer.provisioned", {
-        provider: ref.kind,
-        operation: "reuse",
-        durationMs: Math.round(performance.now() - started),
-      });
-      return ref;
+      if (!damaged) {
+        await ensureComputerWorkspaceLayout(
+          deps.sandbox,
+          ref,
+          parseComputerMode(existing.scope),
+          context.botId,
+          context,
+        );
+        log.info("computer.provisioned", {
+          provider: ref.kind,
+          operation: "reuse",
+          durationMs: Math.round(performance.now() - started),
+        });
+        return ref;
+      }
+      context.signal.throwIfAborted();
     }
   }
 
@@ -507,6 +524,33 @@ export async function provisionComputer(
       );
     }
     throw error;
+  }
+}
+
+/**
+ * Whether the provider confirms this reference is running. A status it still cannot read after
+ * short retries is not a confirmation, so the caller reconnects as it did before the check.
+ */
+async function confirmedRunning(
+  sandbox: SandboxProvider,
+  ref: ComputerRef,
+  context: AdapterContext,
+): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const running = (await sandbox.isRunning?.(ref, context)) === true;
+      // Some status reads ignore the signal and answer after the run was cancelled.
+      context.signal.throwIfAborted();
+      return running;
+    } catch (error) {
+      context.signal.throwIfAborted();
+      const wait = RUNNING_CHECK_RETRY_MS[attempt];
+      if (wait === undefined || !isRetryableError(error)) {
+        getLogger().warn("computer.running_check", { provider: ref.kind, error });
+        return false;
+      }
+      await abortableDelay(wait, context.signal);
+    }
   }
 }
 

@@ -136,7 +136,11 @@ export interface SandboxProvider {
    * choose between kinds at provision time implement it.
    */
   provisionKind?(): Promise<ComputerRef["kind"]>;
-  /** Read-only probe: true only when this exact reference is already running. */
+  /**
+   * Read-only probe that never starts or resumes anything. Resolves true only when the provider
+   * reports this exact reference running, and false only when it reports it not running or gone;
+   * throws when it cannot tell.
+   */
   isRunning?(computer: ComputerRef, context: AdapterContext): Promise<boolean>;
   /**
    * Read-only probe: true only when the provider already holds this reference stopped with its

@@ -698,6 +698,20 @@ export class BoatSandboxProvider implements SandboxProvider {
     return this.desktops.releaseScreen(computer, context);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "boat") return false;
+    try {
+      const { sandbox } = await this.client.get(
+        { sandboxId: this.id(computer) },
+        { signal: context.signal },
+      );
+      return RUNNABLE_STATES.has(sandbox.state);
+    } catch (error) {
+      if (isSandboxGoneError(error)) return false;
+      throw error;
+    }
+  }
+
   async isStopped(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     try {
       const { sandbox } = await this.client.get(

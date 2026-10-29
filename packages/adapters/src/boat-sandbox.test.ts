@@ -880,6 +880,32 @@ describe("BoatSandboxProvider", () => {
   });
 
   describe("a sandbox Boat already stopped", () => {
+    it("is reported running only while it can run, without being started", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const get = FakeBoatApi.prototype.get;
+      const outage = new Error("Boat status unavailable");
+      let failing = false;
+      vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+        this: FakeBoatApi,
+        ...args: Parameters<FakeBoatApi["get"]>
+      ) {
+        if (failing) throw outage;
+        return get.apply(this, args);
+      });
+      const { api, provider, computer } = await boat();
+      expect(await provider.isRunning(computer, context)).toBe(true);
+      failing = true;
+      await expect(provider.isRunning(computer, context)).rejects.toBe(outage);
+      failing = false;
+      expect(await provider.isRunning({ ...computer, kind: "e2b" }, context)).toBe(false);
+      await provider.stop(computer, context);
+
+      expect(await provider.isRunning(computer, context)).toBe(false);
+      api.delete(computer.id);
+      expect(await provider.isRunning(computer, context)).toBe(false);
+      expect(resume).not.toHaveBeenCalled();
+    });
+
     it("is reported stopped without being started", async () => {
       const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
       const { api, provider, computer } = await boat();

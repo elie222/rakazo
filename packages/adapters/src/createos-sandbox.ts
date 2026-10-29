@@ -456,6 +456,16 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     return this.ref(created.id, request.botId, true);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "createos") return false;
+    try {
+      return (await this.getSandbox(computer.providerRef, context)).status === "running";
+    } catch (error) {
+      if (isCreateOSSandboxGone(error)) return false;
+      throw error;
+    }
+  }
+
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const profile = createosChromiumProfile(screenSessionKey(context));
     await this.executeChecked(

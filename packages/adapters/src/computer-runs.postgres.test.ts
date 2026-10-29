@@ -96,12 +96,15 @@ describePostgres("computer runs (PostgreSQL)", () => {
     const o = await owner();
 
     await o.start();
-    const { runningSince, providerRef } = await system.computer.findUniqueOrThrow({
-      where: { id: o.id },
-    });
+    const { runningSince, providerRef, screenGeneration } = await system.computer.findUniqueOrThrow(
+      { where: { id: o.id } },
+    );
     expect(providerRef).toBeTruthy();
-    // A reconnect within the same stretch is the same run.
+    // A reconnect within the same stretch is the same run, and keeps open screens.
     await o.start();
+    expect(
+      (await system.computer.findUniqueOrThrow({ where: { id: o.id } })).screenGeneration,
+    ).toBe(screenGeneration);
     const open = await runAsTenant(o.tenant, () =>
       db.prisma.computerRun.findMany({ where: { computerId: o.id } }),
     );

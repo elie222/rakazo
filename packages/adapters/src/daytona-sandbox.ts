@@ -222,6 +222,20 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return this.ref(sandbox, request.botId, true, false);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "daytona") return false;
+    try {
+      const sandbox = await withAbort(
+        this.client.get(computer.providerRef || computer.id),
+        context.signal,
+      );
+      return sandbox.state === SandboxState.STARTED;
+    } catch (error) {
+      if (isDaytonaSandboxMissing(error)) return false;
+      throw error;
+    }
+  }
+
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     await this.prepareWorkspace(await withAbort(this.box(computer), context.signal));
   }
