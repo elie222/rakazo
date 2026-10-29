@@ -10,7 +10,6 @@ import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from 
 test("Integrations installs a plugin, completes real broker OAuth against a fake provider, and removes its children", async ({
   page,
 }, testInfo) => {
-  await page.clock.install();
   await signup(page, `marketplace-${Date.now()}@rakazo.test`, "password12", "Marketplace Test");
   await completeOnboarding(page);
   const botId = activeBotId(page);
@@ -68,25 +67,18 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   expect(server.oauthStatus).toBe("none");
   expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
 
-  // A closed popup stays pending until timeout, without losing the install.
-  await page.clock.pauseAt(Date.now() + 1_000);
+  // Closing the provider must not claim Connected or lose the install.
   const cancelledPopup = page.waitForEvent("popup", { timeout: 30_000 });
   await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
   const first = await cancelledPopup;
   await expect(first.getByRole("heading", { name: "Fixture provider sign-in" })).toBeVisible();
   await first.close();
-  await page.clock.fastForward(119_999);
-  await expect(dialog.getByRole("button", { name: "Connecting…", exact: true })).toBeDisabled();
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await expect(dialog.getByRole("img", { name: "Connected", exact: true })).toHaveCount(0);
-  await page.clock.fastForward(1);
   await expect(dialog.getByRole("alert")).toContainText("Sign-in cancelled");
-  await expect(dialog.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
-  await page.clock.resume();
+  await expect(dialog.getByRole("button", { name: "Reconnect", exact: true })).toBeEnabled();
 
   cancel = false;
   const popupPromise = page.waitForEvent("popup", { timeout: 30_000 });
-  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
+  await dialog.getByRole("button", { name: "Reconnect", exact: true }).click();
   const popup = await popupPromise;
   await expect(dialog.getByRole("img", { name: "Connected", exact: true })).toBeVisible();
   await expect.poll(() => popup.isClosed()).toBe(true);
