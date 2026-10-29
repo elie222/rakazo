@@ -141,11 +141,13 @@ or set `SANDBOX_COMPUTER_EGRESS=open` and recreate the supervisor.
 When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
 same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
 warning in its log. It keeps the first completed answer; a check that could not finish (a Docker
-error or timeout) fails that computer's start and runs again on the next one. An install from before the ruleset existed therefore
-keeps working when it upgrades. After installing the ruleset, recreate the supervisor, or set
-`restricted` to refuse computers whenever the rules are missing. A host-run supervisor
-(`pnpm dev`) and the desktop app's **This computer** stack default to open: Docker Desktop
-keeps its bridges in a VM the host rules cannot reach.
+error or timeout) fails that computer's start and runs again on the next one. With the ruleset
+in place, so does a configured `SANDBOX_COMPUTER_DNS` that no server answers (see below). An
+install from before the ruleset existed therefore keeps working when it upgrades. After
+installing the ruleset, recreate the supervisor, or set `restricted` to refuse computers
+whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the desktop app's
+**This computer** stack default to open: Docker Desktop keeps its bridges in a VM the host
+rules cannot reach.
 
 Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
 and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
@@ -156,13 +158,18 @@ traffic from the match and nothing else. A computer provisioned while egress was
 is replaced on its next provision — resuming it on an unnamed bridge would bypass the
 restriction.
 
-Computers resolve names through Docker's embedded DNS, which forwards each lookup to the
-host's resolvers from inside the computer's network. When the host's resolver has a private
-address, as a cloud VPC resolver or a LAN router does, the ruleset drops that forward too and
-every lookup times out while connections by IP still work. Set `SANDBOX_COMPUTER_DNS` to
+Computers resolve names through Docker's embedded DNS. Docker 28 and newer forward lookups
+to the host's own resolvers from the host's network, so a private host resolver (a cloud VPC
+resolver, a LAN router) keeps working. Older Docker versions forward from the computer's
+network, and so does any server set in `SANDBOX_COMPUTER_DNS` or the daemon's `dns` option;
+the ruleset drops those lookups when the resolver has a private address, and every lookup
+times out while connections by IP still work. In those cases set `SANDBOX_COMPUTER_DNS` to
 public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and recreate the
-supervisor: Docker then forwards computers' lookups there, and each computer picks the
-servers up on its next provision.
+supervisor; each computer picks the servers up on its next provision. When
+`SANDBOX_COMPUTER_DNS` is set, computers with restricted or `auto` egress start only after one
+of its first three servers (Docker uses no more) answers from a computer network; a start that
+fails this check retries it on the next start. The check runs from an IPv4-only network and
+skips IPv6 servers, so if those three are all IPv6 nothing is checked.
 
 If computers must reach LAN services, an internal proxy, or endpoints bound to the host,
 set `SANDBOX_COMPUTER_EGRESS=open`, recreate the supervisor, and run

@@ -572,6 +572,18 @@ describe("restricted egress rekeying", () => {
     expect(existing.start).not.toHaveBeenCalled();
   });
 
+  it.each(["auto", "restricted"])("probes %s egress with configured computer DNS", async (mode) => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", mode);
+    vi.stubEnv("SANDBOX_COMPUTER_DNS", "1.1.1.1, 9.9.9.9");
+    setupExisting(computerNetworkNameFor("bot"));
+    await provision();
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      COMPUTER_IMAGE,
+      ["1.1.1.1", "9.9.9.9"],
+    );
+  });
+
   it("refuses restricted computers until the host ruleset is verified", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
     const { existing } = setupExisting(computerNetworkNameFor("bot"));

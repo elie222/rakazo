@@ -201,10 +201,10 @@ export function resolveComputerEgressMode(
 /**
  * DNS servers for computers, from SANDBOX_COMPUTER_DNS (comma-separated IP addresses).
  * Unset keeps Docker's default: a computer on its own network asks Docker's embedded
- * resolver, which forwards to the host's resolvers from inside the computer's network.
- * Restricted egress drops that forward when the host's resolver has a private address
- * (a cloud VPC resolver, a LAN router), so every name lookup times out; servers set here
- * replace the host's as the forward target, and public ones stay reachable.
+ * resolver, which forwards to the host's configured resolvers.
+ * Docker 28+ forwards host DNS from the host namespace. Older Docker and explicit
+ * container/daemon DNS forward from the computer network, where restricted egress
+ * drops private resolvers. Servers set here replace that target.
  */
 export function resolveComputerDns(value = process.env.SANDBOX_COMPUTER_DNS): string[] | undefined {
   const servers = (value ?? "")
