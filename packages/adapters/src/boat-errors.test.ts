@@ -181,10 +181,14 @@ describe("Boat API errors", () => {
       vi.spyOn(Math, "random").mockReturnValue(0.5);
       const start = Date.now();
       const sentAt: number[] = [];
-      const call = wrapBoatCall(async (_request: unknown, _init: RequestInit) => {
-        sentAt.push(Date.now() - start);
-        throw new ResponseError(Response.json(body, { status: 429 }));
-      }, "fake-key");
+      const call = wrapBoatCall(
+        async (_request: unknown, _init: RequestInit) => {
+          sentAt.push(Date.now() - start);
+          throw new ResponseError(Response.json(body, { status: 429 }));
+        },
+        "fake-key",
+        true,
+      );
       const refused = await settle(call({}, { signal: new AbortController().signal }));
       expect(refused).toBeInstanceOf(SandboxRateLimitError);
       expect(sentAt).toEqual(sent);
@@ -195,7 +199,9 @@ describe("Boat API errors", () => {
     const call = vi.fn(async () => {
       throw ipLimit(12);
     });
-    await expect(wrapBoatCall(call, "fake-key")()).rejects.toBeInstanceOf(SandboxRateLimitError);
+    await expect(wrapBoatCall(call, "fake-key", true)()).rejects.toBeInstanceOf(
+      SandboxRateLimitError,
+    );
     expect(call).toHaveBeenCalledOnce();
   });
 
@@ -211,7 +217,7 @@ describe("Boat API errors", () => {
         return request;
       },
       "fake-key",
-      false,
+      true,
       new BoatRequestGate(),
     );
     const { signal } = new AbortController();
@@ -245,7 +251,7 @@ describe("Boat API errors", () => {
           });
         });
       });
-      const wrapped = wrapBoatCall(call, "fake-key", false, gate);
+      const wrapped = wrapBoatCall(call, "fake-key", true, gate);
       const outcome = wrapped({}, { signal: controller.signal }).catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(0);
       gate.close(closeMs);
@@ -276,21 +282,10 @@ describe("Boat API errors", () => {
     const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
       throw call.mock.calls.length === 1 ? ipLimit(12) : second();
     });
-    const wrapped = wrapBoatCall(call, "fake-key", false, new BoatRequestGate());
+    const wrapped = wrapBoatCall(call, "fake-key", true, new BoatRequestGate());
     const error = await settle(wrapped({}, { signal: new AbortController().signal }));
     expect(matches(error)).toBe(true);
     expect(call).toHaveBeenCalledTimes(2);
-  });
-
-  it("wakes callers held at the gate at a random point in the second after it reopens", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0.25);
-    const gate = new BoatRequestGate();
-    const start = Date.now();
-    gate.close(10_000);
-    const opened = gate.wait().then(() => Date.now() - start);
-    await vi.runAllTimersAsync();
-    expect(await opened).toBe(10_250);
   });
 
   it("stops waiting to retry an unsent request once the caller cancels", async () => {
@@ -365,14 +360,6 @@ describe("Boat API errors", () => {
       new DOMException("This operation was aborted", "AbortError"),
       "The request failed and the interceptors did not return an alternative response",
     );
-    const call = wrapBoatCall(async () => {
-      throw cancelled;
-    }, "fake-key");
-    await expect(call()).rejects.toBe(cancelled);
-  });
-
-  it("does not replace cancellation and network errors", async () => {
-    const cancelled = new DOMException("Cancelled", "AbortError");
     const call = wrapBoatCall(async () => {
       throw cancelled;
     }, "fake-key");

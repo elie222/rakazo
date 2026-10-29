@@ -1480,7 +1480,7 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
     getSavedSnapshot: boatCall(api.getSavedSnapshot.bind(api), true),
     hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
-    resume: startCall("resume", sandboxCall(api.resume.bind(api))),
+    resume: startCall("resume", sandboxCall(api.resume.bind(api), true)),
     saveSavedSnapshot: boatCall(api.saveSavedSnapshot.bind(api)),
     stop: sandboxCall(api.stop.bind(api)),
     update: sandboxCall(api.update.bind(api), true),

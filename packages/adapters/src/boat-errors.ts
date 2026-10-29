@@ -67,9 +67,10 @@ const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
  * `idempotent` call that Boat failed on its side. A sandbox that took the request and did not
  * answer in time would only time out again, so that is never resent. A server error that
  * remains is an outage at Boat, reported as unresponsive like a connection Boat never answered.
- * A request Boat refused for a rate limit that clears within its minute is sent once more after
- * Boat's wait plus up to a second, but only when the caller's signal bounds that wait; a caller
- * whose signal ends the wait or the resent request gets Boat's refusal.
+ * Only idempotent calls are resent after a rate limit: create and command start have no
+ * idempotency key and could duplicate billed sandboxes or command effects. Limits that clear
+ * within a minute get one retry after the wait plus jitter, bounded by the caller's signal.
+ * Cancellation during the wait or resend preserves Boat's refusal.
  */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
@@ -108,9 +109,8 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       return await attempt(...args);
     } catch (error) {
       const wait = rateLimitWait(error);
-      if (signal && wait !== undefined) {
-        // Boat never processed the first send, so a caller giving up on the resend gets its
-        // refusal, as with any request it cancels mid-flight.
+      if (idempotent && signal && wait !== undefined) {
+        // Preserve the rate-limit error if cancellation ends the wait or resend.
         try {
           await delay(spread(wait), undefined, { signal });
           return await attempt(...args);
@@ -142,7 +142,7 @@ export function callerSignal(init: unknown): AbortSignal | undefined {
 }
 
 /**
- * How long to wait before resending a request Boat refused unprocessed under its per-IP limit or
+ * How long to wait before resending an idempotent request refused under the per-IP limit or
  * a start limit over the minute, when the wait ends within that minute. A quota over a longer
  * window only clears by sending less, so it is not resent.
  */

@@ -1034,14 +1034,13 @@ describe("BoatSandboxProvider", () => {
   it("holds every Boat request for the wait Boat names after refusing this host's request rate", async () => {
     const { api, provider, computer } = await boat();
     await provider.prepare(computer, context);
-    // Longer than Boat's rate window, so the refused request is not resent.
-    api.limitRequests(90);
+    api.limitRequests(30);
 
     const refused = await drain(
       provider.execute(computer, { argv: ["echo", "first"] }, context),
     ).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(SandboxRateLimitError);
-    expect(refused).toMatchObject({ retryAfterMs: 90_000 });
+    expect(refused).toMatchObject({ retryAfterMs: 30_000 });
 
     const refusedAt = Date.now();
     api.requestTimes.length = 0;
@@ -1050,7 +1049,7 @@ describe("BoatSandboxProvider", () => {
       drain(provider.execute(computer, { argv: ["echo", "third"] }, context)),
     ]);
     expect(api.requestTimes.length).toBeGreaterThanOrEqual(2);
-    expect(Math.min(...api.requestTimes)).toBeGreaterThanOrEqual(refusedAt + 90_000);
+    expect(Math.min(...api.requestTimes)).toBeGreaterThanOrEqual(refusedAt + 30_000);
   });
 
   it("finishes a resume when Boat's per-IP limit refuses the status check that follows", async () => {
@@ -1069,6 +1068,55 @@ describe("BoatSandboxProvider", () => {
     await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
     expect(api.state(computer.id)).toBe("ready");
     expect(api.requestTimes.at(-1)).toBeGreaterThanOrEqual(refusedAt + 30_000);
+  });
+
+  it("surfaces a create rate limit without creating a second billed sandbox", async () => {
+    const api = new FakeBoatApi();
+    const create = vi
+      .spyOn(api, "create")
+      .mockRejectedValueOnce(
+        new ResponseError(
+          Response.json({ code: "IP_RATE_LIMIT_EXCEEDED", retryAfter: 12 }, { status: 429 }),
+        ),
+      );
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    await expect(
+      provider.provision({ botId: "bot-a", homePath: "/unused" }, context),
+    ).rejects.toBeInstanceOf(SandboxRateLimitError);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces a command start rate limit without running the command twice", async () => {
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    command.mockClear();
+    command.mockRejectedValueOnce(
+      new ResponseError(
+        Response.json({ code: "IP_RATE_LIMIT_EXCEEDED", retryAfter: 12 }, { status: 429 }),
+      ),
+    );
+
+    await expect(
+      drain(provider.execute(computer, { argv: ["echo", "once"] }, context)),
+    ).rejects.toBeInstanceOf(SandboxRateLimitError);
+    expect(command).toHaveBeenCalledOnce();
+  });
+
+  it("resends an idempotent resume after a short rate limit", async () => {
+    const resume = vi
+      .spyOn(FakeBoatApi.prototype, "resume")
+      .mockRejectedValueOnce(
+        new ResponseError(
+          Response.json({ code: "rate_limited", window: "minute" }, { status: 429 }),
+        ),
+      );
+
+    const { api, provider, computer } = await boat();
+    api.setState(computer.id, "archived");
+    await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
+    expect(resume).toHaveBeenCalledTimes(2);
   });
 
   it("fails a delete Boat refuses for its per-IP limit without resending it", async () => {
