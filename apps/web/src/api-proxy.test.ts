@@ -86,20 +86,27 @@ function upgrade(
 }
 
 describe("apiProxy", () => {
-  it("forwards a computer's device socket to the API", async () => {
+  it("forwards the device socket and preserves authentication, origin and address headers", async () => {
     const { target, upgrades } = await startApi();
     const port = await startPreview(target);
 
-    await expect(upgrade(port)).resolves.toBe(101);
-    expect(upgrades).toHaveLength(1);
-  });
-
-  it("appends the hop it saw to a device socket's forwarded address", async () => {
-    const { target, upgrades } = await startApi();
-    const port = await startPreview(target);
-
-    await upgrade(port, { headers: { "X-Forwarded-For": "203.0.113.9" } });
-    expect(upgrades[0]?.["x-forwarded-for"]).toBe("203.0.113.9, 127.0.0.1");
+    await expect(
+      upgrade(port, {
+        path: `${USER_DEVICE_CONNECT_PATH}?v=1`,
+        headers: {
+          Authorization: "Bearer fake-device-token",
+          Origin: "https://app.example.test",
+          "X-Forwarded-For": "203.0.113.9",
+        },
+      }),
+    ).resolves.toBe(101);
+    expect(upgrades).toEqual([
+      expect.objectContaining({
+        authorization: "Bearer fake-device-token",
+        origin: "https://app.example.test",
+        "x-forwarded-for": "203.0.113.9, 127.0.0.1",
+      }),
+    ]);
   });
 
   it("appends the hop it saw to an API request's forwarded address", async () => {
@@ -114,9 +121,12 @@ describe("apiProxy", () => {
 
   it.each([
     "/api/threads",
+    "/rpc",
+    "/unrelated",
+    `${USER_DEVICE_CONNECT_PATH}%2f..%2fthreads`,
     `${USER_DEVICE_CONNECT_PATH}x`,
     `${USER_DEVICE_CONNECT_PATH}/../../threads`,
-  ])("forwards no other upgrade under /api, such as %s", async (path) => {
+  ])("forwards no other upgrade path, such as %s", async (path) => {
     const { target, upgrades } = await startApi();
     const port = await startPreview(target);
 
@@ -124,14 +134,6 @@ describe("apiProxy", () => {
       "upgrade was never answered",
     );
     expect(upgrades).toHaveLength(0);
-  });
-
-  it("forwards the device socket with a query string", async () => {
-    const { target, upgrades } = await startApi();
-    const port = await startPreview(target);
-
-    await expect(upgrade(port, { path: `${USER_DEVICE_CONNECT_PATH}?v=1` })).resolves.toBe(101);
-    expect(upgrades).toHaveLength(1);
   });
 
   it("lets any host through when the server allows every host", async () => {
@@ -192,13 +194,11 @@ describe("hostAllowed", () => {
           .on("error", reject);
       });
       expect({ host, status }).toEqual({ host, status: expected ? 200 : 403 });
+      expect({ host, allowed: hostAllowed(host, allowed) }).toEqual({ host, allowed: expected });
     }
   });
 
-  it.each([[undefined, true] as [string | undefined, boolean], ...cases])(
-    "treats %s as allowed: %s",
-    (host, expected) => {
-      expect(hostAllowed(host, allowed)).toBe(expected);
-    },
-  );
+  it("allows a missing host like Vite", () => {
+    expect(hostAllowed(undefined, allowed)).toBe(true);
+  });
 });
