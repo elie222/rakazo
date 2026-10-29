@@ -329,8 +329,11 @@ jobs:
                 | if . == null then []
                   elif (.updates | type) == "array" then .updates
                   else error("malformed updates") end
+                | . as $updates
                 | map(select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not)))[0] as $update
-                | if $update == null then
+                | if $update == null and ($updates | length) >= 50 then
+                    error("update lookup is incomplete")
+                  elif $update == null then
                     ""
                   elif ($update.gitCommitHash | type) != "string" or $update.gitCommitHash == "" then
                     error("missing published commit")
