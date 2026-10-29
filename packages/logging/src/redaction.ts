@@ -77,8 +77,13 @@ const BARE_SECRET =
 const WINDOWS_PROFILE = /[A-Z]:[\\/]Users[\\/](?:(?![A-Z]:[\\/])[^\\/\r\n])+/gi;
 const POSIX_PROFILE = /(?:\/Users\/|\/home\/)[^/\s]+/g;
 
+// An unfinished quoted value consumes the rest of the text as well.
+const INVALID_HEADER_VALUE =
+  /Headers\.append: (\\?")[\s\S]*?(?:\1 is an invalid header value\.|$)/g;
+
 export function redactSensitiveText(text: string): string {
   return text
+    .replace(INVALID_HEADER_VALUE, `Headers.append: $1${REDACTED}$1 is an invalid header value.`)
     .replace(EMAIL_CANDIDATE, (candidate) => (candidate.includes("@") ? REDACTED : candidate))
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)

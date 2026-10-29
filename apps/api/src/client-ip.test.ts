@@ -1,5 +1,13 @@
 import { CLIENT_IP_HEADER } from "@rakazo/auth";
-import { getLogContext, runWithLogContext } from "@rakazo/logging";
+import { recordSecurityEvent } from "@rakazo/db";
+import {
+  createLogger,
+  createTestSink,
+  getLogContext,
+  getLogger,
+  installLogger,
+  runWithLogContext,
+} from "@rakazo/logging";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -137,7 +145,11 @@ describe("clientIpMiddleware", () => {
   function app(trustedProxies: string[]) {
     const hono = new Hono();
     hono.use("*", clientIpMiddleware(createClientIpResolver({ trustedProxies, header }), header));
-    hono.get("/", (c) => c.json({ ip: requestClientIp(c) ?? null, context: getLogContext() }));
+    hono.get("/", async (c) => {
+      getLogger().info("http.request.completed");
+      await recordSecurityEvent({ type: "auth.sign_out" });
+      return c.json({ ip: requestClientIp(c) ?? null, context: getLogContext() });
+    });
     return hono;
   }
   const fromSocket = (hono: Hono, remoteAddress: string, headers: Record<string, string>) =>
@@ -148,13 +160,21 @@ describe("clientIpMiddleware", () => {
       return (await response.json()) as { ip: string | null; context: Record<string, unknown> };
     });
 
-  it("stamps the resolved address and user agent on the log context", async () => {
-    const body = await fromSocket(app(["172.20.0.3"]), "172.20.0.3", {
+  it("keeps caller details on security events only", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const body = await fromSocket(app(["192.0.2.3"]), "192.0.2.3", {
       [header]: "203.0.113.5",
       "user-agent": "curl/8.5.0",
     });
     expect(body.ip).toBe("203.0.113.5");
-    expect(body.context).toMatchObject({
+    expect(body.context).not.toHaveProperty("client.ip");
+    expect(body.context).not.toHaveProperty("user_agent.original");
+    const requestLog = sink.events.find((event) => event.message === "http.request.completed");
+    expect(requestLog).toMatchObject({ message: "http.request.completed" });
+    expect(requestLog).not.toHaveProperty("client.ip");
+    expect(requestLog).not.toHaveProperty("user_agent.original");
+    expect(sink.events.find((event) => event.message === "security.event")).toMatchObject({
       "client.ip": "203.0.113.5",
       "user_agent.original": "curl/8.5.0",
     });

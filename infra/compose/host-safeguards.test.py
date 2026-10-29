@@ -86,6 +86,63 @@ class AuditShipTests(unittest.TestCase):
         self.assertEqual((invalid["event"], invalid["user"]), ("ssh.failed", "oracle"))
         self.assertIsNone(self.auth("Connection closed by 198.51.100.9 port 6"))
 
+    def test_command_redaction(self):
+        cases = [
+            ("docker exec -e PGPASSWORD=fake-value app psql", "fake-value", "docker exec", "app"),
+            ("sh <<'EOF'\nFAKE_SECRET_ACCESS_KEY=fake-value\npsql\nEOF", "fake-value", "sh", "psql"),
+            ("psql -c \"select 'user@example.com'\"", "user@example.com", "psql", "select"),
+            ("psql postgres://app:fake-pass@db.example.com/app", "app:fake-pass", "psql", "db.example.com"),
+            ("curl -H 'Authorization: Bearer fake-value' https://example.com", "fake-value", "curl", "example.com"),
+            ("cat <<'EOF'\n-----BEGIN RSA PRIVATE KEY-----\nfake-value\n-----END RSA PRIVATE KEY-----\nEOF", "fake-value", "cat", "EOF"),
+            ("curl 'https://example.com/?token=fake-value&mode=test'", "fake-value", "curl", "mode=test"),
+        ]
+        for command, secret, executable, useful in cases:
+            with self.subTest(command=command):
+                event = self.auth("app : USER=root ; COMMAND=" + command, "sudo")
+                self.assertEqual((event["user"], event["as_user"]), ("app", "root"))
+                for field in ("command", "message"):
+                    self.assertNotIn(secret, event[field])
+                    self.assertIn("[Redacted]", event[field])
+                    self.assertIn(executable, event[field])
+                    self.assertIn(useful, event[field])
+
+    def test_text_redaction_patterns(self):
+        secrets = [
+            "PGPASSWORD=fake-value", "AWS_SECRET_ACCESS_KEY=fake-value",
+            "API_KEY=fake-value", "CREDENTIAL=fake-value", "PASSWD=fake-value",
+            '--password="fake-value with spaces"', "--password fake-value",
+            "--token fake-value", "--api-key fake-value", 'API_KEY="fake-value with spaces"',
+            '\"password\":\"fake-value with spaces\"', '\"api_key\":\"fake-value\"',
+            "Bearer fake-value", "sk-test-" + "x" * 24,
+            *[prefix + "x" * 40 for prefix in ("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_")],
+            *[prefix + "-" + "x" * 24 for prefix in ("xoxa", "xoxb", "xoxp", "xoxr", "xoxs")],
+            "AKIAEXAMPLEEXAMPLE12", "eyJfake.eyJfake.fake", "owner@example.org",
+            "-----BEGIN PRIVATE KEY-----\nfake-value",
+            *["https://example.com/?" + key + "=fake-value&mode=test" for key in (
+                "token", "access_token", "refresh_token", "id_token", "code", "key", "api_key",
+                "apikey", "secret", "password", "sig", "signature", "X-Amz-Signature", "auth",
+            )],
+        ]
+        for text in secrets:
+            with self.subTest(text=text):
+                redacted = audit_ship.redact_sensitive_text(text)
+                self.assertIn("[Redacted]", redacted)
+                self.assertNotIn("fake-value", redacted)
+                self.assertNotIn("x" * 24, redacted)
+                self.assertNotIn("eyJfake", redacted)
+                self.assertNotIn("AKIAEXAMPLEEXAMPLE12", redacted)
+                self.assertNotIn("owner@example.org", redacted)
+        for program in ("su", "useradd"):
+            event = self.auth("PGPASSWORD=fake-value owner@example.org", program)
+            self.assertNotIn("fake-value", event["message"])
+            self.assertNotIn("owner@example.org", event["message"])
+
+    def test_redaction_precedes_truncation(self):
+        command = "docker exec app -e PGPASSWORD=" + "x" * 1500
+        event = self.auth("app : USER=root ; COMMAND=" + command, "sudo")
+        self.assertEqual(event["command"], "docker exec app -e PGPASSWORD=[Redacted]")
+        self.assertTrue(event["message"].endswith("PGPASSWORD=[Redacted]"))
+
     def test_sudo_identity_su_and_truncation(self):
         command = "/usr/bin/echo " + "x" * 2000
         sudo = self.auth("  deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=" + command, "sudo")

@@ -291,6 +291,7 @@ describe("normalizeRunError", () => {
       "Encountered invalidated oauth token for user, failing request",
       // A key pasted with code around it; the code's words are not provider signals.
       'Headers.append: "Bearer example-key\nclient = Client(timeout=30, credits=5, rate_limit=1)" is an invalid header value.',
+      'Headers.append: "[Redacted]" is an invalid header value.',
       "Cannot convert argument to a ByteString because the character at index 0 has a value of 48120 which is greater than 255.",
       google({
         code: 400,

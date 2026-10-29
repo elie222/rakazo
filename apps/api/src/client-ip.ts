@@ -4,8 +4,7 @@ import { BlockList, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { CLIENT_IP_HEADER } from "@rakazo/auth";
-import { securityRequestBindings } from "@rakazo/db";
-import { enrichLogContext } from "@rakazo/logging";
+import { withSecurityRequest } from "@rakazo/db";
 import type { Context, MiddlewareHandler } from "hono";
 
 export interface ClientIpConfig {
@@ -142,13 +141,12 @@ function normalizeIp(value: string): string {
 
 const CLIENT_IP_KEY = "rakazo.clientIp";
 
-/** Resolve the caller once per request, and stamp it on every log line and security event. */
+/** Resolve the caller once per request and make it available to security events. */
 export function clientIpMiddleware(resolver: ClientIpResolver, header: string): MiddlewareHandler {
   return async (c, next) => {
     const ip = await resolver({ peer: socketPeer(c), forwarded: c.req.header(header) });
     c.set(CLIENT_IP_KEY, ip);
-    enrichLogContext(securityRequestBindings({ ip, userAgent: c.req.header("user-agent") }));
-    await next();
+    await withSecurityRequest({ ip, userAgent: c.req.header("user-agent") }, next);
   };
 }
 

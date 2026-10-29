@@ -1,8 +1,61 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { createLogger } from "./logger.js";
 import { redactBindings, redactSensitiveText } from "./redaction.js";
+import { createTestSink } from "./test-sink.js";
 
 describe("redaction", () => {
+  it.each([
+    'Headers.append: "fake pasted snippet\nPGPASSWORD=fake-value" is an invalid header value.',
+    'Headers.append: "fake pasted snippet\nPGPASSWORD=fake-value',
+    'Headers.append: "fake "quoted" snippet" is an invalid header value.',
+  ])("redacts echoed header values throughout log events: %s", (message) => {
+    const fixed = 'Headers.append: "[Redacted]" is an invalid header value.';
+    expect(redactSensitiveText(message)).toBe(fixed);
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    const error = new TypeError(message);
+    error.stack = `TypeError: ${message}\n    at fetch (example.js:1:1)`;
+    logger.error(message, error, { reason: message });
+    expect(sink.events[0]).toMatchObject({
+      message: fixed,
+      reason: fixed,
+      error: {
+        message: fixed,
+        stack: message.endsWith("value.")
+          ? `TypeError: ${fixed}\n    at fetch (example.js:1:1)`
+          : `TypeError: ${fixed}`,
+      },
+    });
+    expect(JSON.stringify(sink.events)).not.toContain("fake");
+  });
+
+  it("redacts echoed headers in serialized structured provider failures", () => {
+    const message = 'Headers.append: "fake pasted snippet" is an invalid header value.';
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    logger.warn("run.failed", { error: { diagnostic: message }, reason: message });
+    expect(sink.events[0]).toMatchObject({
+      reason: 'Headers.append: "[Redacted]" is an invalid header value.',
+      error: {
+        message: JSON.stringify({
+          diagnostic: 'Headers.append: "[Redacted]" is an invalid header value.',
+        }),
+      },
+    });
+    expect(JSON.stringify(sink.events)).not.toContain("fake pasted snippet");
+  });
+
+  it("preserves non-header messages in plain-object failures", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "logging-test", sinks: [sink] });
+    const error = { message: "fixture failure" };
+    logger.warn("run.failed", { error });
+    expect(sink.events[0]).toMatchObject({
+      error: { message: JSON.stringify(error) },
+    });
+  });
+
   it("preserves numeric request budgets without exposing token values or content", () => {
     expect(
       redactBindings({
