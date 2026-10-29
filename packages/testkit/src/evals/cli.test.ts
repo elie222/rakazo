@@ -158,6 +158,24 @@ it("lists the silence suite without inference", () => {
   expect(output).toContain("silence-failed-check:");
 });
 
+it("lists the deliberation suite without inference", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      path.resolve(import.meta.dirname, "../cli/evals.ts"),
+      "--suite",
+      "deliberation",
+      "--list",
+    ],
+    { encoding: "utf8", timeout: 20_000 },
+  );
+  expect(output.trim().split("\n")).toHaveLength(3);
+  expect(output).toContain("deliberation-false-premise:");
+  expect(output).toContain("deliberation-sound-premise:");
+});
+
 it("requires explicit judge configuration before scheduling semantic live cases", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "eval-judge-missing-"));
   try {
