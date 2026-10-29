@@ -25,23 +25,16 @@ function regularFileIsUsable(stat: Stats, uid: number, gid: number): boolean {
   );
 }
 
-/**
- * Home folder trees in which a tool leaves read-only folders on purpose. Go removes write bits from
- * each module folder it unpacks into its module cache unless -modcacherw is set (`go help build`;
- * makeDirsReadOnly in cmd/go/internal/modfetch/fetch.go). The cache defaults to GOPATH/pkg/mod and
- * GOPATH to ~/go (`go help gopath`; cmd/go/internal/cfg/cfg.go).
- */
-const READ_ONLY_TREES = [/^go\/pkg\/mod(\/|$)/];
-
-/**
- * Folders need rwx for the uid, except that one the uid owns inside a read-only tree needs only
- * r-x. Trees match the folder's own path in the home and symlinks are not followed, so a folder
- * outside them keeps the full rule even behind a link named like one, and a link a bot points
- * into one is not resolved. `entry` is the path relative to the home, empty for the home itself.
- */
+/** Go makes module-cache directories read-only unless -modcacherw is set. */
 function directoryIsUsable(stat: Stats, uid: number, gid: number, entry: string): boolean {
-  const readOnly = stat.uid === uid && READ_ONLY_TREES.some((tree) => tree.test(entry));
-  return hasPermissions(stat, uid, gid, readOnly ? 0b101 : 0b111);
+  if (hasPermissions(stat, uid, gid, 0b111)) return true;
+  // Match the walked path, never a symlink target, and keep the exception owner-only.
+  return (
+    stat.uid === uid &&
+    (entry === "go/pkg/mod" || entry.startsWith("go/pkg/mod/")) &&
+    (stat.mode & 0o022) === 0 &&
+    hasPermissions(stat, uid, gid, 0b101)
+  );
 }
 
 function isMissingOrNotDirectory(error: unknown): boolean {

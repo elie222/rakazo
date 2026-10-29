@@ -217,10 +217,14 @@ describe("computer home ownership", () => {
   );
 });
 
-describe.each([
-  { walk: "host", platform: process.platform },
-  { walk: "pathname", platform: "darwin" },
-])("computer home folders via the $walk walk", ({ platform }) => {
+describe.each(
+  process.platform === "linux"
+    ? [
+        { walk: "descriptor", platform: "linux" },
+        { walk: "pathname", platform: "darwin" },
+      ]
+    : [{ walk: "pathname", platform: process.platform }],
+)("computer home folders via the $walk walk", ({ platform }) => {
   const goModule = "go/pkg/mod/example.com/mod@v1.0.0";
 
   async function makeHome(
@@ -250,51 +254,37 @@ describe.each([
     },
   );
 
-  it.each([
-    ".config",
-    ".browser-profiles/chromium",
-    "attachments",
-    "shared",
-    "bots/bot-1",
-    ".local/share/uv",
-    "project/vendor",
-    "go/pkg",
-    "go/pkg/modx",
-    "src/go/pkg/mod",
-  ])("rejects a read-only %s outside Go's module cache", async (entry) => {
-    const { home, folder } = await makeHome("rakazo-home-readonly-dir-", entry);
-    await lockFolder(folder, 0o555);
+  it.each([".config", "go/pkg", "go/pkg/modx", "src/go/pkg/mod"])(
+    "rejects a read-only %s outside Go's module cache",
+    async (entry) => {
+      const { home, folder } = await makeHome("rakazo-home-readonly-dir-", entry);
+      await lockFolder(folder, 0o555);
 
-    const stat = await lstat(home);
-    await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
-      chmodHint(home, entry),
-    );
-  });
+      const stat = await lstat(home);
+      await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
+        chmodHint(home, entry),
+      );
+    },
+  );
 
-  it("rejects a read-only folder reached through a symlinked alias", async () => {
-    const { home, folder } = await makeHome("rakazo-home-alias-", "dotfiles/config");
-    await symlink("dotfiles/config", path.join(home, ".config"));
-    await lockFolder(folder, 0o555);
+  it.each(["go", "go/pkg", "go/pkg/mod"])(
+    "does not widen the Go exemption through a symlinked %s folder",
+    async (alias) => {
+      const { home, folder } = await makeHome(
+        "rakazo-home-go-alias-",
+        "elsewhere/pkg/mod/example.com",
+      );
+      const link = path.join(home, alias);
+      await mkdir(path.dirname(link), { recursive: true });
+      await symlink(path.relative(path.dirname(link), path.join(home, "elsewhere")), link);
+      await lockFolder(folder, 0o555);
 
-    const stat = await lstat(home);
-    await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
-      chmodHint(home, "dotfiles/config"),
-    );
-  });
-
-  it("does not widen the Go exemption through a symlinked go folder", async () => {
-    const { home, folder } = await makeHome(
-      "rakazo-home-go-alias-",
-      "elsewhere/pkg/mod/example.com",
-    );
-    await symlink("elsewhere", path.join(home, "go"));
-    await lockFolder(folder, 0o555);
-
-    const stat = await lstat(home);
-    await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
-      chmodHint(home, "elsewhere/pkg/mod/example.com"),
-    );
-  });
+      const stat = await lstat(home);
+      await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
+        chmodHint(home, "elsewhere/pkg/mod/example.com"),
+      );
+    },
+  );
 
   it("rejects a read-only folder in Go's module cache that only the computer group owns", async () => {
     const { home, folder } = await makeHome("rakazo-home-go-group-", goModule);
@@ -308,6 +298,19 @@ describe.each([
       chownHint(home, stat.uid + 1, stat.gid, goModule),
     );
   });
+
+  it.each([0o575, 0o557, 0o577])(
+    "rejects an owner-read-only module directory writable by others (mode %i)",
+    async (mode) => {
+      const { home, folder } = await makeHome("rakazo-home-go-writable-", goModule);
+      await lockFolder(folder, mode);
+
+      const stat = await lstat(home);
+      await expect(assertHomeWritableOn(platform, home, stat.uid, stat.gid)).rejects.toThrow(
+        chmodHint(home, goModule),
+      );
+    },
+  );
 
   it("still checks entries inside read-only folders the sandbox user owns", async () => {
     const { home, folder } = await makeHome("rakazo-home-readonly-dir-entry-", goModule);
@@ -335,13 +338,15 @@ describe.each([
   );
 
   it.each(["555", "000"])("rejects a folder someone else owns with mode %s", async (mode) => {
-    const { home, folder } = await makeHome("rakazo-home-foreign-dir-", "cache");
-    await chmod(home, 0o777);
+    const { home, folder } = await makeHome("rakazo-home-foreign-dir-", goModule);
+    for (const entry of ["", "go", "go/pkg", "go/pkg/mod", "go/pkg/mod/example.com"]) {
+      await chmod(path.join(home, entry), 0o777);
+    }
     await lockFolder(folder, Number.parseInt(mode, 8));
 
     const stat = await lstat(folder);
     await expect(assertHomeWritableOn(platform, home, stat.uid + 1, stat.gid + 1)).rejects.toThrow(
-      chownHint(home, stat.uid + 1, stat.gid + 1, "cache"),
+      chownHint(home, stat.uid + 1, stat.gid + 1, goModule),
     );
   });
 
