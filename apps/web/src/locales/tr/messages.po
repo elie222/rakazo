@@ -1449,10 +1449,6 @@ msgstr "sütun {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -3403,10 +3399,6 @@ msgstr "Botların MEMORY.md'ye ek olarak bilgileri anlamına göre kaydedip hat�
 msgid "Light"
 msgstr "Açık"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr ""
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -4332,10 +4324,6 @@ msgstr "Sayfa {page} / {count}"
 msgid "Page not found"
 msgstr "Sayfa bulunamadı"
 
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr ""
-
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "Geçiş anahtarı"
@@ -5257,10 +5245,6 @@ msgstr "Gönderiliyor…"
 msgid "Sent"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr ""
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr ""
@@ -5700,10 +5684,6 @@ msgstr "Takım Bilgisayarı"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx

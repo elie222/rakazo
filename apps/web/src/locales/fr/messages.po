@@ -1449,10 +1449,6 @@ msgstr "colonne {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "Bientôt disponible"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -3403,10 +3399,6 @@ msgstr "Permet aux bots d’enregistrer et de retrouver des faits par leur sens,
 msgid "Light"
 msgstr "Clair"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Incident Linear"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -4332,10 +4324,6 @@ msgstr "Page {page} sur {count}"
 msgid "Page not found"
 msgstr "Page introuvable"
 
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "Incident PagerDuty"
-
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "Clé d’accès"
@@ -5257,10 +5245,6 @@ msgstr "Envoi en cours…"
 msgid "Sent"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Alerte Sentry"
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr "Le point de terminaison Serenity est obligatoire."
@@ -5701,10 +5685,6 @@ msgstr "Ordinateur d'équipe"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Message Teams"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams non activé"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

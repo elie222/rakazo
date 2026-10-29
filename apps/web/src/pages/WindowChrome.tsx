@@ -11,6 +11,7 @@ export function WindowChrome() {
   if (kind === "darwin") {
     return <div className="app-drag h-3 w-[72px] shrink-0" aria-hidden="true" />;
   }
+  // Frameless windows draw the macOS traffic lights; their fixed colours are the convention, not tokens.
   return (
     <div className="app-drag flex shrink-0 gap-[7px]">
       <button
