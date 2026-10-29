@@ -93,8 +93,8 @@ export function useComposerActions({
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   useEffect(() => {
-    setComposerUnsavedWork(sending || pendingAttachments.length > 0);
-    return () => setComposerUnsavedWork(false);
+    setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
+    return () => setComposerUnsavedWork({ sending: false, attachments: false });
   }, [sending, pendingAttachments.length]);
   const sendingRef = useRef(false);
   const [sendFailure, setSendFailure] = useState<{

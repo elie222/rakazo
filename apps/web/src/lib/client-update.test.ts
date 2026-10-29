@@ -53,6 +53,7 @@ function setup(overrides: Partial<ClientUpdateDeps> = {}) {
     servedBuild: vi.fn(async () => NEW as string | null),
     reload: vi.fn(() => true),
     holdsUnsavedWork: vi.fn(() => false),
+    holdsWorkInFlight: vi.fn(() => false),
     hasUnsentDraft: vi.fn(() => false),
     now: () => now,
     setInterval: (callback) => {
@@ -200,10 +201,39 @@ describe("client updates", () => {
     expect(again.deps.reload).toHaveBeenCalledOnce();
   });
 
-  it("reloads at once when the server refuses this build, even mid-typing", async () => {
-    const { deps, doc, reply } = setup();
-    doc.activeElement = { value: "typing" } as unknown as Element;
+  it("reloads at once when the server refuses this build", async () => {
+    const { deps, reply } = setup();
     reply(426, NEW);
+    await flush();
+    expect(deps.reload).toHaveBeenCalledOnce();
+  });
+
+  it("holds a refused build's reload while work is in flight, then reloads once it is gone", async () => {
+    const holdsWorkInFlight = vi.fn(() => true);
+    const { deps, doc, reply, idleTick } = setup({ holdsWorkInFlight });
+    reply(426);
+    await flush();
+    // Held work longer than the rollout retries does not use them up.
+    for (let i = 0; i <= CLIENT_UPDATE_REQUIRED_RETRIES; i++) idleTick();
+    await flush();
+    holdsWorkInFlight.mockReturnValue(false);
+    doc.activeElement = { value: "typing" } as unknown as Element;
+    idleTick();
+    await flush();
+    doc.activeElement = null;
+    doc.dialog = true;
+    idleTick();
+    await flush();
+    expect(deps.reload).not.toHaveBeenCalled();
+    doc.dialog = false;
+    idleTick();
+    await flush();
+    expect(deps.reload).toHaveBeenCalledOnce();
+  });
+
+  it("reloads a refused build despite attachments, which the refused build cannot send", async () => {
+    const { deps, reply } = setup({ holdsUnsavedWork: vi.fn(() => true) });
+    reply(426);
     await flush();
     expect(deps.reload).toHaveBeenCalledOnce();
   });
@@ -218,6 +248,29 @@ describe("client updates", () => {
     resolve(NEW);
     await flush();
     expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps a refused build's retry when work appears during its last check", async () => {
+    let resolve!: (build: string | null) => void;
+    const servedBuild = vi.fn(async () => OLD as string | null);
+    const holdsWorkInFlight = vi.fn(() => false);
+    const { deps, reply, idleTick } = setup({ servedBuild, holdsWorkInFlight });
+    reply(426);
+    await flush();
+    for (let i = 1; i < CLIENT_UPDATE_REQUIRED_RETRIES; i++) {
+      idleTick();
+      await flush();
+    }
+    servedBuild.mockImplementation(() => new Promise((done) => (resolve = done)));
+    idleTick();
+    holdsWorkInFlight.mockReturnValue(true);
+    resolve(NEW);
+    await flush();
+    holdsWorkInFlight.mockReturnValue(false);
+    servedBuild.mockResolvedValue(NEW);
+    idleTick();
+    await flush();
+    expect(deps.reload).toHaveBeenCalledOnce();
   });
 
   it("tries the same build pair again when the recovery guard refused the reload", async () => {
