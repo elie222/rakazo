@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type * as TimersPromises from "node:timers/promises";
 import type { FileUrlResponse, SandboxStateEnum } from "@boatdev/sdk";
-import { ResponseError } from "@boatdev/sdk";
+import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
@@ -1011,13 +1011,14 @@ describe("BoatSandboxProvider", () => {
   it("holds every Boat request for the wait Boat names after refusing this host's request rate", async () => {
     const { api, provider, computer } = await boat();
     await provider.prepare(computer, context);
-    api.limitRequests(30);
+    // Longer than Boat's rate window, so the refused request is not resent.
+    api.limitRequests(90);
 
     const refused = await drain(
       provider.execute(computer, { argv: ["echo", "first"] }, context),
     ).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(SandboxRateLimitError);
-    expect(refused).toMatchObject({ retryAfterMs: 30_000 });
+    expect(refused).toMatchObject({ retryAfterMs: 90_000 });
 
     const refusedAt = Date.now();
     api.requestTimes.length = 0;
@@ -1026,7 +1027,92 @@ describe("BoatSandboxProvider", () => {
       drain(provider.execute(computer, { argv: ["echo", "third"] }, context)),
     ]);
     expect(api.requestTimes.length).toBeGreaterThanOrEqual(2);
-    expect(Math.min(...api.requestTimes)).toBeGreaterThanOrEqual(refusedAt + 30_000);
+    expect(Math.min(...api.requestTimes)).toBeGreaterThanOrEqual(refusedAt + 90_000);
+  });
+
+  it("finishes a resume when Boat's per-IP limit refuses the status check that follows", async () => {
+    const accept = FakeBoatApi.prototype.resume;
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    api.setState(computer.id, "archived");
+    let refusedAt = 0;
+    resume.mockImplementationOnce(async (request) => {
+      const accepted = await accept.call(api, request);
+      refusedAt = Date.now();
+      api.limitRequests(30);
+      return accepted;
+    });
+
+    await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
+    expect(api.state(computer.id)).toBe("ready");
+    expect(api.requestTimes.at(-1)).toBeGreaterThanOrEqual(refusedAt + 30_000);
+  });
+
+  it("fails a delete Boat refuses for its per-IP limit without resending it", async () => {
+    const remove = vi.spyOn(FakeBoatApi.prototype, "deleteSandbox");
+    const { api, provider, computer } = await boat();
+    api.limitRequests(30);
+
+    await expect(provider.destroy(computer, context)).rejects.toBeInstanceOf(SandboxRateLimitError);
+    expect(remove).toHaveBeenCalledOnce();
+  });
+
+  // The SDK's idle timer aborts its own attach: once the request is sent, the runtime reports a
+  // FetchError caused by the abort; while the attach still waits at the request gate, the abort
+  // itself.
+  const idleAbort = () => new DOMException("This operation was aborted", "AbortError");
+  it.each([
+    ["a rate limit", undefined],
+    ["the SDK's idle timeout on the request", new FetchError(idleAbort(), "The request failed")],
+    ["the SDK's idle timeout at the request gate", idleAbort()],
+  ])(
+    "finishes a long command by polling when %s ends the attach to its output",
+    async (_name, attachError) => {
+      const run = FakeBoatApi.prototype.command;
+      const command = vi.spyOn(FakeBoatApi.prototype, "command");
+      const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
+      const { api, provider, computer } = await boat();
+      await provider.prepare(computer, context);
+      api.detachedRunMs = 60_000;
+      command.mockImplementationOnce(async (request) => {
+        const started = await run.call(api, request);
+        if (attachError) attach.mockRejectedValueOnce(attachError);
+        else api.limitRequests(90);
+        return started;
+      });
+
+      const events = [];
+      for await (const event of provider.execute(
+        computer,
+        { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 },
+        context,
+      )) {
+        events.push(event);
+      }
+      expect(events).toEqual([
+        { type: "stdout", data: "polled\n" },
+        { type: "exit", code: 0 },
+      ]);
+      expect(attach).toHaveBeenCalledOnce();
+      const sent = command.mock.calls.map(([request]) => request.commandRequest.command);
+      expect(sent.filter((script) => script.includes("pkill"))).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["an unexpected failure", new Error("attach broke"), "Error"],
+    ["a Boat server error", boatError(500, "internal", "upstream"), "SandboxUnresponsiveError"],
+  ])("fails a long command when %s ends the attach to its output", async (_name, failure, name) => {
+    const attach = vi.spyOn(FakeBoatApi.prototype, "attachCommandRaw");
+    const status = vi.spyOn(FakeBoatApi.prototype, "commandStatus");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    attach.mockRejectedValue(failure);
+
+    await expect(
+      drain(provider.execute(computer, { argv: ["echo", "x"], timeoutMs: 20 * 60_000 }, context)),
+    ).rejects.toMatchObject({ name });
+    expect(status).not.toHaveBeenCalled();
   });
 
   it("follows a long command on Boat's output stream, reattaching where each connection ended", async () => {

@@ -9,7 +9,7 @@ import type {
   SandboxStateEnum,
   SavedSnapshot,
 } from "@boatdev/sdk";
-import { BoatApi, Configuration, followCommand } from "@boatdev/sdk";
+import { BoatApi, Configuration, FetchError, followCommand } from "@boatdev/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -1278,7 +1278,14 @@ export class BoatSandboxProvider implements SandboxProvider {
         }
       }
     } catch (error) {
-      if (signal?.aborted || !(timeout.aborted || error instanceof BoatApiError)) throw error;
+      // A rate limit, or the SDK's own idle timer ending the attach (on its request, or while it
+      // waits at the request gate), leaves the command to status polls too.
+      const unavailable =
+        timeout.aborted ||
+        error instanceof BoatApiError ||
+        error instanceof SandboxRateLimitError ||
+        isAbortError(error instanceof FetchError ? error.cause : error);
+      if (signal?.aborted || !unavailable) throw error;
     }
     return undefined;
   }
