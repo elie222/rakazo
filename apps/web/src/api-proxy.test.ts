@@ -112,14 +112,26 @@ describe("apiProxy", () => {
     expect(await response.json()).toMatchObject({ "x-forwarded-for": "203.0.113.9, 127.0.0.1" });
   });
 
-  it("forwards no other upgrade under /api", async () => {
+  it.each([
+    "/api/threads",
+    `${USER_DEVICE_CONNECT_PATH}x`,
+    `${USER_DEVICE_CONNECT_PATH}/../../threads`,
+  ])("forwards no other upgrade under /api, such as %s", async (path) => {
     const { target, upgrades } = await startApi();
     const port = await startPreview(target);
 
-    await expect(upgrade(port, { path: "/api/threads", timeoutMs: 500 })).rejects.toThrow(
+    await expect(upgrade(port, { path, timeoutMs: 500 })).rejects.toThrow(
       "upgrade was never answered",
     );
     expect(upgrades).toHaveLength(0);
+  });
+
+  it("forwards the device socket with a query string", async () => {
+    const { target, upgrades } = await startApi();
+    const port = await startPreview(target);
+
+    await expect(upgrade(port, { path: `${USER_DEVICE_CONNECT_PATH}?v=1` })).resolves.toBe(101);
+    expect(upgrades).toHaveLength(1);
   });
 
   it("lets any host through when the server allows every host", async () => {

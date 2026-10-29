@@ -3,6 +3,9 @@ import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts/user-devices";
 import type { ProxyOptions } from "vite";
 import { appendForwardedFor } from "./forwarded-for.js";
 
+/** Vite treats a proxy key starting with `^` as a pattern for the request's path and query. */
+export const DEVICE_SOCKET = `^${USER_DEVICE_CONNECT_PATH}(?:\\?|$)`;
+
 /**
  * What the web server forwards to the API, in development and in `vite preview` deployments.
  * `allowedHosts` reads the running server's own list: Vite checks it for plain requests but not
@@ -39,8 +42,9 @@ export function apiProxy(
   });
   return {
     "/api": options(false),
-    // A user's own computer keeps its device socket open here, the API's only upgrade.
-    [USER_DEVICE_CONNECT_PATH]: options(true),
+    // A user's own computer keeps its device socket open here, the API's only upgrade. Vite
+    // matches other keys as prefixes, so this one is anchored to the exact path.
+    [DEVICE_SOCKET]: options(true),
     "/rpc": options(false),
     // Native app domain association, served by the API from deployment settings.
     "/.well-known/apple-app-site-association": options(false),

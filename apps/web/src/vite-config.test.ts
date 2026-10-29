@@ -7,6 +7,7 @@ import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { ProxyOptions, UserConfig } from "vite";
 import { createServer, loadConfigFromFile, preview } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEVICE_SOCKET } from "./api-proxy.js";
 
 const configFile = path.resolve(import.meta.dirname, "../vite.config.ts");
 const cleanup: (() => Promise<void>)[] = [];
@@ -73,7 +74,7 @@ describe("vite.config", () => {
       const upgrades = Object.entries(proxy ?? {})
         .filter(([, options]) => (options as ProxyOptions).ws)
         .map(([context]) => context);
-      expect(upgrades).toEqual([USER_DEVICE_CONNECT_PATH]);
+      expect(upgrades).toEqual([DEVICE_SOCKET]);
       expect(proxy).toHaveProperty("/api");
     }
   });
