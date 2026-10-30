@@ -5520,10 +5520,6 @@ msgstr "スペース"
 msgid "Speak"
 msgstr "読み上げ"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "読み上げのみ"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "この返信を読み上げ"

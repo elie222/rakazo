@@ -5520,10 +5520,6 @@ msgstr "Spaces"
 msgid "Speak"
 msgstr "Vorlesen"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "Nur sprechen"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "Diese Antwort vorlesen"

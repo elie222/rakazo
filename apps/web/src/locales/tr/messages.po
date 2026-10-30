@@ -5520,10 +5520,6 @@ msgstr "Alanlar"
 msgid "Speak"
 msgstr "Seslendir"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "Yalnızca seslendir"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "Bu yanıtı seslendir"

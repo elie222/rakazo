@@ -5520,10 +5520,6 @@ msgstr "스페이스"
 msgid "Speak"
 msgstr "읽기"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "음성 출력만"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "이 답변 읽기"

@@ -5520,10 +5520,6 @@ msgstr "מרחבים"
 msgid "Speak"
 msgstr "הקראה"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "הקראה בלבד"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "הקראת התשובה"

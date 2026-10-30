@@ -5520,10 +5520,6 @@ msgstr "工作区"
 msgid "Speak"
 msgstr "朗读"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "仅朗读"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "朗读这条回复"

@@ -5520,10 +5520,6 @@ msgstr "Espaces"
 msgid "Speak"
 msgstr "Parler"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "Parler uniquement"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "Lire cette réponse à voix haute"

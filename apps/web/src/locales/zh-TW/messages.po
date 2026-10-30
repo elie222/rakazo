@@ -5521,10 +5521,6 @@ msgstr "空間"
 msgid "Speak"
 msgstr "朗讀"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "僅朗讀"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "朗讀這條回覆"

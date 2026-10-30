@@ -5520,10 +5520,6 @@ msgstr "कार्यस्थान"
 msgid "Speak"
 msgstr "बोलें"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "केवल बोलें"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "यह उत्तर बोलकर सुनाएं"
