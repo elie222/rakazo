@@ -847,6 +847,8 @@ export const PluginPreviewSchema = z.object({
   skills: z.array(PluginPreviewSkillSchema),
   mcpServers: z.array(PluginPreviewMcpServerSchema),
   skipped: z.array(PluginPreviewSkippedSchema),
+  /** Skills left out because a built-in skill has the same name; clients released before it ignore it. */
+  builtinNames: z.array(z.string()).optional(),
 });
 export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
 

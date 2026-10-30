@@ -231,6 +231,10 @@ msgstr "hace {minutes} min"
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {# bot ahora usa el modelo predeterminado del espacio.} other {# bots ahora usan el modelo predeterminado del espacio.}}"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
+msgstr ""
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "{name} pregunta"
@@ -4092,7 +4096,7 @@ msgstr "Normal"
 msgid "Not a valid skill"
 msgstr "No es una habilidad válida"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr "No se agregaron: {0}"

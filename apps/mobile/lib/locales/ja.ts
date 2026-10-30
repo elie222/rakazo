@@ -1228,6 +1228,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not add skills": "スキルを追加できませんでした",
   "Could not remove skills": "スキルを削除できませんでした",
   "Not added: {list}": "追加されなかったもの: {list}",
+  "{name} (same name as a built-in skill)": "{name}（組み込みスキルと同じ名前）",
   "Remove skills": "スキルを削除",
   "Search skills": "スキルを検索",
   "Your skills": "あなたのスキル",
