@@ -385,6 +385,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(holdToTalk).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
   await expect(holdToTalk).toHaveCount(0);
+  // Stop can arrive over the live stream before the first send returns; Send stays disabled
+  // until then, and Tab would skip it.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await composer.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
