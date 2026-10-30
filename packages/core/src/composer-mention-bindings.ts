@@ -261,3 +261,42 @@ export function resolveComposerMentionEdit(
     caret: mention.start,
   };
 }
+
+/**
+ * Two-step delete for the mobile composer. A backspace right after a mention, or right after the
+ * space that follows it, keeps the text and selects the mention; the next one removes it together
+ * with that space. `selected` is the start of the mention that is currently selected, if any.
+ */
+export function resolveComposerMentionBackspace(
+  previous: string,
+  next: string,
+  bindings: readonly ComposerMentionBinding[],
+  hints: ComposerMentionEditHints,
+  selected: number | null,
+): {
+  text: string;
+  bindings: ComposerMentionBinding[];
+  caret: number;
+  selected: number | null;
+} | null {
+  if (next.length !== previous.length - 1) return null;
+  const edit = editBetween(previous, next, hints);
+  if (edit.length !== 0 || edit.end - edit.start !== 1) return null;
+  const binding = bindings.find(
+    (candidate) =>
+      edit.end === candidate.end ||
+      (edit.end === candidate.end + 1 && previous[candidate.end] === " "),
+  );
+  if (!binding) return null;
+  if (selected !== binding.start) {
+    return { text: previous, bindings: [...bindings], caret: edit.end, selected: binding.start };
+  }
+  const end = previous[binding.end] === " " ? binding.end + 1 : binding.end;
+  const text = previous.slice(0, binding.start) + previous.slice(end);
+  return {
+    text,
+    bindings: mapEdit(bindings, binding.start, end, 0, text),
+    caret: binding.start,
+    selected: null,
+  };
+}

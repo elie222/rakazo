@@ -10,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { TextProps } from "react-native";
 import { Alert, Pressable, Text, View } from "react-native";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
@@ -22,6 +22,7 @@ import { allowsSpace } from "../../lib/ask-action-label";
 import { plainAskTitle } from "../../lib/ask-title";
 import { t, useI18n } from "../../lib/i18n";
 import { isInlineImageBlock } from "../../lib/inline-image";
+import { UserMentionsContext, userMentionTargets } from "../../lib/message-mentions";
 import { messagePresentationSegments } from "../../lib/message-presentation";
 import { useResolvedAppearance } from "../../lib/native";
 import { speakerColorFor } from "../../lib/thread-message-text";
@@ -74,6 +75,23 @@ export const MessageBubble = memo(function MessageBubble({
   mentions,
   ...props
 }: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+  const { members, onOpenBot } = props;
+  const userMentions = useMemo(
+    () => (members?.length ? { targets: userMentionTargets(members), onOpenBot } : undefined),
+    [members, onOpenBot],
+  );
+  const body = <MessageBubbleWithMentions mentions={mentions} {...props} />;
+  return props.message.role === "user" && userMentions ? (
+    <UserMentionsContext.Provider value={userMentions}>{body}</UserMentionsContext.Provider>
+  ) : (
+    body
+  );
+});
+
+function MessageBubbleWithMentions({
+  mentions,
+  ...props
+}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
   if (!mentions?.length) return <MessageBubbleBody {...props} />;
   return (
     <MessageMentions
@@ -101,7 +119,7 @@ export const MessageBubble = memo(function MessageBubble({
       />
     </MessageMentions>
   );
-});
+}
 
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;

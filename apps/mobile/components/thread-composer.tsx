@@ -15,9 +15,10 @@ import {
   composerMentionSegments,
   composerMentionsForPrompt,
   composerSelectedMentions,
+  filterComposerMentionTargets,
   mentionChipKey,
+  resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
-  resolvePersonaColorDef,
   SLASH_ACTIONS,
   serializeComposerPrompt,
   truncateSlashDescription,
@@ -40,6 +41,7 @@ import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
+import { BotAvatar } from "./bot-avatar";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
@@ -48,6 +50,8 @@ type NativeEdit = {
   afterText: string;
   bindings: ComposerMentionBinding[];
   beforeSelections: ComposerMentionRange[];
+  /** Start of the mention that was selected when the edit began. */
+  selectedMention: number | null;
 };
 
 export type ThreadComposerHandle = {
@@ -57,6 +61,11 @@ export type ThreadComposerHandle = {
 };
 
 const DRAFT_SAVE_DELAY_MS = 500;
+const MENTION_PICKER_MAX_ROWS = 5;
+const MENTION_ROW_HEIGHT = 44;
+const MENTION_ROW_PADDING = 14;
+const MENTION_ROW_GAP = 12;
+const MENTION_AVATAR_SIZE = 24;
 
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
@@ -105,12 +114,10 @@ export function ThreadComposer({
   onSlashAction,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
-  const mentionStyle = (mention: ComposerMention) => ({
-    backgroundColor: tokens.muted,
-    color:
-      mention.kind === "bot" && mention.color
-        ? resolvePersonaColorDef(mention.id, mention.color).light
-        : undefined,
+  // A mention is plain text in the link blue; it turns bold while a backspace has it selected.
+  const mentionStyle = (selected: boolean) => ({
+    color: tokens.link,
+    fontWeight: selected ? ("bold" as const) : undefined,
   });
   const { fontScale } = useWindowDimensions();
   // The input text stops growing at MAX_FONT_SCALE, so its height limits stop there too.
@@ -130,6 +137,12 @@ export function ThreadComposer({
   const bindingsRef = useRef(saved.bindings);
   const selectionHistory = useRef<ComposerMentionRange[]>([]);
   const pendingNativeEdit = useRef<NativeEdit | null>(null);
+  const [selectedMention, setSelectedMention] = useState<number | null>(null);
+  const selectedMentionRef = useRef<number | null>(null);
+  function selectMention(start: number | null) {
+    selectedMentionRef.current = start;
+    setSelectedMention(start);
+  }
   function updateBindings(next: ComposerMentionBinding[]) {
     bindingsRef.current = next;
     setMentionBindings(next);
@@ -180,6 +193,7 @@ export function ThreadComposer({
       setSlashQuery(null);
       setSelectedSkill(null);
       updateBindings([]);
+      selectMention(null);
       selectionHistory.current = [];
       pendingNativeEdit.current = null;
     },
@@ -191,10 +205,10 @@ export function ThreadComposer({
   }));
   const mentionOptions = useMemo(() => {
     if (mentionQuery === null || composerMentionTargets.length === 0) return [];
-    const query = mentionQuery.query.trim().toLowerCase();
-    return composerMentionTargets
-      .filter((target) => !query || target.name.toLowerCase().startsWith(query))
-      .slice(0, 10);
+    return filterComposerMentionTargets(composerMentionTargets, mentionQuery.query).slice(
+      0,
+      MENTION_PICKER_MAX_ROWS,
+    );
   }, [composerMentionTargets, mentionQuery]);
   const slashQueryNormalized = slashQuery?.trim().toLowerCase() ?? null;
   const slashSkillOptions =
@@ -236,6 +250,9 @@ export function ThreadComposer({
     // Native text changes can arrive before their selection event. Infer the end
     // of the changed span so the picker never reads the previous caret position.
     const previous = draftRef.current;
+    // The native input can report the text it already shows again, for instance after the
+    // composer moved its caret. That is no edit, and the caret it implies would be the end.
+    if (nativeValue === previous) return;
     let prefix = 0;
     while (
       prefix < previous.length &&
@@ -257,6 +274,7 @@ export function ThreadComposer({
       afterText: nativeValue,
       bindings: bindingsRef.current,
       beforeSelections: [nativeSelection.current, ...selectionHistory.current.toReversed()],
+      selectedMention: selectedMentionRef.current,
     };
     pendingNativeEdit.current = edit;
     selectionHistory.current = [];
@@ -270,10 +288,18 @@ export function ThreadComposer({
   }
 
   function applyNativeEdit(edit: NativeEdit, after: ComposerMentionRange) {
-    const resolved = resolveComposerMentionEdit(edit.beforeText, edit.afterText, edit.bindings, {
-      before: edit.beforeSelections,
-      after,
-    });
+    const hints = { before: edit.beforeSelections, after };
+    const resolved = resolveComposerMentionBackspace(
+      edit.beforeText,
+      edit.afterText,
+      edit.bindings,
+      hints,
+      edit.selectedMention,
+    ) ?? {
+      ...resolveComposerMentionEdit(edit.beforeText, edit.afterText, edit.bindings, hints),
+      selected: null,
+    };
+    selectMention(resolved.selected);
     updateBindings(resolved.bindings);
     draftRef.current = resolved.text;
     setDraft(resolved.text);
@@ -286,6 +312,7 @@ export function ThreadComposer({
     const next = bindComposerMention(draftRef.current, mentionQuery, mention, bindingsRef.current);
     pendingNativeEdit.current = null;
     updateBindings(next.bindings);
+    selectMention(null);
     draftRef.current = next.text;
     setDraft(next.text);
     nativeSelection.current = { start: next.caret, end: next.caret };
@@ -304,6 +331,7 @@ export function ThreadComposer({
     completedSelection.current = null;
     setSelection(nativeSelection.current);
     updateBindings([]);
+    selectMention(null);
     selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
@@ -316,6 +344,7 @@ export function ThreadComposer({
     completedSelection.current = null;
     setSelection(nativeSelection.current);
     updateBindings([]);
+    selectMention(null);
     selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
@@ -349,36 +378,50 @@ export function ThreadComposer({
             overflow: "hidden",
           }}
         >
-          {mentionOptions.map((mention) => (
-            <Pressable
-              key={mentionChipKey(mention)}
-              accessibilityLabel={t("@{name}", { name: mention.name })}
-              onPress={() => insertMention(mention)}
-              style={{
-                flexDirection: "row",
-                alignItems: "flex-start",
-                gap: 10,
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-              }}
-            >
-              <MentionOptionIcon mention={mention} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ color: tokens.foreground, fontSize: 14 }}>@{mention.name}</Text>
-                {mention.subtitle ? (
+          {mentionOptions.map((mention, index) => (
+            <View key={mentionChipKey(mention)}>
+              {index > 0 ? (
+                <View
+                  style={{
+                    height: 1,
+                    marginStart: MENTION_ROW_PADDING + MENTION_AVATAR_SIZE + MENTION_ROW_GAP,
+                    backgroundColor: tokens.border,
+                  }}
+                />
+              ) : null}
+              <Pressable
+                accessibilityLabel={t("@{name}", { name: mention.name })}
+                onPress={() => insertMention(mention)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: MENTION_ROW_GAP,
+                  height: MENTION_ROW_HEIGHT,
+                  paddingHorizontal: MENTION_ROW_PADDING,
+                }}
+              >
+                <MentionOptionIcon mention={mention} />
+                <Text
+                  numberOfLines={1}
+                  style={{ flexShrink: 1, color: tokens.foreground, fontSize: 17 }}
+                >
+                  {mention.name}
+                </Text>
+                {mention.kind === "routine" || mention.kind === "connector" ? (
                   <Text
                     numberOfLines={1}
                     style={{
+                      flex: 1,
+                      textAlign: "right",
                       color: tokens.mutedForeground,
-                      fontSize: 12.5,
-                      marginTop: 2,
+                      fontSize: 13,
                     }}
                   >
                     {mention.subtitle}
                   </Text>
                 ) : null}
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
           ))}
         </ScrollView>
       ) : null}
@@ -596,6 +639,23 @@ export function ThreadComposer({
                   }
                   selectionHistory.current = [...selectionHistory.current.slice(-3), next];
                   nativeSelection.current = next;
+                  // Moving the caret out of a selected mention and its trailing space deselects it. The
+                  // caret may still report the character a backspace is about to delete.
+                  const selectedBinding = bindingsRef.current.find(
+                    (binding) => binding.start === selectedMentionRef.current,
+                  );
+                  if (
+                    selectedBinding &&
+                    !(
+                      next.start === next.end &&
+                      next.start > selectedBinding.start &&
+                      next.start <=
+                        selectedBinding.end +
+                          (draftRef.current[selectedBinding.end] === " " ? 1 : 0)
+                    )
+                  ) {
+                    selectMention(null);
+                  }
                   setSelection(undefined);
                   if (
                     next.start === completedSelection.current &&
@@ -635,7 +695,11 @@ export function ThreadComposer({
                 {composerMentionSegments(draft, mentionBindings).map((segment, index) => (
                   <Text
                     key={index}
-                    style={segment.binding ? mentionStyle(segment.binding.mention) : undefined}
+                    style={
+                      segment.binding
+                        ? mentionStyle(segment.binding.start === selectedMention)
+                        : undefined
+                    }
                   >
                     {segment.text}
                   </Text>
@@ -711,61 +775,39 @@ export function ThreadComposer({
 
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   const tokens = useMobileTokens();
-  if (mention.kind === "routine") {
+  if (mention.kind === "bot") {
     return (
-      <NativeSymbol ios="clock" android="time-outline" size={16} color={tokens.mutedForeground} />
-    );
-  }
-  if (mention.kind === "connector") {
-    return (
-      <NativeSymbol
-        ios="puzzlepiece.extension"
-        android="extension-puzzle-outline"
-        size={16}
-        color={tokens.mutedForeground}
+      <BotAvatar
+        color={mention.color ?? tokens.mutedForeground}
+        avatarSet={mention.avatarSet}
+        identity={mention.id}
+        size={MENTION_AVATAR_SIZE}
       />
     );
   }
-  if (mention.kind === "group") {
-    return (
-      <View
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          backgroundColor: tokens.muted,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={{ color: tokens.foreground, fontSize: 9 }}>G</Text>
-      </View>
-    );
-  }
-  if (mention.kind === "everyone") {
-    return (
-      <View
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          backgroundColor: tokens.muted,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={{ color: tokens.foreground, fontSize: 9 }}>@</Text>
-      </View>
-    );
-  }
+  const symbol =
+    mention.kind === "routine"
+      ? ({ ios: "clock", android: "time-outline" } as const)
+      : mention.kind === "connector"
+        ? ({ ios: "puzzlepiece.extension", android: "extension-puzzle-outline" } as const)
+        : ({ ios: "person.3.fill", android: "people" } as const);
   return (
     <View
       style={{
-        width: 16,
-        height: 16,
-        borderRadius: 4,
-        backgroundColor: mention.color ?? tokens.mutedForeground,
+        width: MENTION_AVATAR_SIZE,
+        height: MENTION_AVATAR_SIZE,
+        borderRadius: MENTION_AVATAR_SIZE / 2,
+        backgroundColor: tokens.muted,
+        alignItems: "center",
+        justifyContent: "center",
       }}
-    />
+    >
+      <NativeSymbol
+        ios={symbol.ios}
+        android={symbol.android}
+        size={14}
+        color={tokens.mutedForeground}
+      />
+    </View>
   );
 }
