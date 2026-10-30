@@ -774,6 +774,10 @@ msgstr "回答済み: {answer}"
 msgid "Anthropic API"
 msgstr "Anthropic API"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Anthropic Messages"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "自分のキーで、あらゆるモデルを"
@@ -1208,6 +1212,10 @@ msgstr "変更中…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "チャートを表示できませんでした: {error}"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Chat Completions"
+msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -4539,6 +4547,10 @@ msgstr "プログラム: {name}"
 msgid "Protected input"
 msgstr "保護された入力"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Protocol"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -4911,6 +4923,10 @@ msgstr "ボットサイドバーのサイズを変更"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "パネルのサイズを変更"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Responses"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"
