@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   sheet: vi.fn(),
   confirmDelete: vi.fn(),
   modal: vi.fn(),
+  keyboardAvoider: vi.fn(),
   views: vi.fn(),
   listeners: new Map<string, (event: { endCoordinates: { height: number } }) => void>(),
   styles: [] as Record<string, unknown>[],
@@ -72,6 +73,12 @@ vi.mock("../components/native-action-button", () => ({
     onPress: () => void;
     disabled?: boolean;
   }) => createElement("button", { type: "button", onClick: onPress, disabled }, label),
+}));
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardAvoidingView: (props: { children: ReactNode }) => {
+    mocks.keyboardAvoider(props);
+    return createElement("div", null, props.children);
+  },
 }));
 vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
@@ -460,6 +467,24 @@ describe("inbox organization actions", () => {
     await next.click("Delete section");
     expect(mocks.confirmDelete).toHaveBeenCalledOnce();
     expect(next.props.onDeleteSection).toHaveBeenCalledWith("one");
+  });
+  it("presents a native iOS form sheet instead of the custom overlay", async () => {
+    mocks.platform = "ios";
+    await loadComponents();
+    const { props, click } = await organize();
+    expect(mocks.sheet).not.toHaveBeenCalled();
+    const modal = mocks.modal.mock.lastCall?.[0];
+    expect(modal).toMatchObject({
+      presentationStyle: "formSheet",
+      allowSwipeDismissal: true,
+      onRequestClose: props.onClose,
+    });
+    expect(modal.transparent).toBeUndefined();
+    // The sheet sits below the top of the screen, so keyboard avoidance must offset for it.
+    expect(mocks.keyboardAvoider.mock.lastCall?.[0]).toMatchObject({ automaticOffset: true });
+    await click("Second");
+    expect(props.onUpdate).toHaveBeenCalledWith({ sectionId: "two" });
+    expect(props.onClose).toHaveBeenCalledOnce();
   });
   it("keeps the original fade Modal when native views are unavailable", async () => {
     mocks.missing = "SlotView";

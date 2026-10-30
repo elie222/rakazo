@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView as SheetKeyboardAvoidingView } from "react-native-keyboard-controller";
 import type { MobileBot, MobileBotSection } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
@@ -91,7 +92,15 @@ export function BotOrganizeModal({
   if (Sheet === undefined) return null;
 
   const content = (
-    <View style={Sheet ? styles.nativeSheet : styles.sheet}>
+    <View
+      style={
+        Sheet
+          ? styles.nativeSheet
+          : Platform.OS === "ios"
+            ? [styles.nativeSheet, styles.formSheetContent]
+            : styles.sheet
+      }
+    >
       <Text style={styles.title} numberOfLines={1}>
         {bot.name}
       </Text>
@@ -231,12 +240,24 @@ export function BotOrganizeModal({
       </NativeSheet>
     );
   }
+  if (Platform.OS === "ios") {
+    return (
+      <Modal
+        animationType="slide"
+        presentationStyle="formSheet"
+        allowSwipeDismissal
+        onRequestClose={onClose}
+      >
+        {/* The sheet starts below the top of the screen; the offset keeps Cancel above the keyboard. */}
+        <SheetKeyboardAvoidingView behavior="padding" automaticOffset style={styles.formSheet}>
+          {content}
+        </SheetKeyboardAvoidingView>
+      </Modal>
+    );
+  }
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
-      >
+      <KeyboardAvoidingView style={styles.overlay}>
         <Pressable
           accessibilityLabel={t("Close chat organization")}
           style={StyleSheet.absoluteFill}
@@ -295,6 +316,9 @@ function createBotOrganizeStyles() {
       paddingTop: 18,
       paddingBottom: 28,
     },
+    formSheet: { flex: 1, backgroundColor: tokens.background, paddingTop: 18 },
+    // The keyboard shrinks the section list so the name field stays visible.
+    formSheetContent: { flexShrink: 1 },
     nativeSheet: {
       paddingHorizontal: 16,
       paddingBottom: 28,
