@@ -7,6 +7,7 @@ import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
+  MESSAGING_DRAIN_PAGE_SIZE,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
 } from "./messaging-delivery.js";
 import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
@@ -139,34 +140,51 @@ function createDeps(overrides: {
         if (where?.id) return rows.find((row) => row.id === where.id) ?? null;
         return null;
       }),
-      findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
-        const now = Date.now();
-        const found = rows.filter((row) => {
-          if (where?.status && row.status !== where.status) return false;
-          if (!where?.OR) return row.status === "pending";
-          const next = row.nextAttemptAt;
-          if (next == null) return true;
-          const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
-          return nextMs <= now;
-        });
-        // The drain reads in send order (orderBy createdAt).
-        return found.every((row) => row.createdAt instanceof Date)
-          ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
-          : found;
-      }),
-      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
+      findMany: vi.fn(
+        async ({
+          where,
+          take,
+        }: {
+          where?: { status?: string; OR?: unknown[] };
+          take?: number;
+        } = {}) => {
+          const now = Date.now();
+          const found = rows.filter((row) => {
+            if (where?.status && row.status !== where.status) return false;
+            if (!where?.OR) return row.status === "pending";
+            const next = row.nextAttemptAt;
+            if (next == null) return true;
+            const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
+            return nextMs <= now;
+          });
+          // The drain reads in send order (orderBy createdAt).
+          const ordered = found.every((row) => row.createdAt instanceof Date)
+            ? found.sort(
+                (a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime(),
+              )
+            : found;
+          return take ? ordered.slice(0, take) : ordered;
+        },
+      ),
+      // An earlier row to the same conversation that is still pending or in
+      // flight (see hasUndeliveredEarlierRow).
       findFirst: vi.fn(
         async ({
           where,
         }: {
           where: {
-            sourceMessageId: string;
             createdAt: { lt: Date };
+            identityId?: string;
+            threadId?: string;
+            sourceMessageId?: string;
             OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
           };
         }) =>
           rows.find((row) => {
-            if (row.sourceMessageId !== where.sourceMessageId) return false;
+            if (where.sourceMessageId && row.sourceMessageId !== where.sourceMessageId)
+              return false;
+            if (where.identityId && row.identityId !== where.identityId) return false;
+            if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
             if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
             return where.OR.some((condition) =>
               condition.status === "pending"
@@ -750,19 +768,25 @@ function createChannelDeps(
           return nextMs <= now;
         });
       }),
-      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
+      // An earlier row to the same conversation that is still pending or in
+      // flight (see hasUndeliveredEarlierRow).
       findFirst: vi.fn(
         async ({
           where,
         }: {
           where: {
-            sourceMessageId: string;
             createdAt: { lt: Date };
+            identityId?: string;
+            threadId?: string;
+            sourceMessageId?: string;
             OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
           };
         }) =>
           rows.find((row) => {
-            if (row.sourceMessageId !== where.sourceMessageId) return false;
+            if (where.sourceMessageId && row.sourceMessageId !== where.sourceMessageId)
+              return false;
+            if (where.identityId && row.identityId !== where.identityId) return false;
+            if (where.threadId !== undefined && row.threadId !== where.threadId) return false;
             if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
             return where.OR.some((condition) =>
               condition.status === "pending"
@@ -1628,4 +1652,117 @@ describe("accepted outbound bookkeeping failures", () => {
       expect(deps.rows[0]!.status).toBe("sent");
     },
   );
+});
+
+describe("drain lanes", () => {
+  const groupRow = (id: string, threadId: string, offset: number) => ({
+    id,
+    idempotencyKey: `msg:${id}`,
+    kind: "group",
+    identityId: null,
+    threadId,
+    body: id,
+    status: "pending",
+    sourceMessageId: `${id}-source`,
+    providerHandle: null,
+    attempts: 0,
+    nextAttemptAt: null,
+    createdAt: new Date(1_000 + offset),
+  });
+
+  it("sends separate conversations without waiting for a slow one", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("slow-1", "t-slow", 0), groupRow("fast-1", "t-fast", 1)],
+    });
+    let releaseSlow = () => {};
+    const slowSend = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await slowSend;
+      return { handle: "h-slow" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    // Both conversations are on the wire before the slow one answers.
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(2));
+    releaseSlow();
+    await drained;
+
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("keeps one conversation in order while its first send is running", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    let releaseFirst = () => {};
+    const firstSend = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    deps.sendToThread.mockImplementationOnce(async () => {
+      await firstSend;
+      return { handle: "h-1" };
+    });
+
+    const drained = deliverMessagingOutbound(deps, {}, context);
+    await vi.waitFor(() => expect(deps.sendToThread).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[1]!.status).toBe("pending");
+
+    releaseFirst();
+    await drained;
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "t-a", body: "a-1" },
+      { threadId: "t-a", body: "a-2" },
+    ]);
+  });
+
+  it("leaves a conversation alone when another drain claimed its oldest row", async () => {
+    const deps = createDeps({
+      run: null,
+      outboundRows: [groupRow("a-1", "t-a", 0), groupRow("a-2", "t-a", 1)],
+    });
+    (
+      deps.prisma.messagingOutbound.updateMany as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({ count: 0 });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    // Overtaking would reorder the conversation, so the later row waits too.
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
+  });
+
+  it("does not queue another drain when the whole page is waiting out a backoff", async () => {
+    const rows = Array.from({ length: MESSAGING_DRAIN_PAGE_SIZE }, (_, index) => ({
+      ...groupRow(`w-${index}`, `t-${index}`, index),
+      nextAttemptAt: new Date(Date.now() + 60_000),
+    }));
+    const deps = createDeps({ run: null, outboundRows: rows });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    // Re-queuing here would repeat the same page forever.
+    expect(deps.sendToThread).not.toHaveBeenCalled();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("reads one page and queues the rest of the backlog", async () => {
+    const rows = Array.from({ length: MESSAGING_DRAIN_PAGE_SIZE + 1 }, (_, index) =>
+      groupRow(`g-${index}`, `t-${index}`, index),
+    );
+    const deps = createDeps({ run: null, outboundRows: rows });
+
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledTimes(MESSAGING_DRAIN_PAGE_SIZE);
+    expect(deps.rows.filter((row) => row.status === "pending")).toHaveLength(1);
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "messaging.deliver" }),
+    );
+  });
 });
