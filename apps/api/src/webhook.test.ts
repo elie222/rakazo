@@ -609,18 +609,33 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("acme/app");
   });
 
+  const fullMetadata = { event: "pull_request", repositoryId: 55, number: 42, action: "opened" };
   it.each([
     {
       name: "reads the payload field of GitHub's default form encoding",
+      contentType: "application/x-www-form-urlencoded",
       body: (json: string) => new URLSearchParams({ payload: json }).toString(),
-      metadata: { event: "pull_request", repositoryId: 55, number: 42, action: "opened" },
+      metadata: fullMetadata,
+    },
+    {
+      name: "matches the form media type case-insensitively",
+      contentType: "Application/X-WWW-Form-Urlencoded ; charset=utf-8",
+      body: (json: string) => new URLSearchParams({ payload: json }).toString(),
+      metadata: fullMetadata,
+    },
+    {
+      name: "keeps a JSON delivery whose parameter mentions the form type",
+      contentType: "application/json; profile=application/x-www-form-urlencoded",
+      body: (json: string) => json,
+      metadata: fullMetadata,
     },
     {
       name: "keeps a form body without a payload field event-only",
+      contentType: "application/x-www-form-urlencoded",
       body: (json: string) => new URLSearchParams({ data: json }).toString(),
       metadata: { event: "pull_request" },
     },
-  ])("$name", async ({ body, metadata }) => {
+  ])("$name", async ({ contentType, body, metadata }) => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Review PRs", prompt: "Inspect the change" }],
     });
@@ -629,7 +644,7 @@ describe("GitHub event HTTP route", () => {
     const request = await githubRequest(body(json), SECRET, "delivery-form", "pull_request");
     const res = await app.request("/api/v1/bots/bot-1/github", {
       ...request,
-      headers: { ...request.headers, "content-type": "application/x-www-form-urlencoded" },
+      headers: { ...request.headers, "content-type": contentType },
     });
     expect(res.status).toBe(200);
     const prompt = String(deps.sendUserMessage.mock.calls[0]![0].prompt);

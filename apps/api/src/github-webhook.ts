@@ -222,9 +222,11 @@ export function mountGithubWebhookRoute(
 
     const contentType = c.req.header("content-type");
     // GitHub's default form content type sends the JSON in the `payload` field.
-    const body = contentType?.includes("application/x-www-form-urlencoded")
-      ? (new URLSearchParams(raw).get("payload") ?? "")
-      : raw;
+    const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+    const body =
+      mediaType === "application/x-www-form-urlencoded"
+        ? (new URLSearchParams(raw).get("payload") ?? "")
+        : raw;
     const payload = parseWebhookPayload(body, contentType);
     const githubEvent = githubEventName(c.req.header("x-github-event"));
     const eventPrompt = formatGithubEventPrompt(githubEvent, payload);
