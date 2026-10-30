@@ -291,6 +291,7 @@ describe("secrets model-visibility conformance", () => {
             connectorId: "pipedream",
             externalId: "gmail",
             displayName: "Gmail",
+            providerRef: "apn_gmail",
           },
         ],
       } as AdapterContext;
