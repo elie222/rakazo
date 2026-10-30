@@ -53,6 +53,9 @@ const OnboardingPage = lazyComponent(() =>
 const WelcomePage = lazyComponent(() =>
   import("./pages/Welcome").then((module) => module.WelcomePage),
 );
+const NotFoundPage = lazyComponent(() =>
+  import("./pages/NotFound").then((module) => module.NotFoundPage),
+);
 const ArtifactsPage = lazyComponent(() =>
   import("./pages/Artifacts").then((module) => module.ArtifactsPage),
 );
@@ -268,6 +271,7 @@ function SessionApp() {
                 <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 <Route path="/app/:botId" element={<ShellPage />} />
               </Route>
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </div>

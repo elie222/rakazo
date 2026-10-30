@@ -3035,6 +3035,10 @@ msgstr "正在準備"
 msgid "Git event"
 msgstr "Git 事件"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "返回首頁"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4314,6 +4318,10 @@ msgstr "擁有者"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "第 {page} 頁，共 {count} 頁"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "找不到頁面"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"

@@ -3034,6 +3034,10 @@ msgstr "מתכונן"
 msgid "Git event"
 msgstr "אירוע Git"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "לדף הבית"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4313,6 +4317,10 @@ msgstr "בעלים"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "עמוד {page} מתוך {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "הדף לא נמצא"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"

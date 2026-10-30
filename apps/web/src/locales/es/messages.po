@@ -3034,6 +3034,10 @@ msgstr "Preparando"
 msgid "Git event"
 msgstr "Evento de Git"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "Ir al inicio"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4313,6 +4317,10 @@ msgstr "Propietario"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Página {page} de {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "Página no encontrada"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"

@@ -3034,6 +3034,10 @@ msgstr "Подготовка"
 msgid "Git event"
 msgstr "Git-событие"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "На главную"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4313,6 +4317,10 @@ msgstr "Владелец"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Страница {page} из {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "Страница не найдена"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"

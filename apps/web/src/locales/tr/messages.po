@@ -3034,6 +3034,10 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "Ana sayfaya git"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4313,6 +4317,10 @@ msgstr "Sahip"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Sayfa {page} / {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "Sayfa bulunamadı"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"

@@ -3034,6 +3034,10 @@ msgstr ""
 msgid "Git event"
 msgstr "Git 이벤트"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "홈으로"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
@@ -4313,6 +4317,10 @@ msgstr "소유자"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "{page} / {count}페이지"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "페이지를 찾을 수 없습니다"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
