@@ -1006,6 +1006,7 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("stdio"),
     command: z.string().min(1).max(512),
+    /** Update: send none to keep the stored arguments while the command is unchanged. */
     args: z.array(z.string().max(2048)).max(64).default([]),
     env: z
       .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string().max(4096))
@@ -1048,7 +1049,8 @@ export const McpServerSchema = z.object({
   transport: McpTransportSchema,
   endpoint: z.string().url().nullable(),
   command: z.string().nullable(),
-  args: z.array(z.string()),
+  /** Arguments are stored encrypted and never returned. */
+  hasArgs: z.boolean(),
   envKeys: z.array(z.string()),
   /** Env variables that receive a credential file's path instead of a value. */
   fileKeys: z.array(z.string()),

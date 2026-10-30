@@ -1748,7 +1748,7 @@ describe("MCP pre-registered OAuth client", () => {
           expect(secrets.put).not.toHaveBeenCalled();
         });
 
-        it("drops the files when the credential is cleared", async () => {
+        it("drops the files but keeps the arguments when the credential is cleared", async () => {
           const { client, material, server } = harness(true, storedWithFile);
 
           const updated = await client.mcp.servers.update({
@@ -1758,6 +1758,23 @@ describe("MCP pre-registered OAuth client", () => {
 
           expect(updated.fileKeys).toEqual([]);
           expect(server()?.files).toEqual({});
+          expect(material()).toEqual({ args: stdio.args });
+        });
+
+        it("drops the secret when the credential is cleared from a server without arguments", async () => {
+          const { client, material, server } = harness(true, storedWithFile);
+
+          await client.mcp.servers.update({
+            ...base,
+            config: {
+              ...base.config,
+              command: "npx",
+              args: [],
+              oauthClient: null,
+              clearCredential: true,
+            },
+          });
+
           expect(server()?.secretId).toBeNull();
           expect(material).toThrow();
         });
@@ -1845,7 +1862,7 @@ describe("MCP pre-registered OAuth client", () => {
         const updated = await client.mcp.servers.update(update);
 
         expect(updated.oauthClientId).toBe("client-1.apps.example.test");
-        expect(material()).toEqual(stored);
+        expect(material()).toEqual({ ...stored, args: stdio.args });
       });
 
       it("clears the grant when the update changes the scope", async () => {
@@ -2375,6 +2392,59 @@ describe("MCP server health", () => {
 
       expect(created.health.status).toBe("unknown");
       expect(h.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("keeps stdio arguments in the encrypted credential, never in the row or the response", async () => {
+      const h = harness({ row: null });
+      const put = vi.mocked(h.deps.secrets.put).mockResolvedValue({
+        id: "secret-1",
+        ciphertext: "v2:fake",
+      } as never);
+
+      const created = await h.client.mcp.servers.create({
+        ...stdioInput,
+        args: ["--api-key", "fake-key"],
+      });
+
+      expect(JSON.parse(String(put.mock.calls[0]?.[0]))).toMatchObject({
+        args: ["--api-key", "fake-key"],
+      });
+      const data = vi.mocked(h.deps.prisma.mcpServer.create).mock.calls[0]?.[0].data;
+      expect(data).not.toHaveProperty("args");
+      expect(data).toMatchObject({ hasArgs: true, secretId: "secret-1" });
+      expect(created).not.toHaveProperty("args");
+      expect(created.hasArgs).toBe(true);
+    });
+
+    it("moves a server's plaintext arguments into its credential when it is saved", async () => {
+      const h = harness({ row: baseRow({ args: ["--api-key", "fake-key"] }) });
+      const put = vi.mocked(h.deps.secrets.put).mockResolvedValue({
+        id: "secret-1",
+        ciphertext: "v2:fake",
+      } as never);
+
+      const updated = await h.client.mcp.servers.update({
+        id: "server-1",
+        config: { ...stdioInput, args: [] },
+      });
+
+      expect(JSON.parse(String(put.mock.calls[0]?.[0]))).toMatchObject({
+        args: ["--api-key", "fake-key"],
+      });
+      expect(h.row()).toMatchObject({ args: [], hasArgs: true, secretId: "secret-1" });
+      expect(updated.hasArgs).toBe(true);
+    });
+
+    it("still reports arguments a server kept in plaintext", async () => {
+      const h = harness();
+      (h.deps.prisma.mcpServer as unknown as { findMany: unknown }).findMany = vi.fn(async () => [
+        h.row(),
+      ]);
+
+      const [listed] = await h.client.mcp.servers.list();
+
+      expect(listed).not.toHaveProperty("args");
+      expect(listed?.hasArgs).toBe(true);
     });
 
     it("asks for a client ID when the server cannot register one", async () => {

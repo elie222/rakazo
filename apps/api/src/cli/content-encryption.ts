@@ -3,9 +3,11 @@ import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import {
   contentKeyProviderFromEnv,
+  createSecretStore,
   EncryptedSecretStore,
   LocalArtifactStore,
   upgradeLegacySecrets,
+  withSecretPersistence,
 } from "@rakazo/adapters";
 import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
@@ -19,13 +21,15 @@ import {
   rotateSpaceDataKeys,
   runAsSystem,
 } from "@rakazo/db";
+import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
 import { createSecretMigrationRepository } from "../secret-migration.js";
 
 loadRootEnv();
 
 const USAGE = `Usage: content-encryption <command> [--dry-run]
   status               Rows and artifacts still in plaintext, keys per master key
-  migrate              Encrypt existing content and upgrade legacy credentials
+  migrate              Encrypt existing content, upgrade legacy credentials and
+                       move MCP server arguments into their encrypted credentials
   rotate [--reencrypt] Re-wrap space keys under the active master key; with
                        --reencrypt also add new data keys and re-encrypt content
   reencrypt            Re-encrypt content still under an older data key
@@ -165,6 +169,22 @@ async function upgradeCredentials() {
   if (counts.failed) process.exitCode = 1;
 }
 
+async function moveMcpArgs() {
+  const secrets = createSecretStore(resolveEncryptionKey(process.env));
+  await secrets.start();
+  try {
+    const counts = await moveMcpArgsIntoSecrets(withSecretPersistence(prisma, secrets), secrets, {
+      dryRun,
+      signal: controller.signal,
+    });
+    write(
+      `mcp server arguments: ${counts.moved} encrypted, ${counts.planned} planned, ${counts.concurrent} changed concurrently`,
+    );
+  } finally {
+    await secrets.close();
+  }
+}
+
 // Reads or rewrites every tenant's content, so it runs across Spaces.
 try {
   await runAsSystem("content encryption maintenance", async () => {
@@ -190,6 +210,7 @@ try {
         write("CONTENT_ENCRYPTION is off: new content is still stored in plaintext");
       await rewriteContent("encrypt");
       await upgradeCredentials();
+      await moveMcpArgs();
     } else if (command === "rotate") {
       const keys = await rewrapSpaceKeys(prisma, contentKeys, {
         dryRun,

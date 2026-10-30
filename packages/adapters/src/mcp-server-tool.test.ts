@@ -150,6 +150,13 @@ describe("buildMcpCredentialBlob", () => {
     ).toEqual(JSON.stringify({ secret: "tok", env: {}, headers: { Authorization: "Bearer tok" } }));
   });
 
+  it("stores stdio arguments, which may carry tokens, in the blob", () => {
+    expect(
+      JSON.parse(buildMcpCredentialBlob({ args: ["--api-key", "fake-key"] }) ?? "null"),
+    ).toEqual({ env: {}, headers: {}, args: ["--api-key", "fake-key"] });
+    expect(buildMcpCredentialBlob({ args: [] })).toBeNull();
+  });
+
   it("stores a pre-registered OAuth client on its own", () => {
     expect(
       JSON.parse(

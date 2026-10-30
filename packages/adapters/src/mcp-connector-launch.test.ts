@@ -86,11 +86,13 @@ function contextFor(botId = "bot-1") {
 describe("MCP connector managed stdio launch", () => {
   let root: string;
   let env: Record<string, string>;
+  let args: string[] | undefined;
   const updateMany = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ count: 1 }));
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "rakazo-mcp-launch-"));
     env = {};
+    args = undefined;
     updateMany.mockClear();
   });
 
@@ -132,7 +134,7 @@ describe("MCP connector managed stdio launch", () => {
       secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })) },
       mcpServer: { updateMany },
     };
-    const secrets = { load: vi.fn(async () => JSON.stringify({ env })) };
+    const secrets = { load: vi.fn(async () => JSON.stringify({ env, args })) };
     return new McpConnector(prisma as never, secrets as never, {
       stdioEnabled: options.stdioEnabled ?? true,
       allowedCommands: options.allowedCommands ?? ["npx"],
@@ -170,6 +172,20 @@ describe("MCP connector managed stdio launch", () => {
           expect.objectContaining({ healthStatus: "ok", healthToolCount: 1 }),
         ),
       );
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("launches with the arguments kept in the encrypted credential", async () => {
+    await publishPackage(root);
+    args = ["-y", SPEC, "--region", "us"];
+    const connector = connectorFor({ server: { ...SERVER, args: [] } });
+    try {
+      const [tool] = await connector.discoverTools(contextFor());
+      expect(await callTool(connector, tool!)).toMatchObject([
+        { type: "result", data: { content: [{ text: "hi --region us" }] } },
+      ]);
     } finally {
       await connector.close();
     }

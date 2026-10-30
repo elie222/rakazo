@@ -1023,7 +1023,8 @@ export class McpConnector implements ConnectorProvider {
       let digest = plaintext === undefined ? undefined : credentialDigest(plaintext);
       material = plaintext === undefined ? {} : (JSON.parse(plaintext) as OAuthMaterial);
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
-      const args = Array.isArray(server.args) ? server.args.map(String) : [];
+      // Rows saved before arguments moved into the secret still hold them in plaintext.
+      const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;

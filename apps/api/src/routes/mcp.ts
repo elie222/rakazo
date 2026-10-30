@@ -38,7 +38,7 @@ import {
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
 } from "../mcp-approval.js";
-import { buildMcpUpdateMaterial } from "../mcp-material.js";
+import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
@@ -477,9 +477,11 @@ export function mcpRoutes(ctx: RouterContext) {
               await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
             }
             const endpointChanged = existing.endpoint !== nextEndpoint;
+            existingMaterial.args ??= legacyMcpArgs(existing.args);
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: endpointChanged,
               endpointChanged,
+              commandChanged: existing.command !== ("command" in config ? config.command : null),
             });
             if (update.action === "store" && config.transport === "stdio") {
               await assertMcpRemoteEndpoint(
@@ -564,7 +566,8 @@ export function mcpRoutes(ctx: RouterContext) {
                       transport: config.transport,
                       endpoint: nextEndpoint,
                       command: "command" in config ? config.command : null,
-                      args: ("args" in config ? config.args : []) as Prisma.InputJsonValue,
+                      args: [],
+                      hasArgs: update.action === "store" && Boolean(update.material.args?.length),
                       env: ("env" in config
                         ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,

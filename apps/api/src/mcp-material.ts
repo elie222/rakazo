@@ -17,6 +17,8 @@ type McpOAuthClient = {
  * `oauthClient` is a client the user registered with the provider themselves. */
 export type McpSecretMaterial = {
   secret?: string;
+  /** Stdio launch arguments, which may carry tokens. */
+  args?: string[];
   env?: Record<string, string>;
   /** Credential file templates by the env variable that receives the file's path. */
   files?: Record<string, string>;
@@ -25,18 +27,26 @@ export type McpSecretMaterial = {
   oauth?: Record<string, unknown>;
 };
 
+/** Arguments a row still holds in plaintext from before they moved into its secret. */
+export function legacyMcpArgs(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 export type McpMaterialUpdate =
   | { action: "keep" }
   | { action: "store"; material: McpSecretMaterial };
 
 /** An empty "store" material means credentials were cleared: the caller deletes the secret
  * row and nulls `secretId` instead of storing an empty object. env/headers are full-replace;
- * files are kept when omitted. OAuth state is dropped when the endpoint changed, since tokens
- * issued for one endpoint must never be sent to another server. */
+ * files are kept when omitted, and stdio arguments when none are sent for the same command.
+ * OAuth state is dropped when the endpoint changed, since tokens issued for one endpoint must
+ * never be sent to another server. */
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,
-  options: { clearOAuth?: boolean; endpointChanged?: boolean } = {},
+  options: { clearOAuth?: boolean; endpointChanged?: boolean; commandChanged?: boolean } = {},
 ): McpMaterialUpdate {
   const client = nextOAuthClient(
     existing.oauthClient,
@@ -51,11 +61,20 @@ export function buildMcpUpdateMaterial(
     if (client.next) material.oauthClient = client.next;
     else delete material.oauthClient;
   }
+  const { files: storedFiles, args: storedArgs, ...rest } = material;
+  const args =
+    config.transport !== "stdio"
+      ? []
+      : config.args?.length || options.commandChanged
+        ? (config.args ?? [])
+        : (storedArgs ?? []);
+  const withArgs = args.length > 0 ? { args } : {};
   const clearing = config.clearCredential === true;
   if (clearing) {
     return {
       action: "store",
       material: {
+        ...withArgs,
         ...(material.oauthClient ? { oauthClient: material.oauthClient } : {}),
         ...(material.oauth ? { oauth: material.oauth } : {}),
       },
@@ -72,7 +91,6 @@ export function buildMcpUpdateMaterial(
         );
   const env = "env" in config ? keepBlank(config.env, material.env) : undefined;
   const headers = "headers" in config ? keepBlank(config.headers, material.headers) : undefined;
-  const { files: storedFiles, ...withoutFiles } = material;
   const files =
     config.transport === "stdio"
       ? config.files
@@ -82,6 +100,7 @@ export function buildMcpUpdateMaterial(
   const hasFiles = files !== undefined && Object.keys(files).length > 0;
   const existingHasMaterial = Boolean(
     material.secret ||
+      storedArgs?.length ||
       (material.env && Object.keys(material.env).length > 0) ||
       (storedFiles && Object.keys(storedFiles).length > 0) ||
       (material.headers && Object.keys(material.headers).length > 0) ||
@@ -90,6 +109,7 @@ export function buildMcpUpdateMaterial(
   );
   const suppliesMaterial = Boolean(
     secret ||
+      args.length > 0 ||
       (env && Object.keys(env).length > 0) ||
       (headers && Object.keys(headers).length > 0) ||
       hasFiles,
@@ -100,7 +120,8 @@ export function buildMcpUpdateMaterial(
   return {
     action: "store",
     material: {
-      ...withoutFiles,
+      ...rest,
+      ...withArgs,
       ...(secret ? { secret } : {}),
       ...(env !== undefined ? { env } : {}),
       ...(headers !== undefined ? { headers } : {}),

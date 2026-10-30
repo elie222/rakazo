@@ -51,7 +51,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       transport: "stdio",
       endpoint: null,
       command: "npx",
-      args: ["-y", "invoices-mcp@1.0.0"],
+      hasArgs: true,
       envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET", "GOOGLE_ACCESS_TOKEN"],
       fileKeys: ["GOOGLE_OAUTH_CREDENTIALS"],
       headerKeys: [],

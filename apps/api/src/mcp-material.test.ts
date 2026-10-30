@@ -520,4 +520,40 @@ describe("buildMcpUpdateMaterial", () => {
       ).toEqual({ action: "store", material: { secret: "s", headers: {} } });
     });
   });
+
+  describe("stdio arguments", () => {
+    const stdio = { transport: "stdio", slug: "x", name: "x", command: "npx" } as const;
+
+    it("stores new arguments in the material", () => {
+      expect(buildMcpUpdateMaterial({}, { ...stdio, args: ["--api-key", "fake-key"] })).toEqual({
+        action: "store",
+        material: { args: ["--api-key", "fake-key"] },
+      });
+    });
+
+    it("keeps the stored arguments when none are sent back", () => {
+      expect(
+        buildMcpUpdateMaterial({ args: ["--api-key", "fake-key"] }, { ...stdio, args: [] }),
+      ).toEqual({ action: "store", material: { args: ["--api-key", "fake-key"] } });
+    });
+
+    it("does not hand stored arguments to a different command", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { args: ["--api-key", "fake-key"] },
+          { ...stdio, command: "uvx", args: [] },
+          { commandChanged: true },
+        ),
+      ).toEqual({ action: "store", material: {} });
+    });
+
+    it("keeps the arguments when credentials are cleared", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { args: ["serve"], env: { API_KEY: "k" } },
+          { ...stdio, args: [], clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: { args: ["serve"] } });
+    });
+  });
 });
