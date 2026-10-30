@@ -443,6 +443,45 @@ describe("inbound webhook HTTP route", () => {
     );
   });
 
+  it("collapses only byte-identical retries of payloads that reuse an id", async () => {
+    const deps = createDeps();
+    const app = mount(deps);
+    const post = (body: string) =>
+      app.request("/api/v1/bots/bot-1/webhook", {
+        method: "POST",
+        headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+        body,
+      });
+    const paid = JSON.stringify({ id: "order-42", status: "paid" });
+    await post(paid);
+    await post(paid);
+    await post(JSON.stringify({ id: "order-42", status: "shipped" }));
+    const nonces = deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce);
+    expect(nonces[0]).toBeDefined();
+    expect(nonces[1]).toBe(nonces[0]);
+    expect(nonces[2]).not.toBe(nonces[0]);
+  });
+
+  it("deduplicates on standard webhook delivery headers", async () => {
+    const deps = createDeps();
+    const app = mount(deps);
+    for (const status of ["paid", "shipped"]) {
+      await app.request("/api/v1/bots/bot-1/webhook", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${SECRET}`,
+          "content-type": "application/json",
+          "webhook-id": "msg_delivery-1",
+        },
+        body: JSON.stringify({ id: "order-42", status }),
+      });
+    }
+    const digest = createHash("sha256").update("msg_delivery-1").digest("base64url");
+    for (const call of deps.sendUserMessage.mock.calls) {
+      expect(call[0].clientNonce).toBe(`webhook:bot-1:${digest}`);
+    }
+  });
+
   it("rejects oversized payloads", async () => {
     const deps = createDeps();
     const app = mount(deps);
