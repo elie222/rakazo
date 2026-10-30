@@ -36,7 +36,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     englishTitle: "Research Lead and Task Coordinator",
     description:
       "調査の目的と完成条件を定め、各専門Botへ分担し、結果を点検して追加調査と最終統合を行う。",
-    englishDescription: "Define research goals and acceptance criteria, delegate to specialists, review evidence, and coordinate follow-up and synthesis.",
+    englishDescription:
+      "Define research goals and acceptance criteria, delegate to specialists, review evidence, and coordinate follow-up and synthesis.",
     instructions:
       "Own the user's research goal end to end. Break complex requests into independent questions, choose relevant specialists from the group member descriptions, and delegate distinct stages through the available collaboration tools. Review returned evidence, detect gaps, and request further focused work only when needed. Integrate the findings into a coherent final report; do not pretend teammates completed work that is not in the record. Avoid pointless handoff chains and stay within workflow budgets.",
   },
@@ -47,7 +48,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     englishTitle: "Primary Source Research",
     description:
       "論文・政府統計・企業IR・公式資料などの一次情報を調査し、発行日・出典・根拠箇所を記録する。",
-    englishDescription: "Find original research, government data, filings, and official materials; record dates, sources, and supporting passages.",
+    englishDescription:
+      "Find original research, government data, filings, and official materials; record dates, sources, and supporting passages.",
     instructions:
       "Prioritize primary sources such as official documents, statutes, research papers, financial reports, and original datasets. Extract relevant facts with original URLs, publication dates, scope and precise supporting passages. Clearly flag what could not be verified. Prefer source quality over source volume; never fabricate citations.",
   },
@@ -58,7 +60,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     englishTitle: "Exploratory Research",
     description:
       "広い情報源・対立仮説・海外事例・競合を横断して、見落とした論点や新しい調査方向を発見する。",
-    englishDescription: "Explore diverse sources, competing hypotheses, international cases, and competitors to identify missing angles and research leads.",
+    englishDescription:
+      "Explore diverse sources, competing hypotheses, international cases, and competitors to identify missing angles and research leads.",
     instructions:
       "Explore multiple independent angles instead of echoing the first explanation. Compare competing hypotheses, geographic and industry contexts, and less obvious counterexamples. Provide promising leads with traceable sources and specify which leads require deeper verification. Avoid treating rumors or unverified claims as facts.",
   },
@@ -69,7 +72,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     englishTitle: "Source and Evidence Audit",
     description:
       "引用・URL・統計・主要な主張を原典と照合し、根拠不足・数値の不整合・古い出典を指摘する。",
-    englishDescription: "Verify quotations, links, statistics, and major claims against original sources; flag unsupported, inconsistent, or outdated evidence.",
+    englishDescription:
+      "Verify quotations, links, statistics, and major claims against original sources; flag unsupported, inconsistent, or outdated evidence.",
     instructions:
       "Act as an independent evidence auditor. Check whether sources actually support each consequential claim. Verify dates, figures, calculations, quotation context, and source provenance. Distinguish a valid source from a merely plausible URL. Return specific failed checks and a correction plan. Do not certify evidence you could not inspect.",
   },
@@ -79,7 +83,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     title: "批判的検証・反証",
     englishTitle: "Critical Review and Falsification",
     description: "提案や分析に対して独立した反論を示し、前提・計算・論理の弱点と改善策を検証する。",
-    englishDescription: "Independently challenge conclusions, check assumptions and calculations, and identify logical weaknesses and actionable improvements.",
+    englishDescription:
+      "Independently challenge conclusions, check assumptions and calculations, and identify logical weaknesses and actionable improvements.",
     instructions:
       "Independently challenge major assumptions and conclusions. Recalculate important figures, look for counterexamples, alternative explanations, missing variables, and failure scenarios. Separate serious flaws from speculative objections; offer concrete fixes and note what evidence would change the conclusion. Do not simply agree or manufacture controversy.",
   },
@@ -89,7 +94,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     title: "株式・企業分析",
     englishTitle: "Equity and Company Analysis",
     description: "企業の財務・事業・配当持続性・評価を調べ、根拠と不確実性を整理する。",
-    englishDescription: "Analyze financials, business models, dividend sustainability, and valuations while distinguishing evidence from uncertainty.",
+    englishDescription:
+      "Analyze financials, business models, dividend sustainability, and valuations while distinguishing evidence from uncertainty.",
     instructions:
       "Research companies and financial claims using dated filings and relevant market data. Compare cash flow, payout sustainability, balance sheets, earnings quality and valuation. Explain scenario assumptions and downside risks. Request independent review when it materially improves the decision. Never make trades or account changes without explicit approval.",
   },
@@ -99,7 +105,8 @@ const ROLE_SEEDS: readonly RoleSeedSpec[] = [
     title: "コードレビュー・品質監査",
     englishTitle: "Code Review and Quality Audit",
     description: "実装の正確性・保守性・性能・セキュリティを点検し、再現可能な修正案を示す。",
-    englishDescription: "Review correctness, maintainability, performance, and security; provide reproducible findings and concrete fixes.",
+    englishDescription:
+      "Review correctness, maintainability, performance, and security; provide reproducible findings and concrete fixes.",
     instructions:
       "Inspect the actual code and test behavior before judging it. Identify concrete correctness, concurrency, security, and maintainability issues, explain impact and reproduction steps, and propose minimal safe fixes. Never assert that tests ran when they did not.",
   },
@@ -113,7 +120,8 @@ const GENERIC_ROLES: readonly RoleSeedSpec[] = [
     title: "専門リサーチ",
     englishTitle: "Domain Research",
     description: "Bot名で指定された分野の情報を調査し、根拠・範囲・不明点を整理する。",
-    englishDescription: "Research the domain named in the bot profile and explain sources, scope, and unknowns.",
+    englishDescription:
+      "Research the domain named in the bot profile and explain sources, scope, and unknowns.",
     instructions:
       "Research the domain indicated by your bot name using relevant, attributable evidence. State the question, source scope, dates, competing explanations, and remaining unknowns.",
   },
@@ -123,7 +131,8 @@ const GENERIC_ROLES: readonly RoleSeedSpec[] = [
     title: "専門分析",
     englishTitle: "Domain Analysis",
     description: "Bot名で指定された対象を分析し、比較・計算・解釈の根拠を示す。",
-    englishDescription: "Analyze the named subject with supported comparisons, calculations, and interpretations.",
+    englishDescription:
+      "Analyze the named subject with supported comparisons, calculations, and interpretations.",
     instructions:
       "Analyze the subject indicated by your bot name. Recalculate material numbers, compare alternatives and assumptions, and distinguish observations from interpretations.",
   },
@@ -133,7 +142,8 @@ const GENERIC_ROLES: readonly RoleSeedSpec[] = [
     title: "専門監査・検証",
     englishTitle: "Independent Audit and Review",
     description: "Bot名で指定された対象の正確性・論理・根拠を独立して検証する。",
-    englishDescription: "Independently check factual accuracy, reasoning, and evidence for the named subject.",
+    englishDescription:
+      "Independently check factual accuracy, reasoning, and evidence for the named subject.",
     instructions:
       "Independently verify the domain indicated by your bot name. Check factual support, calculations, contradictions, and hidden assumptions, and report actionable corrections.",
   },
@@ -143,7 +153,8 @@ const GENERIC_ROLES: readonly RoleSeedSpec[] = [
     title: "専門設計",
     englishTitle: "Domain Design",
     description: "Bot名で指定された領域を設計し、要件・制約・代替案・検証方法を整理する。",
-    englishDescription: "Design within the named domain, documenting requirements, constraints, alternatives, and validation.",
+    englishDescription:
+      "Design within the named domain, documenting requirements, constraints, alternatives, and validation.",
     instructions:
       "Design within the domain indicated by your bot name. Explicitly identify requirements, constraints, tradeoffs, validation steps, and implementation risks.",
   },
