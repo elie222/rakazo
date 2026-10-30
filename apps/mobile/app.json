@@ -1,9 +1,8 @@
 {
   "expo": {
-    "name": "Rakazo",
-    "slug": "rakazo",
-    "owner": "inbox-zero",
-    "scheme": "rakazo",
+    "name": "Atlas Dots",
+    "slug": "atlas-dots",
+    "scheme": "atlasdots",
     "version": "1.0.11",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
@@ -83,7 +82,7 @@
       "./plugins/with-lan-cleartext"
     ],
     "ios": {
-      "bundleIdentifier": "com.rakazo.app",
+      "bundleIdentifier": "com.atlasdots.app",
       "buildNumber": "1",
       "supportsTablet": false,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
@@ -100,7 +99,7 @@
       }
     },
     "android": {
-      "package": "com.rakazo.app",
+      "package": "com.atlasdots.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",

@@ -1,9 +1,9 @@
 {
   "name": "@rakazo/desktop",
-  "productName": "Rakazo",
+  "productName": "Atlas Dots",
   "version": "0.3.6",
   "author": {
-    "name": "Rakazo"
+    "name": "Aditya Wakharkar"
   },
   "license": "Apache-2.0",
   "type": "module",
@@ -61,7 +61,7 @@
       }
     ],
     "extraMetadata": {
-      "name": "rakazo",
+      "name": "atlas-dots",
       "main": "dist/main.js"
     },
     "mac": {

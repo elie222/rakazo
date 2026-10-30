@@ -1,13 +1,21 @@
 {
-  "name": "Rakazo",
-  "short_name": "Rakazo",
-  "description": "An open source Grok Bot alternative for persistent AI teammates that do real work.",
+  "name": "Atlas Dots",
+  "short_name": "Atlas Dots",
+  "description": "A self-hosted platform for persistent AI teammates that do real work.",
   "start_url": "/",
   "display": "browser",
   "background_color": "#FDFDFD",
   "theme_color": "#FDFDFD",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
