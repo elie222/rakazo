@@ -141,7 +141,7 @@ export async function prepareOwnBotSettings(
     data.autoSpeak = args.readAloud;
   }
   if (typeof args.voice === "string" && args.voice.trim()) {
-    const voices = await listVoices();
+    const voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
     if (!voices) return { error: "Connect a voice provider first." };
     const voice = resolveVoiceChoice(voices, args.voice);
     if (!voice.ok) return { error: voice.error };

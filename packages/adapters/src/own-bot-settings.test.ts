@@ -162,6 +162,7 @@ const voices = [
   { id: "voice-rachel", label: "Rachel" },
   { id: "voice-adam", label: "Adam - Deep Narrator" },
   { id: "voice-adam-2", label: "Adam - Calm" },
+  { id: "voice-sumire", label: "菫 清楚" },
 ];
 
 describe("resolveVoiceChoice", () => {
@@ -169,6 +170,7 @@ describe("resolveVoiceChoice", () => {
     ["rachel", "voice-rachel"],
     ["voice-rachel", "voice-rachel"],
     ["Deep narrator", "voice-adam"],
+    ["菫", "voice-sumire"],
     ["default", null],
   ])("resolves %s", (query, voiceId) => {
     expect(resolveVoiceChoice(voices, query)).toEqual({ ok: true, voiceId });
@@ -181,12 +183,19 @@ describe("resolveVoiceChoice", () => {
     });
     expect(resolveVoiceChoice(voices, "Bella")).toEqual({
       ok: false,
-      error: 'No voice matches "Bella". Voices: Rachel, Adam - Deep Narrator, Adam - Calm.',
+      error:
+        'No voice matches "Bella". Voices: Rachel, Adam - Deep Narrator, Adam - Calm, 菫 清楚.',
     });
   });
 });
 
 describe("prepareOwnBotSettings voice", () => {
+  it("resets to the default voice without a voice provider", async () => {
+    expect(
+      await prepareOwnBotSettings(deps(), scope, bot, { voice: "default" }, async () => null),
+    ).toEqual({ data: { voiceId: null } });
+  });
+
   it("lists voices only when a voice is asked for and stores the match", async () => {
     const list = vi.fn(async () => voices);
     expect(await prepareOwnBotSettings(deps(), scope, bot, { readAloud: true }, list)).toEqual({
