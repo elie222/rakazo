@@ -226,6 +226,10 @@ msgstr "hace {minutes} min"
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {# bot ahora usa el modelo predeterminado del espacio.} other {# bots ahora usan el modelo predeterminado del espacio.}}"
 
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
+msgstr ""
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "{name} pregunta"
@@ -800,6 +804,10 @@ msgstr "Claves de API"
 msgid "Appearance"
 msgstr "Apariencia"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr "Apariencia: {label}"
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "Aplicar"
@@ -812,7 +820,7 @@ msgstr "Límites de aprobación"
 msgid "Approval model"
 msgstr "Modelo de aprobación"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "Aprobaciones"
@@ -987,7 +995,7 @@ msgstr "Autenticación básica ({username})"
 msgid "Bearer token"
 msgstr "Token Bearer"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "Facturación"
 
@@ -1450,6 +1458,10 @@ msgstr "Próximamente"
 msgid "Command"
 msgstr "Comando"
 
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr "Menú de comandos"
+
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
@@ -1475,7 +1487,7 @@ msgstr "Completado"
 msgid "Completed"
 msgstr "Completado"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1577,6 +1589,7 @@ msgid "Connect API key"
 msgstr "Conectar clave de API"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "Conectar aplicaciones"
 
@@ -2364,6 +2377,7 @@ msgid "Customize bot avatar"
 msgstr "Personalizar avatar del bot"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "Oscuro"
 
@@ -3005,6 +3019,7 @@ msgstr "Pantalla completa"
 msgid "Gateway ID"
 msgstr "ID de gateway"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "General"
@@ -3376,6 +3391,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "Permite a los bots guardar y recordar datos por significado, además de MEMORY.md."
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "Claro"
 
@@ -3618,7 +3634,7 @@ msgstr "Miembros ({0})"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Memoria"
@@ -3690,7 +3706,7 @@ msgstr "Mensaje…"
 msgid "Messaged {peer}"
 msgstr "Mensaje enviado a {peer}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Mensajería"
 
@@ -3767,7 +3783,7 @@ msgid "Model options"
 msgstr "Opciones del modelo"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "Modelos"
@@ -3920,6 +3936,7 @@ msgstr "Nuevo bot"
 msgid "New group"
 msgstr "Nuevo grupo"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "Nuevo chat grupal"
@@ -3937,6 +3954,7 @@ msgstr "Nuevo elemento de trabajo abierto"
 msgid "New password"
 msgstr "Nueva contraseña"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "Nuevo espacio privado"
@@ -3981,10 +3999,6 @@ msgstr "Sin autenticación"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "Sin autenticación"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr "No hay bots"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4043,6 +4057,7 @@ msgstr "No se encontraron servidores MCP remotos"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Sin resultados"
@@ -4083,7 +4098,7 @@ msgstr "Normal"
 msgid "Not a valid skill"
 msgstr "No es una habilidad válida"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr "No se agregaron: {0}"
@@ -5131,8 +5146,8 @@ msgid "Search artifacts…"
 msgstr "Buscar artefactos…"
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
-msgstr "Buscar bots y cambiar de conversación"
+msgid "Search bots, actions, and settings"
+msgstr "Buscar bots, acciones y configuración"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
@@ -5257,6 +5272,10 @@ msgstr "URL del servidor"
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Configuración"
+
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr "Configuración: {label}"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
@@ -5400,6 +5419,7 @@ msgstr "Habilidad {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "Habilidades"
@@ -5633,15 +5653,12 @@ msgstr "Admite razonamiento"
 msgid "Switch"
 msgstr "Cambiar"
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr "Cambiar de bot"
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Cambiando…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "Sistema"
 
@@ -6112,7 +6129,7 @@ msgstr "Progreso de la actualización"
 msgid "Updated {updated}"
 msgstr "Actualizado el {updated}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "Actualizaciones"
 
@@ -6146,7 +6163,7 @@ msgid "Urgent"
 msgstr "Urgente"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Uso"
 
@@ -6244,7 +6261,7 @@ msgstr "Usando tu clave de API. El plan gratuito termina el {freeUntil}."
 msgid "Value"
 msgstr "Valor"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "Bóveda"
@@ -6269,7 +6286,7 @@ msgstr "Ver todo"
 msgid "View source"
 msgstr "Ver código fuente"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6292,7 +6309,7 @@ msgstr "Esperando en la cola…"
 msgid "Waiting…"
 msgstr "Esperando…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr "Billetera"
 

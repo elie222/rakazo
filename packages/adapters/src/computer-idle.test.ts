@@ -1228,6 +1228,43 @@ describe("background work launch and probe", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32").each([true, false])(
+    "sweeps every stale marker with held background work: %s",
+    async (held) => {
+      const markerId = `computer-sweep-${randomUUID()}`;
+      const activeMarker = `/tmp/rakazo-background-${markerId}-run-1-a-held`;
+      const staleMarkers = [
+        `/tmp/rakazo-background-${markerId}-run-1-b-stale`,
+        `/tmp/rakazo-background-${markerId}-run-2-c-stale`,
+      ];
+      for (const marker of [activeMarker, ...staleMarkers]) markers.add(marker);
+
+      if (held) {
+        const active = spawn(
+          "bash",
+          [
+            "-c",
+            BACKGROUND_WORK_LAUNCH,
+            "rakazo-background-launch",
+            markerId,
+            "run-1",
+            "a-held",
+            "exec sleep 30",
+          ],
+          { stdio: "ignore", detached: true },
+        );
+        children.push(active);
+        await expect.poll(() => existsSync(activeMarker)).toBe(true);
+      }
+      for (const marker of staleMarkers) writeFileSync(marker, "");
+
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
+      for (const marker of staleMarkers) expect(existsSync(marker)).toBe(false);
+      expect(existsSync(activeMarker)).toBe(held);
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "cleans a completed marker without blocking a later launch",
     async () => {

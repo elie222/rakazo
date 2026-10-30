@@ -431,3 +431,45 @@ describe("rejected model credentials", () => {
     expect(isModelCredentialRejected(new Error(message))).toBe(false);
   });
 });
+
+describe("message-only API status wrappers", () => {
+  it("uses a backup for exhausted credits reported inside a parenthesized API status", () => {
+    const error = new Error(
+      'API error (403): {"error":"You have run out of credits or need a Grok subscription"}',
+    );
+    expect(isRetryableProviderUnavailable(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+
+  it.each([
+    "API error (403): Permission denied: out of credits",
+    "API error (401): You have run out of credits",
+    "API error (400): Unsupported parameter: credits",
+  ])("does not classify a terminal response as an outage: %s", (error) => {
+    expect(isRetryableProviderUnavailable(error)).toBe(false);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+});
+
+describe("postfixed credential failures", () => {
+  it.each(["credential expired", "credential revoked", "token expired", "token revoked"])(
+    "recognizes %s even beside a retryable transport hint",
+    (message) => {
+      const error = new Error(`${message}; request timeout`);
+      expect(isModelCredentialRejected(error)).toBe(true);
+      expect(isRetryableProviderUnavailable(error)).toBe(false);
+      expect(isTransientModelError(error)).toBe(false);
+    },
+  );
+  it.each(["token missing", "credential missing"])("does not retry %s", (message) => {
+    expect(isRetryableProviderUnavailable(`${message}; timeout`)).toBe(false);
+  });
+  it("does not treat an expired credential plus exhausted quota as account exhaustion", () => {
+    expect(
+      isRetryableProviderUnavailable({
+        status: 403,
+        message: "credential expired; quota exhausted",
+      }),
+    ).toBe(false);
+  });
+});

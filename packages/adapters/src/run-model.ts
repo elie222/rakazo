@@ -201,6 +201,7 @@ async function resolveModelKeyMaterial(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
@@ -315,6 +316,8 @@ async function resolveModelKeyMaterial(
         accountId,
         gatewayId,
         baseUrl,
+        apiProtocol:
+          resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
@@ -461,6 +464,7 @@ export async function resolveConnectedRunModel(
     callObserver: resolved.callObserver,
     ...cloudflareRunFields(resolved),
     baseUrl: resolved.baseUrl,
+    apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,
@@ -558,6 +562,7 @@ export async function resolveRunModel(
     callObserver: resolved.callObserver,
     ...cloudflareRunFields(resolved),
     baseUrl: resolved.baseUrl,
+    apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,

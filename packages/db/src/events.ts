@@ -1592,7 +1592,14 @@ export async function finalizeComputerControlRelease(
  */
 export async function settleReleasedTakeoverCards(
   prisma: PrismaClient,
-  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+  input: {
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    reason: unknown;
+    lease?: RunLease;
+  },
   notify?: (threadId: string, seq: number) => Promise<void>,
 ): Promise<void> {
   const seq = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -1604,7 +1611,14 @@ export async function settleReleasedTakeoverCards(
 
 async function settleReleasedTakeoverCardsInTransaction(
   tx: Prisma.TransactionClient,
-  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+  input: {
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    reason: unknown;
+    lease?: RunLease;
+  },
 ): Promise<number | null> {
   const messages = await tx.message.findMany({
     where: { threadId: input.threadId, runId: input.runId, role: "bot" },
@@ -1626,6 +1640,7 @@ async function settleReleasedTakeoverCardsInTransaction(
       botId: input.botId,
       type: "thread.message.updated",
       runId: input.runId,
+      lease: input.lease,
       payload: { messageId: message.id, role: "bot", blocks },
     });
     lastSeq = updated.seq;

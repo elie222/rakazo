@@ -236,7 +236,6 @@ export function McpServersOverlay({
     setTransport(server.transport);
     setEndpoint(server.endpoint ?? "");
     setCommand(server.command ?? "");
-    setArgs(server.args.join(" "));
     setHeaderName(server.headerKeys[0] ?? "Authorization");
     const rows = [
       ...server.envKeys.map((name) => ({ ...emptyEnvRow(), name })),
@@ -301,11 +300,7 @@ export function McpServersOverlay({
               name: name.trim(),
               transport,
               command: command.trim(),
-              // Untouched arguments keep their boundaries, spaces included.
-              args:
-                editing && args === editing.args.join(" ")
-                  ? editing.args
-                  : args.split(/\s+/).filter(Boolean),
+              args: args.split(/\s+/).filter(Boolean),
               env: envEntries(false),
               files: envEntries(true),
               secret: secret || undefined,
@@ -558,7 +553,7 @@ export function McpServersOverlay({
                         id="mcp-args"
                         value={args}
                         onChange={(e) => setArgs(e.target.value)}
-                        placeholder="--stdio"
+                        placeholder={editing?.hasArgs ? t`Stored encrypted` : "--stdio"}
                       />
                     </Field>
                   </>

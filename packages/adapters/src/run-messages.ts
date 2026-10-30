@@ -21,7 +21,10 @@ export function withRunLease(deps: ExecutorDeps, runId: string, lease: RunLease)
   };
 }
 
-export function runLeaseFor(deps: ExecutorDeps, runId: string): RunLease | undefined {
+export function runLeaseFor(
+  deps: Pick<ExecutorDeps, "runLease">,
+  runId: string,
+): RunLease | undefined {
   return deps.runLease?.runId === runId ? deps.runLease : undefined;
 }
 

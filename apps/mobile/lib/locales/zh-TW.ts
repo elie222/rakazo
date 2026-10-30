@@ -1210,6 +1210,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not add skills": "無法新增技能",
   "Could not remove skills": "無法移除技能",
   "Not added: {list}": "未新增：{list}",
+  "{name} (same name as a built-in skill)": "{name}（與內建技能同名）",
   "Remove skills": "移除技能",
   "Search skills": "搜尋技能",
   "Your skills": "你的技能",
