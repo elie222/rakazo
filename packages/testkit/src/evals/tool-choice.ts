@@ -71,7 +71,12 @@ export const ToolChoiceCaseSchema = z
   .refine(
     ({ kind, expect }) =>
       kind === "control" ||
-      Boolean(expect.calls?.length || expect.anyOf || expect.bot || expect.user || expect.order),
+      Boolean(
+        expect.calls?.length ||
+          expect.anyOf ||
+          expect.order ||
+          Object.keys({ ...expect.bot, ...expect.user }).length,
+      ),
     { message: "A guard needs a call, setting or order it must produce, not only prohibitions" },
   );
 export type ToolChoiceCase = z.infer<typeof ToolChoiceCaseSchema>;

@@ -162,5 +162,19 @@ describe("tool-choice grading", () => {
       ]),
     );
     expect(() => loadToolChoiceCases(file)).toThrow(/guard needs/);
+    writeFileSync(
+      file,
+      JSON.stringify([
+        {
+          id: "empty-bot",
+          area: "x",
+          kind: "guard",
+          purpose: "x",
+          prompt: "x",
+          expect: { bot: {} },
+        },
+      ]),
+    );
+    expect(() => loadToolChoiceCases(file)).toThrow(/guard needs/);
   });
 });
