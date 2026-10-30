@@ -80,6 +80,103 @@ describeWithDatabase("API authorization and resource isolation", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it("keeps another member's routine test run keys apart from a send's", async () => {
+    const owner = await signup(app, `routine-keys-owner-${stamp}@rakazo.test`, "Owner");
+    const peer = await signup(app, `routine-keys-peer-${stamp}@rakazo.test`, "Peer");
+    const ownerActor = await rpc<Actor>(app, owner, "me");
+    const peerActor = await rpc<Actor>(app, peer, "me");
+    const space = await db.space.findUniqueOrThrow({ where: { id: ownerActor.spaceId } });
+    await db.member.create({
+      data: {
+        id: `routine-keys-member-${stamp}`,
+        organizationId: space.organizationId,
+        userId: peerActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const ownBot = await rpc<Bot>(app, owner, "bots/create", botInput("Own"), space.id);
+    const peerBot = await rpc<Bot>(app, peer, "bots/create", botInput("Peer"), space.id);
+    const own = await rpc<{ id: string }>(
+      app,
+      owner,
+      "routines/create",
+      routineInput(ownBot.id),
+      space.id,
+    );
+    const peers = await rpc<{ id: string }>(
+      app,
+      peer,
+      "routines/create",
+      routineInput(peerBot.id),
+      space.id,
+    );
+    const clientNonce = `routine-keys-${stamp}`;
+    // The peer test-runs their own routine under the key the owner's send will use.
+    await rpc(
+      app,
+      peer,
+      "routines/testRun",
+      { routineId: peers.id, clientNonce: `routine-mention:${clientNonce}:${own.id}` },
+      space.id,
+    );
+
+    const sent = await rpc<{ routineRunIds: string[] }>(
+      app,
+      owner,
+      "threads/sendWithRoutines",
+      { botId: ownBot.id, clientNonce, routineIds: [own.id] },
+      space.id,
+    );
+
+    expect(sent.routineRunIds).toHaveLength(1);
+    expect(await db.run.findUniqueOrThrow({ where: { id: sent.routineRunIds[0] } })).toMatchObject({
+      routineId: own.id,
+      userId: ownerActor.userId,
+    });
+
+    // The previous release stored `routine-test:<client nonce>` as given, so the peer could write
+    // a key shaped like the owner's. That run must not become the owner's receipt.
+    const later = `routine-keys-legacy-${stamp}`;
+    const peerThread = await db.thread.findUniqueOrThrow({ where: { botId: peerBot.id } });
+    const task = await db.task.create({
+      data: {
+        spaceId: space.id,
+        botId: peerBot.id,
+        threadId: peerThread.id,
+        userId: peerActor.userId,
+        prompt: "Peer routine",
+        status: "queued",
+      },
+    });
+    await db.run.create({
+      data: {
+        spaceId: space.id,
+        botId: peerBot.id,
+        threadId: peerThread.id,
+        taskId: task.id,
+        userId: peerActor.userId,
+        status: "queued",
+        trigger: "routine",
+        routineId: peers.id,
+        clientNonce: `routine-test:${ownerActor.userId}:routine-mention:${later}:${own.id}`,
+      },
+    });
+    const withText = await rpc<{ routineRunIds: string[]; send?: { runId: string } }>(
+      app,
+      owner,
+      "threads/sendWithRoutines",
+      { botId: ownBot.id, clientNonce: later, text: "and the notes", routineIds: [own.id] },
+      space.id,
+    );
+    expect(withText.send).toBeDefined();
+    expect(await db.message.count({ where: { clientNonce: later } })).toBe(1);
+    expect(withText.routineRunIds).toHaveLength(1);
+    expect(
+      await db.run.findUniqueOrThrow({ where: { id: withText.routineRunIds[0] } }),
+    ).toMatchObject({ routineId: own.id, userId: ownerActor.userId });
+  });
+
   it("batches routine mentions with the same user, space and archive isolation as per-bot reads", async () => {
     const owner = await signup(app, `routine-mentions-owner-${stamp}@rakazo.test`, "Owner");
     const peer = await signup(app, `routine-mentions-peer-${stamp}@rakazo.test`, "Peer");
@@ -210,6 +307,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
+      [
+        "threads/sendWithRoutines",
+        { botId: "missing-bot", clientNonce: "nope", routineIds: ["missing-routine"] },
+      ],
       ["threads/stop", { botId: "missing-bot" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
@@ -633,6 +734,19 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/update", { routineId: ownerRoutine.id, name: "Stolen Routine" }],
       ["routines/remove", { routineId: ownerRoutine.id }],
       ["routines/testRun", { routineId: ownerRoutine.id }],
+      [
+        "threads/sendWithRoutines",
+        { botId: intruderBot.id, clientNonce: "stolen", routineIds: [ownerRoutine.id] },
+      ],
+      [
+        "threads/sendWithRoutines",
+        {
+          botId: intruderBot.id,
+          clientNonce: "stolen-text",
+          text: "intruder message",
+          routineIds: [ownerRoutine.id],
+        },
+      ],
       ["scratchpad/update", { itemId: ownerScratchpad.id, title: "Stolen item" }],
       ["scratchpad/remove", { itemId: ownerScratchpad.id }],
       ["skills/get", { skillId: ownerSkill.id }],

@@ -24,11 +24,12 @@ vi.mock("../../lib/prepare-image", () => ({
 type Rpc = {
   routines: { testRun: ReturnType<typeof vi.fn> };
   artifacts: { create: ReturnType<typeof vi.fn> };
-  threads: { send: ReturnType<typeof vi.fn> };
+  threads: { send: ReturnType<typeof vi.fn>; sendWithRoutines: ReturnType<typeof vi.fn> };
 };
 
 let rpc: Rpc;
 let me: Me | null;
+let navigate: ReturnType<typeof vi.fn>;
 let root: Root;
 let latest: ReturnType<typeof useComposerActions>;
 
@@ -47,7 +48,7 @@ function Harness() {
     botsRef: ref<Bot[]>([]),
     bootstrapMe: me,
     activeSnapshot: null,
-    navigate: vi.fn(),
+    navigate: navigate as never,
     refreshBots: async () => undefined,
     refreshThreadRef: ref(async () => ({}) as ThreadSnapshot),
     refreshGroupThreadRef: ref(async () => ({}) as ThreadSnapshot),
@@ -70,10 +71,11 @@ async function flush() {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   me = null;
+  navigate = vi.fn();
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { send: vi.fn() },
+    threads: { send: vi.fn(), sendWithRoutines: vi.fn() },
   };
   root = createRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
@@ -129,4 +131,79 @@ it("keeps an attachment added while a send is in flight", async () => {
     expect.objectContaining({ artifactIds: ["artifact-a.txt"] }),
   );
   expect(latest.activePendingAttachments.map((pending) => pending.file)).toEqual([fileB]);
+});
+
+const digest = { kind: "routine" as const, id: "routine-1", name: "digest" };
+const review = { kind: "routine" as const, id: "routine-2", name: "review" };
+
+async function send(text: string, mentions: (typeof digest)[]) {
+  let accepted!: boolean;
+  await act(async () => {
+    accepted = await latest.sendMessage(text, mentions, "nonce-1");
+  });
+  return accepted;
+}
+
+it("sends text and routines as one request and gives the draft back when it fails", async () => {
+  // Before, the routines ran on their own first, so a failed text send could not be retried.
+  rpc.routines.testRun.mockResolvedValue({ runId: "routine-run" });
+  rpc.threads.send.mockRejectedValue(new Error("offline"));
+  rpc.threads.sendWithRoutines.mockRejectedValue(new Error("offline"));
+
+  expect(await send("@digest @review and the notes", [digest, review])).toBe(false);
+
+  expect(rpc.routines.testRun).not.toHaveBeenCalled();
+  expect(rpc.threads.send).not.toHaveBeenCalled();
+  expect(rpc.threads.sendWithRoutines).toHaveBeenCalledTimes(1);
+  expect(rpc.threads.sendWithRoutines).toHaveBeenCalledWith(
+    expect.objectContaining({
+      botId: "bot-1",
+      clientNonce: "nonce-1",
+      routineIds: ["routine-1", "routine-2"],
+      text: expect.stringContaining("and the notes"),
+    }),
+  );
+});
+
+it("clears the draft once the send with routines is accepted", async () => {
+  rpc.threads.sendWithRoutines.mockResolvedValue({
+    routineRunIds: ["routine-run"],
+    send: { runId: "run-1", taskId: "task-1", seq: 1 },
+  });
+
+  expect(await send("@digest and the notes", [digest])).toBe(true);
+  expect(rpc.threads.sendWithRoutines).toHaveBeenCalledTimes(1);
+});
+
+it("runs routines without text in one request", async () => {
+  rpc.routines.testRun.mockImplementation(async ({ routineId }: { routineId: string }) => {
+    if (routineId === review.id) throw new Error("offline");
+    return { runId: "routine-run" };
+  });
+  rpc.threads.sendWithRoutines.mockRejectedValueOnce(new Error("offline"));
+
+  expect(await send("@digest @review", [digest, review])).toBe(false);
+  expect(rpc.routines.testRun).not.toHaveBeenCalled();
+  expect(rpc.threads.sendWithRoutines).toHaveBeenCalledWith({
+    botId: "bot-1",
+    clientNonce: "nonce-1",
+    routineIds: ["routine-1", "routine-2"],
+  });
+
+  rpc.threads.sendWithRoutines.mockResolvedValueOnce({ routineRunIds: ["a", "b"] });
+  expect(await send("@digest @review", [digest, review])).toBe(true);
+  expect(rpc.threads.send).not.toHaveBeenCalled();
+});
+
+it("opens a mentioned group without running anything", async () => {
+  const team = { kind: "group" as const, id: "group-2", name: "Team" };
+  let accepted!: boolean;
+  await act(async () => {
+    accepted = await latest.sendMessage("@Team", [team], "nonce-1");
+  });
+
+  expect(accepted).toBe(true);
+  expect(navigate).toHaveBeenCalledWith("/app/g/group-2");
+  expect(rpc.threads.sendWithRoutines).not.toHaveBeenCalled();
+  expect(rpc.threads.send).not.toHaveBeenCalled();
 });
