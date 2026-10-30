@@ -609,6 +609,34 @@ describe("GitHub event HTTP route", () => {
     expect(prompt).not.toContain("acme/app");
   });
 
+  it.each([
+    {
+      name: "reads the payload field of GitHub's default form encoding",
+      body: (json: string) => new URLSearchParams({ payload: json }).toString(),
+      metadata: { event: "pull_request", repositoryId: 55, number: 42, action: "opened" },
+    },
+    {
+      name: "keeps a form body without a payload field event-only",
+      body: (json: string) => new URLSearchParams({ data: json }).toString(),
+      metadata: { event: "pull_request" },
+    },
+  ])("$name", async ({ body, metadata }) => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Review PRs", prompt: "Inspect the change" }],
+    });
+    const app = mount(deps);
+    const json = JSON.stringify({ action: "opened", number: 42, repository: { id: 55 } });
+    const request = await githubRequest(body(json), SECRET, "delivery-form", "pull_request");
+    const res = await app.request("/api/v1/bots/bot-1/github", {
+      ...request,
+      headers: { ...request.headers, "content-type": "application/x-www-form-urlencoded" },
+    });
+    expect(res.status).toBe(200);
+    const prompt = String(deps.sendUserMessage.mock.calls[0]![0].prompt);
+    const fenced = prompt.match(/<github_event_metadata>\n([\s\S]*)\n<\/github_event_metadata>/);
+    expect(JSON.parse(fenced![1]!)).toEqual(metadata);
+  });
+
   it("reuses the same clientNonce for duplicate GitHub deliveries", async () => {
     const deps = createDeps({
       routines: [{ id: "routine-1", name: "Review pushes", prompt: "Inspect the change" }],
