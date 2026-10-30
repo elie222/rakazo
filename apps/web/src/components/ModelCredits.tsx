@@ -99,10 +99,7 @@ export function CreditChoice({
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  const { logOut, signingOut } = useSignOut(
-    () => window.location.assign("/sign-in"),
-    () => setError(true),
-  );
+  const { logOut, signingOut } = useSignOut("/sign-in", () => setError(true));
   // A choice that answers after the plans were closed must not leave the app.
   const closed = useRef(false);
   useEffect(() => {

@@ -19,6 +19,7 @@ import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { syncCallIdentity } from "./lib/call-session";
 import { desktopBridge } from "./lib/desktop";
 import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
 import { identifyMonitoringUser } from "./lib/monitoring";
@@ -34,6 +35,7 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
@@ -141,8 +143,10 @@ function SessionApp() {
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
   useLayoutEffect(() => {
-    if (gate === "authenticated" || gate === "anonymous")
-      syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+    if (gate !== "authenticated" && gate !== "anonymous") return;
+    syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+    syncCallIdentity(analyticsUserId ?? null);
+    syncLogOutFailure(gate === "authenticated");
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
