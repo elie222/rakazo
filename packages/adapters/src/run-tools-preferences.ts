@@ -1,6 +1,7 @@
 import { TimeZoneSchema } from "@rakazo/contracts";
 import { z } from "zod";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import { isSubagentToolExecution } from "./run-effects.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -27,7 +28,7 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
   const write = timezone !== undefined || marketingEmails !== undefined;
   if (write && isSubagentToolExecution(call.executionId))
     return call.finish({ error: "Helpers cannot change account preferences." });
-  if (write && (ctx.state.tainted || (await ctx.trust.receivedOutsideMessage())))
+  if (write && (await isRunTainted(ctx)))
     return call.finish({
       error:
         "Account preferences are blocked for the rest of this run because it read outside content.",

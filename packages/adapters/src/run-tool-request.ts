@@ -22,6 +22,7 @@ import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import {
   approvalReplayEffectToolName,
   CATALOG_APPROVAL_TOOL,
@@ -424,7 +425,7 @@ async function prepareOwnBotUpdate(
       return {
         error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
       };
-    if (ctx.state.tainted || (await ctx.trust.receivedOutsideMessage()))
+    if (await isRunTainted(ctx))
       return {
         error:
           "Model, thinking and read-aloud changes are blocked for the rest of this run because it read outside content.",

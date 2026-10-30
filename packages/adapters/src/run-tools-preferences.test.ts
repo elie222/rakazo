@@ -23,7 +23,8 @@ function fakeAccount(ownerStartedRun = true, tainted = false) {
     },
     run: { userId: "starter" },
     source: { ownerStartedRun },
-    state: { tainted },
+    runId: "run-1",
+    state: { tainted, earlierAttempt: Promise.resolve(false) },
     trust: { receivedOutsideMessage: async () => false },
   };
   const call = (args: Record<string, unknown>) =>
