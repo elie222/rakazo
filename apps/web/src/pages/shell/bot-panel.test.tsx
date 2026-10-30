@@ -672,12 +672,18 @@ it.each([{ isComposing: true }, { keyCode: 229 }])(
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    const windowKeys: string[] = [];
+    const onWindowKey = (event: KeyboardEvent) => windowKeys.push(event.key);
+    window.addEventListener("keydown", onWindowKey);
     for (const key of ["Enter", "Escape"]) {
       await act(async () =>
         input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...composition })),
       );
     }
+    window.removeEventListener("keydown", onWindowKey);
     expect(container.querySelector('[aria-label="Name"]')).toBe(input);
+    // A composing Escape must not reach page-level Escape listeners such as the reply chip.
+    expect(windowKeys).not.toContain("Escape");
     expect(onSave).not.toHaveBeenCalled();
     await act(async () =>
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),

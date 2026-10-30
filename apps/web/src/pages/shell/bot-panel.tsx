@@ -899,7 +899,10 @@ function InlineProfileField({
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (event.key === "Escape") event.stopPropagation();
+          return;
+        }
         if (event.key === "Enter") {
           event.preventDefault();
           commit();
