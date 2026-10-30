@@ -106,11 +106,16 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
-/** Opens the bot panel from the header pill, unless it is already open, and shows one tab. */
+/** Opens the bot panel from the header pill and shows one tab, leaving an open routine editor. */
 export async function openBotPanelTab(page: Page, name: "Computer" | "Routines" | "Advanced") {
   const pill = page.getByTestId("bot-settings-trigger");
-  if ((await pill.getAttribute("aria-expanded")) !== "true") await pill.click();
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
+  if (!(await tab.isVisible())) {
+    // The pill closes whatever else the sidebar shows, such as a restored routine editor.
+    if ((await pill.getAttribute("aria-expanded")) === "true") await pill.click();
+    await expect(pill).toHaveAttribute("aria-expanded", "false");
+    await pill.click();
+  }
   await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
 }
