@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { SandboxKind } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { NO_SANDBOX_MESSAGE } from "./none-sandbox.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
@@ -111,6 +113,22 @@ describe("createSandboxProvider", () => {
   it("throws on unknown provider", async () => {
     await expect(createSandboxProvider("bogus", {})).rejects.toThrow(
       'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.',
+    );
+  });
+
+  it("accepts only sandbox kinds, including none", async () => {
+    const source = readFileSync(new URL("./sandbox-factory.ts", import.meta.url), "utf8");
+    const cases = [...source.matchAll(/case "([^"]+)":/g)].flatMap((match) =>
+      match[1] === undefined ? [] : [match[1]],
+    );
+    expect(new Set(cases)).toEqual(new Set(SandboxKind.options));
+    for (const kind of cases) {
+      expect(SandboxKind.safeParse(kind).success).toBe(true);
+      await expect(createSandboxProvider(kind, {})).resolves.toBeDefined();
+    }
+    expect((await createSandboxProvider("none", {})).describe().id).toBe("none");
+    await expect(createSandboxProvider("not-a-provider", {})).rejects.toThrow(
+      /Unknown SANDBOX_PROVIDER/,
     );
   });
 });
