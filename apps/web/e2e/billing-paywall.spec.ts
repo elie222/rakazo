@@ -89,7 +89,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
       state: "active",
       hasCustomer: true,
       price: { ...price, amount: 2000 },
-      computerAllowance: { limitUsd: 4, usedUsd: 1.25 },
+      computerHoursLeft: 13,
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
@@ -98,7 +98,8 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   expect(purchase).toEqual({ amountCents: 2000, monthly: true });
   const settings = await openUserSettings(page, "billing");
   await expect(settings.getByText("$20.00", { exact: true })).toBeVisible();
-  await expect(settings.getByText("Computer allowance: $2.75 left", { exact: true })).toBeVisible();
+  await expect(settings.getByText("Computer hours left", { exact: true })).toBeVisible();
+  await expect(settings.getByText("13", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-balance");
   await settings.getByRole("button", { name: "Add credits", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add credits" });

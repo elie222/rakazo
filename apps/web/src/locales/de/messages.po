@@ -1493,14 +1493,14 @@ msgstr "Abgeschlossen"
 msgid "Computer"
 msgstr "Computer"
 
-#: src/components/ModelCredits.tsx
-msgid "Computer allowance: {computerLeft} left"
-msgstr "Computer-Kontingent: {computerLeft} übrig"
-
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "Computer konnte nicht gestartet werden"
+
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "Verbleibende Computerstunden"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"

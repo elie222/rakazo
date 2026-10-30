@@ -8,9 +8,8 @@ import {
 } from "@rakazo/db";
 
 /**
- * What an hour of a billed computer counts against the allowance, $0.20, unless its provider
- * declares its own price through `hourlyCostMicros`: above a small cloud machine's raw price,
- * so the allowance also covers storage and saves, and a $5 allowance is about 25 hours.
+ * What an hour of a billed computer counts against the allowance, $0.20: above a small cloud
+ * machine's raw price, so the allowance also covers storage and saves, and $5 is 25 hours.
  */
 export const DEFAULT_SANDBOX_HOURLY_COST_MICROS = 200_000;
 
@@ -22,10 +21,7 @@ export function sandboxHourlyCostMicros(
   computer: Pick<ComputerRef, "kind">,
 ): number {
   if (computer.kind === "desktop") return 0;
-  return (
-    sandbox.hourlyCostMicros?.(computer) ??
-    (sandbox.billsWhileRunning?.(computer) ? DEFAULT_SANDBOX_HOURLY_COST_MICROS : 0)
-  );
+  return sandbox.billsWhileRunning?.(computer) ? DEFAULT_SANDBOX_HOURLY_COST_MICROS : 0;
 }
 
 /** This month's computer allowance and spend, in micro-dollars; null when it has no limit. */

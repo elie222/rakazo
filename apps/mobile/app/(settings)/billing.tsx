@@ -109,14 +109,6 @@ export default function BillingScreen() {
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
         ) : null}
-        {status.computerAllowance ? (
-          <SettingsRow
-            title={t("Computer allowance")}
-            value={t("{amount} left", {
-              amount: `$${Math.max(0, status.computerAllowance.limitUsd - status.computerAllowance.usedUsd).toFixed(2)}`,
-            })}
-          />
-        ) : null}
         {status.canManage ? (
           <SettingsRow
             title={plan && !status.byokFreeUntil ? t("Change plan") : t("Choose a plan")}
@@ -125,6 +117,11 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
+      {status.computerHoursLeft != null ? (
+        <SettingsGroup>
+          <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+        </SettingsGroup>
+      ) : null}
       {referral ? (
         <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
           <SettingsRow

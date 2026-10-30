@@ -1493,14 +1493,14 @@ msgstr "Tamamlandı"
 msgid "Computer"
 msgstr "Bilgisayar"
 
-#: src/components/ModelCredits.tsx
-msgid "Computer allowance: {computerLeft} left"
-msgstr "Bilgisayar kotası: {computerLeft} kaldı"
-
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "Bilgisayar başlatılamadı"
+
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "Kalan bilgisayar saati"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"

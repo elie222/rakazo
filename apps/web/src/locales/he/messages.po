@@ -1493,14 +1493,14 @@ msgstr "הושלם"
 msgid "Computer"
 msgstr "מחשב"
 
-#: src/components/ModelCredits.tsx
-msgid "Computer allowance: {computerLeft} left"
-msgstr "מכסת מחשב: נותרו {computerLeft}"
-
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "הפעלת המחשב נכשלה"
+
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "שעות מחשב שנותרו"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"

@@ -11,7 +11,7 @@ import {
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
-import { sandboxAllowance } from "@rakazo/adapters";
+import { DEFAULT_SANDBOX_HOURLY_COST_MICROS, sandboxAllowance } from "@rakazo/adapters";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
@@ -393,10 +393,12 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          computerAllowance: computerAllowance && {
-            limitUsd: computerAllowance.limitMicros / MICROS_PER_DOLLAR,
-            usedUsd: computerAllowance.usedMicros / MICROS_PER_DOLLAR,
-          },
+          computerHoursLeft:
+            computerAllowance &&
+            Math.floor(
+              Math.max(0, computerAllowance.limitMicros - computerAllowance.usedMicros) /
+                DEFAULT_SANDBOX_HOURLY_COST_MICROS,
+            ),
           referral: await referrals.status(organizationId, isOwner),
         };
       }

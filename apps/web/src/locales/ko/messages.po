@@ -1493,14 +1493,14 @@ msgstr "완료"
 msgid "Computer"
 msgstr "컴퓨터"
 
-#: src/components/ModelCredits.tsx
-msgid "Computer allowance: {computerLeft} left"
-msgstr "컴퓨터 한도: {computerLeft} 남음"
-
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "컴퓨터를 시작하지 못했습니다"
+
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "남은 컴퓨터 시간"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"

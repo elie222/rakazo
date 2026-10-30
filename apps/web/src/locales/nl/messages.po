@@ -1493,14 +1493,14 @@ msgstr "Voltooid"
 msgid "Computer"
 msgstr "Computer"
 
-#: src/components/ModelCredits.tsx
-msgid "Computer allowance: {computerLeft} left"
-msgstr "Computertegoed: {computerLeft} over"
-
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "De computer kon niet opstarten"
+
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "Resterende computeruren"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"

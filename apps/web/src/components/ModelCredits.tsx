@@ -261,11 +261,6 @@ export function ModelCreditsSettings({
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(status.balanceUsd ?? 0);
-  const computerLeft = status.computerAllowance
-    ? new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" }).format(
-        Math.max(0, status.computerAllowance.limitUsd - status.computerAllowance.usedUsd),
-      )
-    : null;
   async function action(work: () => Promise<void>) {
     if (pending) return;
     setPending(true);
@@ -313,11 +308,6 @@ export function ModelCreditsSettings({
             <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>
           )}
         </p>
-        {computerLeft ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            <Trans>Computer allowance: {computerLeft} left</Trans>
-          </p>
-        ) : null}
         {status.canManage ? (
           <div className="mt-5 flex flex-wrap gap-3">
             {freeUntil && price ? (
@@ -343,6 +333,14 @@ export function ModelCreditsSettings({
           </div>
         ) : null}
       </div>
+      {status.computerHoursLeft != null ? (
+        <div className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Computer hours left</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+        </div>
+      ) : null}
       {status.canManage ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="font-medium">

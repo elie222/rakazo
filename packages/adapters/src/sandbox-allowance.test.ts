@@ -76,7 +76,7 @@ describe("computer allowance", () => {
     expect(values).toContainEqual(now);
   });
 
-  it("prices each provider kind by its own hourly cost", async () => {
+  it("counts only computers that bill while running", async () => {
     const { deps } = allowanceDeps({
       billing: true,
       mode: "byok",
@@ -85,10 +85,10 @@ describe("computer allowance", () => {
         { kind: "docker", hours: 10 },
       ],
       sandbox: {
-        hourlyCostMicros: (computer) => (computer.kind === "boat" ? 250_000 : 0),
+        billsWhileRunning: (computer) => computer.kind === "boat",
       },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(500_000);
+    expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(400_000);
   });
 });
 
@@ -101,7 +101,7 @@ describe("computer hourly cost", () => {
   });
 
   it("never charges for a host computer", () => {
-    const sandbox = { billsWhileRunning: () => true, hourlyCostMicros: () => 1 } as never;
+    const sandbox = { billsWhileRunning: () => true } as never;
     expect(sandboxHourlyCostMicros(sandbox, { kind: "desktop" })).toBe(0);
   });
 });
