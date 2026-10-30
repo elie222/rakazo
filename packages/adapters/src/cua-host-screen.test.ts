@@ -116,7 +116,7 @@ describe("Cua host screen", () => {
     vi.useFakeTimers();
     try {
       const observed = screen.observe(scope, "TextEdit");
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(20_000);
       await expect(observed).resolves.toMatchObject({ app: "TextEdit" });
     } finally {
       vi.useRealTimers();
@@ -198,6 +198,25 @@ describe("Cua host screen", () => {
       observation: { app: "TextEdit" },
     });
     expect(calls.filter(([name]) => name === "press_key")).toHaveLength(1);
+  });
+
+  it("keeps the count of actions that ran when the window is gone afterwards", async () => {
+    let closed = false;
+    const { screen } = driver({
+      ...runningTextEdit,
+      list_windows: () =>
+        closed ? { structuredContent: { windows: [] } } : runningTextEdit.list_windows(),
+      invoke_menu: () => {
+        closed = true;
+        return { structuredContent: {} };
+      },
+    });
+    await expect(
+      screen.act(scope, "TextEdit", [{ kind: "menu", path: ["File", "Close"] }]),
+    ).resolves.toEqual({
+      completed: 1,
+      error: "TextEdit is open but shows no window. Ask the user to open one, then try again.",
+    });
   });
 
   it("asks for an observation before element numbers mean anything", async () => {

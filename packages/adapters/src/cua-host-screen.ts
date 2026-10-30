@@ -370,13 +370,16 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
         }
         completed += 1;
       }
-      // Let the app redraw before the look that shows the result.
+      // Let the app redraw before the look that shows the result. Actions that ran stay
+      // counted even when that look fails, so the bot never repeats them blindly.
       await sleep(300, undefined, { signal: scope.signal });
-      return {
-        completed,
-        ...(error ? { error } : {}),
-        observation: await observeTarget(await target(app, scope.signal), scope.signal),
-      };
+      try {
+        const observation = await observeTarget(await target(app, scope.signal), scope.signal);
+        return { completed, ...(error ? { error } : {}), observation };
+      } catch (caught) {
+        if (!(caught instanceof HostScreenError)) throw caught;
+        return { completed, error: error ?? caught.message };
+      }
     },
     async close() {
       clearTimeout(idle);

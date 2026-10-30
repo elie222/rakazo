@@ -1174,13 +1174,6 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
-  let screenLocked = false;
-  powerMonitor.on("lock-screen", () => {
-    screenLocked = true;
-  });
-  powerMonitor.on("unlock-screen", () => {
-    screenLocked = false;
-  });
   hostScreen = createDesktopHostScreen({
     platform: process.platform,
     // Installed builds ship the driver as an extra resource; `pnpm build` downloads it for development.
@@ -1195,7 +1188,7 @@ app.whenReady().then(async () => {
       requestScreenCapture: () =>
         desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
     },
-    locked: () => screenLocked,
+    locked: () => powerMonitor.getSystemIdleState(1) === "locked",
   });
   userDevices = createUserDeviceAccess({
     userDataDir,
