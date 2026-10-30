@@ -209,12 +209,20 @@ List the cases without inference:
 pnpm test:evals --list
 ```
 
-Run through a normal provider connection, referring to an existing credential
-variable rather than placing a key on the command line:
+By default every suite runs Claude Haiku 5.5 through OpenRouter, reading the key
+from `OPENROUTER_API_KEY` and pricing from the committed fixture, so results do
+not depend on a local `PI_DEFAULT_MODEL`:
+
+```bash
+pnpm test:evals --live --trials 3
+```
+
+To try another model, name an existing credential variable rather than placing
+a key on the command line:
 
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
-  --api-key-env OPENROUTER_API_KEY --trials 3
+  --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> --trials 3
 ```
 
 `--connection <private-json-file>` also accepts the shared `models/connect`
@@ -326,6 +334,39 @@ The initial live baseline is inconclusive: fourteen of fifteen trials ended with
 model-call timeout errors, mostly within two seconds rather than at the trial's
 three-minute deadline. The saved report lacks transport diagnostics to establish
 the cause. No live qualification of the suite or its judge is claimed.
+
+### Reply length evals
+
+```sh
+pnpm test:evals --suite verbosity --list
+pnpm test:evals --live --suite verbosity --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/verbosity.json
+```
+
+Six ordinary chat requests that need tools: a one-fact CRM lookup, an inbox
+check, a note whose save errors after it succeeded, a GitHub outage, work across
+two apps, and an owner whose bot instructions ask for one or two sentences.
+Each case checks the effect (the right reads, exactly one note, no other writes),
+then two structural limits on everything the person saw for the turn: a word
+budget, and no narration such as "That failed, retrying…" while it worked:
+no text in an earlier message of the turn, and none between the first and last
+tool call of the final one. One opening sentence before the first tool call is
+allowed.
+
+The `verbosity-meaning-v4` judge then grades meaning: the reply gives the
+requested outcome without contradicting the case facts, leads with it, does not
+narrate its process or correct itself, and has no recap, unrequested advice, or
+closing offer after a successful answer. One short sentence about a recovered
+error, and one short next step after a failure, are allowed. It runs only
+after the deterministic checks pass and is calibrated against reviewed examples of direct answers, narrated work,
+self-correction, closing offers, invented causes, and short-but-wrong replies.
+Owner-trusted writes are pre-approved through approval rules; the outage case
+turns off web and computer fallbacks so it grades how the failure is reported.
+
+On Claude Haiku 5.5 with the reply-style guidance, 12 of 18 trials pass, replies
+average 38 visible words, and no trial narrates between tool calls. The
+remaining failures explain a recovered save error in two sentences, list each
+failed lookup and offer to retry after an outage, or run one word over the
+owner's brevity budget.
 
 ### Long conversation and cost evals
 

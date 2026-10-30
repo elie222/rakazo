@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { runJobKey } from "@rakazo/adapter-kit";
 import { CapturingNotificationProvider, MessagingTeamChatEmulator } from "@rakazo/adapters";
-import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
+import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
-import type { EvalCase, Evidence } from "./cases.js";
+import type { EvalCase, Evidence, TurnMessage } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -174,7 +174,7 @@ export async function runTrial(
         name: "Assistant",
         title: "",
         description: "",
-        instructions: "",
+        instructions: scenario.botInstructions ?? "",
         notifyOnFinish: Boolean(scenario.routine),
       });
       botId = bot.id;
@@ -189,7 +189,16 @@ export async function runTrial(
         botId,
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
+        ...(scenario.disabledBuiltinTools
+          ? { disabledBuiltinTools: scenario.disabledBuiltinTools }
+          : {}),
       });
+      for (const tool of scenario.allowTools ?? [])
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: tool,
+        });
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
@@ -336,6 +345,7 @@ export async function runTrial(
     phase = "product";
     let lastText = "";
     const replies: string[] = [];
+    const turnMessages: TurnMessage[][] = [];
     for (const [stepIndex, step] of scenario.steps.entries()) {
       if (Date.now() >= deadline) throw new EvalFailure("incomplete", "Trial time budget exceeded");
       if ("newWorkspace" in step) {
@@ -573,6 +583,23 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
+      const firstTool = await prisma.event.findFirst({
+        where: { runId, type: "agent.tool.called" },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
+      turnMessages.push(
+        (
+          await prisma.message.findMany({
+            where: { runId, role: "bot" },
+            orderBy: { seq: "asc" },
+            select: { blocks: true, createdAt: true },
+          })
+        ).map((m) => ({
+          blocks: m.blocks as MessageBlock[],
+          beforeTools: !firstTool || m.createdAt < firstTool.createdAt,
+        })),
+      );
       if (scenario.routine && "wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
@@ -624,6 +651,7 @@ export async function runTrial(
     const evidence: Evidence = {
       text: lastText,
       replies,
+      turnMessages,
       routineRuns,
       files,
       records: services.records,

@@ -33,7 +33,11 @@ import {
 import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
 import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
-import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
+import {
+  longWorkProgressGuidance,
+  REACTION_SILENT_REPLY_GUIDANCE,
+  REPLY_STYLE_GUIDANCE,
+} from "./run-replies.js";
 import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
@@ -1324,8 +1328,7 @@ describe("userTurnInstructions", () => {
   ];
   const archiveBot =
     "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
-  const replyGuidance =
-    "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
+  const replyGuidance = `${REPLY_STYLE_GUIDANCE} ${longWorkProgressGuidance(500)}`;
   const stableTail = [
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
     "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
