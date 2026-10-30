@@ -20,6 +20,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleProbeSuccessMessage,
   savedCompatibleEndpointMatches,
+  savedCompatibleProtocol,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
@@ -372,11 +373,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
-    // A protocol belongs to its endpoint: the saved endpoint keeps its saved
-    // protocol, like header rows; any other endpoint falls back to the default.
-    const nextProtocol = savedCompatibleEndpointMatches(nextBaseUrl, credential?.baseUrl)
-      ? (credential?.apiProtocol ?? "chat-completions")
-      : "chat-completions";
+    const nextProtocol = savedCompatibleProtocol(credential, nextBaseUrl);
     setApiProtocol(nextProtocol);
     clampStagedThinkingLevel(nextProtocol);
     resetOpenAiCompatibleProbe();

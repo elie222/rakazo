@@ -6,6 +6,7 @@ import {
   OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
   savedCompatibleEndpointMatches,
+  savedCompatibleProtocol,
 } from "./openai-compatible-ui.js";
 
 describe("openAiCompatibleConnectReady", () => {
@@ -105,4 +106,19 @@ it.each(["", "https://", "https://other.test", "https://ollama.com/v2"])(
 );
 it("does not match a missing saved endpoint", () => {
   expect(savedCompatibleEndpointMatches(OLLAMA_CLOUD_BASE_URL, undefined)).toBe(false);
+});
+
+describe("savedCompatibleProtocol", () => {
+  const saved = { baseUrl: "http://127.0.0.1:8000/v1", apiProtocol: "anthropic-messages" as const };
+
+  it("keeps the saved protocol only for the saved endpoint", () => {
+    expect(savedCompatibleProtocol(saved, " http://127.0.0.1:8000/v1/ ")).toBe(
+      "anthropic-messages",
+    );
+    expect(savedCompatibleProtocol(saved, "http://other.test/v1")).toBe("chat-completions");
+    expect(savedCompatibleProtocol({ baseUrl: saved.baseUrl }, saved.baseUrl)).toBe(
+      "chat-completions",
+    );
+    expect(savedCompatibleProtocol(undefined, saved.baseUrl)).toBe("chat-completions");
+  });
 });
