@@ -1,5 +1,4 @@
 import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
-import { runJobKey } from "@rakazo/adapter-kit";
 import type { Actor, Group, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -35,6 +34,7 @@ import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "./child-bots.js";
+import { stopCancelledGroupRuns } from "./computer-idle.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
@@ -746,7 +746,7 @@ export async function createFleetGroup(
 
 /** Apply the approved membership change against the members the card was built from. */
 export async function updateFleetGroup(
-  deps: FleetDeps,
+  deps: FleetDeps & Parameters<typeof stopCancelledGroupRuns>[0],
   run: FleetRun,
   canonical: Record<string, unknown>,
 ): Promise<
@@ -766,12 +766,11 @@ export async function updateFleetGroup(
   } catch (error) {
     return repoRefusal(error);
   }
-  await Promise.all(
-    updated.cancelledRunIds.map((runId) =>
-      deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-    ),
-  );
   await appendGroupEvent(deps, run, "group.updated", updated.group);
+  // The change is committed: a failed cleanup must not leave the approved effect uncertain.
+  await stopCancelledGroupRuns(deps, run, updated).catch((error) =>
+    getLogger().error("group member teardown", error),
+  );
   const { group } = updated;
   return {
     ok: true,

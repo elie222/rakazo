@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerSleepJob,
+  runJobKey,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -16,12 +17,13 @@ import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  createGroupRepos,
   createThreadMessageInTransaction,
   recordComputerRunEnd,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
-import { toComputerRef } from "./computer-lifecycle.js";
+import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
@@ -236,6 +238,55 @@ export async function cancelComputerRunWork(
   } catch {
     // Best effort after the run is already cancelled.
   }
+}
+
+/** Stop a group's cancelled runs on their computers, then expire their leases. */
+export async function stopCancelledGroupRuns(
+  deps: {
+    prisma: PrismaClient;
+    jobs: Pick<JobPublisher, "cancel">;
+    sandbox: Pick<SandboxProvider, "execute" | "cancelRunWork" | "releaseScreen">;
+  },
+  actor: { spaceId: string; userId: string },
+  cancelled: {
+    cancelledRunIds: string[];
+    computers: Array<
+      Parameters<typeof toComputerRef>[0] & {
+        id: string;
+        botId: string;
+        runId: string;
+        fence: number;
+      }
+    >;
+  },
+): Promise<void> {
+  await Promise.all(
+    cancelled.cancelledRunIds.map((runId) =>
+      deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+    ),
+  );
+  await Promise.all(
+    cancelled.computers.map(async (computer) => {
+      if (!computer.providerRef) return;
+      const context = {
+        operationId: "stop",
+        traceId: "stop",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: computer.botId,
+        runId: computer.runId,
+        screenLeaseId: screenLeaseIdForRun(computer, computer.runId),
+        cancelRunWork: true,
+        signal: new AbortController().signal,
+      };
+      const ref = toComputerRef(computer);
+      await cancelComputerRunWork(deps.sandbox, ref, computer.id, computer.runId, context);
+      await deps.sandbox.releaseScreen?.(ref, context).catch(() => undefined);
+    }),
+  );
+  // Expire the leases only after teardown: while they were live, no other run could claim
+  // these screens.
+  await createGroupRepos(deps.prisma).releaseArchivedRunLeases(cancelled.cancelledRunIds);
 }
 
 export const BACKGROUND_WORK_PROBE = [
