@@ -32,10 +32,12 @@ import {
   userTurnMessageForRun,
 } from "@rakazo/core";
 import {
+  cancelRunsInTransaction,
   effectiveMemoryScope,
   isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  loadRunHistorySourceMessage,
   loadRunTurnCheckpoint,
   parseComputerMode,
   RunHistoryWriteError,
@@ -92,6 +94,12 @@ import {
   MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import {
+  groupGoalRootId,
+  isGroupGoalScopedRun,
+  scopeToGroupGoalWithSource,
+  trimGroupHistoryWithSource,
+} from "./local-group-history.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
@@ -183,6 +191,7 @@ import {
   RECENT_TURN_IMAGE_TURNS,
   withRecentTurnImages,
 } from "./run-turn-images.js";
+import { filterGroupPeerHandoffTool } from "./schedule-tools.js";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 import { inferScript } from "./scripted-runtime.js";
 import { listAgentSkillRecords } from "./skill-tools.js";
@@ -241,6 +250,62 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
+      const groupRootId = groupGoalRootId(run.clientNonce);
+      if (groupRootId) {
+        // A queued worker must not start an obsolete assignment after a newer
+        // user request. Recheck just before claiming the run, not only when
+        // the coordinator schedules its next stage.
+        const root = await deps.prisma.run.findUnique({
+          where: { id: groupRootId },
+          select: {
+            id: true,
+            threadId: true,
+            spaceId: true,
+            userId: true,
+            sourceMessage: { select: { role: true, seq: true, threadId: true } },
+          },
+        });
+        const superseded =
+          !root ||
+          root.threadId !== run.threadId ||
+          root.spaceId !== run.spaceId ||
+          root.userId !== run.userId ||
+          root.sourceMessage?.role !== "user" ||
+          root.sourceMessage.threadId !== root.threadId ||
+          Boolean(
+            await deps.prisma.message.findFirst({
+              where: {
+                threadId: root.threadId,
+                role: "user",
+                seq: { gt: root.sourceMessage.seq },
+              },
+              select: { id: true },
+            }),
+          );
+        if (superseded) {
+          // The status guard and cleanup must be atomic. A concurrent worker may
+          // have ended the run since it was read; do not cancel its task then.
+          await deps.prisma.$transaction(async (tx) => {
+            const cancelledAt = new Date();
+            const updated = await tx.run.updateMany({
+              where: {
+                id: runId,
+                status: {
+                  in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+                },
+              },
+              data: { status: "cancelled", completedAt: cancelledAt },
+            });
+            if (updated.count !== 1) return;
+            await cancelRunsInTransaction(
+              tx,
+              [{ id: run.id, taskId: run.taskId, userId: run.userId, spaceId: run.spaceId }],
+              cancelledAt,
+            );
+          });
+          return;
+        }
+      }
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
       const fence = nextFence(run.leaseFence);
@@ -506,6 +571,33 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
+        // Restrict internal group teamwork to the current user request and
+        // later teammate messages. Old unrelated group uploads and compressed
+        // summaries must not silently become evidence for the latest goal.
+        const goalScopedTeamRun = isGroupGoalScopedRun(run.clientNonce, task.prompt);
+        // The 200-message rolling window may no longer contain the original
+        // human request. Fetch that specific source with the full history
+        // projection, including attachment blocks, instead of only its seq.
+        const windowSource =
+          goalScopedTeamRun && run.sourceMessageId
+            ? messages.find(
+                (message) => message.id === run.sourceMessageId && message.role === "user",
+              )
+            : undefined;
+        const omittedSource =
+          goalScopedTeamRun && run.sourceMessageId && !windowSource
+            ? await loadRunHistorySourceMessage(deps.prisma, thread.id, run.sourceMessageId)
+            : null;
+        const goalStartSeq = goalScopedTeamRun
+          ? (windowSource?.seq ?? omittedSource?.seq ?? null)
+          : null;
+        if (goalScopedTeamRun && goalStartSeq == null) {
+          throw new Error("Cannot resolve the current user request for group delegation");
+        }
+        const scopedRunMessages =
+          goalStartSeq == null
+            ? messages
+            : scopeToGroupGoalWithSource(messages, goalStartSeq, omittedSource);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -578,9 +670,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ...connectedContext(connectedPlugins),
           connectedProviders: connectedComposio.map((row) => row.provider),
         };
-        const memoryScope = configuredMemory
-          ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
-          : null;
+        // Peer jobs must not resurrect unrelated past research via semantic memory.
+        const memoryScope =
+          !goalScopedTeamRun && configuredMemory
+            ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
+            : null;
         const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
 
         await deps.events.append({
@@ -598,7 +692,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const threadContext = threadContextForRun(
           run.trigger,
           {
-            messages: [...messages].reverse().map((m) => ({
+            messages: [...scopedRunMessages].reverse().map((m) => ({
               id: m.id,
               createdAt: m.createdAt?.toISOString(),
               seq: m.seq,
@@ -610,8 +704,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
                 : messageToAgentHistoryText(m),
             })),
-            summary: thread.historyCompactionSummary,
-            historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+            summary: goalScopedTeamRun ? null : thread.historyCompactionSummary,
+            historyCompactedUpToSeq: goalScopedTeamRun ? null : thread.historyCompactedUpToSeq,
           },
           messagingChannelRun,
           run.sourceMessageId,
@@ -627,7 +721,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           role,
           content,
         }));
-        const historyMessages = messages.map((message) => ({
+        const historyMessages = scopedRunMessages.map((message) => ({
           id: message.id,
           role: message.role,
           runId: message.runId,
@@ -720,7 +814,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               }),
           recallPromise,
         ]);
-        const semanticMemoryEnabled = Boolean(semanticMemory) && !messagingChannelRun;
+        const semanticMemoryEnabled =
+          Boolean(semanticMemory) && !messagingChannelRun && !goalScopedTeamRun;
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {
@@ -732,13 +827,15 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           }
         }
         if (!compactedHistory.usedLocalSummary) {
-          history = history.slice(
-            -historyWindowSize({
-              semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
-              recallSucceeded,
-            }),
-          );
+          const windowSize = historyWindowSize({
+            semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
+            compacted: thread.historyCompactedUpToSeq != null,
+            recallSucceeded,
+          });
+          history =
+            goalScopedTeamRun && run.sourceMessageId
+              ? trimGroupHistoryWithSource(history, run.sourceMessageId, windowSize)
+              : history.slice(-windowSize);
         }
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
@@ -1082,27 +1179,30 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputer = "offline";
         }
         const builtins = [
-          ...selectBuiltinToolsForRun({
-            ticketBoardEnabled: deps.ticketBoardEnabled,
-            phoneCallsEnabled: deps.phoneCallsEnabled,
-            historyRetrievalEnabled: contextStrategy !== "current",
-            graphicalToolsAllowed,
-            pageBrowserAllowed,
-            groupId: thread.groupId,
-            trigger: run.trigger,
-            semanticMemoryEnabled,
-            semanticMemoryForgets: Boolean(semanticMemory?.forget),
-            mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
-            mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
-            paymentWalletEnabled,
-            messagingChannelRun,
-            voiceCall,
-            disabledBuiltinTools: bot.disabledBuiltinTools,
-            fleetManagement: bot.fleetManagement,
-            followUpFromUser: sourceMessage?.role === "user",
-            userComputer: userComputer === "connected",
-          }),
+          ...filterGroupPeerHandoffTool(
+            selectBuiltinToolsForRun({
+              ticketBoardEnabled: deps.ticketBoardEnabled,
+              phoneCallsEnabled: deps.phoneCallsEnabled,
+              historyRetrievalEnabled: contextStrategy !== "current",
+              graphicalToolsAllowed,
+              pageBrowserAllowed,
+              groupId: thread.groupId,
+              trigger: run.trigger,
+              semanticMemoryEnabled,
+              semanticMemoryForgets: Boolean(semanticMemory?.forget),
+              mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
+              mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+              cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+              paymentWalletEnabled,
+              messagingChannelRun,
+              voiceCall,
+              disabledBuiltinTools: bot.disabledBuiltinTools,
+              fleetManagement: bot.fleetManagement,
+              followUpFromUser: sourceMessage?.role === "user",
+              userComputer: userComputer === "connected",
+            }),
+            run.clientNonce,
+          ),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&
           bot.crossSpaceCommunication === true &&

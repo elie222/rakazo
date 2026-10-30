@@ -173,6 +173,10 @@ export const messagingTools: ToolHandlers = {
   async handoff_to_bot(ctx, call) {
     const { deps, run, thread } = ctx;
     const { args, effectKey } = call;
+    if (run.clientNonce?.startsWith("local-group-team:"))
+      return call.finish({
+        error: "Report your findings to this group. The coordinator handles further delegation.",
+      });
     const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
     if (!groupId) return call.finish({ error: "group_id is required outside a group chat" });
     const result = await handoffToGroupBot(deps, run, groupId, {

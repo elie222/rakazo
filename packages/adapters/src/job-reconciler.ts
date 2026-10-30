@@ -10,6 +10,8 @@ import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { reconcileCallRequests } from "./call-request.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
+import { advanceGroupTeam } from "./local-group-dispatch.js";
+import { localGroupReviewConfig, scheduleLocalGroupReview } from "./local-group-review.js";
 import { findRunRecoveryBlockers } from "./run-recovery.js";
 import { reconcileStuckWork } from "./stuck-work.js";
 import { isLoopGuardStopText } from "./tool-loop.js";
@@ -140,6 +142,7 @@ export function createJobReconciler(
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
+  let groupReviewCursor: string | undefined;
   let controlScanDeadline: Date | undefined;
 
   const reconcileOnce = async () => {
@@ -301,6 +304,59 @@ export function createJobReconciler(
             }
           }),
         );
+      }
+
+      // Opt-in local coordinator. Recheck pending completed stages on every pass;
+      // a durable marker and row lock make restarts and multi-workers safe.
+      const localReview = localGroupReviewConfig();
+      if (events && localReview.enabled && localReview.since) {
+        const finishedPeers = await deps.prisma.run.findMany({
+          where: {
+            OR: [
+              {
+                trigger: { in: ["user", "follow_up"] },
+                status: "completed",
+                completedAt: { gte: localReview.since },
+              },
+              {
+                trigger: "follow_up",
+                status: { in: ["failed", "cancelled"] },
+                clientNonce: { startsWith: "local-group-team:" },
+                updatedAt: { gte: localReview.since },
+              },
+            ],
+            groupReviewScheduledAt: null,
+            sourceMessageId: { not: null },
+            thread: { groupId: { not: null } },
+          },
+          orderBy: [{ completedAt: "asc" }, { id: "asc" }],
+          // Resume after the previous page instead of retrying the same waiting
+          // peers, which could permanently starve newly completed requests.
+          ...(groupReviewCursor ? { cursor: { id: groupReviewCursor }, skip: 1 } : {}),
+          take: batchSize,
+          select: { id: true, clientNonce: true },
+        });
+        // Sweep the entire eligible set across reconciliation passes, then wrap.
+        groupReviewCursor =
+          finishedPeers.length === batchSize
+            ? finishedPeers[finishedPeers.length - 1]?.id
+            : undefined;
+        for (const finished of finishedPeers) {
+          try {
+            const groupStage = await advanceGroupTeam(
+              { prisma: deps.prisma, jobs: deps.jobs },
+              finished.id,
+            );
+            if (!groupStage.handled && !finished.clientNonce?.startsWith("local-group-team:")) {
+              await scheduleLocalGroupReview(
+                { prisma: deps.prisma, jobs: deps.jobs, events },
+                finished.id,
+              );
+            }
+          } catch (error) {
+            getLogger().error("local deep research/goal reconciliation", error);
+          }
+        }
       }
 
       // A queued run already has a job while it waits out failure backoff.
