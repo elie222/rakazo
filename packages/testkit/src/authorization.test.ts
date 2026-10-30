@@ -2343,9 +2343,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await exported.text()).toContain('"action":"space.created"');
 
     await db.member.updateMany({ where: { userId: account.userId }, data: { role: "member" } });
-    expect((await rpc<{ canViewAuditLog?: boolean }>(app, owner, "me")).canViewAuditLog).toBe(
-      false,
-    );
     await expectForbidden(app, owner, "audit/events", {});
     expect(
       (await app.request("/api/audit-events/export", { headers: { cookie: owner } })).status,

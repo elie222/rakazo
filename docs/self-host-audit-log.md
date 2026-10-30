@@ -3,7 +3,7 @@
 Rakazo keeps a record of who did what in each organization: which bot or person took an action,
 what was approved and by whom, and which settings and credentials changed. Recording is always on.
 
-Organization owners and admins read it in **Settings → Audit log**, and can export it as JSON Lines.
+Organization owners and admins can export it as JSON Lines, and operators can forward it to a SIEM.
 
 ## What is recorded
 

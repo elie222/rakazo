@@ -458,10 +458,6 @@ msgstr "Nombre de la cuenta"
 msgid "Account menu for {name}"
 msgstr "Menú de cuenta de {name}"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Action"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -482,10 +478,6 @@ msgstr "Activo"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Actividad"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Actor"
-msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -902,10 +894,6 @@ msgstr "Adjuntar archivo"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "Archivo adjunto"
-
-#: src/pages/settings-nav.ts
-msgid "Audit log"
-msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -2006,10 +1994,6 @@ msgstr "No se pudieron cargar las opciones de inicio de sesión"
 msgid "Could not load skill"
 msgstr "No se pudo cargar la habilidad"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not load the audit log"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "No se pudo cargar este artefacto."
@@ -2518,7 +2502,6 @@ msgid "Deletion code"
 msgstr "Código de eliminación"
 
 #: src/components/AskCard.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "Denegado"
 
@@ -2874,7 +2857,6 @@ msgstr "Expandir tabla"
 msgid "expired"
 msgstr "caducado"
 
-#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Exportar"
@@ -2908,7 +2890,6 @@ msgstr "fallido"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "Falló"
 
@@ -3456,7 +3437,6 @@ msgid "Load earlier messages"
 msgstr "Cargar mensajes anteriores"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr "Cargar más"
 
@@ -4028,10 +4008,6 @@ msgstr "Sin autenticación"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "Ningún bot coincide"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "No events yet"
-msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -5702,10 +5678,6 @@ msgstr "Tabla"
 msgid "Take control"
 msgstr "Tomar el control"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Target"
-msgstr ""
-
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Enseñar una tarea"
@@ -5969,10 +5941,6 @@ msgstr "Esta semana"
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "jueves"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Time"
-msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

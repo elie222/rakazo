@@ -458,10 +458,6 @@ msgstr "Ярлык аккаунта"
 msgid "Account menu for {name}"
 msgstr "Меню аккаунта {name}"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Action"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -482,10 +478,6 @@ msgstr "Активный"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Активность"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Actor"
-msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -902,10 +894,6 @@ msgstr "Прикрепить файл"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "Вложение"
-
-#: src/pages/settings-nav.ts
-msgid "Audit log"
-msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -2006,10 +1994,6 @@ msgstr "Не удалось загрузить способы входа"
 msgid "Could not load skill"
 msgstr "Не удалось загрузить навык"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not load the audit log"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -2518,7 +2502,6 @@ msgid "Deletion code"
 msgstr "Код удаления"
 
 #: src/components/AskCard.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "Отклонено"
 
@@ -2874,7 +2857,6 @@ msgstr "Развернуть таблицу"
 msgid "expired"
 msgstr "истёк срок"
 
-#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Экспорт"
@@ -2908,7 +2890,6 @@ msgstr "неуспешный"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "Ошибка"
 
@@ -3456,7 +3437,6 @@ msgid "Load earlier messages"
 msgstr "Загрузить более ранние сообщения"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr ""
 
@@ -4028,10 +4008,6 @@ msgstr "Нет аутентификации"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "Ни один бот не подходит"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "No events yet"
-msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -5702,10 +5678,6 @@ msgstr "Таблица"
 msgid "Take control"
 msgstr "Взять управление"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Target"
-msgstr ""
-
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Научить задачу"
@@ -5969,10 +5941,6 @@ msgstr ""
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "четверг"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Time"
-msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

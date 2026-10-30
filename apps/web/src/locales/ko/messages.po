@@ -458,10 +458,6 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name}의 계정 메뉴"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Action"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -482,10 +478,6 @@ msgstr "활성"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "활동"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Actor"
-msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -902,10 +894,6 @@ msgstr "파일 첨부"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "첨부 파일"
-
-#: src/pages/settings-nav.ts
-msgid "Audit log"
-msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -2006,10 +1994,6 @@ msgstr "로그인 옵션을 불러올 수 없습니다"
 msgid "Could not load skill"
 msgstr "스킬을 불러오지 못했습니다"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not load the audit log"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr ""
@@ -2518,7 +2502,6 @@ msgid "Deletion code"
 msgstr "삭제 코드"
 
 #: src/components/AskCard.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "거부됨"
 
@@ -2874,7 +2857,6 @@ msgstr "표 확장"
 msgid "expired"
 msgstr "만료됨"
 
-#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "내보내기"
@@ -2908,7 +2890,6 @@ msgstr "실패"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "실패"
 
@@ -3456,7 +3437,6 @@ msgid "Load earlier messages"
 msgstr "이전 메시지 불러오기"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr ""
 
@@ -4027,10 +4007,6 @@ msgstr "인증 없음"
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
-msgstr ""
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "No events yet"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -5702,10 +5678,6 @@ msgstr "표"
 msgid "Take control"
 msgstr "제어권 가져오기"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Target"
-msgstr ""
-
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "작업 가르치기"
@@ -5969,10 +5941,6 @@ msgstr ""
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "목요일"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Time"
-msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

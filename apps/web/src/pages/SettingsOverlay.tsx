@@ -15,7 +15,6 @@ import {
   UpdatesSettingsPanel,
   UsageSettingsPanel,
 } from "./AccountSettingsOverlay";
-import { AuditLogSettingsPanel } from "./AuditLogSettingsPanel";
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
@@ -45,7 +44,6 @@ export function SettingsOverlay({
   onAccountImported,
   onImportAgent,
   billingEnabled = false,
-  auditLogEnabled = false,
   sandboxProvider,
   onSandboxProviderChange,
   messagingEnabled = false,
@@ -73,7 +71,6 @@ export function SettingsOverlay({
   onAccountImported?: () => Promise<void>;
   onImportAgent?: () => void;
   billingEnabled?: boolean;
-  auditLogEnabled?: boolean;
   sandboxProvider?: string | null;
   onSandboxProviderChange?: (sandboxProvider: string) => void;
   messagingEnabled?: boolean;
@@ -99,7 +96,6 @@ export function SettingsOverlay({
   const section =
     (requestedSection === "computer" && !showComputer) ||
     (requestedSection === "billing" && !billingEnabled) ||
-    (requestedSection === "audit" && !auditLogEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
     (requestedSection === "updates" && !showUpdates)
@@ -141,7 +137,6 @@ export function SettingsOverlay({
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
-    audit: auditLogEnabled,
   });
 
   useEffect(() => {
@@ -337,10 +332,10 @@ export function SettingsOverlay({
                     : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
                 }`}
               >
-                {/* Memory scrolls its own body and applies the same width there; Usage's and the audit log's tables need the room. */}
+                {/* Memory scrolls its own body and applies the same width there; Usage's table needs the room. */}
                 <div
                   className={
-                    section === "memory" || section === "usage" || section === "audit"
+                    section === "memory" || section === "usage"
                       ? "contents"
                       : SETTINGS_CONTENT_WIDTH
                   }
@@ -409,7 +404,6 @@ export function SettingsOverlay({
                       onRecoveryDismissed={releaseComputerRecovery}
                     />
                   ) : null}
-                  {section === "audit" && auditLogEnabled ? <AuditLogSettingsPanel /> : null}
                   {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
                   {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                   {section === "models" ? (

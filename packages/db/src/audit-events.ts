@@ -121,7 +121,7 @@ function bounded(value: string | null | undefined, max: number): string | null {
 }
 
 /** The memberships that may read the audit log of the organization that owns this space. */
-export function auditLogReaderWhere(spaceId: string): Prisma.MemberWhereInput {
+function auditLogReaderWhere(spaceId: string): Prisma.MemberWhereInput {
   return { role: { in: ["owner", "admin"] }, organization: { spaces: { some: { id: spaceId } } } };
 }
 

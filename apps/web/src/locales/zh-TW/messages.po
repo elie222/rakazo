@@ -459,10 +459,6 @@ msgstr "帳號標籤"
 msgid "Account menu for {name}"
 msgstr "{name} 的帳號選單"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Action"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -483,10 +479,6 @@ msgstr "啟用"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "動態"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Actor"
-msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -903,10 +895,6 @@ msgstr "附加檔案"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "附件"
-
-#: src/pages/settings-nav.ts
-msgid "Audit log"
-msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -2007,10 +1995,6 @@ msgstr "無法載入登入選項"
 msgid "Could not load skill"
 msgstr "無法載入技能"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not load the audit log"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
 msgstr "無法載入此成品。"
@@ -2519,7 +2503,6 @@ msgid "Deletion code"
 msgstr "刪除驗證碼"
 
 #: src/components/AskCard.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "已拒絕"
 
@@ -2875,7 +2858,6 @@ msgstr "展開表格"
 msgid "expired"
 msgstr "已過期"
 
-#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "匯出"
@@ -2909,7 +2891,6 @@ msgstr "失敗"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "失敗"
 
@@ -3457,7 +3438,6 @@ msgid "Load earlier messages"
 msgstr "載入更早的訊息"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr "載入更多"
 
@@ -4029,10 +4009,6 @@ msgstr "無驗證"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "沒有符合的機器人"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "No events yet"
-msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -5703,10 +5679,6 @@ msgstr "表格"
 msgid "Take control"
 msgstr "接管控制權"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Target"
-msgstr ""
-
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "示範任務"
@@ -5970,10 +5942,6 @@ msgstr "本週"
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "週四"
-
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Time"
-msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

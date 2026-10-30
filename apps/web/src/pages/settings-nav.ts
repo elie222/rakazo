@@ -5,7 +5,6 @@ import {
   Cpu,
   CreditCard,
   Gauge,
-  History,
   KeyRound,
   MessageCircle,
   Monitor,
@@ -30,7 +29,6 @@ export function useSettingsNavItems(available: {
   computer: boolean;
   billing: boolean;
   updates: boolean;
-  audit: boolean;
 }): SettingsNavItem[] {
   const { t } = useLingui();
   return [
@@ -45,7 +43,6 @@ export function useSettingsNavItems(available: {
     ...(available.wallet ? [{ id: "wallet" as const, label: t`Wallet`, icon: Wallet }] : []),
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "usage", label: t`Usage`, icon: Gauge },
-    ...(available.audit ? [{ id: "audit" as const, label: t`Audit log`, icon: History }] : []),
     ...(available.computer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
     ...(available.updates
