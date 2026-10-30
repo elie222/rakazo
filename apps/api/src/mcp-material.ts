@@ -132,11 +132,15 @@ export function buildMcpUpdateMaterial(
     ...(headers !== undefined ? { headers } : {}),
     ...(hasFiles ? { files } : {}),
   };
-  // env is full-replace and the contract defaults it to {}, so an update without
-  // credentials replaces the stored names with nothing. An empty record is not a
-  // credential: dropping it lets an emptied material reach {} so the caller deletes
-  // the secret row instead of storing `{"env":{}}` and reporting a saved credential.
+  // env and headers are full-replace and the contract defaults them to {}, so an update
+  // without credentials replaces the stored names with nothing. An empty record is not a
+  // credential: dropping it lets an emptied material reach {} so the caller deletes the
+  // secret row instead of storing `{"env":{}}` or `{"headers":{}}` and reporting a saved
+  // credential.
   if (stored.env !== undefined && Object.keys(stored.env).length === 0) delete stored.env;
+  if (stored.headers !== undefined && Object.keys(stored.headers).length === 0) {
+    delete stored.headers;
+  }
   return { action: "store", material: stored };
 }
 
