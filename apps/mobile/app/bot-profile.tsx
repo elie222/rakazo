@@ -60,7 +60,10 @@ export default function BotProfile() {
         .then((next) => {
           if (current) setComputer(next);
         })
-        .catch(() => undefined);
+        // A stale Running or Asleep is worse than no state.
+        .catch(() => {
+          if (current) setComputer(null);
+        });
       return () => {
         current = false;
       };
