@@ -178,8 +178,9 @@ async function moveMcpArgs() {
       signal: controller.signal,
     });
     write(
-      `mcp server arguments: ${counts.moved} encrypted, ${counts.planned} planned, ${counts.concurrent} changed concurrently`,
+      `mcp server arguments: ${counts.moved} encrypted, ${counts.planned} planned, ${counts.concurrent} changed concurrently, ${counts.failed} failed`,
     );
+    if (counts.failed) process.exitCode = 1;
   } finally {
     await secrets.close();
   }

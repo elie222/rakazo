@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Arguments of a stdio MCP server, which can carry tokens, are stored encrypted with its other credentials and are no longer returned to clients; leaving them blank when editing keeps them. Self-hosted deployments move arguments saved earlier with `content-encryption migrate` ([content encryption](docs/self-host-storage.md#content-encryption)).
+- Arguments of a stdio MCP server, which can carry tokens, are stored encrypted with its other credentials and are no longer returned to clients; leaving them blank when editing keeps them. Arguments saved earlier move into encrypted storage automatically when the API starts.
 - Approval rules judge each action in a Composio batch even when Composio is connected as an MCP server, so "Always allow" on one action no longer allows every other action through that server.
 - Mobile threads now show work started by another client as soon as the run starts, without hiding waiting runs or another group member's error.
 - Hovering a message no longer places its entire row above the floating chat header and other higher-priority controls.
