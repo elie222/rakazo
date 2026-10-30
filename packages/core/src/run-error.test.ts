@@ -735,6 +735,29 @@ describe("the one action that fixes a failed run", () => {
     });
   });
 
+  it("waits out a 429 that resets hours from now instead of calling it a rate limit", () => {
+    const daily = (reset: number) =>
+      `429 ${JSON.stringify({
+        error: {
+          message: "Rate limit exceeded: free-models-per-day",
+          code: 429,
+          metadata: {
+            headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(reset) },
+            limit_source: "openrouter_free_tier_daily",
+          },
+        },
+      })}`;
+    const tomorrow = Date.parse("2026-10-02T00:00:00Z");
+    expect(normalizeRunError(daily(tomorrow), undefined, "en", now)).toMatchObject({
+      summary: "Your OpenRouter reached its daily credit limit. Resets Oct 2.",
+      kind: "credit",
+      period: "daily",
+      recovery: "model",
+      resetAt: tomorrow,
+    });
+    expect(action(daily(now + 30_000))).toMatchObject({ kind: "rate" });
+  });
+
   it.each([
     '401: {"message":"Missing Authentication header","code":401}',
     '401: {"message":"User not found.","code":401}',

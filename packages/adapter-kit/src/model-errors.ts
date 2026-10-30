@@ -1,3 +1,5 @@
+import { providerQuotaResetAt } from "@rakazo/contracts";
+
 /** A model call failed for a reason that should clear on its own, such as an overloaded provider. */
 export class TransientModelError extends Error {
   constructor(message: string) {
@@ -169,6 +171,8 @@ export function isTransientModelError(error: unknown): boolean {
   if (statuses.has(402)) return false;
   // An exhausted account stays exhausted; retrying the same model cannot help.
   if (isAccountExhaustion(text, statuses)) return false;
+  // A limit the provider says resets hours from now will not clear during a retry.
+  if (providerQuotaResetAt(text) !== undefined) return false;
   // Short rate windows can reset during a retry; subscription and billing limits cannot.
   const shortWindow =
     /\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|retry[- ]after[: ]+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b/.test(

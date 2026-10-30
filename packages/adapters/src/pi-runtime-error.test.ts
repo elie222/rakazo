@@ -165,6 +165,15 @@ describe("Pi runtime errors after every backup failed", () => {
     '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}';
   const unknown = "Cannot read properties of undefined (reading 'content')";
   const emptyReply = "Provider returned an empty response";
+  const dailyQuota = `429 ${JSON.stringify({
+    error: {
+      message: "Rate limit exceeded: free-models-per-day",
+      code: 429,
+      metadata: { headers: { "X-RateLimit-Reset": String(Date.now() + 10 * 60 * 60_000) } },
+    },
+  })}`;
+  const rateLimited =
+    '429 {"type":"error","error":{"type":"rate_limit_error","message":"Rate limited"}}';
 
   function exhausted(primaryError: string, reasons: string[], skipped: string[] = []) {
     return modelFallbackFailure(primaryError, [
@@ -194,6 +203,11 @@ describe("Pi runtime errors after every backup failed", () => {
     [
       "an account failure outranks timeouts",
       exhausted(timedOut, [timedOut, freeTier]),
+      ModelAccountError,
+    ],
+    [
+      "a quota that resets hours away outranks a rate-limited backup",
+      exhausted(dailyQuota, [rateLimited]),
       ModelAccountError,
     ],
     ["bad output outranks timeouts", exhausted(timedOut, [emptyReply]), ModelOutputError],

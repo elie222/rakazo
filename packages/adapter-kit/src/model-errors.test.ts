@@ -125,6 +125,23 @@ describe("transient model errors", () => {
   ])("treats the exhausted usage window as permanent: %s", (message) => {
     expect(isTransientModelError({ status: 403, type: "permission_error", message })).toBe(false);
   });
+
+  it("moves to a backup without retrying a quota that resets hours from now", () => {
+    const daily = (reset: number) =>
+      `429 ${JSON.stringify({
+        error: {
+          message: "Rate limit exceeded: free-models-per-day",
+          code: 429,
+          metadata: {
+            headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(reset) },
+          },
+        },
+      })}`;
+    const exhausted = { errorMessage: daily(Date.now() + 10 * 60 * 60_000) };
+    expect(isTransientModelError(exhausted)).toBe(false);
+    expect(isRetryableProviderUnavailable(exhausted)).toBe(true);
+    expect(isTransientModelError({ errorMessage: daily(Date.now() + 30_000) })).toBe(true);
+  });
 });
 
 describe("provider availability classification", () => {

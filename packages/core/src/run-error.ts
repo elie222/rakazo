@@ -1,5 +1,5 @@
 import type { RunErrorKind } from "@rakazo/contracts";
-import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
+import { COMPUTER_RATE_LIMIT_ERROR, providerQuotaResetAt } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
 export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
@@ -324,8 +324,11 @@ export function normalizeRunError(
     /insufficient[_ ](?:quota|balance)|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(
       signals,
     );
+  // A 429 that resets hours from now is a quota to wait out, not a short rate window.
+  const quotaResetAt = status === 429 ? providerQuotaResetAt(trimmed, now) : undefined;
   if (
     status !== 413 &&
+    quotaResetAt === undefined &&
     (status === 429 ||
       /rate[_ -]limit|too many requests|resource[_ ]?exhausted|request limit reached/i.test(
         signals,
@@ -337,6 +340,7 @@ export function normalizeRunError(
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 402 ||
+    quotaResetAt !== undefined ||
     /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
       signals,
     )
@@ -361,7 +365,7 @@ export function normalizeRunError(
         : /key[_ ]limit|\bkey\b[^.]{0,30}\blimit\b/i.test(signals)
     )
       ? "key"
-      : /credit|insufficient_quota/i.test(signals)
+      : /credit|insufficient_quota|free[_ -]tier/i.test(signals)
         ? "credit"
         : "spending";
     // A capped key is fixed by connecting another; an account out of money or quota is not, but
@@ -383,15 +387,18 @@ export function normalizeRunError(
         date.getTime() > now
       ) {
         resetAt = date.getTime();
-        summary = translate("{summary} Resets {date}.", {
-          summary,
-          date: new Intl.DateTimeFormat(locale, {
-            month: "short",
-            day: "numeric",
-            timeZone: "UTC",
-          }).format(date),
-        });
       }
+    }
+    resetAt ??= quotaResetAt;
+    if (resetAt !== undefined) {
+      summary = translate("{summary} Resets {date}.", {
+        summary,
+        date: new Intl.DateTimeFormat(locale, {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }).format(resetAt),
+      });
     }
   } else if (
     typeof payload.param === "string" &&
