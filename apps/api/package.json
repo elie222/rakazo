@@ -17,7 +17,7 @@
     "secrets:infisical": "tsx src/cli/secrets-infisical.ts",
     "content-encryption": "tsx src/cli/content-encryption.ts",
     "home-storage": "tsx src/cli/home-storage.ts",
-    "shared-storage": "tsx src/cli/shared-storage.ts src/cli/diagnostics.ts"
+    "shared-storage": "tsx src/cli/shared-storage.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
