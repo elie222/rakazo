@@ -4,6 +4,7 @@ import { recordSecurityEvent } from "@rakazo/db";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { oidcProofKey } from "./account-security.js";
+import type { EmailLocaleOf } from "./email.js";
 import { identityCodeEmail } from "./email.js";
 
 /** How long one confirmation lets a session reach sensitive data. */
@@ -82,7 +83,10 @@ const expiredCode = () =>
  * Step-up confirmation for the signed-in session. Password accounts confirm with their
  * password; accounts without one use an emailed code or a fresh SSO sign-in, like deletion.
  */
-export function identityConfirmation(email: TransactionalEmailProvider | undefined) {
+export function identityConfirmation(
+  email: TransactionalEmailProvider | undefined,
+  emailLocaleOf: EmailLocaleOf,
+) {
   return {
     id: "identity-confirmation",
     endpoints: {
@@ -105,7 +109,8 @@ export function identityConfirmation(email: TransactionalEmailProvider | undefin
             value: `${user.id}:${hashCode(code)}:0`,
             expiresAt: new Date(Date.now() + CODE_EXPIRES_MS),
           });
-          await email.send(await identityCodeEmail(user.email, code));
+          const locale = await emailLocaleOf({ id: user.id }, ctx.headers);
+          await email.send(await identityCodeEmail(user.email, code, locale));
           return ctx.json({ success: true });
         },
       ),

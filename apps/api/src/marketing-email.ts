@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import { welcomeEmail } from "@rakazo/auth";
+import { emailLocale, welcomeEmail } from "@rakazo/auth";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { Hono } from "hono";
@@ -36,11 +36,13 @@ export async function sendWelcomeEmail(
     onError: (error: unknown) => void;
   },
   userId: string,
+  /** The first sign-in comes before any app reports a language, so its browser's stands in. */
+  headers?: Headers,
 ): Promise<void> {
   try {
     const user = await deps.prisma.user.findFirst({
       where: { id: userId, createdAt: { gte: new Date(Date.now() - WELCOME_WINDOW_MS) } },
-      select: { email: true, name: true },
+      select: { email: true, name: true, locale: true },
     });
     if (!user) return;
     const claim = await deps.prisma.emailSend.createMany({
@@ -48,7 +50,11 @@ export async function sendWelcomeEmail(
       skipDuplicates: true,
     });
     if (claim.count === 0) return;
-    const message = await welcomeEmail(user, unsubscribeUrl(deps.origin, deps.secret, userId));
+    const message = await welcomeEmail(
+      user,
+      unsubscribeUrl(deps.origin, deps.secret, userId),
+      emailLocale(user.locale, headers),
+    );
     // The provider tracks the send, so shutdown drains it; sign-in does not wait on delivery.
     void deps.email.send(message).catch(deps.onError);
   } catch (error) {
