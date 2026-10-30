@@ -3,15 +3,26 @@ import { threadWindowMessages } from "@rakazo/core";
 import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import type { ListRenderItem } from "react-native";
-import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  I18nManager,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import type { MobileMessage } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
+import { threadColumnTrailingInset } from "../../lib/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread-list-scroll";
 import type { useThreadPaging } from "../../lib/thread-paging";
 import { ThreadScrollSurface } from "../thread-scroll-surface";
 import { JumpToLatestButton } from "./thread-list-controls";
 
 const styles = StyleSheet.create({
+  // Full screen width. Column padding stays on the content so the indicator
+  // is drawn on the screen edge rather than inside the column.
   list: { flex: 1 },
 });
 const messageListPosition = { minIndexForVisible: 0 };
@@ -30,6 +41,7 @@ export function ThreadMessageList({
   threadKey,
   headerClearance,
   bottomInset,
+  columnPadding,
   visibleMessages,
   liveItems,
   renderItem,
@@ -47,6 +59,8 @@ export function ThreadMessageList({
   headerClearance: { padding: number; minHeight: number };
   /** Space under the list that the composer does not cover. */
   bottomInset: number;
+  /** Message inset. Applied to the content, never the scroll view frame. */
+  columnPadding: { paddingLeft: number; paddingRight: number };
   visibleMessages: MobileMessage[];
   liveItems: ThreadItem<MobileMessage>[];
   renderItem: ListRenderItem<ThreadItem<MobileMessage>>;
@@ -65,9 +79,14 @@ export function ThreadMessageList({
   const { showPinnedPage, pinnedTarget, pinnedNewerCursor, behavior, state } = scroll;
   const { jumpTarget } = scroll;
   const listContentStyle = useMemo(
-    () => ({ paddingBottom: headerClearance.padding, paddingTop: bottomInset + 16 }),
-    [headerClearance.padding, bottomInset],
+    () => ({
+      paddingBottom: headerClearance.padding,
+      paddingTop: bottomInset + 16,
+      ...columnPadding,
+    }),
+    [headerClearance.padding, bottomInset, columnPadding],
   );
+  const jumpInset = threadColumnTrailingInset(columnPadding, I18nManager.isRTL);
 
   return (
     // The floor keeps a tall suggestion list from sliding under the transparent header.
@@ -81,12 +100,13 @@ export function ThreadMessageList({
           <ScrollView
             key={jumpTarget ?? pinnedTarget?.messageId ?? threadKey}
             ref={scroll.pinnedList}
-            style={{ flex: 1 }}
+            style={styles.list}
             // A pinned page always shows the floating jump button (44pt, 12pt from the
             // bottom), so its last message must be able to scroll clear of it.
             contentContainerStyle={{
               paddingTop: headerClearance.padding,
               paddingBottom: 12 + 44 + 16,
+              ...columnPadding,
             }}
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             maintainVisibleContentPosition={messageListPosition}
@@ -139,6 +159,7 @@ export function ThreadMessageList({
       )}
       {showPinnedPage || state.detached ? (
         <JumpToLatestButton
+          insetEnd={jumpInset}
           unread={state.unread}
           onPress={() => {
             if (showPinnedPage) {

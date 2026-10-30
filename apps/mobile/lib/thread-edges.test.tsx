@@ -4,6 +4,9 @@ import { ScrollViewMarker } from "react-native-screens/experimental";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
+  THREAD_COLUMN_GUTTER,
+  threadColumnPadding,
+  threadColumnTrailingInset,
   threadEdgeOptions,
   threadHeaderClearance,
   threadHeaderFloats,
@@ -78,4 +81,22 @@ it.each([64, 96, 116, 120])(
 
 it("preserves Android clearance without a floating header", () => {
   expect(threadHeaderClearance(0)).toEqual({ padding: 8, anchor: 24, minHeight: 0 });
+});
+
+it("pads the chat column inside the screen, including a cutout and a wide gutter", () => {
+  expect(THREAD_COLUMN_GUTTER).toBe(20);
+  expect(threadColumnPadding({ left: 0, right: 0 })).toEqual({
+    paddingLeft: 20,
+    paddingRight: 20,
+  });
+  expect(threadColumnPadding({ left: 40, right: 8 })).toEqual({
+    paddingLeft: 60,
+    paddingRight: 28,
+  });
+});
+
+it("keeps the jump button on the column's trailing edge in both directions", () => {
+  const padding = threadColumnPadding({ left: 40, right: 8 });
+  expect(threadColumnTrailingInset(padding, false)).toBe(28);
+  expect(threadColumnTrailingInset(padding, true)).toBe(60);
 });
