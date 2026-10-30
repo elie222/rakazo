@@ -20,7 +20,6 @@ export async function message(
   to: string,
   subject: string,
   content: ReactNode,
-  headers?: Record<string, string>,
   unsubscribeUrl?: string,
 ): Promise<TransactionalEmail> {
   const html = await render(
@@ -66,16 +65,16 @@ export async function message(
               rakazo
             </Text>
             {content}
-            <Hr style={{ borderTop: `1px solid ${lightTokens.card}`, marginTop: "28px" }} />
-            <Text style={{ color: lightTokens.foreground, fontSize: "12px", marginBottom: 0 }}>
-              {unsubscribeUrl ? (
-                <Link href={unsubscribeUrl} style={linkStyle}>
-                  Unsubscribe
-                </Link>
-              ) : (
-                "Rakazo"
-              )}
-            </Text>
+            {unsubscribeUrl ? (
+              <>
+                <Hr style={{ borderColor: lightTokens.border, marginTop: "28px" }} />
+                <Text style={{ fontSize: "12px", marginBottom: 0 }}>
+                  <Link href={unsubscribeUrl} style={{ color: lightTokens.mutedForeground }}>
+                    Unsubscribe
+                  </Link>
+                </Text>
+              </>
+            ) : null}
           </Section>
         </Container>
       </Body>
@@ -86,16 +85,11 @@ export async function message(
     subject,
     html,
     text: toPlainText(html),
-    ...(headers || unsubscribeUrl
+    ...(unsubscribeUrl
       ? {
           headers: {
-            ...headers,
-            ...(unsubscribeUrl
-              ? {
-                  "List-Unsubscribe": `<${unsubscribeUrl}>`,
-                  "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-                }
-              : {}),
+            "List-Unsubscribe": `<${unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
           },
         }
       : {}),

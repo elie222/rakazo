@@ -445,9 +445,6 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
-      '@rakazo/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -32,7 +32,6 @@ export function referralEmail(
       </Text>
       <Text>Elie</Text>
     </>,
-    undefined,
     unsubscribeUrl,
   );
 }

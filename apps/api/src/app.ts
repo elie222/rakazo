@@ -97,12 +97,7 @@ import {
   verifyModelServesAgents,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import {
-  createAuth,
-  createReferralEmailReconciler,
-  isBlockedAuthPath,
-  loopbackTwinOrigins,
-} from "@rakazo/auth";
+import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
@@ -174,6 +169,7 @@ import { createMessagingReceipts } from "./messaging-receipts.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { monitoringRoutes } from "./monitoring.js";
 import { pluginSubmissionRoutes } from "./plugin-submissions.js";
+import { sendReferralEmails, startReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
@@ -463,15 +459,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
-  const referralsEnabled = billing?.referralsEnabled ?? false;
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
     create: {
       id: "default",
       modelCreditsEnabled,
-      referralsEnabled,
     },
-    update: { modelCreditsEnabled, referralsEnabled },
+    update: { modelCreditsEnabled },
   });
   const installed = new InstalledConnectorProvider(
     prisma,
@@ -697,19 +691,24 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           prisma,
           securityEventRetentionDays(),
         ),
-        reconcileReferralEmails: createReferralEmailReconciler({
-          prisma,
-          email,
-          enabled: Boolean(env.welcomeEmailEnabled),
-          replyTo: env.emailReplyTo,
-          origin: env.webOrigin,
-          secret: env.encryptionKey,
-          onError: onEmailError,
-        }),
         reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
       })
     : undefined;
   reconciler?.start();
+  const stopReferralEmails =
+    email && env.welcomeEmailEnabled && billing?.referralsEnabled
+      ? startReferralEmails(
+          sendReferralEmails({
+            prisma,
+            email,
+            appUrl: new URL("/app", env.webOrigin).href,
+            origin: env.authUrl,
+            secret: env.authSecret,
+            onError: onEmailError,
+          }),
+          onEmailError,
+        )
+      : undefined;
 
   const router = createRouter({
     speechSummary:
@@ -866,7 +865,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       onEmailError,
     }),
   );
-  app.route("/", marketingEmailRoutes(prisma, env.authSecret, env.encryptionKey));
+  app.route("/", marketingEmailRoutes(prisma, env.authSecret));
   mountApiRequestBodyLimits(app, env.maxUploadSizeBytes);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountDiagramScript(app);
@@ -1412,6 +1411,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await messaging?.shutdown?.();
       await teamChatBridge?.stop();
       await stopInstalledBridges?.();
+      await stopReferralEmails?.();
       await email?.drain?.();
       await reconciler?.stop();
       await oauthTokenUpgrade;

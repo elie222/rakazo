@@ -2,7 +2,7 @@ import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createReferralEmailReconciler } from "./marketing-email.js";
+import { sendReferralEmails } from "./referral-email.js";
 
 const dbTests =
   process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL
@@ -23,17 +23,11 @@ dbTests("day-one email eligibility and durable claims", () => {
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = asSystem(db.prisma);
-    await prisma.deploymentSettings.upsert({
-      where: { id: "default" },
-      create: { id: "default", referralsEnabled: true },
-      update: { referralsEnabled: true },
-    });
     vi.spyOn(Date, "now").mockReturnValue(now);
-    reconcile = createReferralEmailReconciler({
+    reconcile = sendReferralEmails({
       prisma,
       email: { send } as unknown as TransactionalEmailProvider,
-      enabled: true,
-      replyTo: "support@example.com",
+      appUrl: "https://app.example.com/app",
       origin: "https://app.example.com",
       secret: "test-auth-secret-at-least-32-characters",
       onError,

@@ -1,15 +1,28 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import {
-  UNSUBSCRIBE_PATH,
-  unsubscribeUrl,
-  validUnsubscribeToken as validToken,
-  welcomeEmail,
-} from "@rakazo/auth";
+import { welcomeEmail } from "@rakazo/auth";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { Hono } from "hono";
 
-export { unsubscribeUrl } from "@rakazo/auth";
+export const UNSUBSCRIBE_PATH = "/api/v1/email/unsubscribe";
+
+function unsubscribeToken(secret: string, userId: string): string {
+  return createHmac("sha256", secret).update(`marketing-unsubscribe:${userId}`).digest("base64url");
+}
+
+export function unsubscribeUrl(origin: string, secret: string, userId: string): string {
+  const url = new URL(UNSUBSCRIBE_PATH, origin);
+  url.searchParams.set("user", userId);
+  url.searchParams.set("token", unsubscribeToken(secret, userId));
+  return url.href;
+}
+
+function validToken(secret: string, userId: string, token: string): boolean {
+  const expected = Buffer.from(unsubscribeToken(secret, userId));
+  const actual = Buffer.from(token);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
 
 // Accounts older than this never get a welcome, including those created before the email existed.
 const WELCOME_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -44,22 +57,12 @@ export async function sendWelcomeEmail(
 }
 
 // GET only confirms: link scanners open every URL in an email. Mail clients POST (RFC 8058).
-export function marketingEmailRoutes(
-  prisma: PrismaClient,
-  secret: string,
-  productEmailSecret?: string,
-) {
+export function marketingEmailRoutes(prisma: PrismaClient, secret: string) {
   const app = new Hono();
   const verifiedUser = (url: string) => {
     const params = new URL(url).searchParams;
     const userId = params.get("user") ?? "";
-    const token = params.get("token") ?? "";
-    // Workers already hold the encryption key; never give them the session-signing secret.
-    return userId &&
-      (validToken(secret, userId, token) ||
-        (productEmailSecret && validToken(productEmailSecret, userId, token)))
-      ? userId
-      : null;
+    return userId && validToken(secret, userId, params.get("token") ?? "") ? userId : null;
   };
   app.get(UNSUBSCRIBE_PATH, (c) =>
     verifiedUser(c.req.url)

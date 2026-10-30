@@ -62,7 +62,6 @@ export function welcomeEmail(
       <Text>Have any questions? Reply to this email.</Text>
       <Text>Elie</Text>
     </>,
-    undefined,
     unsubscribeUrl,
   );
 }
