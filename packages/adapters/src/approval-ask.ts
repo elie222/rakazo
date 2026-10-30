@@ -52,10 +52,16 @@ export function buildApprovalAskBlock(
       ),
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "deny", label: "Deny" },
-      ],
+      actions: toolRequiresExplicitApproval(toolName)
+        ? [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ]
+        : [
+            { id: "allow", label: "Allow once" },
+            { id: "always", label: "Always allow this tool" },
+            { id: "deny", label: "Deny" },
+          ],
     };
   }
   if (toolName === "respond_agent_connection") {

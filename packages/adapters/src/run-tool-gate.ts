@@ -232,7 +232,9 @@ export async function gateToolCall(
   // site this run was not given needs a person: a reviewer would judge it on this run's
   // context, and passing it would trust the site for every later run.
   const scheduleNamesNewSite =
-    (name === "schedule_create" || (name === "schedule_update" && Boolean(args.prompt))) &&
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const requiresApprovalByDefault =
