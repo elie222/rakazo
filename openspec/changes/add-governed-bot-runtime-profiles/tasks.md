@@ -1,6 +1,15 @@
 # Tasks
 
-This is an unstarted implementation checklist. The current authorization covers planning and OpenSpec setup only. Start implementation only after a new owner request selects the apply workflow. Backlog TASK-394 tracks the draft; keep overall implementation status on the existing board and use this file as the implementation checklist.
+Implementation is in progress under the owner-approved bounded persona scope. TASK-394 records the current authorization: continue isolated implementation and prepare a pull request; do not deploy, merge, or push to the default branch. The full design remains incomplete. Keep overall status on TASK-394 and use this file as the implementation checklist.
+
+### Verified persona regression milestone
+
+- [x] Reproduce and correct the routine-backoff transaction assertions without weakening the routine lock checks (`6e4c3a5`, typed spy follow-up `15a2cd8`).
+- [x] Supply scoped bot/profile delegates and transaction clients in legacy executor fixtures (`86da6a8`). Both previously failing files pass all 155 tests.
+- [x] Run the broader relevant regression set: 995 tests pass in 40 files. Adapter, API and web TypeScript checks pass.
+- [ ] Complete the full design and integrated release gates below. The focused persona result does not complete extension, learning, initiative, routing or specialist requirements.
+
+The setup error handler logs the sanitized original error before it queries the failure streak. A second database failure in that query can replace the propagated exception. Missing fixture methods caused the observed failures. No production error-handling change forms part of this milestone.
 
 The sequence below implements the whole agreed design. Groups 10 and 13 include optional integrations: complete their discovery and conformance work, but keep activation disabled if a gate fails. Record a specific blocker and reconcile the design/specs rather than calling an unverified integration complete or substituting another product silently. Exact dependency versions and deployment defaults are technical discovery items; changing the agreed trust or product scope requires owner review.
 
