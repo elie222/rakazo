@@ -160,6 +160,7 @@ export function NewSpaceDialog({
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (event.key === "Enter") create();
             }}
             placeholder={t`Customer support`}
