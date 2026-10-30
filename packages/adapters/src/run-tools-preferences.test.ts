@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { preferenceTools } from "./run-tools-preferences.js";
 
-function fakeAccount(ownerStartedRun = true, tainted = false) {
+function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?: string) {
   const users = {
     starter: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
     other: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
@@ -34,6 +34,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false) {
         name: "update_preferences",
         args,
         executionId: "call-1",
+        nextApprovedTool,
         finish: async (result: unknown) => result,
       } as never,
     );
@@ -94,6 +95,14 @@ describe("update_preferences", () => {
     });
     expect(users.starter.marketingEmailOptOutAt).toBeNull();
     await expect(call({})).resolves.toEqual({ timezone: "UTC", marketingEmails: true });
+  });
+
+  it("applies a change the owner approved after outside content", async () => {
+    const { users, call } = fakeAccount(true, true, "update_preferences");
+    await expect(call({ timezone: "Asia/Tokyo" })).resolves.toMatchObject({
+      timezone: "Asia/Tokyo",
+    });
+    expect(users.starter.timezone).toBe("Asia/Tokyo");
   });
 
   it("is offered only on runs the account owner started", () => {

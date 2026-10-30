@@ -28,7 +28,9 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
   const write = timezone !== undefined || marketingEmails !== undefined;
   if (write && isSubagentToolExecution(call.executionId))
     return call.finish({ error: "Helpers cannot change account preferences." });
-  if (write && (await isRunTainted(ctx)))
+  // The owner already approved the change itself; its replay runs in a later attempt.
+  const approved = call.nextApprovedTool === "update_preferences";
+  if (write && !approved && (await isRunTainted(ctx)))
     return call.finish({
       error:
         "Account preferences are blocked for the rest of this run because it read outside content.",
