@@ -300,7 +300,7 @@ export function scheduleComputerSleep(
 }
 
 /** When a rate-limited provider said it takes requests again. */
-function rateLimitEnds(error: unknown): Date | undefined {
+export function rateLimitEnds(error: unknown): Date | undefined {
   return error instanceof SandboxRateLimitError && error.retryAfterMs
     ? new Date(Date.now() + error.retryAfterMs)
     : undefined;
@@ -773,20 +773,7 @@ function mayNeedSleep(computer: { state: string; updatedAt: Date }): boolean {
  * the next idle check, so the job succeeds instead of spending its retries on the same answer.
  */
 function deferSleep(error: unknown, computer: { id: string; kind: string }): boolean {
-  const reason =
-    error instanceof SandboxRateLimitError
-      ? "rate_limited"
-      : error instanceof SandboxUnresponsiveError
-        ? "unresponsive"
-        : error instanceof SandboxUnavailableError
-          ? "unavailable"
-          : error instanceof WorkspaceTooLargeError
-            ? error.limit === "bytes"
-              ? "too_large"
-              : "too_many_files"
-            : error instanceof HomeSaveConflictError
-              ? "saved_elsewhere"
-              : undefined;
+  const reason = sleepDeferReason(error);
   if (!reason) return false;
   getLogger().warn("computer.sleep_deferred", {
     "computer.id": computer.id,
@@ -795,6 +782,23 @@ function deferSleep(error: unknown, computer: { id: string; kind: string }): boo
     error,
   });
   return true;
+}
+
+/** Why a save or stop that failed with `error` left the computer up, to be tried again later. */
+export function sleepDeferReason(error: unknown): string | undefined {
+  return error instanceof SandboxRateLimitError
+    ? "rate_limited"
+    : error instanceof SandboxUnresponsiveError
+      ? "unresponsive"
+      : error instanceof SandboxUnavailableError
+        ? "unavailable"
+        : error instanceof WorkspaceTooLargeError
+          ? error.limit === "bytes"
+            ? "too_large"
+            : "too_many_files"
+          : error instanceof HomeSaveConflictError
+            ? "saved_elsewhere"
+            : undefined;
 }
 
 /**

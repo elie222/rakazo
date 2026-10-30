@@ -464,21 +464,25 @@ export async function checkpointAndRecordComputerWorkspace(
 
 /**
  * Saves the computer's workspace, then stops it. Nothing on a damaged computer can be read, so it
- * stops without the save and keeps the provider's last good copy; any other save failure throws.
+ * stops without the save and keeps the provider's last good copy; any other save failure throws
+ * before anything is stopped. `onStop` runs just before the provider is asked to stop it.
  */
 export async function checkpointAndStopComputer(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
   computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
+  onStop?: () => void,
 ): Promise<void> {
   try {
     await checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
   } catch (error) {
     if (!isSandboxDamagedError(error)) throw error;
+    onStop?.();
     await deps.sandbox.stop(computer, context, { discardUnsaved: true });
     return;
   }
+  onStop?.();
   await deps.sandbox.stop(computer, context);
 }
 
