@@ -5285,6 +5285,10 @@ msgstr "서버 URL"
 msgid "Settings"
 msgstr "설정"
 
+#: src/components/AskCard.tsx
+msgid "Settings updated"
+msgstr "설정이 업데이트됨"
+
 #: src/pages/Shell.tsx
 msgid "Settings: {label}"
 msgstr ""

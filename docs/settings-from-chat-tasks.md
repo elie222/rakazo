@@ -82,18 +82,22 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ### 2. Bot settings from chat
 
-- [ ] Remove `propose_instructions_update` and its approval wiring; `update_bot`
+- [x] Remove `propose_instructions_update` and its approval wiring; `update_bot`
       accepts `instructions` on the bot's own profile.
-- [ ] `update_bot` with no fields returns the current settings and allowed
-      values (connected models, thinking levels, voices).
-- [ ] Add `model` (resolved from loose names against connected models; a clear
+- [x] `update_bot` with no fields returns the current settings and allowed
+      values (connected models, thinking levels). Voices take a provider call,
+      so they are listed only when `voice` is passed and matches nothing.
+- [x] Add `model` (resolved from loose names against connected models; a clear
       "connect a provider first" result when none match), `thinking`, `voice`,
-      `readAloud`, `memoryScope`. Same API validation as the settings screen.
-      Reuse the same resolution in `set_child_bot_model`.
-- [ ] Undo for chat-made profile changes, reusing instruction/profile history.
-- [ ] Prompt: change settings only when the user asks; onboarding self-setup
+      `readAloud`. Same API validation as the settings screen.
+      Reuse the same resolution in `set_child_bot_model`. `memoryScope` stays
+      in Settings: shared memory widens what the bot reads and exposes.
+- [x] Undo for chat-made changes: instructions keep their history; model,
+      thinking, voice and read-aloud post a "Settings updated" card whose undo
+      writes the previous values back only while the changed ones still hold.
+- [x] Prompt: change settings only when the user asks; onboarding self-setup
       (name, description, instructions) stays.
-- [ ] Eval: settings guard cases pass; controls show no unasked changes.
+- [x] Eval: settings guard cases pass; controls show no unasked changes.
 
 ### 3. User settings from chat
 

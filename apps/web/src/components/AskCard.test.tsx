@@ -16,7 +16,8 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-vi.mock("../lib/rpc", () => ({ rpc: {} }));
+const rpc = vi.hoisted(() => ({ bots: { update: vi.fn(async () => ({})) } }));
+vi.mock("../lib/rpc", () => ({ rpc }));
 
 import { ChoiceCard } from "../pages/shell/message-cards";
 import type { AskBlock } from "./AskCard";
@@ -571,4 +572,31 @@ it("dims the options a typed answer did not match", async () => {
   });
   expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
   expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("undoes a settings change from chat while it still holds", async () => {
+  await render({
+    kind: "ask",
+    text: "Settings updated",
+    status: "answered",
+    settingsUpdate: {
+      botId: "bot-1",
+      before: { modelProvider: null, modelId: null, thinkingLevel: null },
+      after: { modelProvider: "google", modelId: "gemini-3.8-flash", thinkingLevel: "high" },
+    },
+  });
+  expect(container.textContent).toContain("Settings updated");
+  await act(async () => button("Undo")?.click());
+  expect(rpc.bots.update).toHaveBeenCalledWith({
+    botId: "bot-1",
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    expectedSettings: {
+      modelProvider: "google",
+      modelId: "gemini-3.8-flash",
+      thinkingLevel: "high",
+    },
+  });
+  expect(button("Restored")?.disabled).toBe(true);
 });

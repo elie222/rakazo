@@ -6686,6 +6686,29 @@ describe("bot model auth on save", () => {
       }),
     );
   });
+
+  it("undoes a chat-made settings change only while it still holds", async () => {
+    const { botUpdate, handler } = saveDeps({ modelId: luna, preferences: () => null });
+    const undo = { botId: "bot-1", autoSpeak: false, expectedSettings: { autoSpeak: true } };
+
+    expect((await call(handler, "bots/update", undo)).status).toBe(200);
+    expect(botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", autoSpeak: true },
+        data: expect.objectContaining({ autoSpeak: false }),
+      }),
+    );
+
+    botUpdate.mockRejectedValueOnce(Object.assign(new Error("No record"), { code: "P2025" }));
+    const changed = await call(handler, "bots/update", undo);
+    expect(changed.status).toBe(409);
+    await expect(changed.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        code: "CONFLICT",
+        message: "Settings changed; review the current settings first.",
+      }),
+    });
+  });
 });
 
 describe("bot restore computer quota", () => {

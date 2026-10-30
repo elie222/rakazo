@@ -965,7 +965,7 @@ export async function setChildBotModel(
       threadId: child.thread.id,
       botId: child.id,
       emitBotUpdated: true,
-      expectedModel: {
+      expectedSettings: {
         modelProvider: child.modelProvider,
         modelId: child.modelId,
         thinkingLevel: child.thinkingLevel ?? null,

@@ -5285,6 +5285,10 @@ msgstr "सर्वर URL"
 msgid "Settings"
 msgstr "सेटिंग्स"
 
+#: src/components/AskCard.tsx
+msgid "Settings updated"
+msgstr "सेटिंग्स अपडेट की गईं"
+
 #: src/pages/Shell.tsx
 msgid "Settings: {label}"
 msgstr ""

@@ -381,7 +381,7 @@ export async function prepareToolRequest(
 }
 
 /** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
-const OWNER_SETTINGS = ["model", "thinkingLevel", "readAloud"];
+const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
 
 /** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
 const OWN_FIELDS = new Set([
@@ -423,12 +423,13 @@ async function prepareOwnBotUpdate(
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
     if (!ctx.source.ownerStartedRun || isSubagentToolExecution(executionId))
       return {
-        error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
+        error:
+          "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
       };
     if (await isRunTainted(ctx))
       return {
         error:
-          "Model, thinking and read-aloud changes are blocked for the rest of this run because it read outside content.",
+          "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
       };
   }
   if (!argumentGiven(args.instructions)) return undefined;

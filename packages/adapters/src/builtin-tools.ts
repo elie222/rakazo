@@ -1491,6 +1491,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "boolean",
           description: "Read your replies aloud.",
         },
+        voice: {
+          type: "string",
+          description: 'Voice to read replies in: a voice name, or "default".',
+        },
         bot_id: {
           type: "string",
           description: "A bot in this space, to update its profile instead of yours.",

@@ -5285,6 +5285,10 @@ msgstr "Sunucu URL'si"
 msgid "Settings"
 msgstr "Ayarlar"
 
+#: src/components/AskCard.tsx
+msgid "Settings updated"
+msgstr "Ayarlar güncellendi"
+
 #: src/pages/Shell.tsx
 msgid "Settings: {label}"
 msgstr ""

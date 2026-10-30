@@ -1553,16 +1553,64 @@ describe("own settings through update_bot", () => {
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
   });
-  it("leaves the model to the owner's own chat", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
-    f.setCalls([{ args: { model: "Claude Sonnet" }, executionId: "call-1" }]);
+  it("keeps memory scope in Settings, since shared memory widens what it reads", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { memoryScope: "shared" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.results).toEqual([
-      {
-        error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
-      },
-    ]);
-    expect(f.effects).toEqual([]);
+    expect(f.results).toEqual([{ error: "Only the owner can change memoryScope, in Settings." }]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it.each([{ model: "Claude Sonnet" }, { voice: "Rachel" }])(
+    "leaves %o to the owner's own chat",
+    async (args) => {
+      const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
+      f.setCalls([{ args, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results).toEqual([
+        {
+          error:
+            "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+        },
+      ]);
+      expect(f.effects).toEqual([]);
+    },
+  );
+  it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-1", autoSpeak: false },
+        data: { autoSpeak: true },
+      }),
+    );
+    expect(f.prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: [
+            {
+              kind: "ask",
+              text: "Settings updated",
+              status: "answered",
+              settingsUpdate: {
+                botId: "bot-1",
+                before: { autoSpeak: false },
+                after: { autoSpeak: true },
+              },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+  it("posts no undo card when a setting already has the asked value", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { readAloud: false }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, readAloud: false }]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it("keeps the model once outside content entered the run", async () => {
     const f = fixture({ name: "update_bot", builtin: true });

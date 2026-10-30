@@ -1,3 +1,4 @@
+import { BotSettingsValuesSchema } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import {
   commitBotUpdate,
@@ -22,7 +23,11 @@ import {
   updateFleetGroup,
   updateOwnBotFromTool,
 } from "./fleet-tools.js";
-import { prepareOwnBotSettings, readOwnBotSettings } from "./own-bot-settings.js";
+import {
+  listDefaultVoices,
+  prepareOwnBotSettings,
+  readOwnBotSettings,
+} from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
@@ -254,7 +259,7 @@ export const fleetTools: ToolHandlers = {
         }),
       );
     }
-    const { instructions, model, thinkingLevel, readAloud, ...profile } = args;
+    const { instructions, model, thinkingLevel, readAloud, voice, ...profile } = args;
     const modelDeps = await fleetPrepareDeps(deps, run);
     const live = await deps.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -268,31 +273,59 @@ export const fleetTools: ToolHandlers = {
         modelId: true,
         thinkingLevel: true,
         autoSpeak: true,
+        voiceId: true,
       },
     });
     if (!Object.values(args).some(argumentGiven))
       return call.finish(await readOwnBotSettings(modelDeps, run, live));
-    const settings = await prepareOwnBotSettings(modelDeps, run, live, {
-      model,
-      thinkingLevel,
-      readAloud,
-    });
+    const settings = await prepareOwnBotSettings(
+      modelDeps,
+      run,
+      live,
+      { model, thinkingLevel, readAloud, voice },
+      () => listDefaultVoices(deps, run, context),
+    );
     if ("error" in settings) return call.finish(settings);
+    const before = BotSettingsValuesSchema.parse(
+      Object.fromEntries(
+        Object.keys(settings.data).map((key) => [key, live[key as keyof typeof settings.data]]),
+      ),
+    );
     // The profile goes first, so a rejected field leaves everything else unchanged for a retry.
     const updated = Object.values(profile).some(argumentGiven)
       ? await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context)
       : undefined;
     if (updated && "error" in updated) return call.finish(updated);
-    if (Object.keys(settings.data).length)
-      await commitBotUpdate({
-        prisma: deps.prisma,
-        notify: (threadId, seq) => deps.events.notify(threadId, seq),
-        spaceId: run.spaceId,
-        threadId: thread.id,
-        botId: bot.id,
-        emitBotUpdated: true,
-        data: settings.data,
-      });
+    if (
+      Object.entries(settings.data).some(
+        ([key, value]) => before[key as keyof typeof before] !== value,
+      )
+    ) {
+      try {
+        await commitBotUpdate({
+          prisma: deps.prisma,
+          notify: (threadId, seq) => deps.events.notify(threadId, seq),
+          spaceId: run.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          emitBotUpdated: true,
+          expectedSettings: before,
+          data: settings.data,
+        });
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === "P2025"))
+          throw error;
+        return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
+      }
+      await publishMessage(deps, run, "bot", [
+        {
+          kind: "ask",
+          text: "Settings updated",
+          status: "answered",
+          settingsUpdate: { botId: bot.id, before, after: settings.data },
+        },
+      ]).catch((error) => getLogger().error("settings update card", error));
+    }
     if (argumentGiven(instructions)) {
       const set = await commitOwnInstructions(ctx, {
         instructions: String(instructions),
@@ -314,6 +347,7 @@ export const fleetTools: ToolHandlers = {
         ? { thinkingLevel: settings.data.thinkingLevel ?? "default" }
         : {}),
       ...(settings.data.autoSpeak !== undefined ? { readAloud: settings.data.autoSpeak } : {}),
+      ...(settings.data.voiceId !== undefined ? { voice: settings.data.voiceId ?? "default" } : {}),
       ...(argumentGiven(instructions) ? { instructions: "updated" } : {}),
     });
   },

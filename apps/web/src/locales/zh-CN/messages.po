@@ -5285,6 +5285,10 @@ msgstr "服务器 URL"
 msgid "Settings"
 msgstr "设置"
 
+#: src/components/AskCard.tsx
+msgid "Settings updated"
+msgstr "设置已更新"
+
 #: src/pages/Shell.tsx
 msgid "Settings: {label}"
 msgstr ""
