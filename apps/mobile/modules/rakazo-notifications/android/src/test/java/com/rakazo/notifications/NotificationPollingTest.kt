@@ -3,10 +3,177 @@ package com.rakazo.notifications
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotificationPollingTest {
+  @Test
+  fun `restart retains a reply missing from the next full recent page and posts it once`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val reply = run("reply")
+    assertEquals(listOf(reply), completions.page(listOf(reply)))
+    // No completion: the old job is still fetching when the next generation polls.
+    val nextPage = (1..20).map { run("new-$it") }
+    val pending = completions.page(nextPage)
+    assertTrue("the replacement poller must retain the displaced reply", reply in pending)
+    assertFalse("reply" in seen)
+    var notifications = 0
+    completions.complete(reply, alreadyPosted = { false }) {
+      assertFalse("reply" in seen)
+      notifications++
+    }
+    assertTrue("reply" in seen)
+    assertFalse(reply in completions.page(nextPage))
+    completions.complete(reply, alreadyPosted = { false }) { notifications++ }
+    assertEquals(1, notifications)
+  }
+
+  @Test
+  fun `active notification after process death suppresses another alert and records the run seen`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val reply = run("reply")
+    completions.page(listOf(reply))
+    var notifications = 0
+    completions.complete(reply, alreadyPosted = { true }) { notifications++ }
+    assertEquals(0, notifications)
+    assertTrue("reply" in seen)
+    assertTrue(completions.page(listOf(reply)).isEmpty())
+  }
+
+  @Test
+  fun `pending replies are bounded and the oldest is skipped on overflow`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val replies = (1..101).map { run("reply-$it") }
+    var pending = emptyList<RunRecord>()
+    for (reply in replies) pending = completions.page(listOf(reply))
+    assertEquals(100, pending.size)
+    assertFalse(replies.first() in pending)
+    assertTrue(replies.last() in pending)
+    var notifications = 0
+    completions.complete(replies.first(), alreadyPosted = { false }) { notifications++ }
+    assertEquals(0, notifications)
+  }
+
+  @Test
+  fun `pending replies stay in the same session and clear on each session boundary`() {
+    val changes = listOf(
+      listOf("https://other.test", "space", "token", "0"),
+      listOf("https://example.test", "other-space", "token", "0"),
+      listOf("https://example.test", "space", "other-token", "0"),
+      listOf("https://example.test", "space", "token", "1"),
+    )
+    for ((endpoint, spaceId, token, epoch) in changes) {
+      val completions = PollCompletions(mutableSetOf())
+      completions.useSession("https://example.test", "space", "token", 0)
+      val reply = run("reply")
+      completions.page(listOf(reply))
+      completions.useSession("https://example.test", "space", "token", 0)
+      assertEquals(listOf(reply), completions.page(emptyList()))
+      completions.useSession(endpoint, spaceId, token, epoch.toLong())
+      assertTrue(completions.page(emptyList()).isEmpty())
+    }
+  }
+
+  @Test
+  fun `history seeding suppresses old replies and pending replies honour settings and open threads`() {
+    val settings = listOf(
+      NotificationSettings(messages = false) to run("message"),
+      NotificationSettings(scheduledTasks = false) to run("routine").copy(trigger = "routine"),
+    )
+    for ((disabled, reply) in settings) {
+      val seen = mutableSetOf<String>()
+      val completions = PollCompletions(seen)
+      assertTrue(completions.page(listOf(reply), seeded = false).isEmpty())
+      assertTrue(completions.page(listOf(reply)).isEmpty())
+      assertTrue(reply.runId in seen)
+      val pending = reply.copy(runId = "new")
+      completions.page(listOf(pending))
+      assertTrue(completions.page(listOf(pending), settings = disabled).isEmpty())
+      assertTrue("new" in seen)
+      val open = reply.copy(runId = "open")
+      completions.page(listOf(open))
+      assertTrue(completions.page(listOf(open), openThreadId = open.threadId).isEmpty())
+      assertTrue("open" in seen)
+    }
+  }
+
+  @Test
+  fun `muting drops a pending direct reply missing from recent but preserves groups and other bots`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val direct = run("muted")
+    val group = run("group").copy(groupId = "group-1")
+    val other = run("other").copy(botId = "other-bot")
+    completions.page(listOf(direct, group, other))
+    val recent = (1..20).map { run("new-$it").copy(botId = "other-bot") }
+    assertTrue(direct in completions.page(recent))
+
+    completions.muteBot("bot")
+    val afterMute = completions.page(recent)
+    assertFalse("the muted reply must be discarded even when absent from recent", direct in afterMute)
+    assertTrue(group in afterMute)
+    assertTrue(other in afterMute)
+    val posted = mutableListOf<String>()
+    // The pre-mute fetch may still return with its old RunRecord.
+    completions.complete(direct, alreadyPosted = { false }) { posted += direct.runId }
+    completions.complete(group, alreadyPosted = { false }) { posted += group.runId }
+    completions.complete(other, alreadyPosted = { false }) { posted += other.runId }
+    assertEquals(listOf("group", "other"), posted)
+  }
+
+  @Test
+  fun `failed post keeps the pending reply available outside the recent page`() {
+    val seen = mutableSetOf<String>()
+    val completions = PollCompletions(seen)
+    val reply = run("reply")
+    completions.page(listOf(reply))
+    assertThrows(IllegalStateException::class.java) {
+      completions.complete(reply, alreadyPosted = { false }) { error("notification failed") }
+    }
+    assertFalse("reply" in seen)
+    assertEquals(listOf(reply), completions.page(emptyList()))
+    completions.complete(reply, alreadyPosted = { false }) {}
+    assertTrue("reply" in seen)
+    assertTrue(completions.page(emptyList()).isEmpty())
+  }
+
+  @Test
+  fun `completion is remembered only after posting and is not handled again`() {
+    val seen = mutableSetOf<String>()
+    var notifications = 0
+    handleUnseenCompletion("reply", seen) {
+      assertFalse("reply" in seen)
+      notifications++
+      true
+    }
+    assertEquals(setOf("reply"), seen)
+    handleUnseenCompletion("reply", seen) { error("already posted") }
+    assertEquals(1, notifications)
+  }
+
+  @Test
+  fun `failed posting leaves the completion unseen`() {
+    val seen = mutableSetOf<String>()
+    assertThrows(IllegalStateException::class.java) {
+      handleUnseenCompletion("reply", seen) { error("notification failed") }
+    }
+    assertTrue(seen.isEmpty())
+    handleUnseenCompletion("reply", seen) { true }
+    assertEquals(setOf("reply"), seen)
+  }
+
+  @Test
+  fun `deliberately skipped completion is remembered without posting`() {
+    val seen = mutableSetOf<String>()
+    handleUnseenCompletion("reply", seen) { true }
+    assertEquals(setOf("reply"), seen)
+    handleUnseenCompletion("reply", seen) { error("already skipped") }
+  }
+
   @Test
   fun `token is loaded once until reset`() {
     val cache = PollTokenCache()
@@ -113,5 +280,28 @@ class NotificationPollingTest {
     assertEquals(8_000L, cadence.delayMs(59_999, false, 0))
     assertEquals(30_000L, cadence.delayMs(60_000, false, 0))
     assertEquals(8_000L, cadence.delayMs(90_000, true, 0))
+  }
+
+  private fun run(id: String) = RunRecord(
+    runId = id,
+    spaceId = "space",
+    botId = "bot",
+    botName = "Bot",
+    groupId = null,
+    groupName = null,
+    threadId = "thread-$id",
+    status = "completed",
+    prompt = "Prompt",
+    trigger = "message",
+    notificationsEnabled = true,
+  )
+
+  private fun PollCompletions.page(
+    recent: List<RunRecord>,
+    seeded: Boolean = true,
+    settings: NotificationSettings = NotificationSettings(),
+    openThreadId: String? = null,
+  ): List<RunRecord> = prepare(recent, seeded, settings, { it.threadId == openThreadId }) {
+    error("unexpected attention notification")
   }
 }

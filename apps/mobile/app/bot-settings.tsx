@@ -42,7 +42,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import { ProfileEditDialog } from "../components/profile-edit-dialog";
 import { Chevron } from "../components/row-accessories";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
-import { rpc } from "../lib/api";
+import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/api";
 import {
   avatarColor,
   avatarShape,
@@ -55,6 +55,7 @@ import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
+import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useMobileTokens } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { useSideInsets } from "../lib/side-insets";
@@ -134,6 +135,18 @@ export default function BotSettingsScreen() {
           await rpc("bots/update", { botId, notifyOnFinish });
         },
         onChange: setNotifyOnFinish,
+        onSaved: async (notify) => {
+          try {
+            await afterChatNotifyChange(
+              currentApiBase(),
+              await loadSessionToken(),
+              selectedSpaceId() ?? "",
+              { botId, notify },
+            );
+          } catch {
+            // The server save succeeded; device reconciliation can retry later.
+          }
+        },
         onError: (err) => setError(errorText(err)),
       }),
     [botId],

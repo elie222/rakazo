@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   voiceForBot: vi.fn(),
   setVoiceForBot: vi.fn(),
   rpc: vi.fn(),
+  afterChatNotifyChange: vi.fn(async () => undefined),
   back: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
@@ -62,6 +63,9 @@ vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("./api", () => ({
+  currentApiBase: () => "https://api.example.test",
+  loadSessionToken: async () => "token",
+  selectedSpaceId: () => "space-a",
   rpc: async (procedure: string, input?: unknown) => {
     if (
       [
@@ -96,6 +100,7 @@ vi.mock("./api", () => ({
     return [];
   },
 }));
+vi.mock("./live-notifications", () => ({ afterChatNotifyChange: mocks.afterChatNotifyChange }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ back: mocks.back }),
@@ -733,6 +738,46 @@ describe("bot settings device voice menu", () => {
 
     await expand();
     expect(container.textContent).not.toContain("Read replies aloud");
+  });
+
+  it("propagates each saved notification choice from chat settings only after the save succeeds", async () => {
+    const first = deferredSave();
+    mocks.rpc.mockReturnValueOnce(first.promise);
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="When it finishes or needs input"]',
+    )!;
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      notifyOnFinish: false,
+    });
+    expect(mocks.afterChatNotifyChange).not.toHaveBeenCalled();
+    await act(async () => first.resolve());
+    expect(mocks.afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example.test",
+      "token",
+      "space-a",
+      { botId: "bot-fixture", notify: false },
+    );
+
+    await act(async () => toggle.click());
+    expect(mocks.afterChatNotifyChange.mock.calls).toEqual([
+      ["https://api.example.test", "token", "space-a", { botId: "bot-fixture", notify: false }],
+      ["https://api.example.test", "token", "space-a", { botId: "bot-fixture", notify: true }],
+    ]);
+  });
+
+  it("does not propagate a notification change when saving from chat settings fails", async () => {
+    mocks.rpc.mockRejectedValueOnce(new Error("offline"));
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="When it finishes or needs input"]',
+    )!;
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(mocks.afterChatNotifyChange).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("offline");
   });
 
   it("queues notifications and ignores an older failure before saving the latest choice", async () => {

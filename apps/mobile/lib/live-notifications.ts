@@ -28,6 +28,14 @@ type NativeNotifications = {
     locale: string,
   ): Promise<void>;
   resume(endpoint: string, token: string, spaceId: string, locale: string): Promise<void>;
+  /** Missing on native builds that predate pending reply invalidation. */
+  resumeAfterMute?(
+    endpoint: string,
+    token: string,
+    spaceId: string,
+    locale: string,
+    botId: string,
+  ): Promise<void>;
   stop(clearSession: boolean): Promise<void>;
   setOpenThread(botId: string | null, threadId: string | null): Promise<void>;
   openSettings(): Promise<void>;
@@ -114,11 +122,22 @@ export async function resumeLiveNotifications(
   endpoint: string,
   token: string,
   spaceId: string,
+  mutedBotId?: string,
 ): Promise<void> {
   if (!nativeNotifications || !token) return;
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return;
-  await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale());
+  if (mutedBotId && nativeNotifications.resumeAfterMute) {
+    await nativeNotifications.resumeAfterMute(
+      parsed.url,
+      token,
+      spaceId,
+      getActiveUiLocale(),
+      mutedBotId,
+    );
+  } else {
+    await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale());
+  }
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {
@@ -176,10 +195,15 @@ export async function afterChatNotifyChange(
   endpoint: string,
   token: string,
   spaceId: string,
-  change: { threadId?: string; notify: boolean },
+  change: { botId: string; threadId?: string; notify: boolean },
 ): Promise<void> {
-  // Android's live status re-reads which chats notify.
-  await resumeLiveNotifications(endpoint, token, spaceId).catch(() => undefined);
+  // Android also discards replies retained before this bot's own chat was muted.
+  await resumeLiveNotifications(
+    endpoint,
+    token,
+    spaceId,
+    change.notify ? undefined : change.botId,
+  ).catch(() => undefined);
   if (!change.notify && change.threadId) {
     await dismissThreadNotifications({ threadId: change.threadId }).catch(() => undefined);
   }
