@@ -74,6 +74,7 @@ async function failRun(scenario: Scenario) {
     throw scenario.error;
   });
   const prisma = {
+    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -98,7 +99,9 @@ async function failRun(scenario: Scenario) {
     },
     chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
         name: "Assistant",
@@ -187,7 +190,7 @@ async function failRun(scenario: Scenario) {
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
-    $transaction: vi.fn(async () => null),
+    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(prisma)),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (job: { name: string }) => {
@@ -345,7 +348,9 @@ describe("backing off a routine after its model connection refuses it", () => {
   it("counts a refusal of the user's own key", async () => {
     const { prisma } = await failRun({ error: refusedKey(), personalKey: true });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(
+      prisma.$queryRaw.mock.calls.filter((call) => String(call[0]).includes("FROM routines")),
+    ).toHaveLength(1);
   });
 
   it("counts a run pinned to a provider the user has no connection for", async () => {
@@ -354,7 +359,9 @@ describe("backing off a routine after its model connection refuses it", () => {
       pinnedTo: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
     });
 
-    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(
+      prisma.$queryRaw.mock.calls.filter((call) => String(call[0]).includes("FROM routines")),
+    ).toHaveLength(1);
   });
 
   it.each([
@@ -371,7 +378,9 @@ describe("backing off a routine after its model connection refuses it", () => {
   ] satisfies Array<[string, Scenario]>)("does not count %s", async (_label, scenario) => {
     const { prisma } = await failRun(scenario);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(
+      prisma.$queryRaw.mock.calls.filter((call) => String(call[0]).includes("FROM routines")),
+    ).toHaveLength(0);
   });
 });
 
@@ -473,7 +482,12 @@ function retryHarness(scenario: RetryScenario = {}) {
       findUnique: vi.fn(async () => (scenario.missingTask ? null : { prompt: "Sweep the inbox" })),
     },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
-    bot: { findUniqueOrThrow: vi.fn(async () => ({ name: "Assistant" })) },
+    $queryRaw: vi.fn(async () => [{ id: failed.botId }]),
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
+    bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
+      findUniqueOrThrow: vi.fn(async () => ({ name: "Assistant" })),
+    },
   };
   const enqueue = vi.fn(async () => {
     if (scenario.enqueueFails) throw new Error("queue down");
