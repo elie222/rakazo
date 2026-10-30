@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { runJobKey } from "@rakazo/adapter-kit";
-import { CapturingNotificationProvider, MessagingTeamChatEmulator } from "@rakazo/adapters";
-import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
+import {
+  CapturingNotificationProvider,
+  MessagingTeamChatEmulator,
+  messageBot,
+} from "@rakazo/adapters";
+import type { MessageBlock, ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
+import { createThreadEvents } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -84,11 +89,13 @@ export async function runTrial(
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
+  const peerExchanges: NonNullable<Evidence["peerExchanges"]> = [];
   let handles: EvalApp | undefined;
   // The harness observes product state outside any request or job.
   let db: EvalApp["prisma"] | undefined;
   let cookie = "";
   let botId = "";
+  let peer: { id: string; name: string } | undefined;
   let seededThreadId: string | undefined;
   const runIds: string[] = [];
   const runSteps = new Map<string, number>();
@@ -190,6 +197,22 @@ export async function runTrial(
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
       });
+      if (scenario.peer) {
+        const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
+          name: scenario.peer.name,
+          title: "",
+          description: scenario.peer.description,
+          instructions: scenario.peer.instructions,
+          notifyOnFinish: false,
+        });
+        await discardBotIntroRun(trial, cookie, created.id);
+        await rpc(app, cookie, "bots/update", {
+          botId: created.id,
+          modelProvider: options.connection.provider,
+          modelId: options.connection.modelId,
+        });
+        peer = { id: created.id, name: scenario.peer.name };
+      }
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
@@ -358,6 +381,20 @@ export async function runTrial(
         runId = (
           await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text: step.ask })
         ).runId;
+      } else if ("fromPeer" in step) {
+        if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
+        await deliverPeerMessage(prisma, handles.jobs, peer, botId, step.fromPeer);
+        runId = await poll(
+          async () =>
+            (
+              await prisma.run.findFirst({
+                where: { botId, trigger: "bot_message", id: { notIn: runIds } },
+                orderBy: { createdAt: "desc" },
+                select: { id: true },
+              })
+            )?.id,
+          deadline,
+        );
       } else if ("slack" in step) {
         if (!messagingLinked) {
           const link = await rpc<{ code: string }>(app, cookie, "messaging/link/start", { botId });
@@ -444,7 +481,10 @@ export async function runTrial(
       if (
         scenario.steps
           .slice(stepIndex + 1)
-          .some((next) => "ask" in next || "slack" in next || "wakeRoutine" in next)
+          .some(
+            (next) =>
+              "ask" in next || "slack" in next || "wakeRoutine" in next || "fromPeer" in next,
+          )
       )
         setupRunIds.add(runId);
       const requestStarted = (
@@ -522,8 +562,9 @@ export async function runTrial(
       if ("slack" in step && terminal.status === "completed") {
         await waitForMessagingDelivery(prisma, runId, deadline);
       }
-      // Completion is committed before notification delivery. Drain the executor before observing.
-      if (scenario.routine && handles.awaitIdle)
+      // Completion is committed before notification delivery and before the reply returns to a
+      // peer. Drain the executor before observing.
+      if ((scenario.routine || "fromPeer" in step) && handles.awaitIdle)
         await withinDeadline(handles.awaitIdle(), deadline);
       const snap = await rpc<{
         messages: Array<{
@@ -573,6 +614,23 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
+      if ("fromPeer" in step) {
+        const returned = (
+          await prisma.message.findMany({
+            where: { runId, role: "bot" },
+            orderBy: { seq: "asc" },
+            select: { blocks: true },
+          })
+        ).flatMap((message) =>
+          (message.blocks as MessageBlock[]).flatMap((block) =>
+            block.kind === "bot_message_sent" && block.toBotId === peer?.id ? [block.text] : [],
+          ),
+        );
+        peerExchanges.push({
+          message: step.fromPeer,
+          reply: returned.length ? returned.join("\n") : null,
+        });
+      }
       if (scenario.routine && "wakeRoutine" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
@@ -625,6 +683,7 @@ export async function runTrial(
       text: lastText,
       replies,
       routineRuns,
+      peerExchanges,
       files,
       records: services.records,
       notes: services.notes,
@@ -651,6 +710,7 @@ export async function runTrial(
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
         ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(peerExchanges.length ? { "peer-exchanges": JSON.stringify(peerExchanges) } : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
@@ -800,6 +860,54 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   const parsed = (await res.json()) as { json?: T; error?: unknown };
   if (!res.ok || parsed.error) throw new Error(`${proc} failed (${res.status})`);
   return parsed.json as T;
+}
+
+/**
+ * Speak as the peer through message_bot's own delivery, so the subject wakes exactly as it
+ * would from a teammate. The peer's turn is fixture setup: no model is paid to write its words.
+ */
+async function deliverPeerMessage(
+  prisma: EvalApp["prisma"],
+  jobs: JobPublisher,
+  peer: { id: string; name: string },
+  targetBotId: string,
+  text: string,
+) {
+  const { spaceId, userId, thread } = await prisma.bot.findUniqueOrThrow({
+    where: { id: peer.id },
+    select: { spaceId: true, userId: true, thread: { select: { id: true } } },
+  });
+  if (!thread) throw new EvalFailure("harness", "Peer bot has no chat");
+  const task = await prisma.task.create({
+    data: {
+      spaceId,
+      userId,
+      botId: peer.id,
+      threadId: thread.id,
+      prompt: "Synthetic peer turn",
+      status: "completed",
+    },
+  });
+  const run = await prisma.run.create({
+    data: {
+      spaceId,
+      userId,
+      botId: peer.id,
+      threadId: thread.id,
+      taskId: task.id,
+      status: "completed",
+      trigger: "user",
+      completedAt: new Date(),
+    },
+  });
+  const sent = await messageBot(
+    { prisma, events: createThreadEvents(prisma), jobs },
+    { id: run.id, spaceId, threadId: thread.id, botId: peer.id, userId },
+    peer,
+    { bot_id: targetBotId, message: text, intent: "request" },
+    { allowTerminalSource: true },
+  );
+  if (!sent.ok) throw new EvalFailure("harness", `Peer message was not delivered: ${sent.error}`);
 }
 
 async function poll<T>(read: () => Promise<T | undefined>, deadline: number): Promise<T> {
