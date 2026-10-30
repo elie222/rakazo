@@ -556,7 +556,8 @@ export function BotSettings({
         <TabsContent value="routines" className="pt-4">
           {routines}
         </TabsContent>
-        <TabsContent value="settings" data-testid="bot-settings-advanced">
+        {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
+        <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
           <section className="mt-6">
             <h3 className="mb-2 text-xs font-medium text-muted-foreground">
               <Trans>Notifications</Trans>
