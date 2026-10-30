@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  SandboxAllowanceUsedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -45,6 +46,7 @@ import {
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { ObjectAgentHomeStore } from "./home-object-store.js";
+import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import {
   isSandboxDamagedError,
   isSandboxGoneError,
@@ -246,6 +248,11 @@ export async function provisionComputer(
       context.signal.throwIfAborted();
     }
   }
+
+  // A computer that bills starts only while its organization has allowance left this month.
+  const startKind = (await deps.sandbox.provisionKind?.()) ?? existing.kind;
+  if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
+    throw new SandboxAllowanceUsedError();
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait

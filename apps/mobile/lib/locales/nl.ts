@@ -981,6 +981,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not update billing": "Kan facturering niet bijwerken",
   Credits: "Tegoed",
   "Available credits": "Beschikbaar tegoed",
+  "Computer allowance": "Computertegoed",
+  "{amount} left": "{amount} over",
   "Monthly credits": "Maandelijks tegoed",
   "Upgrade now": "Nu upgraden",
   "Downgrade at renewal": "Downgraden bij verlenging",

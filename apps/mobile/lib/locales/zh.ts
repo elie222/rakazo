@@ -1002,6 +1002,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not update billing": "无法更新账单",
   Credits: "额度",
   "Available credits": "可用额度",
+  "Computer allowance": "电脑额度",
+  "{amount} left": "剩余 {amount}",
   "Monthly credits": "每月额度",
   "Upgrade now": "立即升级",
   "Downgrade at renewal": "下次续费时降级",

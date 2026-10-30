@@ -9,7 +9,11 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { SandboxDamagedError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxAllowanceUsedError,
+  SandboxDamagedError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { clearThread } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -1957,6 +1961,28 @@ describe("Team Computer wake", () => {
     const calls = vi.mocked(harness.prisma.computer.updateMany).mock.calls;
     return calls.map(([args]) => args).find((args) => args.data.state === "running")?.data;
   }
+
+  it("does not start a billed computer once its organization spent the month's allowance", async () => {
+    const harness = wakeHarness("stopped");
+    Object.assign(harness.sandbox, { billsWhileRunning: () => true });
+    Object.assign(harness.prisma, {
+      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "organization-1" }) },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ modelCreditsEnabled: true }) },
+      organization: {
+        findUnique: vi.fn().mockResolvedValue({
+          modelCredits: { mode: "credits" },
+          billing: { creditAmountCents: 5000 },
+        }),
+      },
+      // $10 of a $50 plan, at the default $0.10 an hour.
+      $queryRaw: vi.fn().mockResolvedValue([{ kind: "e2b", hours: 100 }]),
+    });
+
+    await expect(boot(harness)).rejects.toBeInstanceOf(SandboxAllowanceUsedError);
+
+    expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
+    expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
 
   it("starts the active-lifetime clock when a stopped computer starts", async () => {
     const harness = wakeHarness("stopped", undefined, {}, { runningSince: null });

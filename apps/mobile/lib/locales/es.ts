@@ -928,6 +928,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not update billing": "No se pudo actualizar la facturación",
   Credits: "Créditos",
   "Available credits": "Créditos disponibles",
+  "Computer allowance": "Saldo de computadora",
+  "{amount} left": "{amount} restantes",
   "Monthly credits": "Créditos mensuales",
   "Upgrade now": "Mejorar plan ahora",
   "Downgrade at renewal": "Bajar de plan al renovar",

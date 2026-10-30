@@ -1020,6 +1020,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not update billing": "Не удалось обновить оплату",
   Credits: "Кредиты",
   "Available credits": "Доступные кредиты",
+  "Computer allowance": "Лимит компьютера",
+  "{amount} left": "Осталось {amount}",
   "Monthly credits": "Ежемесячные кредиты",
   "Upgrade now": "Повысить тариф сейчас",
   "Downgrade at renewal": "Понизить тариф при продлении",

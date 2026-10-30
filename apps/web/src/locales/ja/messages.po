@@ -1493,6 +1493,10 @@ msgstr "完了"
 msgid "Computer"
 msgstr "コンピューター"
 
+#: src/components/ModelCredits.tsx
+msgid "Computer allowance: {computerLeft} left"
+msgstr "コンピューターの利用枠: 残り {computerLeft}"
+
 #: src/pages/shell/computer-view.tsx
 #: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"

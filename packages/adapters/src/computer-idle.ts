@@ -13,6 +13,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -28,6 +29,7 @@ import { expireComputerControl, hasActiveComputerControl } from "./computer-cont
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
+import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -446,20 +448,28 @@ export async function sleepComputerIfIdle(
   // when they next need it. A user in control is left alone: control leases expire on their
   // own, and that release resumes the waiting run.
   // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
+  // Once its organization has spent the month's allowance, nothing, not even a working coding
+  // agent, holds the computer up.
   const activeControl = hasActiveComputerControl(computer);
+  const allowanceUsed = await sandboxAllowanceUsedUp(deps, computer);
   const limitReached =
-    activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl;
+    allowanceUsed ||
+    (activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl);
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl
       ? [...QUEUE_HOLDING_RUN_STATUSES]
       : QUEUE_HOLDING_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
-  const runHolds = () => findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
+  const runHolds = () =>
+    allowanceUsed
+      ? Promise.resolve(null)
+      : findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
   const backgroundHolds = async () =>
-    (!limitReached && (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId))) ||
-    (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined;
+    !allowanceUsed &&
+    ((!limitReached && (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId))) ||
+      (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined);
   const graceEndsAt = () =>
-    activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
+    allowanceUsed || activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
       ? Promise.resolve(null)
       : takeoverGraceEndsAt(deps.prisma, computerId);
   const runHeld = Boolean(await runHolds());
@@ -653,14 +663,22 @@ export async function sleepComputerIfIdle(
     getLogger().warn("computer.suspend_superseded", { "computer.id": computerId });
     return;
   }
-  await recordComputerRunEnd(deps.prisma, computer, limitReached ? "active_limit" : "idle");
+  const reason = allowanceUsed ? "allowance" : limitReached ? "active_limit" : "idle";
+  await recordComputerRunEnd(deps.prisma, computer, reason);
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,
-    reason: limitReached ? "active_limit" : "idle",
+    reason,
     activeMs: computer.runningSince ? Date.now() - computer.runningSince.getTime() : undefined,
   });
   await announceSuspended(deps, computer);
+  if (allowanceUsed)
+    await postComputerNote(
+      deps,
+      computer,
+      `computer-allowance:${computer.id}:${computer.runningSince?.toISOString() ?? ""}`,
+      `${COMPUTER_ALLOWANCE_USED_ERROR} The computer was saved and stopped.`,
+    );
 }
 
 /**
@@ -771,13 +789,22 @@ async function announceUnsavedHome(
 ): Promise<void> {
   // A successful save or a new runtime starts a new episode. The unique message nonce also
   // deduplicates retries across workers; the message and its event commit together.
-  const clientNonce = `computer-unsaved:${computer.id}:${computer.runningSince?.toISOString() ?? ""}:${computer.homeRevisionAt?.toISOString() ?? ""}:${error.limit}`;
-  const blocks = [
-    {
-      kind: "meta" as const,
-      text: `${error.message}. It will keep running unsaved. Remove large files or files you no longer need so it can be saved.`,
-    },
-  ];
+  await postComputerNote(
+    deps,
+    computer,
+    `computer-unsaved:${computer.id}:${computer.runningSince?.toISOString() ?? ""}:${computer.homeRevisionAt?.toISOString() ?? ""}:${error.limit}`,
+    `${error.message}. It will keep running unsaved. Remove large files or files you no longer need so it can be saved.`,
+  );
+}
+
+/** Posts a system note once per `clientNonce` to the thread of every bot on the computer. */
+async function postComputerNote(
+  deps: { prisma: PrismaClient; events: ThreadEvents },
+  computer: { id: string; spaceId: string },
+  clientNonce: string,
+  text: string,
+): Promise<void> {
+  const blocks = [{ kind: "meta" as const, text }];
   const bots = await deps.prisma.bot.findMany({
     where: { computerId: computer.id },
     select: { id: true, thread: { select: { id: true } } },
@@ -812,7 +839,7 @@ async function announceUnsavedHome(
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
       if (!(cause && typeof cause === "object" && "code" in cause && cause.code === "P2002")) {
-        getLogger().error("computer.unsaved_notice_failed", cause);
+        getLogger().error("computer.notice_failed", cause);
       }
     }
   }

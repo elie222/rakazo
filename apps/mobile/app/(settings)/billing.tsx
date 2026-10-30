@@ -109,6 +109,14 @@ export default function BillingScreen() {
         ) : status.access && status.currentPeriodEndsAt ? (
           <SettingsRow title={t("Renews")} value={formatDate(status.currentPeriodEndsAt)} />
         ) : null}
+        {status.computerAllowance ? (
+          <SettingsRow
+            title={t("Computer allowance")}
+            value={t("{amount} left", {
+              amount: `$${Math.max(0, status.computerAllowance.limitUsd - status.computerAllowance.usedUsd).toFixed(2)}`,
+            })}
+          />
+        ) : null}
         {status.canManage ? (
           <SettingsRow
             title={plan && !status.byokFreeUntil ? t("Change plan") : t("Choose a plan")}

@@ -96,7 +96,12 @@ import type {
 
 export interface SandboxProvider {
   /** True when every running minute is billed, so the active-lifetime cap applies. */
-  billsWhileRunning?(computer: ComputerRef): boolean;
+  billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
+  /**
+   * What one running hour costs, in millionths of a dollar, for the monthly computer allowance.
+   * Providers that bill while running and omit it use DEFAULT_SANDBOX_HOURLY_COST_MICROS.
+   */
+  hourlyCostMicros?(computer: Pick<ComputerRef, "kind">): number;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Workspace directory operations for hosts without the standard Unix command tools. */
   workspaceDirectories?(

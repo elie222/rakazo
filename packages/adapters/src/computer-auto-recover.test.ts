@@ -107,6 +107,7 @@ async function damagedComputer(damage: "resume_heals" | "persists" = "resume_hea
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       run: { findFirst: vi.fn().mockResolvedValue(null) },
+      space: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient,
     sandbox,
     home,

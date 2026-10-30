@@ -5,6 +5,7 @@ import type { PrismaClient } from "./generated/prisma/client.js";
  * How a computer run ended.
  * - `stopped`: stopped on request (the stop button, a computer switch, an archived bot).
  * - `idle` / `active_limit`: idle shutdown, or the cap on one continuous stretch.
+ * - `allowance`: its organization spent the month's computer allowance.
  * - `replaced`: torn down by update, recovery or reset; the replacement starts a new run.
  * - `gone`: the provider had already stopped or lost the sandbox.
  * - `deleted`: destroyed with its computer, bot, space or account.
@@ -18,6 +19,7 @@ export type ComputerRunEnd =
   | "stopped"
   | "idle"
   | "active_limit"
+  | "allowance"
   | "replaced"
   | "gone"
   | "deleted"

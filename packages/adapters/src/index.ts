@@ -149,6 +149,7 @@ export * from "./resend-email.js";
 export * from "./routine-watch.js";
 export * from "./run-secret.js";
 export * from "./run-wakeup.js";
+export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";
 export * from "./sandbox-factory.js";
 export * from "./sandbox-provider-env.js";

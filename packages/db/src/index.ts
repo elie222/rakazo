@@ -38,6 +38,7 @@ export * from "./row-security.js";
 export * from "./run-secrets.js";
 export * from "./run-timing.js";
 export * from "./run-turn-checkpoint.js";
+export * from "./sandbox-allowance.js";
 export * from "./scope.js";
 export * from "./security-events.js";
 export * from "./sessions.js";

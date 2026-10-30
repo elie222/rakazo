@@ -1225,6 +1225,87 @@ describe("maximum active lifetime", () => {
   });
 });
 
+describe("monthly computer allowance", () => {
+  const now = new Date("2026-01-20T12:00:00.000Z").getTime();
+
+  beforeEach(() => {
+    vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("saves and stops a computer once the month's allowance is spent, and says so once", async () => {
+    // $5 at the default $0.10 an hour.
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 50,
+    });
+    harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.$queryRaw).toHaveBeenCalled();
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endReason: "allowance" }) }),
+    );
+    expect(harness.prisma.message.create).toHaveBeenCalledOnce();
+    expect(harness.prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: "system",
+          blocks: [
+            {
+              kind: "meta",
+              text: "This month's computer allowance is used up. The computer was saved and stopped.",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("keeps a busy computer running while allowance is left", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 49,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+  });
+
+  it("never limits a computer that does not bill while running", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: false,
+      runningSince: new Date(now - 60_000),
+      backgroundWorkProbeCode: 0,
+      computerHours: 500,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+});
+
 describe("background work launch and probe", () => {
   const children: ReturnType<typeof spawn>[] = [];
   const markers = new Set<string>();
@@ -1613,6 +1694,8 @@ function idleHarness(
     runSinceSave?: boolean;
     takeoverSinceSave?: boolean;
     runningAtProvider?: boolean;
+    /** Hours an own-key organization's computers ran this month; unset leaves billing off. */
+    computerHours?: number;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -1637,6 +1720,14 @@ function idleHarness(
   const notices = new Map<string, { id: string }>();
   const prisma = {
     $transaction: async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => work(prisma),
+    $queryRaw: vi.fn(async () => [{ kind: "e2b", hours: options.computerHours ?? 0 }]),
+    deploymentSettings: {
+      findUnique: vi.fn(async () => ({ modelCreditsEnabled: options.computerHours !== undefined })),
+    },
+    organization: {
+      findUnique: vi.fn(async () => ({ modelCredits: { mode: "byok" }, billing: null })),
+    },
+    space: { findUnique: vi.fn(async () => ({ organizationId: "organization" })) },
     thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, nextEventSeq: 1 }) },
     message: {
       findUnique: vi.fn(

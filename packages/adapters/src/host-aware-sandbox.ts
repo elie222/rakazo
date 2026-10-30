@@ -19,6 +19,7 @@ import { cancelComputerRunWork } from "./computer-idle.js";
 import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
+import { sandboxHourlyCostMicros } from "./sandbox-allowance.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
@@ -101,7 +102,7 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.isolated.describe();
   }
 
-  private route(computer: ComputerRef) {
+  private route(computer: Pick<ComputerRef, "kind">) {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
@@ -233,8 +234,12 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.route(computer).snapshot(computer, context);
   }
 
-  billsWhileRunning(computer: ComputerRef): boolean {
+  billsWhileRunning(computer: Pick<ComputerRef, "kind">): boolean {
     return this.route(computer).billsWhileRunning?.(computer) ?? false;
+  }
+
+  hourlyCostMicros(computer: Pick<ComputerRef, "kind">): number {
+    return sandboxHourlyCostMicros(this.route(computer), computer);
   }
 
   keepAlive(computer: ComputerRef) {
