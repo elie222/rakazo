@@ -4,6 +4,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  openBotPanelTab,
   realSandboxTimeout,
   rpc,
   signup,
@@ -113,7 +114,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel.getByRole("button", { name: /Take control/i })).toHaveCount(0);
   await page.getByTestId("computer-preview").hover();
@@ -159,7 +160,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 });
 
 async function openComputerPanel(page: Page) {
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await expect(page.getByTestId("computer-preview-open")).toHaveCount(1);
 }

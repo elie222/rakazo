@@ -6,6 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   expectCardWidth,
+  openBotPanelTab,
   realSandboxTimeout,
   rpc,
   signup,
@@ -67,12 +68,14 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel. Re-open when closed so Open can refresh computer status.
+  // Reopen the computer tab so Open sees a refreshed computer status.
   const sidePanel = page.getByTestId("side-panel");
-  if ((await sidePanel.getAttribute("data-panel")) === "computer") {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const pill = page.getByTestId("bot-settings-trigger");
+  if ((await pill.getAttribute("aria-expanded")) === "true") {
+    await pill.click();
+    await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([
@@ -99,6 +102,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
@@ -311,15 +315,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.getByRole("button", { name: "Show settings" });
-  if (!(await gear.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  }
-  await gear.click();
-  await page
-    .getByTestId("bot-settings")
-    .getByRole("button", { name: "Advanced", exact: true })
-    .click();
+  await openBotPanelTab(page, "Advanced");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;

@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0}は直接のメンションには引き続き応答します。"
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "{0}の画面"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -631,10 +626,6 @@ msgstr "詳細設定"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "詳細設定..."
-
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "エージェントのコンピューター"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -4973,8 +4964,8 @@ msgstr "キーをローテーション"
 msgid "Routine"
 msgstr "ルーティン"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "ルーティン"
 
@@ -5313,10 +5304,6 @@ msgstr "すべて表示"
 msgid "Show bots"
 msgstr "ボットを表示"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "コンピューターを表示"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "一覧を表示"
@@ -5334,10 +5321,6 @@ msgstr "パスワードを表示"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr "選択中を表示"
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "設定を表示"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"

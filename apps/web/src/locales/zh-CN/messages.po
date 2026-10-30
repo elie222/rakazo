@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} 被直接 @ 时仍会回复。"
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "{0} 的屏幕"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -631,10 +626,6 @@ msgstr "高级"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "高级..."
-
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "Agent 电脑"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -4973,8 +4964,8 @@ msgstr "轮换密钥"
 msgid "Routine"
 msgstr "例行任务"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "例行任务"
 
@@ -5313,10 +5304,6 @@ msgstr "显示全部"
 msgid "Show bots"
 msgstr "显示 Bot"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "显示电脑"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "显示列表"
@@ -5334,10 +5321,6 @@ msgstr "显示密码"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr "显示已选"
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "显示设置"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"

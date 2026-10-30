@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openBotPanelTab, rpc, signup } from "./helpers";
 
 test("sidebar rail keeps chats interactive and remembers a dragged width", async ({
   page,
@@ -140,7 +140,7 @@ test("narrow desktop keeps the chat width when both panels are open", async ({
   await handle.focus();
   await handle.press("End");
   await expect(sidebar).toHaveCSS("width", "480px");
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   const panel = page.getByTestId("side-panel");
   await expect(panel).toHaveCSS("position", "absolute");
   const chat = page.locator('[data-space-switch="main"]');

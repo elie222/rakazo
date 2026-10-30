@@ -99,7 +99,6 @@ export async function signupThroughForm(
   await page.getByRole("button", { name: "Create account" }).click();
 }
 
-/** Open Advanced through its trigger, preserving an already-expanded section. */
 /** Opens Integrations' add menu and picks one of its custom sources. */
 export async function openIntegrationsAdd(page: Page, item: string) {
   const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
@@ -107,11 +106,13 @@ export async function openIntegrationsAdd(page: Page, item: string) {
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
-export async function expandAdvancedSection(section: Locator) {
-  const trigger = section.getByRole("button", { name: "Advanced", exact: true });
-  if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
-  await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  await waitForTransitions(section);
+/** Opens the bot panel from the header pill, unless it is already open, and shows one tab. */
+export async function openBotPanelTab(page: Page, name: "Computer" | "Routines" | "Advanced") {
+  const pill = page.getByTestId("bot-settings-trigger");
+  if ((await pill.getAttribute("aria-expanded")) !== "true") await pill.click();
+  const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
 }
 
 /** Waits for fold-outs to settle before clicking or dragging their contents. */

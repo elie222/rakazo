@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} seguirá respondiendo a las menciones directas."
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "Pantalla de {0}"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -631,10 +626,6 @@ msgstr "Avanzado"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "Avanzado..."
-
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "Computadora del agente"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -4973,8 +4964,8 @@ msgstr "Rotar clave"
 msgid "Routine"
 msgstr "Rutina"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Rutinas"
 
@@ -5313,10 +5304,6 @@ msgstr "Mostrar todos"
 msgid "Show bots"
 msgstr "Mostrar bots"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "Mostrar computadora"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "Mostrar lista"
@@ -5334,10 +5321,6 @@ msgstr "Mostrar contraseña"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr "Mostrar seleccionados"
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "Mostrar configuración"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
