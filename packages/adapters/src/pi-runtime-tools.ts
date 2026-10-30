@@ -1,5 +1,6 @@
 import type { Agent, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -17,6 +18,7 @@ import {
   credentialArgument,
   loginFieldLabelsArgument,
 } from "./bot-secrets.js";
+import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { PiAgentRuntimeOptions } from "./pi-runtime.js";
 import { sanitizeSensitiveText } from "./pi-runtime-errors.js";
@@ -55,7 +57,56 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
 }
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
-  return namedAgentTools(toolDefs).map(({ tool, name }) => toAgentTool(tool, host, name));
+  const { listed, deferred } = partitionTools(toolDefs);
+  const tools = namedAgentTools(listed).map(({ tool, name }) =>
+    toAgentTool(tool, host, name, { deferred }),
+  );
+  if (!deferred.length) return tools;
+  const runnable = new Map(
+    [...tools, ...deferred.map((tool) => toAgentTool(tool, host, tool.name, { viaUseTool: true }))]
+      .filter((tool) => tool.name !== FIND_TOOL && tool.name !== USE_TOOL)
+      .map((tool) => [tool.name, tool]),
+  );
+  return tools.map((tool) =>
+    tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, host) : tool,
+  );
+}
+
+/**
+ * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
+ * and activity all name that tool exactly as a direct call would.
+ */
+function useToolAgentTool(
+  wrapper: AgentTool,
+  runnable: ReadonlyMap<string, AgentTool>,
+  host: ToolHost,
+): AgentTool {
+  return {
+    ...wrapper,
+    // Deferred schedule and memory tools must not race a sibling call.
+    executionMode: "sequential",
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      const { name, arguments: args } = params as { name: string; arguments?: unknown };
+      const tool = runnable.get(name);
+      if (!tool) {
+        host.queue.push({
+          type: "tool",
+          name: USE_TOOL,
+          args: params as Record<string, unknown>,
+          executionId: JSON.stringify(["pi-tool", host.agentNamespace ?? "main", toolCallId]),
+        });
+        throw new Error(`${name} is not available. Use a name find_tool lists.`);
+      }
+      const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
+      const validated = validateToolArguments(tool, {
+        type: "toolCall",
+        id: toolCallId,
+        name,
+        arguments: prepared as never,
+      });
+      return tool.execute(toolCallId, validated, signal, onUpdate);
+    },
+  };
 }
 
 /** Shared canonical mapping for checkpoint validation and runtime exposure. */
@@ -116,6 +167,8 @@ const ACTIVITY_DETAIL_LIMIT = 90;
 /** One human-readable line describing a tool call, shown live in the thread. */
 export function describeToolActivity(toolName: string, args: unknown): string {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  if (toolName === USE_TOOL) return describeToolActivity(String(record.name), record.arguments);
+  if (toolName === FIND_TOOL) return "Finding a tool";
   const detail = (value: unknown): string => {
     const text = sanitizeSensitiveText(String(value ?? ""))
       .replaceAll(/\s+/g, " ")
@@ -245,7 +298,12 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
   };
 }
 
-function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
+function toAgentTool(
+  tool: ConnectorTool,
+  host: ToolHost,
+  exposedName: string,
+  { deferred = [], viaUseTool = false }: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+): AgentTool {
   return {
     name: exposedName,
     label: tool.name,
@@ -370,7 +428,13 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
               details: { skipped: true },
             };
           }
-          host.queue.push({ type: "tool", name: tool.name, args, executionId });
+          host.queue.push({
+            type: "tool",
+            name: tool.name,
+            args,
+            executionId,
+            ...(viaUseTool ? { viaUseTool } : {}),
+          });
           const startedAt = Date.now();
           let result: unknown;
           let failure: unknown;
@@ -444,6 +508,13 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                   content: [{ type: "text", text: "Protected input requested." }],
                   details: args,
                   terminate: true,
+                };
+              }
+              if (tool.name === FIND_TOOL) {
+                const found = findTools(deferred, args);
+                return {
+                  content: [{ type: "text", text: JSON.stringify(found) }],
+                  details: found,
                 };
               }
               if (tool.name === "run_subagent") {

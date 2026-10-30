@@ -18,6 +18,7 @@ import { getLogger } from "@rakazo/logging";
 import type { ApprovalPausedToolResult, ApprovedEffectReplayQueue } from "./approval-effect.js";
 import { approvalPausedToolResult, approvedEffectOccurrence } from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
+import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import type { selectRunConnections } from "./connection-context.js";
@@ -370,7 +371,7 @@ export function restoreTurnCheckpointEffects(
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
-    const namedTools = namedAgentTools(ctx.tools.offered);
+    const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));
     if (
       saved.messages.some(
