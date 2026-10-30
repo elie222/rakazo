@@ -204,6 +204,28 @@ describe("MCP connector managed stdio launch", () => {
   );
 
   it.each([
+    ["bunx", ["pkg"]],
+    ["pnpm", ["dlx", "pkg"]],
+    ["uvx", ["pkg"]],
+  ])("refuses package runner %s before installing or launching", async (command, args) => {
+    const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+    const installs = vi.spyOn(installer, "ensureMcpPackage");
+    const connector = connectorFor({
+      allowedCommands: [command],
+      server: { ...SERVER, command, args },
+    });
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+      expect(tools[0]?.description).toContain("Only npx can launch packages here");
+      expect(launches).not.toHaveBeenCalled();
+      expect(installs).not.toHaveBeenCalled();
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it.each([
     [["-c", "echo hi"]],
     [["--call", "echo hi"]],
     [["--shell", "sh"]],

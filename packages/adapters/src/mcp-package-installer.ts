@@ -79,7 +79,18 @@ export function registryPackageName(spec: string): string | undefined {
 }
 
 export function isNpxCommand(command: string): boolean {
-  return /^npx(?:\.cmd)?$/.test(basename(command.trim()));
+  return /^npx(?:\.cmd|\.exe)?$/i.test(basename(command.trim()));
+}
+
+// Package managers and runners that fetch and run packages Rakazo can't vet. Whole commands,
+// not subcommands: global flags (`pnpm -C dir dlx`) and auto-installs (`bun run`, `uv run
+// --with`) make subcommand checks easy to slip past.
+const PACKAGE_RUNNER =
+  /^(?:npm|pnpm|pnpx|yarn|yarnpkg|corepack|bun|bunx|deno|uv|uvx|pipx)(?:\.cmd|\.exe|\.ps1)?$/i;
+
+/** Whether `command` is a package runner other than npx, which stdio launches never use. */
+export function isPackageRunnerCommand(command: string): boolean {
+  return PACKAGE_RUNNER.test(basename(command.trim()));
 }
 
 /**

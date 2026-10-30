@@ -91,7 +91,11 @@ timeout, `MCP_STDIO_INSTALL_TIMEOUT_MS` (default 180000), separate from the hand
 `MCP_STDIO_STARTUP_TIMEOUT_MS` (default 30000). Pin a version so every start runs the same
 code; npm settings such as `NPM_CONFIG_REGISTRY` can be set in the server's environment
 variables. Any other `npx` form (local paths, git and tarball URLs, unknown `npx` flags) is
-refused. Each server runs as one process per user in each of the API and worker,
+refused. `npx` is the only supported package launcher: other package managers and runners
+(`npm`, `pnpm`, `yarn`, `bun`, `bunx`, `deno`, `uv`, `uvx`, `pipx` and the like) are refused
+even when allowlisted. To run a server from another ecosystem, install it on the host and
+allowlist its binary. An allowlisted interpreter or shell (`node`, `python`, `sh`) runs any
+code passed in its arguments, so allowlist it only where that is acceptable. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
