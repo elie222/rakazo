@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
-import { bootstrapUserSpace, createDb, createPool } from "@rakazo/db";
+import { asSystem, bootstrapUserSpace, createDb, createPool } from "@rakazo/db";
 import { expect, it } from "vitest";
 import { opaque } from "../diagnostics.js";
 
@@ -21,7 +21,8 @@ it.skipIf(!testDatabase)(
       return url.href;
     };
     await admin.query(`CREATE DATABASE "${name}"`);
-    const { prisma, pool } = createDb(at(ownerDatabase));
+    const { prisma: client, pool } = createDb(at(ownerDatabase));
+    const prisma = asSystem(client);
     try {
       await run("pnpm", ["--filter", "@rakazo/api", "db:migrate"], {
         env: {
@@ -87,7 +88,7 @@ it.skipIf(!testDatabase)(
       ])
         expect(stdout).not.toContain(value);
     } finally {
-      await prisma.$disconnect();
+      await client.$disconnect();
       await pool.end();
       await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
       await admin.end();
