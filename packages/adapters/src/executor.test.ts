@@ -3478,6 +3478,21 @@ description: Prepare standup notes
     });
   });
 
+  it("carries the saved protocol into primary and connected model resolution", async () => {
+    const plaintext = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: COMPATIBLE_BASE_URL,
+      apiProtocol: "responses",
+      apiKey: "fake-api-key",
+    });
+    const executor = compatibleExecutor(compatiblePrismaParts("space-model", plaintext), plaintext);
+    const scope = { userId: "user-1", spaceId: "ws-1" };
+    expect(
+      await executor.resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "space-model"),
+    ).toMatchObject({ apiProtocol: "responses" });
+    expect(await executor.resolveModel(scope)).toMatchObject({ apiProtocol: "responses" });
+  });
+
   it("sends saved compatible headers from executor resolution to the model request", async () => {
     const plaintext = serializeModelSecret({
       kind: "openai_compatible",

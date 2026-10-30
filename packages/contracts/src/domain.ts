@@ -1358,6 +1358,10 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/** Wire protocol selected for one OpenAI-compatible connection. */
+export const ModelApiProtocolSchema = z.enum(["chat-completions", "responses"]);
+export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
+
 export const ModelCredentialSchema = z.object({
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
@@ -1369,6 +1373,7 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
   modelId: z.string().optional(),
@@ -1441,6 +1446,7 @@ export const ModelConnectInputSchema = z
     gatewayId: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
+    apiProtocol: ModelApiProtocolSchema.optional(),
     label: z.string().optional(),
     /**
      * The connection this save updates; null adds another connection for the provider.

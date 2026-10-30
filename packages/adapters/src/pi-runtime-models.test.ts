@@ -236,3 +236,18 @@ describe("reasoning efforts an endpoint refuses", () => {
     expect(acceptedReasoningEfforts(model({ off: "none" }), error)).toBeUndefined();
   });
 });
+
+it("keeps protocol selection scoped to the request connection", () => {
+  const request = requestModel("fixture-model", "http://127.0.0.1:8000/v1");
+  const responses = modelsForRequest(
+    { model: { ...request.model, apiProtocol: "responses" } },
+    OPENAI_COMPATIBLE_PROVIDER_ID,
+  );
+  expect(responses.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")?.api).toBe(
+    "openai-responses",
+  );
+  const legacy = modelsForRequest(request, OPENAI_COMPATIBLE_PROVIDER_ID);
+  expect(legacy.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")?.api).toBe(
+    "openai-completions",
+  );
+});

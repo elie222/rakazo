@@ -46,3 +46,14 @@ for a simple daily check.
 ## Usage
 
 **Settings → Usage** shows runs, tokens and cost by model.
+
+
+## Compatible server wire protocol
+
+OpenAI-compatible connections default to Chat Completions. For an endpoint that serves the Responses
+API, the shared `models/connect` RPC accepts `apiProtocol: "responses"` alongside `provider:
+"openai-compatible"`, `baseUrl`, and `modelId`. Use `apiProtocol: "chat-completions"` to switch back.
+This optional API setting applies to one saved connection; it does not change other connections or
+require an environment variable. Current settings screens retain a saved protocol when editing the
+same endpoint. Changing the base URL without specifying a protocol resets it to Chat Completions.
+The same private-endpoint opt-in, HTTPS, redirect and custom-header checks apply to both protocols.
