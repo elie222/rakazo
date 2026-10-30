@@ -1463,6 +1463,19 @@ export async function subscribeThread(
   }
 }
 
+/** Mirrors the web reducer so group member status matches across surfaces. */
+function updateMemberStatus(
+  members: MobileSnapshot["members"],
+  botId: string | undefined,
+  status: string,
+): MobileSnapshot["members"] {
+  const member = members?.find((candidate) => candidate.botId === botId);
+  if (!member || member.status === status) return members;
+  return members?.map((candidate) =>
+    candidate.botId === botId ? { ...candidate, status } : candidate,
+  );
+}
+
 export function applyMobileThreadEvent(
   prev: MobileSnapshot | null,
   event: ThreadEvent,
@@ -1562,8 +1575,16 @@ export function applyMobileThreadEvent(
         ? { ...prev.computer, busyBotName: null }
         : prev.computer;
     const computerChanged = computer !== prev.computer;
+    const members = updateMemberStatus(prev.members, event.botId, status);
     const cursor = event.seq ?? prev.cursor;
-    if (!runChanged && !activeRunChanged && !progressCleared && !needsInsert && !computerChanged) {
+    if (
+      !runChanged &&
+      !activeRunChanged &&
+      !progressCleared &&
+      !needsInsert &&
+      !computerChanged &&
+      members === prev.members
+    ) {
       return cursor === prev.cursor ? prev : { ...prev, cursor };
     }
     if (needsInsert && runId) {
@@ -1581,6 +1602,7 @@ export function applyMobileThreadEvent(
       return {
         ...prev,
         cursor,
+        members,
         messages,
         computer,
         run: promoteWaiting ? waitingRun : prev.run,
@@ -1598,7 +1620,7 @@ export function applyMobileThreadEvent(
             : candidate,
         )
       : prev.activeRuns;
-    return { ...prev, cursor, run, activeRuns, messages, computer };
+    return { ...prev, cursor, members, run, activeRuns, messages, computer };
   }
   if (event.type === "computer.takeover.released") {
     const runId = event.runId;
@@ -1634,6 +1656,7 @@ export function applyMobileThreadEvent(
   }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
+    const nextMemberRun = activeRuns?.find((candidate) => candidate.botId === event.botId);
     const failure = runFailureError(event);
     const primaryEnded = prev.run?.id === event.runId ? prev.run : null;
     // A group member run can fail while another is displayed; see reduceThreadSnapshot.
@@ -1643,6 +1666,7 @@ export function applyMobileThreadEvent(
       ...prev,
       cursor: event.seq ?? prev.cursor,
       messages: prev.messages.filter((message) => message.id !== progressMessageId(event)),
+      members: updateMemberStatus(prev.members, event.botId, nextMemberRun?.status ?? "idle"),
       // A failed run stays in run so the thread can say why it stopped (see reduceThreadSnapshot).
       run:
         endedRun && failure

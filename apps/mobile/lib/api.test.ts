@@ -3332,6 +3332,115 @@ describe("mobile thread event reduction", () => {
     expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
   });
 
+  it("keeps group member status in sync with run lifecycle events, like web", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      botId: undefined,
+      groupId: "group-1",
+      members: [
+        { botId: "bot-1", name: "Writer", color: "blue", status: "idle" },
+        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
+      ],
+    };
+    const statuses = (state: MobileSnapshot | null) =>
+      state?.members?.map((member) => member.status);
+
+    const started = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 4,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(started)).toEqual(["running", "idle"]);
+    const waiting = applyMobileThreadEvent(started, {
+      type: "run.waiting_input",
+      seq: 5,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(waiting)).toEqual(["waiting_input", "idle"]);
+    const resumed = applyMobileThreadEvent(waiting, {
+      type: "run.started",
+      seq: 6,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    const takeover = applyMobileThreadEvent(resumed, {
+      type: "computer.takeover.requested",
+      seq: 7,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(takeover)).toEqual(["waiting_takeover", "idle"]);
+    const released = applyMobileThreadEvent(takeover, {
+      type: "computer.takeover.released",
+      seq: 8,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(released)).toEqual(["queued", "idle"]);
+    const completed = applyMobileThreadEvent(released, {
+      type: "run.completed",
+      seq: 9,
+      botId: "bot-1",
+      runId: "run-1",
+    });
+    expect(statuses(completed)).toEqual(["idle", "idle"]);
+  });
+
+  it("marks a waiting peer that the snapshot omitted", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      members: [{ botId: "bot-2", name: "Researcher", color: "green", status: "running" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.waiting_input",
+      seq: 9,
+      botId: "bot-2",
+      runId: "peer-run",
+    });
+
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "waiting_input" });
+    expect(next?.members?.[0]?.status).toBe("waiting_input");
+  });
+
+  it.each(["run.completed", "run.failed", "run.cancelled"])(
+    "settles a member on %s to its next active run, or idle",
+    (type) => {
+      const initial: MobileSnapshot = {
+        ...snapshot(),
+        groupId: "group-1",
+        run: { id: "run-1", botId: "bot-1", status: "running" },
+        activeRuns: [
+          { id: "run-1", botId: "bot-1", status: "running" },
+          { id: "run-2", botId: "bot-1", status: "waiting_input" },
+          { id: "run-3", botId: "bot-2", status: "running" },
+        ],
+        members: [
+          { botId: "bot-1", name: "Writer", color: "blue", status: "running" },
+          { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
+        ],
+      };
+
+      const first = applyMobileThreadEvent(initial, {
+        type,
+        seq: 9,
+        botId: "bot-1",
+        runId: "run-1",
+      });
+      expect(first?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
+      const last = applyMobileThreadEvent(first, {
+        type,
+        seq: 10,
+        botId: "bot-2",
+        runId: "run-3",
+      });
+      expect(last?.members?.map((member) => member.status)).toEqual(["waiting_input", "idle"]);
+    },
+  );
+
   it("consumes background run starts without changing visible work or members", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),

@@ -283,6 +283,21 @@ describe("mobile dictation", () => {
     expect(onFinal).not.toHaveBeenCalled();
   });
 
+  it("leaves a newer session running when a cancelled request arrives late", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, signal: new AbortController().signal });
+    const cancelled = new AbortController();
+    cancelled.abort();
+
+    await listen({ onFinal: vi.fn(), signal: cancelled.signal });
+    expect(fake.abort).not.toHaveBeenCalled();
+    fake.hear("still here");
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS);
+
+    expect(fake.start).toHaveBeenCalledOnce();
+    expect(onFinal).toHaveBeenCalledWith("still here");
+  });
+
   it("ends the turn on a permission error instead of hanging on the mic", async () => {
     const onFinal = vi.fn();
     await listen({ onFinal });
