@@ -164,9 +164,14 @@ export const Transcript = memo(function Transcript({
     [messages],
   );
   const mentionView = useMemo(() => projectBotMentions(messages), [messages]);
+  // A progress tick rebuilds this view. The jump still reads the latest fold, without a new
+  // callback that would rerender every memoized message.
+  const mentionViewRef = useRef(mentionView);
+  mentionViewRef.current = mentionView;
   const jumpToMessage = useCallback(
-    (messageId: string) => onJumpToMessage(mentionView.foldedInto.get(messageId) ?? messageId),
-    [mentionView, onJumpToMessage],
+    (messageId: string) =>
+      onJumpToMessage(mentionViewRef.current.foldedInto.get(messageId) ?? messageId),
+    [onJumpToMessage],
   );
   const reactionView = useMemo(
     () => projectMessageReactions(mentionView.visibleMessages),
@@ -535,7 +540,7 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
-                      onSpeak={() => onSpeak(message)}
+                      onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}
                       showToolActivity={showToolActivity}
