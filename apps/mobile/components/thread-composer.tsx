@@ -24,9 +24,19 @@ import {
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
-import { useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import {
+  AppState,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import type { ComposerDraftScope } from "../lib/composer-draft";
+import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
@@ -46,8 +56,12 @@ export type ThreadComposerHandle = {
   insert: (text: string) => void;
 };
 
+const DRAFT_SAVE_DELAY_MS = 500;
+
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
+  /** Where the unsent text is kept; without it the draft lives only while mounted. */
+  draftScope?: ComposerDraftScope;
   onMentionRequested?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
@@ -70,6 +84,7 @@ type ThreadComposerProps = {
 
 export function ThreadComposer({
   ref,
+  draftScope,
   onMentionRequested,
   agentSkills,
   composerMentionTargets,
@@ -103,15 +118,16 @@ export function ThreadComposer({
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const inputRef = useRef<TextInput>(null);
-  const [draft, setDraft] = useState("");
-  const draftRef = useRef("");
-  const nativeSelection = useRef({ start: 0, end: 0 });
+  const [saved] = useState(() => readComposerDraft(draftScope));
+  const [draft, setDraft] = useState(saved.text);
+  const draftRef = useRef(saved.text);
+  const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
   const [selection, setSelection] = useState<{ start: number; end: number }>();
   const [mentionQuery, setMentionQuery] = useState<ComposerMentionQuery | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
-  const [mentionBindings, setMentionBindings] = useState<ComposerMentionBinding[]>([]);
-  const bindingsRef = useRef<ComposerMentionBinding[]>([]);
+  const [mentionBindings, setMentionBindings] = useState(saved.bindings);
+  const bindingsRef = useRef(saved.bindings);
   const selectionHistory = useRef<ComposerMentionRange[]>([]);
   const pendingNativeEdit = useRef<NativeEdit | null>(null);
   function updateBindings(next: ComposerMentionBinding[]) {
@@ -119,6 +135,32 @@ export function ThreadComposer({
     setMentionBindings(next);
   }
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
+  // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
+  // Set while the composer holds text that storage does not have yet.
+  const pendingSave = useRef<(() => boolean) | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function flushDraftSave() {
+    clearTimeout(saveTimer.current);
+    // A failed save stays pending, so the next flush retries it.
+    if (pendingSave.current?.()) pendingSave.current = null;
+  }
+  useEffect(() => {
+    if (!draftScope) return;
+    pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
+    clearTimeout(saveTimer.current);
+    // An emptied composer, such as after a send, forgets the draft right away.
+    if (!draft) flushDraftSave();
+    else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
+  }, [draftScope, draft, mentionBindings]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") flushDraftSave();
+    });
+    return () => {
+      subscription.remove();
+      flushDraftSave();
+    };
+  }, []);
   useImperativeHandle(ref, () => ({
     snapshot: () => ({
       promptText: serializeComposerPrompt(draft, selectedSkill),
