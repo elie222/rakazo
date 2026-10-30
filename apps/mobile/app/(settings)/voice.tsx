@@ -287,7 +287,7 @@ export default function VoiceSettings() {
     setError(null);
     if (status) setLoadError(null);
     try {
-      if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
+      if (deviceSettings && !(await saveDeviceVoice(false))) return;
       setProvider(nextProvider);
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
@@ -452,7 +452,7 @@ export default function VoiceSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
+        {loading || !deviceVoiceReady ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {failure && !status ? (
           <LoadFailure
             message={failure}

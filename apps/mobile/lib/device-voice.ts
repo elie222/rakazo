@@ -11,7 +11,7 @@ export async function loadDeviceVoiceEnabled(): Promise<boolean> {
   const stored = await SecureStore.getItemAsync(DEVICE_VOICE_KEY);
   if (stored) return stored === "1";
   try {
-    return !(await rpc("voice/status")).ready;
+    return !(await rpc("voice/status", { scope: "account" })).ready;
   } catch {
     return true;
   }
