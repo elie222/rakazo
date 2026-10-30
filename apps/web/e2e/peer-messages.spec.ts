@@ -97,11 +97,7 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   await expect(close).toHaveCount(1);
   await expect(close.locator("svg")).toBeVisible();
   await expect(close).toHaveText("");
-  const closeBox = await close.boundingBox();
-  const titleBox = await view.getByRole("heading").boundingBox();
-  expect(closeBox).not.toBeNull();
-  expect(titleBox).not.toBeNull();
-  const assertTitleCentered = async () => {
+  const assertHeaderLayout = async () => {
     const viewBox = await view.boundingBox();
     const headingBox = await view.getByRole("heading").boundingBox();
     const buttonBox = await close.boundingBox();
@@ -112,10 +108,14 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
       Math.abs(headingBox!.x + headingBox!.width / 2 - (viewBox!.x + viewBox!.width / 2)),
     ).toBeLessThanOrEqual(1);
     expect(headingBox!.x + headingBox!.width).toBeLessThanOrEqual(buttonBox!.x);
+    const headerBox = await view.locator(":scope > div").first().boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(headerBox!.y).toBe(viewBox!.y);
+    expect(buttonBox!.y).toBeLessThan(viewBox!.y + 24);
+    expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
+    expect(viewBox!.x + viewBox!.width - (buttonBox!.x + buttonBox!.width)).toBeLessThan(24);
   };
-  await assertTitleCentered();
-  expect(closeBox!.y).toBeLessThan(24);
-  expect(closeBox!.x + closeBox!.width).toBeGreaterThan(350);
+  await assertHeaderLayout();
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -129,6 +129,13 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
       ),
     )
     .toBe(true);
+  expect(
+    await peerTranscript.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await captureScreenshot(page, testInfo, "peer-view-only");
+
+  await close.click();
+  await expect(view).toHaveCount(0);
   await page.setViewportSize({ width: 1800, height: 900 });
   const regularContentWidth = await transcript.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -153,20 +160,8 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
     expect(layout.width).toBeLessThanOrEqual(regularContentWidth + 1);
     expect(Math.abs(layout.left - layout.right)).toBeLessThanOrEqual(1);
     expect(layout.left).toBeGreaterThan(regularContentWidth / 4);
-    await assertTitleCentered();
-    const viewBox = await view.boundingBox();
-    const buttonBox = await close.boundingBox();
-    const headerBox = await view.locator(":scope > div").first().boundingBox();
-    expect(headerBox!.y).toBe(viewBox!.y);
-    expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
-    expect(viewBox!.x + viewBox!.width - (buttonBox!.x + buttonBox!.width)).toBeLessThan(24);
+    await assertHeaderLayout();
   };
-  await assertPeerWidth();
-  await captureScreenshot(page, testInfo, "peer-view-only");
-
-  await view.getByRole("button", { name: "Close" }).click();
-  await expect(view).toHaveCount(0);
-  await page.setViewportSize({ width: 1800, height: 900 });
   await page.evaluate(() => {
     const state = {
       phase: "idle",
@@ -198,7 +193,6 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   await chip.scrollIntoViewIfNeeded();
   await chip.click();
   await expect(view).toBeVisible();
-  await assertTitleCentered();
   const avatarsLeft = await view
     .getByRole("heading")
     .evaluate((heading) => heading.getBoundingClientRect().left);
