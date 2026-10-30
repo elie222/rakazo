@@ -7,9 +7,31 @@ import {
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
+import {
+  jsonSchemaParameters,
+  parametersFor,
+  prepareFleetArguments,
+} from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("keeps the history query either/or guidance on the provider wire without a root union", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const field of ["query", "queries"]) {
+      expect(wire.properties[field].description).toContain("never both; one is required");
+    }
+    expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
+    expect(wire).not.toHaveProperty("oneOf");
+    // Root combinators cannot be sent to every provider; original-schema validation remains authoritative.
+    expect(() => parseConnectorToolArgs(tool.inputSchema, {})).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
+    ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
+      queries: ["a"],
+    });
+  });
+
   it.each([
     ["ticket_create", "title", TICKET_TITLE_MAX_LENGTH, { title: "Ship" }],
     ["ticket_create", "description", TICKET_DESCRIPTION_MAX_LENGTH, { title: "Ship" }],
@@ -338,10 +360,10 @@ describe("bot management tool parameters", () => {
     );
   });
 
-  it("update_bot carries bot_id for a child and never instructions", () => {
+  it("update_bot carries bot_id for a child and first instructions, never a version", () => {
     const props = Object.keys(wireFor("update_bot").properties as object);
     expect(props).toContain("bot_id");
-    expect(props).not.toContain("instructions");
+    expect(props).toContain("instructions");
     expect(props).not.toContain("expected_version");
     expect(Object.keys(wireFor("set_child_instructions").properties as object).sort()).toEqual([
       "bot_id",

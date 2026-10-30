@@ -17,7 +17,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
-import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
+import { Chat, isLinkNode, parseMarkdown, text, toPlainText, walkAst } from "chat";
+import { getLarkTextParts } from "./lark/text-parts.js";
 
 /**
  * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
@@ -68,7 +69,6 @@ export interface MessagingPlatform {
   isPermanentSendError?: (error: unknown) => boolean;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
-  /** Group display name from the raw inbound payload. */
   channelName?: (raw: unknown) => string | null;
   /** User-facing transport carried by the raw message when it differs from the provider. */
   transport?: (raw: unknown) => string | null;
@@ -441,7 +441,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
       content: [
-        plainTextWithLinks(message),
+        plainTextWithLinks(message, platform.provider === "lark"),
         ...(attachments.length
           ? message.attachments
               .filter((file) => !file.fetchData && file.url)
@@ -501,9 +501,54 @@ function inboundAttachments(message: Message): MessagingInboundAttachment[] {
  * The SDK's message.text keeps only a link's label, so a Slack link labelled
  * `example.com/projects/…` reaches the model without its target.
  */
-function plainTextWithLinks(message: Message): string {
+function plainTextWithLinks(message: Message, lark: boolean): string {
+  const parts = lark ? getLarkTextParts(message.formatted) : undefined;
+  if (parts) {
+    const rendered = parts.map((part, index) => {
+      if (part.literal) return { value: part.text, addedTarget: false };
+      const value = part.text;
+      if (!value.trim()) return { value, addedTarget: false };
+      const result = renderLinks(parseMarkdown(value));
+      const first = result.ast.children.at(0);
+      const last = result.ast.children.at(-1);
+      const start = first?.position?.start.offset ?? 0;
+      const end = last?.position?.end.offset ?? value.length;
+      const prefix = value.slice(0, start);
+      const previous = parts[index - 1];
+      const sameLine = previous?.literal && !previous.text.endsWith("\n") && !prefix.includes("\n");
+      const leading = sameLine ? prefix : prefix.replace(/[^\r\n]/g, "");
+      let trailing = value.slice(end);
+      // Markdown drops spaces at a fragment boundary; preserve them when the
+      // next structured item is on the same row.
+      if (last?.type === "paragraph" && !trailing && parts[index + 1]?.literal)
+        trailing = value.match(/[ \t]+$/)?.[0] ?? "";
+      // A heading followed by a code row has the same paragraph separation as
+      // a heading followed by ordinary text in the SDK's plain-text renderer.
+      const headingBreak =
+        parts[index + 1]?.literal &&
+        result.ast.children.at(-1)?.type === "heading" &&
+        trailing === "\n"
+          ? "\n"
+          : "";
+      return {
+        value: leading + toPlainText(result.ast) + headingBreak + trailing,
+        addedTarget: result.addedTarget,
+      };
+    });
+    return rendered.some((part) => part.addedTarget)
+      ? rendered.map((part) => part.value).join("")
+      : (message.text ?? "");
+  }
+  const result = renderLinks(message.formatted);
+  return result.addedTarget ? toPlainText(result.ast) : (message.text ?? "");
+}
+
+function renderLinks(formatted: Message["formatted"]): {
+  ast: Message["formatted"];
+  addedTarget: boolean;
+} {
   let addedTarget = false;
-  const ast = walkAst(structuredClone(message.formatted), (node) => {
+  const ast = walkAst(structuredClone(formatted), (node) => {
     if (!isLinkNode(node)) return node;
     const label = toPlainText({ type: "root", children: node.children }).trim();
     const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
@@ -516,7 +561,7 @@ function plainTextWithLinks(message: Message): string {
     addedTarget = true;
     return text(`${label} (${node.url})`);
   });
-  return addedTarget ? toPlainText(ast) : (message.text ?? "");
+  return { ast, addedTarget };
 }
 
 export function providerOfThreadId(threadId: string): string {

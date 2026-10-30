@@ -183,6 +183,7 @@ function account(provider: string, modelId: string) {
     name: "Ada",
     spaceId: "space-1",
     isDeploymentOwner: false,
+    isAdmin: false,
     needsModel: false,
     defaultProvider: provider,
     defaultModel: modelId,
@@ -195,6 +196,7 @@ function account(provider: string, modelId: string) {
     avatarStyle: "organic" as const,
     billingEnabled: false,
     ticketBoardEnabled: false,
+    navLinks: [],
     phoneCallsEnabled: false,
   };
 }
@@ -543,16 +545,15 @@ it("connects a provider from Add fallback without replacing the main model, then
     expect(pickerOptions()).toEqual([openrouterEntry.label]);
     await choose(openrouterEntry.label);
     expect(models.setRole).toHaveBeenCalledTimes(1);
-    expect(models.setRole).toHaveBeenCalledWith(
-      expect.objectContaining({
-        role: "main",
-        primary: { provider: "deepseek", modelId: "deepseek-chat" },
-        backups: [
-          { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
-        ],
-      }),
-      expect.anything(),
-    );
+    // The unchanged main model is left out, so the save cannot rewrite it.
+    const [saved] = vi.mocked(models.setRole).mock.calls[0]!;
+    expect(saved).toMatchObject({
+      role: "main",
+      backups: [
+        { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
+      ],
+    });
+    expect(saved).not.toHaveProperty("primary");
   } finally {
     await view.unmount();
   }
@@ -1217,6 +1218,51 @@ it.each([undefined, "api_key", "oauth"])(
     }
   },
 );
+
+it("tests the selected subscription connection when another connection has the same model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "api",
+      label: "API",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "api_key",
+    },
+    {
+      id: "oauth",
+      label: "Subscription",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      authKind: "oauth",
+    },
+  ]);
+  models.role.mockImplementation(async ({ role }: { role: string }) => ({
+    primary:
+      role === "main"
+        ? { provider: "anthropic", modelId: "claude-fixture", credentialId: "oauth" }
+        : null,
+    backups: [],
+  }));
+  const view = await renderSettings();
+  try {
+    await manage();
+    await click(buttons(view.container, "Test connection")[0]);
+    expect(view.container.textContent).toContain("A subscription credential is stored securely.");
+  } finally {
+    await view.unmount();
+  }
+});
 
 it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));

@@ -9,13 +9,13 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { getModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
+import type { createApp } from "@rakazo/api/app";
+import { appliedModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 type Actor = { spaceId: string; userId: string };
 
@@ -38,7 +38,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-connections-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     fake = new FakeComposioClient();
     composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
@@ -91,7 +91,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     const replace = (actor: Actor, backups: typeof first) =>
       runAsTenant(actor, () => updateModelRole(handles.prisma, actor, "main", { backups }));
     const backups = async (actor: Actor) =>
-      (await runAsTenant(actor, () => getModelRole(handles.prisma, actor, "main"))).backups;
+      (await runAsTenant(actor, () => appliedModelRole(handles.prisma, actor, "main"))).backups;
     await replace(other, first);
     await Promise.all([replace(owner, first), replace(owner, second)]);
     expect([first, second]).toContainEqual(await backups(owner));
@@ -199,8 +199,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       ]),
     );
 
-    // Uninstall the remaining account: catalog must flip off Added (slug-only
-    // emulator refs used to skip remote revoke and leave Gmail stuck connected).
+    // Uninstall the remaining account: catalog must flip off Added.
     await rpc(app, cookie, "connections/revoke", { connectionId: second.connectionId });
     await expect(
       rpc<Array<{ slug: string; connected: boolean }>>(app, cookie, "connections/catalog", {
@@ -377,6 +376,10 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         connectionId: started.connectionId,
       }),
     ).resolves.toMatchObject({ status: "connected" });
+    const stored = await asSystem(handles.prisma).connection.findUniqueOrThrow({
+      where: { id: started.connectionId },
+    });
+    expect(stored.providerRef).toBe("account-linear");
 
     const context = {
       operationId: "pipedream-product-test",
@@ -390,6 +393,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
           connectorId: "pipedream",
           externalId: "linear",
           displayName: "Linear",
+          providerRef: stored.providerRef ?? undefined,
         },
       ],
     };

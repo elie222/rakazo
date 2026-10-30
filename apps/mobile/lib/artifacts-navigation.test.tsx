@@ -1,194 +1,131 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
 import type { ReactNode } from "react";
-import * as React from "react";
-import { act } from "react";
+import { act, createElement } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { isSettingsLink, openFromSettingsSheet, registerSettingsSheet } from "./settings-sheet";
+import { InboxHeader } from "../components/inbox-header";
 
-const testFileUrl = import.meta.url;
-const home = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
-const account = readFileSync(new URL("../app/(settings)/account.tsx", testFileUrl), "utf8");
-function slice(source: string, start: string, end: string) {
-  const from = source.indexOf(start);
-  const to = source.indexOf(end, from);
-  expect(from).toBeGreaterThanOrEqual(0);
-  expect(to).toBeGreaterThan(from);
-  return source.slice(from, to);
-}
-function evaluate(source: string, scope: Record<string, unknown>) {
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  return new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-}
-const t = (text: string) => text;
-const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
-const Button = ({
-  accessibilityLabel,
-  title,
-  accessibilityRole,
-  chevron,
-  disabled,
-  onPress,
-}: {
-  accessibilityLabel?: string;
-  title?: string;
-  accessibilityRole?: string;
-  chevron?: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) => (
-  <button
-    type="button"
-    aria-label={accessibilityLabel}
-    role={accessibilityRole}
-    data-chevron={chevron}
-    disabled={disabled}
-    onClick={onPress}
-  >
-    {title}
-  </button>
-);
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
-afterEach(() => vi.unstubAllGlobals());
-
-it("keeps only Activity, Search and Create in the transparent native home header", () => {
-  const setOptions = vi.fn();
-  evaluate(slice(home, "  useLayoutEffect(() => {\n    if (!nativeHeader)", "  const openBot ="), {
-    useLayoutEffect: (effect: () => void) => effect(),
-    nativeHeader: true,
-    navigation: { setOptions },
-    ready: true,
-    hasSession: true,
-    initials: "A",
-    activityMode: false,
-    toggleActivityMode: vi.fn(),
-    runCreateAction: vi.fn(),
-    router: { push: vi.fn() },
-    t,
-    locale: "en",
-  });
-  const options = setOptions.mock.calls[0]![0];
-  expect(
-    options
-      .unstable_headerRightItems()
-      .map((item: { accessibilityLabel: string }) => item.accessibilityLabel),
-  ).toEqual(["Activity", "Search", "Create"]);
-  expect(options.headerTransparent).toBe(true);
-  expect(options.headerStyle).toEqual({ backgroundColor: "transparent" });
-});
-
-it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (platform) => {
-  const header = slice(
-    home,
-    "      {nativeHeader ? null : (",
-    "      <SelectedChatContext.Provider",
-  ).trim();
-  const element = evaluate(`return <>${header}</>;`, {
-    React,
-    nativeHeader: false,
-    View: ({
+const header = vi.hoisted(() => ({
+  platform: { OS: "ios" },
+  push: vi.fn(),
+}));
+const { labelled } = vi.hoisted(() => ({
+  labelled:
+    (tag: string) =>
+    ({
       children,
       accessibilityLabel,
+      onPress,
     }: {
       children?: ReactNode;
       accessibilityLabel?: string;
-    }) => <fieldset aria-label={accessibilityLabel}>{children}</fieldset>,
-    HeaderButton: Button,
-    Text: View,
-    NativeSymbol: () => null,
-    MenuView: View,
-    styles: {},
-    insets: { top: 0 },
-    columnInsets: { left: 0, right: 0 },
-    t,
-    router: { push: vi.fn() },
-    initials: "A",
-    activityMode: false,
-    toggleActivityMode: vi.fn(),
-    tokens: {},
-    Platform: { OS: platform },
-    openCreateChooser: vi.fn(),
-    appearance: "light",
-    runCreateAction: vi.fn(),
-  });
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  try {
-    act(() => root.render(element));
-    expect(
-      Array.from(container.querySelectorAll("[aria-label]"), (node) =>
-        node.getAttribute("aria-label"),
+      onPress?: () => void;
+    }) =>
+      createElement(tag, { "aria-label": accessibilityLabel, onClick: onPress }, children),
+}));
+
+vi.mock("react-native", () => ({
+  Platform: header.platform,
+  Pressable: labelled("button"),
+  StyleSheet: { create: <T,>(styles: T) => styles },
+  Text: labelled("span"),
+  View: labelled("div"),
+}));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    children,
+    actions,
+    onPressAction,
+  }: {
+    children?: ReactNode;
+    actions: { id: string; title: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+  }) =>
+    createElement(
+      "menu",
+      null,
+      children,
+      actions.map((action) =>
+        createElement(
+          "li",
+          { key: action.id, onClick: () => onPressAction({ nativeEvent: { event: action.id } }) },
+          action.title,
+        ),
       ),
-    ).toEqual(["Account", "Activity", "Search", "Create"]);
-  } finally {
-    act(() => root.unmount());
-  }
+    ),
+}));
+vi.mock("expo-router", () => {
+  const router = { push: header.push };
+  return { useRouter: () => router };
+});
+vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
+vi.mock("./material-icons", () => ({ materialIcons: {} }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("./appearance", () => ({
+  mobileTokens: () => ({}),
+  resolveMobileAppearance: () => "light",
+}));
+vi.mock("./i18n", () => {
+  const i18n = { t: (text: string) => text };
+  return { useI18n: () => i18n };
+});
+vi.mock("./native", () => ({ native: {}, useThemedStyles: () => ({}) }));
+
+let root: Root;
+let container: HTMLDivElement;
+const toggleActivityMode = vi.fn();
+const runCreateAction = vi.fn();
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  header.push.mockReset();
+  toggleActivityMode.mockReset();
+  runCreateAction.mockReset();
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
 });
 
-it.each([false, true])(
-  "keeps account navigation free of server controls (stored owner: %s)",
-  (isDeploymentOwner) => {
-    const start = account.lastIndexOf(
-      "        <SettingsGroup>",
-      account.indexOf('title: t("Artifacts")'),
-    );
-    const group = slice(
-      account.slice(start),
-      "        <SettingsGroup>",
-      "\n\n        <SettingsGroup>",
-    );
-    const events: string[] = [];
-    const unregister = registerSettingsSheet(() => events.push("close"));
-    const router = { push: vi.fn((href: string) => events.push(href)) };
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    const render = (pending: boolean) =>
-      evaluate(`return (${group});`, {
-        React,
-        SettingsGroup: View,
-        SettingsRow: Button,
-        t,
-        pending,
-        me: { isDeploymentOwner },
-        router,
-        isSettingsLink,
-        openFromSettingsSheet,
-      });
-    try {
-      act(() => root.render(render(false)));
-      const rows = Array.from(container.querySelectorAll("button"));
-      expect(rows.map((row) => row.textContent)).toEqual([
-        "Artifacts",
-        "Models",
-        "Voice",
-        "Approvals",
-        "Integrations",
-        "Messaging",
-        "AI data sharing",
-      ]);
-      expect(rows[0]!.getAttribute("role")).toBe("button");
-      expect(rows[0]!.dataset.chevron).toBe("right");
-      act(() => rows[0]!.click());
-      expect(events).toEqual(["close", "/artifacts"]);
-      events.length = 0;
-      act(() => rows[1]!.click());
-      expect(events).toEqual(["/models"]);
-      events.length = 0;
-      act(() => rows[3]!.click());
-      expect(events).toEqual(["/approvals"]);
-      events.length = 0;
-      act(() => rows[5]!.click());
-      expect(events).toEqual(["/messaging"]);
-      act(() => root.render(render(true)));
-      expect(container.querySelector("button")!.disabled).toBe(true);
-    } finally {
-      act(() => root.unmount());
-      unregister();
-    }
-  },
-);
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+function renderHeader(platform: string) {
+  header.platform.OS = platform;
+  act(() =>
+    root.render(
+      <InboxHeader
+        initials="A"
+        activityMode={false}
+        toggleActivityMode={toggleActivityMode}
+        runCreateAction={runCreateAction}
+        columnInsets={{ left: 0, right: 0 }}
+      />,
+    ),
+  );
+  return (label: string) => container.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
+}
+
+it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (platform) => {
+  const control = renderHeader(platform);
+  expect(
+    Array.from(container.querySelectorAll("[aria-label]"), (node) =>
+      node.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Account", "Activity", "Search", "Create"]);
+  act(() => control("Account").click());
+  act(() => control("Search").click());
+  act(() => control("Activity").click());
+  expect(header.push.mock.calls).toEqual([["/account"], ["/search"]]);
+  expect(toggleActivityMode).toHaveBeenCalledOnce();
+});
+
+it.each(["android", "ios"])("creates from the %s menu", (platform) => {
+  renderHeader(platform);
+  for (const item of container.querySelectorAll("li")) act(() => item.click());
+  expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
+});

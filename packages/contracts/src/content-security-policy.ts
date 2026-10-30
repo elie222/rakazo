@@ -9,11 +9,46 @@
  * app policy the way a srcdoc frame would; its own meta CSP governs it and its nested preview. */
 export const HTML_VIEWER_PATH = "/html-viewer.html";
 
+/** The page that draws a Wuying desktop with its vendor Web SDK, next to the SDK's own files. */
+export const WUYING_SCREEN_PATH = "/wuying/screen.html";
+const WUYING_SCREEN_PREFIX = "/wuying/";
+
+// The vendor runs only in opaque frames, including if this page is opened directly.
+// No app-origin fetches, forms, objects or top-level navigation. Inline hashes cover only
+// the pinned container's focus guard, version marker and click listener.
+const WUYING_CONTENT_SECURITY_POLICY = serialize({
+  "default-src": ["'none'"],
+  sandbox: ["allow-scripts", "allow-pointer-lock"],
+  "script-src": [
+    "'self'",
+    "'wasm-unsafe-eval'",
+    "blob:",
+    "https://g.alicdn.com",
+    "'sha256-YWDKpAXTqwkBgKv52boPcHHeIFM0KgmGRB7P5BAYG1g='",
+    "'sha256-rukASNY1jEwwaAb4qYHy6q+Vz2CBb8DRFWqOn3yc534='",
+    "'sha256-QrA3rhcCnVi1raBBazigw1S+co1eZTAaQED3N3leMaw='",
+  ],
+  "style-src": ["'unsafe-inline'", "https://g.alicdn.com"],
+  "img-src": ["data:", "blob:", "https://img.alicdn.com", "https://gw.alicdn.com"],
+  "font-src": ["data:", "https://g.alicdn.com"],
+  "media-src": ["blob:"],
+  "connect-src": [
+    "https://*.aliyuncs.com",
+    "wss://*.aliyuncs.com",
+    "https://eds.aliyun.com",
+    "https://eds-intl.aliyun.com",
+    "https://g.alicdn.com",
+  ],
+  "worker-src": ["blob:"],
+  "frame-src": ["'self'"],
+  "base-uri": ["'none'"],
+  "form-action": ["'none'"],
+});
+
 /** Same-origin endpoint browsers send violation reports to, so a blocked resource is not silent. */
 export const CSP_REPORT_PATH = "/api/csp-report";
 const CSP_REPORT_GROUP = "csp";
 
-/** The `Reporting-Endpoints` header that names the policy's `report-to` group. */
 export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`;
 
 const APP_DIRECTIVES: Record<string, string[]> = {
@@ -48,6 +83,30 @@ function serialize(directives: Record<string, string[]>) {
 export interface ContentSecurityPolicyExtensions {
   scriptSrc?: readonly string[];
   connectSrc?: readonly string[];
+  /** Allows the Crisp chat widget the paywall loads when `CRISP_WEBSITE_ID` is set. */
+  crisp?: boolean;
+}
+
+// The required origins from Crisp's domain list; images already pass the https: img-src.
+const CRISP = "https://client.crisp.chat";
+const CRISP_DIRECTIVES: Record<string, string[]> = {
+  "script-src": [CRISP],
+  "connect-src": [CRISP, "https://storage.crisp.chat", "wss://client.relay.crisp.chat"],
+  "style-src": [CRISP],
+  "font-src": [CRISP],
+  "media-src": [CRISP],
+  // Its bot checks run in workers loaded from blob: URLs.
+  "worker-src": ["'self'", "blob:", CRISP],
+};
+
+const CRISP_WEBSITE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `CRISP_WEBSITE_ID` is optional; a malformed one throws so the server refuses to start. */
+export function parseCrispWebsiteId(value: string | undefined): string | null {
+  const id = value?.trim();
+  if (!id) return null;
+  if (!CRISP_WEBSITE_ID.test(id)) throw new Error("CRISP_WEBSITE_ID must be a Crisp website ID");
+  return id.toLowerCase();
 }
 
 // An https origin with an optional port and no path. A wildcard covers subdomains of a base with at
@@ -80,11 +139,17 @@ export function parseContentSecuritySources(setting: string, value: string | und
 }
 
 export function appContentSecurityPolicy(extensions: ContentSecurityPolicyExtensions = {}) {
-  return serialize({
+  const directives: Record<string, string[]> = {
     ...APP_DIRECTIVES,
     "script-src": ["'self'", ...(extensions.scriptSrc ?? [])],
     "connect-src": ["'self'", ...(extensions.connectSrc ?? [])],
-  });
+  };
+  if (extensions.crisp) {
+    for (const [name, sources] of Object.entries(CRISP_DIRECTIVES)) {
+      directives[name] = [...new Set([...(directives[name] ?? []), ...sources])];
+    }
+  }
+  return serialize(directives);
 }
 
 export const APP_CONTENT_SECURITY_POLICY = appContentSecurityPolicy();
@@ -105,5 +170,10 @@ export function contentSecurityPolicyFor(
   )
     return null;
   if (pathname === HTML_VIEWER_PATH) return HTML_VIEWER_CONTENT_SECURITY_POLICY;
+  if (pathname === WUYING_SCREEN_PATH)
+    return `${WUYING_CONTENT_SECURITY_POLICY}; frame-ancestors 'self'`;
+  // The nested runtime has an opaque ancestor, which cannot match 'self'. Its sandbox
+  // policy still prevents access to the app even when visited directly.
+  if (pathname.startsWith(WUYING_SCREEN_PREFIX)) return WUYING_CONTENT_SECURITY_POLICY;
   return appPolicy;
 }

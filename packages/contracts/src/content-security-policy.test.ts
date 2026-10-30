@@ -7,6 +7,8 @@ import {
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
   parseContentSecuritySources,
+  parseCrispWebsiteId,
+  WUYING_SCREEN_PATH,
 } from "./content-security-policy.js";
 
 function directives(policy: string) {
@@ -64,6 +66,19 @@ describe("app content security policy", () => {
 
   it("lets only the app frame the HTML viewer shell, whose own meta CSP governs it", () => {
     expect(contentSecurityPolicyFor(HTML_VIEWER_PATH)).toBe("frame-ancestors 'self'");
+  });
+
+  it("isolates Wuying documents without widening the app policy", () => {
+    const screen = directives(contentSecurityPolicyFor(WUYING_SCREEN_PATH)!);
+    expect(screen.get("sandbox")).toEqual(["allow-scripts", "allow-pointer-lock"]);
+    expect(screen.get("frame-ancestors")).toEqual(["'self'"]);
+    expect(screen.get("connect-src")).not.toContain("'self'");
+    expect(screen.get("script-src")).not.toContain("'unsafe-eval'");
+    expect(screen.get("script-src")).toContain("'wasm-unsafe-eval'");
+    const nested = directives(contentSecurityPolicyFor("/wuying/sdk/ASP/container.html")!);
+    expect(nested.get("sandbox")).toEqual(screen.get("sandbox"));
+    expect(nested.get("frame-ancestors")).toBeUndefined();
+    expect(contentSecurityPolicyFor("/chat")).toBe(APP_CONTENT_SECURITY_POLICY);
   });
 });
 
@@ -142,5 +157,38 @@ describe("operator-added origins", () => {
     expect(contentSecurityPolicyFor("/", extended)).toBe(extended);
     expect(contentSecurityPolicyFor("/rpc/me", extended)).toBeNull();
     expect(contentSecurityPolicyFor(HTML_VIEWER_PATH, extended)).toBe("frame-ancestors 'self'");
+  });
+});
+
+describe("Crisp chat widget", () => {
+  it("adds Crisp's origins only when the deployment configures it", () => {
+    const crisp = directives(
+      appContentSecurityPolicy({ crisp: true, scriptSrc: ["https://static.example.com"] }),
+    );
+    expect(crisp.get("script-src")).toEqual([
+      "'self'",
+      "https://static.example.com",
+      "https://client.crisp.chat",
+    ]);
+    expect(crisp.get("connect-src")).toContain("wss://client.relay.crisp.chat");
+    expect(crisp.get("style-src")).toEqual([
+      "'self'",
+      "'unsafe-inline'",
+      "https://client.crisp.chat",
+    ]);
+    expect(crisp.get("worker-src")).toEqual(["'self'", "blob:", "https://client.crisp.chat"]);
+    expect(crisp.get("frame-ancestors")).toEqual(["'none'"]);
+    expect(APP_CONTENT_SECURITY_POLICY).not.toContain("crisp");
+  });
+
+  it("accepts only a website ID", () => {
+    expect(parseCrispWebsiteId(undefined)).toBeNull();
+    expect(parseCrispWebsiteId(" ")).toBeNull();
+    expect(parseCrispWebsiteId(" C2C27EA6-4FDB-4350-A9FC-4B5B052DC5EC ")).toBe(
+      "c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec",
+    );
+    for (const value of ["nope", 'c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec"; alert(1)//']) {
+      expect(() => parseCrispWebsiteId(value)).toThrow("CRISP_WEBSITE_ID");
+    }
   });
 });

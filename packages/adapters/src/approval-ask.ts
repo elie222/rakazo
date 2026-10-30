@@ -1,8 +1,9 @@
+import type { ToolBatch } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
-  composioBatchActions,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -15,6 +16,8 @@ export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
 /** Longer fetch URLs are refused, so an approval card always shows the whole URL it sends. */
 export const MAX_FETCH_URL_LENGTH = 2_048;
+/** These send data to the site their url names, so a site the run was not given is gated. */
+export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
 
 /** A fleet card built from the resolved request: a title and the lines under it. */
 export type FleetCardSummary = { title: string; lines: string[] };
@@ -34,7 +37,7 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string; summary?: FleetCardSummary },
+  options?: { reviewReason?: string; summary?: FleetCardSummary; batch?: ToolBatch },
 ): MessageBlock {
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
@@ -101,9 +104,27 @@ export function buildApprovalAskBlock(
       ],
     };
   }
+  if (toolName === "user_computer_shell") {
+    const cwd = typeof args.cwd === "string" && args.cwd.trim() ? `cd ${args.cwd.trim()}\n` : "";
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: "Run on your computer?",
+      detail: truncate(
+        redactSecrets(`${cwd}${String(args.command ?? "")}`, secrets),
+        MAX_APPROVAL_DETAIL_LENGTH,
+      ),
+      detailFormat: "code",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow for this chat" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+  }
   const fetchSite = webFetchSite(toolName, args);
-  const summary = describeApprovalAction(toolName, args);
-  const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
+  const summary = describeApprovalAction(toolName, args, options?.batch);
+  const detail = formatApprovalDetail(toolName, args, options?.reviewReason, options?.batch);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -141,13 +162,21 @@ export function buildApprovalAskBlock(
 }
 
 function webFetchSite(toolName: string, args: Record<string, unknown>): string | undefined {
-  return toolName === "web_fetch" && typeof args.url === "string" ? urlSite(args.url) : undefined;
+  return SITE_SENDING_TOOLS.has(toolName) && typeof args.url === "string"
+    ? urlSite(args.url)
+    : undefined;
 }
 
-function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
-  // A Composio batch is named by the actions it runs; "…" stands for an entry that names none.
-  const batch = composioBatchActions(toolName, args);
-  if (batch?.slugs.length) return [...batch.slugs, ...(batch.complete ? [] : ["…"])].join(", ");
+function describeApprovalAction(
+  toolName: string,
+  args: Record<string, unknown>,
+  batchShape: ToolBatch | undefined,
+): string {
+  // A batch is named by the actions it runs; "…" stands for an entry that names none.
+  const batch = batchShape && batchActions(batchShape, args);
+  if (batch?.actions.length) {
+    return [...batch.actions, ...(batch.complete ? [] : ["…"])].join(", ");
+  }
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
@@ -163,7 +192,8 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
 function formatApprovalDetail(
   toolName: string,
   args: Record<string, unknown>,
-  reviewReason?: string,
+  reviewReason: string | undefined,
+  batch: ToolBatch | undefined,
 ): string | undefined {
   const lines: string[] = [];
   if (reviewReason?.trim()) {
@@ -175,10 +205,9 @@ function formatApprovalDetail(
     );
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
-  const keys =
-    toolName === "web_fetch"
-      ? ["url"]
-      : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
+  const keys = SITE_SENDING_TOOLS.has(toolName)
+    ? ["url", "method", "body"]
+    : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
   const pushArgs = (values: Record<string, unknown>) => {
     for (const key of keys) {
       const value = values[key];
@@ -186,12 +215,13 @@ function formatApprovalDetail(
       lines.push(`${key}: ${String(value)}`);
     }
   };
-  if (composioBatchActions(toolName, args)) {
-    for (const item of args.tools as unknown[]) {
+  const items = batch ? args[batch.items] : undefined;
+  if (batch && Array.isArray(items)) {
+    for (const item of items) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-      const slug = typeof entry.tool_slug === "string" && entry.tool_slug.trim();
-      lines.push(slug || "…");
-      pushArgs(objectArguments(entry.arguments));
+      const action = entry[batch.action];
+      lines.push((typeof action === "string" && action.trim()) || "…");
+      pushArgs(objectArguments(entry[batch.arguments]));
     }
   } else {
     pushArgs(args);
@@ -200,7 +230,7 @@ function formatApprovalDetail(
   return lines.join("\n");
 }
 
-/** A batch entry's arguments, which Composio accepts as an object or a JSON string. */
+/** A batch entry's arguments, as an object or a JSON string. */
 function objectArguments(value: unknown): Record<string, unknown> {
   let parsed = value;
   if (typeof value === "string") {

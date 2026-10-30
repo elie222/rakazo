@@ -33,3 +33,52 @@ export function anySignal(signals: AbortSignal[]): AbortSignal {
   for (const signal of signals) signal.addEventListener("abort", onAbort);
   return controller.signal;
 }
+
+/**
+ * Settle with `promise`, or reject with the signal's reason as soon as it aborts, even when the
+ * promise itself ignores the signal. `abortedMessage` covers runtimes whose signals carry no reason.
+ */
+export function withAbort<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  abortedMessage = "Request aborted.",
+): Promise<T> {
+  const reason = () => signal.reason ?? new Error(abortedMessage);
+  if (signal.aborted) {
+    promise.catch(() => undefined);
+    return Promise.reject(reason());
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(reason());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * A signal that aborts with `message` after `timeoutMs`, or with `parent`'s reason when that
+ * aborts first. Dispose once the request settles.
+ */
+export function requestDeadline(timeoutMs: number, message: string, parent?: AbortSignal) {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parent?.reason);
+  if (parent?.aborted) abortFromParent();
+  else parent?.addEventListener("abort", abortFromParent, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", abortFromParent);
+    },
+  };
+}

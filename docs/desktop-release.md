@@ -23,16 +23,33 @@ in the runner's temp directory for the packaging step and deletes it afterwards.
 without it `CSC_LINK` signing fails while creating the temporary keychain. Drop
 the patch once an electron-builder release includes that fix.
 
-Windows (optional):
+Windows signs through Azure Artifact Signing once it is configured, logging in
+with GitHub OIDC instead of a stored secret. Create a Public Trust certificate
+profile, then an app registration with the Artifact Signing Certificate Profile
+Signer role on the signing account, and a `desktop-release` environment in the
+repository settings. Give the app registration a federated credential whose
+subject is exactly the one printed under "Federated token details" in the
+release's Azure login step. This repository's OIDC subject includes owner and
+repository IDs, so the plain `repo:<owner>/<repo>:environment:desktop-release`
+form does not match.
 
 | Secret | Value |
 | --- | --- |
-| `DESKTOP_WIN_CSC_LINK` | Base64 of the Authenticode certificate as `.p12`/`.pfx` |
-| `DESKTOP_WIN_CSC_KEY_PASSWORD` | Its password |
+| `DESKTOP_WIN_AZURE_TENANT_ID` | Directory (tenant) ID of the app registration |
+| `DESKTOP_WIN_AZURE_CLIENT_ID` | Application (client) ID of the app registration |
 
-When `DESKTOP_WIN_CSC_LINK` is unset the Windows build and its release assets
-are skipped. macOS and Linux always build, and the release is only published
-when every platform that was built produced its installer and update feed.
+| Variable | Value |
+| --- | --- |
+| `DESKTOP_WIN_SIGNING_ENDPOINT` | The signing account's URI, such as `https://eus.codesigning.azure.net/` |
+| `DESKTOP_WIN_SIGNING_ACCOUNT` | The signing account name |
+| `DESKTOP_WIN_SIGNING_PROFILE` | The certificate profile name |
+| `DESKTOP_WIN_PUBLISHER` | The certificate's common name, exactly as validated |
+
+When `DESKTOP_WIN_AZURE_CLIENT_ID` is unset the Windows installer ships
+unsigned, and Windows shows a SmartScreen warning on first launch. Unsigned
+builds carry no publisher in their update config, so they accept the first
+signed update; from then on updates must match the publisher. The release is
+only published when every platform produced its installer and update feed.
 
 Set a secret from a file without echoing it:
 

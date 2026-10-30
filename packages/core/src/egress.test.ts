@@ -32,6 +32,21 @@ describe("urlSite", () => {
     expect(registrableDomain("c2VjcmV0.github.io")).toBe("github.io");
     expect(registrableDomain("c2VjcmV0.leak.example.co.uk")).toBe("example.co.uk");
   });
+
+  it.each(["leak123-.attacker.com", "-leak.attacker.com", "le~ak.attacker.com"])(
+    "reduces the hostname %s, which URLs accept, to its registrable domain",
+    (hostname) => {
+      expect(registrableDomain(hostname)).toBe("attacker.com");
+      expect(hostSite(hostname)).toBe("attacker.com");
+    },
+  );
+
+  it("has no registrable domain for a hostname without one", () => {
+    expect(registrableDomain("localhost")).toBeUndefined();
+    expect(registrableDomain("co.uk")).toBeUndefined();
+    expect(registrableDomain("203.0.113.7")).toBe("203.0.113.7");
+    expect(registrableDomain("[2001:db8::1]")).toBe("[2001:db8::1]");
+  });
 });
 
 describe("normalizedHttpUrl", () => {
@@ -60,5 +75,61 @@ describe("sitesInText", () => {
 
   it("skips email addresses, file names and words without a public suffix", () => {
     expect([...sitesInText("Email bob@mail.example.com about notes.txt and index.ts")]).toEqual([]);
+  });
+
+  it.each([
+    "ada.li@example.org",
+    "ada.li@例子.测试",
+    "ada.li@💩.la",
+    "ada.li+tag@example.org",
+    "ada.li+标签@example.org",
+    "ada.li+📬@example.org",
+    "ada.li/part@example.org",
+    '"ada.li"@example.org',
+    '"ada.li\\" contact"@example.org',
+    "mailto:ada.li@example.org",
+    "<ada.li@example.org>",
+    "ada.li@localhost",
+    "ada.li@[203.0.113.7]",
+  ])("does not trust a domain in the email %s", (email) => {
+    expect([...sitesInText(`Email ${email}`)]).toEqual([]);
+  });
+
+  it("keeps separately named sites alongside email addresses", () => {
+    expect([
+      ...sitesInText("Email ada.li@example.org, then visit ada.li and example.org."),
+    ]).toEqual(["ada.li", "example.org"]);
+  });
+
+  it("keeps sites separated from internationalized email by punctuation or whitespace", () => {
+    expect([...sitesInText("ada.li@例子.测试,example.com;example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com\u00a0ada.li+标签@例子.测试\u00a0example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com，ada.li@例子.测试；example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+  });
+
+  it("reads internationalized domain names whole, as their ASCII form", () => {
+    expect([...sitesInText("Visit münchen.de and bücher.de, then example.com")]).toEqual([
+      "xn--mnchen-3ya.de",
+      "xn--bcher-kva.de",
+      "example.com",
+    ]);
+    expect([...sitesInText("See https://münchen.de/")]).toEqual(["xn--mnchen-3ya.de"]);
+  });
+
+  it("extracts explicit URL hosts before excluding email addresses", () => {
+    expect([
+      ...sitesInText(
+        "Read https://ada.li@example.org/path and https://example.com/?email=ada.li@example.net",
+      ),
+    ]).toEqual(["example.org", "example.com"]);
   });
 });

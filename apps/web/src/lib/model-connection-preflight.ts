@@ -128,10 +128,12 @@ export function unavailableSelectedModel(
 }
 
 type ListedModelCredential = {
+  id?: string;
   provider: string;
   authKind?: StoredModelAuthKind;
   modelId?: string;
   isDefault?: boolean;
+  reconnectRequired?: boolean;
 };
 
 /**
@@ -161,24 +163,31 @@ export async function loadStoredModelAuth(
   provider: string,
   listCredentials: () => Promise<ReadonlyArray<ListedModelCredential>>,
   modelId?: string,
+  credentialId?: string | null,
 ): Promise<{
   storedAuthKind: StoredModelAuthKind | null;
   credentialLookupFailed: boolean;
   credentialUnreadable: boolean;
+  reconnectRequired: boolean;
 }> {
   try {
     const credentials = await listCredentials();
-    const match = credentialForSpaceModel(credentials, provider, modelId);
+    const match =
+      credentialId === undefined
+        ? credentialForSpaceModel(credentials, provider, modelId)
+        : credentials.find((entry) => entry.id === credentialId && entry.provider === provider);
     return {
       storedAuthKind: match?.authKind ?? null,
       credentialLookupFailed: false,
       credentialUnreadable: Boolean(match && match.authKind === undefined),
+      reconnectRequired: match?.reconnectRequired === true,
     };
   } catch {
     return {
       storedAuthKind: null,
       credentialLookupFailed: true,
       credentialUnreadable: false,
+      reconnectRequired: false,
     };
   }
 }
@@ -193,6 +202,8 @@ type ModelConnectionPreflightInput = {
   credentialLookupFailed?: boolean;
   /** A credential row exists but its kind could not be read. */
   credentialUnreadable?: boolean;
+  /** The stored subscription sign-in was rejected and has to be signed in again. */
+  reconnectRequired?: boolean;
   /** Catalog entry says this provider has a pinned models-list URL. */
   catalogProbe?: boolean;
   probeCatalog?: (input: { provider: string; apiKey: string }) => Promise<{ models: string[] }>;
@@ -211,6 +222,16 @@ export async function runModelConnectionPreflight(
           outcome: "unknown",
           message: t`Could not check stored credentials.`,
           nextAction: t`Try the test again.`,
+        },
+      };
+    }
+    if (input.reconnectRequired) {
+      return {
+        ok: false,
+        failure: {
+          outcome: "needs_sign_in",
+          message: t`This provider is not connected yet.`,
+          nextAction: t`Finish subscription sign-in, then test again.`,
         },
       };
     }

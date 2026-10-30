@@ -1,5 +1,6 @@
 import type { ConnectorProvider, JobPublisher } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
+import type { RoutineWatch } from "@rakazo/contracts";
 import { RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
 import {
   cronFromPreset,
@@ -274,6 +275,9 @@ export async function userTimeZone(prisma: PrismaClient, userId: string): Promis
   return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
 }
 
+/** Each routine is an unattended model run, so a looping bot must not stack them. */
+export const MAX_ACTIVE_ROUTINES_PER_BOT = 50;
+
 /** Persist and enqueue a bot routine that wakes in the originating thread. */
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
@@ -295,6 +299,26 @@ export async function createScheduleFromTool(
   const prompt = input.prompt.trim();
   if (!name) return { error: "name is required." };
   if (!prompt) return { error: "prompt is required." };
+
+  const active = await deps.prisma.routine.findMany({
+    where: { spaceId: input.spaceId, botId: routineBotId, active: true },
+    select: { id: true, name: true, threadId: true },
+  });
+  // Match per thread: schedule_update in a group only reaches this thread's routines.
+  const sameName = active.find(
+    (row) =>
+      row.threadId === routineThreadId && row.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (sameName) {
+    return {
+      error: `An active routine named "${sameName.name}" already exists (${sameName.id}). Update or cancel it instead.`,
+    };
+  }
+  if (active.length >= MAX_ACTIVE_ROUTINES_PER_BOT) {
+    return {
+      error: `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`,
+    };
+  }
 
   const parsedTimezone = TimeZoneSchema.safeParse(
     input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
@@ -678,8 +702,8 @@ export async function cancelScheduleFromTool(
   return { ok: true as const, routineId: existing.id, name: existing.name };
 }
 
-/** Creating unattended shell work requires explicit approval, including JSON tool input. */
-export function commandWatchFromTool(value: unknown): string | undefined {
+/** The watch a `schedule_create` call asks for, including JSON tool input. */
+export function watchFromTool(value: unknown): RoutineWatch | undefined {
   if (typeof value === "string") {
     try {
       value = JSON.parse(value);
@@ -688,5 +712,11 @@ export function commandWatchFromTool(value: unknown): string | undefined {
     }
   }
   const parsed = RoutineWatchSchema.safeParse(value);
-  return parsed.success && parsed.data.kind === "command" ? parsed.data.command : undefined;
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Creating unattended shell work requires explicit approval, including JSON tool input. */
+export function commandWatchFromTool(value: unknown): string | undefined {
+  const watch = watchFromTool(value);
+  return watch?.kind === "command" ? watch.command : undefined;
 }

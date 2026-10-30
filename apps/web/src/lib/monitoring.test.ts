@@ -38,6 +38,21 @@ describe("browser monitoring", () => {
     consoleError.mockRestore();
   });
 
+  it("reports early errors that carry an error, not bare error events", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    sentry.captureException.mockClear();
+    const target = new EventTarget();
+    fresh.installEarlyErrorReporting(target as unknown as Window);
+    const thrown = new Error("module evaluation failed");
+    target.dispatchEvent(Object.assign(new Event("error"), { error: null }));
+    target.dispatchEvent(Object.assign(new Event("error"), { error: thrown }));
+
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(sentry.captureException).toHaveBeenCalledWith(thrown, expect.any(Object));
+  });
+
   it("does not report failures the recovery reload is about to replace", async () => {
     vi.resetModules();
     const fresh = await import("./monitoring");
@@ -155,6 +170,20 @@ describe("browser monitoring", () => {
     expect(sentry.init).not.toHaveBeenCalled();
   });
 
+  it("stays off in a desktop build that does not report errors", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    vi.stubGlobal("window", { rakazoDesktop: { monitoring: { enabled: async () => false } } });
+    try {
+      expect(
+        await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" })),
+      ).toBe(false);
+      expect(sentry.init).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("stays off when the SDK fails to start", async () => {
     sentry.init.mockImplementation(() => {
       throw new Error("init failed");
@@ -266,6 +295,31 @@ describe("browser monitoring", () => {
       beforeSend({}, { originalException: new DOMException("aborted", "AbortError") }),
     ).toBeNull();
     expect(beforeSend({}, { originalException: new Error("boom") })).toEqual({
+      user: { ip_address: null },
+    });
+  });
+
+  it("drops gateway answers during a deploy and failures from code that is not the app's", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    const { beforeSend } = sentry.init.mock.calls.at(-1)![0];
+    for (const originalException of [
+      Object.assign(new Error("Bad Gateway"), { status: 502 }),
+      { code: 4001, message: "User rejected the request." },
+      new TypeError("undefined is not an object (evaluating 'window.__firefox__.reader')"),
+      new TypeError("undefined is not an object (evaluating 'window.ethereum.selectedAddress')"),
+      new DOMException(
+        "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+        "NotFoundError",
+      ),
+    ])
+      expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
+    expect(
+      beforeSend({}, { originalException: Object.assign(new Error("Conflict"), { status: 409 }) }),
+    ).toEqual({ user: { ip_address: null } });
+    expect(beforeSend({ message: "plain" }, { originalException: "plain" })).toEqual({
+      message: "plain",
       user: { ip_address: null },
     });
   });

@@ -15,13 +15,14 @@ import {
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { SETTINGS_CONTENT_WIDTH } from "../components/SettingsRows";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SpaceMemorySection } from "./KnowledgeSection";
+import type { MemoryProviderConnectionDraft } from "./memory-providers/registry";
 import {
   defaultMemoryProviderSettings,
   MEMORY_PROVIDER_SETTINGS,
-  type MemoryProviderConnectionDraft,
   memoryProviderSettings,
 } from "./memory-providers/registry";
 
@@ -176,7 +177,7 @@ export function MemorySettingsOverlay({
       ) : null}
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
-        <div className="space-y-5">
+        <div className={`space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
           {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
 
           <SpaceMemorySection />

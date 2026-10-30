@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, ConnectorCatalogItem } from "@rakazo/adapter-kit";
+import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import {
   pickReusableConnection,
   planLiveConnectionSync,
@@ -356,49 +357,25 @@ export function connectionsRoutes(ctx: RouterContext) {
               context.signal,
             );
             if (state && state !== input.provider) {
-              // Composio browser OAuth stores an authorization-request id in
-              // auth.state. Prefer canceling that pending request by id so the
-              // authorization URL cannot later create an untracked remote. The
-              // request id is the connected-account nanoid (INITIATED until OAuth
-              // finishes). Fall back to resolving an ACTIVE account id only when
-              // cancel is unavailable.
-              const cancelAuthorizationRequest = (
-                connector as {
-                  cancelAuthorizationRequest?: (
-                    requestId: string,
-                    context: typeof adapterContext,
-                  ) => Promise<void>;
-                }
-              ).cancelAuthorizationRequest;
-              if (cancelAuthorizationRequest) {
-                await cancelAuthorizationRequest(state, adapterContext).catch(() => undefined);
+              // Composio browser OAuth stores an authorization-request id in auth.state.
+              // Cancel that request by id so the authorization URL cannot later create an
+              // untracked remote; resolve an ACTIVE account id only when cancel is unavailable.
+              if (connector.cancelAuthorizationRequest) {
+                await connector
+                  .cancelAuthorizationRequest(state, adapterContext)
+                  .catch(() => undefined);
               } else {
-                const resolveAccountId = (
-                  connector as {
-                    resolveConnectedAccountId?: (
-                      userId: string,
-                      slug: string,
-                      currentRef: string | null | undefined,
-                      excludeIds?: string[],
-                      spaceId?: string,
-                    ) => Promise<string | undefined>;
-                  }
-                ).resolveConnectedAccountId;
-                let revokeRef = state;
-                if (resolveAccountId) {
-                  const resolved = await resolveAccountId(
-                    context.actor.userId,
-                    input.provider,
-                    state,
-                    [],
-                    context.actor.spaceId,
-                  ).catch(() => undefined);
-                  if (!resolved) {
-                    revokeRef = "";
-                  } else {
-                    revokeRef = resolved;
-                  }
-                }
+                const revokeRef = connector.resolveConnectedAccountId
+                  ? await connector
+                      .resolveConnectedAccountId(
+                        context.actor.userId,
+                        input.provider,
+                        state,
+                        [],
+                        context.actor.spaceId,
+                      )
+                      .catch(() => undefined)
+                  : state;
                 if (revokeRef) {
                   await connector.revoke(revokeRef, adapterContext).catch(() => undefined);
                 }
@@ -407,16 +384,7 @@ export function connectionsRoutes(ctx: RouterContext) {
               // Pipedream begin only returns the app slug. Drop remotes that no
               // remaining local row still references so a lost race cannot leave
               // an orphan authorization, without wiping sibling accounts.
-              const revokeUnreferenced = (
-                connector as {
-                  revokeUnreferencedAccounts?: (
-                    slug: string,
-                    keepAccountIds: string[],
-                    context: ReturnType<typeof connectionContext>,
-                  ) => Promise<void>;
-                }
-              ).revokeUnreferencedAccounts;
-              if (revokeUnreferenced) {
+              if (connector.revokeUnreferencedAccounts) {
                 // Hold the provider lock across the keep-id snapshot and remote
                 // cleanup so a concurrent complete cannot persist a providerRef
                 // that this cleanup then deletes as unreferenced.
@@ -445,7 +413,11 @@ export function connectionsRoutes(ctx: RouterContext) {
                   // otherwise slug-only pending refs are dropped from keepIds and
                   // revokeUnreferencedAccounts deletes that sibling's remote auth.
                   if (!canRevokeUnreferenced) return;
-                  await revokeUnreferenced(input.provider, keepIds, adapterContext);
+                  await connector.revokeUnreferencedAccounts?.(
+                    input.provider,
+                    keepIds,
+                    adapterContext,
+                  );
                 }).catch(() => undefined);
               }
             }
@@ -465,6 +437,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             data: { status: "error" },
           });
           if (error instanceof ProviderTransactionBusyError) throw error;
+          if (error instanceof ConnectorAuthUnavailableError) {
+            getLogger().warn("connections.begin app has no usable auth config", {
+              connectorId: input.connectorId,
+              provider: input.provider,
+              reason: String(error.cause),
+            });
+            throw new ORPCError(error.code, { status: 400, message: error.message });
+          }
           throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
         }
       }),
@@ -547,54 +527,29 @@ export function connectionsRoutes(ctx: RouterContext) {
                 const pendingRef = current.providerRef?.trim();
                 try {
                   if (pendingRef && pendingRef !== current.provider) {
-                    const cancelAuthorizationRequest = (
-                      transactionConnector as {
-                        cancelAuthorizationRequest?: (
-                          requestId: string,
-                          context: typeof revokedContext,
-                        ) => Promise<void>;
-                      }
-                    ).cancelAuthorizationRequest;
-                    if (cancelAuthorizationRequest) {
-                      await cancelAuthorizationRequest(pendingRef, revokedContext);
+                    if (transactionConnector.cancelAuthorizationRequest) {
+                      await transactionConnector.cancelAuthorizationRequest(
+                        pendingRef,
+                        revokedContext,
+                      );
                     } else {
-                      const resolveAccountId = (
-                        transactionConnector as {
-                          resolveConnectedAccountId?: (
-                            userId: string,
-                            slug: string,
-                            currentRef: string | null | undefined,
-                            excludeIds?: string[],
-                            spaceId?: string,
-                          ) => Promise<string | undefined>;
-                        }
-                      ).resolveConnectedAccountId;
-                      let revokeRef = pendingRef;
-                      if (resolveAccountId) {
-                        const resolved = await resolveAccountId(
-                          context.actor.userId,
-                          current.provider,
-                          pendingRef,
-                          [],
-                          context.actor.spaceId,
-                        ).catch(() => undefined);
-                        revokeRef = resolved ?? "";
-                      }
+                      const revokeRef = transactionConnector.resolveConnectedAccountId
+                        ? await transactionConnector
+                            .resolveConnectedAccountId(
+                              context.actor.userId,
+                              current.provider,
+                              pendingRef,
+                              [],
+                              context.actor.spaceId,
+                            )
+                            .catch(() => undefined)
+                        : pendingRef;
                       if (revokeRef) {
                         await transactionConnector.revoke(revokeRef, revokedContext);
                       }
                     }
                   } else {
-                    const revokeUnreferenced = (
-                      transactionConnector as {
-                        revokeUnreferencedAccounts?: (
-                          slug: string,
-                          keepAccountIds: string[],
-                          context: typeof revokedContext,
-                        ) => Promise<void>;
-                      }
-                    ).revokeUnreferencedAccounts;
-                    if (revokeUnreferenced) {
+                    if (transactionConnector.revokeUnreferencedAccounts) {
                       const kept = await tx.connection.findMany({
                         where: {
                           spaceId: context.actor.spaceId,
@@ -610,7 +565,11 @@ export function connectionsRoutes(ctx: RouterContext) {
                         existing.provider,
                       );
                       if (canRevokeUnreferenced) {
-                        await revokeUnreferenced(existing.provider, keepIds, revokedContext);
+                        await transactionConnector.revokeUnreferencedAccounts(
+                          existing.provider,
+                          keepIds,
+                          revokedContext,
+                        );
                       }
                     }
                   }
@@ -657,31 +616,18 @@ export function connectionsRoutes(ctx: RouterContext) {
               // begin. Resolve it to the connected-account id so revoke deletes the
               // right remote authorization. Prefer an account id not already used
               // by a sibling row for the same provider.
-              const resolveAccountId = (
-                transactionConnector as {
-                  resolveConnectedAccountId?: (
-                    userId: string,
-                    slug: string,
-                    currentRef: string | null | undefined,
-                    excludeIds?: string[],
-                    spaceId?: string,
-                  ) => Promise<string | undefined>;
-                  connectedAccountId?: (
-                    userId: string,
-                    slug: string,
-                  ) => Promise<string | undefined>;
-                }
-              ).resolveConnectedAccountId;
-              const fallbackAccountId = (
-                transactionConnector as {
-                  connectedAccountId?: (
-                    userId: string,
-                    slug: string,
-                  ) => Promise<string | undefined>;
-                }
-              ).connectedAccountId;
+              const resolveAccountId = (ref: string | null | undefined, excludeIds: string[]) =>
+                transactionConnector
+                  .resolveConnectedAccountId?.(
+                    context.actor.userId,
+                    existing.provider,
+                    ref,
+                    excludeIds,
+                    context.actor.spaceId,
+                  )
+                  .catch(() => undefined);
               let resolvedAccountId: string | undefined;
-              if (resolveAccountId || fallbackAccountId) {
+              if (transactionConnector.resolveConnectedAccountId) {
                 const siblings = await tx.connection.findMany({
                   where: {
                     spaceId: context.actor.spaceId,
@@ -699,50 +645,23 @@ export function connectionsRoutes(ctx: RouterContext) {
                 // sibling's account. If a sibling ref cannot be resolved yet, leave
                 // this row pending so a later complete can re-resolve safely.
                 const excludeIds: string[] = [];
-                let unresolvedSibling = false;
                 for (const sibling of siblings) {
                   const ref = sibling.providerRef?.trim();
                   // Slug-only refs cannot identify a concrete remote account; resolving
                   // them would pick an arbitrary ACTIVE id and over-exclude.
                   if (!ref || ref === existing.provider) continue;
-                  if (resolveAccountId) {
-                    const resolvedSiblingId = await resolveAccountId(
-                      context.actor.userId,
-                      existing.provider,
-                      ref,
-                      [],
-                      context.actor.spaceId,
-                    ).catch(() => undefined);
-                    if (resolvedSiblingId) {
-                      excludeIds.push(resolvedSiblingId);
-                    } else {
-                      unresolvedSibling = true;
-                    }
-                  } else {
-                    excludeIds.push(ref);
-                  }
+                  const resolvedSiblingId = await resolveAccountId(ref, []);
+                  if (!resolvedSiblingId) return current;
+                  excludeIds.push(resolvedSiblingId);
                 }
-                if (unresolvedSibling) {
-                  return current;
-                }
-                resolvedAccountId = resolveAccountId
-                  ? await resolveAccountId(
-                      context.actor.userId,
-                      existing.provider,
-                      current.providerRef,
-                      excludeIds,
-                      context.actor.spaceId,
-                    ).catch(() => undefined)
-                  : await fallbackAccountId!(context.actor.userId, existing.provider).catch(
-                      () => undefined,
-                    );
+                resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
               }
 
               // When a resolver exists and providerRef is still a request-scoped
               // id (not the provider slug), require a concrete account id before
               // marking connected — otherwise revoke would delete the wrong ref.
               if (
-                resolveAccountId &&
+                transactionConnector.resolveConnectedAccountId &&
                 current.providerRef &&
                 current.providerRef !== current.provider &&
                 !resolvedAccountId
@@ -1023,14 +942,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             if (shouldRestoreLocalAfterRemoteRevokeFailure(error)) {
               await restoreLocalStatus();
             } else {
-              getLogger().error(
-                "connections.revoke remote outcome uncertain; leaving local revoked",
-                error,
-                {
-                  connectionId: input.connectionId,
-                  connectorId: outcome.remote.connectorId,
-                },
-              );
+              const where = {
+                connectionId: input.connectionId,
+                connectorId: outcome.remote.connectorId,
+              };
+              const message = "connections.revoke remote outcome uncertain; leaving local revoked";
+              // The caller hung up mid-revoke: the row is already handled, nothing to report.
+              if (context.signal?.aborted) getLogger().warn(message, where);
+              else getLogger().error(message, error, where);
             }
             if (error instanceof ORPCError) throw error;
             throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });

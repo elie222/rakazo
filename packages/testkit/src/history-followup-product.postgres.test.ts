@@ -12,7 +12,6 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
   it.each([
     { size: 1000 as const, strategy: "snapshots" as const },
     { size: 1000 as const, strategy: undefined },
-    { size: 1000 as const, strategy: "retrieval" as const },
     { size: 100 as const, strategy: undefined },
   ])(
     "retains source-verified replies with $size originals and $strategy strategy",
@@ -95,7 +94,7 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       });
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-history-followup-"));
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const result = await runTrial(
           {
             id: "synthetic-source-verified-followups",

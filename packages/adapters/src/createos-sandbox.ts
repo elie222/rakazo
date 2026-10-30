@@ -31,13 +31,11 @@ import {
   shellQuote,
   workspacePath,
 } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
 const CREATEOS_BROWSER_PROFILES = `${CREATEOS_WORKSPACE}/.browser-profiles`;
@@ -456,6 +454,16 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     return this.ref(created.id, request.botId, true);
   }
 
+  async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "createos") return false;
+    try {
+      return (await this.getSandbox(computer.providerRef, context)).status === "running";
+    } catch (error) {
+      if (isCreateOSSandboxGone(error)) return false;
+      throw error;
+    }
+  }
+
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const profile = createosChromiumProfile(screenSessionKey(context));
     await this.executeChecked(
@@ -687,6 +695,7 @@ print(json.dumps(out))
   ): Promise<void> {
     let batchBytes = 0;
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (batchBytes > PORTABLE_TRANSFER_BATCH_BYTES) batchBytes = 0;
       await this.putFile(computer, file, context);
       batchBytes += file.content.byteLength;
@@ -1094,11 +1103,18 @@ print(json.dumps(out))
       return;
     }
     if (action.kind === "scroll") {
+      if (action.direction === "left" || action.direction === "right") {
+        throw new Error("CreateOS computers can only scroll up or down");
+      }
+      // Given a point, the pointer moves there first, so the wheel scrolls what is under it.
+      if (action.x !== undefined && action.y !== undefined) {
+        await this.postJson(`${root}/mouse/move?${query}`, { x: action.x, y: action.y }, context);
+      }
       await this.postJson(
         `${root}/mouse/scroll?${query}`,
         {
           direction: action.direction,
-          amount: clampRounded(action.amount ?? 3, 1, 100),
+          amount: clampRounded(action.amount ?? 3, 1, 20),
         },
         context,
       );
@@ -1357,7 +1373,7 @@ raise SystemExit(1)
   ): AsyncIterable<PortableFile> {
     const entries = await this.listFiles(computer, directory, context);
     for (const entry of entries) {
-      if (shouldSkipCreateOSWorkspaceFile(entry.path)) continue;
+      if (shouldSkipCreateOSWorkspaceFile(entry.path, entry.kind === "dir")) continue;
       if (entry.kind === "dir") {
         yield* this.walkWorkspace(computer, entry.path, context);
       } else {
@@ -1377,7 +1393,7 @@ raise SystemExit(1)
   ): Promise<boolean> {
     const entries = await this.listFiles(computer, directory, context);
     for (const entry of entries) {
-      if (shouldSkipCreateOSWorkspaceFile(entry.path)) continue;
+      if (shouldSkipCreateOSWorkspaceFile(entry.path, entry.kind === "dir")) continue;
       if (entry.kind === "file") return true;
       if (await this.hasExportableWorkspaceFiles(computer, entry.path, context)) return true;
     }
@@ -1774,9 +1790,9 @@ function isTransientCreateOSHttpStatus(status: number): boolean {
   return status === 408 || status === 429 || status === 502 || status === 503 || status === 504;
 }
 
-function shouldSkipCreateOSWorkspaceFile(relative: string): boolean {
+function shouldSkipCreateOSWorkspaceFile(relative: string, isDirectory = false): boolean {
   if (relative === ".rakazo" || relative.startsWith(".rakazo/")) return true;
-  return shouldSkipPortableWorkspaceFile(relative);
+  return shouldSkipPortableWorkspaceFile(relative, isDirectory);
 }
 
 export function isAllowedCreateOSScreenUrl(resolved: URL, baseUrl: string): boolean {

@@ -10,23 +10,22 @@ import {
   isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  ModelHeaderRowsSchema,
   modelHeadersInput,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatibleConnectReady,
-  parseModelContextWindow,
-  parseModelMaxImagesPerPrompt,
-  parseModelMaxTokens,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
+  compatibleConnectionReady,
   compatibleModelRows,
+  connectionFormFields,
+  connectionFormModelId,
+  connectionMaxTokensField,
   createModelProbe,
   initialModelProbeState,
-  pickCatalogModelId,
+  modelConnectRequest,
   savedCompatibleModelIds,
   toggleEnabledModelId,
 } from "@rakazo/core";
@@ -47,6 +46,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HeaderRowsEditor } from "../../components/header-rows-editor";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
@@ -65,22 +65,6 @@ import { native, useThemedStyles } from "../../lib/native";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
 import { errorText } from "../../lib/user-error";
-
-function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
-  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
-  }
-  return stored !== undefined ? String(stored) : "";
-}
-
-const THINKING_LEVEL_OPTIONS: ThinkingLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
 
 type ModelSelection = {
   modelId?: string;
@@ -204,60 +188,43 @@ export default function ModelConnection() {
       if (!request) throw new Error(t("Could not load model settings"));
       setError(null);
       const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
-        rpc<MobileMe>("me"),
-        rpc<MobileModel[]>("models/list"),
-        rpc<MobileModelCredential[]>("models/credentials"),
+        rpc("me"),
+        rpc("models/list"),
+        rpc("models/credentials"),
       ]);
       const nextProvider = request.provider;
       const nextCredential = nextCredentials.find((entry) => entry.id === credentialIdRef.current);
-      const nextModel =
-        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-          ? preferred.modelId?.trim() ||
-            nextCredential?.modelId ||
-            (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ||
-            ""
-          : pickCatalogModelId(
-              nextCatalog,
-              nextProvider,
-              preferred.modelId ||
-                nextCredential?.modelId ||
-                (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
-            );
+      const nextModel = connectionFormModelId({
+        catalog: nextCatalog,
+        provider: nextProvider,
+        credential: nextCredential,
+        defaults: nextMe,
+        current: preferred.modelId,
+      });
+      const fields = connectionFormFields({
+        catalog: nextCatalog,
+        provider: nextProvider,
+        modelId: nextModel,
+        credential: nextCredential,
+        presetBaseUrl: request.baseUrl,
+      });
       meRef.current = nextMe;
       setMe(nextMe);
       setCatalog(nextCatalog);
       setCredentials(nextCredentials);
       resetOpenAiCompatibleProbe();
       setModelId(nextModel);
-      setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
-      if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-        setBaseUrl(nextCredential?.baseUrl ?? request.baseUrl ?? "");
-        setHeaderRows(null);
-        setReasoning(nextCredential?.reasoning ?? false);
-        setThinkingLevel(
-          clampCatalogThinkingLevel(
-            nextCredential?.modelId === nextModel ? nextCredential?.thinkingLevel : null,
-            nextCredential?.reasoning ? COMPATIBLE_THINKING_LEVELS : [],
-          ) as ThinkingLevel | null,
-        );
-        setContextWindow(String(nextCredential?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW));
-        setSupportsImages(nextCredential?.supportsImages ?? false);
-        setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
-      } else {
-        // A credential's stored effort is bound to its saved model choice.
-        const nextEntry = nextCatalog.find(
-          (entry) => entry.provider === nextProvider && entry.id === nextModel,
-        );
-        setThinkingLevel(
-          clampCatalogThinkingLevel(
-            nextCredential?.modelId === nextModel ? nextCredential.thinkingLevel : null,
-            nextEntry?.thinkingLevels,
-          ) as ThinkingLevel | null,
-        );
-      }
-      setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
-      setAccountId(nextCredential?.accountId ?? "");
-      setGatewayId(nextCredential?.gatewayId ?? "");
+      setHeaderRows(null);
+      setEnabledModelIds(fields.enabledModelIds);
+      setBaseUrl(fields.baseUrl);
+      setReasoning(fields.reasoning);
+      setThinkingLevel(fields.thinkingLevel);
+      setMaxTokens(fields.maxTokens);
+      setContextWindow(fields.contextWindow);
+      setSupportsImages(fields.supportsImages);
+      setMaxImagesPerPrompt(fields.maxImagesPerPrompt);
+      setAccountId(fields.accountId);
+      setGatewayId(fields.gatewayId);
       return nextMe;
     },
     [request, rpc, t],
@@ -301,15 +268,12 @@ export default function ModelConnection() {
   const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default");
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
-  const openAiCompatibleReady = openAiCompatibleConnectReady({
-    apiKey:
-      apiKey ||
-      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
-        ? "stored"
-        : ""),
-    baseUrl: effectiveBaseUrl,
-    modelId:
-      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+  const openAiCompatibleReady = compatibleConnectionReady({
+    apiKey,
+    baseUrl,
+    modelId,
+    headerRows,
+    credential,
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
@@ -340,7 +304,7 @@ export default function ModelConnection() {
       baseUrl,
       apiKey,
       request: (input) =>
-        rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
+        rpc("models/probeOpenAiCompatible", {
           ...input,
           headers: modelHeadersInput(headerRows),
           credentialId: credential?.id,
@@ -398,106 +362,52 @@ export default function ModelConnection() {
   async function connectKey(limitsOnly = false) {
     if (!selected) return;
     const anchor = limitsOnly ? "limits" : "connection";
-    const savingLimitOnly = !isOpenAiCompatible && (limitsOnly || !apiKey.trim());
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    const supportedThinking = isOpenAiCompatible
-      ? reasoning
-        ? COMPATIBLE_THINKING_LEVELS
-        : []
-      : selected.thinkingLevels;
-    const stagedThinking = clampCatalogThinkingLevel(
-      thinkingLevel,
-      supportedThinking,
-    ) as ThinkingLevel | null;
-    const modelChanged = (credential?.modelId ?? null) !== (activeModelId || null);
-    if (isOpenAiCompatible) {
-      if (!effectiveBaseUrl || !modelId.trim()) return;
-    } else if (savingLimitOnly) {
-      if (!credential) return;
-    } else if (apiKey.trim().length < 8) {
-      return;
-    }
+    const connect = modelConnectRequest({
+      form: {
+        apiKey,
+        modelId,
+        enabledModelIds,
+        baseUrl,
+        headerRows,
+        reasoning,
+        thinkingLevel,
+        maxTokens,
+        contextWindow,
+        supportsImages,
+        maxImagesPerPrompt,
+        accountId,
+        gatewayId,
+      },
+      selected,
+      credential,
+      credentialId: credentialIdRef.current,
+      settingsOnly: limitsOnly,
+      makeDefault: { makeDefault, scope: target.scope },
+    });
+    if (connect.status === "incomplete") return;
     // Drop the previous result before the limit check so it cannot sit beside the new one.
     Keyboard.dismiss();
     clearFeedback();
     setFeedbackAnchor(anchor);
-    const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
-    if ((isOpenAiCompatible || maxTokens.trim()) && parsedMaxTokens === undefined) {
+    if (connect.status === "invalid") {
       publishFeedback(anchor, {
-        error: t("Enter a whole number from 1 to {max} for maximum output tokens.", {
-          max: MAX_MODEL_MAX_TOKENS,
-        }),
+        error:
+          connect.field === "maxTokens"
+            ? t("Enter a whole number from 1 to {max} for maximum output tokens.", {
+                max: MAX_MODEL_MAX_TOKENS,
+              })
+            : connect.field === "maxImagesPerPrompt"
+              ? t("Enter a whole number from 1 to 1000 for the image limit.")
+              : t("Enter a whole number from 1 to {max} for the context limit.", {
+                  max: MAX_MODEL_CONTEXT_WINDOW,
+                }),
       });
       return;
     }
-    const parsedMaxImagesPerPrompt = isOpenAiCompatible
-      ? parseModelMaxImagesPerPrompt(maxImagesPerPrompt, supportsImages)
-      : undefined;
-    if (
-      isOpenAiCompatible &&
-      supportsImages &&
-      maxImagesPerPrompt.trim() &&
-      parsedMaxImagesPerPrompt === undefined
-    ) {
-      publishFeedback(anchor, {
-        error: t("Enter a whole number from 1 to 1000 for the image limit."),
-      });
-      return;
-    }
-    const maxImagesPerPromptInput =
-      supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-    const parsedContextWindow = isOpenAiCompatible
-      ? parseModelContextWindow(contextWindow)
-      : undefined;
-    if (isOpenAiCompatible && parsedContextWindow === undefined) {
-      publishFeedback(anchor, {
-        error: t("Enter a whole number from 1 to {max} for the context limit.", {
-          max: MAX_MODEL_CONTEXT_WINDOW,
-        }),
-      });
-      return;
-    }
-    if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
+    const { savingLimitOnly, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc<MobileModelCredential>(
-        "models/connect",
-        isOpenAiCompatible
-          ? {
-              provider: selected.provider,
-              baseUrl: effectiveBaseUrl,
-              headers: modelHeadersInput(headerRows),
-              modelId: modelId.trim(),
-              // The server adds the default itself.
-              enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
-              reasoning,
-              thinkingLevel: stagedThinking,
-              maxTokens: parsedMaxTokens,
-              contextWindow: parsedContextWindow,
-              supportsImages,
-              maxImagesPerPrompt: maxImagesPerPromptInput,
-              makeDefault,
-              scope: target.scope,
-              apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
-              credentialId: credentialIdRef.current,
-            }
-          : {
-              provider: selected.provider,
-              ...(!savingLimitOnly ? { apiKey: apiKey.trim() } : {}),
-              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
-              modelId: selected.id,
-              // A limits-only save leaves the stored effort alone while the model
-              // stays put. Changing the model sends the clamped level, including
-              // null, so the previous model's effort is not reused.
-              ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
-              makeDefault,
-              scope: target.scope,
-              maxTokens: parsedMaxTokens ?? null,
-              label: selected.providerName ?? selected.provider,
-              credentialId: credentialIdRef.current,
-            },
-      );
+      const saved = await rpc("models/connect", connect.input);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
       if (!limitsOnly) setApiKey("");
@@ -516,11 +426,7 @@ export default function ModelConnection() {
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
     await waitForModelOAuth(loginId, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc<MobileModelCredential>(
-      "models/finishOAuth",
-      { loginId },
-      { signal: controller.signal },
-    );
+    const saved = await rpc("models/finishOAuth", { loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     credentialIdRef.current = saved.id;
@@ -556,7 +462,7 @@ export default function ModelConnection() {
     oauthAbortRef.current = controller;
     let waitingForCode = false;
     try {
-      const started = await rpc<ModelOAuthBegin>(
+      const started = await rpc(
         "models/beginOAuth",
         {
           provider: selected.provider,
@@ -819,7 +725,7 @@ export default function ModelConnection() {
                 label={t("Reasoning effort")}
                 choices={[
                   { key: "", label: t("Default") },
-                  ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                  ...COMPATIBLE_THINKING_LEVELS.map((level) => ({
                     key: level,
                     label: thinkingLevelLabel(level, t),
                   })),
@@ -852,66 +758,13 @@ export default function ModelConnection() {
               />
             </View>
           </View>
-          <Text style={styles.sectionTitle}>{t("Headers")}</Text>
-          {visibleHeaderRows.map((row, index) => (
-            <View key={index} style={styles.keySection}>
-              <TextInput
-                accessibilityLabel={t("Header name")}
-                placeholder={t("Header name")}
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                editable={!busy}
-                maxLength={256}
-                style={styles.keyInput}
-                value={row.name}
-                onChangeText={(name) =>
-                  changeHeaderRows(
-                    visibleHeaderRows.map((entry, i) => (i === index ? { ...entry, name } : entry)),
-                  )
-                }
-              />
-              <TextInput
-                accessibilityLabel={t("Header value")}
-                placeholder={
-                  savedHeaderEndpointMatches && credential?.headerNames?.includes(row.name)
-                    ? "••••••••"
-                    : t("Header value")
-                }
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
-                secureTextEntry
-                editable={!busy}
-                maxLength={1024}
-                style={styles.keyInput}
-                value={row.value}
-                onChangeText={(value) =>
-                  changeHeaderRows(
-                    visibleHeaderRows.map((entry, i) =>
-                      i === index ? { ...entry, value } : entry,
-                    ),
-                  )
-                }
-              />
-              <NativeActionButton
-                accessibilityLabel={t("Remove header")}
-                icon={{ ios: "xmark", android: "close" }}
-                prominence="plain"
-                disabled={busy}
-                onPress={() => changeHeaderRows(visibleHeaderRows.filter((_, i) => i !== index))}
-              />
-            </View>
-          ))}
-          <NativeActionButton
-            label={t("Add header")}
-            prominence="secondary"
-            disabled={busy || visibleHeaderRows.length >= 8}
-            onPress={() => changeHeaderRows([...visibleHeaderRows, { name: "", value: "" }])}
+          <HeaderRowsEditor
+            rows={visibleHeaderRows}
+            onChange={changeHeaderRows}
+            disabled={busy}
+            savedValuePlaceholder={(row) =>
+              savedHeaderEndpointMatches && (credential?.headerNames?.includes(row.name) ?? false)
+            }
           />
           {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
           {limitField(

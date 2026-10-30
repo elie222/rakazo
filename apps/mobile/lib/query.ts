@@ -1,5 +1,7 @@
+import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
-import { hashKey, isCancelledError, QueryClient } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import type { RpcArgs } from "./api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "./api";
 import { t } from "./i18n";
 import { currentSessionGeneration } from "./session";
@@ -21,88 +23,52 @@ export const queryClient = new QueryClient({
 });
 
 /**
- * The server, signed-in session, and space a read belongs to. A session change (sign-in,
- * sign-out, server switch) also clears the cache, so data never crosses an auth boundary.
+ * The server and signed-in session a read belongs to. A session change (sign-in, sign-out,
+ * server switch) also clears the cache, so data never crosses an auth boundary.
  */
-function scopeKey(spaceId?: string): string[] {
-  return [
-    `server:${currentApiBase()}`,
-    `session:${currentSessionGeneration()}`,
-    `space:${spaceId ?? selectedSpaceId() ?? ""}`,
-  ];
+function sessionScope(): string[] {
+  return [`server:${currentApiBase()}`, `session:${currentSessionGeneration()}`];
 }
 
-/**
- * One rpc read in the current scope. Its answer is only cached under the scope it was sent in.
- * A `spaceId` sends it to that Space instead of the selected one.
- */
-export function rpcQuery<T>(proc: string, input?: object, spaceId?: string) {
-  const scope = scopeKey(spaceId);
+function spaceScope(spaceId?: string): string[] {
+  return [...sessionScope(), `space:${spaceId ?? selectedSpaceId() ?? ""}`];
+}
+
+function scopedRpcQuery<P extends RpcPath>(
+  scopeKey: () => string[],
+  proc: P,
+  input?: RpcInput<P>,
+  spaceId?: string,
+) {
+  type T = RpcOutput<P>;
+  const scope = scopeKey();
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
   const queryFn: QueryFunction<T> = async ({ signal }) => {
-    if (scopeKey(spaceId).join("\n") !== scope.join("\n"))
+    if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t("Something went wrong. Try again."));
     const requestContext = await captureApiRequestContext(spaceId);
-    const answer = await rpc<T>(proc, input, { signal, requestContext });
-    if (scopeKey(spaceId).join("\n") !== scope.join("\n"))
+    const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
+    if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t("Something went wrong. Try again."));
     return answer;
   };
   return { queryKey, queryFn };
 }
 
+/**
+ * One rpc read in the current scope (server, session, space). Its answer is only cached under
+ * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
+ */
+export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, spaceId);
+}
+
+/** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
+export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
+  return scopedRpcQuery(sessionScope, proc, input);
+}
+
 /** Forgets every cached read; the session registers this so sign-out never shows old data. */
 export function clearQueries(): void {
   queryClient.clear();
-}
-
-/**
- * Writes what a save confirmed. An older read still in flight is cancelled first, or it could
- * land afterwards and put the value from before the save back on screen.
- */
-export async function writeSaved<T>(
-  queryKey: DataTag<QueryKey, T, Error>,
-  update: (current: T | undefined) => T,
-): Promise<void> {
-  await queryClient.cancelQueries({ queryKey, exact: true });
-  queryClient.setQueryData(queryKey, update);
-}
-
-/**
- * Reads data again. After a change, a read already in flight started before it, so that read is
- * cancelled rather than reused and the answer comes from a request sent afterwards. `reuse` is
- * for a screen opening, where sharing an in-flight read is fine.
- */
-const freshAnswers = new Map<string, Promise<unknown>>();
-
-export async function fetchFresh<T>(
-  options: { queryKey: DataTag<QueryKey, T, Error>; queryFn: QueryFunction<T> },
-  { reuse = false } = {},
-): Promise<T> {
-  if (reuse) return queryClient.fetchQuery({ ...options, staleTime: 0 });
-  // Claimed before cancelling, so a refresh this one cancels can wait for its final answer.
-  const key = hashKey(options.queryKey);
-  let settle!: (answer: Promise<T>) => void;
-  const answer = new Promise<T>((resolve) => {
-    settle = resolve;
-  });
-  answer.catch(() => undefined);
-  freshAnswers.set(key, answer);
-  const run = (async () => {
-    try {
-      await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true });
-      return await queryClient.fetchQuery({ ...options, staleTime: 0 });
-    } catch (error) {
-      const newer = freshAnswers.get(key);
-      // A newer refresh of the same data cancelled this one; its answer is newer still.
-      if (isCancelledError(error) && newer && newer !== answer) return newer as Promise<T>;
-      throw error;
-    }
-  })();
-  settle(run);
-  try {
-    return await run;
-  } finally {
-    if (freshAnswers.get(key) === answer) freshAnswers.delete(key);
-  }
 }

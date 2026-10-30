@@ -202,7 +202,7 @@ it("discloses the self-hosted voice origin without its encrypted key", async () 
       }),
     ),
     put: vi.fn(),
-  };
+  } as never;
   const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
   expect(status.recipients).toHaveLength(1);
   expect(JSON.stringify(status)).toContain("http://100.64.0.10:8810");

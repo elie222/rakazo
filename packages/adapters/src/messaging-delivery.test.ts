@@ -1,14 +1,15 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
-import { MessagingSendError } from "./chat-sdk-surface.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
+import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
-  type MessagingDeliveryDeps,
 } from "./messaging-delivery.js";
+import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
 const context: AdapterContext = {
   operationId: "op-1",
@@ -1195,6 +1196,84 @@ describe("deliverMessagingOutbound conversation order", () => {
   });
 });
 
+describe("WhatsApp rendered outbound delivery", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const deliver = async (body: string, failSend?: number) => {
+    const sends: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init: RequestInit) => {
+        const payload = JSON.parse(String(init.body)) as { text: { body: string } };
+        sends.push(payload.text.body);
+        if (sends.length === failSend) {
+          return Response.json({ error: { message: "temporary error", code: 1 } }, { status: 500 });
+        }
+        return Response.json({ messages: [{ id: `wamid.${sends.length}` }] });
+      }),
+    );
+    const messaging = new ChatSdkMessagingSurface(
+      messagingPlatformsFromEnv({
+        whatsappAccessToken: "test-token",
+        whatsappPhoneNumberId: "123",
+        whatsappAppSecret: "test-secret",
+        whatsappVerifyToken: "test-verify",
+      }),
+    );
+    const deps = createDeps({
+      identity: {
+        provider: "whatsapp",
+        address: "15551234567",
+        dmThreadId: "whatsapp:123:15551234567",
+      },
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: body }] }],
+    });
+    const run = () => deliverMessagingOutbound({ ...deps, messaging }, { runId: "run-1" }, context);
+    await run();
+    return { deps, sends, run };
+  };
+  const intact = (text: string) => text.length <= 4096 && !/\p{Cs}/u.test(text);
+
+  it("splits before Markdown rendering pushes an emoji across the limit", async () => {
+    // Rendering expands this auto-link so the emoji would begin at UTF-16 offset 4095.
+    const link = `www.${"a".repeat(2000)}.test`;
+    const body = `${link} ${"x".repeat(65)}😀zzz`;
+    expect(body.length).toBeLessThan(4096);
+
+    const { deps, sends, run } = await deliver(body, 2);
+
+    expect(deps.rows).toHaveLength(2);
+    expect(sends).toHaveLength(2);
+    expect(sends.every(intact)).toBe(true);
+    expect(sends.join(" ")).toContain("😀zzz");
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending"]);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await run();
+
+    expect(sends.slice(2)).toEqual([sends[1]]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
+  it("sends a table that renders past the limit as one request per queued part", async () => {
+    const rows = Array.from({ length: 200 }, (_, i) => `| ${i} | x | 😀 |`);
+    const body = [
+      "| n | text | mood |",
+      "| - | - | - |",
+      `| - | ${"w".repeat(40)} | - |`,
+      ...rows,
+    ].join("\n");
+    expect(body.length).toBeLessThan(4096);
+
+    const { deps, sends } = await deliver(body);
+
+    expect(deps.rows.length).toBeGreaterThan(1);
+    expect(sends).toHaveLength(deps.rows.length);
+    expect(sends.every(intact)).toBe(true);
+    expect(deps.rows.every((row) => row.status === "sent")).toBe(true);
+  });
+});
+
 describe("deliverMessagingOutbound attachments", () => {
   const telegram = { provider: "telegram", address: "123", dmThreadId: "telegram:123" };
   const artifacts = [
@@ -1453,4 +1532,100 @@ it("drops a queued connection invite after opt-out", async () => {
   });
   await deliverMessagingOutbound(deps, {}, context);
   expect(deps.sendToThread).not.toHaveBeenCalled();
+});
+
+describe("accepted outbound bookkeeping failures", () => {
+  const cases = [
+    ["group", "handle"],
+    ["intro", "handle"],
+    ["invite", "counter"],
+    ["text", "handle"],
+    ["text", "counter"],
+    ["attachment", "handle"],
+    ["attachment", "counter"],
+  ] as const;
+
+  function pending(kind: string) {
+    return createDeps({
+      identity: { provider: "telegram", dmThreadId: "telegram:123" },
+      outboundRows: [
+        {
+          id: "out-accepted",
+          idempotencyKey:
+            kind === "invite"
+              ? "connect:bot-1:bot-9"
+              : kind === "attachment"
+                ? "msg:m-1:file:art-1"
+                : "msg:m-1",
+          sourceMessageId: "m-1",
+          kind: kind === "group" || kind === "intro" ? kind : "dm",
+          identityId: kind === "group" || kind === "intro" ? null : "mi-1",
+          threadId: kind === "group" || kind === "intro" ? "telegram:group" : null,
+          body: kind === "attachment" ? "" : "Hello",
+          status: "pending",
+          attempts: 0,
+          providerHandle: null,
+          nextAttemptAt: null,
+          createdAt: new Date(1_000),
+        },
+      ],
+      artifacts: [
+        {
+          id: "art-1",
+          spaceId: "ws-1",
+          userId: "user-1",
+          name: "chart.png",
+          mimeType: "image/png",
+          storageKey: "chart",
+        },
+      ],
+    });
+  }
+
+  it.each(cases)("does not resend accepted %s after a %s save failure", async (kind, failure) => {
+    const deps = pending(kind);
+    const error = new Error("bookkeeping unavailable");
+    if (failure === "counter") {
+      deps.prisma.messagingIdentity.update.mockRejectedValueOnce(error);
+    } else if (kind === "group" || kind === "intro") {
+      deps.prisma.messagingOutbound.update.mockRejectedValueOnce(error);
+    } else {
+      const update = deps.prisma.messagingOutbound.updateMany.getMockImplementation()!;
+      deps.prisma.messagingOutbound.updateMany
+        .mockImplementationOnce(update)
+        .mockRejectedValueOnce(error);
+    }
+    await deliverMessagingOutbound(deps, {}, context);
+    // Past every send retry and abandoned-part deadline, the accepted row stays claimed.
+    deps.rows[0]!.nextAttemptAt = new Date(0);
+    deps.rows[0]!.updatedAt = new Date(0);
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[0]!.status).toBe("sent");
+    expect(deps.rows[0]!.attempts).toBe(0);
+    expect(deps.rows[0]!.providerHandle).toBe(failure === "counter" ? "handle-out-1" : null);
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(deps.rows).toHaveLength(1);
+  });
+
+  it.each(["group", "intro", "text", "attachment"])(
+    "still retries %s when the provider fails before acceptance",
+    async (kind) => {
+      const deps = pending(kind);
+      deps.sendToThread.mockRejectedValueOnce(new Error("provider unavailable"));
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.rows[0]!.status).toBe("pending");
+      expect(deps.rows[0]!.attempts).toBe(1);
+      expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          name: "messaging.deliver",
+          availableAt: deps.rows[0]!.nextAttemptAt,
+        }),
+      );
+      deps.rows[0]!.nextAttemptAt = new Date(0);
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.sendToThread).toHaveBeenCalledTimes(2);
+      expect(deps.rows[0]!.status).toBe("sent");
+    },
+  );
 });

@@ -48,14 +48,9 @@ type IdentityRow = {
 };
 
 /**
- * Automatic mirror, not a send tool: every text-bearing bot message of a
- * messaging run is copied into the uniform outbox and sent (with its images
- * and files on DM platforms that can send them), so delivery does
- * not depend on prompt compliance. DM runs go to the owner's conversation;
- * channel runs go to the group with an attribution prefix and are fanned
- * out internally to peer approved bots (agent-to-agent traffic never
- * transits the messaging provider). Also drains pending outbox rows (invites
- * and intros are enqueued by the channels slice).
+ * Automatic mirror, not a send tool, so delivery does not depend on prompt
+ * compliance. Agent-to-agent fan-out stays internal and never transits the
+ * messaging provider. Also drains outbox rows the channels slice enqueued.
  */
 export async function deliverMessagingOutbound(
   deps: MessagingDeliveryDeps,
@@ -434,6 +429,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
     });
     if (claim.count === 0) continue;
     let attachmentName: string | null = null;
+    let accepted = false;
     try {
       if (row.kind === "group" || row.kind === "intro") {
         if (!row.threadId) {
@@ -447,6 +443,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           { threadId: row.threadId, body: row.body },
           context,
         );
+        accepted = true;
         await deps.prisma.messagingOutbound.update({
           where: { id: row.id },
           data: { providerHandle: sent.handle },
@@ -488,6 +485,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           context,
         );
         if (result === "delivered") {
+          accepted = true;
           await deps.prisma.messagingIdentity.update({
             where: { id: identity.id },
             data: { outboundSinceInbound: { increment: 1 } },
@@ -523,6 +521,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         { threadId, body: row.body, ...(attachment ? { attachment } : {}) },
         context,
       );
+      accepted = true;
       await deps.prisma.messagingOutbound.updateMany({
         where: { id: row.id },
         data: { providerHandle: sent.handle },
@@ -532,6 +531,11 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         data: { outboundSinceInbound: { increment: 1 } },
       });
     } catch (error) {
+      if (accepted) {
+        // Keep the sent claim even if saving the handle or counter fails.
+        getLogger().error("messaging outbound bookkeeping error", error);
+        continue;
+      }
       // Transient provider errors go back to pending with a backed-off
       // retry (no sooner than the provider's retry-after); a permanent error
       // or an exhausted budget is terminal.
@@ -638,7 +642,6 @@ async function resolveDirectThread(
   return threadId;
 }
 
-/** Exponential backoff per attempt, capped at one minute. */
 function messagingOutboundRetryDelayMs(attempts: number): number {
   return Math.min(2 ** attempts * 1000, 60_000);
 }

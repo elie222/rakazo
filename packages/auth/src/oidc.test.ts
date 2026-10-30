@@ -521,6 +521,30 @@ describe("OIDC callbacks", () => {
     expect(session.status).toBe(200);
     expect(await session.json()).toMatchObject({ user: { email: "sso@example.test" } });
   });
+  it.each([
+    "https://attacker.example.test/authorize",
+    `${issuer}/elsewhere`,
+    "https://identity.example.test.attacker.example.test/authorize",
+  ])(
+    "only lets the native proxy redirect to the SSO authorization endpoint (%s)",
+    async (target) => {
+      setup();
+      const response = await request(
+        `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: `${target}?state=planted` })}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.headers.get("location")).toBeNull();
+      expect(cookies).not.toContain("state=");
+    },
+  );
+  it("closes the native proxy without SSO", async () => {
+    setup({ oidc: undefined });
+    const response = await request(
+      `/expo-authorization-proxy?${new URLSearchParams({ authorizationURL: "https://attacker.example.test/x?state=planted" })}`,
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+  });
   it("enforces the allowlist before inserting a user", async () => {
     setup({ signupAllowlist: "allowed@example.test" });
     expect((await signIn()).headers.get("location")).toContain("error=EMAIL_NOT_ALLOWED");
@@ -1186,6 +1210,25 @@ describe("SSO-only account deletion", () => {
     });
     expect((await request("/delete-user", {})).status).toBe(200);
     expect(rows("user")).toHaveLength(0);
+  });
+  it("confirms identity for the session a fresh SSO sign-in creates", async () => {
+    setup();
+    await signIn();
+    const confirmed = (row: Record<string, unknown>) =>
+      auth.hasRecentIdentityConfirmation({
+        sessionId: String(row.id),
+        userId: String(row.userId),
+      });
+    const first = rows("session").at(-1)!;
+    expect(await confirmed(first)).toBe(false);
+    expect((await request("/confirm-identity", {})).status).toBe(400);
+    await request(await start(undefined, false, `${origin}/app`, true));
+    const current = rows("session").at(-1)!;
+    expect(current.id).not.toBe(first.id);
+    expect(await confirmed(current)).toBe(true);
+    expect(await confirmed(first)).toBe(false);
+    expireOidcProofs();
+    expect(await confirmed(current)).toBe(false);
   });
   it("refuses a stale session, then accepts fresh reauthentication", async () => {
     setup();

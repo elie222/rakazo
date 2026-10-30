@@ -1,10 +1,5 @@
-import {
-  type AdapterContext,
-  computerControlExpireJob,
-  type JobPublisher,
-  runContinueJob,
-  type SandboxProvider,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import { computerControlExpireJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -164,7 +159,7 @@ export async function revokeScreenControl(
   } catch (error) {
     if (!isSandboxGoneError(error)) throw error;
     if (opts?.clearGoneRef === false) return;
-    getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+    getLogger().warn(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, { error });
     // Fence by lease + skip booting/suspending so a stale gone-cleanup cannot clobber an
     // in-flight replace/boot that still names this providerRef.
     const cleared = await deps.prisma.computer.updateMany({

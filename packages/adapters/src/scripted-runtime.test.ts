@@ -125,6 +125,14 @@ describe("inferScript shell", () => {
   });
 });
 
+describe("inferScript user computer", () => {
+  it("runs hostname on the user's computer", () => {
+    expect(inferScript("run hostname on my computer")[0]?.toolCalls).toEqual([
+      { name: "user_computer_shell", args: { command: "hostname" } },
+    ]);
+  });
+});
+
 describe("inferScript quote markdown fixture", () => {
   it("returns the markdown fixture including the caller marker", () => {
     expect(inferScript("quote markdown fixture md-stamp")[0]?.assistant).toContain(
@@ -149,6 +157,26 @@ describe("inferScript request_secret", () => {
                 origin: "https://api.example.test",
                 auth: { type: "bearer" },
               },
+            },
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("inferScript command variable request_secret", () => {
+  it("opens a command variable card via request_secret", () => {
+    expect(inferScript("show a command variable secret card")).toEqual([
+      {
+        assistant: "i need that key in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "Deploy key",
+              purpose: "api_key",
+              credential: { name: "deploy-key", auth: { type: "command" } },
             },
           },
         ],

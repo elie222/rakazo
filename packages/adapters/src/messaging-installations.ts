@@ -8,7 +8,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { Actor, MessagingInstallationSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialDigest } from "./credential-digest.js";
 
@@ -21,30 +21,47 @@ export class MessagingInstallations implements MessagingInstallationStore {
     private readonly cleanupJobs?: Pick<JobPublisher, "enqueue">,
   ) {}
 
-  async start(actor: Actor, botId: string): Promise<string> {
-    const bot = await this.prisma.bot.findFirst({
-      where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
-      select: { id: true },
-    });
-    if (!bot) throw new Error("Bot not found");
+  /** Without a chosen bot, the workspace answers as the first bot in the user's default space. */
+  async start(actor: Actor, botId?: string): Promise<string> {
+    const bot = botId
+      ? await this.prisma.bot.findFirst({
+          where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+          select: { id: true, spaceId: true },
+        })
+      : await this.defaultBot(actor.userId);
+    if (!bot) throw new IsolationError("Bot not found");
     const state = randomBytes(32).toString("base64url");
-    await this.prisma.messagingInstallSession.deleteMany({
-      where: { userId: actor.userId, expiresAt: { lt: new Date() } },
-    });
-    await this.prisma.messagingInstallSession.create({
-      data: {
-        id: credentialDigest(state),
-        provider: this.provider.provider,
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        botId,
-        expiresAt: new Date(Date.now() + 10 * 60_000),
-      },
+    await runAsSystem("start messaging workspace installation", async () => {
+      await this.prisma.messagingInstallSession.deleteMany({
+        where: { userId: actor.userId, expiresAt: { lt: new Date() } },
+      });
+      await this.prisma.messagingInstallSession.create({
+        data: {
+          id: credentialDigest(state),
+          provider: this.provider.provider,
+          spaceId: bot.spaceId,
+          userId: actor.userId,
+          botId: bot.id,
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        },
+      });
     });
     return this.provider.authorizeUrl(state);
   }
 
-  async complete(state: string, code: string): Promise<void> {
+  private defaultBot(userId: string) {
+    return runAsSystem("resolve default messaging bot", async () => {
+      const { spaceId } = await requireMembership(this.prisma, userId);
+      return this.prisma.bot.findFirst({
+        where: { spaceId, userId, archivedAt: null },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, spaceId: true },
+      });
+    });
+  }
+
+  /** Only the user who started it may finish, so a forwarded authorize link cannot attach their workspace. */
+  async complete(actor: Actor, state: string, code: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !code || code.length > 4096)
       throw new Error("Invalid authorization");
     await runAsSystem("complete messaging workspace installation", async () => {
@@ -53,6 +70,7 @@ export class MessagingInstallations implements MessagingInstallationStore {
       });
       if (
         !session ||
+        session.userId !== actor.userId ||
         session.provider !== this.provider.provider ||
         session.expiresAt <= new Date()
       )
@@ -148,20 +166,36 @@ export class MessagingInstallations implements MessagingInstallationStore {
     });
   }
 
+  /** A user's workspaces from every space they belong to: the connection is theirs, not the space's. */
   async list(actor: Actor): Promise<MessagingInstallationSummary[]> {
-    return this.prisma.messagingInstallation.findMany({
-      where: { provider: this.provider.provider, spaceId: actor.spaceId, userId: actor.userId },
-      select: { id: true, provider: true, workspaceName: true, botId: true },
-      orderBy: { createdAt: "asc" },
-    });
+    const rows = await runAsSystem("list a user's messaging workspaces", () =>
+      this.prisma.messagingInstallation.findMany({
+        where: {
+          provider: this.provider.provider,
+          userId: actor.userId,
+          space: { memberships: { some: { userId: actor.userId } } },
+        },
+        select: {
+          id: true,
+          provider: true,
+          workspaceName: true,
+          botId: true,
+          bot: { select: { name: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+    return rows.map(({ bot, ...row }) => ({ ...row, botName: bot.name }));
   }
 
+  /** A teammate's workspace in this space accepts the user's DM link; their own rows link directly. */
   async canLinkPersonalMessages(actor: Actor): Promise<boolean> {
     return runAsSystem("check space messaging link availability", async () => {
       const candidates = await this.prisma.messagingInstallation.findMany({
         where: {
           provider: this.provider.provider,
           spaceId: actor.spaceId,
+          userId: { not: actor.userId },
           space: { memberships: { some: { userId: actor.userId } } },
         },
         select: { id: true },
@@ -174,10 +208,12 @@ export class MessagingInstallations implements MessagingInstallationStore {
   }
 
   async remove(actor: Actor, id: string): Promise<void> {
-    const installation = await this.prisma.messagingInstallation.findFirst({
-      where: { id, spaceId: actor.spaceId, userId: actor.userId },
+    await runAsSystem("disconnect a user's messaging workspace", async () => {
+      const installation = await this.prisma.messagingInstallation.findFirst({
+        where: { id, userId: actor.userId },
+      });
+      if (installation) await this.removeOwned(installation);
     });
-    if (installation) await this.removeOwned(installation);
   }
 
   async removeForBot(bot: { id: string; spaceId: string; userId: string }): Promise<void> {

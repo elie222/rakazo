@@ -1,5 +1,5 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
-import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
+import { APPROVED_ACTION_NOT_RUN_ERROR, isConversationalRun } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycle from "../../adapters/src/computer-lifecycle.js";
 import { createRunExecutor } from "../../adapters/src/executor.js";
@@ -24,6 +24,9 @@ function fixture(
   encryptedCheckpoint = false,
   toolName = "fixture_write",
   requireApproval = true,
+  /** A confirmed image reply linked to this run, with its real steering row binding. */
+  reply?: { steeringRunId: string | null; messageRunId?: string },
+  supportsImages = false,
 ) {
   const run = {
     id: "fixture-run",
@@ -37,8 +40,32 @@ function fixture(
     routineId: null,
     leaseFence: 0,
     checkpoint: null,
+    sourceMessageId: null as string | null,
   };
   const task = { id: run.taskId, prompt: "Read evidence then complete the fixture." };
+  const replyBlocks = [
+    {
+      kind: "image",
+      artifactId: "fixture-image",
+      name: "reply.png",
+      mimeType: "image/png",
+      size: 4,
+      imageHandling: "confirm",
+    },
+  ];
+  // Like a send during active work, the message is linked to the run for display either way.
+  const replyMessage = {
+    id: "resumed-reply",
+    threadId: run.threadId,
+    runId: reply?.messageRunId ?? run.id,
+    role: "user",
+    seq: 2,
+    createdAt: new Date(),
+    blocks: replyBlocks,
+  };
+  const steering: Array<{ id: string; messageId: string; runId: string | null }> = reply
+    ? [{ id: "reply-steering", messageId: replyMessage.id, runId: reply.steeringRunId }]
+    : [];
   const effects: Record<string, unknown>[] = [];
   const empty = {
     findMany: async () => [],
@@ -73,8 +100,30 @@ function fixture(
           },
         ],
       },
+      artifact: {
+        ...empty,
+        findMany: async () => [{ id: "fixture-image", storageKey: "fixture-image-key" }],
+      },
       message: {
         ...empty,
+        findMany: async ({ where }: { where?: { OR?: Record<string, unknown>[] } } = {}) =>
+          (reply ? [replyMessage] : []).filter(
+            (message) =>
+              !where?.OR ||
+              where.OR.some((match) =>
+                "id" in match
+                  ? message.id === match.id
+                  : "runId" in match
+                    ? message.runId === match.runId
+                    : steering.some(
+                        (row) =>
+                          row.messageId === message.id &&
+                          row.runId ===
+                            (match as { steeringMessages: { some: { runId: string } } })
+                              .steeringMessages.some.runId,
+                      ),
+              ),
+          ),
         create: async ({ data }: { data: object }) => ({ id: "fixture-message", ...data }),
       },
       event: { ...empty, create: async ({ data }: { data: object }) => ({ seq: 1, ...data }) },
@@ -225,12 +274,13 @@ function fixture(
     run.status = "waiting_takeover";
     return { continuationRunId: null };
   });
-  const writes = vi.fn(async () => ({ ok: true }));
+  const writes = vi.fn(async (..._args: unknown[]) => ({ ok: true }));
   const reads = vi.fn(async (_computer: unknown, _path: string) =>
     new TextEncoder().encode("unique-executor-evidence"),
   );
   const executor = createRunExecutor({
     prisma,
+    artifacts: { get: async () => new Uint8Array([137, 80, 78, 71]) },
     runtime: new PiAgentRuntime(),
     mcpAllowPrivateEndpoint: true,
     deploymentModelKey: "fixture-key",
@@ -243,6 +293,7 @@ function fixture(
           allowPrivateEndpoint: true,
           contextWindow: 160000,
           maxTokens: 1024,
+          visionModelIds: supportsImages ? [model.id] : [],
         }),
     },
     connector: {
@@ -275,7 +326,24 @@ function fixture(
     events: {
       notify: vi.fn(async () => undefined),
       append: vi.fn(async () => undefined),
-      claimSteering: async () => [],
+      // Production claim rule: routine turns take only rows bound to them; pending rows wait.
+      claimSteering: async (input: { runId: string; seenIds: string[] }) =>
+        steering
+          .filter(
+            (row) =>
+              !input.seenIds.includes(row.id) &&
+              (row.runId === input.runId ||
+                (row.runId === null && isConversationalRun(run.trigger))),
+          )
+          .map((row) => {
+            row.runId = input.runId;
+            return {
+              id: row.id,
+              messageId: row.messageId,
+              text: "Read this image",
+              blocks: replyBlocks,
+            };
+          }),
       finalizeRun,
       pauseRunForInput,
       pauseRunForTakeover,
@@ -286,6 +354,7 @@ function fixture(
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     executor,
+    prisma,
     run,
     task,
     effects,
@@ -298,6 +367,105 @@ function fixture(
 }
 
 describe("executor paused transcript", () => {
+  it.each(["user", "routine"])(
+    "delivers a resumed %s reply image through bounded recent history",
+    async (trigger) => {
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect(request) {
+              expect(
+                JSON.stringify(request.messages).match(/data:image\/png;base64,iVBORw==/g),
+              ).toHaveLength(1);
+            },
+            response: { type: "text", text: "Read the image." },
+          },
+        ],
+      });
+      try {
+        const state = fixture(
+          model.model,
+          false,
+          "fixture_write",
+          false,
+          { steeringRunId: "fixture-run" },
+          true,
+        );
+        state.run.trigger = trigger;
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        model.assertComplete();
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "completed" }),
+        );
+      } finally {
+        await model.close();
+      }
+    },
+  );
+  it.each(["user", "routine"])(
+    "guards a resumed %s run's confirmed reply after a late text-only model change",
+    async (trigger) => {
+      const model = await startModelEmulator({
+        steps: [{ expect() {}, response: { type: "text", text: "Must not call" } }],
+      });
+      try {
+        const state = fixture(model.model, false, "fixture_write", false, {
+          steeringRunId: "fixture-run",
+        });
+        state.run.trigger = trigger;
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "failed", error: expect.stringMatching(/image/i) }),
+        );
+        expect(model.requests).toHaveLength(0);
+      } finally {
+        await model.close();
+      }
+    },
+  );
+  it("finishes a text-only background routine while its continuation owns the image", async () => {
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect(request) {
+            expect(JSON.stringify(request.messages)).not.toContain("data:image");
+          },
+          response: { type: "text", text: "Routine done." },
+        },
+      ],
+    });
+    try {
+      // A send during routine work links the message to the routine but leaves steering pending.
+      const state = fixture(model.model, false, "fixture_write", false, { steeringRunId: null });
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
+      );
+    } finally {
+      await model.close();
+    }
+  });
+  it("guards the continuation that owns an image sent during background work", async () => {
+    const model = await startModelEmulator({
+      steps: [{ expect() {}, response: { type: "text", text: "Must not call" } }],
+    });
+    try {
+      const state = fixture(model.model, false, "fixture_write", false, {
+        steeringRunId: "fixture-run",
+        messageRunId: "finished-routine",
+      });
+      state.run.trigger = "follow_up";
+      state.run.sourceMessageId = "resumed-reply";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "failed", error: expect.stringMatching(/image/i) }),
+      );
+      expect(model.requests).toHaveLength(0);
+    } finally {
+      await model.close();
+    }
+  });
   it.each(["allow", "deny"])(
     "%s keeps checkpoint storage separate from action effects",
     async (answer) => {

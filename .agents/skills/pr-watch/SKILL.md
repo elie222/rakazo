@@ -77,6 +77,9 @@ do not mutate external checks without authorization.
 Judge each on merits. Review bots are confidently wrong often enough to check,
 and a wrong fix is worse than a declined comment.
 
+- The flagged code should not exist (unrun harness, speculative path, scope the
+  PR does not need) → remove it, validate, and reply that it was removed.
+  Do not build more code to satisfy a finding about code that should go.
 - Valid → fix, validate, then reply with what changed.
 - Wrong → reply with the evidence that refutes it: the line of code, the
   upstream source, the behaviour on the base branch.
@@ -150,6 +153,15 @@ Finish only when one observation of a single SHA proves all of:
 3. Every root comment is answered — inline review threads and conversation
    comments alike — and no new one appeared.
 4. At least one full wait happened after your last push or reply.
+
+For a UI change, once the screenshot gallery for that SHA is published, put the
+screenshot that shows the change in the PR description.
+`pr-screenshots [PR] [FILTER]`, next to `pr-digest`, prints the run's
+checkpoints as `<source>\t<Markdown image>`; filter by the spec or checkpoint
+name you wrote, pick the frame, and edit the description
+(`gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@<file>`). If the
+Playwright workflow did not run for that SHA, there is no gallery; say so in
+the description instead of waiting for one.
 
 Report the PR link, final head, waits, fix rounds, what feedback you handled and
 declined, what you validated, any unresolved threads, and whether you finished

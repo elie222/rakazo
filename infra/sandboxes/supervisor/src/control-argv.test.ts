@@ -69,6 +69,17 @@ describe.each([undefined, profile])(
       });
     });
 
+    it.each([
+      { kind: "scroll" as const, direction: "down" as const, amount: 4 },
+      { kind: "scroll" as const, direction: "up" as const, amount: 4, x: 600, y: 420 },
+      { kind: "scroll" as const, direction: "left" as const, amount: 2 },
+      { kind: "scroll" as const, direction: "right" as const, amount: 2, x: 40, y: 300 },
+    ])("accepts a generated scroll, with or without a point", (action) => {
+      const step = containerActionStep(action, display, browserProfile);
+      if (!("argv" in step)) throw new Error("expected command");
+      expect(check(step.argv)).toEqual({ allowed: true, longLived: false });
+    });
+
     it("accepts generated keyboard input without treating it as a long-lived process", () => {
       const step = containerActionStep({ kind: "key", key: "Enter" }, display, browserProfile);
       if (!("argv" in step)) throw new Error("expected command");
@@ -133,6 +144,34 @@ describe("controller argv restrictions", () => {
       "rakazo-browser",
     ],
   ])("rejects malformed or unauthorized argv %j", (...argv) => {
+    expect(check(argv).allowed).toBe(false);
+  });
+
+  const scroll = (...tail: string[]) => ["env", `DISPLAY=${display}`, "xdotool", ...tail];
+  it("accepts a scroll aimed at a point: the pointer moves there, then the wheel turns", () => {
+    expect(
+      check(scroll("mousemove", "--", "600", "420", "click", "--repeat", "4", "5")).allowed,
+    ).toBe(true);
+  });
+
+  it.each([
+    // A repeated left or right click is not a scroll.
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "1"),
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "3"),
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "8"),
+    scroll("click", "--repeat", "3", "2"),
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "21", "5"),
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "0", "5"),
+    scroll("mousemove", "--", "6e2", "420", "click", "--repeat", "3", "5"),
+    scroll("mousemove", "600", "420", "click", "--repeat", "3", "5"),
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "3", "5", "extra"),
+    scroll("mousemove", "--", "600", "420", "key", "--repeat", "3", "5"),
+    // Digits outside ASCII ("²", Arabic-Indic "٣") are not a count or a coordinate.
+    scroll("mousemove", "--", "600", "420", "click", "--repeat", "²", "5"),
+    scroll("click", "--repeat", "²", "5"),
+    scroll("click", "--repeat", "٣", "5"),
+    scroll("mousemove", "--", "٦00", "420", "click", "--repeat", "3", "5"),
+  ])("rejects a scroll that isn't the generated shape %j", (...argv) => {
     expect(check(argv).allowed).toBe(false);
   });
 });

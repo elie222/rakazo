@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { AgentImportStatusSchema } from "./agent-import-setup.js";
+import { BotAvatarSetSchema, BotAvatarValueSchema } from "./bot-avatar.js";
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
@@ -224,64 +225,18 @@ export const AgentImportPreviewInput = z.strictObject({
   skillFiles,
 });
 
-/** An existing bot keeps its instructions unless replaced, and its model unless ticked. */
-export const AgentImportDestinationSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("new") }),
-  z.strictObject({
-    kind: z.literal("existing"),
-    botId: z.string().min(1).max(100),
-    replaceInstructions: z.boolean().default(false),
-    /** The instructions the user saw, so a replace never overwrites an edit made since. */
-    expectedInstructions: z.string().optional(),
-  }),
-]);
-export type AgentImportDestination = z.infer<typeof AgentImportDestinationSchema>;
-
 export const AgentImportCreateInput = z.strictObject({
   /** Chosen by the client once per import, so a retried create returns the same bot. */
   importKey: z.string().trim().min(8).max(100).optional(),
-  /** Like `bots.create`: one bot per key in a space (onboarding's first bot). */
-  spawnKey: z.string().trim().min(1).max(120).optional(),
   files: AgentImportFilesSchema,
   includeSecrets,
   skillFiles,
-  destination: AgentImportDestinationSchema.default({ kind: "new" }),
-  /** The new bot's name; not used when adding to an existing bot. */
-  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
+  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   computerMode: ComputerModeSchema.default("team"),
+  /** Portable appearance when supplied by an exported profile; older imports stay organic. */
+  color: BotAvatarValueSchema.optional(),
+  avatarSet: BotAvatarSetSchema.optional(),
   selection: AgentImportSelectionSchema,
 });
 export type AgentImportCreateInput = z.infer<typeof AgentImportCreateInput>;
-
-const importedNames = z.object({
-  skills: z.array(z.string()),
-  spaceMemory: z.array(z.string()),
-  mcpServers: z.array(z.string()),
-  apiKeys: z.array(z.string()),
-  /** For an import into an existing bot: its added memory documents and routines. */
-  botMemory: z.array(z.string()).default([]),
-  routines: z.array(z.string()).default([]),
-});
-
-/** What Undo would remove, and what it keeps because it changed since the import. */
-export const AgentImportInfoSchema = z.object({
-  id: z.string(),
-  source: AgentImportSourceSchema,
-  createdAt: z.string(),
-  remove: importedNames,
-  keep: importedNames,
-  /** Added to a bot that existed before; Undo then never deletes the bot. */
-  existingBot: z.boolean().default(false),
-  /** Set when the import replaced the instructions; `keep` when they changed since. */
-  instructions: z.enum(["restore", "keep"]).nullable().default(null),
-  /** Likewise for a model the import set on an existing bot. */
-  model: z.enum(["restore", "keep"]).nullable().default(null),
-});
-export type AgentImportInfo = z.infer<typeof AgentImportInfoSchema>;
-
-/** Undoes the bot's latest import only while it is still the one the user was shown. */
-export const AgentImportUndoInput = z.strictObject({
-  botId: z.string().min(1).max(100),
-  importId: z.string().min(1).max(100),
-});

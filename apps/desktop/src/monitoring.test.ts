@@ -21,7 +21,7 @@ vi.mock("./native-crashes.js", () => ({
   disableNativeCrashReporting: vi.fn(),
 }));
 afterEach(() => vi.useRealTimers());
-const options = { version: "1.0.0", base: "https://app.example.com" };
+const options = { version: "1.0.0", base: "https://app.example.com", reportsErrors: true };
 const config = (body: unknown) => async () => new Response(JSON.stringify(body));
 
 beforeEach(() => {
@@ -32,6 +32,13 @@ beforeEach(() => {
 });
 
 describe("desktop monitoring", () => {
+  it("reports only from packaged release-workflow builds", async () => {
+    const { desktopReportsErrors } = await import("./monitoring.js");
+    expect(desktopReportsErrors(true, "1")).toBe(true);
+    expect(desktopReportsErrors(true, "")).toBe(false);
+    expect(desktopReportsErrors(false, "1")).toBe(false);
+  });
+
   it("initializes observers once, switches transports, and disables reporting with the server", async () => {
     const monitor = await import("./monitoring.js");
     const error = new Error("startup");
@@ -72,6 +79,17 @@ describe("desktop monitoring", () => {
     expect(initialized.beforeSend({ tags: { "monitoring.connection": 1 } }, {})).toBeNull();
     await monitor.configureDesktopMonitoring(config({ dsn: null }), options);
     expect(initialized.beforeSend({}, {})).toBeNull();
+  });
+
+  it("never starts the SDK for a build that does not report errors", async () => {
+    const monitor = await import("./monitoring.js");
+    monitor.reportDesktopError(new Error("startup"), "desktop.startup");
+    await monitor.configureDesktopMonitoring(config({ dsn: "https://key@errors.example.com/8" }), {
+      ...options,
+      reportsErrors: false,
+    });
+    expect(sdk.init).not.toHaveBeenCalled();
+    expect(sdk.captureException).not.toHaveBeenCalled();
   });
 
   it("accepts only the latest identity response when cookies change", async () => {

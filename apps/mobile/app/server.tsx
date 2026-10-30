@@ -1,7 +1,10 @@
+import type { ModelHeaderRow } from "@rakazo/contracts";
+import { serverHeadersFromRows } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HeaderRowsEditor } from "../components/header-rows-editor";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
 import {
@@ -16,7 +19,9 @@ import {
 } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { serverHeaders } from "../lib/server-headers";
 import { useSideInsets } from "../lib/side-insets";
+import { errorText } from "../lib/user-error";
 
 export default function ServerScreen() {
   const sideInsets = useSideInsets();
@@ -25,6 +30,9 @@ export default function ServerScreen() {
   const router = useRouter();
   const current = currentApiBase();
   const [draft, setDraft] = useState(current);
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[]>(() =>
+    Object.entries(serverHeaders(current)).map(([name, value]) => ({ name, value })),
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const active = useRef(true);
@@ -52,13 +60,20 @@ export default function ServerScreen() {
     setPending(true);
     setError(null);
     try {
-      const probed = await probeApiBase(draft);
+      let headers: Record<string, string>;
+      try {
+        headers = serverHeadersFromRows(headerRows);
+      } catch (headerError) {
+        setError(errorText(headerError));
+        return;
+      }
+      const probed = await probeApiBase(draft, fetch, headers);
       if (!active.current) return;
       if (!probed.ok) {
         setError(probed.error);
         return;
       }
-      const saved = await saveApiBase(probed.url);
+      const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
         setError(saved.error);
         return;
@@ -142,6 +157,14 @@ export default function ServerScreen() {
               {warning}
             </Text>
           ) : null}
+          <HeaderRowsEditor
+            rows={headerRows}
+            onChange={(rows) => {
+              setHeaderRows(rows);
+              setError(null);
+            }}
+            disabled={pending}
+          />
           {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton

@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { NavLink } from "@rakazo/contracts";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
@@ -13,11 +14,14 @@ import {
   Download,
   FolderOpen,
   Gauge,
+  Link2,
   LogOut,
   Plug,
+  ScrollText,
   Settings,
   Smartphone,
   SquareKanban,
+  UserPlus,
   UserRound,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -34,10 +38,14 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onIntegrations: () => void;
+  onSkills: () => void;
   onBoard?: () => void;
+  links?: NavLink[];
+  onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
   onUsage: () => void;
+  onInvite?: () => void;
   onLogOut: () => void;
   signingOut: boolean;
   logOutError: string | null;
@@ -58,10 +66,14 @@ export function SidebarFooter({
   open,
   onOpenChange,
   onIntegrations,
+  onSkills,
   onBoard,
+  links = [],
+  onLink,
   onArtifacts,
   onSettings,
   onUsage,
+  onInvite,
   onLogOut,
   signingOut,
   logOutError,
@@ -145,29 +157,28 @@ export function SidebarFooter({
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onUsage}
+              aria-label={t`Settings`}
+              onClick={onSettings}
             >
-              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Usage</Trans>
+              <Settings className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Settings</Trans>
             </Button>
-            <a
-              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-              href={/Android/i.test(navigator.userAgent) ? ANDROID_APK_URL : IOS_APP_STORE_URL}
-              target="_blank"
-              rel="noreferrer"
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onSkills}
             >
-              <Smartphone className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Get the mobile app</Trans>
-            </a>
-            <a
-              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-              href="https://github.com/elie222/rakazo/blob/main/docs/self-host.md"
-              target="_blank"
-              rel="noreferrer"
+              <ScrollText className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Skills</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2.5 font-normal"
+              onClick={onArtifacts}
             >
-              <BookOpen className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Docs</Trans>
-            </a>
+              <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Artifacts</Trans>
+            </Button>
             {onBoard ? (
               <Button
                 variant="ghost"
@@ -178,23 +189,54 @@ export function SidebarFooter({
                 <Trans>Board</Trans>
               </Button>
             ) : null}
+            {links.map((link) => (
+              <Button
+                key={link.id}
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={() => onLink?.(link)}
+              >
+                <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                {link.label}
+              </Button>
+            ))}
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
-              onClick={onArtifacts}
+              onClick={onUsage}
             >
-              <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Artifacts</Trans>
+              <Gauge className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Usage</Trans>
             </Button>
-            <Button
-              variant="ghost"
-              className="h-9 w-full justify-start gap-2.5 font-normal"
-              aria-label={t`Settings`}
-              onClick={onSettings}
+            <div className="my-1 border-t border-border" />
+            <a
+              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
+              href={/Android/i.test(navigator.userAgent) ? ANDROID_APK_URL : IOS_APP_STORE_URL}
+              target="_blank"
+              rel="noreferrer"
             >
-              <Settings className="text-muted-foreground" strokeWidth={1.75} />
-              <Trans>Settings</Trans>
-            </Button>
+              <Smartphone className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Get the mobile app</Trans>
+            </a>
+            {onInvite ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onInvite}
+              >
+                <UserPlus className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Invite friends</Trans>
+              </Button>
+            ) : null}
+            <a
+              className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
+              href="https://github.com/elie222/rakazo/blob/main/docs/self-host.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <BookOpen className="text-muted-foreground" strokeWidth={1.75} />
+              <Trans>Docs</Trans>
+            </a>
             <div className="my-1 border-t border-border" />
             <Button
               variant="ghost"

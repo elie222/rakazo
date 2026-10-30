@@ -17,11 +17,48 @@ export const RUN_TRIGGERS = [
   "webhook",
   "messaging",
   "cloud_agent",
+  "purchase",
   "created",
   "tickets",
 ] as const;
 export const RunTriggerSchema = z.enum(RUN_TRIGGERS);
 export type RunTrigger = z.infer<typeof RunTriggerSchema>;
+
+/**
+ * Whose problem a failed run is. Every kind except "output" is the user's provider account,
+ * key, plan or model choice; "output" is a model that returned nothing usable.
+ */
+export const RUN_ERROR_KINDS = [
+  "key",
+  "credit",
+  "spending",
+  "rate",
+  "auth",
+  "access",
+  "model",
+  "context",
+  "output",
+] as const;
+export type RunErrorKind = (typeof RUN_ERROR_KINDS)[number];
+
+/** A limit that resets later than this is a quota to wait out, not a rate limit to retry. */
+const PROVIDER_QUOTA_MIN_RESET_MS = 60 * 60_000;
+
+/**
+ * When a provider error says its exhausted limit resets, if that is over an hour away. Gateways
+ * copy the response's `X-RateLimit-Reset` (an epoch in seconds or milliseconds) or `Retry-After`
+ * (seconds) headers into the error body, which is all a model runtime passes on.
+ */
+export function providerQuotaResetAt(text: string, now = Date.now()): number | undefined {
+  const epoch = text.match(/\bx-ratelimit-reset\\?"?\s*[:=]\s*\\?"?(\d{10,13})(?!\d)/i)?.[1];
+  const delay = text.match(/\bretry-after\\?"?\s*[:=]\s*\\?"?(\d+)(?![\d.])/i)?.[1];
+  const resetAt = epoch
+    ? Number(epoch) * (epoch.length > 10 ? 1 : 1000)
+    : delay
+      ? now + Number(delay) * 1000
+      : undefined;
+  return resetAt !== undefined && resetAt - now > PROVIDER_QUOTA_MIN_RESET_MS ? resetAt : undefined;
+}
 
 export const RoutineRunSchema = z.object({
   id: Id,
@@ -38,6 +75,9 @@ export type RoutineRun = z.infer<typeof RoutineRunSchema>;
 
 export const RoutineRunCursorSchema = z.object({ id: Id, createdAt: IsoDate });
 export type RoutineRunCursor = z.infer<typeof RoutineRunCursorSchema>;
+/** Runs per history page; the first page a screen shows is shorter. */
+export const ROUTINE_HISTORY_PAGE_SIZE = 20;
+export const ROUTINE_HISTORY_FIRST_PAGE_SIZE = 5;
 export const RoutineHistorySchema = z.object({
   runs: z.array(RoutineRunSchema),
   nextCursor: RoutineRunCursorSchema.nullable(),

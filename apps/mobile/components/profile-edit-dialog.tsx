@@ -9,7 +9,6 @@ export function ProfileEditDialog({
   value,
   label,
   editLabel,
-  placeholder,
   maxLength,
   large = false,
   icon,
@@ -18,7 +17,6 @@ export function ProfileEditDialog({
   value: string;
   label: string;
   editLabel: string;
-  placeholder?: string;
   maxLength: number;
   large?: boolean;
   icon?: "plus";
@@ -75,7 +73,7 @@ export function ProfileEditDialog({
               color: large ? tokens.foreground : tokens.mutedForeground,
             }}
           >
-            {value || placeholder}
+            {value}
           </Text>
         )}
       </Pressable>

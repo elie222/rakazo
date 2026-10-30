@@ -46,6 +46,33 @@ describePostgres("content encryption (PostgreSQL)", () => {
     clients.push(db);
     return db;
   }
+  it("decrypts confirmed image intent after filtering only the plain image kind", () =>
+    runAsSystem("test fixture", async () => {
+      const image: MessageBlock = {
+        kind: "image",
+        artifactId: "encrypted-image",
+        name: "reply.png",
+        mimeType: "image/png",
+        imageHandling: "confirm",
+      };
+      const message = await createThreadMessage(prisma, {
+        threadId,
+        role: "user",
+        blocks: [image],
+      });
+      expect(await rawBlocks(message.id)).not.toContain('"imageHandling"');
+      const found = await prisma.message.findMany({
+        where: {
+          id: message.id,
+          threadId,
+          role: "user",
+          blocks: { array_contains: [{ kind: "image" }] },
+        },
+        select: { blocks: true },
+      });
+      expect(found).toEqual([{ blocks: [image] }]);
+    }));
+
   const rawBlocks = async (id: string) =>
     (await raw.query(`SELECT blocks::text AS blocks FROM messages WHERE id = $1`, [id])).rows[0]
       .blocks as string;
@@ -207,6 +234,18 @@ describePostgres("content encryption (PostgreSQL)", () => {
         [threadId],
       );
       expect(left.rows[0].n).toBe(0);
+      // Variants across the user's chats verify each query against the decrypted text.
+      const variants = await searchHistory(
+        prisma,
+        { ...scope, allowMyChats: true },
+        { scope: "my_chats", queries: ["legacy pelicans", "fresh note"] },
+      );
+      expect(
+        variants.messages.map((m) => [m.text, m.matchedQueryIndexes, m.threadId]).sort(),
+      ).toEqual([
+        ["fresh note about pelicans", [1], threadId],
+        ["legacy note about pelicans", [0], threadId],
+      ]);
 
       const excerpt = await readHistory(prisma, scope, { messageId: plaintextId, limit: 1 });
       expect(excerpt.messages[0]!.text).toBe("legacy note about pelicans");

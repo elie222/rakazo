@@ -44,6 +44,18 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
     );
   });
 
+  it("keeps gateway paths that already contain a version segment", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1/some-model")).toBe(
+      "https://gateway.example.test/v1/some-model",
+    );
+    expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1beta/openai/")).toBe(
+      "https://gateway.example.test/v1beta/openai",
+    );
+    expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/openai")).toBe(
+      "https://gateway.example.test/openai/v1",
+    );
+  });
+
   it("rejects text that is not an HTTP(S) URL", () => {
     expect(() => normalizeOpenAiCompatibleBaseUrl("127.0.0.1:8000")).toThrow();
   });

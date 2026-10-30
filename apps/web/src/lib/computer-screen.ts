@@ -1,3 +1,6 @@
+import { t } from "@lingui/core/macro";
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
+import { WUYING_SCREEN_PATH } from "@rakazo/contracts/content-security-policy";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -32,12 +35,17 @@ export function embeddableScreenUrl(url: string | null): string | null {
   try {
     const parsed = new URL(url, window.location.href);
     const page = new URL(window.location.href);
+    // A Wuying desktop is drawn by its Web SDK in a page this server serves. Its one-time login
+    // code rides in the fragment so it never reaches a server log.
+    if (parsed.protocol === "wuying:") {
+      return `${page.origin}${WUYING_SCREEN_PATH}#${parsed.searchParams.toString()}`;
+    }
     // The server that served this page proxies /novnc/. Keep the frame on this origin even when the
     // API's WEB_ORIGIN names another host for it (localhost vs 127.0.0.1), as the CSP frames 'self'.
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
       return null;
@@ -48,10 +56,30 @@ export function embeddableScreenUrl(url: string | null): string | null {
   }
 }
 
+/**
+ * A Wuying screen URL carries a one-time login code, so every read of it differs. Reloading the
+ * frame for a new code would open a second session that signs the first one out; the screen keeps
+ * the URL it connected with until the desktop or the view changes.
+ */
+export function sameWuyingScreen(current: string | null, next: string | null): boolean {
+  if (!current || !next) return false;
+  try {
+    const a = new URL(current);
+    const b = new URL(next);
+    if (a.protocol !== "wuying:" || b.protocol !== "wuying:") return false;
+    return ["desktop_id", "region_id", "view_only"].every(
+      (name) => a.searchParams.get(name) === b.searchParams.get(name),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function screenIframeSandbox(url: string | null) {
   if (!url) return undefined;
   try {
-    return new URL(url, window.location.href).pathname.startsWith("/novnc/")
+    const pathname = new URL(url, window.location.href).pathname;
+    return pathname.startsWith("/novnc/") || pathname === WUYING_SCREEN_PATH
       ? "allow-scripts allow-pointer-lock"
       : undefined;
   } catch {
@@ -115,7 +143,7 @@ export function screenFrameStarted(message: ScreenFrameMessage): boolean {
 /** The error a frame report means for the screen, or null while it is fine. */
 export function screenFrameError(message: ScreenFrameMessage, fallback: string): string | null {
   if (message.rakazoScreen !== "failed" && message.rakazoScreen !== "disconnected") return null;
-  return message.detail ?? fallback;
+  return message.rakazoScreen === "disconnected" ? t`The screen connection closed.` : fallback;
 }
 
 /**
@@ -136,13 +164,12 @@ export async function probeScreen(
     if (response.ok) return null;
     // The proxy couldn't reach the API to check the screen: that's a connection problem.
     if (response.type === "opaqueredirect" || response.status === 503) return fallback;
-    const contentType = response.headers?.get("content-type") ?? "";
-    const body = (await response.text().catch(() => "")).trim();
-    // Only the proxy's own short plain-text reasons are worth showing; an upstream HTML error
-    // page would read as raw markup in the alert.
-    const isHtml = /html/i.test(contentType) || /<[a-z!/]/i.test(body);
-    const text = isHtml ? "" : body.slice(0, 200);
-    return text || `${fallback} (HTTP ${response.status})`;
+    if (response.status === 403) return t`The screen link expired.`;
+    const body = await response.text().catch(() => "");
+    if (response.status === 502 && body.trim() === "Screen unavailable (upstream_timeout)") {
+      return t`The screen did not respond.`;
+    }
+    return fallback;
   } catch {
     return fallback;
   }

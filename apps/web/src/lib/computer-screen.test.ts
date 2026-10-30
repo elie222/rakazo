@@ -7,6 +7,7 @@ import {
   loadComputerScreen,
   probeScreen,
   probeScreenStatus,
+  sameWuyingScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -92,6 +93,31 @@ describe("computer screen requests", () => {
   });
 });
 
+describe("sameWuyingScreen", () => {
+  const screen = (code: string, viewOnly = "true", desktop = "ecd-1") =>
+    `wuying://desktop?desktop_id=${desktop}&region_id=cn-hangzhou&auth_code=${code}&view_only=${viewOnly}`;
+
+  it("keeps a connected Wuying screen when only its login code changes", () => {
+    expect(sameWuyingScreen(screen("a"), screen("b"))).toBe(true);
+    expect(sameWuyingScreen(screen("a"), screen("b", "false"))).toBe(false);
+    expect(sameWuyingScreen(screen("a"), screen("b", "true", "ecd-2"))).toBe(false);
+    expect(sameWuyingScreen(null, screen("b"))).toBe(false);
+    expect(sameWuyingScreen("http://127.0.0.1:5173/novnc/a", "http://127.0.0.1:5173/novnc/a")).toBe(
+      false,
+    );
+  });
+});
+
+describe("Wuying frame isolation", () => {
+  it("sandboxes the vendor page without same-origin access and uses frame state probing", () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
+    const url = embeddableScreenUrl("wuying://desktop?auth_code=fake-once&desktop_id=ecd-fake");
+    expect(screenIframeSandbox(url)).toBe("allow-scripts allow-pointer-lock");
+    expect(isProxiedScreenUrl(url)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("embeddableScreenUrl", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -101,6 +127,15 @@ describe("embeddableScreenUrl", () => {
     vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
     expect(embeddableScreenUrl("http://127.0.0.1:6080/vnc.html")).toBeNull();
     expect(embeddableScreenUrl("http://localhost:6080/vnc.html")).toBeNull();
+  });
+
+  it("draws a Wuying desktop in the page that carries its Web SDK", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/chat" } });
+    expect(
+      embeddableScreenUrl("wuying://desktop?desktop_id=ecd-1&auth_code=once&view_only=true"),
+    ).toBe(
+      "http://localhost:5173/wuying/screen.html#desktop_id=ecd-1&auth_code=once&view_only=true",
+    );
   });
 
   it("serves the screen proxy from the page origin", () => {
@@ -236,10 +271,12 @@ describe("screen frame reports", () => {
     expect(screenFrameError({ rakazoScreen: "connecting" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "connected" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "failed", detail: "Refused" }, "fallback")).toBe(
-      "Refused",
+      "fallback",
     );
     expect(screenFrameError({ rakazoScreen: "failed" }, "fallback")).toBe("fallback");
-    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe("fallback");
+    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe(
+      "The screen connection closed.",
+    );
   });
 
   it("only treats the proxy's own pages as reporting frames", () => {
@@ -270,12 +307,12 @@ describe("probeScreen", () => {
       probeScreen(url, "fallback", async () =>
         response(403, "Invalid or expired screen capability"),
       ),
-    ).resolves.toBe("Invalid or expired screen capability");
+    ).resolves.toBe("The screen link expired.");
     await expect(
       probeScreen(url, "fallback", async () =>
         response(502, "Screen unavailable (upstream_timeout)"),
       ),
-    ).resolves.toBe("Screen unavailable (upstream_timeout)");
+    ).resolves.toBe("The screen did not respond.");
   });
 
   it("reads an access check that couldn't reach the API as a connection problem", async () => {
@@ -285,19 +322,23 @@ describe("probeScreen", () => {
     await expect(probeScreen(url, "fallback", async () => response(503))).resolves.toBe("fallback");
   });
 
+  it("never shows untrusted plain text", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(500, "private token")),
+    ).resolves.toBe("fallback");
+  });
+
   it("never shows an upstream HTML error page as the reason", async () => {
     await expect(
       probeScreen(url, "fallback", async () =>
         response(502, "<!DOCTYPE html><html><body><h1>Bad gateway</h1></body></html>"),
       ),
-    ).resolves.toBe("fallback (HTTP 502)");
+    ).resolves.toBe("fallback");
     const html = {
       ...response(500, "Bad gateway"),
       headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
     } as Response;
-    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe(
-      "fallback (HTTP 500)",
-    );
+    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe("fallback");
   });
 
   it("falls back when the page cannot be fetched or would leave the app", async () => {

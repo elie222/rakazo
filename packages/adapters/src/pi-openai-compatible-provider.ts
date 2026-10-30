@@ -1,27 +1,24 @@
 import { lookup } from "node:dns/promises";
-import { isIP, type LookupFunction } from "node:net";
-import {
-  createProvider,
-  type Model,
-  type MutableModels,
-  type Provider,
-  type ProviderStreams,
-} from "@earendil-works/pi-ai";
+import type { LookupFunction } from "node:net";
+import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import type { ModelApiProtocol } from "@rakazo/contracts";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  ipVersion,
+  isCloudMetadataAddress,
+  isLinkLocalAddress,
+  isNonPublicAddress,
+  MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
-import {
-  createAddressCheckedLookup,
-  isCloudMetadataAddress,
-  isLinkLocalAddress,
-  isPrivateAddress,
-  type ResolveHostname,
-} from "./network-address.js";
+import type { ResolveHostname } from "./network-address.js";
+import { createAddressCheckedLookup } from "./network-address.js";
 import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
@@ -56,7 +53,6 @@ const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
 
-/** Select response-size and model-count caps, using larger caps for pinned catalogs. */
 function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModelIds: number } {
   return catalogProbe
     ? { maxBytes: CATALOG_MAX_MODELS_RESPONSE_BYTES, maxModelIds: CATALOG_MAX_MODEL_IDS }
@@ -74,15 +70,18 @@ export function openAiCompatibleModel(
   acceptsImages = false,
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
   contextWindow = DEFAULT_MODEL_CONTEXT_WINDOW,
-): Model<"openai-completions"> {
+  apiProtocol: ModelApiProtocol = "chat-completions",
+): Model<"openai-completions" | "openai-responses"> {
   return {
     id,
     name: id,
-    api: "openai-completions",
+    api: apiProtocol === "responses" ? "openai-responses" : "openai-completions",
     provider: OPENAI_COMPATIBLE_PROVIDER_ID,
     baseUrl,
     reasoning,
     compat: {
+      // `store: false` is already the default, and Google's endpoint rejects the field.
+      supportsStore: false,
       supportsDeveloperRole: false,
       supportsReasoningEffort: reasoning,
       thinkingFormat: "openai",
@@ -96,20 +95,21 @@ export function openAiCompatibleModel(
 }
 
 function openAiCompatibleProvider(
-  models: Model<"openai-completions">[],
+  models: Model<"openai-completions" | "openai-responses">[],
   policy: { allowPrivate?: boolean; headers?: Record<string, string> } = {},
 ): Provider {
-  const api = openAICompletionsApi();
+  const api = (protocol: string) =>
+    protocol === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
   const safeApi: ProviderStreams = {
     stream: (model, context, options) =>
-      api.stream(model, context, {
+      api(model.api).stream(model, context, {
         ...options,
         fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
     streamSimple: (model, context, options) =>
-      api.streamSimple(model, context, {
+      api(model.api).streamSimple(model, context, {
         ...options,
         fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
@@ -151,8 +151,8 @@ export function createOpenAiCompatibleLookup(
       if (
         addresses.some(
           (entry) =>
-            isIP(entry.address) === 0 ||
-            !isPrivateAddress(entry.address) ||
+            ipVersion(entry.address) === 0 ||
+            !isNonPublicAddress(entry.address) ||
             isLinkLocalAddress(entry.address),
         )
       ) {
@@ -160,7 +160,7 @@ export function createOpenAiCompatibleLookup(
       }
       return;
     }
-    if (addresses.some((entry) => isPrivateAddress(entry.address))) {
+    if (addresses.some((entry) => isNonPublicAddress(entry.address))) {
       throw new Error("Public model server hostname resolved to a private address");
     }
   });
@@ -204,7 +204,7 @@ export function createOpenAiCompatibleFetch(
     const dispatcher = new Agent({
       connect: {
         timeout: MODEL_CONNECT_TIMEOUT_MS,
-        ...(isIP(hostname) === 0
+        ...(ipVersion(hostname) === 0
           ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
           : {}),
       },
@@ -298,14 +298,9 @@ async function closeDispatcherWithResponse(
 
 /** Always-visible catalog provider with a placeholder model entry. */
 export function openAiCompatibleCatalogProvider(): Provider {
-  // The vision gate resolves against this catalog rather than the per-run
-  // registry, so a model only declared at runtime would still read as
-  // text-only. Register the operator's declared vision models here too.
-  //
-  // If the reserved placeholder id ("custom") is itself declared vision-
-  // capable, upgrade the placeholder entry rather than appending a second
-  // model with the same id — Models.getModel returns the first match, so a
-  // duplicate would leave the gate reading the text-only placeholder.
+  // The vision gate resolves against this catalog, not the per-run registry, so
+  // declared vision models are registered here too. A declared placeholder id
+  // upgrades the placeholder in place: Models.getModel returns the first match.
   const visionIds = openAiCompatibleVisionModelIds();
   const placeholderAcceptsImages = visionIds.has(OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
   const visionModels = [...visionIds]
@@ -330,12 +325,12 @@ export function registerOpenAiCompatibleCatalog(models: MutableModels): MutableM
   return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
 }
 
-/** Register a concrete model + base URL for an agent run. */
 export function registerOpenAiCompatibleRuntime(
   models: MutableModels,
   opts: {
     modelId: string;
     baseUrl: string;
+    apiProtocol?: ModelApiProtocol;
     headers?: Record<string, string>;
     reasoning?: boolean;
     acceptsImages?: boolean;
@@ -358,6 +353,7 @@ export function registerOpenAiCompatibleRuntime(
           acceptsImages,
           opts.maxTokens,
           opts.contextWindow,
+          opts.apiProtocol,
         ),
       ],
       { allowPrivate: opts.allowPrivate, headers: opts.headers },
@@ -406,14 +402,15 @@ export type OpenAiCompatibleModelsResponse = {
 /** Shared suffix: /models probe is optional when the user already knows a model id. */
 const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
 
+/** Extracts model ids; valid JSON can still be null or lack a list, which gets the actionable missing-list error. */
 function probeModelIds(
   body: OpenAiCompatibleModelsResponse,
   opts?: { catalogProbe?: boolean },
 ): string[] {
   const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
-  const entries = Array.isArray(body.data)
+  const entries = Array.isArray(body?.data)
     ? body.data
-    : Array.isArray(body.models)
+    : Array.isArray(body?.models)
       ? body.models
       : null;
   if (!entries) {
@@ -477,7 +474,7 @@ export async function verifyOpenAiCompatibleApiKey(
   signal?: AbortSignal,
 ): Promise<void> {
   if (new URL(input.baseUrl).hostname !== "ollama.com") return;
-  if (!input.apiKey?.trim()) throw new Error("API key was rejected by the provider.");
+  if (!input.apiKey?.trim()) throw new Error(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
@@ -494,7 +491,7 @@ export async function verifyOpenAiCompatibleApiKey(
   }
   await response.body?.cancel().catch(() => undefined);
   if (response.status === 401 || response.status === 403) {
-    throw new Error("API key was rejected by the provider.");
+    throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }

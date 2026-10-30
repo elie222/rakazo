@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants } from "node:fs";
+import { mkdir, open, rm, statfs } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -7,73 +7,35 @@ import type {
   ComputerRef,
   PortableFile,
   SandboxProvider,
+  StreamedPortableFile,
   WorkspaceDirectoryRequest,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { parseScreenLeaseId } from "@rakazo/core";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
-import { LocalAgentHomeStore } from "./home.js";
+import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
+import { isSandboxDamagedError } from "./sandbox-errors.js";
+import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
+
+export { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
 
-/** Browser profile directories the browser rebuilds on its own; exports skip them. */
-export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set([
-  "Cache",
-  "Code Cache",
-  "CacheStorage",
-  "GPUCache",
-  "GrShaderCache",
-  "ShaderCache",
-  "DawnGraphiteCache",
-  "DawnWebGPUCache",
-  "GraphiteDawnCache",
-  "Crashpad",
-  "startup_cache",
-  "cache2",
-  // Components and models the browser downloads again on its own; each copy is per bot.
-  "ActorSafetyLists",
-  "CertificateRevocation",
-  "component_crx_cache",
-  "Crowd Deny",
-  "DeferredBrowserMetrics",
-  "Dictionaries",
-  "extensions_crx_cache",
-  "hyphen-data",
-  "OnDeviceHeadSuggestModel",
-  "optimization_guide_model_store",
-  "OptimizationHints",
-  "PKIMetadata",
-  "Safe Browsing",
-  "SafetyTips",
-  "screen_ai",
-  "Subresource Filter",
-  "WasmTtsEngine",
-  "WidevineCdm",
-  "ZxcvbnData",
-]);
-const skippedBrowserProfileFiles = new Set([
-  "BrowserMetrics",
-  "BrowserMetrics-spare.pma",
-  "DevToolsActivePort",
-  "SingletonCookie",
-  "SingletonLock",
-  "SingletonSocket",
-  ".parentlock",
-  "lock",
-]);
+/** Disk a save leaves free for everything else on the data volume. */
+const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
+/** How often, in bytes written, a save checks the volume's free space again. */
+const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
+/** Disk a file costs beyond its contents, so many small files still trigger the check. */
+const FILE_DISK_OVERHEAD_BYTES = 4096;
 
-/** Excludes transient browser state that is unsafe or wasteful to restore. */
-export function shouldSkipPortableWorkspaceFile(relative: string) {
-  if (!relative.startsWith(".browser-profiles/")) return false;
-  const segments = relative.split("/");
-  const name = segments.at(-1) ?? "";
-  return (
-    segments.some((segment) => SKIPPED_BROWSER_PROFILE_DIRECTORIES.has(segment)) ||
-    skippedBrowserProfileFiles.has(name)
-  );
+/** Docker computers mount the server's home directory, whichever store keeps it. */
+export function mountsServerHome(kind: string) {
+  return kind === "docker";
 }
 
 /** The computer already reads and writes the server's home directory, so there is nothing to copy. */
@@ -84,7 +46,7 @@ async function homeIsMounted(
   context: AdapterContext,
 ) {
   if (!(home instanceof LocalAgentHomeStore)) return false;
-  if (computer.kind === "docker") return true;
+  if (mountsServerHome(computer.kind)) return true;
   // Object-backed homes must hydrate and export even when a claim was configured.
   if (home.describe().id !== "local-fs") return false;
   return (
@@ -155,6 +117,10 @@ const REMOVE_CONTAINED_DIRECTORIES = [
   '    "$resolved_parent/$name") ;;',
   '    *) echo "folder escapes the team home" >&2; return 1 ;;',
   "  esac",
+  // Go's module cache has read-only folders. Only folders need write access to empty them; file
+  // modes stay, since a hard link can share a file with the rest of the home. find does not
+  // follow links.
+  '  find "$target" -type d ! -perm -0200 -exec chmod u+w {} + 2>/dev/null || true',
   '  rm -rf -- "$target"',
   "}",
   "status=0",
@@ -347,27 +313,85 @@ export async function checkpointComputerWorkspace(
   homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
-  /** Read after the export, just before saving, so a deletion during the export still counts. */
-  excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
-): Promise<string> {
+  /** The computer saved; its deleted bots' folders are read after the export, just before saving. */
+  record?: {
+    prisma: Pick<PrismaClient, "botDeletion" | "computer">;
+    computer: { id: string; scope: string; spaceId: string };
+    /** Called once the export has finished, just before the files are stored. */
+    onExported?: () => void;
+  },
+  saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
+): Promise<string | undefined> {
+  // A machine whose restore never finished holds only part of the home: save nothing from it,
+  // nor while a start that may still replace or restore it is under way. Every later start moves
+  // the row into booting, which changes its screen generation, so one that began or even
+  // finished during the export shows in the second read.
+  const lifecycle = () =>
+    record?.prisma.computer.findFirst({
+      where: { id: record.computer.id },
+      select: { state: true, restorePending: true, screenGeneration: true },
+    });
+  const before = await lifecycle();
+  if (before?.restorePending || before?.state === "booting") return undefined;
   if (
     home instanceof LocalAgentHomeStore &&
     (await homeIsMounted(home, sandbox, computer, context))
   ) {
     return home.revise(homeKey);
   }
-  const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));
+  // On the data volume, never a container's own disk, and removed later if this process dies.
+  const staging =
+    home instanceof LocalAgentHomeStore
+      ? await home.createStaging()
+      : await createStagingDirectory();
   try {
-    for await (const file of sandbox.exportWorkspace(computer, context)) {
-      await writePortableFile(staging, file);
+    const limits = await withinFreeDisk(saveLimits, staging.path);
+    const copied = { bytes: 0, files: 0, unchecked: 0 };
+    // Other saves share the volume, so free space is checked again as the disk use grows.
+    const use = async (diskBytes: number) => {
+      copied.unchecked += diskBytes;
+      if (copied.unchecked < FREE_DISK_CHECK_BYTES) return;
+      copied.unchecked = 0;
+      if ((await freeDisk(staging.path)) < 0) throw new WorkspaceTooLargeError("bytes");
+    };
+    const count = async (bytes: number) => {
+      copied.bytes += bytes;
+      if (copied.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+      await use(bytes);
+    };
+    for await (const file of sandbox.exportWorkspace(computer, context, limits)) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      if (++copied.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      // Even an empty file takes an inode and usually a block.
+      await use(FILE_DISK_OVERHEAD_BYTES);
+      await writePortableFile(staging.path, file, count);
     }
-    for (const folder of (await excludedFolders?.()) ?? []) {
-      await rm(path.join(staging, folder), { recursive: true, force: true });
+    record?.onExported?.();
+    if ((await lifecycle())?.screenGeneration !== before?.screenGeneration) return undefined;
+    const excluded = record && (await deletedTeamBotFolders(record.prisma, record.computer));
+    for (const folder of excluded ?? []) {
+      await rm(path.join(staging.path, folder), { recursive: true, force: true });
     }
-    return await home.commit(homeKey, staging, context);
+    return await home.commit(homeKey, staging.path, context);
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    await staging.remove();
   }
+}
+
+/** The save limits, lowered to the disk space left on the volume that stages the files. */
+async function withinFreeDisk(
+  limits: WorkspaceExportLimits,
+  directory: string,
+): Promise<WorkspaceExportLimits> {
+  const free = await freeDisk(directory);
+  return { ...limits, maxBytes: Math.max(0, Math.min(limits.maxBytes, free)) };
+}
+
+/** Bytes free on the volume beyond the reserve; unlimited where the platform cannot tell. */
+async function freeDisk(directory: string) {
+  const disk = await statfs(directory).catch(() => undefined);
+  if (!disk) return Number.POSITIVE_INFINITY;
+  return Number(disk.bavail) * Number(disk.bsize) - SAVE_DISK_RESERVE_BYTES;
 }
 
 /** Remote exports quiesce browsers, so a run must not checkpoint while peers are driving them. */
@@ -420,7 +444,7 @@ export async function checkpointAndRecordComputerWorkspace(
   computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
-): Promise<string> {
+): Promise<string | undefined> {
   const checkpointedAt = new Date();
   const revision = await checkpointComputerWorkspace(
     deps.home,
@@ -428,8 +452,9 @@ export async function checkpointAndRecordComputerWorkspace(
     computerRecord.homeKey,
     computer,
     context,
-    () => deletedTeamBotFolders(deps.prisma, computerRecord),
+    { prisma: deps.prisma, computer: computerRecord },
   );
+  if (revision === undefined) return undefined;
   await deps.prisma.computer.updateMany({
     where: { id: computerRecord.id },
     data: { homeRevision: revision, homeRevisionAt: checkpointedAt },
@@ -437,7 +462,32 @@ export async function checkpointAndRecordComputerWorkspace(
   return revision;
 }
 
-async function writePortableFile(root: string, file: PortableFile) {
+/**
+ * Saves the computer's workspace, then stops it. Nothing on a damaged computer can be read, so it
+ * stops without the save and keeps the provider's last good copy; any other save failure throws.
+ */
+export async function checkpointAndStopComputer(
+  deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
+  computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
+  computer: ComputerRef,
+  context: AdapterContext,
+): Promise<void> {
+  try {
+    await checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
+  } catch (error) {
+    if (!isSandboxDamagedError(error)) throw error;
+    await deps.sandbox.stop(computer, context, { discardUnsaved: true });
+    return;
+  }
+  await deps.sandbox.stop(computer, context);
+}
+
+/** Writes one exported file; a streamed one goes to disk chunk by chunk. */
+async function writePortableFile(
+  root: string,
+  file: PortableFile | StreamedPortableFile,
+  count: (bytes: number) => Promise<void>,
+) {
   const relative = normalizeWorkspacePath(file.path);
   if (!relative) throw new Error("Workspace snapshots cannot contain an empty file path");
   const target = path.resolve(root, relative);
@@ -446,7 +496,22 @@ async function writePortableFile(root: string, file: PortableFile) {
     throw new Error("Workspace snapshot path escapes its staging directory");
   }
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, file.content, { mode: file.executable ? 0o700 : 0o600 });
+  const handle = await open(
+    target,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0),
+    file.executable ? 0o700 : 0o600,
+  );
+  try {
+    for await (const chunk of "body" in file ? file.body : [file.content]) {
+      await count(chunk.byteLength);
+      for (let offset = 0; offset < chunk.byteLength; ) {
+        const { bytesWritten } = await handle.write(chunk, offset, chunk.byteLength - offset);
+        offset += bytesWritten;
+      }
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Route directory intents through native providers while preserving the Unix fallback. */

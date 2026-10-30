@@ -1,13 +1,15 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
-import { isCloudMetadataHost, isLocalMcpHost } from "@rakazo/contracts";
-import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
-  egressRefused,
+  ipVersion,
   isCloudMetadataAddress,
+  isCloudMetadataHost,
   isLinkLocalAddress,
-  isPrivateAddress,
-} from "./network-address.js";
+  isLocalhostOrLoopbackIp,
+  isNonPublicAddress,
+  normalizeHost,
+} from "@rakazo/contracts";
+import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
+import { egressRefused } from "./network-address.js";
 import { createPrivateNetworkFetch, isPrivateRemoteMcpHostname } from "./remote-mcp.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
@@ -54,15 +56,11 @@ export function parseServiceBaseUrl(baseUrl: string): URL {
 }
 
 function hostnameOf(url: URL): string {
-  return url.hostname
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "")
-    .toLowerCase();
+  return normalizeHost(url.hostname);
 }
 
 function isBlockedHost(host: string): boolean {
-  if (isCloudMetadataHost(host)) return true;
-  return isIP(host) !== 0 && (isCloudMetadataAddress(host) || isLinkLocalAddress(host));
+  return isCloudMetadataHost(host) || (ipVersion(host) !== 0 && isLinkLocalAddress(host));
 }
 
 function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
@@ -73,7 +71,7 @@ function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
   ) {
     throw new Error(BLOCKED_TARGET_ERROR);
   }
-  if (addresses.length === 0 || addresses.some((entry) => !isPrivateAddress(entry.address))) {
+  if (addresses.length === 0 || addresses.some((entry) => !isNonPublicAddress(entry.address))) {
     throw new Error(LOCAL_NETWORK_ERROR);
   }
 }
@@ -82,8 +80,8 @@ function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
 export function assertLocalServiceBaseUrlSync(baseUrl: string): void {
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
   if (isBlockedHost(host)) throw egressRefused(host, new Error(BLOCKED_TARGET_ERROR));
-  if (isLocalMcpHost(host) || isPrivateRemoteMcpHostname(host)) return;
-  if (isIP(host) !== 0) throw egressRefused(host, new Error(LOCAL_NETWORK_ERROR));
+  if (isLocalhostOrLoopbackIp(host) || isPrivateRemoteMcpHostname(host)) return;
+  if (ipVersion(host) !== 0) throw egressRefused(host, new Error(LOCAL_NETWORK_ERROR));
 }
 
 /**
@@ -100,11 +98,11 @@ export async function pinLocalServiceHost(
 ): Promise<ResolvedAddress[] | undefined> {
   assertLocalServiceBaseUrlSync(baseUrl);
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
-  if (isLocalMcpHost(host)) return undefined;
+  if (isLocalhostOrLoopbackIp(host)) return undefined;
   if (options.allowPrivateEndpoint !== true) {
     throw egressRefused(host, new MemoryProviderPrivateEndpointRequiredError());
   }
-  if (isIP(host) !== 0) return undefined;
+  if (ipVersion(host) !== 0) return undefined;
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   let addresses: ResolvedAddress[];
   try {
@@ -148,7 +146,7 @@ function pinsPrivateDns(baseUrl: string): boolean {
     return false;
   }
   const host = hostnameOf(url);
-  return !isLocalMcpHost(host) && isIP(host) === 0;
+  return !isLocalhostOrLoopbackIp(host) && ipVersion(host) === 0;
 }
 
 function resolverFor(connection: LocalServiceConnection): ResolveHostname {

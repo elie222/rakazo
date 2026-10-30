@@ -162,6 +162,21 @@ describe("voiceAccountIssue", () => {
       429,
       { error: { message: "You have no credits remaining.", code: "insufficient_quota" } },
     ],
+    [
+      "OpenAI spent credit without the quota code",
+      429,
+      { error: { message: "You have no credits remaining. Add credits to continue." } },
+    ],
+    [
+      "OpenAI inactive billing",
+      429,
+      {
+        error: {
+          message: "Your account is not active, please check your billing details on our website.",
+          code: "billing_not_active",
+        },
+      },
+    ],
     ["ElevenLabs spent quota", 401, { detail: { status: "quota_exceeded", message: "Over" } }],
   ])("reads %s as out of credit", (_name, status, body) => {
     expect(voiceAccountIssue(status, body)).toBe("VOICE_OUT_OF_CREDIT");
@@ -177,6 +192,17 @@ describe("voiceAccountIssue", () => {
 
   it.each([
     ["a rate limit", 429, { error: { message: "Slow down", code: "rate_limit_exceeded" } }],
+    [
+      "an OpenAI per-minute limit",
+      429,
+      {
+        error: {
+          message:
+            "Rate limit reached for tts-1 on requests per min (RPM). Please try again in 20s.",
+          code: "rate_limit_exceeded",
+        },
+      },
+    ],
     ["an outage", 503, { message: "Service unavailable" }],
     [
       "a missing ElevenLabs permission",
@@ -195,6 +221,18 @@ describe("voiceAccountIssue", () => {
       message: "Fish Audio says this account is out of credit.",
     });
     expect(voiceRequestError(503, "Fish Audio", "speaking", null)).not.toBeInstanceOf(
+      VoiceAccountError,
+    );
+  });
+
+  it("raises other refusals of the account without a code and keeps the provider message", () => {
+    const permission = "The API key you used is missing the permission text_to_speech.";
+    const error = voiceRequestError(401, "ElevenLabs", "speaking", {
+      detail: { status: "missing_permissions", message: permission },
+    });
+    expect(error).toBeInstanceOf(VoiceAccountError);
+    expect(error).toMatchObject({ code: undefined, message: permission });
+    expect(voiceRequestError(400, "ElevenLabs", "speaking", null)).not.toBeInstanceOf(
       VoiceAccountError,
     );
   });

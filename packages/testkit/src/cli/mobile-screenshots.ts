@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import type { Server } from "node:http";
+import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -11,7 +12,8 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { createThreadMessage, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { createThreadMessage } from "@rakazo/db";
 import { sessionCookieHeader } from "../index.js";
 import { runProcess } from "./process.js";
 
@@ -62,7 +64,7 @@ async function main() {
     },
     { fetch: thirdParties.fetch, resolveHostname: thirdParties.resolveHostname },
   );
-  const { createApp } = await import("../../../../apps/api/src/app.ts");
+  const { createApp } = await import("@rakazo/api/app");
   const handles = await createApp({
     databaseUrl: process.env.DATABASE_URL!,
     dataDir: DATA_DIR,
@@ -82,7 +84,7 @@ async function main() {
     fetch: handles.app.fetch,
     hostname: "0.0.0.0",
     port: API_PORT,
-  });
+  }) as Server;
   const deviceControl = startDeviceControlServer();
 
   try {

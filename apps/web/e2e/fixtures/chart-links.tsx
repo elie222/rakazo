@@ -12,7 +12,7 @@ const i18n = setupI18n({ locale: "en", messages: { en: {} } });
 createRoot(document.getElementById("root")!).render(
   <I18nProvider i18n={i18n}>
     <main className="min-h-screen bg-background px-4 py-5 text-foreground md:px-7 md:py-6">
-      <div className="group/message relative hover:z-20">
+      <div className="group/message relative hover:z-[1]">
         <div className="relative flex justify-start">
           <div
             data-testid="message-bubble-frame"

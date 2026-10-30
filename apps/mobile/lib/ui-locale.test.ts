@@ -19,12 +19,31 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("nl-BE")).toBe("nl");
     expect(normalizeUiLocale("ja")).toBe("ja");
     expect(normalizeUiLocale("ja-JP")).toBe("ja");
+    expect(normalizeUiLocale("es")).toBe("es");
+    expect(normalizeUiLocale("es-ES")).toBe("es");
+    expect(normalizeUiLocale("es-MX")).toBe("es");
+    expect(normalizeUiLocale("es-419")).toBe("es");
+    expect(normalizeUiLocale("es_CL")).toBe("es");
   });
 
-  it("does not fold Traditional Chinese into Simplified", () => {
-    expect(normalizeUiLocale("zh-TW")).toBe("en");
-    expect(normalizeUiLocale("zh-HK")).toBe("en");
-    expect(normalizeUiLocale("zh-Hant")).toBe("en");
+  it.each([
+    "zh-TW",
+    "zh_TW",
+    " ZH-tw ",
+    "zh-HK",
+    "zh-MO",
+    "zh-Hant",
+    "zh-Hant-TW",
+    "zh-Hant-HK",
+    "zh-TW-u-nu-hanidec",
+    "zh-Hant-CN",
+  ])("maps %s to Traditional Chinese", (tag) => expect(normalizeUiLocale(tag)).toBe("zh-TW"));
+
+  it("honors an explicit Simplified script in Traditional Chinese regions", () => {
+    expect(normalizeUiLocale("zh-Hans-TW")).toBe("zh-CN");
+    expect(normalizeUiLocale("zh-Hans-HK")).toBe("zh-CN");
+    expect(normalizeUiLocale("en-TW")).toBe("en");
+    expect(normalizeUiLocale("de-HK")).toBe("de");
   });
 
   it("falls back to English for unknown locales and web-only languages", () => {
@@ -80,5 +99,22 @@ describe("resolveUiLocale", () => {
         deviceLanguage: null,
       }),
     ).toBe("en");
+  });
+});
+
+describe("Traditional Chinese preferences", () => {
+  it("uses the device locale and lets a saved choice override it", () => {
+    expect(resolveUiLocale({ stored: null, envDefault: null, deviceLanguage: "zh-TW" })).toBe(
+      "zh-TW",
+    );
+    expect(resolveUiLocale({ stored: "zh-TW", envDefault: "en", deviceLanguage: "zh-CN" })).toBe(
+      "zh-TW",
+    );
+    expect(resolveUiLocale({ stored: "zh-CN", envDefault: "zh-TW", deviceLanguage: "zh-TW" })).toBe(
+      "zh-CN",
+    );
+    expect(resolveUiLocale({ stored: null, envDefault: "zh-TW", deviceLanguage: "en" })).toBe(
+      "zh-TW",
+    );
   });
 });

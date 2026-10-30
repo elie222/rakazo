@@ -2,7 +2,8 @@ import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { redactShellStreams } from "./agent-environment.js";
 import { automated } from "./automated-messages.js";
-import { clipToolResultText } from "./pi-runtime-limits.js";
+import { shortenPlainText } from "./context-selection.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
 /**
  * Device-code logins print a code and then wait. Once that output goes quiet,
@@ -43,9 +44,16 @@ export function formatFinishedShellCommand(result: FinishedShellCommand): string
   // Delivered in the user's role after the turn, so marked as automated: models took
   // finished console output for the user replying.
   const parts = [automated("Shell command finished."), `exit code: ${result.code}`];
-  if (result.stdout) parts.push(`stdout:\n${clipToolResultText(result.stdout)}`);
-  if (result.stderr) parts.push(`stderr:\n${clipToolResultText(result.stderr)}`);
+  if (result.stdout) parts.push(`stdout:\n${keepHeadAndTail(result.stdout)}`);
+  if (result.stderr) parts.push(`stderr:\n${keepHeadAndTail(result.stderr)}`);
   return parts.join("\n");
+}
+
+// Build and install failures print last, so keep the tail as well as the head.
+function keepHeadAndTail(text: string): string {
+  return text.length > TOOL_RESULT_TEXT_LIMIT
+    ? shortenPlainText(text, TOOL_RESULT_TEXT_LIMIT)
+    : text;
 }
 
 /**
@@ -71,7 +79,9 @@ function turnReturnedRunningShell(turn: {
   toolResults: Array<{ toolName?: string; details?: unknown }>;
 }): boolean {
   return turn.toolResults.some(
-    (result) => result.toolName === "shell" && isRunningShellCommand(result.details),
+    (result) =>
+      (result.toolName === "shell" || result.toolName === "user_computer_shell") &&
+      isRunningShellCommand(result.details),
   );
 }
 

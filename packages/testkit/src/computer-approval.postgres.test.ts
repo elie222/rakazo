@@ -6,10 +6,11 @@ import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rak
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
-import { type ModelEmulatorStep, startModelEmulator } from "./model-emulator.js";
+import type { ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const fixtureOrigin = "http://127.0.0.1:5173";
 
@@ -74,7 +75,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-computer-approval-"));
       let stop: (() => Promise<void>) | undefined;
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const handles = await createApp({
           databaseUrl: process.env.DATABASE_URL!,
           realtimeDatabaseUrl: process.env.DATABASE_URL!,

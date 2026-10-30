@@ -14,7 +14,7 @@ import {
   observationToolResult,
   PiAgentRuntime,
 } from "@rakazo/adapters";
-import { computerReplayContext, waitForReplayFile } from "./computer-replay.js";
+import { computerReplayContext, controlsInTree, waitForReplayFile } from "./computer-replay.js";
 import {
   CONTACTS_CSV,
   CONTACTS_PATH,
@@ -22,11 +22,8 @@ import {
   EXPORT_FIXTURE_URL,
   EXPORT_RECEIPT_PATH,
 } from "./computer-replay-fixture.js";
-import {
-  type ModelEmulatorRequest,
-  type ModelEmulatorStep,
-  startModelEmulator,
-} from "./model-emulator.js";
+import type { ModelEmulatorRequest, ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 
 const targets = ["Export contacts", "Download CSV", "Cancel"] as const;
 type Target = (typeof targets)[number];
@@ -247,16 +244,16 @@ export function contactsReplaySteps(record: ContactsRecording): ModelEmulatorSte
           name = "browser_act";
           const snapshot = toolResults(request)
             .map((result) => resultObject(result.content))
-            .findLast((result) => Array.isArray(result?.elements));
-          const candidates = (
-            snapshot?.elements as Array<{ name: string; ref: string }> | undefined
-          )?.filter((node) => node.name === step.target);
+            .findLast((result) => typeof result?.tree === "string");
+          const candidates = controlsInTree(snapshot?.tree).filter(
+            (node) => node.name === step.target,
+          );
           assert.equal(
             candidates?.length,
             1,
             "Recorded button must exist uniquely in the current snapshot",
           );
-          args = { actions: [{ kind: "click", ref: candidates![0]!.ref }] };
+          args = { actions: [{ kind: "click", ref: candidates[0]!.ref }] };
         }
       }
       return { type: "tool" as const, id: `recorded-${index}`, name, arguments: args };

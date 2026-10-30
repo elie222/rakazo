@@ -2,14 +2,21 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  AvailabilityControl,
+  AvailabilityLabel,
+  reachesOtherSpaces,
+  useOwnSpaces,
+} from "../components/integrations/space-availability";
 import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 
 const NO_DOCS: MemoryDocument[] = [];
@@ -22,29 +29,10 @@ function rowClass(open: boolean): string {
 }
 
 /**
- * Bot memory and the current user's skills in this space.
- * User-scoped memory shared across bots lives in the Memory settings overlay.
+ * Bot memory. Skills belong to the person in a space, not to one bot, so they live in
+ * the Skills dialog; memory shared across bots lives in the Memory settings overlay.
  */
-export function KnowledgeSection({
-  botId,
-  skillsOnly = false,
-}: {
-  botId: string;
-  /** Unused: skills are read from and saved to the shared cached list. */
-  onSkillsChange?: (skills: AgentSkillCatalogEntry[]) => void;
-  skillsOnly?: boolean;
-}) {
-  if (skillsOnly)
-    return (
-      <section data-testid="bot-knowledge">
-        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-          <Trans>Skills</Trans>
-        </h3>
-        <div className="rounded-xl bg-muted/50 p-4">
-          <AgentSkills />
-        </div>
-      </section>
-    );
+export function KnowledgeSection({ botId }: { botId: string }) {
   return (
     <MemoryDocumentList
       key={botId}
@@ -330,7 +318,8 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-function AgentSkills() {
+/** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
+export function AgentSkills() {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -338,7 +327,7 @@ function AgentSkills() {
   // The same list the composer offers as skill mentions, so a change here shows there at once.
   const list = queries.agentSkills.list.queryOptions();
   const listQuery = useQuery({ ...list, refetchOnMount: "always" });
-  const skills = listQuery.data ?? NO_SKILLS;
+  const skills = (listQuery.data ?? NO_SKILLS).filter((skill) => skill.source !== "plugin");
   const loading = listQuery.isPending;
   const [open, setOpen] = useState<AgentSkill | null>(null);
   const [creating, setCreating] = useState(false);
@@ -348,9 +337,10 @@ function AgentSkills() {
   const error = actionError ?? (listQuery.isError ? t`Could not load` : null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const selection = useRef(0);
+  const spaceCount = useOwnSpaces().length;
 
   async function refresh() {
-    await fetchFresh(queryClient, list);
+    return fetchFresh(queryClient, list);
   }
 
   useEffect(
@@ -457,7 +447,10 @@ function AgentSkills() {
                 >
                   {entry.name}
                 </span>
-                <SkillSourceBadge source={entry.source} />
+                <span className="flex shrink-0 items-center gap-2">
+                  <AvailabilityLabel availability={entry.availability} />
+                  <SkillSourceBadge source={entry.source} />
+                </span>
               </span>
               <span
                 className="mt-0.5 block truncate text-[12.5px] text-muted-foreground"
@@ -469,13 +462,36 @@ function AgentSkills() {
           ))
         : null}
       {editorOpen ? (
-        <div className="px-2.5 pb-2">
+        <div className="pb-2">
           {open ? (
-            <div className="flex items-center gap-2 pb-1">
+            <div className="flex min-h-7 items-center gap-2">
               <div className="min-w-0 truncate text-[14px] font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
               <SkillSourceBadge source={open.source} />
+              {open.source === "user" ? (
+                <div className="ms-auto">
+                  <AvailabilityControl
+                    kind="skill"
+                    id={open.id}
+                    availability={open.availability}
+                    onChanged={async () => {
+                      // Another skill may have been opened while this was saving; leave it alone.
+                      const opened = selection.current;
+                      // Narrowed away from this space, the skill can no longer be read here.
+                      const here = (await refresh()).some((entry) => entry.id === open.id);
+                      if (selection.current !== opened) return;
+                      if (!here) {
+                        selection.current += 1;
+                        setOpen(null);
+                        return;
+                      }
+                      const fresh = await rpc.agentSkills.get({ skillId: open.id });
+                      if (selection.current === opened) setOpen(fresh);
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
           <Textarea
@@ -524,7 +540,15 @@ function AgentSkills() {
                   confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >
-                {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                {confirmingDelete ? (
+                  reachesOtherSpaces(open.availability, spaceCount) ? (
+                    <Trans>Remove from every space?</Trans>
+                  ) : (
+                    <Trans>Confirm delete</Trans>
+                  )
+                ) : (
+                  <Trans>Delete</Trans>
+                )}
               </Button>
             ) : null}
           </div>

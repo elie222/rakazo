@@ -241,6 +241,7 @@ function sniffImage(bytes: Uint8Array): ImageFormat | undefined {
 export async function faviconDataUrl(bytes: Uint8Array): Promise<string | null> {
   const format = sniffImage(bytes);
   if (!format) return null;
+  // sharp is a native addon; load it only when an image is processed.
   const { default: sharp } = await import("sharp");
   try {
     let image: ReturnType<typeof sharp>;

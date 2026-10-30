@@ -1,6 +1,8 @@
 import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
 import {
+  ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
@@ -14,15 +16,10 @@ export class AttachmentValidationError extends Error {
 }
 
 /**
- * Validates base64 without a grouped-repetition regex over the whole string.
- * `/^(?:[A-Za-z0-9+/]{4})*(...)?$/` stack-overflows V8's regex engine on
- * inputs in the megabytes-of-characters range — reproduced directly: a 5 MiB
- * string throws `RangeError: Maximum call stack size exceeded` on `.test()`.
- * At the current 10 MiB attachment limit, base64 expansion (4/3) puts any
- * attachment over ~3.75 MiB squarely in that range, so this crashes on a
- * routine, non-malicious upload. A flat, ungrouped `[chars]*` quantifier does
- * not have this problem; padding is checked separately since it can only
- * ever be the trailing 0-2 characters.
+ * Validates base64 without a grouped-repetition regex over the whole string:
+ * `/^(?:[A-Za-z0-9+/]{4})*(...)?$/` overflows V8's regex stack on multi-megabyte
+ * inputs, which ordinary attachments reach. A flat `[chars]*` quantifier does not;
+ * padding is checked separately since it can only be the trailing 0-2 characters.
  */
 function isWellFormedBase64(value: string): boolean {
   const paddingMatch = /={1,2}$/.exec(value);
@@ -30,6 +27,23 @@ function isWellFormedBase64(value: string): boolean {
   const body = paddingLength > 0 ? value.slice(0, value.length - paddingLength) : value;
   if (body.includes("=")) return false;
   return /^[A-Za-z0-9+/]*$/.test(body);
+}
+
+export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
+  const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
+  if (!value) return ATTACHMENT_MAX_COUNT;
+  const count = Number(value);
+  if (
+    !/^\d+$/.test(value) ||
+    !Number.isInteger(count) ||
+    count < 1 ||
+    count > ATTACHMENT_COUNT_CEILING
+  ) {
+    throw new Error(
+      `MAX_ATTACHMENTS_PER_MESSAGE must be an integer from 1 to ${ATTACHMENT_COUNT_CEILING}`,
+    );
+  }
+  return count;
 }
 
 export function uploadSizeFromEnv(source: { MAX_UPLOAD_SIZE_MB?: string }): number {
@@ -181,6 +195,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".md": "text/markdown",
   ".markdown": "text/markdown",
   ".csv": "text/csv",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".html": "text/html",
   ".htm": "text/html",
   ".json": "application/json",
@@ -201,6 +217,8 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/plain": ".txt",
   "text/markdown": ".md",
   "text/csv": ".csv",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",

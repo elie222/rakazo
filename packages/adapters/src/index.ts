@@ -6,6 +6,7 @@ export * from "./artifact-store-factory.js";
 export * from "./artifacts.js";
 export * from "./auto-review.js";
 export * from "./auto-review-factory.js";
+export * from "./aws-kms-key-provider.js";
 export * from "./background-job-handlers.js";
 export * from "./billing-emulator.js";
 export * from "./boat-sandbox.js";
@@ -17,8 +18,11 @@ export {
   listBotSecretMetadata,
   normalizeSecretDestination,
   pageUrlOrigin,
+  revealBotSecret,
+  SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
 } from "./bot-secrets.js";
+export * from "./boxd-sandbox.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
@@ -82,8 +86,10 @@ export * from "./integration-provider-settings.js";
 export * from "./jev-auto-review.js";
 export * from "./job-reconciler.js";
 export * from "./keenable-web.js";
+export * from "./key-provider-factory.js";
 export * from "./keyless-http-web.js";
 export * from "./kubernetes-sandbox.js";
+export * from "./macos-voice.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
 export * from "./mcp-oauth.js";
@@ -100,18 +106,23 @@ export * from "./messaging-installations.js";
 export * from "./messaging-platforms.js";
 export * from "./messaging-team-chat-emulator.js";
 export * from "./model-connect.js";
+export * from "./model-connect-check.js";
 export { hostedModelCreditObserver } from "./model-credit-observer.js";
 export * from "./model-credit-reconciler.js";
 export * from "./model-roles.js";
 export * from "./model-selection.js";
 export * from "./model-vision.js";
 export * from "./none-sandbox.js";
+export * from "./novita-sandbox.js";
+export * from "./novita-template.js";
 export * from "./openai-compatible-url.js";
 export * from "./openai-compatible-voice.js";
 export * from "./openai-voice.js";
 export * from "./openrouter-usage.js";
 export * from "./page-browser-session.js";
 export * from "./parallel-web.js";
+export * from "./payment-wallet-factory.js";
+export * from "./payment-wallets.js";
 export * from "./pi-catalog-availability.js";
 export * from "./pi-codex-catalog.js";
 export * from "./pi-credentials.js";
@@ -124,7 +135,11 @@ export * from "./pi-runtime.js";
 export * from "./pi-session.js";
 export { shutdownPiTelemetry } from "./pi-telemetry.js";
 export * from "./pipedream-connector.js";
+export * from "./plugin-connectors.js";
+export * from "./plugin-marketplace.js";
 export * from "./product-analytics.js";
+export * from "./purchase-poll.js";
+export * from "./purchase-service.js";
 export * from "./push-token-store.js";
 export * from "./railway-sandbox.js";
 export * from "./realtime.js";
@@ -162,6 +177,9 @@ export * from "./third-party-connector-emulator.js";
 export * from "./ticket-changes.js";
 export * from "./ticket-tools.js";
 export { dispatcherFetch } from "./undici-fetch.js";
+export * from "./user-device-emulator.js";
+export * from "./user-device-gateway.js";
+export * from "./user-device-protocol.js";
 export * from "./voice-factory.js";
 export * from "./wakeup.js";
 export * from "./web-limits.js";

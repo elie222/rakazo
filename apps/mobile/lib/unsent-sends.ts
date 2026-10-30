@@ -1,5 +1,6 @@
 import { isModelRequiredSendError } from "@rakazo/core";
 import { Alert, AppState } from "react-native";
+import type { RpcArgs } from "./api";
 import {
   captureApiRequestContext,
   currentApiBase,
@@ -59,19 +60,17 @@ export async function prepareUnsentSends(): Promise<void> {
 }
 // Configure the wipe before bootstrap can replace credentials or the saved server.
 configureUnsentSends({
-  request: async <T>(
-    proc: string,
-    body: unknown,
-    options: Parameters<typeof rpc>[2],
-    spaceId: string | null,
-  ) => {
+  request: async (proc, body, options, spaceId) => {
     const generation = currentSessionGeneration();
     const context = await captureApiRequestContext();
     if (generation !== currentSessionGeneration()) throw new Error("Session changed");
     const headers = { ...context.headers };
     if (spaceId) headers["x-rakazo-space-id"] = spaceId;
     else delete headers["x-rakazo-space-id"];
-    return rpc<T>(proc, body, { ...options, requestContext: { ...context, headers } });
+    return rpc(
+      proc,
+      ...([body, { ...options, requestContext: { ...context, headers } }] as RpcArgs<typeof proc>),
+    );
   },
   serverReachable: isServerReachable,
   scope,
@@ -83,7 +82,7 @@ configureUnsentSends({
         { text: t("Not Now"), style: "cancel" },
         { text: t("Add Model"), onPress: openModelSettings, isPreferred: true },
       ]);
-    } else {
+    } else if (!attempt.imageConfirmation) {
       Alert.alert(t("Failed to send message"), attempt.error);
     }
   },

@@ -1,13 +1,17 @@
 import { ORPCError } from "@orpc/server";
 import {
-  deploymentAutoReviewDefault,
   effectiveModelRole,
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
+import {
+  approvalModeFromPreference,
+  approvalPreferenceFromMode,
+  previewActionApprovalRule,
+} from "@rakazo/core";
+import { urlSite } from "@rakazo/core/egress";
 import {
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -26,6 +30,7 @@ import {
 } from "@rakazo/db";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
+import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import { withSerializableRetry } from "../serializable-retry.js";
 import {
@@ -75,9 +80,14 @@ export function accountRoutes(ctx: RouterContext) {
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     billing: {
-      selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) =>
-        requireBilling(deps).selectFunding(context.actor, input.funding),
-      ),
+      selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        if (input.funding === "credits") {
+          const record = await firstModelConnectAnalytics(deps, context.actor, "credits");
+          record(undefined, { name: "model_connect_started" });
+        }
+        return billing.selectFunding(context.actor, input.funding, input.client);
+      }),
       purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
         requireBilling(deps).purchaseCredits(context.actor, input),
       ),
@@ -87,12 +97,21 @@ export function accountRoutes(ctx: RouterContext) {
       status: authed.billing.status.handler(async ({ context }) =>
         requireBilling(deps).status(context.actor),
       ),
-      checkout: authed.billing.checkout.handler(async ({ context }) =>
-        requireBilling(deps).checkout(context.actor),
+      refresh: authed.billing.refresh.handler(async ({ context }) => {
+        const billing = requireBilling(deps);
+        await billing.syncForActor(context.actor);
+        return billing.status(context.actor);
+      }),
+      checkout: authed.billing.checkout.handler(async ({ context, input }) =>
+        requireBilling(deps).checkout(context.actor, input?.client),
       ),
-      portal: authed.billing.portal.handler(async ({ context }) =>
-        requireBilling(deps).portal(context.actor),
+      portal: authed.billing.portal.handler(async ({ context, input }) =>
+        requireBilling(deps).portal(context.actor, input?.client),
       ),
+      claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
+        await requireBilling(deps).claimReferral(context.actor, input.code);
+        return { ok: true as const };
+      }),
     },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
@@ -140,6 +159,19 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
+      preview: authed.approvalRules.preview.handler(async ({ context, input }) => {
+        const rules = (await listApprovalRules(deps.prisma, context.actor, input.scope)).map(
+          approvalRuleDto,
+        );
+        const rule = rules.find((entry) => entry.id === input.id);
+        if (!rule) throw new ORPCError("NOT_FOUND");
+        if (rule.matchKind === "category" && input.effect !== "remove")
+          throw new ORPCError("BAD_REQUEST");
+        return previewActionApprovalRule(rules, rule, input.effect, {
+          ...input.sample,
+          site: input.sample.site?.toLowerCase(),
+        });
+      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
@@ -157,6 +189,33 @@ export function accountRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
     },
+    // The user's own list for the external-link prompt, kept apart from approval rules: a
+    // trusted link site never lets a bot fetch, and a site rule never skips the prompt.
+    trustedLinkSites: {
+      list: authed.trustedLinkSites.list.handler(async ({ context }) => {
+        const rows = await deps.prisma.trustedLinkSite.findMany({
+          where: { userId: context.actor.userId },
+          orderBy: { site: "asc" },
+        });
+        return rows.map((row) => row.site);
+      }),
+      trust: authed.trustedLinkSites.trust.handler(async ({ context, input }) => {
+        // The server names the site, so the list only ever holds sites.
+        const site = urlSite(input.url);
+        if (!site) throw new ORPCError("BAD_REQUEST", { message: "Not a web link." });
+        await deps.prisma.trustedLinkSite.createMany({
+          data: { userId: context.actor.userId, site },
+          skipDuplicates: true,
+        });
+        return { site };
+      }),
+      remove: authed.trustedLinkSites.remove.handler(async ({ context, input }) => {
+        await deps.prisma.trustedLinkSite.deleteMany({
+          where: { userId: context.actor.userId, site: input.site },
+        });
+        return { ok: true as const };
+      }),
+    },
     autoReview: {
       get: authed.autoReview.get.handler(async ({ context, input }) => {
         return loadAutoReviewSettings(deps, context.actor, input?.scope);
@@ -169,7 +228,7 @@ export function accountRoutes(ctx: RouterContext) {
             input.mode
               ? approvalPreferenceFromMode(input.mode)
               : { enabled: input.enabled, skipApprovals: input.skipApprovals },
-            { enabled: deploymentAutoReviewDefault(process.env), skipApprovals: false },
+            { enabled: true, skipApprovals: false },
             input.scope,
           ),
         );
@@ -278,7 +337,7 @@ export function accountRoutes(ctx: RouterContext) {
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
-        prepareVoice(deps, context.actor, input),
+        prepareVoice(deps, context.actor, { ...input, signal: context.signal }),
       ),
     },
   };
@@ -313,7 +372,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     findAutoReviewPreference(deps.prisma, actor, scope),
   ]);
   const stored = {
-    enabled: preference?.enabled ?? deploymentAutoReviewDefault(process.env),
+    enabled: preference?.enabled ?? true,
     skipApprovals: preference?.skipApprovals ?? false,
   };
   const settings = { ...stored, mode: approvalModeFromPreference(stored) };

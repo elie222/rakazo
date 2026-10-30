@@ -15,10 +15,10 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 import {
-  reliableModelStream,
   SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT,
   SILENT_TOOL_CONTINUATION_PROMPT,
 } from "./pi-runtime.js";
+import { reliableModelStream } from "./pi-runtime-stream.js";
 import { formatFinishedShellCommand } from "./shell-command-stream.js";
 
 const image = { type: "image_url", image_url: { url: "data:image/png;base64,aGk=" } };
@@ -93,6 +93,11 @@ describe("automated messages are labelled as not from the user", () => {
     beforeEach(async () => {
       bodies.length = 0;
       server = createServer((req, res) => {
+        // Local tools can probe any listening loopback port; only model calls are recorded.
+        if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
+          res.writeHead(404).end();
+          return;
+        }
         let raw = "";
         req.on("data", (chunk) => (raw += chunk));
         req.on("end", () => {

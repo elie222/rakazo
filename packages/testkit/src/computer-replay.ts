@@ -14,12 +14,12 @@ import {
   PiAgentRuntime,
 } from "@rakazo/adapters";
 import { CONTACTS_CSV, CONTACTS_PATH, EXPORT_FIXTURE_URL } from "./computer-replay-fixture.js";
-import {
-  type ModelEmulatorRequest,
-  type ModelEmulatorResponse,
-  type ModelEmulatorStep,
-  startModelEmulator,
+import type {
+  ModelEmulatorRequest,
+  ModelEmulatorResponse,
+  ModelEmulatorStep,
 } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 
 export function computerReplayContext(): AdapterContext {
   return {
@@ -63,8 +63,7 @@ export async function runComputerReplay(
   const click = (id: string, expectedId: string, name: string) =>
     step((request) => {
       const result = lastToolResult(request, expectedId);
-      const elements = result.elements as Array<{ name: string; ref: string }>;
-      const target = elements.find((element) => element.name === name);
+      const target = controlsInTree(result.tree).find((element) => element.name === name);
       assert.ok(target, `Current snapshot is missing ${name}`);
       return tool(id, "browser_act", { actions: [{ kind: "click", ref: target.ref }] });
     }, expectedId);
@@ -162,6 +161,16 @@ export async function runComputerReplay(
   } finally {
     await emulator.close();
   }
+}
+
+/** The controls a snapshot tree lists, as "- role "name" [ref]" lines (the model's text carries no other copy). */
+export function controlsInTree(tree: unknown): Array<{ name: string; ref: string }> {
+  return String(tree ?? "")
+    .split("\n")
+    .flatMap((line) => {
+      const match = /^- [^"]*?("(?:[^"\\]|\\.)*") \[(e\d+)\]/.exec(line);
+      return match ? [{ name: JSON.parse(match[1]!) as string, ref: match[2]! }] : [];
+    });
 }
 
 function lastToolResult(

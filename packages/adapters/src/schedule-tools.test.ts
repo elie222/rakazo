@@ -10,10 +10,14 @@ import {
   filterGroupPeerHandoffTool,
   isOneShotRoutineCron,
   listSchedulesFromTool,
+  MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
   SCHEDULE_TOOL_NAMES,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
+
+const noRoutines = async () => [];
+const impossibleOffsetDates = ["2030-02-30T10:00Z", "2030-04-31T10:00+05:30"];
 
 describe("resolveScheduleTiming", () => {
   beforeEach(() => vi.useFakeTimers({ now: new Date("2026-10-20T00:11:59.999Z") }));
@@ -81,6 +85,20 @@ describe("resolveScheduleTiming", () => {
     // 00:30 in Berlin on the 20th already passed (it is 02:11 there).
     expect(at("2026-10-20T00:30", "Europe/Berlin")).toMatch(/^One-shot schedules must run/);
   });
+
+  it.each(impossibleOffsetDates)(
+    "rejects impossible offset dates in schedule timing: %s",
+    (date) => {
+      expect.soft(resolveScheduleTiming({ runAt: date })).toEqual({
+        ok: false,
+        error: "runAt must be a valid ISO datetime.",
+      });
+      expect.soft(resolveScheduleTiming({ cron: "0 9 * * *", startAt: date })).toEqual({
+        ok: false,
+        error: "startAt must be an ISO date or datetime.",
+      });
+    },
+  );
 
   it("starts a repeat at the first occurrence at or after startAt", () => {
     const first = (input: Record<string, unknown>, timezone: string) => {
@@ -278,6 +296,43 @@ describe("isOneShotRoutineCron", () => {
 
 describe("schedule tool persistence", () => {
   const noTimezone = { findUnique: vi.fn(async () => null) };
+  it.each(impossibleOffsetDates)("does not persist an impossible offset date: %s", async (date) => {
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const enqueue = vi.fn(async () => undefined);
+    const append = vi.fn(async () => undefined);
+    const deps = {
+      prisma: { routine: { create, findMany: noRoutines } },
+      events: { append },
+      jobs: { enqueue },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+
+    for (const [schedule, error] of [
+      [{ runAt: date }, "runAt must be a valid ISO datetime."],
+      [{ cron: "0 9 * * *", startAt: date }, "startAt must be an ISO date or datetime."],
+    ] as const) {
+      expect
+        .soft(
+          await createScheduleFromTool(deps, {
+            spaceId: "ws-1",
+            botId: "bot-1",
+            userId: "user-1",
+            threadId: "thread-1",
+            name: "Daily",
+            prompt: "Check",
+            timezone: "UTC",
+            schedule,
+          }),
+        )
+        .toEqual({ error });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+  });
+
   it.each([{ cron: "0 9 * * *" }, { watch: { kind: "files", paths: ["inbox"] } }])(
     "rejects an invalid timezone before persisting %j",
     async (schedule) => {
@@ -288,7 +343,7 @@ describe("schedule tool persistence", () => {
       const enqueue = vi.fn(async () => undefined);
       const deps = {
         prisma: {
-          routine: { create },
+          routine: { create, findMany: noRoutines },
           bot: { findFirst: vi.fn(async () => ({ computer: null })) },
         },
         events: { append: vi.fn() },
@@ -309,6 +364,95 @@ describe("schedule tool persistence", () => {
       expect(enqueue).not.toHaveBeenCalled();
     },
   );
+  it("refuses a name already active in the thread, not one in another thread", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "routine-1", name: "Morning joke", threadId: "thread-1" },
+      { id: "routine-2", name: "Evening joke", threadId: "thread-2" },
+    ]);
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-3",
+      ...args.data,
+    }));
+    const deps = {
+      prisma: {
+        user: noTimezone,
+        routine: {
+          create,
+          findMany,
+        },
+      },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+
+    const result = await createScheduleFromTool(deps, {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      name: " morning joke ",
+      prompt: "Tell a joke",
+      schedule: { every: 1, unit: "minutes" },
+    });
+
+    expect(result).toEqual({
+      error:
+        'An active routine named "Morning joke" already exists (routine-1). Update or cancel it instead.',
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", active: true },
+      select: { id: true, name: true, threadId: true },
+    });
+    expect(create).not.toHaveBeenCalled();
+
+    const other = await createScheduleFromTool(deps, {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      name: "Evening joke",
+      prompt: "Tell a joke",
+      schedule: { every: 1, unit: "minutes" },
+    });
+    expect(other).toMatchObject({ ok: true, routineId: "routine-3" });
+  });
+
+  it("refuses a new routine once the bot has the maximum active", async () => {
+    const create = vi.fn();
+    const deps = {
+      prisma: {
+        user: noTimezone,
+        routine: {
+          create,
+          findMany: vi.fn(async () =>
+            Array.from({ length: MAX_ACTIVE_ROUTINES_PER_BOT }, (_, i) => ({
+              id: `routine-${i}`,
+              name: `Check ${i}`,
+              threadId: "thread-1",
+            })),
+          ),
+        },
+      },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn() },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+
+    const result = await createScheduleFromTool(deps, {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      name: "One more",
+      prompt: "Check",
+      schedule: { watch: { kind: "files", paths: ["inbox"] } },
+    });
+
+    expect(result).toEqual({
+      error: `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`,
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("creates routines with routine.created and enqueues wakeup", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
@@ -321,7 +465,7 @@ describe("schedule tool persistence", () => {
       prisma: {
         user: noTimezone,
         bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-        routine: { create },
+        routine: { create, findMany: noRoutines },
       },
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
@@ -367,7 +511,7 @@ describe("schedule tool persistence", () => {
     const deps = {
       prisma: {
         user: { findUnique: vi.fn(async () => ({ timezone: saved })) },
-        routine: { create },
+        routine: { create, findMany: noRoutines },
       },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined) },
@@ -402,7 +546,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: { user: noTimezone, routine: { create } },
+      prisma: { user: noTimezone, routine: { create, findMany: noRoutines } },
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -441,6 +585,7 @@ describe("schedule tool persistence", () => {
       prisma: {
         user: noTimezone,
         routine: {
+          findMany: noRoutines,
           create: vi.fn(async () => ({
             id: "routine-1",
             name: "Morning joke",
@@ -479,6 +624,7 @@ describe("schedule tool persistence", () => {
       prisma: {
         user: noTimezone,
         routine: {
+          findMany: noRoutines,
           create: vi.fn(async () => ({
             id: "routine-1",
             name: "Morning joke",
@@ -517,6 +663,7 @@ describe("schedule tool persistence", () => {
       prisma: {
         user: noTimezone,
         routine: {
+          findMany: noRoutines,
           create: vi.fn(async () => ({
             id: "routine-1",
             name: "Morning joke",
@@ -560,6 +707,7 @@ describe("schedule tool persistence", () => {
       prisma: {
         user: noTimezone,
         routine: {
+          findMany: noRoutines,
           create: vi.fn(async () => ({
             id: "routine-1",
             name: "Morning joke",
@@ -683,7 +831,7 @@ describe("schedule_create with a watch", () => {
           user: { findUnique: vi.fn(async () => null) },
           connection: { findMany: vi.fn(async () => []) },
           bot: { findFirst: vi.fn(async () => ({ computer: null })) },
-          routine: { create },
+          routine: { create, findMany: noRoutines },
         },
         events: { append: vi.fn(async () => undefined) },
         jobs: { enqueue, cancel: vi.fn(async () => undefined) },
@@ -878,6 +1026,23 @@ describe("updateScheduleFromTool", () => {
       });
     return { findFirst, updateMany, enqueue, cancel, append, update };
   }
+
+  it.each(impossibleOffsetDates)(
+    "does not update to an impossible offset date: %s",
+    async (date) => {
+      const { updateMany, enqueue, cancel, append, update } = setup();
+      expect.soft(await update({ schedule: { runAt: date } })).toEqual({
+        error: "runAt must be a valid ISO datetime.",
+      });
+      expect.soft(await update({ schedule: { startAt: date } })).toEqual({
+        error: "startAt must be an ISO date or datetime.",
+      });
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(cancel).not.toHaveBeenCalled();
+      expect(append).not.toHaveBeenCalled();
+    },
+  );
 
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();

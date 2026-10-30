@@ -47,12 +47,10 @@ test("markdown tables render as an interactive card", async ({ page }, testInfo)
   await card.getByRole("button", { name: "Sort by Qty" }).click();
   await expect(qtyHeader).toHaveAttribute("aria-sort", "descending");
   await expect(card.locator("tbody tr").first()).toContainText("item-12");
-  // Third click clears the sort and restores source order.
   await card.getByRole("button", { name: "Sort by Qty" }).click();
   await expect(qtyHeader).not.toHaveAttribute("aria-sort", /./);
   await expect(card.locator("tbody tr").first()).toContainText("item-01");
 
-  // Pagination past the page size.
   await expect(card.getByText("1–10 of 12 rows")).toBeVisible();
   await card.getByRole("button", { name: "Next page" }).click();
   await expect(card.getByText("11–12 of 12 rows")).toBeVisible();
@@ -83,7 +81,6 @@ test("markdown tables render as an interactive card", async ({ page }, testInfo)
   const expectedCsv = ["Item,Qty", ...sorted.map(({ item, qty }) => `${item},${qty}`)].join("\n");
   expect(await readFile(downloadPath!, "utf8")).toBe(`\uFEFF${expectedCsv}`);
 
-  // Fullscreen dialog re-renders the table; Escape closes it.
   await card.getByRole("button", { name: "Expand table" }).click();
   const dialog = page.getByRole("dialog", { name: "Table" });
   await expect(dialog.locator("tbody tr")).toHaveCount(10);
@@ -213,8 +210,7 @@ test("expanded tables show long cell content without truncation", async ({ page 
   expect(dialogMetrics.scrollHeight - dialogMetrics.clientHeight).toBeLessThanOrEqual(1);
   expect(dialogMetrics.scrollWidth - dialogMetrics.clientWidth).toBeLessThanOrEqual(1);
 
-  // The dialog sizes to content: a two-column table hugs its ~32rem floor; the
-  // broken layout stretched the dialog to ~94vw.
+  // The dialog sizes to content: a two-column table hugs its ~32rem floor.
   const box = await page.getByRole("dialog", { name: "Table" }).boundingBox();
   const viewportWidth = page.viewportSize()?.width ?? 1280;
   expect(box).not.toBeNull();

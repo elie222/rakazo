@@ -97,7 +97,10 @@ function setup(
     $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
   };
   const prisma = {
-    deploymentSettings: { findUnique: vi.fn(async () => null) },
+    deploymentSettings: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
+    // Saved choices that keep a model listed after new users stop being offered it.
+    bot: { findMany: vi.fn(async () => []) },
+    routine: { findMany: vi.fn(async () => []) },
     space: {
       findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
     },
@@ -174,8 +177,8 @@ function setup(
   } as unknown as RouterDeps;
   const actor = options.actor ?? owner;
   const handler = new RPCHandler(createRouter(deps));
-  const call = async (procedure: string, input: unknown) =>
-    handler.handle(
+  const call = async (procedure: string, input: unknown) => {
+    const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/${procedure}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -183,6 +186,9 @@ function setup(
       }),
       { prefix: "/rpc", context: { actor } },
     );
+    if (!response) throw new Error(`no response for ${procedure}`);
+    return { response };
+  };
   const roles = () => roleRows;
   // The main model's fallbacks in the shape `existing` takes.
   const rows = () =>
@@ -201,6 +207,28 @@ function setup(
 const availableModel = listPiCatalog().find(
   (entry) => entry.provider === "openrouter" && !entry.placeholder,
 )!;
+
+describe("model catalog offered to pickers", () => {
+  it("leaves out models agents cannot run but keeps one the account saved", async () => {
+    const { call, prisma } = setup();
+    const saved = "openai/gpt-5.5-pro:batch";
+    vi.mocked(prisma.bot.findMany).mockResolvedValue([
+      { modelProvider: "openrouter", modelId: saved },
+    ] as never);
+
+    const { response } = await call("models/list", null);
+
+    expect(response?.status).toBe(200);
+    const { json } = (await response!.json()) as {
+      json: Array<{ provider: string; id: string }>;
+    };
+    const openrouter = json.filter((entry) => entry.provider === "openrouter");
+    expect(
+      openrouter.filter((entry) => entry.id.endsWith(":batch")).map((entry) => entry.id),
+    ).toEqual([saved]);
+    expect(openrouter.some((entry) => entry.id === "anthropic/claude-haiku-5.5")).toBe(true);
+  });
+});
 
 describe("model backup settings API", () => {
   it("rejects a compatible catalog placeholder outside the enabled list", async () => {

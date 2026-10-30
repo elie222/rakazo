@@ -9,10 +9,10 @@ import {
 } from "./local-group-dispatch.js";
 
 const bots = [
-  { id: "lead", name: "Coordinator", title: "Leader", description: "Plans work" },
-  { id: "a", name: "Investigator", title: "Original sources", description: "Reads evidence" },
-  { id: "b", name: "Critic", title: "Skeptic", description: "Tests claims" },
-  { id: "c", name: "Fact Checker", title: "Auditor", description: "Checks claims" },
+  { id: "lead", name: "Coordinator", description: "Plans work" },
+  { id: "a", name: "Investigator", description: "Reads evidence" },
+  { id: "b", name: "Critic", description: "Tests claims" },
+  { id: "c", name: "Fact Checker", description: "Checks claims" },
 ];
 const root = {
   id: "root",
@@ -132,10 +132,7 @@ describe("generic, bounded group collaboration", () => {
     expect(parsePeerJobNonce("user:some-run")).toBeNull();
   });
   it("selects named specialists without truncating the roster", () => {
-    const roster = [
-      ...bots,
-      { id: "d", name: "DevOps", title: "Operations", description: "Deployment" },
-    ];
+    const roster = [...bots, { id: "d", name: "DevOps", description: "Deployment" }];
     const requested = requestedGroupParticipants(
       [{ kind: "text", text: "Investigate @DevOps and @Critic, not @InvestigatorExtra." }],
       roster,
@@ -165,7 +162,6 @@ describe("generic, bounded group collaboration", () => {
     const roster = Array.from({ length: 10 }, (_, i) => ({
       id: `bot${i}`,
       name: `Member ${i}`,
-      title: "Analyst",
       description: "Research",
     }));
     expect(chooseGroupTeammates(roster, "bot0").map((bot) => bot.id)).toEqual(
@@ -210,7 +206,6 @@ describe("generic, bounded group collaboration", () => {
       ...Array.from({ length: 9 }, (_, i) => ({
         id: `member${i}`,
         name: `Member ${i}`,
-        title: "Researcher",
         description: "Review evidence",
       })),
     ];
@@ -268,10 +263,7 @@ describe("generic, bounded group collaboration", () => {
     expect(h.jobs.enqueue).toHaveBeenCalledTimes(1);
   });
   it("does not wait for teammates added after initial dispatch", async () => {
-    const roster = [
-      ...bots,
-      { id: "late", name: "New colleague", title: "New role", description: "Joined later" },
-    ];
+    const roster = [...bots, { id: "late", name: "New colleague", description: "Joined later" }];
     const h = harness({ peer: true, roster, statuses: ["completed", "completed", "completed"] });
     expect(await advanceGroupTeam(h.deps as never, "peer1")).toMatchObject({
       stage: "synthesis",

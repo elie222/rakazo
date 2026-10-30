@@ -5,7 +5,12 @@ import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
-const actor: Actor = { spaceId: "space-test", userId: "user-test" };
+const actor: Actor = {
+  spaceId: "space-test",
+  userId: "user-test",
+  email: "user@example.test",
+  isDeploymentOwner: false,
+};
 
 function fixture(count: number) {
   const artifacts = Array.from({ length: count }, (_, index) => ({
@@ -76,6 +81,74 @@ describe("artifact search batching", () => {
     const { prisma } = fixture(0);
     expect(await querySpaceSearch(prisma as unknown as PrismaClient, actor, "report")).toEqual([]);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("search saturation", () => {
+  it.each([
+    { direct: 25, grouped: 25, conversations: 0, artifactReads: 1, routineReads: 0 },
+    { direct: 25, grouped: 25, conversations: 5, artifactReads: 1, routineReads: 0 },
+    { direct: 10, grouped: 25, conversations: 0, artifactReads: 2, routineReads: 0 },
+    { direct: 0, grouped: 0, conversations: 0, artifactReads: 2, routineReads: 1 },
+  ])("stops lower-priority reads when the content budget fills: %j", async (scenario) => {
+    const { prisma, artifacts, groupArtifacts } = fixture(25);
+    const messageSearchTokens = vi.fn().mockResolvedValue([]);
+    Object.assign(prisma, { $contentEncryption: () => ({ messageSearchTokens }) });
+    prisma.bot.findMany.mockResolvedValue(
+      Array.from({ length: scenario.conversations }, (_, i) => ({ id: `bot-${i}`, name: "Bot" })),
+    );
+    prisma.artifact.findMany
+      .mockReset()
+      .mockResolvedValueOnce(artifacts.slice(0, scenario.direct))
+      .mockResolvedValueOnce(groupArtifacts.slice(0, scenario.grouped));
+    const reference = (id: string) => ({ artifactId: id, id: `message-${id}`, seq: 7 });
+    if (scenario.direct)
+      prisma.$queryRaw.mockResolvedValueOnce(artifacts.map((a) => reference(a.id)));
+    if (scenario.grouped)
+      prisma.$queryRaw.mockResolvedValueOnce(groupArtifacts.map((a) => reference(a.id)));
+    prisma.routine.findMany.mockResolvedValue(
+      Array.from({ length: 25 }, (_, i) => ({
+        id: `routine-${i}`,
+        botId: "bot",
+        bot: { name: "Bot" },
+        name: "report",
+        prompt: "report",
+      })),
+    );
+
+    const hits = await querySpaceSearch(prisma as never, actor, "report");
+
+    expect(hits).toHaveLength(25);
+    expect(hits.slice(0, scenario.conversations).every((hit) => hit.kind === "conversation")).toBe(
+      true,
+    );
+    const expectedFiles = [
+      ...artifacts.slice(0, scenario.direct),
+      ...groupArtifacts.slice(0, scenario.grouped),
+    ];
+    expect(hits.filter((hit) => hit.kind === "file").map((hit) => hit.artifactId)).toEqual(
+      expectedFiles.slice(0, 25 - scenario.conversations).map((file) => file.id),
+    );
+    expect(prisma.artifact.findMany).toHaveBeenCalledTimes(scenario.artifactReads);
+    expect(prisma.routine.findMany).toHaveBeenCalledTimes(scenario.routineReads);
+    expect(messageSearchTokens).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(
+      1 +
+        Number(scenario.direct > 0) +
+        Number(scenario.grouped > 0 && scenario.artifactReads === 2),
+    );
+  });
+
+  it("keeps searching after unreferenced file candidates fail to fill the budget", async () => {
+    const { prisma } = fixture(25);
+    prisma.routine.findMany.mockResolvedValue([
+      { id: "routine", botId: "bot", bot: { name: "Bot" }, name: "report", prompt: "report" },
+    ]);
+    expect(await querySpaceSearch(prisma as never, actor, "report")).toMatchObject([
+      { kind: "routine", routineId: "routine" },
+    ]);
+    expect(prisma.artifact.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
   });
 });
 

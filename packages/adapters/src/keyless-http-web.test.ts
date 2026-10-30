@@ -6,7 +6,13 @@ import {
   KeylessHttpWebProvider,
   parseDuckDuckGoResults,
 } from "./keyless-http-web.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import {
+  clampMaxChars,
+  clampMaxResults,
+  clampOffset,
+  MAX_WEB_FETCH_OFFSET,
+  pageWindow,
+} from "./web-limits.js";
 import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -29,6 +35,124 @@ describe("web provider factory", () => {
 });
 
 describe("keyless HTTP web provider", () => {
+  it("preserves literal text/plain content through the fetch tool", async () => {
+    const body = "Use <project-root>/src &amp; keep  spacing\n  indented\n";
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () =>
+        new Response(body, { headers: { "content-type": "Text/Plain; charset=utf-8" } }),
+      resolveHostname: publicResolver,
+    });
+
+    await expect(
+      webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
+    ).resolves.toEqual({
+      url: "https://example.test/doc",
+      title: "Untitled",
+      text: body,
+      truncated: false,
+    });
+  });
+
+  it("uses the final response's MIME type after a redirect", async () => {
+    const provider = new KeylessHttpWebProvider({
+      fetch: async (input) =>
+        String(input).endsWith("/start")
+          ? new Response(null, {
+              status: 302,
+              headers: { location: "/final", "content-type": "text/html" },
+            })
+          : new Response("Use <project-root>/src", {
+              headers: { "content-type": "text/plain; charset=UTF-8" },
+            }),
+      resolveHostname: publicResolver,
+    });
+    await expect(
+      webFetchFromTool(provider, ctx, { url: "https://example.test/start" }),
+    ).resolves.toMatchObject({
+      url: "https://example.test/final",
+      text: "Use <project-root>/src",
+    });
+  });
+
+  it("paginates preserved plain text", async () => {
+    const body = "<x>  ".repeat(50);
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () => new Response(body, { headers: { "content-type": "text/plain" } }),
+      resolveHostname: publicResolver,
+    });
+    await expect(
+      webFetchFromTool(provider, ctx, { url: "https://example.test/doc", maxChars: 100 }),
+    ).resolves.toMatchObject({
+      text: `${body.slice(0, 100)}\n\n[Content truncated; continue with offset 100]`,
+      truncated: true,
+    });
+    await expect(
+      webFetchFromTool(provider, ctx, {
+        url: "https://example.test/doc",
+        maxChars: 100,
+        offset: 200,
+      }),
+    ).resolves.toMatchObject({ text: body.slice(200), truncated: false });
+  });
+
+  it("keeps the byte limit for plain text", async () => {
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () =>
+        new Response("<x>".repeat(40), { headers: { "content-type": "text/plain" } }),
+      resolveHostname: publicResolver,
+      maxBufferBytes: 100,
+    });
+    await expect(
+      webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
+    ).resolves.toEqual({
+      error: "Response is too large",
+    });
+  });
+
+  it("cancels an ongoing plain text read", async () => {
+    const controller = new AbortController();
+    let bodyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    const provider = new KeylessHttpWebProvider({
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start() {
+              bodyStarted();
+            },
+          }),
+          {
+            headers: { "content-type": "text/plain" },
+          },
+        ),
+      resolveHostname: publicResolver,
+    });
+    const pending = webFetchFromTool(
+      provider,
+      { ...ctx, signal: controller.signal },
+      { url: "https://example.test/doc" },
+    );
+    await started;
+    controller.abort(new Error("cancelled"));
+    await expect(pending).resolves.toEqual({ error: "cancelled" });
+  });
+
+  it("still extracts HTML and does not treat similar media types as plain text", async () => {
+    for (const contentType of ["text/html; charset=utf-8", "text/plain-extra"]) {
+      const provider = new KeylessHttpWebProvider({
+        fetch: async () =>
+          new Response("<title>Doc</title><p>hello <b>world</b></p>", {
+            headers: { "content-type": contentType },
+          }),
+        resolveHostname: publicResolver,
+      });
+      const result = await webFetchFromTool(provider, ctx, { url: "https://example.test/doc" });
+      expect(result).toMatchObject({ title: "Doc", text: "hello world", truncated: false });
+    }
+  });
+
   it("searches via the HTML backend without a vendor API key", async () => {
     const html = `
       <div class="result">
@@ -54,7 +178,7 @@ describe("keyless HTTP web provider", () => {
   });
 
   it("fetches readable page text with truncation", async () => {
-    const long = "word ".repeat(100);
+    const long = Array.from({ length: 100 }, (_, i) => `w${i}`).join(" ");
     const html = `<html><head><title>Doc</title></head><body><article><p>${long}</p></article></body></html>`;
     const fetchMock: typeof fetch = async () =>
       new Response(html, { status: 200, headers: { "content-type": "text/html" } });
@@ -66,8 +190,23 @@ describe("keyless HTTP web provider", () => {
     expect(result.title).toBeTruthy();
     expect(result.url).toBe("https://example.test/doc");
     expect(result.truncated).toBe(true);
-    expect(result.text.endsWith("[Content truncated]")).toBe(true);
-    expect(result.text.length).toBeLessThanOrEqual(120 + "\n\n[Content truncated]".length);
+    expect(result.text).toBe(
+      `${long.slice(0, 120)}\n\n[Content truncated; continue with offset 120]`,
+    );
+
+    const next = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 120 },
+      ctx,
+    );
+    expect(next.text).toBe(
+      `${long.slice(120, 240)}\n\n[Content truncated; continue with offset 240]`,
+    );
+
+    const last = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 360 },
+      ctx,
+    );
+    expect(last).toMatchObject({ text: long.slice(360), truncated: false });
   });
 
   it("falls back to HTML strip when Readability finds nothing", () => {
@@ -133,5 +272,53 @@ describe("web tool clamps", () => {
     expect(clampMaxChars(undefined)).toBe(8_000);
     expect(clampMaxChars(10)).toBe(100);
     expect(clampMaxChars(999_999)).toBe(50_000);
+  });
+
+  it("bounds offset and names the next read in a cut", () => {
+    expect(clampOffset(undefined)).toBe(0);
+    expect(clampOffset(-4)).toBe(0);
+    expect(clampOffset(1.9)).toBe(1);
+    expect(clampOffset(MAX_WEB_FETCH_OFFSET)).toBe(MAX_WEB_FETCH_OFFSET);
+    expect(() => clampOffset(MAX_WEB_FETCH_OFFSET + 1)).toThrow(
+      `web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.`,
+    );
+    expect(pageWindow("cdefgh", 4, 2)).toEqual({
+      text: "cdef\n\n[Content truncated; continue with offset 6]",
+      truncated: true,
+    });
+    expect(pageWindow("ab", 4, 0)).toEqual({ text: "ab", truncated: false });
+    expect(pageWindow("abcdef", 4, MAX_WEB_FETCH_OFFSET - 1)).toEqual({
+      text: "abcd\n\n[Content truncated; stopped at the read limit]",
+      truncated: true,
+    });
+  });
+
+  it("reads the next fake window and ignores a negative offset", async () => {
+    const fake = new FakeWebProvider();
+    fake.fetchResult = { ...fake.fetchResult, text: "abcdefghij" };
+    await expect(
+      fake.fetch({ url: "https://example.test/1", maxChars: 4, offset: 2 }, ctx),
+    ).resolves.toMatchObject({
+      text: "cdef\n\n[Content truncated; continue with offset 6]",
+      truncated: true,
+    });
+    await expect(
+      fake.fetch({ url: "https://example.test/1", maxChars: 4, offset: -3 }, ctx),
+    ).resolves.toMatchObject({
+      text: "abcd\n\n[Content truncated; continue with offset 4]",
+      truncated: true,
+    });
+    expect(fake.lastFetch?.offset).toBe(-3);
+
+    const rejected = new FakeWebProvider();
+    await expect(
+      webFetchFromTool(rejected, ctx, {
+        url: "https://example.test/1",
+        offset: MAX_WEB_FETCH_OFFSET + 1,
+      }),
+    ).resolves.toEqual({
+      error: `web_fetch can skip at most ${MAX_WEB_FETCH_OFFSET} characters.`,
+    });
+    expect(rejected.lastFetch).toBeUndefined();
   });
 });

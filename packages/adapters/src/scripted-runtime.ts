@@ -10,6 +10,8 @@ import {
   BOT_MESSAGE_WAKE_CUE,
   inferHandoffTargetName,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
+  MODEL_REQUEST_LIMIT_ERROR,
   modelFallbackFailure,
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
@@ -216,6 +218,15 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("run hostname on my computer")) {
+    return [
+      {
+        assistant: "checking your computer's name.",
+        toolCalls: [{ name: "user_computer_shell", args: { command: "hostname" } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     const name = namedBot(prompt) ?? "Peer";
     const message =
@@ -284,6 +295,23 @@ export function inferScript(
                 origin: "https://login.example.test",
                 auth: { type: "login" },
               },
+            },
+          },
+        ],
+      },
+    ];
+  }
+  if (lower.includes("command variable secret card")) {
+    return [
+      {
+        assistant: "i need that key in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "Deploy key",
+              purpose: "api_key",
+              credential: { name: "deploy-key", auth: { type: "command" } },
             },
           },
         ],
@@ -666,8 +694,14 @@ function shouldFail(prompt: string): boolean {
  */
 function scriptedFailure(prompt: string): string {
   if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
+  if (/\bconnection request limit\b/i.test(prompt)) return MODEL_REQUEST_LIMIT_ERROR;
   if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
+  if (/\bcut reply\b/i.test(prompt)) return MODEL_OUTPUT_CUT_ERROR;
   if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
+  if (/\bout of credits\b/i.test(prompt)) {
+    return '402: {"message":"You have no credits remaining. Add credits to continue."}';
+  }
+  if (/\brejected key\b/i.test(prompt)) return '401: {"message":"Invalid API key"}';
   if (/\bexhausted backups\b/i.test(prompt)) {
     return modelFallbackFailure('429: {"message":"Too many requests"}', [
       {

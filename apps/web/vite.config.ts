@@ -14,6 +14,7 @@ import {
   CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
+  parseCrispWebsiteId,
 } from "@rakazo/contracts/content-security-policy";
 import {
   safeScreenProxyResponseHeaders,
@@ -22,12 +23,12 @@ import {
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
+import type { PreviewServer, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
+import { apiProxy } from "./src/api-proxy.js";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
-import { appendForwardedFor } from "./src/forwarded-for.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
   collectNovncHtml,
@@ -291,7 +292,13 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
     const path = novncRequestPath(req.url);
-    if (!path) return;
+    // Node drops its own socket error handler on upgrade, so a client reset with no listener
+    // crashes the server. Other upgrades belong to Vite's HMR or the API proxy, so only their
+    // errors are ignored.
+    if (!path) {
+      socket.on("error", () => {});
+      return;
+    }
     req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();
@@ -299,6 +306,16 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
+    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
+    // Listen before the access check; the close handler below tears down the upstream.
+    socket.on("error", (error) => {
+      screenLog.warn("screen.proxy.websocket_error", {
+        ...bindings,
+        "screen.side": "client",
+        "error.code": socketErrorCode(error),
+      });
+      closeInitiator ??= "client";
+    });
     const confirmedAt = performance.now();
     const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
       screenLog.warn("screen.proxy.target_rejected", {
@@ -318,7 +335,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         : net.connect(target.port, target.hostname);
     let upgraded = false;
     let closed = false;
-    let closeInitiator: "client" | "upstream" | "revoked" | undefined;
     const logClose = (side: "client" | "upstream") => {
       if (closed) return;
       closed = true;
@@ -439,15 +455,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       closeInitiator ??= "upstream";
       socket.destroy();
     });
-    socket.on("error", (error) => {
-      screenLog.warn("screen.proxy.websocket_error", {
-        ...bindings,
-        "screen.side": "client",
-        "error.code": socketErrorCode(error),
-      });
-      closeInitiator ??= "client";
-      upstream.destroy();
-    });
   });
 }
 
@@ -456,28 +463,6 @@ export default defineConfig(({ command, mode }) => {
   const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
-  const apiProxy = Object.fromEntries(
-    [
-      "/api",
-      "/rpc",
-      // Native app domain association, served by the API from deployment settings.
-      "/.well-known/apple-app-site-association",
-      "/.well-known/assetlinks.json",
-    ].map((path) => [
-      path,
-      {
-        target: api,
-        changeOrigin: true,
-        // Append the hop this proxy saw, so the API never mistakes a caller's own header for its
-        // address. The API reads past this hop only when it is listed in TRUSTED_PROXIES.
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq, req) => {
-            proxyReq.setHeader("x-forwarded-for", appendForwardedFor(req));
-          });
-        },
-      } satisfies ProxyOptions,
-    ]),
-  );
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const allowedHosts = [
     previewHost,
@@ -486,6 +471,10 @@ export default defineConfig(({ command, mode }) => {
       .map((entry) => entry.trim())
       .filter(Boolean),
   ];
+  // Set by the server built from this config; reusing one config object for two servers would
+  // leave the last one's list.
+  let proxyHosts: readonly string[] | true = [];
+  const proxy = apiProxy(api, () => proxyHosts);
   const screenProxySecret = () =>
     resolveScreenProxySecret({
       ...process.env,
@@ -508,9 +497,23 @@ export default defineConfig(({ command, mode }) => {
       "RAKAZO_CSP_CONNECT_SRC",
       process.env.RAKAZO_CSP_CONNECT_SRC ?? rootEnv.RAKAZO_CSP_CONNECT_SRC,
     ),
+    crisp: parseCrispWebsiteId(process.env.CRISP_WEBSITE_ID ?? rootEnv.CRISP_WEBSITE_ID) !== null,
   });
   return {
-    build: { sourcemap: true },
+    build: {
+      sourcemap: true,
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Shared chunks that build schemas run before the entry chunk's body, so the Zod
+            // config only lands in time when it ships inside Zod's own chunk.
+            groups: [
+              { name: "zod", test: /[\\/]node_modules[\\/]zod[\\/]|[\\/]src[\\/]zod-config\.ts$/ },
+            ],
+          },
+        },
+      },
+    },
     define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
       {
@@ -583,6 +586,16 @@ export default defineConfig(({ command, mode }) => {
         },
       },
       {
+        // The hosts the running server allows, as Vite resolved them, for proxied upgrades.
+        name: "rakazo-api-proxy-hosts",
+        configureServer: (server) => {
+          proxyHosts = server.config.server.allowedHosts;
+        },
+        configurePreviewServer: (server) => {
+          proxyHosts = server.config.preview.allowedHosts;
+        },
+      },
+      {
         name: "rakazo-novnc-proxy",
         configureServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
         configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
@@ -593,13 +606,13 @@ export default defineConfig(({ command, mode }) => {
       port: webPort,
       strictPort: true,
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
       allowedHosts,
-      proxy: apiProxy,
+      proxy,
     },
   };
 });

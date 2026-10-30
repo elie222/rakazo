@@ -130,14 +130,16 @@ RUN sed -i 's/^# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && locale
 ENV LANG=C.UTF-8
 ENV UV_TOOL_DIR=/home/rakazo/.local/share/uv/tools \
     UV_TOOL_BIN_DIR=/home/rakazo/.local/bin \
-    UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python \
-    UV_CACHE_DIR=/home/rakazo/.cache/uv
+    UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python
 WORKDIR /home/rakazo
 # --chmod normalizes modes: a restrictive host umask (e.g. 077 on hardened hosts) would
 # otherwise leave these files unreadable to USER 1000 at runtime.
 COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=644 user-env.sh /usr/local/lib/rakazo-user-env.sh
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
+# Tells the supervisor this control service accepts scrolls aimed at a point and sideways
+# scrolls; it sends those to older images through its fallback instead.
+LABEL rakazo.control.aimedScroll="1"
 COPY --from=capture-builder /build/librakazo-xcapture.so /usr/local/lib/librakazo-xcapture.so
 COPY --chmod=755 rakazo-browser /usr/local/bin/rakazo-browser
 COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch

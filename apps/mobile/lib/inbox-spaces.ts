@@ -1,8 +1,10 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { groupBotsForSidebar } from "@rakazo/core";
+import { botAvatarActivity, groupBotsForSidebar, logoAvatarNeedsAttention } from "@rakazo/core";
 import type { MobileBot, MobileGroup, MobileSpace } from "./api";
 import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { t } from "./i18n";
+import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<
   MobileSpace,
@@ -27,6 +29,48 @@ export type InboxSpaceItem =
       collapsed?: boolean;
       count?: number;
     };
+
+export type PinnedChat =
+  | { kind: "bot"; bot: MobileBot | SpaceBot }
+  | { kind: "group"; group: MobileGroup | SpaceGroup };
+export type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
+
+/** What a chat adds to the off-screen unread pills: unread, and a bot waiting on you. */
+function chatSignal(chat: PinnedChat): InboxSignal {
+  return chat.kind === "bot"
+    ? {
+        unread: chat.bot.unread ? 1 : 0,
+        attention: logoAvatarNeedsAttention(
+          botAvatarActivity(
+            chat.bot,
+            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
+          ),
+        )
+          ? 1
+          : 0,
+      }
+    : { unread: chat.group.unread ? 1 : 0, attention: 0 };
+}
+
+export function inboxItemKey(item: InboxItem): string {
+  if (item.type === "pinned") return "pinned";
+  if (item.type === "heading") return `heading-${item.key}`;
+  if (item.type === "bot") return item.bot.id;
+  return `group-${item.group.id}`;
+}
+
+export function inboxSignal(item: InboxItem): InboxSignal {
+  if (item.type === "heading") return { unread: 0, attention: 0 };
+  if (item.type === "bot") return chatSignal({ kind: "bot", bot: item.bot });
+  if (item.type === "group") return chatSignal({ kind: "group", group: item.group });
+  return item.chats.map(chatSignal).reduce(
+    (total, signal) => ({
+      unread: total.unread + signal.unread,
+      attention: total.attention + signal.attention,
+    }),
+    { unread: 0, attention: 0 },
+  );
+}
 
 export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDelete">) {
   return !space.isDefault && space.canDelete === true;
@@ -126,7 +170,7 @@ export async function removeInboxSpace(
   spaceId: string,
   refresh: () => Promise<void>,
 ): Promise<string | null> {
-  const response = await rpc<{ ok: true; activeSpaceId: string }>("spaces/remove", { spaceId });
+  const response = await rpc("spaces/remove", { spaceId });
   if (selectedSpaceId() === spaceId) {
     if (await selectSpace(response.activeSpaceId).catch(() => false)) {
       await refresh();

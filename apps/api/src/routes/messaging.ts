@@ -30,6 +30,15 @@ export function messagingRoutes(ctx: RouterContext) {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           return { url: await deps.messagingInstallations.start(context.actor, input.botId) };
         }),
+        complete: authed.messaging.installations.complete.handler(async ({ context, input }) => {
+          if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
+          try {
+            await deps.messagingInstallations.complete(context.actor, input.state, input.code);
+          } catch {
+            throw new ORPCError("BAD_REQUEST");
+          }
+          return { ok: true as const };
+        }),
         remove: authed.messaging.installations.remove.handler(async ({ context, input }) => {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           await deps.messagingInstallations.remove(context.actor, input.id);
@@ -55,22 +64,28 @@ export function messagingRoutes(ctx: RouterContext) {
       }),
       link: {
         start: authed.messaging.link.start.handler(async ({ context, input }) => {
-          const bot = await deps.prisma.bot.findFirst({
-            where: {
-              id: input.botId,
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              archivedAt: null,
-            },
-            select: { id: true },
-          });
+          // Any of the user's bots, so a workspace's DMs link from whichever space is open.
+          const bot = await runAsSystem("find a bot to link a chat app", () =>
+            deps.prisma.bot.findFirst({
+              where: {
+                id: input.botId,
+                userId: context.actor.userId,
+                archivedAt: null,
+                space: { memberships: { some: { userId: context.actor.userId } } },
+              },
+              select: { id: true, spaceId: true },
+            }),
+          );
           if (!bot) throw new ORPCError("NOT_FOUND");
           // One chat identity per bot: delivery mirrors a bot's replies to
           // exactly one conversation.
-          const linked = await deps.prisma.messagingIdentity.findUnique({
-            where: { botId: bot.id },
-            select: { id: true },
-          });
+          // The bot may live in another space, so look across them.
+          const linked = await acrossChatIdentities(() =>
+            deps.prisma.messagingIdentity.findUnique({
+              where: { botId: bot.id },
+              select: { id: true },
+            }),
+          );
           if (linked) {
             throw new ORPCError("BAD_REQUEST", {
               message: "That bot is already linked to a chat app; unlink it first.",
@@ -78,7 +93,7 @@ export function messagingRoutes(ctx: RouterContext) {
           }
           const issued = await issueMessagingLinkCode(deps.prisma, {
             userId: context.actor.userId,
-            spaceId: context.actor.spaceId,
+            spaceId: bot.spaceId,
             botId: bot.id,
           });
           return {

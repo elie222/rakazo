@@ -114,9 +114,9 @@ vi.mock("../components/native-switch", () => ({
 }));
 
 const bots = [
-  { id: "bot-1", name: "Researcher", title: "Reads papers" },
-  { id: "bot-2", name: "Writer", title: "Drafts prose" },
-  { id: "bot-3", name: "Runner", title: "Runs tasks" },
+  { id: "bot-1", name: "Researcher" },
+  { id: "bot-2", name: "Writer" },
+  { id: "bot-3", name: "Runner" },
 ] as MobileBot[];
 const group = {
   id: "group-1",
@@ -167,7 +167,7 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   expect(switches()).toHaveLength(2);
   await act(async () => switches()[1]!.click());
   await click("Show all");
-  await filter("  PAPERS ");
+  await filter("  RESEARCH ");
   expect(switches()).toHaveLength(1);
   await filter("zzz");
   expect(container.textContent).toContain("No matching bots");

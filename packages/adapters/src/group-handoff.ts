@@ -9,19 +9,20 @@ import {
   renderGroupMembersContext,
   resolveBotAddress,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
   lockOwnedGroup,
-  type PrismaClient,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ExecutorDeps } from "./executor.js";
+import type { ExecutorDeps } from "./executor-deps.js";
+import { runLeaseFor } from "./run-messages.js";
 
 export async function handoffToGroupBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
     id: string;
     spaceId: string;
@@ -171,6 +172,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       runId: inGroup ? run.id : undefined,
       clientNonce: deliveryKey,
+      lease: inGroup ? runLeaseFor(deps, run.id) : undefined,
     });
     // Local opt-in: peers otherwise see only the summary in this handoff.
     // Preserve bounded user-supplied facts (numbers, dates, constraints) from
@@ -247,6 +249,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       type: "group.handoff",
       runId: inGroup ? run.id : undefined,
+      lease: inGroup ? runLeaseFor(deps, run.id) : undefined,
       payload: {
         messageId: message.id,
         fromBotId: run.botId,
@@ -296,7 +299,7 @@ export async function loadGroupContext(
       members: {
         where: { bot: { archivedAt: null } },
         include: {
-          bot: { select: { id: true, name: true, title: true, description: true } },
+          bot: { select: { id: true, name: true, description: true } },
         },
         orderBy: { createdAt: "asc" },
       },

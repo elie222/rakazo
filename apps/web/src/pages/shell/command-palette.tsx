@@ -14,7 +14,17 @@ import {
   CommandShortcut,
   Kbd,
 } from "@rakazo/ui-web";
+import { Check } from "lucide-react";
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+
+export type CommandPaletteAction = {
+  id: string;
+  label: string;
+  icon: ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean }>;
+  checked?: boolean;
+  onSelect: () => void;
+};
 
 function isApplePlatform() {
   if (typeof navigator === "undefined") return false;
@@ -23,19 +33,11 @@ function isApplePlatform() {
 }
 
 function botSearchText(bot: Bot) {
-  return `${bot.name} ${bot.title} ${bot.description} ${bot.preview}`.toLowerCase();
+  return `${bot.name} ${bot.description} ${bot.preview}`.toLowerCase();
 }
 
 function botSubtitle(bot: Bot) {
-  return bot.description.trim() || bot.preview.trim() || bot.title.trim();
-}
-
-function botTitleTag(bot: Bot) {
-  const title = bot.title.trim();
-  if (!title) return null;
-  // Title is already the subtitle when there is no description/preview.
-  if (!(bot.description.trim() || bot.preview.trim())) return null;
-  return title;
+  return bot.description.trim() || bot.preview.trim();
 }
 
 export function CommandPalette({
@@ -43,11 +45,13 @@ export function CommandPalette({
   onOpenChange,
   bots,
   onSelectBot,
+  actions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bots: Bot[];
   onSelectBot: (botId: string) => void;
+  actions: CommandPaletteAction[];
 }) {
   const [search, setSearch] = useState("");
   const [modKey, setModKey] = useState("⌘");
@@ -65,6 +69,12 @@ export function CommandPalette({
     if (!needle) return bots;
     return bots.filter((bot) => botSearchText(bot).includes(needle));
   }, [bots, search]);
+
+  const filteredActions = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return actions;
+    return actions.filter((action) => action.label.toLowerCase().includes(needle));
+  }, [actions, search]);
 
   useEffect(() => {
     if (!open) return;
@@ -87,8 +97,8 @@ export function CommandPalette({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t`Switch bot`}
-      description={t`Search bots and switch conversations`}
+      title={t`Command menu`}
+      description={t`Search bots, actions, and settings`}
       className="sm:max-w-xl"
     >
       <Command
@@ -104,12 +114,11 @@ export function CommandPalette({
         />
         <CommandList className="max-h-80" data-testid="command-palette-list">
           <CommandEmpty>
-            <Trans>No bots</Trans>
+            <Trans>No results</Trans>
           </CommandEmpty>
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
-              const titleTag = botTitleTag(bot);
               const shortcut = index < 9 ? `${modKey}${index + 1}` : null;
               return (
                 <CommandItem
@@ -122,20 +131,16 @@ export function CommandPalette({
                   }}
                   className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
                 >
-                  <BotAvatar color={bot.color} identity={bot.id} size={32} status={bot.status} />
+                  <BotAvatar
+                    avatarSet={bot.avatarSet}
+                    color={bot.color}
+                    identity={bot.id}
+                    size={32}
+                    status={bot.status}
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium text-foreground" dir="auto">
-                        {bot.name}
-                      </span>
-                      {titleTag ? (
-                        <Badge
-                          variant="secondary"
-                          className="max-w-[40%] truncate rounded-full px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
-                        >
-                          {titleTag}
-                        </Badge>
-                      ) : null}
+                    <div className="truncate font-medium text-foreground" dir="auto">
+                      {bot.name}
                     </div>
                     {subtitle ? (
                       <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">
@@ -152,6 +157,38 @@ export function CommandPalette({
               );
             })}
           </CommandGroup>
+          {filteredActions.length > 0 ? (
+            <CommandGroup>
+              {filteredActions.map((action) => (
+                <CommandItem
+                  key={action.id}
+                  value={action.id}
+                  aria-checked={action.checked}
+                  data-testid={`command-palette-action-${action.id}`}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    action.onSelect();
+                  }}
+                  className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <action.icon size={16} strokeWidth={1.8} aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {action.label}
+                  </span>
+                  {action.checked ? (
+                    <Check
+                      size={16}
+                      strokeWidth={1.8}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                  ) : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
         </CommandList>
       </Command>
     </CommandDialog>

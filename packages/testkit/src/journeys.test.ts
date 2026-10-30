@@ -14,6 +14,7 @@ import {
   organizeBot,
   toComputerRef,
 } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import {
@@ -24,14 +25,13 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 import { createModelConnectionFixtureFetch } from "./model-connection-fixture.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";
@@ -59,7 +59,7 @@ describeJourneys("required product journeys", () => {
 
   async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
     const { runId } = await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text });
-    let terminal: { status: string; error: string | null } | null = null;
+    let terminal = null as { status: string; error: string | null } | null;
     await waitForDatabase(async () => {
       terminal = await prisma.run.findUnique({
         where: { id: runId },
@@ -107,7 +107,7 @@ describeJourneys("required product journeys", () => {
       }
     }
     for (const runId of targets) {
-      let terminal: { status: string; error: string | null } | null = null;
+      let terminal = null as { status: string; error: string | null } | null;
       await waitForDatabase(async () => {
         terminal = await prisma.run.findUnique({
           where: { id: runId },
@@ -126,7 +126,7 @@ describeJourneys("required product journeys", () => {
   }
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       databaseUrl: process.env.DATABASE_URL!,
@@ -416,8 +416,8 @@ describeJourneys("required product journeys", () => {
     );
     expect(chief.computerMode).toBe("team");
     expect(coder.computerMode).toBe("team");
-    expect(chiefRecord.computerId).toBe(coderRecord.computerId);
-    expect(chiefRecord.computerId).not.toBe(bobRecord.computerId);
+    expect(chiefRecord!.computerId).toBe(coderRecord!.computerId);
+    expect(chiefRecord!.computerId).not.toBe(bobRecord!.computerId);
 
     const bobList = await rpc<Bot[]>(app, bob, "bots/list");
     expect(bobList.map((b) => b.id)).not.toContain(chief.id);
@@ -551,10 +551,10 @@ describeJourneys("required product journeys", () => {
       where: { id: coder.id },
       include: { computer: true },
     });
-    expect(dedicatedRecord.computerId).not.toBe(chiefRecord.computerId);
+    expect(dedicatedRecord.computerId).not.toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "team" });
     const backOnTeam = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
-    expect(backOnTeam.computerId).toBe(chiefRecord.computerId);
+    expect(backOnTeam.computerId).toBe(chiefRecord!.computerId);
     await rpc<Bot>(app, ada, "bots/setComputer", { botId: coder.id, mode: "dedicated" });
     const reusedDedicated = await prisma.bot.findUniqueOrThrow({ where: { id: coder.id } });
     expect(reusedDedicated.computerId).toBe(dedicatedRecord.computerId);
@@ -1957,8 +1957,8 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await rpc(app, cookie, "bots/update", { botId: bot.id, title: "Updated chief" });
-    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).title).toBe(
+    await rpc(app, cookie, "bots/update", { botId: bot.id, description: "Updated chief" });
+    expect((await rpc<Bot>(app, cookie, "bots/get", { botId: bot.id })).description).toBe(
       "Updated chief",
     );
 
@@ -3990,6 +3990,7 @@ type Bot = {
   sectionId: string | null;
   unread: boolean;
   computerMode: "team" | "dedicated";
+  fleetManagement: boolean;
   parentBotId?: string | null;
 };
 type Snap = {

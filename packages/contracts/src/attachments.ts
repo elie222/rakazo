@@ -1,6 +1,8 @@
 /** Default for deployments and clients connected to older servers. */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_MAX_COUNT = 4;
+/** Hard ceiling for the configurable per-message limit. */
+export const ATTACHMENT_COUNT_CEILING = 100;
 /** Shared photo preparation policy for web and mobile composers. */
 export const ATTACHMENT_IMAGE_MAX_EDGE = 1_600;
 export const ATTACHMENT_IMAGE_QUALITY = 0.7;
@@ -30,6 +32,8 @@ export const ATTACHMENT_FILE_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/html",
   "application/json",
   "application/zip",
@@ -70,4 +74,9 @@ export function attachmentMaxBytes(config?: { maxUploadSizeBytes?: number } | nu
 
 export function attachmentSizeLabel(maxBytes: number): string {
   return `${maxBytes / (1024 * 1024)} MiB`;
+}
+
+/** Effective per-message limit, including the fallback for older servers. */
+export function attachmentMaxCount(config?: { maxAttachmentsPerMessage?: number } | null): number {
+  return config?.maxAttachmentsPerMessage ?? ATTACHMENT_MAX_COUNT;
 }

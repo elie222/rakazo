@@ -79,7 +79,14 @@ const SPAWN_ENV_ALLOWLIST = [
   "DOCKER_CERT_PATH",
   "DOCKER_TLS_VERIFY",
 ];
-const WIN32_ENV_ALLOWLIST = ["SystemRoot", "SystemDrive", "APPDATA", "LOCALAPPDATA", "ProgramData"];
+const WIN32_ENV_ALLOWLIST = [
+  "SystemRoot",
+  "SystemDrive",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "ProgramFiles",
+];
 
 /**
  * Compose interpolates the process environment into the stack, so only what docker
@@ -196,10 +203,10 @@ export function runDocker(
       if (line !== "") options.onLine?.(line);
     };
     for (const stream of ["stdout", "stderr"] as const) {
-      child[stream]?.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf8");
+      child[stream]?.setEncoding("utf8");
+      child[stream]?.on("data", (text: string) => {
         captured[stream] += text;
-        const parts = (pending[stream] + text).split("\n");
+        const parts = (pending[stream] + text).split(/\r?\n/);
         pending[stream] = parts.pop() ?? "";
         for (const part of parts) emit(part);
       });
@@ -281,7 +288,14 @@ const ADDRESS_POOL_EXHAUSTED = [
   "all predefined address pools have been fully subnetted",
   "could not find an available, non-overlapping ipv4 address pool",
 ];
-const PORT_IN_USE = ["address already in use", "port is already allocated", "bind for 127.0.0.1"];
+const PORT_IN_USE = [
+  "address already in use",
+  "port is already allocated",
+  "bind for 127.0.0.1",
+  "bind: only one usage of each socket address",
+  "bind: an attempt was made to access a socket in a way forbidden by its access permissions",
+  "ports are not available",
+];
 
 /** Docker output can contain paths and hostnames, so callers map kinds to fixed messages. */
 export function classifyDockerFailure(output: string): DockerFailureKind {
@@ -291,7 +305,11 @@ export function classifyDockerFailure(output: string): DockerFailureKind {
   if (matches(DAEMON_DOWN)) return "daemon-down";
   if (matches(COMPOSE_MISSING)) return "compose-missing";
   if (matches(PORT_IN_USE)) return "port-in-use";
-  if (matches(IMAGE_NOT_FOUND)) return "image-not-found";
+  if (
+    matches(IMAGE_NOT_FOUND) ||
+    (text.includes("failed to resolve reference") && text.includes(": not found"))
+  )
+    return "image-not-found";
   if (matches(ADDRESS_POOL_EXHAUSTED)) return "address-pool-exhausted";
   if (matches(NETWORK)) return "network";
   return "other";

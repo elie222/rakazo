@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
@@ -17,10 +15,7 @@ import {
   inboxRowActionList,
   inboxRowActions,
   unreadOverrideKey,
-  withoutArchiving,
 } from "./inbox-swipe";
-
-const testFileUrl = import.meta.url;
 
 const swift = vi.hoisted(() => ({
   groups: [] as Array<{ edge?: string; allowsFullSwipe?: boolean; labels: string[] }>,
@@ -56,11 +51,18 @@ vi.mock("@expo/ui/swift-ui", async () => {
     swift.groups.push({ edge, allowsFullSwipe, labels });
     return <div data-ui="SwipeActions.Actions">{children}</div>;
   };
-  const ContextMenu = Object.assign(box("ContextMenu"), {
-    Trigger: box("ContextMenu.Trigger"),
-    Preview: box("ContextMenu.Preview"),
-    Items: box("ContextMenu.Items"),
-  });
+  const ContextMenu = Object.assign(
+    ({ children, modifiers }: { children?: ReactNode; modifiers?: unknown[] }) => (
+      <div data-ui="ContextMenu" data-modifiers={JSON.stringify(modifiers ?? [])}>
+        {children}
+      </div>
+    ),
+    {
+      Trigger: box("ContextMenu.Trigger"),
+      Preview: box("ContextMenu.Preview"),
+      Items: box("ContextMenu.Items"),
+    },
+  );
   return {
     Host: box("Host"),
     List: box("List"),
@@ -130,10 +132,14 @@ vi.mock("@expo/ui/swift-ui", async () => {
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
   return {
-    shapes: { roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }) },
+    shapes: {
+      roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }),
+      rectangle: () => ({ shape: "rectangle" }),
+    },
     ...Object.fromEntries(
       [
         "background",
+        "contentShape",
         "font",
         "foregroundStyle",
         "frame",
@@ -326,6 +332,15 @@ describe("iOS swipe row", () => {
     act(() => root.unmount());
   });
 
+  it("gives the chat row context menu a rectangular hit area", () => {
+    const { find, root } = render();
+    const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
+    expect(JSON.parse(menu?.dataset.modifiers ?? "[]")).toEqual([
+      { name: "contentShape", value: { shape: "rectangle" } },
+    ]);
+    act(() => root.unmount());
+  });
+
   it("offers read state, pin, notifications, move, then archive and delete last for a bot", () => {
     const { items, find, root } = render({
       unread: true,
@@ -418,443 +433,4 @@ describe("iOS swipe row", () => {
     expect(empty.find('[data-ui="ContextMenu.Preview"]')!.textContent).toBe("AdaNo messages yet");
     act(() => empty.root.unmount());
   });
-});
-
-describe("cross-space organize", () => {
-  const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
-  const handler = source.slice(
-    source.indexOf("  const organize = useCallback("),
-    source.indexOf("  const organizeBot = useCallback("),
-  );
-
-  function setup(cached: boolean) {
-    const chat = { id: "bot-other", spaceId: "space-other" };
-    const space = { id: chat.spaceId, bots: [chat], groups: [], botSections: [] };
-    const scope = {
-      useCallback: (callback: unknown) => callback,
-      organizeRequestId: { current: 0 },
-      currentSessionGeneration: () => 1,
-      currentApiBase: () => "",
-      me: { spaceId: "space-current" },
-      bots: [],
-      groups: [],
-      botSections: [],
-      spaces: cached ? [space] : [],
-      captureApiRequestContext: vi.fn(async () => ({ headers: { authorization: "Bearer fake" } })),
-      rpc: vi.fn(async () => ({ current: space })),
-      setOrganizeTarget: vi.fn(),
-      // A background poll must not delay showing an already available chat.
-      loadBots: vi.fn(() => new Promise(() => {})),
-      Alert: { alert: vi.fn() },
-      errorText: (_error: unknown, fallback: string) => fallback,
-      t: (text: string) => text,
-    };
-    const compiled = ts.transpileModule(`${handler}\nreturn organize;`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText;
-    const organize = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as (
-      kind: string,
-      chat: { id: string; spaceId: string },
-    ) => Promise<void>;
-    return { ...scope, organize, chat, space };
-  }
-
-  it("opens immediately from the other space's cached data", async () => {
-    const h = setup(true);
-    const done = h.organize("bot", h.chat);
-    expect(h.setOrganizeTarget).toHaveBeenCalledWith({
-      kind: "bot",
-      id: h.chat.id,
-      spaceId: h.chat.spaceId,
-      chat: h.chat,
-      sections: [],
-    });
-    expect(h.rpc).not.toHaveBeenCalled();
-    await done;
-  });
-
-  it("fetches missing data in the target space independently of inbox polling", async () => {
-    const h = setup(false);
-    await h.organize("bot", h.chat);
-    expect(h.rpc).toHaveBeenCalledWith("spaces/list", undefined, {
-      requestContext: {
-        headers: { authorization: "Bearer fake", "x-rakazo-space-id": h.chat.spaceId },
-      },
-      skipSpaceAuthRecovery: true,
-    });
-    expect(h.setOrganizeTarget).toHaveBeenCalledWith(expect.objectContaining({ chat: h.chat }));
-  });
-
-  it("ignores a fallback response after the organize target is closed", async () => {
-    const h = setup(false);
-    let finish!: (value: { current: typeof h.space }) => void;
-    h.rpc.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const done = h.organize("bot", h.chat);
-    await Promise.resolve();
-    h.organizeRequestId.current += 1;
-    finish({ current: h.space });
-    await done;
-    expect(h.setOrganizeTarget).not.toHaveBeenCalled();
-  });
-});
-
-describe("inbox swipe handlers", () => {
-  const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
-  const handlerSource = [
-    source.slice(
-      source.indexOf("/** Sends a request about a chat to that chat's space"),
-      source.indexOf("export default function HomeRoute()"),
-    ),
-    source.slice(
-      source.indexOf("  // One path for the long-press sheet and the swipe actions."),
-      source.indexOf("  const botAction = useCallback("),
-    ),
-  ].join("\n");
-
-  const session = { space: "space-a", generation: 1 };
-  beforeEach(() => {
-    session.space = "space-a";
-    session.generation = 1;
-  });
-  const sent = (call: unknown[]) => call.slice(0, 2);
-
-  function handlers(
-    rpc: (procedure: string, input: unknown, options?: unknown) => Promise<unknown>,
-  ) {
-    const state = {
-      overrides: new Map<string, boolean>() as ReadonlyMap<string, boolean>,
-      archiving: new Set<string>() as ReadonlySet<string>,
-      bots: [{ id: "b1", unread: false }],
-      groups: [{ id: "g1", unread: true }],
-      spaces: [
-        { id: "space-a", bots: [{ id: "b1" }], groups: [{ id: "g1" }] },
-        { id: "space-b", bots: [{ id: "x" }], groups: [{ id: "x" }] },
-      ],
-    };
-    const update =
-      <K extends keyof typeof state>(key: K) =>
-      (next: (typeof state)[K] | ((current: (typeof state)[K]) => (typeof state)[K])) => {
-        state[key] = typeof next === "function" ? next(state[key]) : next;
-      };
-    const scope = {
-      useCallback: (callback: unknown) => callback,
-      useState: <T,>(init: () => T) => [init()],
-      createLatestQueue,
-      rpc: vi.fn(rpc),
-      loadBots: vi.fn(async () => {}),
-      setUnreadOverrides: update("overrides"),
-      setArchiving: update("archiving"),
-      setBots: update("bots"),
-      setGroups: update("groups"),
-      setSpaces: update("spaces"),
-      Alert: { alert: vi.fn() },
-      t: (text: string) => text,
-      errorText: (_error: unknown, fallback: string) => fallback,
-      chatTarget,
-      unreadOverrideKey,
-      afterChatNotifyChange: vi.fn(async () => {}),
-      confirmDeleteBot: vi.fn(),
-      confirmDeleteGroup: vi.fn(),
-      notifyArchivedChatsChanged: vi.fn(),
-      removeFromSearchInbox: vi.fn(),
-      dismissThreadNotifications: vi.fn(async () => {}),
-      currentApiBase: () => "",
-      loadSessionToken: async () => null,
-      selectedSpaceId: () => session.space,
-      currentSessionGeneration: () => session.generation,
-      captureApiRequestContext: async () => ({
-        apiBase: "",
-        headers: { authorization: "Bearer token", "x-rakazo-space-id": session.space },
-        sessionGeneration: session.generation,
-      }),
-    };
-    const compiled = ts.transpileModule(`${handlerSource}\nreturn { updateChat, runRowAction };`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText;
-    const run = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as {
-      runRowAction: (
-        kind: "bot" | "group",
-        chat: { id: string; name?: string; spaceId?: string },
-        action: InboxRowAction,
-      ) => Promise<void>;
-      updateChat: (
-        kind: "bot" | "group",
-        chat: { id: string; spaceId?: string },
-        update: { pinned?: boolean },
-      ) => Promise<void>;
-    };
-    return { ...scope, state, runRowAction: run.runRowAction, updateChat: run.updateChat };
-  }
-
-  it("sends overlapping read changes for one chat in order and keeps the newest on screen", async () => {
-    const pending: Array<() => void> = [];
-    const h = handlers(() => new Promise<void>((resolve) => pending.push(resolve)));
-    const first = h.runRowAction("bot", { id: "b1" }, "unread");
-    const second = h.runRowAction("bot", { id: "b1" }, "read");
-    await second;
-    // The second change waits for the first instead of racing it.
-    await vi.waitFor(() => expect(h.rpc).toHaveBeenCalledTimes(1));
-    expect(sent(h.rpc.mock.calls[0]!)).toEqual(["threads/markUnread", { botId: "b1" }]);
-    expect(h.state.overrides.get("bot:b1")).toBe(false);
-    pending.shift()!();
-    await vi.waitFor(() => expect(h.rpc).toHaveBeenCalledTimes(2));
-    expect(sent(h.rpc.mock.calls[1]!)).toEqual(["threads/markRead", { botId: "b1" }]);
-    // The first request finishing must not clear the newer choice.
-    expect(h.state.overrides.get("bot:b1")).toBe(false);
-    pending.shift()!();
-    await first;
-    expect(h.state.bots[0]!.unread).toBe(false);
-    expect(h.state.overrides.size).toBe(0);
-  });
-
-  it("clears a chat's delivered notifications when it is marked read, not unread", async () => {
-    const h = handlers(async () => undefined);
-    await h.runRowAction("bot", { id: "b1", threadId: "thread-b1" } as never, "read");
-    await h.runRowAction("bot", { id: "b2" }, "read");
-    await h.runRowAction("group", { id: "g1" }, "read");
-    await h.runRowAction("bot", { id: "b1" }, "unread");
-    expect(h.dismissThreadNotifications.mock.calls).toEqual([
-      [{ threadId: "thread-b1" }],
-      [{ botId: "b2" }],
-      [{ groupId: "g1" }],
-    ]);
-  });
-
-  it("drops a change that is undone before its turn", async () => {
-    const pending: Array<() => void> = [];
-    const h = handlers(() => new Promise<void>((resolve) => pending.push(resolve)));
-    const first = h.runRowAction("group", { id: "g1" }, "read");
-    void h.runRowAction("group", { id: "g1" }, "unread");
-    void h.runRowAction("group", { id: "g1" }, "read");
-    await vi.waitFor(() => expect(pending).toHaveLength(1));
-    pending.shift()!();
-    await first;
-    expect(h.rpc.mock.calls.map(sent)).toEqual([["threads/markRead", { groupId: "g1" }]]);
-    expect(h.state.groups[0]!.unread).toBe(false);
-    expect(h.state.overrides.size).toBe(0);
-  });
-
-  it("sends a queued change in the Space it was swiped in after a Space switch", async () => {
-    const pending: Array<() => void> = [];
-    const h = handlers(() => new Promise<void>((resolve) => pending.push(resolve)));
-    const first = h.runRowAction("bot", { id: "b1" }, "unread");
-    void h.runRowAction("bot", { id: "b1" }, "read");
-    await vi.waitFor(() => expect(pending).toHaveLength(1));
-    session.space = "space-b";
-    pending.shift()!();
-    await vi.waitFor(() => expect(pending).toHaveLength(1));
-    const spaces = h.rpc.mock.calls.map(
-      (call) =>
-        (call[2] as { requestContext: { headers: Record<string, string> } }).requestContext.headers[
-          "x-rakazo-space-id"
-        ],
-    );
-    expect(spaces).toEqual(["space-a", "space-a"]);
-    pending.shift()!();
-    await first;
-  });
-
-  it("drops queued changes quietly once the session changes", async () => {
-    const pending: Array<() => void> = [];
-    const h = handlers(() => new Promise<void>((resolve) => pending.push(resolve)));
-    const first = h.runRowAction("bot", { id: "b1" }, "unread");
-    void h.runRowAction("bot", { id: "b1" }, "read");
-    await vi.waitFor(() => expect(pending).toHaveLength(1));
-    session.generation = 2;
-    pending.shift()!();
-    await first;
-    expect(h.rpc).toHaveBeenCalledTimes(1);
-    expect(h.state.overrides.size).toBe(0);
-    expect(h.Alert.alert).not.toHaveBeenCalled();
-  });
-
-  it("marks unread optimistically, keeps it through the request, then refreshes", async () => {
-    let finish!: () => void;
-    const h = handlers(() => new Promise<void>((resolve) => (finish = resolve)));
-    const pending = h.runRowAction("bot", { id: "b1" }, "unread");
-    await vi.waitFor(() => expect(h.rpc).toHaveBeenCalledTimes(1));
-    expect(sent(h.rpc.mock.calls[0]!)).toEqual(["threads/markUnread", { botId: "b1" }]);
-    expect(h.state.overrides.get("bot:b1")).toBe(true);
-    // A poll landing now still shows the stale server value underneath the override.
-    expect(applyUnreadOverrides("bot", h.state.bots, h.state.overrides)[0]!.unread).toBe(true);
-    finish();
-    await pending;
-    expect(h.state.bots[0]!.unread).toBe(true);
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-    expect(h.state.overrides.size).toBe(0);
-    expect(h.Alert.alert).not.toHaveBeenCalled();
-  });
-
-  it("rolls a failed read change back and uses the native alert", async () => {
-    const h = handlers(async () => {
-      throw new Error("offline");
-    });
-    await h.runRowAction("group", { id: "g1" }, "read");
-    expect(sent(h.rpc.mock.calls[0]!)).toEqual(["threads/markRead", { groupId: "g1" }]);
-    expect(h.state.overrides.size).toBe(0);
-    expect(h.state.groups[0]!.unread).toBe(true);
-    expect(h.Alert.alert).toHaveBeenCalledWith("Could not update chat", "Try again.");
-  });
-
-  it.each([
-    ["bot", "archive", "bots/archive", { botId: "x" }],
-    ["group", "archive", "groups/archive", { groupId: "x" }],
-    ["bot", "pin", "bots/update", { botId: "x", pinned: true }],
-    ["group", "unpin", "groups/update", { groupId: "x", pinned: false }],
-  ] as const)("%s %s calls %s and refreshes the inbox", async (kind, action, procedure, input) => {
-    const h = handlers(async () => ({ ok: true }));
-    await h.runRowAction(kind, { id: "x" }, action);
-    expect(h.rpc.mock.calls).toEqual([[procedure, input]]);
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ["bot", "confirmDeleteBot"],
-    ["group", "confirmDeleteGroup"],
-  ] as const)(
-    "%s delete asks with the chat's own confirmation and refreshes once deleted",
-    async (kind, confirm) => {
-      const h = handlers(async () => ({ ok: true }));
-      await h.runRowAction(kind, { id: "x", name: "Ada" }, "delete");
-      // Nothing is removed until the alert is confirmed.
-      expect(h.rpc).not.toHaveBeenCalled();
-      expect(h.loadBots).not.toHaveBeenCalled();
-      expect(h[confirm]).toHaveBeenCalledWith({ id: "x", name: "Ada" }, expect.any(Function));
-      h[confirm].mock.calls[0]![1]();
-      expect(h.loadBots).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it("hides an archived chat at the tap and keeps it hidden from a reload until it settles", async () => {
-    let finish!: (value: unknown) => void;
-    const h = handlers(() => new Promise((resolve) => (finish = resolve)));
-    let finishReload!: () => void;
-    const reload = new Promise<void>((resolve) => (finishReload = resolve));
-    h.loadBots.mockImplementation(async () => {
-      await reload;
-      h.state.bots = h.state.bots.filter((bot) => bot.id !== "b1");
-    });
-    h.state.bots = [{ id: "b0", unread: false }, ...h.state.bots, { id: "b2", unread: false }];
-    const polledBots = [...h.state.bots];
-    const pending = h.runRowAction("bot", { id: "b1" }, "archive");
-    expect(h.state.archiving).toEqual(new Set(["bot:b1"]));
-    // A poll that still lists the chat doesn't bring the row back while the archive runs.
-    expect(withoutArchiving("bot", h.state.bots, h.state.archiving).map((bot) => bot.id)).toEqual([
-      "b0",
-      "b2",
-    ]);
-    await vi.waitFor(() => expect(h.rpc).toHaveBeenCalledTimes(1));
-    finish({ ok: true });
-    await vi.waitFor(() => expect(h.loadBots).toHaveBeenCalledTimes(1));
-    expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
-    // A poll replaces the stored list while the post-archive reload is still pending.
-    h.state.bots = polledBots;
-    expect(h.state.archiving).toEqual(new Set(["bot:b1"]));
-    expect(withoutArchiving("bot", h.state.bots, h.state.archiving).map((bot) => bot.id)).toEqual([
-      "b0",
-      "b2",
-    ]);
-    finishReload();
-    await pending;
-    expect(h.state.bots.map((bot) => bot.id)).toEqual(["b0", "b2"]);
-    expect(h.state.spaces[0]!.bots).toEqual([]);
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-    expect(h.notifyArchivedChatsChanged).toHaveBeenCalledTimes(1);
-    expect(h.state.archiving.size).toBe(0);
-    expect(h.Alert.alert).not.toHaveBeenCalled();
-  });
-
-  it("keeps an archived chat gone when the reload after the archive fails", async () => {
-    const h = handlers(async () => ({ ok: true }));
-    // loadBots reports a failed load by resolving false and leaves the list as it was.
-    h.loadBots.mockImplementation(async () => false as never);
-    await h.runRowAction("group", { id: "g1" }, "archive");
-    expect(h.state.groups).toEqual([]);
-    expect(h.state.archiving.size).toBe(0);
-  });
-
-  it("puts a chat back in its place when the archive fails", async () => {
-    const h = handlers(async () => {
-      throw new Error("offline");
-    });
-    h.state.bots = [{ id: "b0", unread: false }, ...h.state.bots, { id: "b2", unread: false }];
-    await h.runRowAction("bot", { id: "b1" }, "archive");
-    expect(h.state.archiving.size).toBe(0);
-    expect(withoutArchiving("bot", h.state.bots, h.state.archiving).map((bot) => bot.id)).toEqual([
-      "b0",
-      "b1",
-      "b2",
-    ]);
-    expect(h.notifyArchivedChatsChanged).not.toHaveBeenCalled();
-    expect(h.Alert.alert).toHaveBeenCalledWith("Could not archive bot", "Try again.");
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-  });
-
-  it("archives a chat from another space in that space", async () => {
-    const h = handlers(async () => ({ ok: true }));
-    await h.runRowAction("group", { id: "x", spaceId: "space-b" }, "archive");
-    expect(h.rpc.mock.calls[0]?.[2]).toMatchObject({
-      requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
-    });
-  });
-
-  it("marks a chat from another space read in that space", async () => {
-    const h = handlers(async () => ({ ok: true }));
-    await h.runRowAction("bot", { id: "x", spaceId: "space-b" }, "read");
-    expect(h.rpc.mock.calls[0]?.[2]).toMatchObject({
-      requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
-    });
-  });
-
-  it("updates a chat from another space in that space without switching", async () => {
-    const h = handlers(async () => ({ ok: true }));
-    await h.updateChat("bot", { id: "x", spaceId: "space-b" }, { pinned: false });
-    expect(h.rpc.mock.calls).toEqual([
-      [
-        "bots/update",
-        { botId: "x", pinned: false },
-        {
-          requestContext: {
-            apiBase: "",
-            headers: { authorization: "Bearer token", "x-rakazo-space-id": "space-b" },
-            sessionGeneration: 1,
-          },
-          skipSpaceAuthRecovery: true,
-        },
-      ],
-    ]);
-    expect(h.loadBots).toHaveBeenCalledTimes(1);
-  });
-
-  it("names the archive failure for bots", async () => {
-    const h = handlers(async () => {
-      throw new Error("nope");
-    });
-    await h.runRowAction("bot", { id: "x" }, "archive");
-    await h.runRowAction("group", { id: "x" }, "pin");
-    expect(h.Alert.alert.mock.calls.map(([title]) => title)).toEqual([
-      "Could not archive bot",
-      "Could not update chat",
-    ]);
-    expect(h.notifyArchivedChatsChanged).not.toHaveBeenCalled();
-    expect(h.removeFromSearchInbox).not.toHaveBeenCalled();
-  });
-
-  it.each(["bot", "group"] as const)(
-    "updates the archived count once a %s is archived",
-    async (kind) => {
-      const h = handlers(async () => ({ ok: true }));
-      await h.runRowAction(kind, { id: "x" }, "archive");
-      // Search stops offering it at once, before the inbox reloads.
-      expect(h.removeFromSearchInbox).toHaveBeenCalledWith("x");
-      expect(h.notifyArchivedChatsChanged).toHaveBeenCalledOnce();
-      await h.runRowAction(kind, { id: "x" }, "pin");
-      expect(h.notifyArchivedChatsChanged).toHaveBeenCalledOnce();
-    },
-  );
 });

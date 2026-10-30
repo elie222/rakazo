@@ -1,9 +1,14 @@
+import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultCatalogModelId } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import {
   catalogModelLabel,
+  catalogModelServesAgents,
   catalogProviderProbeBaseUrl,
+  hiddenCatalogModel,
   listPiCatalog,
+  offeredCatalog,
   probeCatalogProviderModels,
   scriptedCatalogEntry,
   verifyCatalogProviderApiKey,
@@ -12,6 +17,14 @@ import { probeOpenAiCompatibleModels } from "./pi-openai-compatible-provider.js"
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 
 describe("catalog provider authentication", () => {
+  it("refuses a key that cannot travel in a header without calling the provider", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "openrouter", apiKey: "sk-fixture-ключ" }, fetchImpl),
+    ).rejects.toThrow(MODEL_KEY_FORMAT_ERROR);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("checks authentication before listing a public OpenRouter catalog", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       Response.json({ data: [{ id: "fixture-model" }] }),
@@ -365,7 +378,7 @@ describe("Pi model catalog", () => {
     ).toBeUndefined();
 
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
-    delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
     try {
       await expect(
         probeOpenAiCompatibleModels(
@@ -374,7 +387,7 @@ describe("Pi model catalog", () => {
             throw new Error("user-supplied probe should be rejected before fetch");
           },
         ),
-      ).rejects.toThrow(/Public model endpoints are blocked/);
+      ).rejects.toThrow(/Public model endpoints are disabled/);
 
       for (const [provider, baseUrl] of Object.entries(expected)) {
         let requestedUrl = "";
@@ -506,5 +519,68 @@ describe("catalogModelLabel", () => {
     ["latest", "latest", "latest"],
   ])("labels %s / %s as %s", (id, name, expected) => {
     expect(catalogModelLabel(id, name, providerModelIds)).toBe(expected);
+  });
+});
+
+describe("models agents can run", () => {
+  const free = { input: 0, output: 0 };
+  const paid = { input: 1, output: 2 };
+
+  it.each([
+    // OpenRouter batch variants only exist on its batch endpoint.
+    [{ provider: "openrouter", id: "fixture/model:batch", cost: paid }, false],
+    [{ provider: "openrouter", id: "fixture/model", cost: paid }, true],
+    // OpenRouter's own free models still answer API calls.
+    [{ provider: "openrouter", id: "fixture/model:free", cost: free }, true],
+    // OpenCode's free tier only answers inside the OpenCode app.
+    [{ provider: "opencode", id: "fixture-free", cost: free }, false],
+    [{ provider: "opencode", id: "fixture", cost: paid }, true],
+    [{ provider: "opencode-go", id: "fixture-free", cost: free }, true],
+    // Retired or integration-refused ids.
+    [{ provider: "google", id: "gemini-2.5-flash", cost: paid }, false],
+    [{ provider: "google", id: "gemini-3.8-flash", cost: paid }, true],
+    [{ provider: "groq", id: "llama-3.1-8b-instant", cost: paid }, false],
+    [{ provider: "github-copilot", id: "grok-4.5", cost: paid }, false],
+  ])("judges %o as %s", (model, expected) => {
+    expect(catalogModelServesAgents(model)).toBe(expected);
+  });
+
+  it("hides bundled models agents cannot run from the offered catalog", () => {
+    const offered = offeredCatalog(listPiCatalog());
+    const has = (provider: string, id: string) =>
+      offered.some((entry) => entry.provider === provider && entry.id === id);
+    expect(offered.some((entry) => entry.id.endsWith(":batch"))).toBe(false);
+    expect(has("openrouter", "anthropic/claude-haiku-5.5")).toBe(true);
+    expect(has("google", "gemini-2.5-flash")).toBe(false);
+    expect(has("groq", "llama-3.1-8b-instant")).toBe(false);
+    expect(has("opencode", "big-pickle")).toBe(false);
+    expect(has("opencode", "claude-haiku-5-5")).toBe(true);
+    // A hidden model stays a known catalog id, so saved choices keep running.
+    expect(listPiCatalog().some((entry) => entry.id === "gemini-2.5-flash")).toBe(true);
+  });
+
+  it("keeps a hidden model the account already saved", () => {
+    const entries = [
+      { provider: "google", id: "gemini-2.5-flash" },
+      { provider: "openrouter", id: "fixture/model:batch" },
+    ];
+    expect(offeredCatalog(entries, new Set(["google:gemini-2.5-flash"]))).toEqual([entries[0]]);
+  });
+
+  it("judges live ids the catalog does not bundle by their id", () => {
+    expect(hiddenCatalogModel({ provider: "openrouter", id: "fixture/live:batch" })).toBe(true);
+    expect(hiddenCatalogModel({ provider: "openrouter", id: "fixture/live" })).toBe(false);
+  });
+
+  it.each([
+    ["google", "gemini-3.8-flash"],
+    ["groq", "openai/gpt-oss-120b"],
+    ["minimax", "MiniMax-M3"],
+  ])("connects %s to %s when no model is chosen", (provider, model) => {
+    expect(defaultCatalogModelId(provider, "fixture-api-key")).toBe(model);
+    expect(
+      listPiCatalog().find((entry) => entry.provider === provider && entry.id === model)
+        ?.recommended,
+    ).toBe(true);
   });
 });

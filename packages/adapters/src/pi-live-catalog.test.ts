@@ -10,7 +10,7 @@ import {
 } from "./pi-live-catalog.js";
 import { isChatModelId } from "./pi-live-model.js";
 import { listPiCatalog } from "./pi-models.js";
-import { resolveRuntimeModel } from "./pi-runtime.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 
 const provider = "openai";
 const base = listPiCatalog();

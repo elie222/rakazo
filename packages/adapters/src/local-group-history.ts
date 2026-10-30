@@ -49,7 +49,7 @@ export function scopeToGroupGoalWithSource<T extends { seq: number }>(
 /** Keep the originating request even when newer messages exhaust the model
  * history window. Input and output are oldest-first, matching executor history.
  * The source consumes one slot; never append it past the configured budget. */
-export function trimGroupHistoryWithSource<T extends { id: string }>(
+export function trimGroupHistoryWithSource<T extends { id?: string | undefined }>(
   history: readonly T[],
   sourceMessageId: string,
   limit: number,

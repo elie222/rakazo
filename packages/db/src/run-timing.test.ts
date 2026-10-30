@@ -43,6 +43,8 @@ describe("run response timing", () => {
       isRunResponse("thread.message.created", { role: "bot", blocks: [{ kind: "chart" }] }),
     ).toBe(true);
     expect(isRunResponse("thread.progress", { text: "activity", activity: true })).toBe(false);
+    expect(isRunResponse("thread.meta", { activity: { thinking: true } })).toBe(false);
+    expect(isRunResponse("thread.meta", { activity: { thinking: false } })).toBe(false);
     expect(isRunResponse("thread.progress", { streaming: true, text: "" })).toBe(false);
     expect(
       isRunResponse("thread.message.created", { role: "bot", blocks: [{ kind: "ask" }] }),

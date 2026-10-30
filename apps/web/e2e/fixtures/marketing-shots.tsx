@@ -130,11 +130,6 @@ function fill(element: HTMLInputElement, value: string) {
 function ModelShot() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    document
-      .querySelector<HTMLButtonElement>(
-        '[data-testid="bot-settings-advanced"] > button[aria-expanded="false"]',
-      )
-      ?.click();
     const timer = window.setTimeout(() => setReady(true), 400);
     return () => window.clearTimeout(timer);
   }, []);
@@ -216,6 +211,7 @@ function ApprovalShot() {
 
 const subscriptionMe: Me = {
   ticketBoardEnabled: false,
+  navLinks: [],
   phoneCallsEnabled: false,
   userId: "user-demo",
   email: "ada@example.test",

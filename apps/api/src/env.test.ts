@@ -7,6 +7,24 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("defaults the attachment count to four and accepts configured bounds", () => {
+    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
+    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);
+    for (const count of [1, 8, 100]) {
+      expect(
+        loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: ` ${count} ` }).maxAttachmentsPerMessage,
+      ).toBe(count);
+    }
+  });
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "1e2", "0x10", "101", "9007199254740991"])(
+    "rejects invalid attachment count %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: value })).toThrow(
+        "MAX_ATTACHMENTS_PER_MESSAGE",
+      );
+    },
+  );
+
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
     for (const value of ["false", "1", ""]) {
@@ -41,6 +59,25 @@ describe("loadEnv", () => {
     for (const value of ["false", "1", ""])
       expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
     expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+  });
+  it("loads operator menu links and refuses to start on a bad value", () => {
+    expect(loadEnv(base).navLinks).toEqual([]);
+    expect(
+      loadEnv({
+        ...base,
+        RAKAZO_NAV_LINKS: '[{"id":"clients","label":"Clients","path":"/ext/clients/"}]',
+      }).navLinks,
+    ).toEqual([{ id: "clients", label: "Clients", path: "/ext/clients/", trusted: false }]);
+    expect(() =>
+      loadEnv({ ...base, RAKAZO_NAV_LINKS: '[{"id":"x","label":"X","path":"/api/me"}]' }),
+    ).toThrow("RAKAZO_NAV_LINKS");
+  });
+  it("keeps Crisp chat off unless a valid website ID is set", () => {
+    expect(loadEnv(base).crispWebsiteId).toBeNull();
+    expect(
+      loadEnv({ ...base, CRISP_WEBSITE_ID: "c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec" }).crispWebsiteId,
+    ).toBe("c2c27ea6-4fdb-4350-a9fc-4b5b052dc5ec");
+    expect(() => loadEnv({ ...base, CRISP_WEBSITE_ID: "nope" })).toThrow("CRISP_WEBSITE_ID");
   });
   it("defaults the product path to Pi, Docker, and Graphile Worker", () => {
     const env = loadEnv(base);
@@ -119,6 +156,24 @@ describe("loadEnv", () => {
       daytonaApiUrl: "https://daytona.test/api",
       daytonaTarget: "test-target",
     });
+  });
+
+  it("loads Novita credentials and the shared sandbox template", () => {
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "novita",
+        NOVITA_API_KEY: "test-novita-key",
+        SANDBOX_TEMPLATE: "custom-desktop",
+      }),
+    ).toMatchObject({
+      sandboxProvider: "novita",
+      novitaApiKey: "test-novita-key",
+      sandboxTemplate: "custom-desktop",
+    });
+    expect(
+      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
+    ).toBe("none");
   });
 
   it("loads provider-specific Boat configuration", () => {

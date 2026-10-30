@@ -2,11 +2,6 @@ import { droppedTableHtmlText } from "@rakazo/contracts";
 import type { MarkdownCopy } from "./markdown-copy";
 import { defaultMarkdownCopy } from "./markdown-copy";
 
-/**
- * Pure helpers behind the markdown table card: hast extraction, type
- * inference, sorting, and copy/export serialization.
- */
-
 /** Structural hast subset — avoids a direct @types/hast dependency. */
 export interface HastNode {
   type?: string;
@@ -233,7 +228,10 @@ export function tableToCsv(columns: string[], rows: string[][]): string {
 }
 
 export function tableToTsv(columns: string[], rows: string[][]): string {
-  const clean = (value: string) => neutralizeFormula(value).replace(/[\t\r\n]/g, " ");
+  const clean = (value: string) => {
+    const safe = neutralizeFormula(value).replace(/[\t\r\n]/g, " ");
+    return safe.includes('"') ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
   const line = (cells: string[]) => cells.map(clean).join("\t");
   return [line(columns), ...rows.map((row) => line(columns.map((_, i) => row[i] ?? "")))].join(
     "\n",

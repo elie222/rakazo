@@ -18,6 +18,8 @@ const DEFAULT_TICKET_PRIORITY: TicketPriority = "normal";
 export const TICKET_TITLE_MAX_LENGTH = 200;
 export const TICKET_DESCRIPTION_MAX_LENGTH = 20_000;
 const TICKET_PREFIX_MAX_LENGTH = 12;
+// Ticket numbers are stored as PostgreSQL Int values.
+const TICKET_NUMBER_MAX = 2_147_483_647;
 export const TICKET_COMMENT_MAX_LENGTH = 10_000;
 
 const TicketPrefixSchema = z
@@ -44,7 +46,9 @@ export function parseTicketRef(
   if (!rawPrefix || !rawNumber) return null;
   const prefix = rawPrefix.toUpperCase();
   if (expectedPrefix !== undefined && prefix !== expectedPrefix.trim().toUpperCase()) return null;
-  return { prefix, number: Number(rawNumber) };
+  const number = Number(rawNumber);
+  if (number > TICKET_NUMBER_MAX) return null;
+  return { prefix, number };
 }
 
 export const BoardSchema = z.object({

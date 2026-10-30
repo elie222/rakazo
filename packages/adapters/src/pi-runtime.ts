@@ -1,151 +1,93 @@
-import { randomUUID } from "node:crypto";
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
   AssistantMessage,
-  AssistantMessageEvent,
   Context,
   JsonValue,
   Message,
   Model,
-  Models,
-  ModelsSimpleStreamOptions,
-  ModelThinkingLevel,
-  ProviderHeaders,
-  TranscriptContext,
 } from "@earendil-works/pi-ai";
-import {
-  clampThinkingLevel,
-  getSupportedThinkingLevels,
-  Type,
-  validateToolArguments,
-} from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
   AgentSteeringMessage,
-  AgentToolCompletion,
-  AgentToolExecutionResult,
   AgentUsage,
-  ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
+import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
 import {
-  DEFAULT_CONTEXT_STRATEGY,
-  isRetryableProviderUnavailable,
-  isTransientModelError,
-  ModelAccountError,
-  ModelOutputError,
-  TransientModelError,
-} from "@rakazo/adapter-kit";
-import {
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  canonicalPiProviderId,
-  FLEET_TOOL_NAMES,
-  usableModelId,
-} from "@rakazo/contracts";
-import type { ModelBackupOutcome } from "@rakazo/core";
-import {
-  abortableDelay,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
-  MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_IMAGE_INPUT_ERROR,
+  MODEL_OUTPUT_CUT_ERROR,
   modelFallbackFailure,
-  normalizeRunError,
-  parseModelFallbackFailure,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
+import { uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
-import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
-import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
-import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
-import { shortenToolResultText } from "./context-selection.js";
-import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
-import { groqRequestContextWindow } from "./groq-request-budget.js";
-import { estimateModelContextTokens } from "./model-context.js";
-import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
-import {
-  normalizeOpenAiToolParameters,
-  openAiToolParametersNeedNormalization,
-} from "./openai-tool-parameters.js";
-import { affordableOpenRouterOutput } from "./openrouter-output-budget.js";
-import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
-import { liveModelSibling } from "./pi-live-model.js";
-import { registerLocalProvider } from "./pi-local-provider.js";
-import { applyPiModelCompatibility } from "./pi-model-compat.js";
-import { codexComputeResidency } from "./pi-oauth.js";
 import {
-  OPENAI_COMPATIBLE_PROVIDER_ID,
-  registerOpenAiCompatibleCatalog,
-  registerOpenAiCompatibleRuntime,
-} from "./pi-openai-compatible-provider.js";
+  assistantText,
+  messageHasToolCall,
+  modelFailure,
+  providerFailureText,
+  sanitizeError,
+  sanitizeProviderError,
+} from "./pi-runtime-errors.js";
+import type { FallbackStreamState } from "./pi-runtime-fallback.js";
 import {
-  clipToolResultContent,
-  clipToolResultText,
-  effectiveOutputReserve,
-  MODEL_STREAM_IDLE_TIMEOUT_MS,
-  MODEL_STREAM_TIMEOUT_MS,
-  modelStreamMaxRetries,
-  REASONING_MODEL_MAX_TOKENS,
-  resolveCompletionMaxTokens,
-} from "./pi-runtime-limits.js";
+  continuationRepeat,
+  fallbackAwareModelStream,
+  MAX_CONTINUATION_MARKER,
+  MAX_CONTINUATION_OVERLAP,
+  MAX_SELF_RECOVERIES_PER_RUN,
+} from "./pi-runtime-fallback.js";
+import type { RuntimeModelTarget } from "./pi-runtime-models.js";
+import {
+  cardOutputCeiling,
+  modelForCompletion,
+  modelTargetKey,
+  resizeRuntimeTarget,
+  resolveRuntimeModel,
+  sameModelTarget,
+  thinkingLevelFor,
+} from "./pi-runtime-models.js";
+import { conversationSessionId, reliableModelStream } from "./pi-runtime-stream.js";
+import { MAX_PARALLEL_SUBAGENTS } from "./pi-runtime-subagent.js";
+import type { EventQueue, ToolCallBudget, ToolHost } from "./pi-runtime-tools.js";
+import {
+  describeToolActivity,
+  releaseToolCallBudget,
+  toAgentTools,
+  toolCallBudgetExceededMessage,
+  toolCallBudgetFor,
+} from "./pi-runtime-tools.js";
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
-import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "./pi-telemetry.js";
+import { withPiTelemetry } from "./pi-telemetry.js";
+import { withPiThinkingActivity } from "./pi-thinking-activity.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
-import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
-import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
-import type { FinishedShellCommand } from "./shell-command-stream.js";
+import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
-import {
-  isThinkingSignatureMismatch,
-  withoutThinkingBlocks,
-  withoutThinkingFrom,
-} from "./thinking-signatures.js";
-import { textContentArg } from "./tool-text.js";
 import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "./turn-checkpoint.js";
-import { fetchPairedWithDispatcher } from "./undici-fetch.js";
-import { argumentGiven } from "./update-bot-patch.js";
+import { midTaskMessageFromPrompt, midTaskMessagePrompt } from "./user-progress.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
-interface ToolCallBudget {
-  count: number;
-  exceeded: boolean;
-  limit: number;
-  inFlight: number;
-}
-// Optional fuse is process-local. continueRun on another worker starts at zero.
-const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
-// Built on first use, not at module load: entry points call loadRootEnv() after
-// their imports, and ESM hoists those imports, so module-level env reads here
-// would run before .env is loaded and miss the local provider entirely.
-let catalogModelsCache: Models | undefined;
-function catalogModels(): Models {
-  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
-    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
-  );
-  return catalogModelsCache;
-}
-const MAX_PARALLEL_SUBAGENTS = 4;
-const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
-// Sent in the user's role, so marked as automated: models took the old wording for the
-// user telling them never to stop, and kept going instead of asking.
+// Sent in the user's role, so marked as automated: otherwise models read it as the user
+// telling them never to stop, and keep going instead of asking.
 export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
 );
@@ -153,6 +95,21 @@ export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
 export const CUT_REPLY_CONTINUATION_PROMPT = automated(
   "Your previous reply was cut off by a connection error. Continue exactly where it stopped, mid-word if needed, without repeating anything.",
 );
+/**
+ * Sent after a reply ran out of output room. Models don't reliably tell a finished last word
+ * from a cut one, or keep the space before the next word, so the continuation starts by
+ * repeating the reply's last words, quoted here, and the join drops that repeat.
+ */
+export function cutReplyAtLimitPrompt(cut: string): string {
+  const end = cut.trimEnd().slice(-200);
+  const words = /(?:\S+\s+){0,5}\S+$/.exec(end)?.[0] ?? end;
+  // Escaped so a quote mark in the reply can't end the quote early; line breaks stay as they
+  // are, for the model to repeat them.
+  const quoted = words.slice(-80).replace(/["\\]/g, "\\$&");
+  return automated(
+    `Your previous reply hit the output limit. It ended with: "${quoted}" Continue it: start by repeating those last words exactly, then carry on without repeating anything else.`,
+  );
+}
 export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing, even if you were told to stay silent. Otherwise, if you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply; if not, use any remaining tools needed, then give the user the final answer.",
 );
@@ -161,34 +118,6 @@ export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
 // continue stores that sentence as the reply, and the next "continue" runs
 // tools and misses a final answer again.
 export { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
-
-// Reasoning-capable models must not start at "off": for OpenRouter, pi-ai maps
-// that to reasoning.effort "none", which 400s on endpoints that mandate
-// reasoning (e.g. google/gemini-3.7-flash). Keep a real level when model.reasoning
-// is set; plain models stay off.
-const REASONING_MODEL_THINKING_LEVEL: ModelThinkingLevel = "medium";
-function thinkingLevelFor(
-  model: Model<Api>,
-  preferred?: ModelThinkingLevel | null,
-): ModelThinkingLevel {
-  if (!model.reasoning) return "off";
-  if (preferred) return clampThinkingLevel(model, preferred);
-  return clampThinkingLevel(model, REASONING_MODEL_THINKING_LEVEL);
-}
-// Pi forwards these names to OpenAI Responses, whose function-name contract is
-// ^[a-zA-Z0-9_-]+$ with a maximum length of 64 characters.
-const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
-const MAX_AGENT_TOOL_NAME_LENGTH = 64;
-const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
-
-/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default). */
-export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.MAX_TOOL_CALLS_PER_TURN?.trim();
-  if (!raw) return 0;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.floor(parsed);
-}
 
 export interface PiAgentRuntimeOptions {
   /** Directory where Pi JSONL sessions are written. Omit to disable recording. */
@@ -274,6 +203,15 @@ export class PiAgentRuntime implements AgentRuntime {
       ? AbortSignal.any([controller.signal, context.signal])
       : controller.signal;
     const queue = createQueue();
+    let thinking = false;
+    const setThinking = (active: boolean) => {
+      const next = active && !signal.aborted;
+      if (thinking === next) return;
+      thinking = next;
+      queue.push({ type: "thinking", active: next });
+    };
+    const stopThinking = () => setThinking(false);
+    signal.addEventListener("abort", stopThinking, { once: true });
 
     const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
@@ -326,6 +264,11 @@ export class PiAgentRuntime implements AgentRuntime {
         const tools = toAgentTools(toolDefs, host);
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
+        let hasCurrentImages = Boolean(
+          request.currentRunRequiresImageInput ||
+            (request.currentTurnImages?.length && !request.currentTurnImageFileFallback) ||
+            initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
+        );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(request.turnCheckpoint, {
@@ -434,36 +377,43 @@ export class PiAgentRuntime implements AgentRuntime {
           nextIndex: 0,
           backupOutcomes: new Map(),
           selfRecoveries: 0,
-          cutReplies: new WeakSet(),
-          stream: (target, ctx, options) =>
-            reliableModelStream(
-              target.models,
-              target.model,
-              ctx,
-              withCloudflareAuth(target.config, options),
-              target.config.maxTokens,
-              () => target.credentials?.accessToken ?? target.apiKey,
-              (preparedOptions) =>
-                observedPiStream(
-                  target.models,
-                  target.model,
-                  ctx,
-                  preparedOptions,
-                  (event) => queue.push(event),
-                  target.config.callObserver ?? this.modelCallObserver,
-                  {
-                    operationKind: request.usageOperationKind ?? "answer",
-                    userId: context?.userId,
-                    runId: request.runId,
-                  },
-                  {
-                    ...usageHooks,
-                    prepareContext,
-                    onProviderError: (message) => providerFailures.add(message.content),
-                  },
-                ),
-              target.config.cacheCapabilities?.retentionMode,
-            ),
+          cutReplies: new WeakMap(),
+          stream: (target, ctx, options) => {
+            if (hasCurrentImages && !target.model.input.includes("image")) {
+              throw new Error(MODEL_IMAGE_INPUT_ERROR);
+            }
+            return withPiThinkingActivity(
+              reliableModelStream(
+                target.models,
+                target.model,
+                ctx,
+                withCloudflareAuth(target.config, options),
+                target.config.maxTokens,
+                () => target.credentials?.accessToken ?? target.apiKey,
+                (preparedOptions) =>
+                  observedPiStream(
+                    target.models,
+                    target.model,
+                    ctx,
+                    preparedOptions,
+                    (event) => queue.push(event),
+                    target.config.callObserver ?? this.modelCallObserver,
+                    {
+                      operationKind: request.usageOperationKind ?? "answer",
+                      userId: context?.userId,
+                      runId: request.runId,
+                    },
+                    {
+                      ...usageHooks,
+                      prepareContext,
+                      onProviderError: (message) => providerFailures.add(message.content),
+                    },
+                  ),
+                target.config.cacheCapabilities?.retentionMode,
+              ),
+              setThinking,
+            );
+          },
           onContextLimit: (contextWindow) => {
             const target = resizeRuntimeTarget(activeStreamTarget, contextWindow);
             activeStreamTarget = target;
@@ -520,14 +470,28 @@ export class PiAgentRuntime implements AgentRuntime {
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
+            if (steering.some((item) => item.images?.length && !item.imageFileFallback))
+              hasCurrentImages = true;
             for (const item of steering) {
               const images = toPiImages(item.images);
+              const text =
+                item.origin === "user"
+                  ? midTaskMessagePrompt(
+                      item.text,
+                      toolDefs.some((tool) => tool.name === "message_user"),
+                    )
+                  : midTaskMessageFromPrompt(item.text, item.origin);
               agent.steer({
                 role: "user",
-                content: images.length ? [{ type: "text", text: item.text }, ...images] : item.text,
+                content: images.length ? [{ type: "text", text }, ...images] : text,
                 timestamp: Date.now(),
               });
             }
+            // Ordered with the turn's other events, so the run can treat it as a turn boundary.
+            queue.push({
+              type: "steered",
+              fromRunUser: steering.some((item) => item.origin === "user"),
+            });
             return undefined;
           },
           initialState: {
@@ -607,12 +571,18 @@ export class PiAgentRuntime implements AgentRuntime {
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
-        let joinCutReply: { tail: string; held: string } | undefined;
+        let joinCutReply: { tail: string; held: string; requested: boolean } | undefined;
+        let limitContinuation: { tail: string; start: number } | undefined;
+        let outputCutFailed = false;
+        // What the last join dropped from the start of a continuation, which the completed
+        // message still holds.
+        let joinDropped = "";
         const releaseJoin = () => {
           if (!joinCutReply) return;
-          const { tail, held } = joinCutReply;
+          const { tail, held, requested } = joinCutReply;
           joinCutReply = undefined;
-          const text = held.slice(continuationOverlap(tail, held));
+          joinDropped = held.slice(0, continuationRepeat(tail, held, requested));
+          const text = held.slice(joinDropped.length);
           if (!text) return;
           streamed += text;
           queue.push({ type: "text", text });
@@ -634,9 +604,11 @@ export class PiAgentRuntime implements AgentRuntime {
             });
           }
           if (event.type === "message_end") {
+            stopThinking();
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
+            stopThinking();
             finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
@@ -651,6 +623,7 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             currentMessageStreamed = "";
+            if (!joinCutReply) joinDropped = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
             if (streamed && !joinCutReply) queue.push({ type: "turn" });
@@ -669,7 +642,9 @@ export class PiAgentRuntime implements AgentRuntime {
               currentMessageStreamed += delta;
               if (joinCutReply) {
                 joinCutReply.held += delta;
-                const decidable = Math.min(joinCutReply.tail.length, MAX_CONTINUATION_OVERLAP);
+                const decidable =
+                  Math.min(joinCutReply.tail.length, MAX_CONTINUATION_OVERLAP) +
+                  MAX_CONTINUATION_MARKER;
                 if (joinCutReply.held.length > decidable) releaseJoin();
               } else {
                 streamed += delta;
@@ -747,11 +722,32 @@ export class PiAgentRuntime implements AgentRuntime {
               streamed = text;
               queue.push({ type: "text", text });
             }
-            if (fallbackState.cutReplies?.has(event.message.content)) {
-              joinCutReply = { tail: text, held: "" };
+            let cutBy = fallbackState.cutReplies?.get(event.message.content);
+            let tail = text;
+            // A normal stop only finishes the cut reply if the join added new text.
+            if (
+              limitContinuation &&
+              !messageHasToolCall(event.message) &&
+              event.message.stopReason === "stop" &&
+              !streamed.slice(limitContinuation.start).trim() &&
+              !cutBy
+            ) {
+              if (fallbackState.selfRecoveries >= MAX_SELF_RECOVERIES_PER_RUN) {
+                outputCutFailed = true;
+              } else {
+                fallbackState.selfRecoveries += 1;
+                cutBy = "limit";
+                tail = limitContinuation.tail;
+              }
+            }
+            limitContinuation = undefined;
+            if (cutBy) {
+              limitContinuation = cutBy === "limit" ? { tail, start: streamed.length } : undefined;
+              joinCutReply = { tail, held: "", requested: cutBy === "limit" };
               agent.followUp({
                 role: "user",
-                content: CUT_REPLY_CONTINUATION_PROMPT,
+                content:
+                  cutBy === "limit" ? cutReplyAtLimitPrompt(tail) : CUT_REPLY_CONTINUATION_PROMPT,
                 timestamp: Date.now(),
               });
             }
@@ -892,13 +888,14 @@ export class PiAgentRuntime implements AgentRuntime {
         // with a durable assistant message instead of a failed run.
         const budgetExceeded = host.toolCallBudget.exceeded;
         const terminalMessage = agent.state.messages.at(-1);
-        // pi-agent-core records ordinary provider failures as an empty assistant
-        // message (stopReason "error" / "length") and still resolves the run.
-        // state.errorMessage covers the error stop; the message itself covers a
-        // length stop and any failure that never landed on state.
+        // pi-agent-core records provider failures as an empty assistant message and
+        // still resolves the run; state.errorMessage misses length stops and failures
+        // that never landed on state.
         const providerFailure =
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
-        const error = agent.state.errorMessage || providerFailure;
+        const error = outputCutFailed
+          ? MODEL_OUTPUT_CUT_ERROR
+          : agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
           let message = sanitizeProviderError(activeStreamTarget.model.provider, error);
           if (
@@ -921,7 +918,11 @@ export class PiAgentRuntime implements AgentRuntime {
           throw modelFailure(error, message);
         }
         if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
-          const terminalText = assistantText(terminalMessage);
+          const completedText = assistantText(terminalMessage);
+          const terminalText =
+            joinDropped && completedText.startsWith(joinDropped)
+              ? completedText.slice(joinDropped.length)
+              : completedText;
           const sincePendingFinal = streamed.slice(streamedBeforePendingFinal);
           if (terminalText.trim() && !sincePendingFinal.includes(terminalText)) {
             const missing =
@@ -980,6 +981,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 : new Error(message),
         );
       } finally {
+        stopThinking();
+        signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
           const keepForResume =
@@ -1007,286 +1010,6 @@ function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
     data: Buffer.from(image.data).toString("base64"),
     mimeType: image.mimeType,
   }));
-}
-
-function configuredOpenRouterModel(
-  id: string,
-  contextWindow = 16_384,
-): Model<"openai-completions"> {
-  // A configured model can intentionally be newer than Pi's static catalog. Keep
-  // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
-  // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
-  // thinkingLevel "off" becomes effort "none" which those endpoints reject.
-  // Reserve half the conservative fallback window for input. A model card's
-  // configured limits override this placeholder below.
-  return {
-    id,
-    name: id,
-    api: "openai-completions",
-    provider: "openrouter",
-    baseUrl: "https://openrouter.ai/api/v1",
-    reasoning: true,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow,
-    maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, Math.max(1, Math.floor(contextWindow / 2))),
-  };
-}
-
-export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
-  provider: string;
-  modelId: string;
-  models: Models;
-  model: Model<Api> | undefined;
-  apiKey: string | undefined;
-  /** Live credential store; OAuth refreshes swap the credential mid-run. */
-  credentials: PiRuntimeCredentialStore | undefined;
-} {
-  const provider = canonicalPiProviderId(
-    modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider,
-  );
-  const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
-  const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
-  const requestedId =
-    modelConfig.id === "scripted" ? envDefaultModel || DEFAULT_OPENROUTER_MODEL_ID : modelConfig.id;
-  const modelId = usableModelId(requestedId) ?? "";
-  const credentials = credentialStoreForRequest({ model: modelConfig }, provider);
-  const models = modelsForRequest({ model: modelConfig }, provider, credentials);
-  let model = models.getModel(provider, modelId);
-  if (
-    provider === "openrouter" &&
-    !model &&
-    modelId &&
-    ((envDefaultProvider === "openrouter" && modelId === envDefaultModel) ||
-      modelConfig.contextWindow !== undefined)
-  ) {
-    model = configuredOpenRouterModel(modelId, modelConfig.contextWindow);
-  }
-  // Saved generic limits and deployment defaults take precedence over inferred siblings.
-  model ??= liveModelSibling(models, provider, modelId);
-  if (model && (modelConfig.contextWindow !== undefined || modelConfig.maxTokens !== undefined)) {
-    model = {
-      ...model,
-      ...(modelConfig.contextWindow !== undefined
-        ? { contextWindow: modelConfig.contextWindow }
-        : {}),
-      ...(modelConfig.maxTokens !== undefined ? { maxTokens: modelConfig.maxTokens } : {}),
-    };
-  }
-  const apiKey = modelConfig.oauth
-    ? undefined
-    : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? modelConfig.apiKey || "local"
-      : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-        // another provider would ship our key to a vendor it was not issued for.
-        (modelConfig.apiKey ??
-        (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
-  return { provider, modelId, models, model, apiKey, credentials };
-}
-
-function credentialStoreForRequest(
-  request: Pick<AgentRunRequest, "model">,
-  provider: string,
-): PiRuntimeCredentialStore | undefined {
-  const oauth = request.model.oauth;
-  if (!oauth) return undefined;
-  const persist = oauth.persist;
-  return new PiRuntimeCredentialStore(
-    provider,
-    toOAuthCredential(oauth.credential),
-    persist ? (next) => persist(next) : undefined,
-    oauth.retire,
-  );
-}
-
-export function modelsForRequest(
-  request: Pick<AgentRunRequest, "model">,
-  provider: string,
-  credentials?: PiRuntimeCredentialStore,
-): Models {
-  const store = credentials ?? credentialStoreForRequest(request, provider);
-  if (store) {
-    return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
-    );
-  }
-  if (
-    provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-    request.model.baseUrl &&
-    request.model.id.trim()
-  ) {
-    const models = registerOpenAiCompatibleCatalog(
-      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
-    );
-    return registerOpenAiCompatibleRuntime(models, {
-      modelId: request.model.id,
-      baseUrl: request.model.baseUrl,
-      headers: request.model.headers,
-      allowPrivate: request.model.allowPrivateEndpoint,
-      reasoning: request.model.reasoning,
-      acceptsImages: request.model.acceptsImages,
-      maxTokens: request.model.maxTokens,
-      contextWindow: request.model.contextWindow,
-    });
-  }
-  return catalogModels();
-}
-
-function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
-  return namedAgentTools(toolDefs).map(({ tool, name }) => toAgentTool(tool, host, name));
-}
-
-/** Shared canonical mapping for checkpoint validation and runtime exposure. */
-export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
-  // Registration order is incidental. Canonicalize before allocating collision suffixes
-  // so both provider-visible names and JSON schema serialization stay stable.
-  const canonicalJson = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(canonicalJson);
-    if (value && typeof value === "object") {
-      return Object.fromEntries(
-        Object.entries(value)
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-          .map(([key, item]) => [key, canonicalJson(item)]),
-      );
-    }
-    return value;
-  };
-  const ordered = toolDefs
-    .map((tool) => ({
-      tool: {
-        ...tool,
-        inputSchema: canonicalJson(tool.inputSchema) as Record<string, unknown>,
-      },
-      key: JSON.stringify(canonicalJson(tool)),
-    }))
-    .sort((a, b) =>
-      a.tool.name < b.tool.name
-        ? -1
-        : a.tool.name > b.tool.name
-          ? 1
-          : a.key < b.key
-            ? -1
-            : a.key > b.key
-              ? 1
-              : 0,
-    )
-    .map(({ tool }) => tool);
-  const names = normalizeAgentToolNames(ordered);
-  return ordered.map((tool, index) => ({ tool, name: names[index]! }));
-}
-
-/**
- * Normalize connector names only at the boundary where they are exposed to Pi.
- * Connector execution continues to use the original name captured by toAgentTool.
- */
-export function normalizeAgentToolName(name: string): string {
-  if (isProviderSafeAgentToolName(name)) return name;
-  const normalized = name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return (normalized || FALLBACK_AGENT_TOOL_NAME).slice(0, MAX_AGENT_TOOL_NAME_LENGTH);
-}
-
-/**
- * Return one valid, unique model-facing name per connector tool.
- * Existing valid names are reserved first so sanitizing a connector cannot
- * rename or shadow a builtin tool with the same valid name.
- */
-const ACTIVITY_DETAIL_LIMIT = 90;
-
-/** One human-readable line describing a tool call, shown live in the thread. */
-export function describeToolActivity(toolName: string, args: unknown): string {
-  const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  const detail = (value: unknown): string => {
-    const text = sanitizeSensitiveText(String(value ?? ""))
-      .replaceAll(/\s+/g, " ")
-      .trim();
-    return text.length > ACTIVITY_DETAIL_LIMIT ? `${text.slice(0, ACTIVITY_DETAIL_LIMIT)}…` : text;
-  };
-  if (toolName === "shell") return `Running: ${detail(record.command)}`;
-  if (toolName === "read_file") return `Reading ${detail(record.path)}`;
-  if (toolName === "write_file") return `Writing ${detail(record.path)}`;
-  if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
-  if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
-  if (toolName === "open_path") return `Opening ${detail(record.path)}`;
-  if (toolName === "render_plot") return "Rendering a chart";
-  if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
-  if (toolName === "computer_observe") return "Looking at the screen";
-  if (toolName === "browser_navigate")
-    return `Opening page: ${detail(redactActivityUrl(record.url))}`;
-  if (toolName === "browser_snapshot") return "Reading the page";
-  if (toolName === "browser_act") return "Using the page";
-  if (toolName === "computer_act") return "Operating the computer";
-  if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
-  if (toolName === "create_space") return `Creating space: ${detail(record.name)}`;
-  if (toolName === "list_fleet") return "Checking your bots";
-  if (toolName === "create_group") return `Creating group: ${detail(record.name)}`;
-  if (toolName === "update_group")
-    return `Updating group: ${detail(record.group_name ?? record.name)}`;
-  if (toolName === "organize_bot") return "Organizing the sidebar";
-  if (toolName === "set_child_instructions") return "Rewriting a bot's instructions";
-  if (toolName === "set_child_bot_model") return "Setting a bot's model";
-  if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
-  if (toolName === "remember") return "Saving a note to memory";
-  if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
-  if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
-  if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
-  if (toolName === "skill_read") return `Reading skill: ${detail(record.name)}`;
-  if (toolName === "skill_create") return `Creating skill: ${detail(record.name ?? "skill")}`;
-  if (toolName === "skill_update")
-    return `Updating skill: ${detail(record.name ?? record.skillId)}`;
-  if (toolName === "skill_delete")
-    return `Deleting skill: ${detail(record.name ?? record.skillId)}`;
-  const mcp = toolName.match(/^mcp__(.+?)__(.+)$/);
-  if (mcp) return `Using ${mcp[1]}: ${mcp[2]}`;
-  return `Using ${toolName}`;
-}
-
-export function normalizeAgentToolNames(tools: readonly ConnectorTool[]): string[] {
-  const reservedValidNames = new Set(
-    tools.filter((tool) => isProviderSafeAgentToolName(tool.name)).map((tool) => tool.name),
-  );
-  const usedNames = new Set<string>();
-
-  return tools.map((tool) => {
-    const base = normalizeAgentToolName(tool.name);
-    const originalIsValid = isProviderSafeAgentToolName(tool.name);
-    let candidate = base;
-
-    if (usedNames.has(candidate) || (!originalIsValid && reservedValidNames.has(candidate))) {
-      candidate = withToolNameSuffix(base, stableToolNameHash(tool.name));
-    }
-
-    let suffix = 2;
-    while (usedNames.has(candidate) || (!originalIsValid && reservedValidNames.has(candidate))) {
-      candidate = withToolNameSuffix(base, `${stableToolNameHash(tool.name)}_${suffix}`);
-      suffix += 1;
-    }
-
-    usedNames.add(candidate);
-    return candidate;
-  });
-}
-
-function isProviderSafeAgentToolName(name: string): boolean {
-  return AGENT_TOOL_NAME_PATTERN.test(name) && name.length <= MAX_AGENT_TOOL_NAME_LENGTH;
-}
-
-function withToolNameSuffix(base: string, suffix: string): string {
-  const suffixWithSeparator = `_${suffix}`;
-  const prefixLength = Math.max(1, MAX_AGENT_TOOL_NAME_LENGTH - suffixWithSeparator.length);
-  return `${base.slice(0, prefixLength)}${suffixWithSeparator}`;
-}
-
-function stableToolNameHash(name: string): string {
-  let hash = 2166136261;
-  for (const character of name) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 function toHistory(
@@ -1352,2009 +1075,6 @@ function withoutSteeringMessages(
   return result;
 }
 
-/**
- * Normalize `request_secret` arguments.
- *
- * Missing label/purpose must fail rather than filling Code/otp placeholders.
- * `credential` and `replace` must survive: the executor stores a submitted
- * value only when `credential` is present, and it validates the destination
- * shape itself. An earlier version of this function listed only
- * label/purpose/connectionId, so every credential the model supplied was
- * dropped here and the saved value had nowhere to go. Top-level destination
- * fields and a JSON string credential are folded into `credential` so they
- * are not dropped the same way.
- */
-export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
-  const label = raw.label == null ? "" : String(raw.label);
-  const purpose = raw.purpose == null ? "" : String(raw.purpose);
-  if (!label.trim() || !purpose.trim()) {
-    throw new Error(
-      `request_secret requires a non-empty label and purpose (received: ${
-        Object.keys(raw).sort().join(", ") || "no arguments"
-      })`,
-    );
-  }
-  const credential = credentialArgument(raw);
-  const connectionId = connectionIdArgument(raw.connectionId);
-  return {
-    label,
-    purpose,
-    ...(connectionId ? { connectionId } : {}),
-    ...(credential !== undefined ? { credential } : {}),
-    ...(raw.replace === true ? { replace: true } : {}),
-  };
-}
-
-function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
-  return {
-    name: exposedName,
-    label: tool.name,
-    description: tool.description,
-    // Pi runs a turn's tool calls concurrently by default, so a batch that
-    // creates a routine and lists routines can read the list before the row
-    // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes.
-    ...(SCHEDULE_TOOL_NAMES.has(tool.name) || tool.name === "remember"
-      ? { executionMode: "sequential" as const }
-      : {}),
-    parameters: parametersFor(tool),
-    prepareArguments: (args: unknown) => {
-      const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-      if (tool.name === "remember") {
-        return {
-          content: String(raw.content ?? ""),
-          path: String(raw.path ?? "MEMORY.md"),
-        };
-      }
-      if (tool.name === "request_takeover") {
-        return { reason: String(raw.reason ?? "I need you on the screen.") };
-      }
-      if (tool.name === "ask_user") {
-        const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
-        return {
-          question: String(raw.question ?? "What should I use?"),
-          // Keep a missing/invalid options value as-is so schema minItems can reject it;
-          // do not coerce to [] (that used to look like a valid empty list upstream).
-          options,
-        };
-      }
-      if (tool.name === "request_secret") {
-        return prepareRequestSecretArguments(raw);
-      }
-      if (tool.name === "write_file") {
-        return {
-          path: String(raw.path ?? "notes/result.txt"),
-          content: textContentArg(raw.content, ""),
-        };
-      }
-      if (tool.name === "computer_act") {
-        return {
-          actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
-        };
-      }
-      if (tool.name === "list_files") return { path: String(raw.path ?? "") };
-      if (tool.name === "read_file" || tool.name === "open_path") {
-        return { path: String(raw.path ?? "") };
-      }
-      if (tool.name === "launch_app") {
-        return {
-          application: String(raw.application ?? ""),
-          uri: raw.uri ? String(raw.uri) : "",
-        };
-      }
-      if (tool.name === "shell") {
-        return {
-          command: String(raw.command ?? ""),
-          // The executor chooses the bot-scoped default, including Team workspaces.
-          ...(raw.cwd ? { cwd: String(raw.cwd) } : {}),
-        };
-      }
-      if (tool.name === "run_subagent") {
-        return {
-          name: String(raw.name ?? "helper"),
-          task: String(raw.task ?? ""),
-          instructions: raw.instructions ? String(raw.instructions) : "",
-          model_provider: raw.model_provider ? String(raw.model_provider) : "",
-          model_id: raw.model_id ? String(raw.model_id) : "",
-        };
-      }
-      if (tool.name === "spawn_bot") {
-        return {
-          name: String(raw.name ?? ""),
-          title: raw.title ? String(raw.title) : "",
-          description: raw.description ? String(raw.description) : "",
-          instructions: raw.instructions ? String(raw.instructions) : "",
-          prompt: raw.prompt ? String(raw.prompt) : "",
-          computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
-        };
-      }
-      if (tool.name === "update_bot" || FLEET_TOOL_NAMES.some((name) => name === tool.name)) {
-        return prepareFleetArguments(tool.name, raw);
-      }
-      if (tool.name === "create_space") {
-        return { name: String(raw.name ?? "") };
-      }
-      if (tool.name === "archive_bot" || tool.name === "delete_bot") {
-        return {
-          confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
-          bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
-        };
-      }
-      return raw as never;
-    },
-    execute: async (toolCallId, params): Promise<AgentToolResult<unknown>> =>
-      withPiTelemetrySpan(
-        "pi.agent.tool",
-        {
-          "pi.agent.tool.name": tool.name,
-        },
-        async (span) => {
-          host.signal.throwIfAborted();
-          const args = (params ?? {}) as Record<string, unknown>;
-          recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
-          const rawCallId =
-            toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
-          // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
-          const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
-          // A sequential tail cannot start after its preceding call pauses.
-          // This makes the saved sequential tail safe to resolve on resume.
-          if (host.pausePending)
-            return { content: [], details: { skipped: true }, terminate: true };
-          if (host.depth === 0) await host.captureCheckpoint?.(rawCallId, executionId);
-          if (host.pausePending)
-            return { content: [], details: { skipped: true }, terminate: true };
-          if (!beginToolCall(host)) {
-            return {
-              content: [{ type: "text", text: "Skipped: tool-call limit reached." }],
-              details: { skipped: true },
-            };
-          }
-          host.queue.push({ type: "tool", name: tool.name, args, executionId });
-          const startedAt = Date.now();
-          let result: unknown;
-          let failure: unknown;
-          try {
-            result = await (async () => {
-              if (tool.name === "request_takeover") {
-                host.pausePending = true;
-                host.queue.push({
-                  type: "takeover",
-                  ...(host.request.onCheckpoint ? { executionId } : {}),
-                  reason: String(args.reason ?? "I need you on the screen."),
-                });
-                return {
-                  content: [{ type: "text", text: "Takeover requested." }],
-                  details: args,
-                  terminate: true,
-                };
-              }
-              if (tool.name === "ask_user") {
-                const options = Array.isArray(args.options)
-                  ? args.options.map((option) => String(option).trim())
-                  : [];
-                if (
-                  options.length < 2 ||
-                  options.length > 4 ||
-                  options.some((option) => option.length === 0 || option.length > 80) ||
-                  new Set(options).size !== options.length
-                ) {
-                  throw new Error("ask_user requires two to four unique, non-empty options");
-                }
-                host.pausePending = true;
-                host.queue.push({
-                  type: "ask",
-                  ...(host.request.onCheckpoint ? { executionId } : {}),
-                  text: String(args.question ?? "What should I use?"),
-                  actions: options.map((label, index) => ({
-                    id: `choice-${index + 1}`,
-                    label,
-                  })),
-                });
-                return {
-                  content: [{ type: "text", text: "Waiting for the user's choice." }],
-                  details: args,
-                  terminate: true,
-                };
-              }
-              if (tool.name === "request_secret") {
-                if (host.request.executeTool) {
-                  const result = await host.request.executeTool(tool.name, args, executionId);
-                  if (isAgentToolExecutionResult(result)) {
-                    if (isToolPauseResult(result)) host.pausePending = true;
-                    return result;
-                  }
-                  return {
-                    content: [
-                      {
-                        type: "text",
-                        text: serializeToolResult(
-                          result,
-                          host.request.contextStrategy,
-                          tool.name,
-                          args,
-                        ),
-                      },
-                    ],
-                    details: result,
-                  };
-                }
-                host.pausePending = true;
-                return {
-                  content: [{ type: "text", text: "Protected input requested." }],
-                  details: args,
-                  terminate: true,
-                };
-              }
-              if (tool.name === "run_subagent") {
-                const result = await executeSubagent(host, executionId, args);
-                return {
-                  content: [{ type: "text", text: result }],
-                  details: { result },
-                };
-              }
-              if (host.request.executeTool) {
-                const result = await host.request.executeTool(
-                  tool.name,
-                  args,
-                  executionId,
-                  tool.route,
-                  {
-                    onShellStillRunning: (completion) => {
-                      host.pendingShells.push(completion);
-                    },
-                  },
-                );
-                if (isAgentToolExecutionResult(result)) {
-                  if (isToolPauseResult(result)) host.pausePending = true;
-                  return boundAgentToolResult(result);
-                }
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: serializeToolResult(
-                        result,
-                        host.request.contextStrategy,
-                        tool.name,
-                        args,
-                      ),
-                    },
-                  ],
-                  details: result,
-                };
-              }
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: `${tool.name} is unavailable without an executor.`,
-                  },
-                ],
-                details: { error: "no executor" },
-              };
-            })();
-            if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
-            return boundAgentToolResult(result as AgentToolResult<unknown>);
-          } catch (error) {
-            failure = error;
-            throw error;
-          } finally {
-            // Pi only terminates a parallel batch when every result terminates.
-            // A single paused call must stop the turn before another model request.
-            if (host.pausePending) host.abortTurn?.();
-            const details = (
-              result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
-            )?.details;
-            const failed =
-              failure !== undefined || details?.error != null || details?.isError === true;
-            span?.setAttributes({ "pi.agent.tool.success": !failed });
-            recordPiTelemetryContent(span, "pi.agent.tool.result", result);
-            if (failed) span?.setStatus({ status: "error" });
-            endToolCall(host);
-            const completion: AgentToolCompletion = {
-              name: tool.name,
-              executionId,
-              durationMs: Math.max(0, Date.now() - startedAt),
-              ...(result === undefined ? {} : { result }),
-              ...(failure === undefined ? {} : { error: failure }),
-              ...(host.pausePending ? { paused: true } : {}),
-            };
-            try {
-              void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
-                () => undefined,
-              );
-            } catch {
-              // Audit hooks are best effort and must never change tool behavior.
-            }
-          }
-        },
-      ),
-  };
-}
-
-async function executeSubagent(host: ToolHost, executionId: string, args: Record<string, unknown>) {
-  if (host.depth > 0) return "Subagents cannot nest further.";
-  await host.subagentGate.acquire();
-  const agentId = executionId;
-  const name =
-    String(args.name ?? "helper")
-      .trim()
-      .slice(0, 80) || "helper";
-  const task = String(args.task ?? "").trim();
-  const extra = args.instructions ? String(args.instructions).trim() : "";
-  host.queue.push({
-    type: "subagent",
-    agentId,
-    name,
-    task,
-    status: "running",
-    progress: "starting…",
-  });
-
-  const requestedProvider = String(args.model_provider ?? "").trim();
-  const requestedModelId = String(args.model_id ?? "").trim();
-  const hasBackups = Boolean(host.request.fallbackModels?.length);
-  let requestModel = hasBackups ? host.activeModel.config : host.request.model;
-  try {
-    if (Boolean(requestedProvider) !== Boolean(requestedModelId)) {
-      throw new Error("model_provider and model_id must both be set");
-    }
-    if (requestedProvider && requestedModelId) {
-      if (!host.request.resolveModel) {
-        throw new Error("Per-call subagent model selection is unavailable");
-      }
-      requestModel = await host.request.resolveModel(requestedProvider, requestedModelId);
-    }
-  } catch (error) {
-    const message = sanitizeError(error instanceof Error ? error.message : String(error));
-    host.queue.push({
-      type: "subagent",
-      agentId,
-      name,
-      task,
-      status: "failed",
-      result: message,
-    });
-    host.subagentGate.release();
-    return `Subagent failed: ${message}`;
-  }
-
-  const selectedModel =
-    hasBackups && requestModel === host.activeModel.config
-      ? {
-          ...host.activeModel,
-          provider: host.activeModel.model.provider,
-          modelId: host.activeModel.model.id,
-        }
-      : resolveRuntimeModel(requestModel);
-  if (!selectedModel.model) {
-    const message = `Unknown model ${selectedModel.provider}/${selectedModel.modelId}`;
-    host.queue.push({
-      type: "subagent",
-      agentId,
-      name,
-      task,
-      status: "failed",
-      result: message,
-    });
-    host.subagentGate.release();
-    return `Subagent failed: ${message}`;
-  }
-  const subagentModel = modelForCompletion(selectedModel.model, requestModel.maxTokens);
-
-  const childDefs = host.request.tools.filter((tool) => !DELEGATION_TOOL_NAMES.has(tool.name));
-  const nestedHost: ToolHost = {
-    ...host,
-    activeModel: {
-      config: requestModel,
-      models: selectedModel.models,
-      model: subagentModel,
-      cardMaxTokens: cardOutputCeiling(selectedModel.model),
-      apiKey: selectedModel.apiKey,
-      credentials: selectedModel.credentials,
-    },
-    models: selectedModel.models,
-    model: subagentModel,
-    apiKey: hasBackups
-      ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
-      : selectedModel.apiKey,
-    depth: 1,
-    agentNamespace: agentId,
-    pendingShells: [],
-  };
-  let contextPolicy = createRuntimeContextPolicy(
-    {
-      ...host.request,
-      model: requestModel,
-      history: [],
-      prompt: task,
-      sourceMessageId: undefined,
-    },
-    host.context,
-    { credentialScope: selectedModel.apiKey, imageTokens: estimatePiImageTokens },
-  );
-  let nested!: Agent;
-  const providerFailures = new WeakSet<AssistantMessage["content"]>();
-  const retryState: FallbackStreamState = {
-    request: { ...host.request, model: requestModel, fallbackModels: [] },
-    getActive: () => nestedHost.activeModel,
-    signal: host.signal,
-    attempted: new Set(),
-    nextIndex: 0,
-    backupOutcomes: new Map(),
-    selfRecoveries: 0,
-    onSwitch: async () => undefined,
-    onContextLimit: (contextWindow) => {
-      const target = resizeRuntimeTarget(nestedHost.activeModel, contextWindow);
-      nestedHost.activeModel = target;
-      nestedHost.model = target.model;
-      nested.state.model = target.model;
-      contextPolicy = createRuntimeContextPolicy(
-        {
-          ...host.request,
-          model: target.config,
-          history: [],
-          prompt: task,
-          sourceMessageId: undefined,
-        },
-        host.context,
-        { credentialScope: target.apiKey, imageTokens: estimatePiImageTokens },
-      );
-    },
-    isProviderFailure: (message) => providerFailures.has(message.content),
-    stream: (target, ctx, options) =>
-      reliableModelStream(
-        target.models,
-        target.model,
-        ctx,
-        withCloudflareAuth(requestModel, options),
-        target.config.maxTokens,
-        () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
-        (preparedOptions) =>
-          observedPiStream(
-            target.models,
-            target.model,
-            ctx,
-            preparedOptions,
-            (event) => host.queue.push(event),
-            target.config.callObserver ?? host.modelCallObserver,
-            {
-              operationKind: "subagent",
-              agentId,
-              userId: host.context?.userId,
-              runId: host.request.runId,
-            },
-            {
-              prepareContext: contextPolicy.prepareContext,
-              imageTokens: estimatePiImageTokens,
-              recordUsage: host.request.onUsage,
-              onProviderError: (message) => providerFailures.add(message.content),
-              onUsage: (usage) => {
-                contextPolicy.onUsage(usage);
-                const decision = contextPolicy.getDecision();
-                if (decision)
-                  host.onContextDecision?.({
-                    ...decision,
-                    runId: host.request.runId,
-                    agentId,
-                    usage,
-                  });
-              },
-            },
-          ),
-        requestModel.cacheCapabilities?.retentionMode,
-      ),
-  };
-  nested = new Agent({
-    finishTurn: async (turn, turnSignal) => {
-      await deliverFinishedShells(
-        (text) => {
-          nested.followUp({
-            role: "user",
-            content: text,
-            timestamp: Date.now(),
-          });
-        },
-        nestedHost.pendingShells,
-        turn,
-        turnSignal,
-      );
-    },
-    sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
-    streamFn: (_m, ctx, options) =>
-      fallbackAwareModelStream(
-        retryState,
-        ctx,
-        withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
-      ),
-    getApiKey: async () =>
-      hasBackups
-        ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
-        : selectedModel.apiKey,
-    initialState: {
-      systemPrompt: [
-        `You are a Rakazo subagent named "${name}".`,
-        "You run inside the parent bot's turn — you are not a separate bot chat.",
-        "Complete the task and return a concise result. Do not spawn bots or further subagents.",
-        "Your task comes from the parent bot, not from the human user, and you cannot talk to the user: report your result back to the parent bot.",
-        "Messages marked as automated come from Rakazo, not from the user.",
-        extra,
-      ]
-        .filter(Boolean)
-        .join(" "),
-      model: subagentModel,
-      thinkingLevel: thinkingLevelFor(subagentModel, requestModel.thinkingLevel),
-      tools: toAgentTools(childDefs, nestedHost),
-      messages: [],
-    },
-  });
-  host.nestedAgents.add(nested);
-
-  let streamed = "";
-  let lastPush = 0;
-  nested.subscribe((event) => {
-    if (event.type === "tool_execution_start") {
-      if (host.toolCallBudget.exceeded) return;
-      const toolName = "toolName" in event && event.toolName ? String(event.toolName) : "a tool";
-      host.queue.push({
-        type: "subagent",
-        agentId,
-        name,
-        task,
-        status: "running",
-        progress: `using ${toolName}…`,
-      });
-    }
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-      const delta = event.assistantMessageEvent.delta;
-      if (delta) {
-        streamed += delta;
-        const now = Date.now();
-        if (now - lastPush >= 80) {
-          lastPush = now;
-          host.queue.push({
-            type: "subagent",
-            agentId,
-            name,
-            task,
-            status: "running",
-            progress: streamed.slice(-800),
-          });
-        }
-      }
-    }
-    if (event.type === "message_end" && event.message.role === "assistant") {
-      const text = assistantText(event.message);
-      if (text && !streamed) streamed = text;
-    }
-  });
-
-  try {
-    if (host.signal.aborted) {
-      host.queue.push({
-        type: "subagent",
-        agentId,
-        name,
-        task,
-        status: "failed",
-        result: "stopped",
-      });
-      return "stopped";
-    }
-    const onAbort = () => nested.abort();
-    host.signal.addEventListener("abort", onAbort);
-    try {
-      await nested.prompt(
-        `Task from the parent bot (not from the user):\n${task || "Complete the delegated task."}`,
-      );
-    } finally {
-      try {
-        await nested.waitForIdle();
-      } finally {
-        host.signal.removeEventListener("abort", onAbort);
-        // nestedHost is a shallow copy; ask_user / request_takeover set pause
-        // only on the child. Copy it up before the parent releases the budget.
-        if (nestedHost.pausePending) host.pausePending = true;
-      }
-    }
-    // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
-    // completed stop rather than a failed subagent chip.
-    const budgetExceeded = host.toolCallBudget.exceeded;
-    const error = nested.state.errorMessage || providerFailureText(nested.state.messages.at(-1));
-    if (error && !budgetExceeded) {
-      const message = sanitizeProviderError(subagentModel.provider, error);
-      host.queue.push({
-        type: "subagent",
-        agentId,
-        name,
-        task,
-        status: "failed",
-        result: message,
-      });
-      return `Subagent failed: ${message}`;
-    }
-    const budgetMessage = budgetExceeded
-      ? toolCallBudgetExceededMessage(host.toolCallBudget.limit)
-      : undefined;
-    const result =
-      budgetMessage && streamed.trim()
-        ? `${streamed.trim()}\n\n${budgetMessage}`
-        : budgetMessage || streamed || assistantText(nested.state.messages.at(-1)) || "done.";
-    const clipped = clipToolResultText(result, 12_000);
-    host.queue.push({
-      type: "subagent",
-      agentId,
-      name,
-      task,
-      status: "completed",
-      result: clipped,
-    });
-    // The parent bot reads this as a tool result; say plainly that it is the helper talking.
-    return `Result from your helper "${name}" (not a message from the user):\n${clipped}`;
-  } catch (error) {
-    const message = sanitizeError(error instanceof Error ? error.message : String(error));
-    host.queue.push({
-      type: "subagent",
-      agentId,
-      name,
-      task,
-      status: "failed",
-      result: message,
-    });
-    return `Subagent failed: ${message}`;
-  } finally {
-    host.nestedAgents.delete(nested);
-    host.subagentGate.release();
-  }
-}
-
-/** Build AgentTool.parameters for a connector tool, including OpenAI wire fidelity. */
-export function parametersFor(tool: ConnectorTool) {
-  const builtin = builtinParameters(tool);
-  const schema = builtin
-    ? withDeclaredDescriptions(builtin, tool.inputSchema)
-    : safeJsonSchemaParameters(tool);
-  // Type.Union (top-level oneOf/anyOf) serializes without type/properties, and
-  // Anthropic rejects a root union, so it is flattened into one object schema.
-  // Re-wrap only when needed so Type.Object schemas keep TypeBox Kind metadata.
-  if (!openAiToolParametersNeedNormalization(schema)) return schema;
-  return Type.Unsafe(
-    normalizeOpenAiToolParameters(JSON.parse(JSON.stringify(schema))),
-  ) as unknown as ReturnType<typeof Type.Object>;
-}
-
-/** builtinParameters hand-builds stricter schemas for some tools, and those carried none of
- * the parameter descriptions the tool declares. Copy each declared description onto the
- * matching top-level field. The schema is built fresh per call, so this mutates no shared
- * node. */
-function withDeclaredDescriptions<T>(schema: T, declared: unknown): T {
-  const fields = (schema as { properties?: Record<string, Record<string, unknown>> }).properties;
-  const source = (
-    declared as { properties?: Record<string, { description?: unknown }> } | undefined
-  )?.properties;
-  if (!fields || !source) return schema;
-  for (const [key, spec] of Object.entries(source)) {
-    const field = fields[key];
-    if (
-      field &&
-      field.description === undefined &&
-      typeof spec?.description === "string" &&
-      spec.description
-    ) {
-      field.description = spec.description;
-    }
-  }
-  return schema;
-}
-
-/** A remote MCP server controls its own schemas, so a shape TypeBox cannot express must
- * degrade to a permissive object instead of failing every turn for the whole bot. */
-function safeJsonSchemaParameters(tool: ConnectorTool) {
-  try {
-    return jsonSchemaParameters(tool.inputSchema);
-  } catch (error) {
-    getLogger().error(`unsupported input schema for tool ${tool.name}`, error);
-    return Type.Object({});
-  }
-}
-
-function builtinParameters(tool: ConnectorTool) {
-  if (tool.name === "write_file") {
-    return Type.Object({ path: Type.String(), content: Type.String() });
-  }
-  if (tool.name === "request_takeover") {
-    return Type.Object({ reason: Type.String() });
-  }
-  if (tool.name === "ask_user") {
-    return Type.Object({
-      question: Type.String({ maxLength: 240 }),
-      options: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), {
-        minItems: 2,
-        maxItems: 4,
-        uniqueItems: true,
-      }),
-    });
-  }
-  if (tool.name === "remember") {
-    return Type.Object({ content: Type.String(), path: Type.String() });
-  }
-  if (tool.name === "shell") {
-    return Type.Object({
-      command: Type.String(),
-      cwd: Type.Optional(Type.String()),
-    });
-  }
-  if (tool.name === "run_subagent") {
-    return Type.Object({
-      name: Type.String(),
-      task: Type.String(),
-      instructions: Type.Optional(Type.String()),
-      model_provider: Type.Optional(Type.String()),
-      model_id: Type.Optional(Type.String()),
-    });
-  }
-  if (tool.name === "spawn_bot") {
-    return Type.Object({
-      name: Type.String(),
-      title: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
-      instructions: Type.Optional(Type.String()),
-      prompt: Type.Optional(Type.String()),
-      computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),
-    });
-  }
-  if (tool.name === "update_bot") {
-    return Type.Object({
-      name: Type.Optional(Type.String()),
-      title: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
-      color: Type.Optional(Type.String()),
-      artifact_id: Type.Optional(Type.String()),
-      use_attached_image: Type.Optional(Type.Boolean()),
-      notifyOnFinish: Type.Optional(Type.Boolean()),
-      bot_id: Type.Optional(Type.String()),
-    });
-  }
-  if (tool.name === "list_fleet") return Type.Object({ bot_id: Type.Optional(Type.String()) });
-  if (tool.name === "create_group") {
-    return Type.Object({
-      name: Type.String({ minLength: 1 }),
-      bot_ids: Type.Optional(Type.Array(Type.String())),
-      bot_names: Type.Optional(Type.Array(Type.String())),
-    });
-  }
-  if (tool.name === "update_group") {
-    return Type.Object({
-      group_id: Type.Optional(Type.String()),
-      group_name: Type.Optional(Type.String()),
-      name: Type.Optional(Type.String({ minLength: 1 })),
-      add_bot_ids: Type.Optional(Type.Array(Type.String())),
-      remove_bot_ids: Type.Optional(Type.Array(Type.String())),
-    });
-  }
-  if (tool.name === "organize_bot") {
-    return Type.Object({
-      bot_id: Type.Optional(Type.String()),
-      bot_name: Type.Optional(Type.String()),
-      group_id: Type.Optional(Type.String()),
-      group_name: Type.Optional(Type.String()),
-      section: Type.Optional(Type.String({ minLength: 1 })),
-      clear_section: Type.Optional(Type.Boolean()),
-      pinned: Type.Optional(Type.Boolean()),
-    });
-  }
-  if (tool.name === "set_child_instructions") {
-    return Type.Object({
-      bot_id: Type.Optional(Type.String()),
-      bot_name: Type.Optional(Type.String()),
-      instructions: Type.String({ minLength: 1, maxLength: BOT_INSTRUCTIONS_MAX_LENGTH }),
-      expected_version: Type.String(),
-    });
-  }
-  if (tool.name === "set_child_bot_model") {
-    return Type.Object({
-      bot_id: Type.Optional(Type.String()),
-      bot_name: Type.Optional(Type.String()),
-      provider: Type.Optional(Type.String()),
-      model: Type.Optional(Type.String()),
-      thinking_level: Type.Optional(Type.String()),
-      clear: Type.Optional(Type.Boolean()),
-    });
-  }
-  if (tool.name === "create_space") {
-    return Type.Object({ name: Type.String({ minLength: 1, maxLength: 60 }) });
-  }
-  if (tool.name === "archive_bot" || tool.name === "delete_bot") {
-    return Type.Object({
-      confirm_name: Type.String(),
-      bot_id: Type.Optional(Type.String()),
-    });
-  }
-  return undefined;
-}
-
-function isAgentToolExecutionResult(result: unknown): result is AgentToolExecutionResult {
-  if (
-    !result ||
-    typeof result !== "object" ||
-    (result as { kind?: unknown }).kind !== "agent_tool_result" ||
-    !("content" in result)
-  ) {
-    return false;
-  }
-  const content = (result as { content?: unknown }).content;
-  return (
-    Array.isArray(content) &&
-    content.every(
-      (item) =>
-        item &&
-        typeof item === "object" &&
-        ((item as { type?: unknown }).type === "text" ||
-          (item as { type?: unknown }).type === "image"),
-    )
-  );
-}
-
-export function jsonSchemaParameters(
-  schema: Record<string, unknown>,
-  options: FieldOptions = {},
-): ReturnType<typeof Type.Object> {
-  // Keep intersections intact until parametersFor flattens root combinators.
-  // Rebuilding only properties here drops allOf-only fields and their constraints.
-  if (Array.isArray(schema.allOf)) {
-    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
-  }
-  // Top-level oneOf/anyOf (e.g. request_secret's credential XOR connectionId)
-  // must stay a union. Falling through to properties would drop the exclusivity
-  // and re-expose both destinations as optional siblings.
-  const alternatives = Array.isArray(schema.oneOf)
-    ? schema.oneOf
-    : Array.isArray(schema.anyOf)
-      ? schema.anyOf
-      : undefined;
-  if (alternatives && alternatives.length > 0 && schema.properties == null) {
-    return Type.Union(
-      alternatives.map((variant) => jsonSchemaParameters(variant as Record<string, unknown>)),
-      options,
-    ) as unknown as ReturnType<typeof Type.Object>;
-  }
-  const properties = (schema.properties ?? {}) as Record<string, unknown>;
-  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
-  const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
-  for (const [key, spec] of Object.entries(properties)) {
-    const field = jsonField(spec);
-    fields[key] = (required.has(key) ? field : Type.Optional(field)) as unknown as ReturnType<
-      typeof Type.Optional
-    >;
-  }
-  // Preserve closed objects (e.g. request_secret destination oneOf branches).
-  // Type.Object defaults to open, which would let connectionId+replace match both
-  // anyOf variants after conversion.
-  return schema.additionalProperties === false
-    ? Type.Object(fields, { ...options, additionalProperties: false })
-    : Type.Object(fields, options);
-}
-
-type FieldOptions = { description?: string };
-
-/** Carry the parameter description when rebuilding its TypeBox node. */
-function fieldOptions(definition: Record<string, unknown>): FieldOptions {
-  return typeof definition.description === "string" && definition.description
-    ? { description: definition.description }
-    : {};
-}
-
-const FLEET_STRING_ARGS = [
-  "bot_id",
-  "bot_name",
-  "group_id",
-  "group_name",
-  "name",
-  "title",
-  "description",
-  "color",
-  "artifact_id",
-  "provider",
-  "model",
-  "thinking_level",
-  "section",
-  "instructions",
-  "expected_version",
-] as const;
-const FLEET_LIST_ARGS = ["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"] as const;
-const FLEET_FLAG_ARGS = ["pinned", "clear_section", "clear", "use_attached_image"] as const;
-
-/**
- * Keeps only the fleet and `update_bot` arguments a model sent, coerced to their declared types.
- * Providers send omitted optional fields as null or blank, so those stay absent: `String(null)`
- * would otherwise become the text "null".
- */
-export function prepareFleetArguments(
-  toolName: string,
-  raw: Record<string, unknown>,
-): Record<string, unknown> {
-  // A routine's timing fields are numbers and one-of branches; only the blanks are dropped.
-  if (toolName === "create_child_routine") {
-    return Object.fromEntries(Object.entries(raw).filter(([, value]) => argumentGiven(value)));
-  }
-  const out: Record<string, unknown> = {};
-  for (const key of FLEET_STRING_ARGS) {
-    // update_bot never carries instructions; set_child_instructions does, behind a card.
-    if (toolName === "update_bot" && (key === "instructions" || key === "expected_version"))
-      continue;
-    if (argumentGiven(raw[key])) out[key] = String(raw[key]);
-  }
-  for (const key of FLEET_LIST_ARGS) {
-    if (Array.isArray(raw[key])) out[key] = raw[key].map(String);
-  }
-  for (const key of FLEET_FLAG_ARGS) {
-    if (argumentGiven(raw[key])) out[key] = raw[key];
-  }
-  const notify = raw.notifyOnFinish ?? raw.notify_on_finish;
-  if (argumentGiven(notify)) out.notifyOnFinish = notify;
-  return out;
-}
-
-/** Use a plain string enum: some gateways discard the allowed values from anyOf/const unions. */
-function stringEnum(values: readonly string[], options: FieldOptions) {
-  return Type.Unsafe<string>({ type: "string", enum: [...values], ...options });
-}
-
-/** TypeBox only builds literals from primitives; anything else throws while the tool list is
- * being assembled, which would take down the whole turn. */
-function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
-  const members = values.map((value) =>
-    value === null
-      ? Type.Null()
-      : typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-        ? Type.Literal(value)
-        : undefined,
-  );
-  return members.every((member) => member !== undefined) ? Type.Union(members, options) : undefined;
-}
-
-export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
-  const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
-  const options = fieldOptions(definition);
-  if (Array.isArray(definition.enum) && definition.enum.length > 0) {
-    if (definition.enum.every((value) => typeof value === "string")) {
-      return stringEnum(definition.enum as string[], options) as never;
-    }
-    const union = enumUnion(definition.enum, options);
-    if (union) return union as never;
-  }
-  // A `const` names the only accepted value. Without this it degraded to a bare
-  // string, so a discriminator like {type: {const: "bearer"}} told the model
-  // nothing about which value to send -- and it guessed, twice.
-  if ("const" in definition) {
-    // Keep `const` (discriminators such as request_secret's auth.type depend on it) and
-    // add the equivalent one-value `enum`, which survives converters that drop `const`.
-    if (typeof definition.const === "string") {
-      return Type.Unsafe<string>({
-        type: "string",
-        const: definition.const,
-        enum: [definition.const],
-        ...options,
-      }) as never;
-    }
-    const literal = enumUnion([definition.const], options);
-    if (literal) return literal as never;
-  }
-  // A discriminated union arrives as oneOf/anyOf with no sibling `type`. Without
-  // this branch it fell through to the string default, so a model was told to
-  // send an object-valued field as a bare string -- which is exactly what it did.
-  const variants = Array.isArray(definition.oneOf)
-    ? definition.oneOf
-    : Array.isArray(definition.anyOf)
-      ? definition.anyOf
-      : undefined;
-  if (variants && variants.length > 0) {
-    return Type.Union(
-      variants.map((variant) => jsonField(variant)),
-      options,
-    ) as never;
-  }
-  if (Array.isArray(definition.type) && definition.type.length > 0) {
-    // The description belongs on the union, not repeated on every member.
-    const { description: _description, ...member } = definition;
-    return Type.Union(
-      definition.type.map((type) => jsonField({ ...member, type })),
-      options,
-    ) as never;
-  }
-  const type = "type" in definition ? String(definition.type) : "string";
-  if (type === "null") return Type.Null(options) as never;
-  if (type === "number" || type === "integer") return Type.Number(options) as never;
-  if (type === "boolean") return Type.Boolean(options) as never;
-  if (type === "array") {
-    const arrayOptions: FieldOptions & {
-      minItems?: number;
-      maxItems?: number;
-      uniqueItems?: boolean;
-    } = { ...options };
-    if (typeof definition.minItems === "number") arrayOptions.minItems = definition.minItems;
-    if (typeof definition.maxItems === "number") arrayOptions.maxItems = definition.maxItems;
-    if (definition.uniqueItems === true) arrayOptions.uniqueItems = true;
-    return Type.Array(jsonField(definition.items), arrayOptions) as never;
-  }
-  if (type === "object") return jsonSchemaParameters(definition, options) as never;
-  return Type.String({
-    ...options,
-    ...(typeof definition.maxLength === "number" ? { maxLength: definition.maxLength } : {}),
-  });
-}
-
-export function serializeToolResult(
-  result: unknown,
-  strategy: AgentRunRequest["contextStrategy"],
-  name: string,
-  args: Record<string, unknown>,
-) {
-  try {
-    const text = JSON.stringify(result);
-    if (!text) return "ok";
-    // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
-    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name)) return text;
-    return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
-      ? clipToolResultText(text)
-      : shortenToolResultText(text, 12_000, { name, arguments: args });
-  } catch {
-    return "ok";
-  }
-}
-
-function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {
-  if (!result || !Array.isArray(result.content)) return result;
-  return {
-    ...result,
-    content: clipToolResultContent(result.content),
-  };
-}
-
-function assistantText(message: unknown): string {
-  if (!message || typeof message !== "object" || !("content" in message)) return "";
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) =>
-      part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part
-        ? String(part.text)
-        : "",
-    )
-    .join("");
-}
-
-function messageHasToolCall(message: unknown): boolean {
-  if (!message || typeof message !== "object" || !("content" in message)) return false;
-  const content = (message as { content?: unknown }).content;
-  if (!Array.isArray(content)) return false;
-  return content.some(
-    (part) => !!part && typeof part === "object" && "type" in part && part.type === "toolCall",
-  );
-}
-
-/** Provider failure. Aborts stay on the existing cancel path. */
-export function providerFailureText(message: unknown): string | undefined {
-  if (!message || typeof message !== "object") return undefined;
-  if (!("role" in message) || message.role !== "assistant") return undefined;
-  const stopReason =
-    "stopReason" in message && typeof message.stopReason === "string"
-      ? message.stopReason
-      : undefined;
-  if (stopReason === "aborted") return undefined;
-  const errorMessage =
-    "errorMessage" in message &&
-    typeof message.errorMessage === "string" &&
-    message.errorMessage.trim()
-      ? message.errorMessage.trim()
-      : undefined;
-  const text = assistantText(message).trim();
-  if (stopReason === "error") {
-    if (errorMessage) return errorMessage;
-    if (text) return "The model failed after writing a response.";
-    return "The model failed before writing a response.";
-  }
-  if (stopReason === "length" && !text) {
-    return errorMessage || MODEL_OUTPUT_LIMIT_ERROR;
-  }
-  if (errorMessage && !text) return errorMessage;
-  return undefined;
-}
-
-function sanitizeSensitiveText(message: string) {
-  return message
-    .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
-    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(/Bearer\s+[^\s"',;&]+/gi, "Bearer [redacted]")
-    .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
-    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
-    .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)[^\s"',;&]+/gi,
-      "$1[redacted]",
-    )
-    .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
-}
-
-/** Origin + path only for activity chips; drop userinfo, query, and fragment. */
-function redactActivityUrl(value: unknown): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return raw;
-  try {
-    const url = new URL(raw);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    // Never echo unparsed input — it may still contain userinfo/secrets.
-    return "[invalid URL]";
-  }
-}
-
-function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
-}
-
-/** Stable OpenCode affinity id for a bot conversation (and optional nested agent). */
-export function conversationSessionId(threadId: string, botId: string, agentId?: string): string {
-  return agentId ? `${threadId}:${botId}:${agentId}` : `${threadId}:${botId}`;
-}
-
-export function isOpenCodeProvider(provider: string): boolean {
-  return provider === "opencode" || provider === "opencode-go";
-}
-
-const OPENCODE_SESSION_ERROR = "OpenCode rejected this chat session. Send the message again.";
-
-function looksLikeOpenCodeSessionError(message: string): boolean {
-  return (
-    /x-opencode-session/i.test(message) ||
-    /session\s*(id|header|required|missing|invalid|expired|stale)/i.test(message) ||
-    /model is unavailable/i.test(message)
-  );
-}
-
-/**
- * One classification for retries, reporting and the run error view. A failure the view
- * attributes to the user's provider account, key, plan or model choice, or to the model's own
- * unusable output, is not a server fault. Anything it cannot place stays a plain error.
- */
-function modelFailure(error: string, message: string): Error {
-  // When every model failed, the run is only as clear as its least explained failure: an
-  // unexplained part stays a server error, and a part the user must fix outranks bad output,
-  // which outranks one that clears on its own. Skipped backups never ran, so they do not count.
-  const fallback = parseModelFallbackFailure(message);
-  const failures = fallback
-    ? [
-        fallback.primaryError,
-        ...fallback.backups.filter((item) => item.status === "failed").map((item) => item.reason),
-      ].map((part) => modelFailureClass(part, part))
-    : [modelFailureClass(error, message)];
-  const Failure = MODEL_FAILURE_RANK[Math.max(...failures)] ?? Error;
-  return new Failure(message);
-}
-
-/** Least to most severe; a server fault (plain Error) is last. */
-const MODEL_FAILURE_RANK = [TransientModelError, ModelOutputError, ModelAccountError, Error];
-
-function modelFailureClass(error: string, message: string): number {
-  // OpenCode drops chat sessions on its side; the next send opens a new one.
-  if (isTransientModelError(error) || message === OPENCODE_SESSION_ERROR)
-    return MODEL_FAILURE_RANK.indexOf(TransientModelError);
-  const { kind } = normalizeRunError(message);
-  if (kind === "output") return MODEL_FAILURE_RANK.indexOf(ModelOutputError);
-  if (kind) return MODEL_FAILURE_RANK.indexOf(ModelAccountError);
-  return MODEL_FAILURE_RANK.indexOf(Error);
-}
-
-function sanitizeProviderError(provider: string, message: string): string {
-  const sanitized = sanitizeError(message);
-  if (isOpenCodeProvider(provider) && looksLikeOpenCodeSessionError(sanitized)) {
-    return OPENCODE_SESSION_ERROR;
-  }
-  return sanitized;
-}
-
-interface EventQueue {
-  push(event: AgentRuntimeEvent): void;
-  fail(error: Error): void;
-  close(): void;
-  iterate(): AsyncIterable<AgentRuntimeEvent>;
-}
-
-interface ToolHost {
-  context?: Partial<AdapterContext>;
-  modelFetch?: typeof globalThis.fetch;
-  onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];
-  modelCallObserver?: ModelCallObserver;
-  queue: EventQueue;
-  request: AgentRunRequest;
-  activeModel: RuntimeModelTarget;
-  models: Models;
-  model: Model<Api>;
-  apiKey: string | undefined;
-  nestedAgents: Set<Agent>;
-  subagentGate: { acquire(): Promise<void>; release(): void };
-  toolCallBudget: ToolCallBudget;
-  /** Shared fallback uniqueness when the model omits toolCallId (nested hosts reuse this). */
-  toolCallSeq: { value: number };
-  abortTurn(): void;
-  signal: AbortSignal;
-  depth: number;
-  agentNamespace?: string;
-  pausePending: boolean;
-  captureCheckpoint?: (toolCallId: string, executionId: string) => Promise<void>;
-  /** Shell commands that returned output and are still running. */
-  pendingShells: Array<Promise<FinishedShellCommand>>;
-}
-
-function toolCallBudgetExceededMessage(limit: number) {
-  return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
-}
-
-function toolCallBudgetFor(runId: string): ToolCallBudget {
-  const existing = toolCallBudgetsByRun.get(runId);
-  if (existing) {
-    existing.inFlight = 0;
-    existing.limit = maxToolCallsPerTurn();
-    return existing;
-  }
-  const budget: ToolCallBudget = {
-    count: 0,
-    exceeded: false,
-    limit: maxToolCallsPerTurn(),
-    inFlight: 0,
-  };
-  if (budget.limit > 0) toolCallBudgetsByRun.set(runId, budget);
-  return budget;
-}
-
-function releaseToolCallBudget(runId: string, keepForResume: boolean) {
-  if (!keepForResume) toolCallBudgetsByRun.delete(runId);
-}
-
-function maybeAbortToolCallBudget(host: ToolHost) {
-  if (host.toolCallBudget.exceeded && host.toolCallBudget.inFlight === 0) {
-    host.abortTurn();
-  }
-}
-
-function beginToolCall(host: ToolHost): boolean {
-  const budget = host.toolCallBudget;
-  if (budget.limit <= 0) {
-    budget.count += 1;
-    return true;
-  }
-  if (budget.exceeded) {
-    maybeAbortToolCallBudget(host);
-    return false;
-  }
-  budget.count += 1;
-  if (budget.count <= budget.limit) {
-    budget.inFlight += 1;
-    return true;
-  }
-  if (!budget.exceeded) {
-    budget.exceeded = true;
-    host.queue.push({
-      type: "progress",
-      text: `Stopped: more than ${budget.limit} tool calls in one turn.`,
-    });
-  }
-  maybeAbortToolCallBudget(host);
-  return false;
-}
-
-function endToolCall(host: ToolHost) {
-  host.toolCallBudget.inFlight = Math.max(0, host.toolCallBudget.inFlight - 1);
-  maybeAbortToolCallBudget(host);
-}
-
-function modelForCompletion(model: Model<Api>, configuredMaxTokens?: number): Model<Api> {
-  const maxTokens = resolveCompletionMaxTokens(
-    model.maxTokens,
-    configuredMaxTokens,
-    undefined,
-    model.reasoning,
-  );
-  if (maxTokens === model.maxTokens) return model;
-  return { ...model, maxTokens };
-}
-
-interface RuntimeModelTarget {
-  config: AgentRunRequest["model"];
-  models: Models;
-  model: Model<Api>;
-  /** The model card's output ceiling, before the completion default caps `model.maxTokens`. */
-  cardMaxTokens?: number;
-  apiKey?: string;
-  credentials?: PiRuntimeCredentialStore;
-}
-
-/** A provider request ceiling applies only to this run, never to saved connection settings. */
-function resizeRuntimeTarget(
-  target: RuntimeModelTarget,
-  contextWindow: number,
-): RuntimeModelTarget {
-  return {
-    ...target,
-    config: { ...target.config, contextWindow },
-    model: { ...target.model, contextWindow },
-  };
-}
-
-interface FallbackStreamState {
-  request: AgentRunRequest;
-  getActive(): RuntimeModelTarget;
-  signal: AbortSignal;
-  attempted: Set<string>;
-  nextIndex: number;
-  primaryFailure?: string;
-  backupOutcomes: Map<string, ModelBackupOutcome>;
-  /** Calls repeated, given more room or continued after a cut; bounded per run. */
-  selfRecoveries: number;
-  /** More room for the next call, after a call ran out of it inside a tool call. */
-  nextCallRecovery?: { maxTokens?: number; thinkingLevel?: ModelThinkingLevel };
-  /**
-   * Replies ended early by a dropped connection; the runtime asks the model to continue them.
-   * Absent where nothing asks (subagents), so a cut there still fails.
-   */
-  cutReplies?: WeakSet<AssistantMessage["content"]>;
-  /** The next call continues a cut reply, so it is not continued again if it is cut too. */
-  continuingCutReply?: boolean;
-  onSwitch(target: RuntimeModelTarget): Promise<void>;
-  onContextLimit(contextWindow: number): void;
-  isProviderFailure(message: AssistantMessage): boolean;
-  /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
-  dropThinkingBlocks?: boolean;
-  /** Output reservations reduced by a rejected request, scoped to this run and model. */
-  outputCaps?: Map<string, number>;
-  /**
-   * Messages written before the last switch to a backup model. Their thinking is bound to the
-   * model and transcript it was written for, and the backup's policy starts with a rebuild that
-   * can rewrite earlier messages, so requests leave that thinking out from the switch on.
-   */
-  messagesBeforeSwitch?: number;
-  stream(
-    target: RuntimeModelTarget,
-    context: TranscriptContext,
-    options: ModelsSimpleStreamOptions | undefined,
-  ): AssistantMessageEventStream;
-}
-
-/**
- * Reply text or a tool call. Thinking alone is never shown or run, so a call that has only
- * thought can be retried from scratch with its thinking discarded.
- */
-function assistantHasVisibleOutput(message: AssistantMessage): boolean {
-  return message.content.some(
-    (part) => part.type === "toolCall" || (part.type === "text" && part.text.length > 0),
-  );
-}
-
-function eventHasVisibleOutput(event: AssistantMessageEvent): boolean {
-  if (event.type === "toolcall_start" || event.type === "toolcall_end") return true;
-  if (event.type === "text_delta" || event.type === "toolcall_delta") {
-    if (event.delta.length > 0) return true;
-  }
-  if (event.type === "text_end" && event.content.length > 0) return true;
-  if (event.type === "done") return assistantHasVisibleOutput(event.message);
-  if (event.type === "error") return assistantHasVisibleOutput(event.error);
-  return assistantHasVisibleOutput(event.partial);
-}
-
-const MAX_SELF_RECOVERIES_PER_RUN = 3;
-const MIN_CONTINUATION_OVERLAP = 4;
-const MAX_CONTINUATION_OVERLAP = 240;
-
-/**
- * How much of the start of a continuation repeats the end of the cut reply: the longest such
- * run of at least a few characters, up to about a sentence. Shorter matches are coincidence.
- */
-export function continuationOverlap(cut: string, continuation: string): number {
-  const longest = Math.min(cut.length, continuation.length, MAX_CONTINUATION_OVERLAP);
-  for (let size = longest; size >= MIN_CONTINUATION_OVERLAP; size -= 1) {
-    if (cut.endsWith(continuation.slice(0, size))) return size;
-  }
-  return 0;
-}
-const LOWEST_FIRST_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-/**
- * A call that spent its whole output budget before writing anything gets one more try with
- * more room: double the budget within the model's ceiling, the input reserve and any output cap
- * the provider asked for, or, when the user set the budget or it is already at that ceiling,
- * one thinking level less (never off, which some endpoints refuse).
- */
-function lengthRecovery(
-  target: RuntimeModelTarget,
-  sentMaxTokens: number,
-  thinkingLevel: ModelThinkingLevel,
-  outputCap?: number,
-): { maxTokens?: number; thinkingLevel?: ModelThinkingLevel } | undefined {
-  if (target.config.maxTokens === undefined) {
-    const doubled = Math.min(
-      target.cardMaxTokens ?? Number.POSITIVE_INFINITY,
-      outputCap ?? Number.POSITIVE_INFINITY,
-      sentMaxTokens * 2,
-    );
-    const maxTokens = target.model.contextWindow
-      ? effectiveOutputReserve(target.model.contextWindow, doubled)
-      : doubled;
-    if (Number.isFinite(maxTokens) && maxTokens > sentMaxTokens) return { maxTokens };
-  }
-  if (thinkingLevel === "off") return undefined;
-  const supported = getSupportedThinkingLevels(target.model);
-  const lower = LOWEST_FIRST_THINKING_LEVELS.slice(
-    0,
-    LOWEST_FIRST_THINKING_LEVELS.indexOf(thinkingLevel),
-  ).findLast((level) => supported.includes(level));
-  return lower ? { thinkingLevel: lower } : undefined;
-}
-
-/**
- * An OpenAI-compatible model's card carries the default, not the endpoint's ceiling, which
- * is unknown unless the connection sets one; then only the input reserve bounds a raise.
- */
-function cardOutputCeiling(model: Model<Api>): number | undefined {
-  return model.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : model.maxTokens;
-}
-
-function withOutputBudget(target: RuntimeModelTarget, maxTokens: number): RuntimeModelTarget {
-  return {
-    ...target,
-    config: { ...target.config, maxTokens },
-    model: { ...target.model, maxTokens },
-  };
-}
-
-function contextImageCount(context: Context): number {
-  return context.messages.reduce((total, message) => {
-    if (!("content" in message) || !Array.isArray(message.content)) return total;
-    return total + message.content.filter((part) => part.type === "image").length;
-  }, 0);
-}
-
-/**
- * Same rule as the primary model (modelAcceptsImageInput): the catalog's input
- * modalities decide for native providers, and the connection's acceptsImages flag
- * only applies to OpenAI-compatible models, whose runtime model is built from it.
- */
-function fallbackSeesImages(candidate: RuntimeModelTarget): boolean {
-  if (!candidate.model.input.includes("image")) return false;
-  return (
-    candidate.config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
-    candidate.config.acceptsImages !== false
-  );
-}
-
-function fallbackIncompatibility(
-  candidate: RuntimeModelTarget,
-  context: TranscriptContext,
-  options: ModelsSimpleStreamOptions | undefined,
-  requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
-  tools: readonly ConnectorTool[],
-): string | undefined {
-  // The backup's own context policy prunes on its first call; judge what it would send. Too
-  // many user images for its limit throws, and the caller skips the backup.
-  try {
-    context = {
-      ...context,
-      messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
-    };
-  } catch (error) {
-    if (error instanceof ModelImageLimitError)
-      return "The request exceeds the backup model's image limit.";
-    throw error;
-  }
-  const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
-  const outputTokens = resolveCompletionMaxTokens(
-    candidate.model.maxTokens,
-    candidate.config.maxTokens,
-    options?.maxTokens,
-    candidate.model.reasoning,
-    candidate.model.contextWindow,
-  );
-  // Token counts are estimates and can differ by provider/tokenizer. Reserve a
-  // small input-relative margin, not a fixed 4096 tokens that would exclude
-  // otherwise usable small-context models on short turns.
-  const contextSafetyMargin = Math.max(256, Math.ceil(inputTokens * 0.1));
-  if (candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin)
-    return "Conversation exceeds the backup model's context limit.";
-  const imageCount = contextImageCount(context);
-  if (
-    (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
-    !fallbackSeesImages(candidate)
-  ) {
-    return "The backup model cannot use the images required by this request.";
-  }
-  if (
-    typeof candidate.config.maxImagesPerPrompt === "number" &&
-    imageCount > candidate.config.maxImagesPerPrompt
-  ) {
-    return "The request exceeds the backup model's image limit.";
-  }
-  const reasoningLevel = options?.reasoning ?? requestedThinkingLevel;
-  const requiresReasoning =
-    (reasoningLevel !== undefined && reasoningLevel !== null && reasoningLevel !== "off") ||
-    (candidate.config.thinkingLevel !== undefined &&
-      candidate.config.thinkingLevel !== null &&
-      candidate.config.thinkingLevel !== "off");
-  return requiresReasoning && !candidate.model.reasoning
-    ? "The backup model does not support the requested thinking level."
-    : undefined;
-}
-
-function fallbackAwareModelStream(
-  state: FallbackStreamState,
-  context: TranscriptContext,
-  options: ModelsSimpleStreamOptions | undefined,
-): AssistantMessageEventStream {
-  const output = new AssistantMessageEventStream();
-  let lastPartial: AssistantMessage | undefined;
-  const signal = options?.signal ? AbortSignal.any([state.signal, options.signal]) : state.signal;
-  // Once a signature is rejected, requests omit those thinking blocks. Backup fit
-  // must use that same context, or a usable backup can be skipped on discarded text.
-  // A backup is judged on the context it would get after the switch, without earlier thinking.
-  const requestContext = (switching = false) => {
-    if (state.dropThinkingBlocks) return withoutThinkingBlocks(context);
-    const before = switching ? context.messages.length : state.messagesBeforeSwitch;
-    if (!before) return context;
-    const messages = withoutThinkingFrom(context.messages, 0, before);
-    return messages === context.messages ? context : { ...context, messages };
-  };
-  const signalAborted = () => signal.aborted;
-  const recordFailure = (target: RuntimeModelTarget, error: string) => {
-    if (sameModelTarget(target.config, state.request.model)) return;
-    state.backupOutcomes.set(modelTargetKey(target.config), {
-      provider: target.config.provider,
-      modelId: target.config.id,
-      status: "failed",
-      reason: sanitizeProviderError(target.config.provider, error),
-    });
-  };
-  const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    recordFailure(target, message);
-    const aborted = signalAborted() || /abort|cancel/i.test(message);
-    const stopReason: "aborted" | "error" = aborted ? "aborted" : "error";
-    const failure: AssistantMessage = {
-      role: "assistant",
-      content: lastPartial?.content ?? [],
-      api: target.model.api,
-      provider: target.model.provider,
-      model: target.model.id,
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason,
-      errorMessage: message,
-      timestamp: Date.now(),
-    };
-    output.push({ type: "error", reason: stopReason, error: failure });
-    output.end(failure);
-  };
-  const failIfAborted = (target: RuntimeModelTarget) => {
-    if (!signalAborted()) return false;
-    finishWithThrownError(target, new Error("Model request was aborted"));
-    return true;
-  };
-  const resolveNext = async (
-    current: RuntimeModelTarget,
-  ): Promise<RuntimeModelTarget | undefined> => {
-    const choices = state.request.fallbackModels ?? [];
-    while (state.nextIndex < choices.length && !signalAborted()) {
-      const choice = choices[state.nextIndex++];
-      if (!choice) continue;
-      const key = modelTargetKey(choice);
-      if (state.attempted.has(key)) continue;
-      state.attempted.add(key);
-      if (sameModelTarget(choice, current.config)) continue;
-      const skip = (reason: string) =>
-        state.backupOutcomes.set(key, {
-          provider: choice.provider,
-          modelId: choice.id,
-          status: "skipped",
-          reason,
-        });
-      try {
-        const config = state.request.resolveFallbackModel
-          ? await state.request.resolveFallbackModel(
-              choice.provider,
-              choice.id,
-              choice.connectionId,
-            )
-          : (choice as AgentRunRequest["model"]);
-        if (signalAborted()) return undefined;
-        if (config.provider !== choice.provider || config.id !== choice.id) {
-          skip("The saved backup connection no longer matches this model.");
-          continue;
-        }
-        // Never borrow the primary or process-wide key for a backup. Production resolves
-        // each candidate lazily from the authenticated user's Space-scoped credential store.
-        if (!config.apiKey && !config.oauth && config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-          skip("No credential is available for the backup model.");
-          continue;
-        }
-        const resolved = resolveRuntimeModel(config);
-        if (
-          !resolved.model ||
-          resolved.model.provider !== config.provider ||
-          resolved.model.id !== config.id
-        ) {
-          skip("The backup model is unavailable.");
-          continue;
-        }
-        const candidate: RuntimeModelTarget = {
-          config,
-          models: resolved.models,
-          model: modelForCompletion(resolved.model, config.maxTokens),
-          cardMaxTokens: cardOutputCeiling(resolved.model),
-          apiKey: resolved.apiKey,
-          credentials: resolved.credentials,
-        };
-        const incompatibility = fallbackIncompatibility(
-          candidate,
-          requestContext(true),
-          options,
-          state.request.model.thinkingLevel,
-          state.request.tools,
-        );
-        if (incompatibility) {
-          skip(incompatibility);
-          continue;
-        }
-        return candidate;
-      } catch {
-        // Do not persist credential-resolution diagnostics; they can contain secrets.
-        skip("The backup connection or request could not be prepared.");
-      }
-    }
-    return undefined;
-  };
-  const run = async () => {
-    let buffered: AssistantMessageEvent[] = [];
-    let retries = 0;
-    let recoveredIdle = false;
-    let sizingFailure: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
-    // Bound same-model retries. Explicit backups retain their per-model header
-    // timeout: a post-header idle watchdog can already exceed that timeout.
-    let startedAt = Date.now();
-    const timeoutMs = options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS;
-    let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
-    // Set once this call has been repeated after spending its output budget on nothing visible.
-    let lengthRecovered = false;
-    let outputBudget = state.nextCallRecovery?.maxTokens;
-    let thinkingOverride = state.nextCallRecovery?.thinkingLevel;
-    state.nextCallRecovery = undefined;
-    const continuingCutReply = Boolean(state.continuingCutReply);
-    state.continuingCutReply = false;
-    while (!signalAborted()) {
-      const remainingMs = timeoutMs - (Date.now() - startedAt);
-      const failure = firstRetryableError ?? sizingFailure;
-      if ((retries > 0 || sizingFailure) && remainingMs <= 0 && failure) {
-        output.push(failure);
-        output.end(failure.error);
-        return;
-      }
-      const target = state.getActive();
-      const targetKey = JSON.stringify([target.config.provider, target.config.id]);
-      const outputCap = state.outputCaps?.get(targetKey);
-      const attemptOptions = {
-        ...options,
-        ...(retries > 0 || sizingFailure ? { timeoutMs: remainingMs } : {}),
-        ...(outputCap !== undefined
-          ? { maxTokens: Math.min(outputCap, options?.maxTokens ?? outputCap) }
-          : {}),
-      };
-      lastPartial = undefined;
-      let sawVisibleOutput = false;
-      let restart = false;
-      let stream: AssistantMessageEventStream;
-      const thinkingLevel =
-        thinkingOverride ??
-        (target.model.reasoning
-          ? thinkingLevelFor(
-              target.model,
-              target.config.thinkingLevel ??
-                options?.reasoning ??
-                state.request.model.thinkingLevel,
-            )
-          : "off");
-      const sentTarget = outputBudget ? withOutputBudget(target, outputBudget) : target;
-      const sentMaxTokens = resolveCompletionMaxTokens(
-        sentTarget.model.maxTokens,
-        sentTarget.config.maxTokens,
-        attemptOptions.maxTokens,
-        sentTarget.model.reasoning,
-        sentTarget.model.contextWindow,
-      );
-      try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
-        const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
-        stream = state.stream(
-          sentTarget,
-          requestContext(),
-          // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
-          state.request.fallbackModels?.length
-            ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
-            : thinkingOverride
-              ? { ...attemptOptions, reasoning }
-              : attemptOptions,
-        );
-      } catch (error) {
-        finishWithThrownError(target, error);
-        return;
-      }
-      try {
-        for await (const event of stream) {
-          if (event.type === "error") {
-            recordFailure(target, event.error.errorMessage ?? "Model request failed.");
-            let terminalEvent = event;
-            const hasTerminalVisibleOutput = assistantHasVisibleOutput(event.error);
-            if (
-              !sawVisibleOutput &&
-              !hasTerminalVisibleOutput &&
-              event.reason === "error" &&
-              !signalAborted() &&
-              !sizingFailure &&
-              state.isProviderFailure(event.error)
-            ) {
-              const contextWindow = groqRequestContextWindow(
-                target.config.provider,
-                event.error.errorMessage,
-                target.model.contextWindow,
-              );
-              if (contextWindow !== undefined && Date.now() - startedAt < timeoutMs) {
-                state.onContextLimit(contextWindow);
-                getLogger().info("model.context_limit.reduced", {
-                  runId: state.request.runId,
-                  provider: target.config.provider,
-                  model: target.config.id,
-                  contextWindow,
-                });
-                sizingFailure = event;
-                buffered = [];
-                restart = true;
-                break;
-              }
-              const affordable = affordableOpenRouterOutput(
-                target.config.provider,
-                event.error.errorMessage,
-                sentMaxTokens,
-              );
-              if (affordable !== undefined && Date.now() - startedAt < timeoutMs) {
-                state.outputCaps ??= new Map();
-                state.outputCaps.set(targetKey, affordable);
-                getLogger().info("model.output_reservation.reduced", {
-                  runId: state.request.runId,
-                  provider: target.config.provider,
-                  model: target.config.id,
-                  requestedMaxTokens: sentMaxTokens,
-                  effectiveMaxTokens: affordable,
-                });
-                sizingFailure = event;
-                buffered = [];
-                restart = true;
-                break;
-              }
-            }
-            if (
-              !sawVisibleOutput &&
-              !hasTerminalVisibleOutput &&
-              event.reason === "error" &&
-              !signalAborted() &&
-              !state.dropThinkingBlocks &&
-              isThinkingSignatureMismatch(event.error.errorMessage)
-            ) {
-              // Later calls in this run skip the stale thinking up front instead of failing first.
-              state.dropThinkingBlocks = true;
-              buffered = [];
-              restart = true;
-              break;
-            }
-            if (
-              !sawVisibleOutput &&
-              !hasTerminalVisibleOutput &&
-              event.reason === "error" &&
-              !signalAborted() &&
-              state.isProviderFailure(event.error) &&
-              isRetryableProviderUnavailable(event.error)
-            ) {
-              state.primaryFailure ??= sanitizeProviderError(
-                target.config.provider,
-                event.error.errorMessage ?? "Model request failed.",
-              );
-              const next = await resolveNext(target);
-              if (failIfAborted(target)) return;
-              if (next) {
-                state.messagesBeforeSwitch = context.messages.length;
-                await state.onSwitch(next);
-                if (failIfAborted(target)) return;
-                // A raised budget or lower thinking level fitted the failed model, not this one.
-                outputBudget = undefined;
-                thinkingOverride = undefined;
-                buffered = [];
-                restart = true;
-                break;
-              }
-              // An exhausted quota or usage window can move to a backup but will not clear
-              // within the retry budget, so only transient failures retry the same model.
-              if (isTransientModelError(event.error)) {
-                firstRetryableError ??= event;
-                const idle = event.error.errorMessage === MODEL_STREAM_IDLE_TIMEOUT_MESSAGE;
-                const delay = idle
-                  ? recoveredIdle
-                    ? undefined
-                    : MODEL_PROVIDER_RETRY_DELAYS_MS[0]
-                  : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
-                if (idle && delay !== undefined) {
-                  // The post-header idle bound can outlast the header retry window.
-                  // Renew it once for this empty call, retaining completed tool results.
-                  recoveredIdle = true;
-                  startedAt = Date.now();
-                }
-                // Ordinary failures and backoff share the remaining retry window.
-                if (delay !== undefined && Date.now() - startedAt + delay < timeoutMs) {
-                  retries += 1;
-                  await abortableDelay(delay, signal);
-                  if (failIfAborted(target)) return;
-                  if (Date.now() - startedAt < timeoutMs) {
-                    buffered = [];
-                    restart = true;
-                    break;
-                  }
-                }
-                terminalEvent = firstRetryableError;
-              }
-            }
-            const cutText = lastPartial ? assistantText(lastPartial) : "";
-            if (
-              state.cutReplies &&
-              sawVisibleOutput &&
-              lastPartial &&
-              cutText &&
-              !continuingCutReply &&
-              !messageHasToolCall(lastPartial) &&
-              event.reason === "error" &&
-              !signalAborted() &&
-              state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN &&
-              isTransientModelError(event.error)
-            ) {
-              // End the call with the text the user already sees; the runtime asks for the rest.
-              // The terminal message can hold text that never arrived as a delta.
-              const { errorMessage: _dropped, ...ended } = event.error;
-              const cut: AssistantMessage = {
-                ...ended,
-                content: (assistantText(event.error) ? event.error : lastPartial).content.filter(
-                  (part) => part.type === "text",
-                ),
-                stopReason: "stop",
-              };
-              state.selfRecoveries += 1;
-              state.cutReplies.add(cut.content);
-              state.continuingCutReply = true;
-              for (const pending of buffered) output.push(pending);
-              buffered = [];
-              output.push({ type: "done", reason: "stop", message: cut });
-              output.end(cut);
-              return;
-            }
-            for (const pending of buffered) output.push(pending);
-            buffered = [];
-            const terminal =
-              sawVisibleOutput && event.error.content.length === 0 && lastPartial
-                ? { ...event, error: { ...event.error, content: lastPartial.content } }
-                : terminalEvent;
-            output.push(terminal);
-            output.end(terminal.error);
-            return;
-          }
-          if (event.type === "done") {
-            // A recovered call must not replace a later failure with its old error.
-            state.primaryFailure = undefined;
-            state.backupOutcomes.delete(targetKey);
-            if (
-              event.message.stopReason === "length" &&
-              !event.message.errorMessage &&
-              messageHasToolCall(event.message)
-            ) {
-              // pi fails a tool call cut at the limit and asks for it again. That re-issue gets
-              // more room; once the run's recoveries are spent, the run fails instead of looping.
-              if (state.selfRecoveries >= MAX_SELF_RECOVERIES_PER_RUN) {
-                const failure: AssistantMessage = {
-                  ...event.message,
-                  content: event.message.content.filter((part) => part.type !== "toolCall"),
-                  stopReason: "error",
-                  errorMessage: MODEL_OUTPUT_LIMIT_ERROR,
-                };
-                for (const pending of buffered) output.push(pending);
-                buffered = [];
-                output.push({ type: "error", reason: "error", error: failure });
-                output.end(failure);
-                return;
-              }
-              state.selfRecoveries += 1;
-              state.nextCallRecovery = lengthRecovery(
-                target,
-                sentMaxTokens,
-                thinkingLevel,
-                outputCap,
-              );
-            }
-            const recovery =
-              !lengthRecovered &&
-              event.message.stopReason === "length" &&
-              !event.message.errorMessage &&
-              !assistantHasVisibleOutput(event.message) &&
-              state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN &&
-              !signalAborted()
-                ? lengthRecovery(target, sentMaxTokens, thinkingLevel, outputCap)
-                : undefined;
-            if (recovery) {
-              // Repeat the call from the same context; its thinking is discarded with `buffered`.
-              state.selfRecoveries += 1;
-              lengthRecovered = true;
-              outputBudget = recovery.maxTokens ?? outputBudget;
-              thinkingOverride = recovery.thinkingLevel ?? thinkingOverride;
-              buffered = [];
-              restart = true;
-              break;
-            }
-            for (const pending of buffered) output.push(pending);
-            buffered = [];
-            output.push(event);
-            output.end(event.message);
-            return;
-          }
-          lastPartial = {
-            ...event.partial,
-            content: event.partial.content.map((part) => ({ ...part })),
-          };
-          if (eventHasVisibleOutput(event)) {
-            sawVisibleOutput = true;
-            for (const pending of buffered) output.push(pending);
-            buffered = [];
-            output.push(event);
-          } else if (sawVisibleOutput) {
-            output.push(event);
-          } else {
-            buffered.push(event);
-          }
-        }
-      } catch (error) {
-        for (const pending of buffered) output.push(pending);
-        finishWithThrownError(target, error);
-        return;
-      }
-      if (restart) continue;
-      for (const pending of buffered) output.push(pending);
-      finishWithThrownError(target, new Error("Model stream ended without a terminal event"));
-      return;
-    }
-    const target = state.getActive();
-    finishWithThrownError(target, new Error("Model request was aborted"));
-  };
-  void run().catch((error: unknown) => finishWithThrownError(state.getActive(), error));
-  return output;
-}
-
 function createGate(max: number) {
   let active = 0;
   const waiters: Array<() => void> = [];
@@ -3407,320 +1127,4 @@ function createQueue(): EventQueue {
       }
     },
   };
-}
-
-export function isCodexModel(model: Pick<Model<Api>, "api" | "provider">): boolean {
-  return model.provider === "openai-codex" || model.api === "openai-codex-responses";
-}
-
-/** Abort reason recorded when a model stream goes silent past the idle bound. */
-export const MODEL_STREAM_IDLE_TIMEOUT_MESSAGE = "Model stream idle timeout";
-
-export interface StreamIdleWatchdog {
-  /** Composed abort signal to hand to the provider request. */
-  signal: AbortSignal;
-  /** Re-arms the idle bound; invoke on response headers and each delivered event. */
-  ping(): void;
-  /** Wraps the provider stream so every delivered event re-arms the idle bound. */
-  wrap(stream: AssistantMessageEventStream): AssistantMessageEventStream;
-  /** Stops the timer and drops the caller-signal listener. */
-  dispose(): void;
-}
-
-/**
- * `timeoutMs` bounds each attempt's time-to-headers. After headers arrive, pi
- * reads the body until it ends or the request signal aborts, so silence can
- * stall a run. The watchdog composes an AbortController into `options.signal`
- * and re-arms on a 2xx `onResponse` — pi invokes it inside the retry loop when
- * an attempt's headers land — and on every stream event the agent consumes.
- * `idleTimeoutMs` of silence aborts the request.
- *
- * Arming only on a successful response — not at stream creation, and not on
- * retryable error headers — keeps each attempt's time-to-headers inside its
- * own `timeoutMs` budget and each retry backoff outside the idle bound. A
- * non-2xx body is bounded separately by `boundRetryableErrorBody`: pi reads it
- * with `response.text()` after the header timeout is gone, and failing that
- * read lets the attempt retry, whereas aborting this signal would also cancel
- * the backoff. pi reports any signal abort as a generic "Request was aborted",
- * so when the watchdog fired the wrapper relabels the terminal error as an
- * idle timeout rather than a caller abort.
- */
-export function modelStreamIdleWatchdog(
-  upstream: AbortSignal | undefined,
-  idleTimeoutMs: number = MODEL_STREAM_IDLE_TIMEOUT_MS,
-): StreamIdleWatchdog {
-  const controller = new AbortController();
-  let timedOut = false;
-  let disposed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  const onUpstreamAbort = () => controller.abort(upstream?.reason);
-  if (upstream?.aborted) controller.abort(upstream.reason);
-  else upstream?.addEventListener("abort", onUpstreamAbort, { once: true });
-
-  const arm = () => {
-    if (disposed || controller.signal.aborted) return;
-    timer = setTimeout(() => {
-      timer = undefined;
-      if (controller.signal.aborted) return;
-      timedOut = true;
-      controller.abort(new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE));
-    }, idleTimeoutMs);
-    timer.unref?.();
-  };
-
-  const dispose = () => {
-    disposed = true;
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-    upstream?.removeEventListener("abort", onUpstreamAbort);
-  };
-
-  // Nothing arms the timer before a successful response's headers land: the
-  // pre-headers window is bounded per attempt by timeoutMs and retry backoff
-  // by maxRetryDelayMs, so idle budget must not burn there and a retry always
-  // starts from a fresh full budget.
-  const ping = () => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-    arm();
-  };
-
-  const describeTimeout = (message: AssistantMessage): AssistantMessage =>
-    timedOut && message.stopReason === "aborted"
-      ? {
-          ...message,
-          stopReason: "error",
-          errorMessage: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
-        }
-      : message;
-
-  const rewrite = (event: AssistantMessageEvent): AssistantMessageEvent => {
-    if (event.type !== "error") return event;
-    const error = describeTimeout(event.error);
-    return error === event.error ? event : { type: "error", reason: "error", error };
-  };
-
-  return {
-    signal: controller.signal,
-    ping,
-    dispose,
-    wrap(inner) {
-      class Watched extends AssistantMessageEventStream {
-        override async *[Symbol.asyncIterator](): AsyncGenerator<AssistantMessageEvent> {
-          try {
-            for await (const event of inner) {
-              ping();
-              yield rewrite(event);
-            }
-          } finally {
-            dispose();
-          }
-        }
-        override result(): Promise<AssistantMessage> {
-          return inner.result().then(describeTimeout).finally(dispose);
-        }
-      }
-      return new Watched();
-    },
-  };
-}
-
-/**
- * Fails a non-2xx body that stays open. The shared idle watchdog stays
- * unarmed: aborting it would skip pi's retry backoff, and a thrown read error
- * is retried like any other transport failure.
- */
-function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Response {
-  if (response.ok || response.body == null) return response;
-  const reader = response.body.getReader();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const clear = () => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-  };
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const read = reader.read().then(
-        (chunk) => ({ kind: "chunk" as const, chunk }),
-        (error: unknown) => ({ kind: "error" as const, error }),
-      );
-      const timeout = new Promise<{ kind: "timeout" }>((resolve) => {
-        timer = setTimeout(() => resolve({ kind: "timeout" }), idleTimeoutMs);
-        timer.unref?.();
-      });
-      const outcome = await Promise.race([read, timeout]);
-      clear();
-      if (outcome.kind === "timeout") {
-        const error = new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
-        void reader.cancel(error).catch(() => undefined);
-        controller.error(error);
-        return;
-      }
-      if (outcome.kind === "error") {
-        controller.error(outcome.error);
-        return;
-      }
-      if (outcome.chunk.done) controller.close();
-      else controller.enqueue(outcome.chunk.value);
-    },
-    cancel(reason) {
-      clear();
-      return reader.cancel(reason);
-    },
-  });
-  const headers = new Headers(response.headers);
-  headers.delete("content-encoding");
-  headers.delete("content-length");
-  return new Response(body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
-function modelRequestFetch(
-  fetchImpl: ModelsSimpleStreamOptions["fetch"],
-  idleTimeoutMs: number,
-): NonNullable<ModelsSimpleStreamOptions["fetch"]> {
-  return async (input, init) => {
-    // Compatible providers attach a package undici Agent after this wrapper is
-    // installed. Pair that dispatcher without replacing other providers' fetch.
-    const transport =
-      init && "dispatcher" in init
-        ? fetchPairedWithDispatcher(fetchImpl)
-        : (fetchImpl ?? globalThis.fetch);
-    const response = await transport(input, init);
-    return boundRetryableErrorBody(response, idleTimeoutMs);
-  };
-}
-
-// These Pi adapters reject fetch overrides other than globalThis.fetch.
-const APIS_WITHOUT_CUSTOM_FETCH = new Set<Api>(["google-generative-ai", "google-vertex"]);
-
-export function reliableModelStream(
-  models: Models,
-  model: Model<Api>,
-  context: Context,
-  options: ModelsSimpleStreamOptions | undefined,
-  configuredMaxTokens: number | undefined,
-  accessToken?: string | (() => string | undefined),
-  runStream?: (options: ModelsSimpleStreamOptions) => AssistantMessageEventStream,
-  cacheRetention?: ModelsSimpleStreamOptions["cacheRetention"],
-): AssistantMessageEventStream {
-  const watchdog = modelStreamIdleWatchdog(options?.signal);
-  try {
-    const preparedOptions = reliableStreamOptions(
-      model,
-      {
-        ...options,
-        signal: watchdog.signal,
-        fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
-          ? options?.fetch
-          : modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
-        // Only a 2xx arms the shared watchdog. Error bodies are bounded by
-        // the fetch wrapper where supported; caller hooks still see every status.
-        onResponse: (response, requestModel) => {
-          if (response.status >= 200 && response.status < 300) watchdog.ping();
-          return options?.onResponse?.(response, requestModel);
-        },
-      },
-      configuredMaxTokens,
-      accessToken,
-      cacheRetention,
-    );
-    const stream = runStream
-      ? runStream(preparedOptions)
-      : models.streamSimple(model, context, preparedOptions);
-    return watchdog.wrap(stream);
-  } catch (error) {
-    watchdog.dispose();
-    throw error;
-  }
-}
-
-const CODEX_RESIDENCY_HEADER = "x-openai-internal-codex-residency";
-
-/** Header names are case-insensitive: any caller-set casing counts as explicit. */
-function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
-  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === name);
-}
-
-export function reliableStreamOptions(
-  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning"> &
-    Partial<Pick<Model<Api>, "contextWindow">>,
-  options?: ModelsSimpleStreamOptions,
-  configuredMaxTokens?: number,
-  accessToken?: string | (() => string | undefined),
-  cacheRetention?: ModelsSimpleStreamOptions["cacheRetention"],
-): ModelsSimpleStreamOptions {
-  let next: ModelsSimpleStreamOptions = {
-    ...options,
-    ...(cacheRetention ? { cacheRetention } : {}),
-    timeoutMs: options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS,
-    maxRetries: options?.maxRetries ?? modelStreamMaxRetries(),
-    maxTokens: resolveCompletionMaxTokens(
-      model.maxTokens,
-      configuredMaxTokens,
-      options?.maxTokens,
-      model.reasoning,
-      model.contextWindow,
-    ),
-  };
-
-  if (isCodexModel(model)) {
-    // Pi cannot fall back after a WebSocket has emitted its start event. Long tool
-    // runs then surface abnormal close 1006 as a terminal model error. SSE has
-    // bounded network retries and no long-lived connection between tool turns.
-    next = { ...next, transport: "sse" };
-    // Forward the account's compute residency so the Codex backend routes to the
-    // right region. Models.applyAuth resolves auth — including an OAuth refresh
-    // that swaps the stored credential — after these options are built, so the
-    // claim is derived in transformHeaders at request time from the credential
-    // the store holds then. Injection acts like a default header: an explicit
-    // value under any casing wins, and a caller-supplied transformHeaders keeps
-    // the final say.
-    const callerTransform = next.transformHeaders;
-    next = {
-      ...next,
-      transformHeaders: (headers) => {
-        const residency = codexComputeResidency(
-          typeof accessToken === "function" ? accessToken() : accessToken,
-        );
-        const merged =
-          residency && !hasHeader(headers, CODEX_RESIDENCY_HEADER)
-            ? { ...headers, [CODEX_RESIDENCY_HEADER]: residency }
-            : headers;
-        return callerTransform ? callerTransform(merged) : merged;
-      },
-    };
-  }
-
-  // OpenCode Go/Zen require a sticky x-opencode-session header (affinity + some
-  // models 400 without it). Pi 0.85.1 does not attach that header on its own.
-  if (isOpenCodeProvider(model.provider)) {
-    const sessionId = next.sessionId?.trim() || randomUUID();
-    next = {
-      ...next,
-      sessionId,
-      headers: {
-        "x-opencode-session": sessionId,
-        "x-opencode-client": "rakazo",
-        ...next.headers,
-      },
-    };
-  }
-
-  return next;
-}
-
-type ModelTarget = Pick<AgentRunRequest["model"], "provider" | "id" | "connectionId">;
-
-/** A model on one connection: the same model on another account is another backup. */
-function modelTargetKey(target: ModelTarget): string {
-  return JSON.stringify([target.provider, target.id, target.connectionId ?? null]);
-}
-
-function sameModelTarget(left: ModelTarget, right: ModelTarget): boolean {
-  return modelTargetKey(left) === modelTargetKey(right);
 }

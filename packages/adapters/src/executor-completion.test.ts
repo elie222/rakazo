@@ -1,28 +1,32 @@
 import { describe, expect, it } from "vitest";
+import { runIdentityInstruction } from "./run-instructions.js";
+import { mayOpenModelStream } from "./run-lifecycle.js";
 import {
   completionMarksUnread,
-  completionMessageSegments,
   completionNotificationBody,
   completionNotificationPreview,
+  runSendsFinishNotification,
+  secretAskNotification,
+  subagentMarksUnread,
+} from "./run-notifications.js";
+import {
+  completionMessageSegments,
   DELEGATED_EMPTY_NOTICE,
   emptyDelegatedToolTurnShouldFail,
-  isExactNoResponse,
   longWorkProgressGuidance,
-  mayOpenModelStream,
-  NO_RESPONSE,
   REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
-  runIdentityInstruction,
   runPromotesMidTurnNarration,
   runReplyGuidance,
-  runSendsFinishNotification,
-  secretAskNotification,
+  TICKET_SILENT_REPLY_GUIDANCE,
+} from "./run-replies.js";
+import {
+  isExactNoResponse,
+  NO_RESPONSE,
   stripNoResponseReply,
   stripStrayNoResponse,
-  subagentMarksUnread,
-  TICKET_SILENT_REPLY_GUIDANCE,
-} from "./executor.js";
+} from "./silent-reply.js";
 import { finalBlocksAfterMidTurnProgress } from "./user-progress.js";
 
 describe("completionMessageSegments", () => {
@@ -515,12 +519,10 @@ describe("runReplyGuidance", () => {
   it("gives the creation intro the profile fields its prompt asks about", () => {
     const bot = {
       name: "Ada",
-      title: "Inbox lead",
       description: "Reads and sorts mail.",
       instructions: "Never send mail without asking.",
     };
     const intro = runIdentityInstruction(bot, "created");
-    expect(intro).toContain("Title: Inbox lead");
     expect(intro).toContain("Description: Reads and sorts mail.");
     expect(intro).toContain("Never send mail without asking.");
     expect(runIdentityInstruction({ ...bot, instructions: "" }, "created")).toContain(
@@ -532,12 +534,11 @@ describe("runReplyGuidance", () => {
   it("keeps the public description and private instructions distinct on normal runs", () => {
     const bot = {
       name: "Ada",
-      title: "Inbox lead",
       description: "Reads and sorts mail.",
       instructions: "Never send mail without asking.",
     };
     const prompt = runIdentityInstruction(bot, "user");
-    expect(prompt).toContain("Ada: Inbox lead\nReads and sorts mail.");
+    expect(prompt).toContain("Ada\nReads and sorts mail.");
     expect(prompt).toContain("Teammates see only the profile above.");
     expect(prompt.endsWith("Never send mail without asking.")).toBe(true);
   });
@@ -545,40 +546,31 @@ describe("runReplyGuidance", () => {
   it("does not repeat text that older bots saved as both fields", () => {
     const bot = {
       name: "Ada",
-      title: "Inbox lead",
       description: "Reads and sorts mail.",
       instructions: "Reads and sorts mail.",
     };
-    expect(runIdentityInstruction(bot, "user")).toBe("Reads and sorts mail.");
+    expect(runIdentityInstruction(bot, "user")).toBe("Ada\nReads and sorts mail.");
     expect(runIdentityInstruction({ ...bot, instructions: "" }, "user")).toBe(
-      "Ada: Inbox lead\nReads and sorts mail.",
+      "Ada\nReads and sorts mail.",
     );
   });
 
   it("omits blank profile lines and treats missing fields as empty", () => {
     expect(
-      runIdentityInstruction(
-        { name: "Ada", title: "", description: "", instructions: "Stay quiet." },
-        "user",
-      ),
+      runIdentityInstruction({ name: "Ada", description: "", instructions: "Stay quiet." }, "user"),
     ).toBe(
       "Ada\nTeammates see only the profile above. These instructions are private to you:\nStay quiet.",
     );
+    expect(runIdentityInstruction({ name: "Ada", description: "", instructions: "" }, "user")).toBe(
+      "Ada",
+    );
     expect(
       runIdentityInstruction(
-        { name: "Ada", title: "Inbox lead", description: "", instructions: "" },
-        "user",
-      ),
-    ).toBe("Ada: Inbox lead");
-    expect(
-      runIdentityInstruction(
-        { name: "Ada", title: "", description: "Reads and sorts mail.", instructions: "" },
+        { name: "Ada", description: "Reads and sorts mail.", instructions: "" },
         "user",
       ),
     ).toBe("Ada\nReads and sorts mail.");
-    expect(runIdentityInstruction({ name: "Ada", title: "Inbox lead" }, "routine")).toBe(
-      "Ada: Inbox lead",
-    );
+    expect(runIdentityInstruction({ name: "Ada" }, "routine")).toBe("Ada");
   });
 
   it("does not send a finish notification for the creation intro", () => {

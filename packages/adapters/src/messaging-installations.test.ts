@@ -1,6 +1,7 @@
 import type { MessagingInstallProvider, SecretStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
 import { MessagingInstallations } from "./messaging-installations.js";
 
@@ -21,7 +22,7 @@ function fixture() {
   } | null = null;
   let installation: Record<string, unknown> | null = null;
   const prisma = {
-    bot: { findFirst: vi.fn(async () => ({ id: "bot-a" })) },
+    bot: { findFirst: vi.fn(async () => ({ id: "bot-a", spaceId: "space-a" })) },
     spaceMember: { findFirst: vi.fn(async () => ({ id: "member-a" })) },
     messagingInstallSession: {
       create: vi.fn(async ({ data }) => {
@@ -48,7 +49,7 @@ function fixture() {
         return { count: 1 };
       }),
       findFirst: vi.fn(async ({ where }) =>
-        installation?.spaceId === where.spaceId && installation?.userId === where.userId
+        installation?.id === where.id && installation?.userId === where.userId
           ? installation
           : null,
       ),
@@ -109,7 +110,7 @@ it("binds a hashed one-use state to the tenant and stores only the sealed creden
     botId: "bot-a",
   });
   expect(f.getSession()?.id).not.toBe(state);
-  await f.manager.complete(state, "code");
+  await f.manager.complete(actor, state, "code");
   expect(f.getInstallation()).toMatchObject({
     spaceId: "space-a",
     userId: "user-a",
@@ -118,15 +119,15 @@ it("binds a hashed one-use state to the tenant and stores only the sealed creden
     ciphertext: "sealed-token",
   });
   expect(JSON.stringify(f.getInstallation())).not.toContain("fake-token");
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("expired");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("expired");
   expect(f.provider.exchange).toHaveBeenCalledTimes(1);
 });
 it("rejects expired and forged state before contacting Slack", async () => {
   const f = fixture();
   const state = await begin(f);
-  await expect(f.manager.complete("forged", "code")).rejects.toThrow("Invalid");
+  await expect(f.manager.complete(actor, "forged", "code")).rejects.toThrow("Invalid");
   f.setSession({ ...f.getSession()!, expiresAt: new Date(0) });
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("expired");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("expired");
   expect(f.provider.exchange).not.toHaveBeenCalled();
 });
 it("does not let another Rakazo space claim an installed Slack workspace", async () => {
@@ -139,24 +140,51 @@ it("does not let another Rakazo space claim an installed Slack workspace", async
     botId: "bot-b",
     ciphertext: "other-secret",
   });
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("already connected");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("already connected");
   expect(f.secrets.put).not.toHaveBeenCalled();
   expect(f.prisma.messagingInstallation.updateMany).not.toHaveBeenCalled();
+});
+it("only lets the user who started the install finish it", async () => {
+  const f = fixture();
+  const state = await begin(f);
+  await expect(f.manager.complete({ ...actor, userId: "user-b" }, state, "code")).rejects.toThrow(
+    "expired",
+  );
+  expect(f.provider.exchange).not.toHaveBeenCalled();
+  await f.manager.complete(actor, state, "code");
+  expect(f.provider.exchange).toHaveBeenCalledTimes(1);
 });
 it("rechecks membership and bot ownership after authorization", async () => {
   const f = fixture();
   const state = await begin(f);
   f.prisma.spaceMember.findFirst.mockResolvedValueOnce(null as never);
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("owner");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("owner");
   expect(f.provider.exchange).not.toHaveBeenCalled();
 });
 it("requires an owned, active bot before creating an install URL", async () => {
   const f = fixture();
   f.prisma.bot.findFirst.mockResolvedValueOnce(null as never);
-  await expect(f.manager.start(actor, "bot-b")).rejects.toThrow("Bot not found");
+  await expect(f.manager.start(actor, "bot-b")).rejects.toBeInstanceOf(IsolationError);
   expect(f.prisma.messagingInstallSession.create).not.toHaveBeenCalled();
 });
-it("disconnects only an installation owned by the current space and user", async () => {
+it("connects the first bot in the user's default space when no bot is chosen", async () => {
+  const f = fixture();
+  f.prisma.spaceMember.findFirst.mockResolvedValueOnce({
+    userId: "user-a",
+    spaceId: "space-home",
+    member: { user: { email: "fake@example.test" } },
+  } as never);
+  f.prisma.bot.findFirst.mockResolvedValueOnce({ id: "bot-home", spaceId: "space-home" } as never);
+  await f.manager.start({ ...actor, spaceId: "space-work" });
+  expect(f.prisma.bot.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { spaceId: "space-home", userId: "user-a", archivedAt: null },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    }),
+  );
+  expect(f.getSession()).toMatchObject({ botId: "bot-home", spaceId: "space-home" });
+});
+it("disconnects only the user's own installation, from any of their spaces", async () => {
   const f = fixture();
   f.setInstallation({
     id: "installation-a",
@@ -165,9 +193,9 @@ it("disconnects only an installation owned by the current space and user", async
     userId: "user-a",
     ciphertext: "sealed-token",
   });
-  await f.manager.remove({ ...actor, spaceId: "space-b" }, "installation-a");
+  await f.manager.remove({ ...actor, userId: "user-b" }, "installation-a");
   expect(f.prisma.messagingInstallation.deleteMany).not.toHaveBeenCalled();
-  await f.manager.remove(actor, "installation-a");
+  await f.manager.remove({ ...actor, spaceId: "space-b" }, "installation-a");
   expect(f.prisma.messagingIdentity.deleteMany).toHaveBeenCalledWith({
     where: {
       spaceId: "space-a",
@@ -195,14 +223,14 @@ it("does not load credentials after the installation owner loses membership", as
 
 it("removes an old secret reference after a successful reconnect", async () => {
   const f = fixture();
-  await f.manager.complete(await begin(f), "code");
+  await f.manager.complete(actor, await begin(f), "code");
   const id = f.getInstallation()!.id as string;
   vi.mocked(f.secrets.put).mockResolvedValueOnce({
     id,
     ref: "replacement",
     ciphertext: "replacement",
   });
-  await f.manager.complete(await begin(f), "code");
+  await f.manager.complete(actor, await begin(f), "code");
   expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", id);
   expect(f.getInstallation()?.ciphertext).toBe("replacement");
 });
@@ -211,7 +239,7 @@ it("removes an unreferenced secret if persisting an installation fails", async (
   const f = fixture();
   const state = await begin(f);
   f.prisma.messagingInstallation.create.mockRejectedValueOnce(new Error("write failed"));
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("write failed");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("write failed");
   expect(f.secrets.delete).toHaveBeenCalledWith("sealed-token", expect.any(String));
 });
 
@@ -222,7 +250,7 @@ it("does not delete a credential when a write committed before a transport error
     f.setInstallation(data);
     throw new Error("response lost");
   });
-  await expect(f.manager.complete(state, "code")).rejects.toThrow("response lost");
+  await expect(f.manager.complete(actor, state, "code")).rejects.toThrow("response lost");
   expect(f.secrets.delete).not.toHaveBeenCalled();
 });
 
@@ -246,11 +274,11 @@ it("disconnects installations and deletes their secret references before destroy
 
 it("keeps a completed reconnect successful when external cleanup needs a retry", async () => {
   const f = fixture();
-  await f.manager.complete(await begin(f), "code");
+  await f.manager.complete(actor, await begin(f), "code");
   const id = f.getInstallation()!.id as string;
   vi.mocked(f.secrets.put).mockResolvedValueOnce({ id, ref: "new-ref", ciphertext: "new-ref" });
   vi.mocked(f.secrets.delete).mockRejectedValueOnce(new Error("secret store unavailable"));
-  await expect(f.manager.complete(await begin(f), "code")).resolves.toBeUndefined();
+  await expect(f.manager.complete(actor, await begin(f), "code")).resolves.toBeUndefined();
   expect(f.getInstallation()?.ciphertext).toBe("new-ref");
   expect(f.cleanupJobs.enqueue).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -262,7 +290,7 @@ it("keeps a completed reconnect successful when external cleanup needs a retry",
 
 it("keeps a completed disconnect successful when external cleanup needs a retry", async () => {
   const f = fixture();
-  await f.manager.complete(await begin(f), "code");
+  await f.manager.complete(actor, await begin(f), "code");
   const id = f.getInstallation()!.id as string;
   vi.mocked(f.secrets.delete).mockRejectedValueOnce(new Error("secret store unavailable"));
   await expect(f.manager.remove(actor, id)).resolves.toBeUndefined();

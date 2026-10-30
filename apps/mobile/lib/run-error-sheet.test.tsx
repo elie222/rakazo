@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
+import { normalizeRunError } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunErrorSheet, useRunError } from "../components/run-error-sheet";
-import { ThreadErrorNotice } from "../components/thread-error-notice";
+import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../components/thread-error-notice";
+import { runErrorActionLabel } from "./run-error-presentation";
+import { liveEndRunError } from "./thread-window";
 
 const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
@@ -43,6 +44,9 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("./api", () => ({ rpc: vi.fn() }));
+vi.mock("./integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
+vi.mock("./saved-chats", () => ({ liveSavedChatsScope: async () => null }));
 vi.mock("./native", () => ({
   native: {},
   useMobileTokens: () => ({ card: "token-card" }),
@@ -86,10 +90,11 @@ describe("run error recovery", () => {
     expect(node.textContent).toBe("OpenRouter key hit its weekly limit.");
   });
   it("shows useful cause and recovery information before diagnostics, and copies only on request", () => {
-    const onConnection = vi.fn();
-    const onModel = vi.fn();
+    const onPress = vi.fn();
     const onClose = vi.fn();
-    const node = mount(createElement(RunErrorSheet, { details, onClose, onConnection, onModel }));
+    const node = mount(
+      createElement(RunErrorSheet, { details, onClose, action: { label: "Add Model", onPress } }),
+    );
     expect(node.textContent).toContain(
       "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.",
     );
@@ -102,10 +107,9 @@ describe("run error recovery", () => {
           .find((button) => button.textContent === label)
           ?.click();
       });
-    click("Set your own key");
-    click("Change model");
-    expect(onConnection).toHaveBeenCalledOnce();
-    expect(onModel).toHaveBeenCalledOnce();
+    click("Add Model");
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(node.textContent).not.toContain("Change model");
     click("Technical details");
     expect(node.textContent).toContain("Provider message");
     expect(node.textContent).toContain("403");
@@ -121,25 +125,26 @@ describe("run error recovery", () => {
   it.each([
     '404: {"message":"Model unavailable"}',
     "This model's context window is too small. Choose another model.",
+    "This connection's request limit is too small. Choose another model.",
+    "The model hit its output limit before finishing its reply.",
   ])("offers model recovery without suggesting a key failure for %s", (details) => {
+    const label = runErrorActionLabel((key) => key, normalizeRunError(details));
+    expect(label).toBe("Change model");
     const node = mount(
       createElement(RunErrorSheet, {
         details,
         onClose: vi.fn(),
-        onConnection: vi.fn(),
-        onModel: vi.fn(),
+        action: label ? { label, onPress: vi.fn() } : null,
       }),
     );
     expect(node.textContent).toContain("Change model");
-    expect(node.textContent).not.toContain("Set your own key");
+    expect(node.textContent).not.toContain("Replace key");
     expect(node.textContent).not.toContain("your key or a shared key");
   });
   it("omits the reset field after its date passes while the sheet remains open", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-20T23:59:59Z"));
-    const node = mount(
-      createElement(RunErrorSheet, { details, onClose: vi.fn(), onConnection: vi.fn() }),
-    );
+    const node = mount(createElement(RunErrorSheet, { details, onClose: vi.fn() }));
     act(() => {
       Array.from(node.querySelectorAll("button"))
         .find((button) => button.textContent === "Technical details")
@@ -152,47 +157,43 @@ describe("run error recovery", () => {
     );
   });
   it("does not mount a native modal when closed", () => {
-    const node = mount(
-      createElement(RunErrorSheet, { details: null, onClose: vi.fn(), onConnection: vi.fn() }),
-    );
+    const node = mount(createElement(RunErrorSheet, { details: null, onClose: vi.fn() }));
     expect(node.querySelector("dialog")).toBeNull();
   });
 });
 
 describe("inline error card", () => {
   it.each([
-    ["403: OpenRouter weekly key limit exceeded", true, true],
-    ["401: Unauthorized", true, true],
-    ["429: Too many requests", true, true],
-    ["404: Model unavailable", false, true],
-    ["500: Internal server error", false, false],
-  ])("offers only applicable fixes for %s", (details, connection, model) => {
-    const onConnection = vi.fn();
-    const onModel = vi.fn();
+    ["403: OpenRouter weekly key limit exceeded", "Add Model"],
+    ["401: Unauthorized", "Replace key"],
+    ["402: You have no credits remaining.", "Change model"],
+    ["404: Model unavailable", "Change model"],
+    ["429: Too many requests", null],
+    ["500: Internal server error", null],
+  ])("offers the one fix for %s", (details, label) => {
+    const onPress = vi.fn();
     const onDetails = vi.fn();
     function Notice() {
       const error = useRunError(details, false);
+      const actionLabel = error ? runErrorActionLabel((key) => key, error) : null;
       return createElement(ThreadErrorNotice, {
         error: null,
         summary: error?.summary ?? null,
         resetAt: error?.resetAt,
-        onConnection: error?.recovery === "connection" ? onConnection : undefined,
-        onModel: error?.recovery ? onModel : undefined,
+        action: actionLabel ? { label: actionLabel, onPress } : null,
         onDetails,
       });
     }
     const node = mount(createElement(Notice));
-    expect(node.textContent?.includes("Set your own key")).toBe(connection);
-    expect(node.textContent?.includes("Change model")).toBe(model);
+    for (const other of ["Add Model", "Replace key", "Change model"]) {
+      expect(node.textContent?.includes(other)).toBe(other === label);
+    }
     expect(node.textContent).toContain("Details");
-    if (connection) expect(node.textContent).toContain("Add your own key or pick another model.");
-    if (model && !connection) expect(node.textContent).toContain("Choose another model");
     act(() => {
       for (const button of node.querySelectorAll("button")) button.click();
     });
     expect(onDetails).toHaveBeenCalledOnce();
-    expect(onConnection).toHaveBeenCalledTimes(connection ? 1 : 0);
-    expect(onModel).toHaveBeenCalledTimes(model ? 1 : 0);
+    expect(onPress).toHaveBeenCalledTimes(label ? 1 : 0);
   });
   it("puts only future resets in the explanation and expires them while mounted", () => {
     vi.useFakeTimers();
@@ -203,7 +204,7 @@ describe("inline error card", () => {
         error: null,
         summary: error?.summary ?? null,
         resetAt: error?.resetAt,
-        onConnection: vi.fn(),
+        action: { label: "Add Model", onPress: vi.fn() },
         onDetails: vi.fn(),
       });
     }
@@ -216,82 +217,47 @@ describe("inline error card", () => {
 });
 
 it.each([false, true])("keeps history fetch errors visible (provider failure: %s)", (failedRun) => {
-  // Exercise the actual screen notice and pinned footer without its native dependencies.
-  const testFileUrl = import.meta.url;
-  const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-  const noticeStart = source.indexOf("  const visibleRunError =");
-  const notice = source.slice(noticeStart, source.indexOf("  return (\n    <View", noticeStart));
-  const footerStart = source.indexOf("{pinnedNewerCursor === null ? failedSendBubbles : null}");
-  const footer = source.slice(footerStart, source.indexOf("</ScrollView>", footerStart));
-  const scope = {
-    createElement,
-    View: "div",
-    ThreadErrorNotice,
-    showPinnedPage: true,
-    pinnedNewerCursor: 10,
-    normalizedRunError: failedRun
-      ? { summary: "OpenRouter key hit its weekly limit.", recovery: "connection" }
-      : null,
-    error: "Could not load newer messages",
-    showingSaved: false,
-    t: (key: string) => key,
-    setRunErrorDetailsOpen: vi.fn(),
-    openErrorConnection: vi.fn(),
-    openErrorModel: vi.fn(),
-    snap: { run: { botId: "fixture-bot" } },
-    botId: "fixture-bot",
-    failedSendBubbles: null,
-    workingFooter: null,
-    loadingNewer: false,
-  };
-  const script = ts.transpileModule(`${notice}\nreturn <>{fetchErrorNotice}${footer}</>;`, {
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      jsx: ts.JsxEmit.React,
-      jsxFactory: "createElement",
-      jsxFragmentFactory: "Fragment",
-    },
-  }).outputText;
-  const render = new Function("Fragment", ...Object.keys(scope), script);
-  const node = mount(render("div", ...Object.values(scope)));
+  const runError = failedRun
+    ? { summary: "OpenRouter key hit its weekly limit.", recovery: "connection" as const }
+    : null;
+  // A pinned page with newer messages still to load.
+  const visible = liveEndRunError(runError, 10);
+  const node = mount(
+    createElement(
+      "div",
+      null,
+      createElement(ThreadErrorNotice, {
+        error: null,
+        summary: visible?.summary ?? null,
+        onDetails: vi.fn(),
+        action: visible ? { label: "Add Model", onPress: vi.fn() } : null,
+      }),
+      createElement(ThreadFetchErrorNotice, {
+        error: "Could not load newer messages",
+        showingSaved: false,
+      }),
+    ),
+  );
   expect(node.textContent).toContain("Could not load newer messages");
   expect(node.textContent).not.toContain("weekly limit");
-  expect(node.textContent).not.toContain("Set your own key");
-  expect(node.textContent).not.toContain("Change model");
+  expect(node.textContent).not.toContain("Add Model");
   expect(node.textContent).not.toContain("Details");
 });
 
-it("keeps fetch failures outside both native scrolling lists", () => {
-  const testFileUrl = import.meta.url;
-  const source = ts.createSourceFile(
-    "thread.tsx",
-    readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
+it("offers provider recovery once the chat reaches its live end", () => {
+  const runError = { summary: "OpenRouter key hit its weekly limit.", recovery: "connection" };
+  expect(liveEndRunError(runError, null)).toBe(runError);
+  expect(liveEndRunError(null, null)).toBeNull();
+});
+
+it("says the last loaded messages stay on screen when a refresh fails", () => {
+  const node = mount(
+    createElement(ThreadFetchErrorNotice, { error: "Network request failed", showingSaved: true }),
   );
-  let notices = 0;
-  function visit(node: ts.Node) {
-    if (
-      ts.isJsxExpression(node) &&
-      node.expression &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "fetchErrorNotice"
-    ) {
-      notices += 1;
-      for (let parent: ts.Node | undefined = node.parent; parent; parent = parent.parent) {
-        const tag = ts.isJsxElement(parent)
-          ? parent.openingElement.tagName
-          : ts.isJsxSelfClosingElement(parent)
-            ? parent.tagName
-            : undefined;
-        if (tag) expect(tag.getText(source)).not.toMatch(/^(ScrollView|FlatList)$/);
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(source);
-  expect(notices).toBe(1);
+  expect(node.textContent).toBe("Couldn't refresh — showing the last loaded messages.");
+  expect(
+    mount(createElement(ThreadFetchErrorNotice, { error: null, showingSaved: true })).textContent,
+  ).toBe("");
 });
 
 it("draws the error notice as a filled card without an outline", () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import http from "node:http";
 import { homedir } from "node:os";
@@ -17,11 +17,14 @@ import { getLogger, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
-import { Hono, type MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { computerImageEnsurer } from "./computer-image.js";
 import type { ComputerEgressMode } from "./computer-spec.js";
 import {
+  assertComputerMountSources,
   assertVolumeSubpathSupport,
   COMPUTER_GID,
   COMPUTER_IMAGE,
@@ -30,6 +33,7 @@ import {
   computerBridgeNameFor,
   computerDnsMatches,
   computerHomeStorage,
+  computerMountsMatch,
   computerNetworkCreateOptions,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -45,6 +49,7 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
+  resolveComputerMounts,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   resolveSpaceComputerLimit,
@@ -58,6 +63,7 @@ import {
 } from "./computer-spec.js";
 import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
+import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -69,6 +75,7 @@ import {
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionSteps,
+  controlHandlesActions,
   createDockerStreamDemuxer,
   currentComputerScreens,
   demuxDockerStream,
@@ -80,14 +87,15 @@ import {
   nextScreenIndex,
   normalizeWorkspaceRelative,
   oldestIdleScreen,
+  pageBrowserNotReady,
   parseObservation,
   preferComputerControl,
   quiesceBrowserProfilesCommand,
   releaseAssignedScreen,
   resetManagedScreensCommand,
-  type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
+  screenRecentlyEnsured,
   screenReleaseStopCommand,
   shouldReplayComputerActions,
   stopExtraScreenCommand,
@@ -105,9 +113,9 @@ const docker = dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) :
 const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
+const ensureComputerImage = computerImageEnsurer(docker, COMPUTER_IMAGE, computerContext);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
-let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 let dockerApiVersion: string | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
@@ -117,6 +125,15 @@ const computerEgressSetting = resolveComputerEgressMode();
 let computerEgressMode: ComputerEgressMode =
   computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
+const computerMounts = resolveComputerMounts(undefined, [dataDir, dockerSocketPath]);
+// Docker follows symlinks in a bind source, so also check where a locally visible source points.
+assertComputerMountSources(
+  computerMounts.map((mount) => ({
+    ...mount,
+    source: existsSync(mount.source) ? realpathSync(mount.source) : mount.source,
+  })),
+  [dataDir, dockerSocketPath],
+);
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.
@@ -215,6 +232,11 @@ app.post("/computers", async (c) => {
       await ensureComputerImage();
       await ensureRestrictedEgressEnforced();
       const runtimeInfo = await inspectSupervisorContainer();
+      // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
+      assertComputerMountSources(
+        computerMounts,
+        (runtimeInfo?.Mounts ?? []).map((mount) => mount.Source),
+      );
       const networkMode = computerNetworkName(body.botId, runtimeInfo);
       const networkOwner = computerNetworkOwnerFor(dataDir, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
@@ -274,6 +296,8 @@ app.post("/computers", async (c) => {
           info.Config.User === computerUser &&
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
+          // So are host mounts: an added, changed or removed one replaces the computer.
+          computerMountsMatch(info, computerMounts) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -345,6 +369,7 @@ app.post("/computers", async (c) => {
               controlToken: randomUUID(),
               publishControlPort: controlViaLoopback,
               dns: computerDns,
+              mounts: computerMounts,
             }),
           );
           await container.start();
@@ -519,16 +544,35 @@ app.post("/computers/:id/browser", async (c) => {
                 paths: z.array(z.string().min(1).max(1024)).min(1).max(10),
                 roots: z.array(z.string().min(1).max(1024)).max(2).optional(),
               }),
+              z.object({
+                kind: z.literal("pay_token"),
+                text: z.string().min(1).max(4096),
+                origin: z.string().url().max(2048),
+                merchantAccountId: z.string().min(1).max(128),
+              }),
               z
                 .object({
                   kind: z.enum(["fill", "type"]),
-                  ref: z.string().min(1).max(200),
+                  ref: z.string().min(1).max(200).optional(),
                   text: z.string().max(32_000),
                   origin: z.string().url().max(2048).optional(),
-                  field: z.enum(["username", "password"]).optional(),
+                  field: z.enum(["username", "password", "card"]).optional(),
+                  cardField: z.enum(["number", "expiry", "cvc", "postal_code"]).optional(),
                 })
-                // The field decides which input types the helper accepts for a saved login.
-                .refine((step) => !step.origin || step.field, "A saved login fill needs its field"),
+                // The field decides which input types the helper accepts for a saved login or card.
+                .refine((step) => !step.origin || step.field, "A saved login fill needs its field")
+                // A card detail is hidden and checked only when bound to the merchant's origin.
+                .refine(
+                  (step) => step.field !== "card" || step.origin,
+                  "A card fill needs its origin",
+                )
+                .refine(
+                  (step) =>
+                    step.cardField
+                      ? step.kind === "fill" && step.field === "card" && !step.ref
+                      : Boolean(step.ref),
+                  "A fill needs either its ref or, for a card, its card field",
+                ),
             ]),
           )
           .min(1)
@@ -538,19 +582,23 @@ app.post("/computers/:id/browser", async (c) => {
     .parse(await c.req.json());
   const carriesSavedLogin =
     body.command === "act" && body.actions.some((step) => "origin" in step && step.origin);
-  try {
-    const { container, layout } = await managedScreen(
+  const screen = (reuseRecent: boolean) =>
+    managedScreen(
       c.req.param("id"),
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
+      true,
+      reuseRecent,
     );
-    const result = await runContainerCommand(
+  const runHelper = ({ container, layout }: Awaited<ReturnType<typeof screen>>) =>
+    runContainerCommand(
       container,
-      // Arguments go over stdin: origin-bound fills carry saved logins, and argv is readable by
-      // any process in the computer, including the bot's own shell. Other commands also keep the
-      // argv copy so a computer still on an older image keeps working until it is replaced.
+      // Arguments go over stdin: origin-bound fills carry saved logins and cards, and argv is
+      // readable by any process in the computer, including the bot's own shell. Other commands
+      // also keep the argv copy so a computer still on an older image keeps working until it is
+      // replaced.
       [
         "/usr/local/bin/rakazo-page-browser",
         body.command,
@@ -573,6 +621,12 @@ app.post("/computers/:id/browser", async (c) => {
         stdin: `${JSON.stringify(body)}\n`,
       },
     );
+  try {
+    const reusable = await screen(true);
+    let result = await runHelper(reusable);
+    // A reused screen skipped setup, so a browser that has since exited gets it before one retry.
+    if (reusable.reused && pageBrowserNotReady(result))
+      result = await runHelper(await screen(false));
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
@@ -650,7 +704,9 @@ app.post("/computers/:id/actions", async (c) => {
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
     );
-    const control = computerControlEndpoint(info);
+    const endpoint = computerControlEndpoint(info);
+    const control =
+      endpoint && controlHandlesActions(info.Config.Labels, body.actions) ? endpoint : undefined;
     const attempt = await attemptComputerControl(
       control
         ? () =>
@@ -1083,7 +1139,10 @@ app.delete("/computers/:id", async (c) => {
     return await withBotLifecycleLock(botId, async () => {
       const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
       await withComputerScreenLock(id, async () => {
-        await container.remove({ force: true }).catch(() => undefined);
+        await container.remove({ force: true }).catch((error) => {
+          // Already gone is deleted; any other failure may leave the computer running.
+          if ((error as { statusCode?: number })?.statusCode !== 404) throw error;
+        });
         clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
       });
       if (screenNetworkMode !== "internal") {
@@ -1091,8 +1150,12 @@ app.delete("/computers/:id", async (c) => {
       }
       return c.json({ ok: true });
     });
-  } catch {
-    return c.json({ error: "computer not found" }, 404);
+  } catch (error) {
+    if (error instanceof ComputerIdentityError)
+      return c.json({ error: "invalid computer identity" }, 403);
+    if ((error as { statusCode?: number })?.statusCode === 404)
+      return c.json({ error: "computer not found" }, 404);
+    return c.json({ error: "computer failed to delete" }, 500);
   }
 });
 
@@ -1150,64 +1213,20 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   startSupervisor();
 }
 
-async function ensureComputerImage() {
-  if (!imageReady) {
-    imageReady = (async () => {
-      try {
-        await docker.getImage(COMPUTER_IMAGE).inspect();
-        return;
-      } catch {
-        // build below
-      }
-      const dockerfile = path.join(computerContext, "Dockerfile");
-      if (!existsSync(dockerfile)) {
-        throw new Error(
-          `Missing ${COMPUTER_IMAGE}. Build it with: docker build -t ${COMPUTER_IMAGE} infra/sandboxes/computer`,
-        );
-      }
-      const stream = await docker.buildImage(
-        {
-          context: computerContext,
-          src: [
-            "Dockerfile",
-            "start.sh",
-            "user-env.sh",
-            "control.py",
-            "xcapture.c",
-            "rakazo-browser",
-            "rakazo-page-browser",
-            "rakazo-browser.desktop",
-            "embed.html",
-            "clipboard-bridge.js",
-            "mobile-keyboard.js",
-            "fluxbox.init",
-            "fluxbox.apps",
-            "fluxbox.menu",
-          ],
-        },
-        { t: COMPUTER_IMAGE },
-      );
-      await new Promise<void>((resolve, reject) => {
-        docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
-      });
-      await docker.getImage(COMPUTER_IMAGE).inspect();
-    })();
-  }
-  await imageReady;
-}
-
 // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
 // names the interfaces. Refuse restricted computers until a probe shows the host
 // rules are in place. Only success is cached, so installing the rules needs no restart.
 // `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
 // otherwise open with a warning, which is how computers ran before the rules existed. A probe
 // that could not finish decides nothing: the provision fails and the next one probes again.
+// In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
+// answers fails the provision the same way, so the next one probes again.
 let restrictedEgressVerified: Promise<void> | undefined;
 let autoEgressSettled: Promise<void> | undefined;
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
-    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).then(
+    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
       () => {
         computerEgressMode = "restricted";
         getLogger().info("restricted computer egress verified");
@@ -1225,10 +1244,12 @@ async function ensureRestrictedEgressEnforced() {
     return autoEgressSettled;
   }
   if (computerEgressMode !== "restricted") return;
-  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).catch((error) => {
-    restrictedEgressVerified = undefined;
-    throw error;
-  });
+  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).catch(
+    (error) => {
+      restrictedEgressVerified = undefined;
+      throw error;
+    },
+  );
   await restrictedEgressVerified;
 }
 
@@ -1305,11 +1326,53 @@ async function managedScreen(
   screenId: string | undefined,
   screenLeaseId: string | undefined,
   restoreControl = true,
+  reuseRecent = false,
 ) {
   const { container } = await managedContainer(id, botId, spaceId);
-  return withComputerScreenLock(id, () =>
-    ensureManagedScreen(id, container, botId, screenId, screenLeaseId, restoreControl),
-  );
+  return withComputerScreenLock(id, async () => {
+    if (reuseRecent) {
+      const recent = await recentManagedScreen(id, container, botId, screenId, screenLeaseId);
+      if (recent) return recent;
+    }
+    const screen = await ensureManagedScreen(
+      id,
+      container,
+      botId,
+      screenId,
+      screenLeaseId,
+      restoreControl,
+    );
+    return { ...screen, reused: false };
+  });
+}
+
+/** Skip the setup script for a screen set up moments ago on this boot; callers hold the screen lock. */
+async function recentManagedScreen(
+  id: string,
+  container: Docker.Container,
+  botId: string | undefined,
+  screenId: string | undefined,
+  screenLeaseId: string | undefined,
+) {
+  const info = await container.inspect();
+  const startedAt = info.State?.StartedAt;
+  const assigned = currentComputerScreens(computerScreens, computerScreenBoots, id, startedAt);
+  const screenKey = screenId || botId || id;
+  const slot = assigned?.get(screenKey);
+  if (!assigned || !startedAt || computerScreenBoots.get(id) !== startedAt) return undefined;
+  if (!slot?.viewToken || !screenRecentlyEnsured(slot, Date.now())) return undefined;
+  // Still fence the lease: an older execution must not drive this screen.
+  const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);
+  return {
+    container,
+    info,
+    layout: screenPorts(index),
+    index,
+    screenKey,
+    browserProfile: browserProfilePathForScreen(screenKey),
+    viewToken: slot.viewToken,
+    reused: true,
+  };
 }
 
 async function ensureManagedScreen(
@@ -1334,6 +1397,8 @@ async function ensureManagedScreen(
     if (info.State?.StartedAt === screen.info.State?.StartedAt) {
       // Confirm the pending boot marker only after setup completes against the same boot.
       if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
+      const slot = computerScreens.get(id)?.get(screen.screenKey);
+      if (slot) slot.ensuredAt = Date.now();
       try {
         await rejoinComputerNetwork(info);
       } catch (error) {
@@ -1519,20 +1584,9 @@ export async function controlDesktop(
 
 const SCREEN_READY_TIMEOUT_MS = 45_000;
 
-// Docker publishes a container's port mapping (or assigns its internal IP)
-// almost immediately on start, well before the process inside the container
-// is actually listening on it (Xvfb, the browser, x11vnc, then websockify
-// all start in sequence — see infra/sandboxes/computer/start.sh). Returning
-// the URL as soon as the mapping exists lets the frontend iframe race the
-// container's own boot sequence and hit "socket hang up" on first load.
-//
-// A bare TCP connect isn't a strong enough signal either: it only proves the
-// port is accepting connections, not that websockify is actually up and
-// serving — the same race can still slip through between "port open" and
-// "websockify ready" (e.g. right after setInteractiveScreen starts a new
-// x11vnc/websockify pair on the control port for a takeover). An HTTP GET
-// against the same embed.html path the browser will load only succeeds once
-// websockify itself is answering requests, closing that gap too.
+// Docker publishes the port mapping before websockify inside the container is
+// serving, and a bare TCP connect can succeed before it is too. Polling the same
+// embed.html the iframe loads keeps the frontend from hitting "socket hang up".
 export async function waitForScreenReady(host: string, port: number, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
   do {

@@ -64,11 +64,24 @@ vi.mock("@rakazo/ui-web", () => ({
     onPressedChange?: (pressed: boolean) => void;
     variant?: string;
   }) => <button type="button" {...props} />,
+  Tabs: ({
+    value: _value,
+    onValueChange: _onValueChange,
+    ...props
+  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
+    <div {...props} />
+  ),
+  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
+  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
+    <button type="button" role="tab" {...props} />
+  ),
+  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
+    <div {...props} />
+  ),
 }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
-vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 
 import { BotSettings } from "./bot-panel";
 
@@ -173,11 +186,6 @@ describe("BotSettings help", () => {
   it("shows the management subtitle without changing the management switch", async () => {
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
     await renderSettings(onSave, { ...bot, fleetManagement: false });
-    const advanced = container.querySelector<HTMLButtonElement>(
-      '[data-testid="bot-settings-advanced"] button[aria-expanded]',
-    );
-
-    expect(advanced?.getAttribute("aria-expanded")).toBe("true");
     const label = [...container.querySelectorAll("label")].find(
       (entry) => entry.textContent === "Manage the bots it creates",
     );
@@ -188,7 +196,6 @@ describe("BotSettings help", () => {
     expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
     expect(speechRow?.lastElementChild).toBe(speechToggle);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain("Can edit and organise bots it creates");
     expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();
@@ -447,27 +454,20 @@ describe("BotSettings disabled tools", () => {
 
 it("omits projected identity values on unrelated saves but commits explicit inline edits", async () => {
   const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
-  await renderSettings(onSave, { ...bot, name: "Бот", title: "" });
+  await renderSettings(onSave, { ...bot, name: "Бот" });
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[id$="-notify-finish"]')!.click(),
   );
   expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("name");
-  expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("title");
-  for (const [label, edit, value] of [
-    ["Name", "Edit name", "SupportBot2026"],
-    ["Title", "Edit label", "Support"],
-  ]) {
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>(`[aria-label="${edit}"]`)!.click(),
-    );
-    const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-    await act(async () => setField(input, value!));
-    await act(async () =>
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-    );
-  }
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
+  );
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
+  await act(async () => setField(input, "SupportBot2026"));
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
   expect(onSave.mock.calls[1]?.[0]).toMatchObject({ name: "SupportBot2026" });
-  expect(onSave.mock.calls[2]?.[0]).toMatchObject({ title: "Support" });
 });
 
 it("uses section headings without repeating notification or model row labels", async () => {
@@ -481,22 +481,6 @@ it("uses section headings without repeating notification or model row labels", a
   expect(notification?.textContent?.trim()).toBe("When it finishes or needs input");
   const model = container.querySelector('label[for$="-model"]');
   expect(model?.className).toBe("sr-only");
-});
-
-it("renders Advanced as a muted unfilled disclosure with an expanded state", async () => {
-  await renderSettings(vi.fn(async () => undefined));
-  const trigger = container.querySelector<HTMLButtonElement>(
-    '[data-testid="bot-settings-advanced"] button[aria-expanded]',
-  )!;
-  expect(trigger.className).toContain("text-xs font-medium text-muted-foreground");
-  expect(trigger.className).not.toMatch(/bg-muted|rounded-xl|px-4|text-sm/);
-  expect(trigger.querySelector("svg")?.getAttribute("class")).toContain(
-    "group-aria-expanded:rotate-0",
-  );
-  await act(async () => trigger.click());
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => trigger.click());
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("keeps cross-space communication off until explicitly enabled", async () => {

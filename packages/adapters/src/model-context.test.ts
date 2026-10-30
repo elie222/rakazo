@@ -1,8 +1,8 @@
 import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { selectContext } from "./context-selection.js";
-import { selectBuiltinToolsForRun } from "./executor.js";
 import { resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 
 const instructions = [
   "You are a helpful assistant for a small bakery. Answer customer questions about opening hours, prices, allergens and custom cake orders. Keep replies short and friendly, and never promise a delivery time you cannot confirm.",
@@ -35,7 +35,7 @@ function typicalBotBudget(contextWindow: number) {
 describe("model context budget", () => {
   it("fits a typical bot's instructions and tools in a 32k window", () => {
     const budget = typicalBotBudget(32_768);
-    // A byte count alone used to fill the window before any conversation.
+    // A raw byte count would fill the window before any conversation.
     expect(Buffer.byteLength(JSON.stringify(budget.tools), "utf8")).toBeGreaterThan(
       budget.contextWindow - budget.outputReserve,
     );

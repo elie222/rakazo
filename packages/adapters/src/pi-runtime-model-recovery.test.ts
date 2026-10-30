@@ -2,7 +2,7 @@ import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
-import { MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
+import { MODEL_OUTPUT_CUT_ERROR, MODEL_OUTPUT_LIMIT_ERROR } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -30,7 +30,8 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { continuationOverlap, PiAgentRuntime } from "./pi-runtime.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
+import { continuationOverlap, continuationRepeat } from "./pi-runtime-fallback.js";
 
 // A plain model with a card ceiling above the 4k completion default, and a reasoning model
 // already at its 32k default with the input reserve as the limit.
@@ -358,15 +359,6 @@ describe("a call that spends its whole output budget on thinking", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: "Recovered." });
   });
 
-  it("delivers a reply cut at the limit instead of repeating it", async () => {
-    providerState.stream.mockImplementation(() =>
-      stream(message(plain, [{ type: "text", text: "A long reply that" }], "length")),
-    );
-    const events = await run(request(plain));
-    expect(providerState.stream).toHaveBeenCalledOnce();
-    expect(events.at(-1)).toEqual({ type: "done", text: "A long reply that" });
-  });
-
   it("repeats at most three calls in one run", async () => {
     // Each repeat recovers with a tool call, until the fourth run-out fails the run.
     let call = 0;
@@ -573,6 +565,34 @@ describe("a tool call cut at the output limit", () => {
   });
 });
 
+describe("continuationRepeat", () => {
+  it.each([
+    ["Read it\n\n", "then continue.", 0],
+    ["Read it", "…then continue.", 0],
+    ["Try cat\n\n", "at noon.", 0],
+    ["Read it\n\n", "it works.", 2],
+    ["Ag", "Agree on a time.", 2],
+    ["Next Ag", "…Agree on a time.", 3],
+    ["Hello\n\n", "Hello world.", 5],
+    ["Try testing", "ting works.", 4],
+  ])("requires a whole final fragment for short requested repeats: %j, %j", (cut, more, size) => {
+    expect(continuationRepeat(cut, more, true)).toBe(size);
+  });
+
+  it.each([
+    ["as they arrive, since", "…since a friendly", "…since".length],
+    ["as they arrive, since", "... since a friendly", "... since".length],
+    ["deposit the money", "deposit the money according", "deposit the money".length],
+    // An ellipsis that doesn't lead into a repeat is the model's own text.
+    ["Wait", "... and then it worked", 0],
+    ["no repeat here", "fresh words", 0],
+    ["Ag", "Agree on a time.", 0],
+    ["Hello\n\n", "Hello world.", 0],
+  ])("drops %j's repeat from %j", (cut, continuation, size) => {
+    expect(continuationRepeat(cut, continuation)).toBe(size);
+  });
+});
+
 describe("continuationOverlap", () => {
   it.each([
     ["Part one. Part tw", "Part two.", 7],
@@ -583,4 +603,352 @@ describe("continuationOverlap", () => {
   ])("finds %j repeated at the start of %j: %i characters", (cut, continuation, size) => {
     expect(continuationOverlap(cut, continuation)).toBe(size);
   });
+});
+
+/** Reply text that streams live and stops at the output limit. */
+const replyAtLimit = (target: Model<"openai-completions">, text: string) =>
+  stream(message(target, [{ type: "text", text }], "length"), undefined, text);
+
+describe("a reply cut off at the output limit", () => {
+  it("continues once in the same reply with more room, without repeating the cut text", async () => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, "Your login just"))
+      .mockImplementation(() => streamedReply(plain, " expired. Sign in again."));
+    const events = await run(request(plain));
+    expect(sentOptions().map((options) => options.maxTokens)).toEqual([4_096, 8_192]);
+    expect(texts(events).join("")).toBe("Your login just expired. Sign in again.");
+    expect(events.some((event) => event.type === "turn")).toBe(false);
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "Your login just expired. Sign in again.",
+    });
+    const context = providerState.stream.mock.calls[1]?.[1] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const [cut, note] = context.messages.slice(-2);
+    expect(cut).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "Your login just" }],
+    });
+    expect(JSON.stringify(note)).toContain("hit the output limit");
+    // The continuation is asked to start from the reply's last words, quoted for it.
+    expect(JSON.stringify(note)).toContain('It ended with: \\"Your login just\\"');
+  });
+
+  it.each([
+    ['Type "yes" and then run', 'Type \\"yes\\" and then run'],
+    // A reply that ends on a closing quote mark can't end the prompt's quote early.
+    ['Then follow the steps "above"', 'Then follow the steps \\"above\\"'],
+  ])("keeps quote marks in the reply's last words inside the quote: %j", async (cut, quoted) => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, cut))
+      .mockImplementation(() => streamedReply(plain, " and carry on."));
+    await run(request(plain));
+    const context = providerState.stream.mock.calls[1]?.[1] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const note = context.messages.at(-1)?.content;
+    const text = typeof note === "string" ? note : JSON.stringify(note);
+    expect(text).toContain(`It ended with: "${quoted}" Continue it`);
+  });
+
+  it.each([
+    ["Read it\n\n", "then continue.", "Read it\n\nthen continue."],
+    ["Read it", "…then continue.", "Read it…then continue."],
+    ["Try cat\n\n", "at noon.", "Try cat\n\nat noon."],
+    ["Hello\n\n", "Hello world.", "Hello\n\n world."],
+    ["Ag", "Agree on a time.", "Agree on a time."],
+    ["Ag", "…Agree on a time.", "Agree on a time."],
+    // Seams a model wrote when asked only to continue, each joined cleanly once it repeats.
+    [
+      "Keep cash in a lockbox and deposit the money",
+      "deposit the money according to the plan.",
+      "Keep cash in a lockbox and deposit the money according to the plan.",
+    ],
+    [
+      "Greet buyers as they arrive, since",
+      "…since a friendly greeting helps.",
+      "Greet buyers as they arrive, since a friendly greeting helps.",
+    ],
+    [
+      "Make sure the items with allergens",
+      "items with allergens are properly labeled.",
+      "Make sure the items with allergens are properly labeled.",
+    ],
+    [
+      "Confirm the ingredient commitments.\n\nAg",
+      "commitments.\n\nAgree on a time.",
+      "Confirm the ingredient commitments.\n\nAgree on a time.",
+    ],
+  ])("joins a continuation that repeats the end of %j without a seam", async (cut, more, whole) => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, cut))
+      .mockImplementation(() => streamedReply(plain, more));
+    const events = await run(request(plain));
+    expect(texts(events).join("")).toBe(whole);
+    expect(events.at(-1)).toEqual({ type: "done", text: whole });
+  });
+
+  it.each(["", "Your login just", "…Your login just"])(
+    "retries a continuation that adds no text: %j",
+    async (more) => {
+      providerState.stream
+        .mockImplementationOnce(() => replyAtLimit(plain, "Your login just"))
+        .mockImplementationOnce(() => streamedReply(plain, more))
+        .mockImplementation(() => streamedReply(plain, "login just expired."));
+      const events = await run(request(plain));
+      expect(providerState.stream).toHaveBeenCalledTimes(3);
+      expect(texts(events).join("")).toBe("Your login just expired.");
+      expect(events.at(-1)).toEqual({ type: "done", text: "Your login just expired." });
+    },
+  );
+
+  it.each(["", "Your login just", "…Your login just"])(
+    "fails when continuations keep adding no text: %j",
+    async (more) => {
+      providerState.stream
+        .mockImplementationOnce(() => replyAtLimit(plain, "Your login just"))
+        .mockImplementation(() => streamedReply(plain, more));
+      await expect(run(request(plain))).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+      expect(providerState.stream).toHaveBeenCalledTimes(4);
+    },
+  );
+
+  it("shares the recovery allowance with continuations that hit the limit again", async () => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, "Part one. "))
+      .mockImplementationOnce(() => replyAtLimit(plain, "Part two. "))
+      .mockImplementation(() => streamedReply(plain, ""));
+    await expect(run(request(plain))).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+    expect(providerState.stream).toHaveBeenCalledTimes(4);
+  });
+
+  it("drops a continuation's repeat of the cut text", async () => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, "Your login just"))
+      .mockImplementation(() => streamedReply(plain, "login just expired."));
+    const events = await run(request(plain));
+    expect(events.at(-1)).toEqual({ type: "done", text: "Your login just expired." });
+  });
+
+  it("thinks less for the continuation when the budget is already at its ceiling", async () => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(reasoner, "Step one, then"))
+      .mockImplementation(() => streamedReply(reasoner, " step two."));
+    const events = await run(request(reasoner, { thinkingLevel: "high" }));
+    expect(sentOptions().map(({ maxTokens, reasoning }) => [maxTokens, reasoning])).toEqual([
+      [32_768, "high"],
+      [32_768, "medium"],
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Step one, then step two." });
+  });
+
+  it("continues again while the run has recoveries, with more room each time", async () => {
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(plain, "Part one. "))
+      .mockImplementationOnce(() => replyAtLimit(plain, "Part two. "))
+      .mockImplementation(() => streamedReply(plain, "Part three."));
+    const events = await run(request(plain));
+    expect(sentOptions().map((options) => options.maxTokens)).toEqual([4_096, 8_192, 16_384]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Part one. Part two. Part three." });
+  });
+
+  it("still continues in a fresh call when there is no more room to give", async () => {
+    // A user-set budget and thinking turned off leave nothing to raise or lower.
+    providerState.stream
+      .mockImplementationOnce(() => replyAtLimit(reasoner, "Your login just"))
+      .mockImplementation(() => streamedReply(reasoner, " expired."));
+    const events = await run(request(reasoner, { maxTokens: 2_000, thinkingLevel: "off" }));
+    expect(sentOptions().map(({ maxTokens, reasoning }) => [maxTokens, reasoning])).toEqual([
+      [2_000, undefined],
+      [2_000, undefined],
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Your login just expired." });
+  });
+
+  it("stops at the run's recoveries when there is no more room to give", async () => {
+    let call = 0;
+    providerState.stream.mockImplementation(() => {
+      call += 1;
+      return replyAtLimit(reasoner, `Part ${call}. `);
+    });
+    await expect(
+      run(request(reasoner, { maxTokens: 2_000, thinkingLevel: "off" })),
+    ).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+    expect(providerState.stream).toHaveBeenCalledTimes(4);
+  });
+
+  it("fails with the cut-reply error, keeping the text, once the continuations run out", async () => {
+    let call = 0;
+    providerState.stream.mockImplementation(() => {
+      call += 1;
+      return replyAtLimit(plain, `Part ${call}. `);
+    });
+    const events: AgentRuntimeEvent[] = [];
+    const consume = async () => {
+      for await (const event of new PiAgentRuntime().run(request(plain), {
+        signal: new AbortController().signal,
+      })) {
+        events.push(event);
+      }
+    };
+    await expect(consume()).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+    // The first call and three continuations, the run's three recoveries.
+    expect(providerState.stream).toHaveBeenCalledTimes(4);
+    // Everything written reaches the executor, which keeps it above the error.
+    expect(texts(events).join("")).toBe("Part 1. Part 2. Part 3. Part 4. ");
+  });
+
+  it("fails with the cut-reply error once the run's recoveries are spent", async () => {
+    // Three thinking-only run-outs use the run's recoveries; the cut reply then fails.
+    let call = 0;
+    providerState.stream.mockImplementation(() => {
+      call += 1;
+      if (call <= 6) {
+        return call % 2 === 1 ? thinkingOnly(plain, "length") : toolCall(plain, `effect-${call}`);
+      }
+      return replyAtLimit(plain, "Your login just");
+    });
+    const events: AgentRuntimeEvent[] = [];
+    const consume = async () => {
+      for await (const event of new PiAgentRuntime().run(request(plain), {
+        signal: new AbortController().signal,
+      })) {
+        events.push(event);
+      }
+    };
+    await expect(consume()).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+    expect(providerState.stream).toHaveBeenCalledTimes(7);
+    expect(texts(events).join("")).toContain("Your login just");
+  });
+
+  it("says the reply was cut when a tool call after reply text runs out of recoveries", async () => {
+    providerState.stream.mockImplementation(() =>
+      stream(
+        message(
+          plain,
+          [
+            { type: "text", text: "Saving it." },
+            { type: "toolCall", id: "half", name: "write_effect", arguments: {} },
+          ],
+          "length",
+        ),
+        undefined,
+        "Saving it.",
+      ),
+    );
+    const input = request(plain);
+    await expect(run(input)).rejects.toThrow(MODEL_OUTPUT_CUT_ERROR);
+    expect(providerState.stream).toHaveBeenCalledTimes(4);
+    expect(input.executeTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps re-issuing a tool call cut at the limit with more room, without a continuation", async () => {
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          message(
+            plain,
+            [
+              { type: "text", text: "Saving it." },
+              { type: "toolCall", id: "half", name: "write_effect", arguments: {} },
+            ],
+            "length",
+          ),
+          undefined,
+          "Saving it.",
+        ),
+      )
+      .mockImplementation(() => reply(plain, "Saved."));
+    const input = request(plain);
+    const events = await run(input);
+    expect(sentOptions().map((options) => options.maxTokens)).toEqual([4_096, 8_192]);
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(sentContexts()[1]).not.toContain("hit the output limit");
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  it("never continues a run that was stopped", async () => {
+    const controller = new AbortController();
+    providerState.stream.mockImplementation(() => {
+      controller.abort();
+      return replyAtLimit(plain, "Your login just");
+    });
+    // Stopping is the executor's to finish; no call goes out after it.
+    const events = await run(request(plain), controller.signal);
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    expect(texts(events).join("")).toBe("Your login just");
+  });
+});
+
+describe("coarse thinking lifecycle from real Pi stream events", () => {
+  it("emits explicit start/end without leaking thinking text into runtime events", async () => {
+    providerState.stream.mockImplementationOnce(() =>
+      stream(
+        message(reasoner, [{ type: "text", text: "Public answer." }], "stop"),
+        "private fixture reasoning",
+        "Public answer.",
+      ),
+    );
+    const events = await run(request(reasoner));
+    expect(events.filter((event) => event.type === "thinking")).toEqual([
+      { type: "thinking", active: true },
+      { type: "thinking", active: false },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("private fixture reasoning");
+    expect(events.findIndex((event) => event.type === "text")).toBeGreaterThan(
+      events.findIndex((event) => event.type === "thinking" && !event.active),
+    );
+  });
+  it("ends thinking before retry recovery and requires a fresh start on the next attempt", async () => {
+    providerState.stream.mockImplementationOnce(() => thinkingOnly(reasoner, "length"));
+    providerState.stream.mockImplementationOnce(() => reply(reasoner));
+    const events = await run(request(reasoner));
+    expect(events.filter((event) => event.type === "thinking")).toEqual([
+      { type: "thinking", active: true },
+      { type: "thinking", active: false },
+    ]);
+    expect(texts(events)).toContain("Recovered.");
+  });
+  it("does not invent a thinking signal for a text-only model", async () => {
+    providerState.stream.mockImplementationOnce(() => reply(plain));
+    expect((await run(request(plain))).filter((event) => event.type === "thinking")).toEqual([]);
+  });
+});
+
+it("stops the public thinking marker immediately when an active provider turn is aborted", async () => {
+  const controller = new AbortController();
+  providerState.stream.mockImplementationOnce(
+    (_model: unknown, _ctx: unknown, options: { signal?: AbortSignal }) => {
+      const pending = new AssistantMessageEventStream();
+      const empty = message(reasoner, [], "stop");
+      pending.push({ type: "start", partial: empty });
+      pending.push({ type: "thinking_start", contentIndex: 0, partial: empty });
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          const aborted = { ...empty, stopReason: "aborted" as const, errorMessage: "Aborted" };
+          pending.push({ type: "error", reason: "aborted", error: aborted });
+          pending.end(aborted);
+        },
+        { once: true },
+      );
+      return pending;
+    },
+  );
+  const observed: AgentRuntimeEvent[] = [];
+  try {
+    for await (const item of new PiAgentRuntime().run(request(reasoner), {
+      signal: controller.signal,
+    })) {
+      observed.push(item);
+      if (item.type === "thinking" && item.active) controller.abort();
+    }
+  } catch {
+    /* The original cancellation remains a runtime failure, never a completion. */
+  }
+  expect(observed.filter((item) => item.type === "thinking")).toEqual([
+    { type: "thinking", active: true },
+    { type: "thinking", active: false },
+  ]);
 });
