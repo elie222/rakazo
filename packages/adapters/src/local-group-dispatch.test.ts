@@ -81,7 +81,9 @@ function harness(
           status,
         })),
       ),
-      updateMany: vi.fn(async () => ({ count: opts.statuses?.length ?? 0 })),
+      updateMany: vi.fn(async (_args: { data: { completedAt?: Date } }) => ({
+        count: opts.statuses?.length ?? 0,
+      })),
       create: vi.fn(
         async (args: { data: { clientNonce: string; botId: string; sourceMessageId: string } }) => {
           created.push(args);

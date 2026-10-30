@@ -35,7 +35,7 @@ export function requestedGroupParticipants(
       let cursor = text.indexOf(marker);
       while (cursor !== -1) {
         const next = text[cursor + marker.length];
-        if (next === undefined || /[\s,.、，。;:!?！？）)\'"]/.test(next)) return true;
+        if (next === undefined || /[\s,.、，。;:!?！？）)'"]/.test(next)) return true;
         cursor = text.indexOf(marker, cursor + marker.length);
       }
       return false;
