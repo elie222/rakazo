@@ -895,7 +895,7 @@ function activateDesktopMonitoring(url: string | undefined, targetSession?: Sess
   stopMonitoringSession = undefined;
   monitoringTargetUrl = url;
   monitoringSession = targetSession;
-  if (!url || !targetSession || !reportsErrors) {
+  if (!url || !targetSession) {
     disableDesktopMonitoring();
     return;
   }
@@ -913,6 +913,7 @@ function activateDesktopMonitoring(url: string | undefined, targetSession?: Sess
   void configureDesktopMonitoring(fetchMonitoringConfig, {
     version: app.getVersion(),
     base: url,
+    reportsErrors,
   });
 }
 

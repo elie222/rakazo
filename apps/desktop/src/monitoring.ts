@@ -61,7 +61,7 @@ export function disableDesktopMonitoring(): void {
 /** SDK observers initialize once; only the connection's transport and attribution change. */
 export function configureDesktopMonitoring(
   fetchConfig: () => Promise<Response>,
-  options: { version: string; base: string },
+  options: { version: string; base: string; reportsErrors: boolean },
 ): Promise<void> {
   clearTimeout(retryTimer);
   retryTimer = undefined;
@@ -104,7 +104,7 @@ export function configureDesktopMonitoring(
       return;
     }
     if (current !== generation) return;
-    if (!config.dsn) {
+    if (!config.dsn || !options.reportsErrors) {
       errors.install(undefined);
       return;
     }
