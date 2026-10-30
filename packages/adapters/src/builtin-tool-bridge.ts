@@ -40,6 +40,7 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "run_subagent",
   "skill_read",
   "update_bot",
+  "update_preferences",
   "remember",
   "save_memory",
   "recall_memory",
@@ -103,7 +104,7 @@ function bridgeTools(deferred: readonly ConnectorTool[]): ConnectorTool[] {
   return [
     {
       name: FIND_TOOL,
-      description: `Load the parameters of built-in tools not in your tool list, including ones your instructions name, then run one with use_tool. Pass names for exact tools or query to search.\n${formatNameIndexText(groupedNames(searchEntries(deferred)))}`,
+      description: `Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\n${formatNameIndexText(groupedNames(searchEntries(deferred)))}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -115,7 +116,7 @@ function bridgeTools(deferred: readonly ConnectorTool[]): ConnectorTool[] {
     },
     {
       name: USE_TOOL,
-      description: "Run a built-in tool loaded with find_tool.",
+      description: "Run a built-in tool whose parameters find_tool returned in this turn.",
       inputSchema: {
         type: "object",
         properties: {

@@ -49,12 +49,13 @@ describe("built-in tool bridge", () => {
       "shell",
       "skill_read",
       "update_bot",
+      "update_preferences",
       "use_tool",
       "web_fetch",
       "web_search",
       "write_file",
     ]);
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(30_000);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(30_500);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

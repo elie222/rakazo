@@ -116,7 +116,7 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ### 5. Lazy tool loading
 
-- [ ] Provider-neutral bridge: a core set (~12-15 tools, chosen from usage)
+- [x] Provider-neutral bridge: a core set (~12-15 tools, chosen from usage)
       stays listed; the rest are reachable through `find_tool` (returns top
       matches with full schemas) and `use_tool` (runs through the exact same
       gate, approvals and audit as a direct call). The `find_tool` description
@@ -124,10 +124,10 @@ rest on demand. Every step is measured with tool-choice evals before and after.
       exact `names` (lookup) or a `query` (deterministic keyword/BM25 ranking
       over name, description and parameter names, top 3). The tool list never
       changes mid-run, so the prompt cache survives.
-- [ ] Evals: rare tasks find then use the right tool; common tasks never call
+- [x] Evals: rare tasks find then use the right tool; common tasks never call
       `find_tool`; `use_tool` is never called on an unloaded or unknown tool.
-- [ ] Tool activity UI shows the real tool, not `use_tool`.
-- [ ] Deterministic test pinning the visible tool list and a byte budget for
+- [x] Tool activity UI shows the real tool, not `use_tool`.
+- [x] Deterministic test pinning the visible tool list and a byte budget for
       tool text; fails CI when it grows.
 - [ ] Re-run the full tool-choice suite and the existing product suite; compare
       pass rate, tool calls per run, tokens and cost against the baseline.
