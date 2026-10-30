@@ -13,7 +13,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import { QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -434,8 +434,9 @@ export async function sleepComputerIfIdle(
     signal: new AbortController().signal,
   };
   // A status read that never answers counts as not seen rather than holding up the check.
-  const statusCtx = { ...ctx, signal: AbortSignal.timeout(STATUS_CHECK_TIMEOUT_MS) };
-  if (await deps.sandbox.isRunning?.(ref, statusCtx).catch(() => false)) {
+  const statusSignal = AbortSignal.timeout(STATUS_CHECK_TIMEOUT_MS);
+  const status = deps.sandbox.isRunning?.(ref, { ...ctx, signal: statusSignal });
+  if (status && (await withAbort(status, statusSignal).catch(() => false))) {
     await recordComputerRunSeen(deps.prisma, computer);
   }
   // Past the lifetime limit only a run executing right now holds the computer up; waiting

@@ -11,8 +11,8 @@ import type { PrismaClient } from "./generated/prisma/client.js";
  * - `reconciled`: the end was never seen; a later start or the reconciler found the computer
  *   no longer running.
  *
- * An end Rakazo only noticed later (`gone`, `reconciled`, and runs the reconciler closes) is the
- * run's `lastSeenAt` when there is one, else when it was noticed.
+ * A `gone` or `reconciled` end, noticed only later, is the run's `lastSeenAt` when there is one,
+ * else when it was noticed.
  */
 export type ComputerRunEnd =
   | "stopped"
@@ -147,7 +147,8 @@ export async function reconcileComputerRuns(
 ): Promise<void> {
   await prisma.$executeRaw`
     UPDATE "computer_runs" AS r
-    SET "endedAt" = GREATEST(COALESCE(r."lastSeenAt", ${now}::timestamp(3)), r."startedAt"),
+    SET "endedAt" = CASE WHEN c."id" IS NULL THEN ${now}::timestamp(3)
+          ELSE GREATEST(COALESCE(r."lastSeenAt", ${now}::timestamp(3)), r."startedAt") END,
         "endReason" = CASE WHEN c."id" IS NULL THEN 'deleted' ELSE 'reconciled' END
     FROM "computer_runs" AS o
     LEFT JOIN "computers" AS c ON c."id" = o."computerId"
