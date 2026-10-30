@@ -1,20 +1,20 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const helper = pathToFileURL(new URL("./shutdown-signals.ts", import.meta.url).pathname).href;
+const helper = new URL("./shutdown-signals.ts", import.meta.url).href;
 
 // Registered after ours, like Composio's telemetry or graphile-worker: clean up, then re-raise.
 const program = `
 import { stopOnShutdownSignals } from ${JSON.stringify(helper)};
 let stopping = false;
+const alive = setInterval(() => {}, 1_000);
 stopOnShutdownSignals(() => {
   if (stopping) return;
   stopping = true;
   setTimeout(() => {
     console.log("runs handed back");
-    process.exit(0);
+    clearInterval(alive);
   }, 200);
 });
 const reraise = () => {
@@ -22,7 +22,6 @@ const reraise = () => {
   process.kill(process.pid, "SIGTERM");
 };
 process.on("SIGTERM", reraise);
-setInterval(() => {}, 1_000);
 console.log("ready");
 `;
 
@@ -39,11 +38,11 @@ describe("shutdown signals", () => {
         if (output.includes("ready")) resolve();
       });
     });
-    const exited = once(child, "exit");
+    const closed = once(child, "close");
     try {
       await ready;
       child.kill("SIGTERM");
-      const [code, signal] = await exited;
+      const [code, signal] = await closed;
       expect({ code, signal }).toEqual({ code: 0, signal: null });
       expect(output).toContain("runs handed back");
     } finally {
