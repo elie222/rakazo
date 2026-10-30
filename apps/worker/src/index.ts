@@ -4,6 +4,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
@@ -381,8 +382,7 @@ async function main() {
       await logger.flush({ timeoutMs: 2_000 });
     }
   };
-  process.once("SIGTERM", () => void stop());
-  process.once("SIGINT", () => void stop());
+  stopOnShutdownSignals(stop);
   // graphile-worker fires completeJob()/failJobs() without awaiting them. When
   // pool.connect() then hits Postgres 53300 or a saturated pool's checkout timeout,
   // that rejection is unhandled. Exiting on 53300 is a crash loop: Docker restarts
