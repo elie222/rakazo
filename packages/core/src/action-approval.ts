@@ -44,15 +44,15 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "user_computer_shell",
   "user_computer_observe",
   "user_computer_act",
+  "create_group",
+  "update_group",
+  "create_child_routine",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
   "create_space",
-  "create_group",
-  "update_group",
   "set_child_instructions",
   "set_child_bot_model",
-  "create_child_routine",
 ]);
 
 const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
@@ -563,7 +563,7 @@ export function planActionGate(input: {
   mode: ApprovalMode;
   /** Needs a person whatever the rules say (see toolRequiresExplicitApproval). */
   mandatory?: boolean;
-  /** The owner did not start this run, or outside content entered it. */
+  /** The owner did not start this run, or outside content entered it. Never ask refuses only these. */
   steerable?: boolean;
   consequential: boolean;
   /**

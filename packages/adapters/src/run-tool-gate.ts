@@ -246,12 +246,12 @@ export async function gateToolCall(
     );
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
-  const requiresMandatoryApproval =
-    request.ownerApproval ||
-    commandWatch ||
-    scheduleNamesNewSite ||
-    requiresUnattendedApproval ||
-    toolRequiresExplicitApproval(name);
+  // Never ask still refuses these when the run could have been steered. Command watches and
+  // routines naming a new site are not among them: there the bot already runs shell and fetches
+  // any site without asking.
+  const guardedInNeverAsk =
+    request.ownerApproval || requiresUnattendedApproval || toolRequiresExplicitApproval(name);
+  const requiresMandatoryApproval = guardedInNeverAsk || commandWatch || scheduleNamesNewSite;
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -307,7 +307,7 @@ export async function gateToolCall(
         mode,
         mandatory: requiresMandatoryApproval,
         steerable:
-          requiresMandatoryApproval && mode === "never"
+          guardedInNeverAsk && mode === "never"
             ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
             : undefined,
         consequential: requiresApprovalByDefault,

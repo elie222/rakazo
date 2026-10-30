@@ -1762,6 +1762,7 @@ describe("bot management tool gating", () => {
 });
 
 describe("bot management approvals", () => {
+  beforeEach(() => createFleetGroupMock.mockReset());
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
@@ -1772,13 +1773,11 @@ describe("bot management approvals", () => {
     ],
   };
 
-  it("asks with the resolved members even when rules and auto review allow the tool", async () => {
+  it("asks with the resolved members in Ask mode", async () => {
     const f = fixture({
       name: "create_group",
       builtin: true,
       fleetManagement: true,
-      autoReview: true,
-      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_group" }],
       fleetBots: [
         { id: "bot-a", name: "Alpha" },
         { id: "bot-b", name: "Beta" },
@@ -1792,17 +1791,32 @@ describe("bot management approvals", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledWith(
       expect.objectContaining({
         blocks: [
-          expect.objectContaining({
-            text: "Create group “Crew”?",
-            detail: "Members: Alpha, Beta",
-            actions: [
-              { id: "allow", label: "Allow once" },
-              { id: "deny", label: "Deny" },
-            ],
-          }),
+          expect.objectContaining({ text: "Create group “Crew”?", detail: "Members: Alpha, Beta" }),
         ],
       }),
     );
+  });
+
+  it("creates the group in Never ask after outside content", async () => {
+    const f = fixture({
+      name: "create_group",
+      builtin: true,
+      fleetManagement: true,
+      skipApprovals: true,
+      fleetBots: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    const created = { groupId: "group-1", threadId: "thread-group-1", name: "Crew" };
+    createFleetGroupMock.mockResolvedValueOnce(created);
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      { args: modelArgs, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual(created);
   });
 
   it("replays the approved ids after a member is renamed during the pause", async () => {
@@ -1883,6 +1897,25 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("saves a command watch in Never ask after outside content", async () => {
+    const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "command", command: "ls" },
+        },
+        executionId: "call-2",
+      },
+    ]);
+    // Saving the routine itself is outside this fixture; only the gate is under test.
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
+  });
 });
 
 describe("tool watch creation", () => {
@@ -2304,6 +2337,19 @@ describe("Auto Review of new sites", () => {
       await f.run();
       expect(reviewMock).not.toHaveBeenCalled();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    });
+
+    it("saves it in Never ask, where the bot can already fetch any site", async () => {
+      const f = fixture({
+        builtin: true,
+        skipApprovals: true,
+        sourceRole: "user",
+        prompt: "Find news daily",
+      });
+      f.setCalls([search, schedule("Every day fetch https://news.example.org/")]);
+      await f.run(true);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
     });
 
     it.each([
