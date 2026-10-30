@@ -97,9 +97,10 @@ rest on demand. Every step is measured with tool-choice evals before and after.
 
 ### 3. User settings from chat
 
-- [ ] One small patch tool for low-risk user preferences that already live on
-      the server (timezone, voice preferences, marketing email opt-out). Read
-      by omitting fields.
+- [x] `update_preferences`: timezone and marketing emails for the user who
+      started the run, offered only on runs they started. Read by omitting
+      fields. Voice and model preferences stay out: each is tied to a
+      connection and its catalog, not a simple value.
 - Theme stays out: it is device-local (`@rakazo/ui-tokens` appearance
   preference), not an account setting.
 - [ ] Eval cases for each preference and for refused ones (email, billing).
