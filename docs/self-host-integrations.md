@@ -103,6 +103,10 @@ background and its tools appear on a later turn. After a failure, runs skip that
 seconds, doubling up to 5 minutes while it keeps failing. A successful **Test connection** or
 discovery, or a change to the server's settings, ends the wait at once.
 
+If a server shows its tools in **Settings** but a bot never uses them, run the
+[diagnostics report](./self-host.md#reporting-a-problem). Its **Assignment** column names any
+space or owner mismatch that keeps the server's tools from that bot.
+
 ## Apps and connectors
 
 Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an

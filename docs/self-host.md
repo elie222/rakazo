@@ -125,3 +125,16 @@ Compose bot homes mount only their own subdirectory of the application volume us
   page settings.
 - [Billing](./self-host-billing.md): optional Stripe plans and model credits.
 - [Restricted networks](./self-host-restricted-network.md): mirrors when downloads are blocked.
+
+## Reporting a problem
+
+Attach a diagnostics report to a [self-host issue](https://github.com/elie222/rakazo/issues/new?template=self-host.yml):
+
+```bash
+docker compose -f docker-compose.images.yml exec api node dist/cli/diagnostics.js
+```
+
+From a checkout, use `-f infra/compose/docker-compose.yml` (or the production file) instead. The
+report lists the revision, which features are on, migration status, each bot's MCP servers with
+their health, and the latest runs. It prints no secrets, settings values, names, addresses,
+paths or message content; servers, bots and runs appear only as short hashes.
