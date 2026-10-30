@@ -5,7 +5,7 @@ import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
-import { startWorkerHealth } from "./health.js";
+import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -97,6 +97,7 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
+  const stopStallWatch = watchEventLoopStalls();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
@@ -365,6 +366,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     shutdown.abort();
+    stopStallWatch();
     try {
       await stopHealth?.();
       await reconciler.stop();
