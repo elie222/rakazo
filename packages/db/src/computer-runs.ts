@@ -160,10 +160,10 @@ export async function reconcileComputerRuns(
         OR c."runningSince" IS DISTINCT FROM o."startedAt"
       )`;
   // A booting computer may still carry the start of its previous stretch, so only rows that
-  // finished starting count. Host computers are never recorded (see recordComputerRunStart).
+  // finished starting count. The start is the one time it was seen; this pass reads only the row. Host computers are never recorded (see recordComputerRunStart).
   await prisma.$executeRaw`
-    INSERT INTO "computer_runs" ("id", "computerId", "spaceId", "userId", "kind", "providerRef", "startedAt")
-    SELECT gen_random_uuid()::text, c."id", c."spaceId", c."userId", c."kind", c."providerRef", c."runningSince"
+    INSERT INTO "computer_runs" ("id", "computerId", "spaceId", "userId", "kind", "providerRef", "startedAt", "lastSeenAt")
+    SELECT gen_random_uuid()::text, c."id", c."spaceId", c."userId", c."kind", c."providerRef", c."runningSince", c."runningSince"
     FROM "computers" AS c
     WHERE c."state" IN ('running', 'suspending')
       AND c."runningSince" IS NOT NULL

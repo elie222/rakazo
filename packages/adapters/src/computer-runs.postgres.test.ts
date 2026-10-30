@@ -315,6 +315,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
         providerRef,
         startedAt: runningSince,
         endedAt: null,
+        lastSeenAt: runningSince,
       }),
     ]);
   });
