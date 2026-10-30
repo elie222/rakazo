@@ -157,8 +157,16 @@ function getUnsentSends() {
 function waiting() {
   return unsentSends.filter((a) => a.acceptedSeq === undefined);
 }
+/** A clear that failed: discarded messages may still be on disk, so nothing is saved next to them. */
+let clearPending = false;
+function finishPendingClear() {
+  if (!clearPending) return;
+  config!.disk.clear();
+  clearPending = false;
+}
 /** Saves the index, then deletes the files of removed sends it no longer lists. */
 function save(attempts: SendAttempt[]) {
+  finishPendingClear();
   config!.disk.save(attempts);
   for (const attempt of removed) {
     removed.delete(attempt);
@@ -212,7 +220,15 @@ export function clearUnsentSends() {
   removed.clear();
   echoes.clear();
   pendingForce = null;
-  config?.disk.clear();
+  clearPending = false;
+  try {
+    config?.disk.clear();
+  } catch {
+    // The disk can still hold the discarded messages, so this process never loads them back,
+    // and saves wait until the clear succeeds; sign-out itself is never blocked.
+    restored = true;
+    clearPending = true;
+  }
   changed();
 }
 // Alias kept for existing sign-out callers.
@@ -356,6 +372,8 @@ export function useThreadFeedback(
       const scope = config?.scope();
       // Saving before the restore would replace the queue still on disk.
       if (!scope || !restored) throw new Error("SESSION_CHANGED");
+      // Throws while the clear still fails, so the composer keeps the text.
+      finishPendingClear();
       if (waiting().length >= OUTBOX_MAX_ENTRIES) throw new Error(t("Too many unsent messages"));
       // Files left by a removal whose save failed still count against the disk budget.
       if (removed.size) save(waiting());

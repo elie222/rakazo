@@ -279,6 +279,21 @@ describe("scoped mobile outbox", () => {
     const saved = feedback.sendAttempt(payload());
     expect(disk.save).toHaveBeenLastCalledWith([saved]);
   });
+  it("does not load discarded messages back when clearing the disk fails", () => {
+    vi.clearAllMocks();
+    disk.clear.mockImplementation(() => {
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    });
+    act(() => clearFailedSends());
+    act(() => restoreUnsentSends());
+    expect(disk.load).not.toHaveBeenCalled();
+    // A new message must not be committed next to discarded ones the next start would copy back.
+    expect(() => feedback.sendAttempt(payload("Refused"))).toThrow("OUTBOX_STORAGE_UNAVAILABLE");
+    expect(disk.save).not.toHaveBeenCalled();
+    disk.clear.mockImplementation(() => undefined);
+    const saved = feedback.sendAttempt(payload());
+    expect(disk.save).toHaveBeenLastCalledWith([saved]);
+  });
   it("keeps sends ordered, persisted and scoped while offline, and retries on reconnect", async () => {
     reachable = false;
     const first = feedback.sendAttempt(payload("First"));

@@ -2,9 +2,17 @@ import { Directory, File, Paths } from "expo-file-system";
 import type { SendAttempt, UnsentDisk } from "./thread-feedback";
 import { OUTBOX_MAX_ENTRIES } from "./thread-feedback";
 
-// App-private cache storage is excluded from device backups and may be evicted by the OS.
+// The OS may evict the cache when storage runs low, so unsent messages live in documents.
 function root() {
+  return new Directory(Paths.document, "outbox");
+}
+/** Where earlier builds kept the outbox. */
+function legacyRoot() {
   return new Directory(Paths.cache, "outbox");
+}
+/** Exists while the earlier outbox is still on disk but must not be copied again. */
+function legacyDone() {
+  return new File(Paths.document, "outbox-legacy-done");
 }
 function folder(nonce: string) {
   return new Directory(root(), encodeURIComponent(nonce));
@@ -26,6 +34,45 @@ function deleteLeftover(entry: File | Directory) {
   try {
     entry.delete();
   } catch {}
+}
+/** Deletes the earlier outbox, then the marker once nothing is left to copy. */
+function removeLegacy() {
+  if (legacyRoot().exists) deleteLeftover(legacyRoot());
+  if (!legacyRoot().exists && legacyDone().exists) deleteLeftover(legacyDone());
+}
+/** Android copies a directory it cannot list as empty, so check every file the earlier index needs. */
+function copiedLegacy() {
+  const names = ["sends-v4.json", "sends-v4.json.bak"];
+  for (const name of names) {
+    const source = new File(legacyRoot(), name);
+    const copy = new File(root(), name);
+    if (source.exists && (!copy.exists || copy.textSync() !== source.textSync())) return false;
+  }
+  return names
+    .flatMap((name) => readIndex(new File(legacyRoot(), name)) ?? [])
+    .every(
+      (entry) =>
+        typeof entry?.clientNonce !== "string" ||
+        !Array.isArray(entry.payload?.attachments) ||
+        entry.payload.attachments.every((_: unknown, index: number) => {
+          const source = new File(legacyRoot(), encodeURIComponent(entry.clientNonce), `${index}`);
+          const copy = attachmentFile(entry.clientNonce, index);
+          return !source.exists || (copy.exists && copy.size === source.size);
+        }),
+    );
+}
+// Android can move a directory by copying and deleting, and stop halfway. Copy instead, keeping
+// the source until the marker records a full copy; a copy that stopped is discarded and redone.
+function moveLegacyOutbox() {
+  if (legacyRoot().exists && !legacyDone().exists) {
+    if (root().exists) root().delete();
+    legacyRoot().copySync(root());
+    if (!copiedLegacy()) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+    legacyDone().create();
+    // iOS can fail to create a file without an error; the source must stay until the marker exists.
+    if (!legacyDone().exists) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
+  }
+  removeLegacy();
 }
 export const OUTBOX_MAX_BYTES = 50 * 1024 * 1024;
 // Copies of the index left by an interrupted save do not count; load removes them.
@@ -135,6 +182,7 @@ export const outboxDisk: UnsentDisk = {
   },
   load(session, scope) {
     // Storage errors propagate without wiping anything, so a later load retries.
+    moveLegacyOutbox();
     const target = file();
     const entries = committedIndex();
     if (!entries || diskBytes(root()) > OUTBOX_MAX_BYTES) {
@@ -208,11 +256,18 @@ export const outboxDisk: UnsentDisk = {
     } catch {}
   },
   clear() {
+    // Until the earlier outbox is gone, the marker keeps load from copying discarded messages back,
+    // so it comes first: a clear that stops after deleting the outbox must not bring them back.
+    try {
+      if (legacyRoot().exists && !legacyDone().exists) legacyDone().create();
+    } catch {}
     try {
       const directory = root();
       if (directory.exists) directory.delete();
     } catch {
       /* Session namespaces prevent reuse even if deletion fails. */
     }
+    removeLegacy();
+    if (legacyRoot().exists && !legacyDone().exists) throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
   },
 };
