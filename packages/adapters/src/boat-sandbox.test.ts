@@ -838,7 +838,9 @@ describe("BoatSandboxProvider", () => {
       const { api, provider, computer } = await boat();
       api.damage(computer.id);
 
-      await expect(provider.stop(computer, context)).rejects.toThrow("did not reach archived");
+      const stopped = provider.stop(computer, context);
+      await expect(stopped).rejects.toBeInstanceOf(SandboxUnresponsiveError);
+      await expect(stopped).rejects.toThrow("did not reach archived");
 
       expect(stop).toHaveBeenCalledExactlyOnceWith(
         { sandboxId: computer.id },

@@ -934,8 +934,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       if (states.has(response.sandbox.state)) return response.sandbox;
       if (response.sandbox.state === "error") throw new Error(`Boat ${id} entered the error state`);
       await onWait?.(response.sandbox);
+      // A transition Boat has not finished in time is a delay on its side; the caller retries.
       if (Date.now() >= deadline)
-        throw new Error(`Boat ${id} did not reach ${[...states].join("/")}`);
+        throw new SandboxUnresponsiveError(`Boat ${id} did not reach ${[...states].join("/")}`);
       await delay(pause, undefined, { signal: context.signal });
     }
   }

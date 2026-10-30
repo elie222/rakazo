@@ -639,6 +639,31 @@ describe("sandbox idle", () => {
     );
   });
 
+  it("keeps a computer its provider is slow to stop running and checks again later", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.sandbox.stop.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("Boat sandbox did not reach archived"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "unresponsive",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
   it("schedules the next idle check when stopping fails", async () => {
     const harness = idleHarness();
     harness.sandbox.stop.mockRejectedValueOnce(new Error("stop refused"));
