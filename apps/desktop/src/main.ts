@@ -44,6 +44,15 @@ import {
   screenDriverInstaller,
   screenDriverRelease,
 } from "./host-screen.js";
+import {
+  createLocaleHandler,
+  desktopLocale,
+  desktopMessages,
+  errorDetail,
+  startDesktopLocale,
+  t,
+  withDetail,
+} from "./i18n.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -89,7 +98,7 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
-import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
+import { clearSetup, readSetup, readUiLocale, writeSetup, writeUiLocale } from "./setup-store.js";
 import { createSystemSpeech } from "./system-speech.js";
 import type { UserDeviceAccess } from "./user-device.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
@@ -143,18 +152,8 @@ const updaterEnvironment = {
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
 };
-const desktopUpdater = new DesktopUpdateController(
-  updaterEnvironment,
-  // Loaded only when a packaged build actually checks for updates.
-  async () => {
-    const module = await import("electron-updater");
-    return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
-  },
-  undefined,
-  () => {
-    quitting = false;
-  },
-);
+/** Created once the app's language is known, so its first message is in it. */
+let desktopUpdater: DesktopUpdateController;
 let launchUpdateCheckScheduled = false;
 let localStack: LocalStackController;
 let hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
@@ -424,7 +423,7 @@ function createWindow(url: string, partition: string | null) {
   return { loaded, win };
 }
 
-async function probeDocument(url: string): Promise<string | null> {
+async function probeDocument(url: string): Promise<ServerUnavailable | null> {
   // Test/dev harnesses may load data: or file: documents; only probe real servers.
   if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
   try {
@@ -438,11 +437,15 @@ async function probeDocument(url: string): Promise<string | null> {
     });
     // Allow 3xx (e.g. / → /login); reject hard HTTP errors before opening a window.
     if (response.status >= 400) {
-      return `The server answered with HTTP ${response.status}.`;
+      return withDetail(
+        new ServerUnavailable(`The server answered with HTTP ${response.status}.`),
+        t("The server answered with HTTP {status}.", { status: response.status }),
+      );
     }
     return null;
   } catch (error) {
-    return probeFailureMessage(error);
+    const detail = probeFailureMessage(error);
+    return withDetail(new ServerUnavailable(detail), detail);
   }
 }
 
@@ -478,14 +481,24 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
       }
       if (mainStatus !== undefined && mainStatus >= 400) {
         contents.removeListener("render-process-gone", onGone);
-        reject(new ServerUnavailable(`The server answered with HTTP ${mainStatus}.`));
+        reject(
+          withDetail(
+            new ServerUnavailable(`The server answered with HTTP ${mainStatus}.`),
+            t("The server answered with HTTP {status}.", { status: mainStatus }),
+          ),
+        );
         return;
       }
       void waitForMountedAppDocument(contents)
         .then((state) => {
           contents.removeListener("render-process-gone", onGone);
           if (contents.isCrashed()) {
-            reject(new Error("Renderer stopped after load."));
+            reject(
+              withDetail(
+                new Error("Renderer stopped after load."),
+                t("Renderer stopped after load."),
+              ),
+            );
             return;
           }
           resolve(state);
@@ -503,10 +516,20 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
       _validatedURL: string,
       isMainFrame: boolean,
     ) => {
-      if (isMainFrame) settle(new ServerUnavailable(errorDescription || "Page failed to load."));
+      if (!isMainFrame) return;
+      settle(
+        errorDescription
+          ? new ServerUnavailable(errorDescription)
+          : withDetail(new ServerUnavailable("Page failed to load."), t("Page failed to load.")),
+      );
     };
     const onGone = (_event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
-      settle(new Error(`Renderer stopped (${details.reason}).`));
+      settle(
+        withDetail(
+          new Error(`Renderer stopped (${details.reason}).`),
+          t("Renderer stopped ({reason}).", { reason: details.reason }),
+        ),
+      );
     };
 
     contents.on("did-fail-load", onFail);
@@ -661,8 +684,10 @@ async function runMenuUpdateCheck() {
       : dialog.showMessageBox(options);
   if (state.phase === "ready") {
     const { response } = await alert({
-      message: `Rakazo ${state.availableVersion} is ready to install.`,
-      buttons: ["Restart", "Later"],
+      message: t("Rakazo {version} is ready to install.", {
+        version: state.availableVersion ?? "",
+      }),
+      buttons: [t("Restart"), t("Later")],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
@@ -672,7 +697,7 @@ async function runMenuUpdateCheck() {
     if (result.message) {
       await alert({
         type: "warning",
-        message: "Could not install the update.",
+        message: t("Could not install the update."),
         detail: result.message,
       });
     }
@@ -680,11 +705,14 @@ async function runMenuUpdateCheck() {
     // Offline and other failed checks settle back to idle with a message.
     await alert({
       type: "warning",
-      message: "Could not check for updates.",
+      message: t("Could not check for updates."),
       detail: state.message,
     });
   } else if (state.phase === "idle") {
-    await alert({ message: "Rakazo is up to date.", detail: `Version ${state.currentVersion}` });
+    await alert({
+      message: t("Rakazo is up to date."),
+      detail: t("Version {version}", { version: state.currentVersion }),
+    });
   }
 }
 
@@ -700,12 +728,12 @@ async function installUpdate() {
 
 function installApplicationMenu() {
   const computerAccess: Electron.MenuItemConstructorOptions = {
-    label: "Computer Access…",
+    label: t("Computer Access…"),
     visible: currentSetup?.mode === "new",
     click: () => mainWindow?.webContents.send("desktop.computer.configure"),
   };
   const revokeComputerAccess: Electron.MenuItemConstructorOptions = {
-    label: "Revoke Local Computer Access",
+    label: t("Revoke Local Computer Access"),
     visible: remoteServerOrigin() === null && hostComputer?.isEnabled() === true,
     click: () => {
       void hostComputer
@@ -717,24 +745,24 @@ function installApplicationMenu() {
   // Cmd+, is the macOS Settings chord, and no page keydown can see it: the OS takes
   // it first, so the menu item is the only place it can be registered.
   const openSettings: Electron.MenuItemConstructorOptions = {
-    label: "Settings…",
+    label: t("Settings…"),
     accelerator: "CmdOrCtrl+,",
     click: () => mainWindow?.webContents.send("desktop.settings.open"),
   };
   const checkForUpdates: Electron.MenuItemConstructorOptions = {
-    label: "Check for Updates…",
+    label: t("Check for Updates…"),
     visible: updaterSupport(updaterEnvironment).supported,
     click: () => void checkForUpdatesFromMenu(),
   };
   const changeServer: Electron.MenuItemConstructorOptions = {
     id: "change-rakazo-server",
-    label: "Change Rakazo Server…",
+    label: t("Change Rakazo Server…"),
     accelerator: "CmdOrCtrl+Shift+K",
     click: () => showSetupWindow(),
   };
   const stopStack: Electron.MenuItemConstructorOptions = {
     id: "stop-local-stack",
-    label: "Stop Local Stack",
+    label: t("Stop Local Stack"),
     // The stack keeps running after quit (bots are always on); this is the explicit off switch.
     click: () => {
       if (currentSetup?.mode === "new") {
@@ -759,55 +787,68 @@ function installApplicationMenu() {
         mainWindow.webContents.send("desktop.menu.command", name);
     },
   });
-  const newItem = command("New…", "CmdOrCtrl+N", "new");
-  // Electron's own Edit menu, plus Search.
+  const newItem = command(t("New…"), "CmdOrCtrl+N", "new");
+  // Electron's own Edit menu, plus Search. Electron names role items in English, so each one
+  // gets its label to translate it.
   const macEdit: Electron.MenuItemConstructorOptions[] = [
     { type: "separator" },
-    { label: "Speech", submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }] },
+    {
+      label: t("Speech"),
+      submenu: [
+        { role: "startSpeaking", label: t("Start Speaking") },
+        { role: "stopSpeaking", label: t("Stop Speaking") },
+      ],
+    },
   ];
   const editMenu: Electron.MenuItemConstructorOptions = {
-    label: "Edit",
+    label: t("Edit"),
     submenu: [
-      { role: "undo" },
-      { role: "redo" },
+      { role: "undo", label: t("Undo") },
+      { role: "redo", label: t("Redo") },
       { type: "separator" },
-      { role: "cut" },
-      { role: "copy" },
-      { role: "paste" },
-      ...(isMac ? [{ role: "pasteAndMatchStyle" } as const] : []),
-      { role: "delete" },
-      { role: "selectAll" },
+      { role: "cut", label: t("Cut") },
+      { role: "copy", label: t("Copy") },
+      { role: "paste", label: t("Paste") },
+      ...(isMac
+        ? [{ role: "pasteAndMatchStyle", label: t("Paste and Match Style") } as const]
+        : []),
+      { role: "delete", label: t("Delete") },
+      { role: "selectAll", label: t("Select All") },
       { type: "separator" },
-      command("Search…", "CmdOrCtrl+F", "search"),
+      command(t("Search…"), "CmdOrCtrl+F", "search"),
       ...(isMac ? macEdit : []),
     ],
   };
   const goMenu: Electron.MenuItemConstructorOptions = {
-    label: "Go",
+    label: t("Go"),
     submenu: [
-      command("Back", isMac ? "Cmd+[" : "Alt+Left", "back"),
-      command("Forward", isMac ? "Cmd+]" : "Alt+Right", "forward"),
+      command(t("Back"), isMac ? "Cmd+[" : "Alt+Left", "back"),
+      command(t("Forward"), isMac ? "Cmd+]" : "Alt+Right", "forward"),
       { type: "separator" },
-      command("Next Bot", "Ctrl+Tab", "next-bot"),
-      command("Previous Bot", "Ctrl+Shift+Tab", "previous-bot"),
+      command(t("Next Bot"), "Ctrl+Tab", "next-bot"),
+      command(t("Previous Bot"), "Ctrl+Shift+Tab", "previous-bot"),
       { type: "separator" },
-      command("Command Menu…", "CmdOrCtrl+K", "command-menu"),
+      command(t("Command Menu…"), "CmdOrCtrl+K", "command-menu"),
     ],
   };
   const viewMenu: Electron.MenuItemConstructorOptions = {
-    label: "View",
+    label: t("View"),
     submenu: [
-      command("Toggle Sidebar", "CmdOrCtrl+B", "toggle-sidebar"),
+      command(t("Toggle Sidebar"), "CmdOrCtrl+B", "toggle-sidebar"),
       { type: "separator" },
-      { role: "resetZoom" },
-      { role: "zoomIn" },
+      { role: "resetZoom", label: t("Actual Size") },
+      { role: "zoomIn", label: t("Zoom In") },
       // zoomIn's default accelerator is Cmd/Ctrl+Plus, which needs Shift on US layouts.
       { role: "zoomIn", accelerator: "CommandOrControl+=", visible: false },
-      { role: "zoomOut" },
-      // macOS adds its own Enter Full Screen item to a menu named View.
-      ...(process.platform === "darwin"
+      { role: "zoomOut", label: t("Zoom Out") },
+      // macOS adds its own Enter Full Screen item to a menu named "View"; a translated title
+      // may not be recognized, so it gets the item explicitly.
+      ...(process.platform === "darwin" && desktopLocale() === "en"
         ? []
-        : ([{ type: "separator" }, { role: "togglefullscreen" }] as const)),
+        : ([
+            { type: "separator" },
+            { role: "togglefullscreen", label: t("Toggle Full Screen") },
+          ] as const)),
     ],
   };
   const template: Electron.MenuItemConstructorOptions[] =
@@ -816,7 +857,7 @@ function installApplicationMenu() {
           {
             label: app.name,
             submenu: [
-              { role: "about" },
+              { role: "about", label: t("About {name}", { name: app.name }) },
               openSettings,
               checkForUpdates,
               { type: "separator" },
@@ -825,32 +866,32 @@ function installApplicationMenu() {
               changeServer,
               stopStack,
               { type: "separator" },
-              { role: "hide" },
-              { role: "hideOthers" },
-              { role: "unhide" },
+              { role: "hide", label: t("Hide {name}", { name: app.name }) },
+              { role: "hideOthers", label: t("Hide Others") },
+              { role: "unhide", label: t("Show All") },
               { type: "separator" },
-              { role: "quit" },
+              { role: "quit", label: t("Quit {name}", { name: app.name }) },
             ],
           },
-          { label: "File", submenu: [newItem] },
+          { label: t("File"), submenu: [newItem] },
           editMenu,
           viewMenu,
           goMenu,
           {
-            label: "Window",
+            label: t("Window"),
             role: "window",
             submenu: [
-              { role: "minimize" },
-              { role: "zoom" },
-              { role: "close" },
+              { role: "minimize", label: t("Minimize") },
+              { role: "zoom", label: t("Zoom") },
+              { role: "close", label: t("Close Window") },
               { type: "separator" },
-              { role: "front" },
+              { role: "front", label: t("Bring All to Front") },
             ],
           },
         ]
       : [
           {
-            label: "File",
+            label: t("File"),
             submenu: [
               newItem,
               { type: "separator" },
@@ -862,19 +903,27 @@ function installApplicationMenu() {
               { type: "separator" },
               checkForUpdates,
               { type: "separator" },
-              { role: "quit" },
+              { role: "quit", label: process.platform === "win32" ? t("Exit") : t("Quit") },
             ],
           },
           editMenu,
           viewMenu,
           goMenu,
-          { role: "windowMenu" },
+          // The Window menu Electron builds for this role, with its items translated.
+          {
+            label: t("Window"),
+            submenu: [
+              { role: "minimize", label: t("Minimize") },
+              { role: "zoom", label: t("Zoom") },
+              { role: "close", label: t("Close") },
+            ],
+          },
         ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 /** Setup IPC must only answer the setup window, never a connected Rakazo server. */
-function fromSetupWindow(event: Electron.IpcMainInvokeEvent) {
+function fromSetupWindow(event: Pick<Electron.IpcMainInvokeEvent, "sender">) {
   return (
     setupWindow !== null && !setupWindow.isDestroyed() && event.sender === setupWindow.webContents
   );
@@ -886,7 +935,7 @@ async function probeServer(
   headers: Record<string, string> = {},
 ): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
-  if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
+  if (url === null) return { ok: false, error: t("Enter a valid http:// or https:// address.") };
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
   try {
@@ -904,7 +953,7 @@ async function probeServer(
         ok: false,
         status: response.status,
         url,
-        error: "That address redirects elsewhere. Enter the final Rakazo server address.",
+        error: t("That address redirects elsewhere. Enter the final Rakazo server address."),
       };
     }
     if (!response.ok) {
@@ -912,7 +961,7 @@ async function probeServer(
         ok: false,
         status: response.status,
         url,
-        error: `The server answered with HTTP ${response.status}.`,
+        error: t("The server answered with HTTP {status}.", { status: response.status }),
       };
     }
     const health = await readProbeJson(response);
@@ -921,7 +970,7 @@ async function probeServer(
         ok: false,
         status: response.status,
         url,
-        error: "That address did not respond like a Rakazo server.",
+        error: t("That address did not respond like a Rakazo server."),
       };
     }
     return {
@@ -960,20 +1009,12 @@ async function probeManagedStack(
   }
 }
 
+/**
+ * Failures raised here carry their translated detail; any other is a network error. Their
+ * messages stay English for error reports.
+ */
 function openFailureDetail(error: unknown): string {
-  if (error instanceof Error) {
-    const { message } = error;
-    if (
-      message.startsWith("The server answered with HTTP") ||
-      message.startsWith("The server page loaded empty") ||
-      message.startsWith("The server page did not become ready") ||
-      message.startsWith("Renderer stopped") ||
-      message.startsWith("Page failed to load")
-    ) {
-      return message;
-    }
-  }
-  return probeFailureMessage(error);
+  return errorDetail(error) ?? probeFailureMessage(error);
 }
 
 function activateDesktopMonitoring(url: string | undefined, targetSession?: Session) {
@@ -1028,9 +1069,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
   let win: BrowserWindow | null = null;
   try {
     const documentError = await probeDocument(targetUrl);
-    if (documentError !== null) {
-      throw new ServerUnavailable(documentError);
-    }
+    if (documentError !== null) throw documentError;
     await installBundledRenderer(
       targetUrl,
       target.value,
@@ -1043,10 +1082,16 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     // screen and recovers from it. Switching to a server that is not ready keeps the previous one.
     const state = await created.loaded;
     if (switching && state === "pending") {
-      throw new ServerUnavailable("The server page did not become ready.");
+      throw withDetail(
+        new ServerUnavailable("The server page did not become ready."),
+        t("The server page did not become ready."),
+      );
     }
     if (switching && state === "failed") {
-      throw new Error("The server page did not become ready.");
+      throw withDetail(
+        new Error("The server page did not become ready."),
+        t("The server page did not become ready."),
+      );
     }
     currentTargetUrl = targetUrl;
     activateDesktopMonitoring(targetUrl, target.value);
@@ -1069,7 +1114,9 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     // Show the setup window BEFORE destroying the failed one: on Windows/Linux,
     // destroying the last window fires "window-all-closed" -> app.quit() before
     // showSetupWindow() runs, so the app silently exits instead of showing this error.
-    showSetupWindow(`Could not open that server. ${openFailureDetail(error)}`);
+    showSetupWindow(
+      t("Could not open that server. {detail}", { detail: openFailureDetail(error) }),
+    );
     if (win !== null && !win.isDestroyed()) win.destroy();
     return false;
   }
@@ -1094,13 +1141,13 @@ function remoteServerOrigin() {
 }
 
 /** The trust boundary: only a click on Allow here lets bots use this computer. */
-async function confirmComputerAccess(where: string, revokeWhere: string) {
+async function confirmComputerAccess(detail: string) {
   const options: Electron.MessageBoxOptions = {
     type: "warning",
-    title: "Allow local computer access?",
-    message: "Allow bots to use this computer?",
-    detail: `Bots on ${where} can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access ${revokeWhere}.`,
-    buttons: ["Cancel", "Allow"],
+    title: t("Allow local computer access?"),
+    message: t("Allow bots to use this computer?"),
+    detail,
+    buttons: [t("Cancel"), t("Allow")],
     defaultId: 0,
     cancelId: 0,
     noLink: true,
@@ -1116,7 +1163,12 @@ function confirmRemoteComputerAccess(host: string) {
     if (!mainWindow.isVisible()) mainWindow.show();
     else if (!mainWindow.isFocused()) app.dock?.bounce("informational");
   }
-  return confirmComputerAccess(host, "in Settings");
+  return confirmComputerAccess(
+    t(
+      "Bots on {host} can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access in Settings.",
+      { host },
+    ),
+  );
 }
 
 function deviceTokenCipher() {
@@ -1224,8 +1276,10 @@ async function recoverFromCrashedSave(
   }
   const message =
     previousSetup !== null
-      ? "Could not open that server. Renderer stopped. The previous instance was restored for the next launch."
-      : "Could not open that server. Renderer stopped.";
+      ? t(
+          "Could not open that server. Renderer stopped. The previous instance was restored for the next launch.",
+        )
+      : t("Could not open that server. Renderer stopped.");
   showSetupWindow(message);
   return message;
 }
@@ -1255,6 +1309,22 @@ app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
+  startDesktopLocale(
+    await readUiLocale(userDataDir),
+    app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
+  );
+  desktopUpdater = new DesktopUpdateController(
+    updaterEnvironment,
+    // Loaded only when a packaged build actually checks for updates.
+    async () => {
+      const module = await import("electron-updater");
+      return (module.default ?? module).autoUpdater as unknown as ElectronAutoUpdater;
+    },
+    undefined,
+    () => {
+      quitting = false;
+    },
+  );
   try {
     hostComputer = await prepareHostComputer(userDataDir);
   } catch {
@@ -1371,7 +1441,7 @@ app.whenReady().then(async () => {
     if (!fromAppFrame(permissionTarget(), event) || typeof url !== "string" || url.length > 16_384)
       throw new Error("Invalid sign-in request.");
     if (browserAuthAttempts.has(url) || browserAuthAttempts.size >= 8) {
-      throw new Error("A sign-in attempt is already active. Cancel it and retry.");
+      throw new Error(t("A sign-in attempt is already active. Cancel it and retry."));
     }
     const controller = new AbortController();
     browserAuthAttempts.set(url, controller);
@@ -1401,7 +1471,7 @@ app.whenReady().then(async () => {
       });
     } catch {
       controller.abort();
-      throw new Error("Could not open browser sign-in. Close other sign-in attempts and retry.");
+      throw new Error(t("Could not open browser sign-in. Close other sign-in attempts and retry."));
     }
   });
   ipcMain.handle("desktop.oauth.cancel", (event, url: unknown) => {
@@ -1418,7 +1488,7 @@ app.whenReady().then(async () => {
     const origin = new URL(localStack.webUrl()).origin;
     const token = await readStackToken(stackDir(app.getPath("userData")));
     if (!token || !(await localStack.matchesDesiredStack()))
-      throw new Error("Local server is unavailable");
+      throw new Error(t("Local server is unavailable"));
     await saveLocalComputerHost({ origin, token }, computerHost, (input, init) =>
       net.fetch(input instanceof URL ? input.href : input, {
         ...init,
@@ -1428,7 +1498,7 @@ app.whenReady().then(async () => {
   };
   ipcMain.handle("desktop.computer.requestAccess", async (event) => {
     if (!isManagedComputerRequest(event) || !hostComputer)
-      throw new Error("Local computer access requires an app-managed local instance.");
+      throw new Error(t("Local computer access requires an app-managed local instance."));
     if (requestingComputerAccess) return false;
     requestingComputerAccess = true;
     try {
@@ -1438,7 +1508,11 @@ app.whenReady().then(async () => {
         await persistHostChoice("this-mac");
         return true;
       }
-      const allowed = await confirmComputerAccess("this local instance", "from the app menu");
+      const allowed = await confirmComputerAccess(
+        t(
+          "Bots on this local instance can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access from the app menu.",
+        ),
+      );
       if (!allowed || !isManagedComputerRequest(event)) return false;
       hostComputer.activate(true);
       await hostComputer.grant();
@@ -1485,6 +1559,14 @@ app.whenReady().then(async () => {
     await userDevices?.setAllowed(origin, allowed);
     return deviceState(remoteDeviceOrigin(event));
   });
+  ipcMain.handle(
+    "desktop.locale.set",
+    createLocaleHandler(
+      permissionTarget,
+      (locale) => writeUiLocale(userDataDir, locale),
+      installApplicationMenu,
+    ),
+  );
   ipcMain.handle(
     "desktop.badge.set",
     createBadgeHandler(permissionTarget, (count) => app.setBadgeCount(count)),
@@ -1542,6 +1624,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("desktop.update.install", (event) =>
     fromAppFrame(permissionTarget(), event) ? installUpdate() : desktopUpdater.state(),
   );
+  // Synchronous so the setup page has its language before it first paints.
+  ipcMain.on("desktop.setup.locale", (event) => {
+    event.returnValue = fromSetupWindow(event)
+      ? { lang: desktopLocale(), messages: desktopMessages() }
+      : null;
+  });
   ipcMain.handle("desktop.setup.state", (event) => {
     if (!fromSetupWindow(event)) return null;
     return {
@@ -1554,9 +1642,9 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("desktop.setup.test", async (event, url: unknown, headers: unknown) => {
     if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
-    if (typeof url !== "string") return { ok: false, error: "Enter a server address." };
+    if (typeof url !== "string") return { ok: false, error: t("Enter a server address.") };
     const parsedHeaders = parseServerHeaders(headers ?? {});
-    if (parsedHeaders === null) return { ok: false, error: "Invalid custom headers" };
+    if (parsedHeaders === null) return { ok: false, error: t("Invalid custom headers") };
     return probeServer(url, undefined, parsedHeaders);
   });
 
@@ -1564,7 +1652,7 @@ app.whenReady().then(async () => {
     if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
     // A launch still loading counts too: the switch must open and check its own server.
     if (setupSaveInProgress || appOpener.busy())
-      return { ok: false, error: "A connection attempt is already running." };
+      return { ok: false, error: t("A connection attempt is already running.") };
     setupSaveInProgress = true;
     const previousSetup = currentSetup;
     const previousUrl = currentTargetUrl;
@@ -1573,8 +1661,9 @@ app.whenReady().then(async () => {
       if (setup === null) {
         return {
           ok: false,
-          error:
+          error: t(
             "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.",
+          ),
         };
       }
 
@@ -1585,7 +1674,7 @@ app.whenReady().then(async () => {
         if (managedUrl === null || !(await localStack.matchesDesiredStack())) {
           return {
             ok: false,
-            error: "The app-managed Rakazo services are not ready. Retry setup.",
+            error: t("The app-managed Rakazo services are not ready. Retry setup."),
           };
         }
         openSetup = { mode: "new", serverUrl: managedUrl };
@@ -1603,7 +1692,7 @@ app.whenReady().then(async () => {
         syncHostComputerAccess();
         return {
           ok: false,
-          error: "Could not open that server. The previous instance was left unchanged.",
+          error: t("Could not open that server. The previous instance was left unchanged."),
         };
       }
 
@@ -1637,8 +1726,8 @@ app.whenReady().then(async () => {
           ok: false,
           error:
             outcome === "restored"
-              ? "Could not save setup. The previous instance was restored."
-              : "Connected, but could not save setup for the next launch. Try Continue again.",
+              ? t("Could not save setup. The previous instance was restored.")
+              : t("Connected, but could not save setup for the next launch. Try Continue again."),
         };
       } finally {
         rendererWatch?.dispose();
@@ -1712,7 +1801,11 @@ app.whenReady().then(async () => {
           destroySetupWindow();
         }
       } else {
-        showSetupWindow(`Could not reconnect to the saved server. ${reachability.error}`);
+        showSetupWindow(
+          t("Could not reconnect to the saved server. {detail}", {
+            detail: reachability.error ?? "",
+          }),
+        );
       }
     }
   } else {

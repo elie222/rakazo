@@ -1,5 +1,6 @@
 import { i18n } from "@lingui/core";
 import { applyUiDirection } from "./apply-ui-direction";
+import { desktopBridge } from "./desktop";
 import { importChunk } from "./preload-recovery";
 import type { UiLocale } from "./ui-locale";
 import { persistUiLocale, resolveUiLocale } from "./ui-locale";
@@ -52,6 +53,10 @@ function activateLoaded(locale: UiLocale, messages: CatalogMessages): UiLocale {
   i18n.activate(locale);
   activeLocale = locale;
   applyUiDirection(locale);
+  // The desktop app's own menus, dialogs and setup window follow the language chosen here.
+  void desktopBridge()
+    ?.locale?.set(locale)
+    .catch(() => undefined);
   return locale;
 }
 

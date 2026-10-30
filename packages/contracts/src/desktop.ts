@@ -99,6 +99,11 @@ export interface RakazoDesktop {
     enabled: () => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
+  locale?: {
+    /** The language the page shows, so the app's own menus, dialogs and setup window follow it. */
+    set: (locale: string) => Promise<void>;
+  };
+  /** Optional for compatibility with older desktop releases. */
   passkeys?: {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
@@ -219,6 +224,8 @@ export type DesktopSetupLink = "docker-desktop" | "orbstack" | "docker-engine";
 export interface RakazoSetup {
   /** Used only to reserve space for native window controls in the local setup UI. */
   platform: string;
+  /** The page's language and its translations, keyed by the English text; empty for English. */
+  locale: { lang: string; messages: Readonly<Record<string, string>> };
   state: () => Promise<DesktopSetupState>;
   test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
