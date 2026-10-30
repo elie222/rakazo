@@ -134,6 +134,8 @@ let config: Config | undefined;
 let unsentSends: SendAttempt[] = [];
 let sessionCount = 0;
 let restored = false;
+let diskReadable = true;
+const memoryOnly = new WeakSet<SendAttempt>();
 let running: Promise<void> | undefined;
 /** A retry that arrived while a drain was in progress, run once that drain stops. */
 let pendingForce: boolean | null = null;
@@ -159,27 +161,40 @@ function waiting() {
 }
 /** A clear that failed: discarded messages may still be on disk, so nothing is saved next to them. */
 let clearPending = false;
-function finishPendingClear() {
-  if (!clearPending) return;
-  config!.disk.clear();
-  clearPending = false;
-}
-/** Saves the index, then deletes the files of removed sends it no longer lists. */
-function save(attempts: SendAttempt[]) {
-  finishPendingClear();
-  config!.disk.save(attempts);
-  for (const attempt of removed) {
-    removed.delete(attempt);
-    if (!attempts.some((a) => a.clientNonce === attempt.clientNonce)) config!.disk.forget(attempt);
+function tryDisk<T>(operation: () => T, fallback: T): T {
+  try {
+    return operation();
+  } catch (error) {
+    console.warn("Outbox storage unavailable", error);
+    return fallback;
   }
+}
+function finishPendingClear() {
+  if (clearPending) {
+    clearPending = !tryDisk(() => {
+      config!.disk.clear();
+      return true;
+    }, false);
+  }
+  return !clearPending;
+}
+/** Saves the index, then deletes files only once it no longer lists them. */
+function save(attempts: SendAttempt[]) {
+  return tryDisk(() => {
+    if (!finishPendingClear() || !diskReadable) return false;
+    attempts = attempts.filter((attempt) => !memoryOnly.has(attempt));
+    config!.disk.save(attempts);
+    for (const attempt of removed) {
+      removed.delete(attempt);
+      if (!attempts.some((a) => a.clientNonce === attempt.clientNonce))
+        config!.disk.forget(attempt);
+    }
+    return true;
+  }, false);
 }
 function changed() {
   unsentSends = [...unsentSends];
-  try {
-    if (restored && config) save(waiting());
-  } catch {
-    /* The in-memory outbox remains usable; the next change saves again. */
-  }
+  if (restored && config) save(waiting());
   for (const watcher of watchers) watcher();
 }
 function inScope(attempt: SendAttempt) {
@@ -205,7 +220,14 @@ export function restoreUnsentSends() {
   const scope = config?.scope();
   if (restored || !scope || !config) return;
   // Restore before the first write; repeated preparation cannot duplicate nonces.
-  unsentSends = config.disk.load(sessionCount, scope);
+  // Leave unread messages intact until a later launch can restore them.
+  diskReadable = false;
+  unsentSends =
+    tryDisk(() => {
+      const loaded = config!.disk.load(sessionCount, scope);
+      diskReadable = true;
+      return loaded;
+    }, undefined) ?? [];
   for (const attempt of unsentSends) {
     if (attempt.state === "refused" && isModelRequiredSendError(attempt.error))
       attempt.state = "failed";
@@ -220,15 +242,13 @@ export function clearUnsentSends() {
   removed.clear();
   echoes.clear();
   pendingForce = null;
-  clearPending = false;
-  try {
+  diskReadable = true;
+  clearPending = !tryDisk(() => {
     config?.disk.clear();
-  } catch {
-    // The disk can still hold the discarded messages, so this process never loads them back,
-    // and saves wait until the clear succeeds; sign-out itself is never blocked.
-    restored = true;
-    clearPending = true;
-  }
+    return true;
+  }, false);
+  // Never reload discarded messages while their deletion is pending.
+  if (clearPending) restored = true;
   changed();
 }
 // Alias kept for existing sign-out callers.
@@ -271,7 +291,7 @@ export function sendWaitingMessages(force = false): Promise<void> {
             if (!inScope(attempt)) throw new Error("Session changed");
             return config!.request(proc, body, options, attempt.spaceId);
           }) as typeof rpc;
-          await config.disk.hydrate(attempt);
+          if (!memoryOnly.has(attempt)) await config.disk.hydrate(attempt);
           const seq = await deliverSend(attempt.payload, attempt, request);
           if (!inScope(attempt)) continue;
           attempt.acceptedSeq = seq;
@@ -305,7 +325,8 @@ export function sendWaitingMessages(force = false): Promise<void> {
           if (offline) break;
           config.notDelivered(attempt);
         } finally {
-          for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
+          if (!memoryOnly.has(attempt))
+            for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
         }
       }
       if (pendingForce === null) return;
@@ -372,8 +393,6 @@ export function useThreadFeedback(
       const scope = config?.scope();
       // Saving before the restore would replace the queue still on disk.
       if (!scope || !restored) throw new Error("SESSION_CHANGED");
-      // Throws while the clear still fails, so the composer keeps the text.
-      finishPendingClear();
       if (waiting().length >= OUTBOX_MAX_ENTRIES) throw new Error(t("Too many unsent messages"));
       // Files left by a removal whose save failed still count against the disk budget.
       if (removed.size) save(waiting());
@@ -385,15 +404,17 @@ export function useThreadFeedback(
         session: sessionCount,
         ...scope,
       };
-      if (!config!.disk.admit(attempt)) throw new Error(t("Too many unsent messages"));
-      // The caller clears the composer, so the message must already survive a restart.
-      try {
-        config!.disk.save([...waiting(), attempt]);
-      } catch (error) {
-        // The index may hold it after all (a move that failed after copying), so its files
-        // go only once a later save leaves it out.
+      const canPersist = finishPendingClear() && diskReadable;
+      const admitted = canPersist
+        ? tryDisk(() => config!.disk.admit(attempt), undefined)
+        : undefined;
+      if (admitted === false) throw new Error(t("Too many unsent messages"));
+      // Save before the caller clears the composer whenever storage is available.
+      if (admitted === undefined || !save([...waiting(), attempt])) {
+        // A failed move may have committed; forget files only after a later index omits them.
         removed.add(attempt);
-        throw error;
+        memoryOnly.add(attempt);
+        attempt.payload.attachments = payload.attachments.map((a) => ({ ...a }));
       }
       return attempt;
     },

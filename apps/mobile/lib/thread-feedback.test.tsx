@@ -208,17 +208,40 @@ describe("scoped mobile outbox", () => {
     act(() => confirmEchoes("bot-1", [42]));
     expect(container.textContent).toBe("");
   });
-  it("refuses a send it could not save, so the composer keeps the text", () => {
-    disk.save.mockImplementationOnce(() => {
+  it.each(["Outbox full", "OUTBOX_STORAGE_UNAVAILABLE"])(
+    "sends from memory when saving fails with %s",
+    async (message) => {
+      disk.save.mockImplementation(() => {
+        throw new Error(message);
+      });
+      const attempt = feedback.sendAttempt(payload());
+      expect(disk.forget).not.toHaveBeenCalled();
+      await act(async () => {
+        expect(await feedback.send(attempt)).toBe(true);
+      });
+      expect(request).toHaveBeenCalledWith("threads/send", expect.anything(), undefined, "space-a");
+      expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+      disk.save.mockImplementation(() => undefined);
+      act(() => confirmEchoes("bot-1", [42]));
+      expect(disk.forget).toHaveBeenCalledWith(attempt);
+    },
+  );
+  it("retries attachments from memory when admission throws", async () => {
+    disk.admit.mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     });
-    expect(() => feedback.sendAttempt(payload())).toThrow("OUTBOX_STORAGE_UNAVAILABLE");
-    // The failed save may have reached the index anyway (a move that failed after copying),
-    // so the files stay until a later save leaves the message out.
-    expect(disk.forget).not.toHaveBeenCalled();
-    const saved = feedback.sendAttempt(payload("Saved"));
-    expect(disk.forget).toHaveBeenCalledOnce();
-    expect(disk.save).toHaveBeenLastCalledWith([saved]);
+    request.mockRejectedValueOnce(new Error("Send interrupted"));
+    const attempt = feedback.sendAttempt(payload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(attempt.payload.attachments[0]?.contentBase64).toBe("fake");
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
+    expect(disk.hydrate).not.toHaveBeenCalled();
+    expect(disk.save).toHaveBeenLastCalledWith([]);
   });
   it("deletes a delivered message's files only after the index without it is saved", async () => {
     const failed = feedback.sendAttempt(payload("First"));
@@ -265,31 +288,45 @@ describe("scoped mobile outbox", () => {
     });
     expect(disk.forget).not.toHaveBeenCalled();
   });
-  it("writes nothing and refuses sends until a failed restore succeeds", () => {
-    act(() => clearFailedSends());
-    vi.clearAllMocks();
-    disk.load.mockImplementationOnce(() => {
-      throw new Error("Read failed");
-    });
-    expect(() => restoreUnsentSends()).toThrow("Read failed");
-    expect(() => feedback.sendAttempt(payload())).toThrow("SESSION_CHANGED");
-    expect(disk.save).not.toHaveBeenCalled();
-    expect(disk.clear).not.toHaveBeenCalled();
-    act(() => restoreUnsentSends());
-    const saved = feedback.sendAttempt(payload());
-    expect(disk.save).toHaveBeenLastCalledWith([saved]);
-  });
-  it("does not load discarded messages back when clearing the disk fails", () => {
+  it.each(["Read failed", "OUTBOX_STORAGE_UNAVAILABLE"])(
+    "finishes a failed restore (%s) without overwriting recoverable messages",
+    async (message) => {
+      act(() => clearFailedSends());
+      vi.clearAllMocks();
+      disk.load.mockImplementationOnce(() => {
+        throw new Error(message);
+      });
+      act(() => restoreUnsentSends());
+      const attempt = feedback.sendAttempt(payload());
+      await act(async () => {
+        expect(await feedback.send(attempt)).toBe(true);
+      });
+      expect(disk.save).not.toHaveBeenCalled();
+      expect(disk.clear).not.toHaveBeenCalled();
+      act(() => restoreUnsentSends());
+      expect(disk.load).toHaveBeenCalledOnce();
+    },
+  );
+  it("sends in a new session without loading discarded messages when clearing fails", async () => {
+    const old = feedback.sendAttempt(payload("Old"));
+    disk.load.mockReturnValueOnce([old]);
     vi.clearAllMocks();
     disk.clear.mockImplementation(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     });
     act(() => clearFailedSends());
     act(() => restoreUnsentSends());
+    const attempt = feedback.sendAttempt(payload("New"));
+    await act(async () => {
+      expect(await feedback.send(attempt)).toBe(true);
+    });
     expect(disk.load).not.toHaveBeenCalled();
-    // A new message must not be committed next to discarded ones the next start would copy back.
-    expect(() => feedback.sendAttempt(payload("Refused"))).toThrow("OUTBOX_STORAGE_UNAVAILABLE");
+    expect(disk.admit).not.toHaveBeenCalled();
     expect(disk.save).not.toHaveBeenCalled();
+    expect(
+      request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
+    ).toEqual(["New"]);
+    disk.load.mockReset().mockReturnValue([]);
     disk.clear.mockImplementation(() => undefined);
     const saved = feedback.sendAttempt(payload());
     expect(disk.save).toHaveBeenLastCalledWith([saved]);
