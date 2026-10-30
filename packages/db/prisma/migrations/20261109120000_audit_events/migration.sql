@@ -23,7 +23,6 @@ CREATE TABLE "audit_events" (
 );
 
 CREATE INDEX "audit_events_organizationId_createdAt_idx" ON "audit_events"("organizationId", "createdAt");
-CREATE INDEX "audit_events_spaceId_createdAt_idx" ON "audit_events"("spaceId", "createdAt");
 CREATE INDEX "audit_events_createdAt_idx" ON "audit_events"("createdAt");
 
 CREATE TABLE "audit_event_forwarding" (

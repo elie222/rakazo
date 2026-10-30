@@ -533,7 +533,6 @@ model AuditEvent {
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
-  @@index([spaceId, createdAt])
   @@index([createdAt])
   @@map("audit_events")
 }
