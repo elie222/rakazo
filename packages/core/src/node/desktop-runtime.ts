@@ -170,9 +170,10 @@ function browserRunningFunction(profile: string, pidFile: string) {
     '    if browser_matches "$pid"; then return 0; fi',
     "  done",
     "  if [ -d /proc ]; then",
-    "    for proc_dir in /proc/[0-9]*; do",
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
-    '      pid="${proc_dir#/proc/}"',
+    // Filter candidates in one process. Per-PID shell pipelines make an empty-profile
+    // scan take seconds on busy hosts. browser_matches still validates every candidate.
+    `    candidates=$(python3 -c ${shellQuote("import glob, sys\nflag = sys.argv[1].encode()\nfor name in glob.glob('/proc/[0-9]*/cmdline'):\n    try:\n        data = open(name, 'rb').read()\n    except OSError:\n        continue\n    if flag in data:\n        print(name.split('/')[2])")} ${flag}) || return 1`,
+    "    for pid in $candidates; do",
     '      if browser_matches "$pid"; then return 0; fi',
     "    done",
     "  fi",

@@ -529,6 +529,7 @@ describe("shared Linux desktop lifecycle", () => {
         path.join(bin, "python3"),
         [
           "#!/bin/sh",
+          'case "$2" in *"import glob, sys"*) exec /usr/bin/python3 "$@" ;; esac',
           'pid=""',
           'for arg in "$@"; do',
           '  case "$arg" in',
@@ -677,6 +678,7 @@ describe("shared Linux desktop lifecycle", () => {
           mode === "replacement"
             ? [
                 "python3() {",
+                '  case "$2" in *"import glob, sys"*) /usr/bin/python3 "$@"; return ;; esac',
                 `  rm -f ${shellQuote(ready)}`,
                 `  ${shellQuote(python)} ${shellQuote(sleeper)} ${shellQuote(`--user-data-dir=${profile}`)} --remote-debugging-port=9337 </dev/null >/dev/null 2>&1 &`,
                 `  printf %s "$!" >${shellQuote(replacementPidFile)}`,
@@ -685,7 +687,7 @@ describe("shared Linux desktop lifecycle", () => {
                 '  kill "$3"',
                 "}",
               ].join("\n")
-            : "python3() { return 1; }; kill() { return 0; }; sleep() { :; }";
+            : 'python3() { case "$2" in *"import glob, sys"*) /usr/bin/python3 "$@"; return ;; esac; return 1; }; kill() { return 0; }; sleep() { :; }';
         const result = spawnSync(
           "bash",
           ["-eu", "-c", `${close}\n${stopBrowserProfileCommand(profile, shellQuote(pidFile))}`],
