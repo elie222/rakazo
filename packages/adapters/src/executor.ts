@@ -4000,7 +4000,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // projection, including attachment blocks, instead of only its seq.
         const windowSource =
           goalScopedTeamRun && run.sourceMessageId
-            ? messages.find((message) => message.id === run.sourceMessageId && message.role === "user")
+            ? messages.find(
+                (message) => message.id === run.sourceMessageId && message.role === "user",
+              )
             : undefined;
         const omittedSource =
           goalScopedTeamRun && run.sourceMessageId && !windowSource
