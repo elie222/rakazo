@@ -136,8 +136,10 @@ export function artifactCacheSession(token: string): Promise<string> {
       await SecureStore.setItemAsync(KEY, record(entry));
       entry.persisted = true;
     } catch {
-      // Failed persistence must not authorize files from a previous process.
-      if (entry.persisted) entry = { token, namespace: newNamespace(), persisted: false };
+      // Failed persistence must not authorize files from a previous process; this one already
+      // confirmed the active namespace.
+      if (entry.persisted && entry !== active)
+        entry = { token, namespace: newNamespace(), persisted: false };
     }
     if (version !== revision) throw new Error("Artifact session changed");
     active = entry;
