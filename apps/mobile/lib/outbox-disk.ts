@@ -15,13 +15,49 @@ function attachmentFile(nonce: string, index: number) {
 function file() {
   return new File(root(), "sends-v4.json");
 }
+function replacement() {
+  return new File(root(), "sends-v4.json.tmp");
+}
+function backup() {
+  return new File(root(), "sends-v4.json.bak");
+}
+/** Leftovers are retried on the next load, so a failed delete must not block the outbox. */
+function deleteLeftover(entry: File | Directory) {
+  try {
+    entry.delete();
+  } catch {}
+}
 export const OUTBOX_MAX_BYTES = 50 * 1024 * 1024;
+// Copies of the index left by an interrupted save do not count; load removes them.
 function diskBytes(directory: Directory): number {
+  const scratch = [replacement().uri, backup().uri];
   return directory.exists
     ? directory
         .list()
+        .filter((entry) => !scratch.includes(entry.uri))
         .reduce((sum, entry) => sum + (entry instanceof File ? entry.size : diskBytes(entry)), 0)
     : 0;
+}
+/** A parsed index, or undefined when it is missing or corrupt. Read errors propagate. */
+function readIndex(index: File) {
+  if (!index.exists) return undefined;
+  const text = index.textSync();
+  try {
+    const entries: unknown = JSON.parse(text);
+    return Array.isArray(entries) ? entries : undefined;
+  } catch {
+    return undefined;
+  }
+}
+/** The committed index entries, restoring the backup when the index is missing or corrupt. */
+function committedIndex() {
+  const entries = readIndex(file());
+  if (entries) return entries;
+  // A save interrupted between its two moves leaves only the previous index, as the backup.
+  // Never restore the replacement: its save reported failure.
+  const previous = readIndex(backup());
+  if (previous) backup().moveSync(file(), { overwrite: true });
+  return previous;
 }
 function storedEntry(attempt: SendAttempt) {
   return {
@@ -70,25 +106,44 @@ export const outboxDisk: UnsentDisk = {
     try {
       root().create({ intermediates: true, idempotent: true });
       const target = file();
+      const next = replacement();
       const text = JSON.stringify(attempts.slice(0, OUTBOX_MAX_ENTRIES).map(storedEntry));
       const bytes = new TextEncoder().encode(text).length;
-      if (diskBytes(root()) - (target.exists ? target.size : 0) + bytes > OUTBOX_MAX_BYTES) return;
-      target.create({ overwrite: true });
-      target.write(text);
+      if (diskBytes(root()) - (target.exists ? target.size : 0) + bytes > OUTBOX_MAX_BYTES)
+        throw new Error("Outbox full");
+      // A failed save can leave a partial index next to the committed backup; never set it aside over that backup.
+      if (backup().exists) committedIndex();
+      next.create({ overwrite: true });
+      next.write(text);
+      // Moving over a file deletes it first, so set the committed index aside until the new one is in place.
+      // A move points its source object at the destination, so each move gets a fresh destination.
+      if (target.exists) target.moveSync(backup(), { overwrite: true });
+      try {
+        next.moveSync(file());
+      } catch (error) {
+        // Android can move by copying and then fail to delete the source; the copy is then committed.
+        const index = file();
+        if (!index.exists || index.textSync() !== text) throw error;
+        deleteLeftover(replacement());
+      }
     } catch {
-      /* Optional persistence; the in-memory outbox remains usable. */
+      throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
     }
+    // The new index is committed; load removes a backup that could not be deleted.
+    const previous = backup();
+    if (previous.exists) deleteLeftover(previous);
   },
   load(session, scope) {
+    // Storage errors propagate without wiping anything, so a later load retries.
+    const target = file();
+    const entries = committedIndex();
+    if (!entries || diskBytes(root()) > OUTBOX_MAX_BYTES) {
+      outboxDisk.clear();
+      return [];
+    }
+    let loaded: SendAttempt[];
     try {
-      const target = file();
-      if (!target.exists || diskBytes(root()) > OUTBOX_MAX_BYTES) {
-        outboxDisk.clear();
-        return [];
-      }
-      const entries: unknown = JSON.parse(target.textSync());
-      if (!Array.isArray(entries)) return [];
-      const loaded = entries.slice(0, OUTBOX_MAX_ENTRIES).flatMap((entry): SendAttempt[] => {
+      loaded = entries.slice(0, OUTBOX_MAX_ENTRIES).flatMap((entry): SendAttempt[] => {
         if (
           entry?.apiBase !== scope.apiBase ||
           entry.userId !== scope.userId ||
@@ -130,13 +185,13 @@ export const outboxDisk: UnsentDisk = {
           },
         ];
       });
-      const keep = new Set([target.uri, ...loaded.map((a) => folder(a.clientNonce).uri)]);
-      for (const entry of root().list()) if (!keep.has(entry.uri)) entry.delete();
-      return loaded;
     } catch {
       outboxDisk.clear();
       return [];
     }
+    const keep = new Set([target.uri, ...loaded.map((a) => folder(a.clientNonce).uri)]);
+    for (const entry of root().list()) if (!keep.has(entry.uri)) deleteLeftover(entry);
+    return loaded;
   },
   async hydrate(attempt) {
     for (const [index, attachment] of attempt.payload.attachments.entries()) {

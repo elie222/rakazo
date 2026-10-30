@@ -141,6 +141,8 @@ const watchers = new Set<() => void>();
 const deliveredListeners = new Set<(attempt: SendAttempt) => void>();
 const echoes = new Map<string, Set<number>>();
 const screens = new Map<string, number>();
+/** Removed sends whose files wait for a saved index that no longer lists them. */
+const removed = new Set<SendAttempt>();
 export const OUTBOX_MAX_ENTRIES = 20;
 
 function subscribe(watcher: () => void) {
@@ -152,9 +154,24 @@ function subscribe(watcher: () => void) {
 function getUnsentSends() {
   return unsentSends;
 }
+function waiting() {
+  return unsentSends.filter((a) => a.acceptedSeq === undefined);
+}
+/** Saves the index, then deletes the files of removed sends it no longer lists. */
+function save(attempts: SendAttempt[]) {
+  config!.disk.save(attempts);
+  for (const attempt of removed) {
+    removed.delete(attempt);
+    if (!attempts.some((a) => a.clientNonce === attempt.clientNonce)) config!.disk.forget(attempt);
+  }
+}
 function changed() {
   unsentSends = [...unsentSends];
-  if (restored) config?.disk.save(unsentSends.filter((a) => a.acceptedSeq === undefined));
+  try {
+    if (restored && config) save(waiting());
+  } catch {
+    /* The in-memory outbox remains usable; the next change saves again. */
+  }
   for (const watcher of watchers) watcher();
 }
 function inScope(attempt: SendAttempt) {
@@ -168,8 +185,9 @@ function inScope(attempt: SendAttempt) {
   );
 }
 function remove(attempt: SendAttempt) {
-  config?.disk.forget(attempt);
   unsentSends = unsentSends.filter((a) => a !== attempt);
+  // A saved index may still list the message, so its files go only after the index drops it.
+  removed.add(attempt);
   changed();
 }
 export function configureUnsentSends(next: Config) {
@@ -191,6 +209,7 @@ export function clearUnsentSends() {
   sessionCount += 1;
   restored = false;
   unsentSends = [];
+  removed.clear();
   echoes.clear();
   pendingForce = null;
   config?.disk.clear();
@@ -335,9 +354,11 @@ export function useThreadFeedback(
     ),
     sendAttempt(payload: SendPayload): SendAttempt {
       const scope = config?.scope();
-      if (!scope) throw new Error("SESSION_CHANGED");
-      if (unsentSends.filter((a) => a.acceptedSeq === undefined).length >= OUTBOX_MAX_ENTRIES)
-        throw new Error(t("Too many unsent messages"));
+      // Saving before the restore would replace the queue still on disk.
+      if (!scope || !restored) throw new Error("SESSION_CHANGED");
+      if (waiting().length >= OUTBOX_MAX_ENTRIES) throw new Error(t("Too many unsent messages"));
+      // Files left by a removal whose save failed still count against the disk budget.
+      if (removed.size) save(waiting());
       const attempt: SendAttempt = {
         payload: { ...payload, attachments: payload.attachments.map((a) => ({ ...a })) },
         clientNonce: newNonce(),
@@ -347,6 +368,15 @@ export function useThreadFeedback(
         ...scope,
       };
       if (!config!.disk.admit(attempt)) throw new Error(t("Too many unsent messages"));
+      // The caller clears the composer, so the message must already survive a restart.
+      try {
+        config!.disk.save([...waiting(), attempt]);
+      } catch (error) {
+        // The index may hold it after all (a move that failed after copying), so its files
+        // go only once a later save leaves it out.
+        removed.add(attempt);
+        throw error;
+      }
       return attempt;
     },
     async send(attempt: SendAttempt, force = false) {
