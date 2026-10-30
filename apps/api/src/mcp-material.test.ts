@@ -1,5 +1,13 @@
+import { McpServerConfigInput } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { buildMcpUpdateMaterial } from "./mcp-material.js";
+import { buildMcpUpdateMaterial as buildFromParsed } from "./mcp-material.js";
+
+// The router parses an update before building its material, so the tests do too.
+const buildMcpUpdateMaterial = (
+  existing: Parameters<typeof buildFromParsed>[0],
+  input: unknown,
+  options?: Parameters<typeof buildFromParsed>[2],
+) => buildFromParsed(existing, McpServerConfigInput.parse(input), options);
 
 describe("buildMcpUpdateMaterial", () => {
   it("keeps the stored blob untouched when the update carries no credential data", () => {
@@ -527,14 +535,14 @@ describe("buildMcpUpdateMaterial", () => {
     it("stores new arguments in the material", () => {
       expect(buildMcpUpdateMaterial({}, { ...stdio, args: ["--api-key", "fake-key"] })).toEqual({
         action: "store",
-        material: { args: ["--api-key", "fake-key"] },
+        material: { args: ["--api-key", "fake-key"], env: {} },
       });
     });
 
     it("keeps the stored arguments when none are sent back", () => {
       expect(
         buildMcpUpdateMaterial({ args: ["--api-key", "fake-key"] }, { ...stdio, args: [] }),
-      ).toEqual({ action: "store", material: { args: ["--api-key", "fake-key"] } });
+      ).toEqual({ action: "store", material: { args: ["--api-key", "fake-key"], env: {} } });
     });
 
     it("does not hand stored arguments to a different command", () => {
@@ -544,7 +552,7 @@ describe("buildMcpUpdateMaterial", () => {
           { ...stdio, command: "uvx", args: [] },
           { commandChanged: true },
         ),
-      ).toEqual({ action: "store", material: {} });
+      ).toEqual({ action: "store", material: { env: {} } });
     });
 
     it("keeps the arguments when credentials are cleared", () => {

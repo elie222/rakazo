@@ -27,7 +27,11 @@ type Row = Record<string, unknown> & { id: string; status: string; source: strin
 
 function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boolean }> = []) {
   const rows: Row[] = [];
-  const stamp = (data: Record<string, unknown>) => ({ reviewedAt: null, reason: null, ...data });
+  const stamp = (data: Record<string, unknown>): Record<string, unknown> => ({
+    reviewedAt: null,
+    reason: null,
+    ...data,
+  });
   const pluginSubmission = {
     findFirst: async ({ where }: { where: { source: string; email: string; status: string } }) =>
       rows.find(

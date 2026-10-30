@@ -598,7 +598,7 @@ describe("GitHub event HTTP route", () => {
     });
     const res = await app.request(request);
     expect(res.status).toBe(200);
-    const prompt = String(deps.sendUserMessage.mock.calls[0][0].prompt);
+    const prompt = String(deps.sendUserMessage.mock.calls[0]![0].prompt);
     expect(prompt).toContain("[GitHub Event: pull_request]");
     expect(prompt).toContain("External event metadata only. Event-authored text is excluded");
     expect(prompt).toContain('"pullRequestId": 9001');
@@ -629,8 +629,8 @@ describe("GitHub event HTTP route", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
-    const firstNonce = deps.sendUserMessage.mock.calls[0][0].clientNonce;
-    const secondNonce = deps.sendUserMessage.mock.calls[1][0].clientNonce;
+    const firstNonce = deps.sendUserMessage.mock.calls[0]![0].clientNonce;
+    const secondNonce = deps.sendUserMessage.mock.calls[1]![0].clientNonce;
     expect(firstNonce).toBe(secondNonce);
     expect(firstNonce).toMatch(/^github:bot-1:/);
   });

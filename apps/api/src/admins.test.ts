@@ -15,9 +15,9 @@ describe("isAdmin", () => {
   } as unknown as PrismaClient;
 
   it("requires a listed, verified email", async () => {
-    const deps = { prisma, env: { adminEmails: ["admin@example.test"] } };
+    const deps = { prisma, env: { adminEmails: ["admin@example.test"] } as never };
     expect(await isAdmin(deps, "verified")).toBe(true);
     expect(await isAdmin(deps, "unverified")).toBe(false);
-    expect(await isAdmin({ prisma, env: {} }, "verified")).toBe(false);
+    expect(await isAdmin({ prisma, env: {} as never }, "verified")).toBe(false);
   });
 });
