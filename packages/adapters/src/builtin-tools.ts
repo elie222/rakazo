@@ -1428,6 +1428,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         thinkingLevel: {
           type: "string",
           enum: [...ThinkingLevelSchema.options],
+          description:
+            "How hard you reason; raise it when asked to think harder, lower it for speed.",
         },
         readAloud: {
           type: "boolean",

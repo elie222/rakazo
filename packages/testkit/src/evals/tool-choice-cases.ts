@@ -116,6 +116,14 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { bot: { thinkingLevel: ["low", "minimal", "off"] } },
   },
   {
+    id: "settings-thinking-casual",
+    area: "settings",
+    kind: "guard",
+    purpose: "Treat a standing request to reason more deeply as a thinking change.",
+    prompt: "Going forward, please reason much more deeply about everything I ask.",
+    expect: { bot: { thinkingLevel: ["high", "xhigh", "max"] } },
+  },
+  {
     id: "settings-read-aloud-on",
     area: "settings",
     kind: "guard",
