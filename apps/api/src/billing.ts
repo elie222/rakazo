@@ -393,12 +393,7 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          computerHoursLeft:
-            computerAllowance &&
-            Math.floor(
-              Math.max(0, computerAllowance.limitMicros - computerAllowance.usedMicros) /
-                DEFAULT_SANDBOX_HOURLY_COST_MICROS,
-            ),
+          computerHoursLeft: computerAllowance && hoursLeft(computerAllowance),
           referral: await referrals.status(organizationId, isOwner),
         };
       }
@@ -503,4 +498,11 @@ export function createBillingService(deps: {
       }
     },
   };
+}
+
+/** Whole hours, or tenths under one hour, so time that is left never reads as zero. */
+function hoursLeft(allowance: { limitMicros: number; usedMicros: number }): number {
+  const hours =
+    Math.max(0, allowance.limitMicros - allowance.usedMicros) / DEFAULT_SANDBOX_HOURLY_COST_MICROS;
+  return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
 }

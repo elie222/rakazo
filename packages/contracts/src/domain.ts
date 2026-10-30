@@ -1864,8 +1864,8 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
-  /** Whole computer hours left this calendar month; absent when computers have no limit. */
-  computerHoursLeft: z.number().int().nonnegative().nullable().optional(),
+  /** Computer hours left this calendar month; absent when computers have no limit. */
+  computerHoursLeft: z.number().nonnegative().nullable().optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
