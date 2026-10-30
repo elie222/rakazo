@@ -55,6 +55,8 @@ export type EvalCase = {
   approvalTool?: string;
   expectedClarification?: true;
   connections?: string[];
+  /** A run waiting on the user (a choice, a secret, an approval) ends its step instead of failing. */
+  pauseEndsTurn?: true;
   /** Synthetic bot state written before the first step. */
   botSetup?: BotSetup;
   taughtSkill?: true;

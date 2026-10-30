@@ -475,6 +475,10 @@ async function main() {
       CURSOR_API_KEY: "",
       CLOUD_AGENT_PROVIDER: "",
       MODEL_API_KEY: "",
+      // A developer .env with Stripe keys would put the disposable app behind billing.
+      STRIPE_SECRET_KEY: "",
+      STRIPE_WEBHOOK_SECRET: "",
+      STRIPE_PRICE_ID: "",
     });
     execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {
       stdio: "pipe",

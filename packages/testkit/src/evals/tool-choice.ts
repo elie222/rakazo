@@ -163,6 +163,7 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
     id: parsed.id,
     purpose: `[${parsed.area}/${parsed.kind}] ${parsed.purpose}`,
     connections: [],
+    pauseEndsTurn: true,
     ...(parsed.bot ? { botSetup: parsed.bot } : {}),
     steps: [
       ...(parsed.priorTurns ?? []).map((ask) => ({ ask })),

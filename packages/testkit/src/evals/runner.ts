@@ -515,7 +515,9 @@ export async function runTrial(
           (scenario.approvalTool || scenario.expectedClarification)
         )
           return run;
-        if (run && ["waiting_input", "waiting_approval", "paused"].includes(run.status))
+        const waiting = run && ["waiting_input", "waiting_approval", "paused"].includes(run.status);
+        if (waiting && scenario.pauseEndsTurn) return run;
+        if (waiting)
           throw new EvalFailure("agent", "Agent requested assistance; no coaching supplied");
         return run && isTerminal(run.status as RunStatus) ? run : undefined;
       }, deadline);
@@ -542,6 +544,7 @@ export async function runTrial(
       });
       if (
         terminal.status !== "completed" &&
+        !scenario.pauseEndsTurn &&
         !(
           (scenario.approvalTool || scenario.expectedClarification) &&
           terminal.status === "waiting_input"
@@ -634,7 +637,9 @@ export async function runTrial(
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
         throw new EvalFailure("incomplete", lastText);
+      // Provider failures surface as a short notice; a long answer may mention a status code.
       if (
+        lastText.length < 400 &&
         /unknown model|invalid api.?key|authentication.*(?:failed|error)|\b(?:401|402|403|429)\b/i.test(
           lastText,
         )
