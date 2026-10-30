@@ -1,8 +1,9 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { groupBotsForSidebar, isRunWaitingOnUser } from "@rakazo/core";
+import { botAvatarActivity, groupBotsForSidebar, logoAvatarNeedsAttention } from "@rakazo/core";
 import type { MobileBot, MobileGroup, MobileSpace } from "./api";
 import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { t } from "./i18n";
+import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
 import type { InboxSignal } from "./offscreen-unreads";
 
 export type InboxSpace = Pick<
@@ -39,7 +40,14 @@ function chatSignal(chat: PinnedChat): InboxSignal {
   return chat.kind === "bot"
     ? {
         unread: chat.bot.unread ? 1 : 0,
-        attention: isRunWaitingOnUser(chat.bot.status) ? 1 : 0,
+        attention: logoAvatarNeedsAttention(
+          botAvatarActivity(
+            chat.bot,
+            mobileLogoAvatarActivity.getActivity(chat.bot.id, chat.bot.status),
+          ),
+        )
+          ? 1
+          : 0,
       }
     : { unread: chat.group.unread ? 1 : 0, attention: 0 };
 }

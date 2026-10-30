@@ -48,7 +48,8 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
   return "pending";
 })()`;
 
-export type AppDocumentState = "ready" | "failed";
+/** `pending`: the page is still loading when the wait ends, for instance on a slow server. */
+export type AppDocumentState = "ready" | "failed" | "pending";
 
 type DocumentContents = Pick<
   Electron.WebContents,
@@ -62,11 +63,9 @@ export async function waitForMountedAppDocument(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
-    let state: AppDocumentState | "pending";
+    let state: AppDocumentState;
     try {
-      state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as
-        | AppDocumentState
-        | "pending";
+      state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as AppDocumentState;
     } catch (error) {
       // A reload or redirect during startup disposes the frame being asked; ask the next document.
       if (contents.isDestroyed()) throw error;
@@ -75,5 +74,5 @@ export async function waitForMountedAppDocument(
     if (state !== "pending") return state;
     await new Promise((r) => setTimeout(r, 50));
   }
-  throw new Error("The server page did not become ready.");
+  return "pending";
 }

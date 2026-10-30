@@ -43,6 +43,16 @@ export interface RakazoDesktopDevice {
   allowed: boolean;
 }
 
+/**
+ * What the system recognizer reports for one listening session, shaped after Web Speech:
+ * `result` carries the session's whole text so far, `error` a Web Speech error code,
+ * and `end` always comes last.
+ */
+export type RakazoDesktopSpeechEvent =
+  | { session: number; type: "result"; text: string }
+  | { session: number; type: "error"; error: string }
+  | { session: number; type: "end" };
+
 export interface RakazoDesktop {
   /** Optional for compatibility with older desktop releases. */
   badge?: {
@@ -67,7 +77,21 @@ export interface RakazoDesktop {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
   };
+  /**
+   * The operating system's own speech recognition, so dictation needs no provider key.
+   * Absent on platforms without one and on older desktop releases.
+   */
+  speech?: {
+    /** Listens in `language` until stopped. False when refused; no events follow then. */
+    start: (language: string, session: number) => Promise<boolean>;
+    /** Ends the utterance: its final text and `end` still arrive. */
+    stop: (session: number) => Promise<void>;
+    abort: (session: number) => Promise<void>;
+    onEvent: (listener: (event: RakazoDesktopSpeechEvent) => void) => () => void;
+  };
   platform: string;
+  /** Absent on older frameless releases, which still need in-app controls. */
+  nativeWindowFrame?: boolean;
   window: {
     close: () => Promise<void>;
     minimize: () => Promise<void>;
@@ -99,6 +123,8 @@ export type DesktopInstanceMode = "new" | "existing";
 export interface DesktopSetup {
   mode: DesktopInstanceMode;
   serverUrl: string;
+  /** Sent with every request to an existing server, such as an access proxy's credentials. */
+  headers?: Record<string, string>;
 }
 
 export interface DesktopSetupState {
@@ -163,7 +189,7 @@ export interface RakazoSetup {
   /** Used only to reserve space for native window controls in the local setup UI. */
   platform: string;
   state: () => Promise<DesktopSetupState>;
-  test: (url: string) => Promise<DesktopReachability>;
+  test: (url: string, headers?: Record<string, string>) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;
   quit: () => Promise<void>;
   /** Opens one of the Docker install pages in the system browser. */

@@ -30,7 +30,7 @@ describe("host-aware sandbox", () => {
 
   it("never falls back to backend execution when the native connection is missing", async () => {
     const provision = vi.spyOn(DesktopSandboxProvider.prototype, "provision");
-    const sandbox = createRunSandbox("docker", {
+    const sandbox = await createRunSandbox("docker", {
       prisma: {
         deploymentSettings: { findUnique: vi.fn(async () => ({ computerHost: "this-mac" })) },
       } as unknown as PrismaClient,
@@ -70,7 +70,7 @@ describe("host-aware sandbox", () => {
     const pageBrowser = vi
       .spyOn(DockerSandboxProvider.prototype, "pageBrowser")
       .mockResolvedValue(result);
-    const sandbox = createRunSandbox("docker", {
+    const sandbox = await createRunSandbox("docker", {
       prisma: { deploymentSettings: { findUnique: vi.fn() } } as unknown as PrismaClient,
     });
     const browser = new ComputerBrowserProvider({ sandbox });
@@ -205,10 +205,10 @@ describe("host-aware sandbox", () => {
     await desktop.destroy(computer, ctx);
   });
 
-  it("never runs bot commands on a production backend host", () => {
+  it("never runs bot commands on a production backend host", async () => {
     vi.stubEnv("NODE_ENV", "production");
     try {
-      expect(() => createRunSandbox("desktop", {})).toThrow(
+      await expect(createRunSandbox("desktop", {})).rejects.toThrow(
         "SANDBOX_PROVIDER=desktop runs bot commands directly on this host",
       );
       // The desktop app's backend reaches this computer only through the authenticated bridge.

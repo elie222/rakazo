@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { ExecutorDeps } from "./executor-deps.js";
 import {
+  addMcpServerFromTool,
   buildMcpCredentialBlob,
   deriveMcpSlug,
   needsOAuthProbe,
@@ -113,6 +115,26 @@ describe("parseMcpServerToolArgs", () => {
       env: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`K${i}`, "v"])),
     });
     expect(tooMany).toBeUndefined();
+  });
+});
+
+describe("addMcpServerFromTool", () => {
+  it("refuses a credential in the endpoint query, which would be stored in plaintext", async () => {
+    const run = {
+      id: "run-1",
+      spaceId: "space-1",
+      userId: "user-1",
+      threadId: "t-1",
+      botId: "b-1",
+    };
+    const result = await addMcpServerFromTool(
+      { mcpAllowPrivateEndpoint: true } as ExecutorDeps,
+      run,
+      "b-1",
+      { name: "Brex", transport: "streamable_http", endpoint: "http://localhost/mcp?token=abc" },
+      "exec-1",
+    );
+    expect(result).toEqual({ error: "Put token in a header instead of the server URL" });
   });
 });
 

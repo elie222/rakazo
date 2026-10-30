@@ -7,6 +7,24 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("defaults the attachment count to four and accepts configured bounds", () => {
+    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
+    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);
+    for (const count of [1, 8, 100]) {
+      expect(
+        loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: ` ${count} ` }).maxAttachmentsPerMessage,
+      ).toBe(count);
+    }
+  });
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "1e2", "0x10", "101", "9007199254740991"])(
+    "rejects invalid attachment count %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: value })).toThrow(
+        "MAX_ATTACHMENTS_PER_MESSAGE",
+      );
+    },
+  );
+
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
     for (const value of ["false", "1", ""]) {

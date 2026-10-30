@@ -64,6 +64,7 @@ export * from "./model-providers.js";
 export * from "./model-role-settings.js";
 export * from "./passkey-offer.js";
 export * from "./password-policy.js";
+export * from "./peer-exchanges.js";
 export * from "./peer-history.js";
 export * from "./peer-messages.js";
 export * from "./plugin-catalog.js";

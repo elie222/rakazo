@@ -74,6 +74,7 @@ import {
   spaceInboxItems,
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import type { OrganizeTarget } from "../lib/organize-target";
@@ -495,7 +496,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const nativeHeader = iosAtLeast(26) && !embedded;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
-  const jumpSignals = useMemo(() => listData.map(inboxSignal), [listData]);
+  const jumpSignals = useSyncExternalStore(
+    mobileLogoAvatarActivity.subscribe,
+    useMemo(() => {
+      let previous: ReturnType<typeof inboxSignal>[] = [];
+      return () => {
+        const next = listData.map(inboxSignal);
+        if (
+          next.length !== previous.length ||
+          next.some(
+            (signal, index) =>
+              signal.unread !== previous[index]?.unread ||
+              signal.attention !== previous[index]?.attention,
+          )
+        )
+          previous = next;
+        return previous;
+      };
+    }, [listData]),
+  );
   const jumpKeys = useMemo(() => listData.map(inboxItemKey), [listData]);
   const unreadJump = useUnreadJumpPills({
     signals: jumpSignals,

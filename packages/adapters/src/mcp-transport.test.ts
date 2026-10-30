@@ -86,6 +86,9 @@ describe("MCP transport seam", () => {
         installedBin: { binPath: process.execPath },
       }),
     ).rejects.toThrow("not installed by Rakazo");
+    await expect(
+      session.connectStdio({ command: "npx", args: ["-c", "echo hi"], allowedCommands: ["npx"] }),
+    ).rejects.toThrow("npx only launches");
     // The launcher itself must still be allowlisted.
     await expect(
       session.connectStdio({
@@ -460,7 +463,15 @@ describe("MCP transport seam", () => {
       access_token: "fresh-access",
       refresh_token: "rotated-refresh",
     });
-    expect(persisted).toHaveLength(1);
+    // The SDK records the issuer on the stored client first, then the rotation lands once.
+    expect(persisted).toMatchObject([
+      { oauth: { clientInformation: { issuer: "https://auth.example.test" } } },
+      {
+        oauth: {
+          tokens: { refresh_token: "rotated-refresh", issuer: "https://auth.example.test" },
+        },
+      },
+    ]);
     await session.close();
   });
 

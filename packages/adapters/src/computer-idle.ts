@@ -14,11 +14,15 @@ import {
 } from "@rakazo/adapter-kit";
 import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { recordComputerRunEnd } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  recordComputerRunEnd,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
-import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
+import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
@@ -437,12 +441,19 @@ export async function sleepComputerIfIdle(
       computer.homeKey,
       ref,
       ctx,
-      () => deletedTeamBotFolders(deps.prisma, computer),
+      { prisma: deps.prisma, computer },
     );
-    const saved = await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
-      data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: checkpointedAt },
-    });
+    const saved =
+      revision === undefined
+        ? { count: 1 }
+        : await deps.prisma.computer.updateMany({
+            where: suspensionClaim,
+            data: {
+              homeRevision: revision,
+              homeRevisionAt: checkpointedAt,
+              updatedAt: checkpointedAt,
+            },
+          });
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
         where: suspensionClaim,
@@ -487,7 +498,11 @@ export async function sleepComputerIfIdle(
         data: { state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
-      if (deferSleep(error, computer)) return;
+      if (deferSleep(error, computer)) {
+        if (error instanceof WorkspaceTooLargeError)
+          await announceUnsavedHome(deps, computer, error);
+        return;
+      }
       throw error;
     }
   }
@@ -538,7 +553,10 @@ export async function sleepComputerIfIdle(
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
-    if (deferSleep(error, computer)) return;
+    if (deferSleep(error, computer)) {
+      if (error instanceof WorkspaceTooLargeError) await announceUnsavedHome(deps, computer, error);
+      return;
+    }
     throw error;
   }
   const suspended = await deps.prisma.computer.updateMany({
@@ -666,6 +684,61 @@ async function announceSuspended(
       type: "computer.status",
       payload: { status: "suspended" },
     });
+  }
+}
+
+/** System notes reach users and the bot through the existing thread history. */
+async function announceUnsavedHome(
+  deps: { prisma: PrismaClient; events: ThreadEvents },
+  computer: { id: string; spaceId: string; homeRevisionAt: Date | null; runningSince: Date | null },
+  error: WorkspaceTooLargeError,
+): Promise<void> {
+  // A successful save or a new runtime starts a new episode. The unique message nonce also
+  // deduplicates retries across workers; the message and its event commit together.
+  const clientNonce = `computer-unsaved:${computer.id}:${computer.runningSince?.toISOString() ?? ""}:${computer.homeRevisionAt?.toISOString() ?? ""}:${error.limit}`;
+  const blocks = [
+    {
+      kind: "meta" as const,
+      text: `${error.message}. It will keep running unsaved. Remove large files or files you no longer need so it can be saved.`,
+    },
+  ];
+  const bots = await deps.prisma.bot.findMany({
+    where: { computerId: computer.id },
+    select: { id: true, thread: { select: { id: true } } },
+  });
+  for (const bot of bots) {
+    if (!bot.thread) continue;
+    const threadId = bot.thread.id;
+    try {
+      const seq = await deps.prisma.$transaction(async (tx) => {
+        const existing = await tx.message.findUnique({
+          where: { threadId_clientNonce: { threadId, clientNonce } },
+          select: { id: true },
+        });
+        if (existing) return undefined;
+        const message = await createThreadMessageInTransaction(tx, {
+          threadId,
+          botId: bot.id,
+          role: "system",
+          blocks,
+          clientNonce,
+        });
+        const event = await appendEventInTransaction(tx, {
+          spaceId: computer.spaceId,
+          threadId,
+          botId: bot.id,
+          type: "thread.message.created",
+          payload: { messageId: message.id, role: "system", blocks },
+        });
+        return event.seq;
+      });
+      if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
+    } catch (cause) {
+      // A competing worker already wrote the same nonce. Other failures are retried next tick.
+      if (!(cause && typeof cause === "object" && "code" in cause && cause.code === "P2002")) {
+        getLogger().error("computer.unsaved_notice_failed", cause);
+      }
+    }
   }
 }
 

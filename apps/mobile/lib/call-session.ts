@@ -13,8 +13,8 @@ import {
   isRetryableError,
   latestSpokenCallReply,
   newClientId,
+  recognitionLocaleTag,
   retryDelayMs,
-  speechLocaleTag,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
@@ -38,7 +38,7 @@ import {
 } from "./call-sounds";
 import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
-import { getActiveUiLocale, t } from "./i18n";
+import { deviceLanguage, getActiveUiLocale, t } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import type { SpeechOwner } from "./voice";
@@ -666,7 +666,8 @@ function productionDeps(): CallDeps {
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
-  await dictation.listen({ ...handlers, signal, lang: speechLocaleTag(getActiveUiLocale()) });
+  const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
+  await dictation.listen({ ...handlers, signal, lang });
   return true;
 }
 

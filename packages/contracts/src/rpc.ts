@@ -16,7 +16,7 @@ import { AnalyticsScreenInput } from "./analytics.js";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
-  ATTACHMENT_MAX_COUNT,
+  ATTACHMENT_COUNT_CEILING,
 } from "./attachments.js";
 import {
   BoardEventSchema,
@@ -194,7 +194,7 @@ const threadSendInput = threadTarget
   .safeExtend({
     imageHandling: z.enum(["confirm", "file"]).optional(),
     text: z.string().optional(),
-    artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
+    artifactIds: z.array(Id).max(ATTACHMENT_COUNT_CEILING).optional(),
     /** Bare bot ids (legacy) or typed mention chips from the composer. */
     mentions: z
       .array(z.union([Id, structuredMentionTarget]))
@@ -1075,6 +1075,9 @@ export const appContract = {
       list: oc.output(MessagingInstallationsStatusSchema),
       /** Without a bot, the workspace answers as the first bot in the user's default space. */
       start: oc.input(z.object({ botId: Id.optional() })).output(z.object({ url: z.string() })),
+      complete: oc
+        .input(z.object({ state: z.string().max(64), code: z.string().max(4096) }))
+        .output(z.object({ ok: z.literal(true) })),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },
     status: oc.output(MessagingStatusSchema),

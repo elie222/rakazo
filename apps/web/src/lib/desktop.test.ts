@@ -43,7 +43,11 @@ describe("window chrome", () => {
     expect(windowChromeKind(desktop("darwin"))).toBe("darwin");
   });
 
-  it("uses real window-control buttons on Windows and Linux", () => {
+  it("leaves the native Windows frame to Electron when advertised", () => {
+    expect(windowChromeKind({ ...desktop("win32"), nativeWindowFrame: true })).toBe("spacer");
+  });
+
+  it("keeps controls for older frameless Windows clients and Linux", () => {
     expect(windowChromeKind(desktop("win32"))).toBe("controls");
     expect(windowChromeKind(desktop("linux"))).toBe("controls");
   });

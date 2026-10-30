@@ -12,6 +12,8 @@ import type {
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
+type DesktopSetupResult = Awaited<ReturnType<RakazoSetup["save"]>>;
+
 const DEFAULT_LOCAL_URL = "http://127.0.0.1:6130";
 const CLOUD_URL = "https://cloud.rakazo.example";
 
@@ -81,6 +83,8 @@ interface Harness {
   pushStackState: (state: DesktopLocalStackState) => void;
   /** Payloads received by `save`. */
   saves: DesktopSetup[];
+  /** Resolves the oldest pending `save` call, in call order. */
+  resolveSave: (result: DesktopSetupResult) => void;
 }
 
 function mount(saved: DesktopSetup | null): Harness {
@@ -91,6 +95,7 @@ function mount(saved: DesktopSetup | null): Harness {
   const stackStateCalls: Array<Deferred<DesktopLocalStackState>> = [];
   const pushListeners: Array<(state: DesktopLocalStackState) => void> = [];
   const saves: DesktopSetup[] = [];
+  const saveCalls: Array<Deferred<DesktopSetupResult>> = [];
 
   const bridge: RakazoSetup = {
     platform: "linux",
@@ -106,7 +111,9 @@ function mount(saved: DesktopSetup | null): Harness {
     },
     save: (setup) => {
       saves.push(setup);
-      return Promise.resolve({ ok: true });
+      const call = deferred<DesktopSetupResult>();
+      saveCalls.push(call);
+      return call.promise;
     },
     quit: () => Promise.resolve(),
     openLink: () => Promise.resolve(),
@@ -145,6 +152,7 @@ function mount(saved: DesktopSetup | null): Harness {
       for (const listener of pushListeners) listener(state);
     },
     saves,
+    resolveSave: (result) => saveCalls.shift()?.resolve(result),
   };
 }
 
@@ -274,6 +282,48 @@ describe("setup", () => {
     expect(element("stack-phase").textContent).toBe("Downloading Rakazo…");
   });
 
+  it("locks the address while it is being saved and unlocks it when the save fails", async () => {
+    const ui = await boot(null);
+    selectMode("existing");
+    await flush();
+    const field = element<HTMLInputElement>("server-url");
+    field.value = "https://one.example";
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers: {} }]);
+    expect(field.disabled).toBe(true);
+    // Headers saved with this address must not change while the save is pending.
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(true);
+
+    ui.resolveSave({ ok: false, error: "Server did not answer." });
+    await flush();
+    expect(field.disabled).toBe(false);
+    expect(element<HTMLTextAreaElement>("server-headers").disabled).toBe(false);
+    expect(element("status").textContent).toBe("Server did not answer.");
+  });
+
+  it("gives the address its focus back when a save started from it fails", async () => {
+    const ui = await boot(null);
+    selectMode("existing");
+    await flush();
+    const field = element<HTMLInputElement>("server-url");
+    field.value = "https://one.example";
+    field.focus();
+    submitForm();
+    await flush();
+    // Browsers drop focus from a control that becomes disabled; jsdom keeps it, so drop it here.
+    expect(field.disabled).toBe(true);
+    field.disabled = false;
+    field.blur();
+    field.disabled = true;
+    expect(document.activeElement).toBe(document.body);
+
+    ui.resolveSave({ ok: false, error: "Server did not answer." });
+    await flush();
+    expect(document.activeElement).toBe(field);
+  });
+
   it("normalizes the address and reports success for the current check", async () => {
     const ui = await boot(null);
     selectMode("existing");
@@ -303,6 +353,31 @@ describe("setup", () => {
     expect(element<HTMLButtonElement>("check").disabled).toBe(false);
   });
 
+  it("shows saved headers and saves them with the existing server", async () => {
+    const headers = { "CF-Access-Client-Id": "id.access", "CF-Access-Client-Secret": "secret" };
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example", headers });
+    expect(element<HTMLDetailsElement>("server-headers-section").open).toBe(true);
+    expect(element<HTMLTextAreaElement>("server-headers").value).toBe(
+      "CF-Access-Client-Id: id.access\nCF-Access-Client-Secret: secret",
+    );
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([{ mode: "existing", serverUrl: "https://one.example", headers }]);
+  });
+
+  it("refuses a header line without a name before saving", async () => {
+    const ui = await boot({ mode: "existing", serverUrl: "https://one.example" });
+    element<HTMLTextAreaElement>("server-headers").value = ": value";
+
+    submitForm();
+    await flush();
+
+    expect(ui.saves).toEqual([]);
+    expect(element("status").textContent).toBe("Invalid custom headers");
+  });
+
   it("renders a current start and follows it until it saves the ready stack", async () => {
     const ui = await boot(null);
     selectMode("new");
@@ -316,6 +391,8 @@ describe("setup", () => {
     ui.resolveStackState(stackState("ready"));
     await flush();
     ui.resolveAppState(null);
+    await flush();
+    ui.resolveSave({ ok: true });
     await flush();
 
     expect(element("stack-phase").textContent).toBe("Rakazo is ready.");

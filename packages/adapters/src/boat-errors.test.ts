@@ -1,11 +1,47 @@
+import type * as TimersPromises from "node:timers/promises";
 import { FetchError, ResponseError } from "@boatdev/sdk";
 import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatApiError, BoatRequestGate, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
-afterEach(() => vi.unstubAllGlobals());
+// Waits run on the global timer, so a test on fake timers passes Boat's minute at once. An abort
+// rejects the way Node's does, at any point in the wait.
+vi.mock("node:timers/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof TimersPromises>()),
+  setTimeout: (ms?: number, value?: unknown, options?: { signal?: AbortSignal }) =>
+    new Promise((resolve, reject) => {
+      const signal = options?.signal;
+      const abort = () => {
+        clearTimeout(timer);
+        const error = new Error("The operation was aborted", { cause: signal?.reason });
+        reject(Object.assign(error, { name: "AbortError", code: "ABORT_ERR" }));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve(value);
+      }, ms);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    }),
+}));
+
+const ipLimit = (retryAfter: number) =>
+  new ResponseError(Response.json({ code: "IP_RATE_LIMIT_EXCEEDED", retryAfter }, { status: 429 }));
+
+/** Runs the fake clock until nothing waits, then returns what `pending` resolved or threw. */
+async function settle(pending: Promise<unknown>): Promise<unknown> {
+  const outcome = pending.catch((error: unknown) => error);
+  await vi.runAllTimersAsync();
+  return outcome;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("Boat API errors", () => {
   it("reports the upstream failure through the real SDK-backed file operation", async () => {
@@ -132,6 +168,126 @@ describe("Boat API errors", () => {
     expect((error as SandboxRateLimitError).retryAfterMs).toBe(retryAfterMs);
   });
 
+  it.each([
+    ["the per-IP limit", { code: "IP_RATE_LIMIT_EXCEEDED", retryAfter: 12 }, [0, 12_500]],
+    ["a start limit over the minute", { code: "rate_limited", window: "minute" }, [0, 60_500]],
+    ["a per-IP limit past the minute", { code: "IP_RATE_LIMIT_EXCEEDED", retryAfter: 90 }, [0]],
+    ["a start limit over an hour", { code: "rate_limited", window: "hour", retryAfter: 30 }, [0]],
+    ["the account's quota", { code: "limit_reached", retryAfter: 30 }, [0]],
+  ])(
+    "sends a request refused by %s again only when Boat's wait ends within the minute",
+    async (_name, body, sent) => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      const start = Date.now();
+      const sentAt: number[] = [];
+      const call = wrapBoatCall(
+        async (_request: unknown, _init: RequestInit) => {
+          sentAt.push(Date.now() - start);
+          throw new ResponseError(Response.json(body, { status: 429 }));
+        },
+        "fake-key",
+        true,
+      );
+      const refused = await settle(call({}, { signal: new AbortController().signal }));
+      expect(refused).toBeInstanceOf(SandboxRateLimitError);
+      expect(sentAt).toEqual(sent);
+    },
+  );
+
+  it("does not resend a call whose caller gave no signal to bound the wait", async () => {
+    const call = vi.fn(async () => {
+      throw ipLimit(12);
+    });
+    await expect(wrapBoatCall(call, "fake-key", true)()).rejects.toBeInstanceOf(
+      SandboxRateLimitError,
+    );
+    expect(call).toHaveBeenCalledOnce();
+  });
+
+  it("holds a second caller at the gate while the first waits to resend, then sends both", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValueOnce(0.25).mockReturnValueOnce(0.75);
+    const start = Date.now();
+    const sent: string[] = [];
+    const call = wrapBoatCall(
+      async (request: string, _init: RequestInit) => {
+        sent.push(`${request} at ${Date.now() - start}`);
+        if (sent.length === 1) throw ipLimit(12);
+        return request;
+      },
+      "fake-key",
+      true,
+      new BoatRequestGate(),
+    );
+    const { signal } = new AbortController();
+    const first = call("first", { signal });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = call("second", { signal });
+    await vi.runAllTimersAsync();
+    await expect(Promise.all([first, second])).resolves.toEqual(["first", "second"]);
+    expect(sent).toEqual(["first at 0", "first at 12250", "second at 12750"]);
+  });
+
+  it.each([
+    ["waits out Boat's wait", 0, 10_000, 1],
+    ["waits at a gate another refusal closed for longer", 50_000, 30_000, 1],
+    ["waits for the resent request", 0, 20_000, 2],
+  ])(
+    "keeps Boat's refusal when the caller cancels while it %s",
+    async (_name, closeMs, abortAtMs, sends) => {
+      vi.useFakeTimers();
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      const refusal = await boatResponseError(ipLimit(12).response, "fake-key");
+      const gate = new BoatRequestGate();
+      const controller = new AbortController();
+      const call = vi.fn(async (_request: unknown, init: RequestInit) => {
+        if (call.mock.calls.length === 1) throw refusal;
+        // The resent request stays in flight until the caller's signal ends it, as fetch does.
+        return new Promise<never>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            const aborted = new DOMException("This operation was aborted", "AbortError");
+            reject(new FetchError(aborted, "The request failed"));
+          });
+        });
+      });
+      const wrapped = wrapBoatCall(call, "fake-key", true, gate);
+      const outcome = wrapped({}, { signal: controller.signal }).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      gate.close(closeMs);
+      await vi.advanceTimersByTimeAsync(abortAtMs);
+      controller.abort();
+      const error = await outcome;
+      expect(error).toBeInstanceOf(SandboxRateLimitError);
+      expect((error as SandboxRateLimitError).cause).toBe(refusal);
+      expect((error as SandboxRateLimitError).retryAfterMs).toBe(12_000);
+      expect(call).toHaveBeenCalledTimes(sends);
+    },
+  );
+
+  it.each([
+    [
+      "Boat refuses it again",
+      () => ipLimit(20),
+      (error: unknown) => (error as SandboxRateLimitError).retryAfterMs === 20_000,
+    ],
+    [
+      "the sandbox is gone",
+      () => new ResponseError(Response.json({ code: "not_found" }, { status: 404 })),
+      (error: unknown) => error instanceof BoatApiError && error.response.status === 404,
+    ],
+  ])("reports the resent request's own failure when %s", async (_name, second, matches) => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
+      throw call.mock.calls.length === 1 ? ipLimit(12) : second();
+    });
+    const wrapped = wrapBoatCall(call, "fake-key", true, new BoatRequestGate());
+    const error = await settle(wrapped({}, { signal: new AbortController().signal }));
+    expect(matches(error)).toBe(true);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
   it("stops waiting to retry an unsent request once the caller cancels", async () => {
     const controller = new AbortController();
     const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
@@ -163,7 +319,7 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledOnce();
   });
 
-  it("reports a Boat server error as unresponsive but keeps account errors as they are", async () => {
+  it("reports a Boat server error or unpaid account as unresponsive", async () => {
     const failing = (status: number, code: string) =>
       wrapBoatCall(async () => {
         throw new ResponseError(Response.json({ code, message: "upstream" }, { status }));
@@ -175,8 +331,13 @@ describe("Boat API errors", () => {
     expect((outage as Error).cause).toMatchObject({ response: { status: 500 } });
 
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
-    expect(billing).toBeInstanceOf(BoatApiError);
-    expect(billing).toMatchObject({ code: "billing_required" });
+    expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
+
+    const forbidden = await failing(403, "api_key_action_forbidden")().catch(
+      (failure: unknown) => failure,
+    );
+    expect(forbidden).toBeInstanceOf(BoatApiError);
   });
 
   it("retries once when the connection drops during the TLS handshake", async () => {
@@ -204,14 +365,6 @@ describe("Boat API errors", () => {
       new DOMException("This operation was aborted", "AbortError"),
       "The request failed and the interceptors did not return an alternative response",
     );
-    const call = wrapBoatCall(async () => {
-      throw cancelled;
-    }, "fake-key");
-    await expect(call()).rejects.toBe(cancelled);
-  });
-
-  it("does not replace cancellation and network errors", async () => {
-    const cancelled = new DOMException("Cancelled", "AbortError");
     const call = wrapBoatCall(async () => {
       throw cancelled;
     }, "fake-key");

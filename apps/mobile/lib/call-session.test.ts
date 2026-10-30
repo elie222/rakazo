@@ -16,7 +16,17 @@ import { activateUiLocale, getActiveUiLocale } from "./i18n";
 import { reportMobileError } from "./monitoring";
 import type { UiLocale } from "./ui-locale";
 
+const device = vi.hoisted(() => ({ languageTag: "en-US", os: "ios" }));
+
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
+vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: device.languageTag }] }));
+vi.mock("react-native", () => ({
+  Platform: {
+    get OS() {
+      return device.os;
+    },
+  },
+}));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({
   createSpeechOwner: () => Symbol("SpeechOwner"),
@@ -862,6 +872,22 @@ describe("mobile call session", () => {
 });
 
 describe("mobile call speech locales", () => {
+  /** Part of what iOS recognizes, which starts only for a tag it lists exactly. */
+  const IOS_LOCALES = [
+    "de-AT",
+    "de-DE",
+    "en-GB",
+    "en-US",
+    "es-419",
+    "es-CL",
+    "es-ES",
+    "es-MX",
+    "ja-JP",
+    "nl-NL",
+    "ru-RU",
+    "zh-CN",
+    "zh-TW",
+  ];
   let previousLocale: UiLocale;
 
   beforeEach(() => {
@@ -874,19 +900,32 @@ describe("mobile call speech locales", () => {
     stopDictation();
     setSpeechRecognizer(null);
     activateUiLocale(previousLocale);
+    device.languageTag = "en-US";
+    device.os = "ios";
     vi.useRealTimers();
   });
 
   it.each([
-    ["en", "en-US"],
-    ["de", "de-DE"],
-    ["nl", "nl-NL"],
-    ["ja", "ja-JP"],
-    ["ru", "ru-RU"],
-    ["zh-CN", "zh-CN"],
+    ["en", "ios", "en-US", "en-US"],
+    ["de", "ios", "en-US", "de-DE"],
+    ["nl", "ios", "en-US", "nl-NL"],
+    ["ja", "ios", "en-US", "ja-JP"],
+    ["ru", "ios", "en-US", "ru-RU"],
+    ["zh-CN", "ios", "en-US", "zh-CN"],
+    // The app ships no Spanish, so a Spanish phone runs it in English.
+    ["en", "ios", "es-CL", "es-CL"],
+    ["en", "ios", "es-ES", "es-ES"],
+    ["en", "ios", "es-419", "es-MX"],
+    ["en", "android", "it-IT", "it-IT"],
+    ["en", "ios", "es-AR", "es-MX"],
+    ["en", "android", "es-AR", "es-AR"],
+    ["de", "ios", "de-AT", "de-AT"],
+    ["en", "ios", "ru-RU", "ru-RU"],
   ] as const)(
-    "recognizes a %s call with %s and sends its live transcript after silence",
-    async (locale, lang) => {
+    "recognizes a %s call on an %s %s phone with %s and sends its live transcript after silence",
+    async (locale, os, phone, lang) => {
+      device.os = os;
+      device.languageTag = phone;
       const listeners = new Map<string, (payload: never) => void>();
       const start = vi.fn();
       const recognizer: SpeechRecognizer = {
@@ -895,6 +934,7 @@ describe("mobile call speech locales", () => {
         abort: vi.fn(),
         isRecognitionAvailable: () => true,
         requestPermissionsAsync: async () => ({ granted: true }),
+        getSupportedLocales: async () => ({ locales: IOS_LOCALES }),
         addListener: (event, listener) => {
           listeners.set(event, listener as (payload: never) => void);
           return { remove: () => void listeners.delete(event) };
@@ -952,6 +992,7 @@ describe("mobile call recognition recovery", () => {
       abort: vi.fn(),
       isRecognitionAvailable: () => true,
       requestPermissionsAsync: async () => ({ granted: true }),
+      getSupportedLocales: async () => ({ locales: [] }),
       addListener: (event, listener) => {
         listeners.set(event, listener as (payload: never) => void);
         return { remove: () => void listeners.delete(event) };

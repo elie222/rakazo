@@ -51,5 +51,6 @@ export function onDesktopOAuthCallback(
 export function windowChromeKind(desktop?: RakazoDesktop): "spacer" | "darwin" | "controls" {
   if (!desktop) return "spacer";
   if (desktop.platform === "darwin") return "darwin";
+  if (desktop.nativeWindowFrame) return "spacer";
   return "controls";
 }

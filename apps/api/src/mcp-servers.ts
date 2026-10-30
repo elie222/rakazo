@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { McpOAuthBroker, McpOAuthSummary, McpStdioPolicy } from "@rakazo/adapters";
 import {
+  assertNoMcpEndpointCredential,
   assertSafeRemoteUrl,
   buildMcpCredentialBlob,
   mcpServerHealthDto,
@@ -109,6 +110,7 @@ export async function assertMcpRemoteEndpoint(
     await assertSafeRemoteUrl(endpoint, deps.remoteConnectors?.resolveHostname, {
       allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
     });
+    assertNoMcpEndpointCredential(endpoint);
   } catch (error) {
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "MCP endpoint is invalid",

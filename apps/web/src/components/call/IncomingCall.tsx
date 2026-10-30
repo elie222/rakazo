@@ -2,10 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { startCall, useCallSession } from "../../lib/call-session";
-import { rpc } from "../../lib/rpc";
+import { rpc, selectedSpaceId } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
+import { CallWindow } from "./CallWindow";
 
 /** Two short rising tones every two seconds: an incoming ring, unlike the outgoing ringback. */
 function startRingtone(): () => void {
@@ -68,6 +69,15 @@ export function IncomingCall({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const notified = useRef(new Set<string>());
+  /** Leaving the shell, switching space or a lazy route hiding the shell all clear this, so a late
+   * answer must not start the call. A layout effect, because Suspense hides without passive cleanup. */
+  const mounted = useRef(true);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const currentNow = Math.max(now, Date.now());
   const bot = onCall
@@ -134,8 +144,15 @@ export function IncomingCall({
   const answer = async () => {
     setBusy(true);
     setError(null);
+    const target = { botId: bot.id, callId: call.callId };
+    const context = { spaceId: selectedSpaceId() };
     try {
-      const answered = await rpc.threads.answerCall({ botId: bot.id, callId: call.callId });
+      const answered = await rpc.threads.answerCall(target, { context });
+      if (!mounted.current) {
+        // Nobody is left to talk to: hang up the call the server now holds as answered.
+        void rpc.threads.endCall(target, { context }).catch(() => undefined);
+        return;
+      }
       setHandled((current) => new Set(current).add(call.callId));
       startCall({
         botId: bot.id,
@@ -157,7 +174,7 @@ export function IncomingCall({
   };
 
   return (
-    <div
+    <CallWindow
       data-testid="incoming-call"
       role="alertdialog"
       aria-label={t`${bot.name} is calling you`}
@@ -213,6 +230,6 @@ export function IncomingCall({
           {t({ message: "Answer", context: "incoming call" })}
         </Button>
       </div>
-    </div>
+    </CallWindow>
   );
 }

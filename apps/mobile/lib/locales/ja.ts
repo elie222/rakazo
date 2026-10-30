@@ -288,6 +288,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Delete…": "削除…",
   Denied: "拒否",
   Done: "完了",
+  "Needs you": "対応が必要",
+  Skipped: "スキップ済み",
   Failed: "失敗",
   "Failed to refresh": "更新できませんでした",
   "Failed to send message": "メッセージを送信できませんでした",
@@ -1247,3 +1249,5 @@ export const JA_MESSAGES: Record<string, string> = {
   "{count} free months earned": "{count}か月分の無料期間を獲得",
   "Submit a plugin": "プラグインを申請",
 };
+
+export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

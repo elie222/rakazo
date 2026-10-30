@@ -170,6 +170,19 @@ describe("portable plugin parser", () => {
       expect.objectContaining({ kind: "skill_invalid", name: `commands/${"x".repeat(81)}.md` }),
     );
   });
+  it("leaves out skills that repeat a built-in one, without marking the plugin partial", () => {
+    const preview = parse([
+      ...files(),
+      {
+        path: "skills/interrogate/SKILL.md",
+        content: "---\nname: interrogate\ndescription: Review a diff\n---\n\nReview it.\n",
+      },
+      { path: "commands/INTERROGATE.md", content: "Review the diff" },
+      { path: "commands/ interrogate.md", content: "Review the diff" },
+    ]);
+    expect(preview.skills.map((s) => s.name)).toEqual(["example-skill"]);
+    expect(preview.skipped).toEqual([]);
+  });
   it("tells from a file list whether every part installs", () => {
     const remote = JSON.stringify({
       mcpServers: { tools: { type: "http", url: "https://tools.example.test/mcp" } },
@@ -455,10 +468,13 @@ describe("GitHub acquisition", () => {
   });
 });
 
-describe("example plugin", () => {
-  // The plugin the docs and submit page point to must keep passing the same gate as approval.
-  it("installs completely", () => {
-    const root = fileURLToPath(new URL("../../../examples/plugins/hello-world", import.meta.url));
+describe("example plugins", () => {
+  // Both documented examples must parse completely without contacting their MCP endpoints.
+  it.each([
+    { name: "hello-world", skills: ["say-hello"], servers: [] },
+    { name: "mcp-server", skills: ["search-docs"], servers: ["docs"] },
+  ])("loads $name completely", ({ name, skills, servers }) => {
+    const root = fileURLToPath(new URL(`../../../examples/plugins/${name}`, import.meta.url));
     const files = readdirSync(root, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => {
@@ -466,8 +482,9 @@ describe("example plugin", () => {
         return { path: relative(root, path), content: readFileSync(path, "utf8") };
       });
     const plugin = parsePluginDirectory({ files, resolvedSha: SHA });
-    expect(plugin).toMatchObject({ format: "agent-plugins", name: "hello-world", skipped: [] });
-    expect(plugin.skills.map((s) => s.name)).toEqual(["say-hello"]);
+    expect(plugin).toMatchObject({ format: "agent-plugins", name, skipped: [] });
+    expect(plugin.skills.map((s) => s.name)).toEqual(skills);
+    expect(plugin.mcpServers.map((s) => s.name)).toEqual(servers);
     const builtins = BUILTIN_AGENT_SKILLS.map((s) => s.name.toLowerCase());
     expect(plugin.skills.some((s) => builtins.includes(s.name))).toBe(false);
   });

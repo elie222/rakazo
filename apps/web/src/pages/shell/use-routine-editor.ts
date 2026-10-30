@@ -209,7 +209,17 @@ export function useRoutineEditor({
             }
             if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
               setEditingRoutine(saved);
-              setRoutineDraft(draftFromRoutine(saved));
+              // Fields edited while the save was in flight keep the newer value.
+              const fresh = draftFromRoutine(saved);
+              setRoutineDraft(
+                (current) =>
+                  Object.fromEntries(
+                    Object.entries(fresh).map(([key, value]) => {
+                      const field = key as keyof RoutineDraftState;
+                      return [key, current[field] === routineDraft[field] ? value : current[field]];
+                    }),
+                  ) as RoutineDraftState,
+              );
             }
           } catch (error) {
             if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {

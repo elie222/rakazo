@@ -18,6 +18,7 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
+import { fetchServer } from "./server-headers";
 import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
@@ -426,21 +427,25 @@ async function renderUtterance(
   const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
   try {
     const res = await withAbort(
-      fetch(`${requestContext.apiBase}/api/voice/speak`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "rakazo://",
-          ...requestContext.headers,
+      fetchServer(
+        `${requestContext.apiBase}/api/voice/speak`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "rakazo://",
+            ...requestContext.headers,
+          },
+          body: JSON.stringify({
+            text,
+            voiceId: opts.voiceId,
+            botId: opts.botId,
+            scope: opts.scope,
+          }),
+          signal: deadline.signal,
         },
-        body: JSON.stringify({
-          text,
-          voiceId: opts.voiceId,
-          botId: opts.botId,
-          scope: opts.scope,
-        }),
-        signal: deadline.signal,
-      }),
+        requestContext.apiBase,
+      ),
       deadline.signal,
       "Voice request aborted.",
     ).catch((error: unknown) => {

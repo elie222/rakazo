@@ -1,4 +1,14 @@
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -50,5 +60,22 @@ describe("native workspace directory cleanup", () => {
     );
     await expect(lstat(path.join(parent, "deleted-bot"))).rejects.toThrow();
     expect(await readFile(path.join(outside, "keep.txt"), "utf8")).toBe("keep");
+  });
+
+  it("removes a folder that holds Go's read-only module cache", async () => {
+    const parent = path.join(root, "bots");
+    const module = path.join(parent, "deleted-bot", "go", "pkg", "mod", "example.com", "m@v1.0.0");
+    await mkdir(module, { recursive: true });
+    await writeFile(path.join(module, "go.mod"), "module example.com/m\n");
+    await chmod(path.join(module, "go.mod"), 0o444);
+    await chmod(module, 0o555);
+    await chmod(path.dirname(module), 0o555);
+    await removeOwnedWorkspaceChildren(
+      parent,
+      ["deleted-bot"],
+      await lstat(parent, { bigint: true }),
+      signal,
+    );
+    await expect(lstat(path.join(parent, "deleted-bot"))).rejects.toThrow();
   });
 });

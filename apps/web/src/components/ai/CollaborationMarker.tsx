@@ -1,65 +1,42 @@
 import type { BotAvatarSet } from "@rakazo/contracts";
+import { splitPeerLabel } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
-import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { ChevronDown } from "lucide-react";
+import { BotAvatar, GroupAvatar } from "@rakazo/ui-web";
 
-/**
- * Lightweight peer event shown without exposing the exchanged message body. `replies` adds a
- * toggle for the peer run's folded replies.
- */
 export function CollaborationMarker({
-  ariaLabel,
   color,
   avatarSet,
   identity,
   label,
+  peerName,
   onClick,
-  replies,
 }: {
-  ariaLabel: string;
   color: string;
   avatarSet?: BotAvatarSet;
   identity: string;
   label: string;
+  peerName: string;
   onClick: () => void;
-  replies?: { expanded: boolean; label: string; onToggle: () => void };
 }) {
+  const parts = splitPeerLabel(label, peerName);
   return (
-    <div className="flex min-w-0 max-w-full justify-center">
+    <div className="flex min-w-0 max-w-full justify-center py-1">
       <button
         type="button"
         data-testid="peer-receipt-chip"
-        aria-label={ariaLabel}
+        aria-label={label}
         onClick={onClick}
-        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground/75"
+        className="inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground/75 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
       >
+        {parts.before ? <span className="whitespace-pre-wrap">{parts.before}</span> : null}
         <BotAvatar avatarSet={avatarSet} color={color} identity={identity} size={16} />
-        <span dir="auto" className="truncate">
-          {label}
-        </span>
+        {parts.name ? (
+          <span dir="auto" className="truncate font-medium">
+            {parts.name}
+          </span>
+        ) : null}
+        {parts.after ? <span className="whitespace-pre-wrap">{parts.after}</span> : null}
       </button>
-      {replies ? (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          data-testid="peer-replies-toggle"
-          aria-expanded={replies.expanded}
-          aria-label={replies.label}
-          onClick={replies.onToggle}
-          className="ml-1 shrink-0 rounded-full text-muted-foreground"
-        >
-          <ChevronDown
-            size={14}
-            strokeWidth={1.8}
-            className={
-              replies.expanded
-                ? "size-3.5 transition-transform"
-                : "size-3.5 -rotate-90 transition-transform"
-            }
-            aria-hidden="true"
-          />
-        </Button>
-      ) : null}
     </div>
   );
 }

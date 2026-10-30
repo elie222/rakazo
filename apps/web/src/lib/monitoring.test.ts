@@ -284,4 +284,29 @@ describe("browser monitoring", () => {
       user: { ip_address: null },
     });
   });
+
+  it("drops gateway answers during a deploy and failures from code that is not the app's", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    const { beforeSend } = sentry.init.mock.calls.at(-1)![0];
+    for (const originalException of [
+      Object.assign(new Error("Bad Gateway"), { status: 502 }),
+      { code: 4001, message: "User rejected the request." },
+      new TypeError("undefined is not an object (evaluating 'window.__firefox__.reader')"),
+      new TypeError("undefined is not an object (evaluating 'window.ethereum.selectedAddress')"),
+      new DOMException(
+        "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+        "NotFoundError",
+      ),
+    ])
+      expect(beforeSend({}, { originalException }), String(originalException)).toBeNull();
+    expect(
+      beforeSend({}, { originalException: Object.assign(new Error("Conflict"), { status: 409 }) }),
+    ).toEqual({ user: { ip_address: null } });
+    expect(beforeSend({ message: "plain" }, { originalException: "plain" })).toEqual({
+      message: "plain",
+      user: { ip_address: null },
+    });
+  });
 });

@@ -15,6 +15,8 @@ export class BoatApiError extends ResponseError {
     readonly code: string | undefined,
     /** How long Boat asked to wait before the next request, on a 429 that said. */
     readonly retryAfterMs?: number,
+    /** The span a start limit counts over: `minute`, `hour`, or `day`. */
+    readonly window?: string,
   ) {
     super(response, message);
   }
@@ -26,6 +28,8 @@ const BOAT_IP_RATE_LIMIT = "IP_RATE_LIMIT_EXCEEDED";
 const BOAT_RATE_WINDOW_MS = 60_000;
 /** Bounds a wait Boat names, so a malformed answer cannot hold every request for long. */
 const BOAT_MAX_RETRY_AFTER_MS = 5 * 60_000;
+/** Requests released together reach Boat over this long instead of in one burst. */
+const BOAT_WAKE_SPREAD_MS = 1_000;
 
 /**
  * Every Boat call from one provider waits here after Boat refuses this host's address for
@@ -36,7 +40,7 @@ export class BoatRequestGate {
 
   async wait(signal?: AbortSignal): Promise<void> {
     for (let ms = this.openAt - Date.now(); ms > 0; ms = this.openAt - Date.now()) {
-      await delay(ms, undefined, { signal });
+      await delay(spread(ms), undefined, { signal });
     }
   }
 
@@ -63,6 +67,11 @@ const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
  * `idempotent` call that Boat failed on its side. A sandbox that took the request and did not
  * answer in time would only time out again, so that is never resent. A server error that
  * remains is an outage at Boat, reported as unresponsive like a connection Boat never answered.
+ * So is Boat refusing to serve the operator's account until it is paid for: users can only wait.
+ * Only idempotent calls are resent after a rate limit: create and command start have no
+ * idempotency key and could duplicate billed sandboxes or command effects. Limits that clear
+ * within a minute get one retry after the wait plus jitter, bounded by the caller's signal.
+ * Cancellation during the wait or resend preserves Boat's refusal.
  */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
@@ -96,11 +105,22 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     }
   };
   const attemptWithRetry = async (...args: Args): Promise<Result> => {
+    const signal = callerSignal(args[1]);
     try {
       return await attempt(...args);
     } catch (error) {
+      const wait = rateLimitWait(error);
+      if (idempotent && signal && wait !== undefined) {
+        // Preserve the rate-limit error if cancellation ends the wait or resend.
+        try {
+          await delay(spread(wait), undefined, { signal });
+          return await attempt(...args);
+        } catch (failure) {
+          throw signal.aborted ? error : failure;
+        }
+      }
       if (!unsent(error) && !(idempotent && failedAtBoat(error))) throw error;
-      await delay(BOAT_RETRY_DELAY_MS, undefined, { signal: callerSignal(args[1]) });
+      await delay(BOAT_RETRY_DELAY_MS, undefined, { signal });
       return attempt(...args);
     }
   };
@@ -108,7 +128,7 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await attemptWithRetry(...args);
     } catch (error) {
-      if (failedAtBoat(error)) {
+      if (failedAtBoat(error) || billingRequired(error)) {
         throw new SandboxUnresponsiveError(error.message, { cause: error });
       }
       throw error;
@@ -120,6 +140,25 @@ export function wrapBoatCall<Args extends unknown[], Result>(
 export function callerSignal(init: unknown): AbortSignal | undefined {
   const signal = (init as RequestInit | undefined)?.signal;
   return signal instanceof AbortSignal ? signal : undefined;
+}
+
+/**
+ * How long to wait before resending an idempotent request refused under the per-IP limit or
+ * a start limit over the minute, when the wait ends within that minute. A quota over a longer
+ * window only clears by sending less, so it is not resent.
+ */
+function rateLimitWait(error: unknown): number | undefined {
+  const limit = error instanceof SandboxRateLimitError ? error.cause : undefined;
+  if (!(limit instanceof BoatApiError) || limit.retryAfterMs === undefined) return undefined;
+  const clearsWithinWindow =
+    (limit.code === BOAT_IP_RATE_LIMIT || limit.window === "minute") &&
+    limit.retryAfterMs <= BOAT_RATE_WINDOW_MS;
+  return clearsWithinWindow ? limit.retryAfterMs : undefined;
+}
+
+/** A wait plus a random part of a second, so callers waiting together do not wake together. */
+function spread(ms: number): number {
+  return ms + Math.random() * BOAT_WAKE_SPREAD_MS;
 }
 
 /** True when neither Boat nor the sandbox received the request, so sending it again is safe. */
@@ -149,6 +188,10 @@ function failedAtBoat(error: unknown): error is BoatApiError {
   return error instanceof BoatApiError && TRANSIENT_STATUSES.has(error.response.status);
 }
 
+function billingRequired(error: unknown): error is BoatApiError {
+  return error instanceof BoatApiError && error.response.status === 402;
+}
+
 export async function boatResponseError(
   response: Response,
   apiKey: string,
@@ -175,6 +218,7 @@ export async function boatResponseError(
     ),
     code,
     response.status === 429 ? retryAfterMs(response, body) : undefined,
+    safeIdentifier(body?.window),
   );
 }
 

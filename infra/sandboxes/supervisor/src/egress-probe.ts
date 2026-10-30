@@ -1,3 +1,4 @@
+import { isIPv4 } from "node:net";
 import type Docker from "dockerode";
 
 /**
@@ -11,6 +12,10 @@ import type Docker from "dockerode";
  * stands in for the forwarded rules. The forwarded path is also checked directly
  * against the cloud metadata endpoint: where one exists it accepts connections unless
  * the drop is in place, and elsewhere nothing answers, so only a connection fails.
+ * Explicit computer DNS is forwarded from the computer's network, where the ruleset drops
+ * private resolvers, so at least one configured IPv4 server must answer a query from the
+ * bridge (which has no IPv6). Any reply counts, so a resolver that only knows internal
+ * names still passes.
  */
 export const EGRESS_PROBE_NETWORK = "rakazo-egress-probe";
 // Matches the ruleset's `rakazo-c+` interface pattern and Linux's 15-byte limit.
@@ -23,9 +28,12 @@ const PROBE_DEADLINE_MS = 60_000;
 const HOST_REACHABLE = 3;
 const METADATA_ADDRESS = "169.254.169.254";
 const METADATA_REACHABLE = 4;
+const DNS_UNREACHABLE = 5;
+// Each server gets two short tries, so one lost packet does not fail a start (18s for three).
+const DNS_SECONDS = 3;
 
 export const EGRESS_NOT_ENFORCED =
-  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host.md)";
+  "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host-docker-computers.md)";
 
 /**
  * A completed probe that shows the rules are missing, as opposed to a probe that could not finish
@@ -39,27 +47,39 @@ export class EgressNotEnforced extends Error {
 
 /**
  * Shell run in the probe container; exits 0 only when every gateway port timed out
- * and the metadata endpoint did not accept a connection.
+ * and the metadata endpoint did not accept a connection, and some IPv4 `dns` server replied.
  */
-export function egressProbeScript(gateway: string) {
+export function egressProbeScript(gateway: string, dns: string[] = []) {
   const attempts = PROBE_PORTS.map(
     (port) =>
       `timeout ${PROBE_SECONDS_PER_PORT} bash -c 'exec 3<>/dev/tcp/${gateway}/${port}' 2>/dev/null; [ $? -eq 124 ] || exit ${HOST_REACHABLE}`,
   );
   const metadata = `timeout ${PROBE_SECONDS_PER_PORT} bash -c 'exec 3<>/dev/tcp/${METADATA_ADDRESS}/80' 2>/dev/null && exit ${METADATA_REACHABLE}`;
-  return [...attempts, metadata, "exit 0"].join("\n");
+  // An A query for example.com with ID "RK"; a reply echoes the ID.
+  // Docker's embedded resolver forwards to at most the first three servers.
+  const queries = dns
+    .slice(0, 3)
+    .filter((server) => isIPv4(server))
+    .map(
+      (server) =>
+        `for _ in 1 2; do timeout ${DNS_SECONDS} bash -c 'exec 3<>/dev/udp/$0/53 && printf "RK\\1\\0\\0\\1\\0\\0\\0\\0\\0\\0\\7example\\3com\\0\\0\\1\\0\\1" >&3 && [ "$(head -c2 <&3)" = RK ]' ${server} 2>/dev/null && exit 0; done`,
+    );
+  const last = queries.length > 0 ? `exit ${DNS_UNREACHABLE}` : "exit 0";
+  return [...attempts, metadata, ...queries, last].join("\n");
 }
 
 export type EgressProbeVerdict =
   | "enforced"
   | "host-reachable"
   | "metadata-reachable"
+  | "dns-unreachable"
   | "inconclusive";
 
 export function egressProbeVerdict(statusCode: number | undefined): EgressProbeVerdict {
   if (statusCode === 0) return "enforced";
   if (statusCode === HOST_REACHABLE) return "host-reachable";
   if (statusCode === METADATA_REACHABLE) return "metadata-reachable";
+  if (statusCode === DNS_UNREACHABLE) return "dns-unreachable";
   return "inconclusive";
 }
 
@@ -67,8 +87,8 @@ function isAlreadyExists(error: unknown) {
   return /already exists/i.test(String(error));
 }
 
-/** Throws unless the host ruleset drops a `rakazo-c*` bridge's traffic to the host. */
-export async function verifyRestrictedEgress(docker: Docker, image: string) {
+/** Throws unless host and metadata traffic is blocked and any configured DNS server answers. */
+export async function verifyRestrictedEgress(docker: Docker, image: string, dns?: string[]) {
   await docker
     .createNetwork({
       Name: EGRESS_PROBE_NETWORK,
@@ -91,7 +111,7 @@ export async function verifyRestrictedEgress(docker: Docker, image: string) {
     if (!gateway) throw new EgressNotEnforced("probe network has no IPv4 gateway");
     container = await docker.createContainer({
       Image: image,
-      Entrypoint: ["bash", "-c", egressProbeScript(gateway)],
+      Entrypoint: ["bash", "-c", egressProbeScript(gateway, dns)],
       Cmd: [],
       Labels: { "rakazo.egressProbe": "true" },
       HostConfig: {
@@ -116,6 +136,11 @@ export async function verifyRestrictedEgress(docker: Docker, image: string) {
     }
     if (verdict === "metadata-reachable") {
       throw new EgressNotEnforced("a computer bridge reached the metadata endpoint");
+    }
+    if (verdict === "dns-unreachable") {
+      throw new Error(
+        "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)",
+      );
     }
     if (verdict === "inconclusive") {
       throw new Error(

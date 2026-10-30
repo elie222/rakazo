@@ -11,6 +11,7 @@ import {
   createScreenReconnects,
   isRetryableError,
   SCREEN_RECONNECT_DELAY_MS,
+  SCREEN_RECONNECT_EVERY_MS,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
@@ -28,6 +29,7 @@ import {
   probeScreen,
   probeScreenStatus,
   SCREEN_FRAME_LOAD_TIMEOUT_MS,
+  sameWuyingScreen,
   screenFrameError,
   screenFrameMessage,
   screenFrameStarted,
@@ -99,6 +101,9 @@ export function useComputerState({
   const screenReconnects = useRef(createScreenReconnects());
   const screenReconnect = () => screenReconnects.current.for(computerBotIdRef.current ?? "");
   const [screenFrameKey, setScreenFrameKey] = useState(0);
+  // Set once a framed Wuying session ends, so the next read replaces its spent login code.
+  const screenSessionEnded = useRef(false);
+  const wuyingRetryAt = useRef(0);
   // Typing goes back into a reconnected screen that had the keyboard when it dropped.
   const screenRefocus = useRef(createScreenRefocus());
   useEffect(() => {
@@ -141,6 +146,22 @@ export function useComputerState({
       ) {
         screenFrame.focus();
         screenFrame.contentWindow?.postMessage({ rakazoScreenFocus: true }, "*");
+      }
+      const ended = message.rakazoScreen === "failed" || message.rakazoScreen === "disconnected";
+      if (screenUrl?.startsWith("wuying:") && ended) {
+        // A Wuying login code works once, so a frame that loaded a spent one, or a session
+        // another viewer took over, can only come back with a fresh read of the screen.
+        screenSessionEnded.current = true;
+        const now = Date.now();
+        if (now - wuyingRetryAt.current >= SCREEN_RECONNECT_EVERY_MS) {
+          wuyingRetryAt.current = now;
+          const botId = computerBotIdRef.current;
+          clearTimeout(reconnect);
+          reconnect = setTimeout(() => {
+            if (botId && !stopped.signal.aborted) void refreshComputerScreen(botId);
+          }, SCREEN_RECONNECT_DELAY_MS);
+          return;
+        }
       }
       if (screenReconnect().report(message.rakazoScreen) === "reconnect") {
         screenRefocus.current.dropped(document.activeElement === screenFrame);
@@ -258,7 +279,11 @@ export function useComputerState({
             ? id
             : null,
         );
-        setScreenUrl(screen.url);
+        setScreenUrl((current) => {
+          if (!screenSessionEnded.current && sameWuyingScreen(current, screen.url)) return current;
+          screenSessionEnded.current = false;
+          return screen.url;
+        });
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
         if (screen.error || computerErrorFromScreenRef.current) {
           setComputerError(screen.error);

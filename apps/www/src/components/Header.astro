@@ -11,9 +11,11 @@ type Props = {
   locale?: Locale;
   copy?: HomeCopy["nav"];
   homeHref?: string;
+  /** Names the part of the site this header sits on, such as "Docs", next to the logo. */
+  section?: { label: string; href: string };
 };
 
-const { starsLabel } = Astro.props;
+const { starsLabel, section } = Astro.props;
 const locale = Astro.props.locale ?? DEFAULT_LOCALE;
 const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
@@ -22,7 +24,7 @@ const NAV_LINKS = [
   { href: "/docs/", label: copy.docs },
   { href: "/integrations/", label: copy.integrations },
   { href: "/blog/", label: copy.blog },
-];
+].filter((link) => link.href !== section?.href);
 
 const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
 
@@ -34,6 +36,7 @@ function isCurrent(href: string): boolean {
 <header class="site-header">
   <div class="site-header__left">
     <Logo href={homeHref} label={copy.home} />
+    {section && <a class="site-header__section" href={section.href}>{section.label}</a>}
     <nav class="site-nav" aria-label={copy.primary}>
       {
         NAV_LINKS.map((link) => (
@@ -48,6 +51,7 @@ function isCurrent(href: string): boolean {
     </nav>
   </div>
   <div class="site-header__right">
+    <slot />
     <a
       class="star-pill"
       href={GITHUB_URL}

@@ -2079,6 +2079,9 @@ describe("archiveBot", () => {
     const prisma = {
       computer: {
         findUnique: vi.fn().mockResolvedValue(dedicated),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         update: updateComputer,
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -2136,6 +2139,9 @@ describe("archiveBot", () => {
     const prisma = {
       computer: {
         findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValueOnce(running),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         updateMany,
       },
       run: { findMany: vi.fn().mockResolvedValue([]) },
@@ -2183,7 +2189,13 @@ describe("archiveBot", () => {
       const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
       Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
       const prisma = {
-        computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
+        computer: {
+          findUnique: vi.fn().mockResolvedValue(computer),
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
+          ...updates,
+        },
         run: { findMany: vi.fn().mockResolvedValue([]) },
         routine: { findMany: vi.fn().mockResolvedValue([]) },
         $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),

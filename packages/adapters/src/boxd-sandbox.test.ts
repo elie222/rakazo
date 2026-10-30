@@ -1,6 +1,7 @@
 import { RateLimitError } from "@boxd-sh/sdk";
-import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
+import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
@@ -19,7 +20,7 @@ async function events(
   provider: BoxdSandboxProvider,
   computer: ComputerRef,
   request: Parameters<BoxdSandboxProvider["execute"]>[1],
-  context = ctx,
+  context: AdapterContext = ctx,
 ) {
   const seen: ProcessEvent[] = [];
   for await (const event of provider.execute(computer, request, context)) seen.push(event);
@@ -119,6 +120,28 @@ describe("boxd computers", () => {
     // The command removed its environment file as it started.
     expect([...boxd.machine(computer.providerRef).files.keys()]).not.toContainEqual(
       expect.stringContaining(".rakazo-command-env/"),
+    );
+  });
+
+  it("runs a bot's commands on that bot's own screen unless the caller chose a display", async () => {
+    const boxd = new FakeBoxd();
+    const provider = fakeBoxdProvider(boxd);
+    const computer = await provider.provision({ botId: "beto", homePath: "/unused" }, ctx);
+    const sent = async (
+      request: { argv: string[]; env?: Record<string, string> },
+      context: AdapterContext = ctx,
+    ) => {
+      await events(provider, computer, request, context);
+      return boxd.commands.at(-1)!.command;
+    };
+    const argv = ["ffmpeg", "-f", "x11grab", "out.mp4"];
+
+    expect(await sent({ argv }, { ...ctx, botId: "beto" })).toContain(
+      screenDisplayArgv(argv, "beto", 20).map(shellQuote).join(" "),
+    );
+    expect(await sent({ argv })).toBe(argv.map(shellQuote).join(" "));
+    expect(await sent({ argv, env: { DISPLAY: ":0" } }, { ...ctx, botId: "beto" })).not.toContain(
+      "desktop-assignments",
     );
   });
 

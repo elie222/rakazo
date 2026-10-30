@@ -3,8 +3,9 @@
 import { createHash } from "node:crypto";
 import type { PluginPreview } from "@rakazo/contracts";
 import { McpServerConfigInput } from "@rakazo/contracts";
-import { buildSkillMd, parseSkillMd } from "@rakazo/core";
+import { buildSkillMd, findSkillByName, parseSkillMd } from "@rakazo/core";
 import { z } from "zod";
+import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 import { assertNoSensitiveQuery } from "./connector-http.js";
 import { fetchSafeWebText } from "./web-ssrf.js";
 
@@ -555,7 +556,10 @@ export function parsePluginDirectory(input: {
     ...collectSkills(files, skipped, names),
     ...collectAgents(files, skipped, names),
     ...collectCommands(files, names, skipped),
-  ].sort((a, b) => a.name.localeCompare(b.name));
+  ]
+    // A skill named like a built-in one repeats it; every user already has the built-in.
+    .filter((skill) => !findSkillByName(BUILTIN_AGENT_SKILLS, skill.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const canonical = [...files.entries()].sort(([a], [b]) => a.localeCompare(b));
   return {
     format,

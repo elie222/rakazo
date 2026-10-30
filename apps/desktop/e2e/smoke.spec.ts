@@ -35,6 +35,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
         badgeKeys: desktop?.badge ? Object.keys(desktop.badge) : [],
         passkeyRpIds: await desktop?.passkeys?.rpIds(),
         platform: desktop?.platform,
+        nativeWindowFrame: desktop?.nativeWindowFrame,
         state: await desktop?.window.state(),
         update: await desktop?.update.state(),
         nodeGlobals: {
@@ -49,6 +50,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
       "badge",
       "computer",
       "device",
+      "nativeWindowFrame",
       "oauth",
       "passkeys",
       "platform",
@@ -68,6 +70,7 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
     expect(renderer.badgeKeys).toEqual(["set"]);
     expect(renderer.platform).toBe(process.platform);
+    expect(renderer.nativeWindowFrame).toBe(process.platform === "win32");
     expect(renderer.state).toEqual({ minimized: false, maximized: false, fullScreen: false });
     // An unpackaged run has no update feed, and that is reported as a state rather than an error.
     expect(renderer.update).toMatchObject({ phase: "unsupported", availableVersion: null });

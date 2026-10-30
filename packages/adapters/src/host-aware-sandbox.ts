@@ -27,10 +27,10 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
   return envKind;
 }
 
-export function createRunSandbox(
+export async function createRunSandbox(
   kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
-): SandboxProvider {
+): Promise<SandboxProvider> {
   if (kind === "desktop") {
     assertHostCommandsAllowed();
     return new DesktopSandboxProvider({
@@ -38,7 +38,7 @@ export function createRunSandbox(
       hostRoots: [homedir()],
     });
   }
-  const primary = createSandboxProvider(kind, {
+  const primary = await createSandboxProvider(kind, {
     ...opts,
     onUnsafeStop: opts.prisma
       ? async (providerRef) => {

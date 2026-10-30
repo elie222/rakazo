@@ -55,6 +55,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Next: "下一步",
   "Ex: Project Falcon": "例如：猎鹰计划",
   "Search bots": "搜索 Bot",
+  "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
   "About {label}": "关于{label}",
   "Manage the bots it creates": "管理它创建的机器人",
   "Allow cross-space bot communication": "允许跨空间机器人通信",
@@ -437,6 +438,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Description: "描述",
   "Don’t have an account?": "还没有账户？",
   Done: "完成",
+  "Needs you": "需要接管",
+  Skipped: "已跳过",
   "Disconnect {name}?": "断开 {name}？",
   Disconnect: "断开",
   "Disconnect Self-hosted": "断开自托管连接",
@@ -1209,4 +1212,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "1 free month earned": "已获得 1 个月免费",
   "{count} free months earned": "已获得 {count} 个月免费",
   "Submit a plugin": "提交插件",
+};
+
+export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
+  other: ZH_MESSAGES["{count} messages with {peer}"],
 };

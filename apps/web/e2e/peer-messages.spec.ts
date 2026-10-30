@@ -2,7 +2,7 @@ import type { Page, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
-test("shows peer chips in transcript and opens view-only peer chat", async ({ page }, testInfo) => {
+test("shows peer lines in transcript and opens view-only peer chat", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `peer-msg-${stamp}@rakazo.test`, "password12", "Peer Msg");
   await completeOnboarding(page);
@@ -50,8 +50,10 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
     .filter({ hasText: "Researcher" })
     .first();
   await expect(chip).toBeVisible({ timeout: 30_000 });
-  await expect(chip.getByText(/Messaged|Message from/)).toBeVisible();
-  await expect(chip).toHaveAccessibleName(/Messaged Researcher|Message from Researcher/);
+  await expect(chip.getByText(/Messaged|Message from|messages with/)).toBeVisible();
+  await expect(chip).toHaveAccessibleName(
+    /Messaged Researcher|Message from Researcher|messages with Researcher/,
+  );
   await expect(chip.locator(".rakazo-organic-avatar")).toBeVisible();
   await expect(chip).not.toContainText("{peer}");
   // User bubble still contains the phrase; peer body must not appear outside the chip.
@@ -90,8 +92,30 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   const view = page.getByTestId("peer-conversation-view");
   await expect(view).toBeVisible();
   await expect(view.getByRole("heading", { name: /Chief\s*Researcher/ })).toBeVisible();
-  await expect(view.getByText("This chat is view-only")).toBeVisible();
-  await expect(view.getByRole("button", { name: "Close" })).toHaveCount(1);
+  await expect(transcript.getByTestId("peer-replies-toggle")).toHaveCount(0);
+  const close = view.getByRole("button", { name: "Close", exact: true });
+  await expect(close).toHaveCount(1);
+  await expect(close.locator("svg")).toBeVisible();
+  await expect(close).toHaveText("");
+  const closeBox = await close.boundingBox();
+  const titleBox = await view.getByRole("heading").boundingBox();
+  expect(closeBox).not.toBeNull();
+  expect(titleBox).not.toBeNull();
+  const assertTitleCentered = async () => {
+    const viewBox = await view.boundingBox();
+    const headingBox = await view.getByRole("heading").boundingBox();
+    const buttonBox = await close.boundingBox();
+    expect(viewBox).not.toBeNull();
+    expect(headingBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+    expect(
+      Math.abs(headingBox!.x + headingBox!.width / 2 - (viewBox!.x + viewBox!.width / 2)),
+    ).toBeLessThanOrEqual(1);
+    expect(headingBox!.x + headingBox!.width).toBeLessThanOrEqual(buttonBox!.x);
+  };
+  await assertTitleCentered();
+  expect(closeBox!.y).toBeLessThan(24);
+  expect(closeBox!.x + closeBox!.width).toBeGreaterThan(350);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -141,9 +165,10 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await chip.scrollIntoViewIfNeeded();
   await chip.click();
   await expect(view).toBeVisible();
+  await assertTitleCentered();
   const avatarsLeft = await view
-    .locator('[aria-hidden="true"].app-drag')
-    .evaluate((spacer) => spacer.nextElementSibling!.getBoundingClientRect().left);
+    .getByRole("heading")
+    .evaluate((heading) => heading.getBoundingClientRect().left);
   // macOS draws the traffic lights from x=16 to about x=68 in the window's top-left corner.
   expect(avatarsLeft).toBeGreaterThan(80);
   await captureScreenshot(page, testInfo, "peer-view-only-macos-desktop");
@@ -192,45 +217,38 @@ async function openFoldedPeerReply(page: Page, name: string, testInfo: TestInfo)
 
   // Researcher's reply to Chief's request is bot-to-bot work: it folds in Researcher's chat.
   await page.goto(`/app/${researcher.id}`);
-  const composer = page.getByRole("combobox", { name: "Message Researcher" });
   await expect(
-    transcript.getByTestId("peer-receipt-chip").filter({ hasText: "Message from Chief" }),
+    transcript
+      .getByTestId("peer-receipt-chip")
+      .filter({ hasText: /Message from Chief|messages with Chief/ }),
   ).toBeVisible({ timeout: 60_000 });
   const reply = transcript.getByText(foldedReplyText);
   await expect(reply).toHaveCount(0);
-  return { researcher, chiefComposer, composer, transcript, reply };
+  return { researcher, chiefComposer, transcript, reply };
 }
 
 test(
   "folds a peer run's reply under its marker and keeps its ask inline",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
-    const { researcher, chiefComposer, composer, transcript, reply } = await openFoldedPeerReply(
+    const { researcher, chiefComposer, transcript, reply } = await openFoldedPeerReply(
       page,
       "peer-fold",
       testInfo,
     );
 
-    const toggle = transcript.getByRole("button", { name: "Expand Message from Chief" });
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await captureScreenshot(page, testInfo, "peer-replies-folded");
-    await toggle.click();
-    await expect(reply).toBeVisible();
-    // The toggle only folds; the label alone opens the peer chat.
-    await expect(page.getByTestId("peer-conversation-view")).toHaveCount(0);
-    const collapse = transcript.getByRole("button", { name: "Collapse Message from Chief" });
-    await expect(collapse).toHaveAttribute("aria-expanded", "true");
-    await captureScreenshot(page, testInfo, "peer-replies-expanded");
-    await collapse.focus();
-    await collapse.press("Enter");
-    await expect(reply).toHaveCount(0);
-    await toggle.press(" ");
-    await expect(reply).toBeVisible();
+    const line = transcript.getByTestId("peer-receipt-chip").filter({ hasText: "Chief" }).first();
+    await expect(transcript.getByTestId("peer-replies-toggle")).toHaveCount(0);
+    await captureScreenshot(page, testInfo, "peer-line-folded");
+    await line.click();
+    const view = page.getByTestId("peer-conversation-view");
+    await expect(view).toBeVisible();
+    await expect(view.getByText(foldedReplyText).first()).toBeVisible();
+    await captureScreenshot(page, testInfo, "peer-line-read-only-chat");
+    await view.getByRole("button", { name: "Close" }).click();
 
     // A search hit on a folded reply expands its marker and scrolls to it.
     await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
-    await collapse.click();
-    await expect(reply).toHaveCount(0);
     await page.getByTestId("sidebar-search-trigger").click();
     const search = page.getByTestId("sidebar-search").getByRole("textbox");
     await search.fill(foldedReplyText);
@@ -242,65 +260,9 @@ test(
       })
       .first()
       .click();
-    await expect(collapse).toHaveAttribute("aria-expanded", "true");
     await expect(reply).toBeInViewport();
     await captureScreenshot(page, testInfo, "peer-reply-search-jump");
     await expect(search).toHaveCount(0);
-    await collapse.click();
-    await expect(reply).toHaveCount(0);
-
-    // A keyboard-expanded marker stays in view. Short enough that the expanded reply is taller
-    // than the space below the marker.
-    const viewport = page.viewportSize();
-    await page.setViewportSize({ width: 390, height: 360 });
-    await transcript.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
-    await toggle.focus();
-    await page.keyboard.press("Enter");
-    await expect(reply).toBeAttached();
-    await expect(collapse).toHaveAttribute("aria-expanded", "true");
-    await expect(collapse).toBeFocused();
-    await expect(collapse).toBeInViewport();
-    await captureScreenshot(page, testInfo, "peer-replies-keyboard-expanded");
-    if (viewport) await page.setViewportSize(viewport);
-
-    // Later scripted replies repeat the folded reply's text, so it goes by id.
-    const replyId = await transcript
-      .locator("[data-message-id]")
-      .filter({ hasText: foldedReplyText })
-      .getAttribute("data-message-id");
-    const replyRow = transcript.locator(`[data-message-id="${replyId}"]`);
-
-    await replyRow.hover();
-    await replyRow.getByRole("button", { name: "React" }).click();
-    await page.getByRole("button", { name: "👍", exact: true }).click();
-    await expect(replyRow.getByTestId("message-reactions")).toHaveText("👍");
-    // Folded: no stray reaction bubble. Expanded again: the count is back on the reply.
-    await collapse.click();
-    await expect(replyRow).toHaveCount(0);
-    await expect(transcript.getByText("👍", { exact: true })).toHaveCount(0);
-    await captureScreenshot(page, testInfo, "peer-reply-reaction-folded");
-    await toggle.click();
-    const reactions = replyRow.getByTestId("message-reactions");
-    await expect(reactions).toHaveText("👍");
-    await reactions.scrollIntoViewIfNeeded();
-    await expect(reactions).toBeInViewport();
-    await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
-
-    await replyRow.hover();
-    await replyRow.getByRole("button", { name: "Reply", exact: true }).click();
-    await composer.fill("peer-fold-quote");
-    await composer.press("Enter");
-    const quote = transcript
-      .locator("[data-message-id]")
-      .filter({ hasText: "peer-fold-quote" })
-      .getByTestId("reply-parent-preview");
-    await expect(quote).toBeVisible({ timeout: 20_000 });
-    await collapse.click();
-    await expect(replyRow).toHaveCount(0);
-    await quote.click();
-    await expect(collapse).toHaveAttribute("aria-expanded", "true");
-    await expect(replyRow).toBeInViewport();
-    await captureScreenshot(page, testInfo, "peer-reply-quote-jump");
 
     // An ask from the woken run stays inline in the recipient's thread; its text folds.
     await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
@@ -316,7 +278,7 @@ test(
     await expect(
       researcherTranscript
         .getByTestId("peer-receipt-chip")
-        .filter({ hasText: "Message from Chief" }),
+        .filter({ hasText: /Message from Chief|messages with Chief/ }),
     ).toHaveCount(2);
     await expect(
       researcherTranscript.getByText("i need a decision before i continue."),
@@ -328,9 +290,7 @@ test(
     await expect(
       researcherTranscript.getByTestId("message-user-bubble").filter({ hasText: /^Paris$/ }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(
-      researcherTranscript.getByRole("button", { name: "Expand Message from Chief" }),
-    ).toHaveCount(2);
+    await expect(researcherTranscript.getByTestId("peer-replies-toggle")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "peer-run-answer-inline");
   },
 );

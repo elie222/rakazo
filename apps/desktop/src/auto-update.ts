@@ -37,6 +37,8 @@ export function initialUpdateState(env: UpdaterEnvironment): DesktopUpdateState 
 export type UpdaterFailure =
   | { kind: "no-releases"; message: string }
   | { kind: "offline"; message: null }
+  | { kind: "read-only"; message: string }
+  | { kind: "disk-full"; message: string }
   | { kind: "signature"; message: string }
   | { kind: "other"; message: string };
 
@@ -59,6 +61,10 @@ const OFFLINE = [
   // GitHub's release CDN refusing a signed download link that lapsed in transit.
   "jwt:expired",
 ];
+// Squirrel.Mac refuses to replace an app run from a disk image or a translocated download.
+const READ_ONLY = ["read-only volume"];
+// ShipIt's ditto prints the POSIX text; macOS localizes the same failure's description.
+const DISK_FULL = ["no space left on device", "enospc", "设备上无剩余空间"];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
@@ -72,6 +78,13 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
   }
   if (OFFLINE.some((needle) => text.includes(needle))) {
     return { kind: "offline", message: null };
+  }
+  if (READ_ONLY.some((needle) => text.includes(needle))) {
+    return { kind: "read-only", message: "Move Rakazo to Applications to install updates." };
+  }
+  // Ahead of signatures: a full disk also leaves ditto unable to read the archive's signature.
+  if (DISK_FULL.some((needle) => text.includes(needle))) {
+    return { kind: "disk-full", message: "Free up disk space to install updates." };
   }
   if (SIGNATURE.some((needle) => text.includes(needle))) {
     return {
@@ -156,6 +169,16 @@ export function reduceUpdateState(
         return {
           ...state,
           message: failure.message ?? "The update could not be completed. Try again later.",
+        };
+      }
+      if (failure.kind === "read-only") {
+        return {
+          ...state,
+          phase: "unsupported",
+          availableVersion: null,
+          percent: null,
+          message: failure.message,
+          checkedAt: now,
         };
       }
       if (failure.kind === "no-releases" && state.phase === "checking") {

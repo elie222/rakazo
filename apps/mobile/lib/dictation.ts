@@ -4,6 +4,8 @@
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
 
+import { supportedSpeechTag } from "@rakazo/core";
+import { Platform } from "react-native";
 import { reportMobileError } from "./monitoring";
 
 /** Quiet gap that ends an utterance. A natural breath is well under it, a finished turn well over. */
@@ -36,6 +38,7 @@ export type SpeechRecognizer = {
   abort(): void;
   isRecognitionAvailable(): boolean;
   requestPermissionsAsync(): Promise<{ granted: boolean }>;
+  getSupportedLocales(options: Record<string, never>): Promise<{ locales: string[] }>;
   addListener<Event extends keyof DictationEventMap>(
     event: Event,
     listener: (payload: DictationEventMap[Event]) => void,
@@ -65,6 +68,7 @@ let injected: SpeechRecognizer | null = null;
 /** Test seam: an injected recognizer replaces the native module. */
 export function setSpeechRecognizer(recognizer: SpeechRecognizer | null): void {
   injected = recognizer;
+  supported = null;
 }
 
 async function load(): Promise<SpeechRecognizer> {
@@ -72,6 +76,21 @@ async function load(): Promise<SpeechRecognizer> {
   // The native recognizer loads on first dictation, not with every screen that imports this.
   const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
   return ExpoSpeechRecognitionModule as unknown as SpeechRecognizer;
+}
+
+let supported: Promise<string[]> | null = null;
+
+/**
+ * iOS starts a recognizer only for a tag it lists exactly. Android takes any regional tag, and
+ * asking it would start its recognition service first, so it lists nothing here.
+ */
+function supportedLocales(recognizer: SpeechRecognizer): Promise<string[]> {
+  if (Platform.OS !== "ios") return Promise.resolve([]);
+  supported ??= recognizer.getSupportedLocales({}).then(
+    (result) => result.locales,
+    () => [],
+  );
+  return supported;
 }
 
 /** A session older than this one can never deliver a final. */
@@ -116,13 +135,14 @@ export async function listen(opts: {
   const mine = token;
   if (opts.signal?.aborted) return;
   const recognizer = await load();
+  const lang = supportedSpeechTag(opts.lang || "en-US", await supportedLocales(recognizer));
   // A hang-up or a newer session landed while the native module was loading.
   if (token !== mine) return;
   // A signal aborted during loading never fires the listener added below, so check it here.
   if (opts.signal?.aborted) return;
   const session: Session = {
     recognizer,
-    lang: opts.lang || "en-US",
+    lang,
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,

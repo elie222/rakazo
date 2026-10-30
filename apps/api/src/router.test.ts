@@ -564,6 +564,7 @@ describe("model setup gate", () => {
   function modelGateDeps(options: {
     agentRuntime: string;
     maxUploadSizeBytes?: number;
+    maxAttachmentsPerMessage?: number;
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
@@ -592,6 +593,7 @@ describe("model setup gate", () => {
       env: {
         agentRuntime: options.agentRuntime,
         maxUploadSizeBytes: options.maxUploadSizeBytes,
+        maxAttachmentsPerMessage: options.maxAttachmentsPerMessage,
         defaultProvider: "openrouter",
         defaultModel: "test-model",
         deploymentModelConfigured: options.deploymentModelConfigured,
@@ -622,6 +624,21 @@ describe("model setup gate", () => {
     );
     return response;
   }
+
+  it.each([undefined, 1, 8, 100])(
+    "advertises the effective attachment count (%s)",
+    async (maxAttachmentsPerMessage) => {
+      const { actor, handler } = modelGateDeps({
+        agentRuntime: "scripted",
+        maxAttachmentsPerMessage,
+      });
+      const response = await call(handler, actor, "me", null);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        json: { maxAttachmentsPerMessage: maxAttachmentsPerMessage ?? 4 },
+      });
+    },
+  );
 
   it.each([undefined, 25 * 1024 * 1024])(
     "advertises the effective upload limit in me (%s)",
@@ -1497,6 +1514,24 @@ describe("MCP pre-registered OAuth client", () => {
       code: "CONFLICT",
       message: "An MCP server with that name already exists.",
     });
+  });
+
+  it("rejects a credential in the endpoint query, which would be stored in plaintext", async () => {
+    const { client, prisma, secrets } = harness();
+
+    await expect(
+      client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "gmail",
+        name: "Gmail",
+        endpoint: "http://localhost:3100/mcp?region=us&api_key=sk-test-123",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Put api_key in a header instead of the server URL",
+    });
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(prisma.mcpServer.create).not.toHaveBeenCalled();
   });
 
   describe("stdio server with host-managed OAuth", () => {
@@ -3185,11 +3220,30 @@ describe("connections.complete", () => {
       row.status = "connected";
       return true;
     });
-    Object.assign(connector, { connectedAccountId: vi.fn(async () => "account-1") });
+    Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("stores the connected account a request id resolves to", async () => {
+    const { complete, connector, row } = pollFixture("pending");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      accounts: new Map([["request-1", "account-1"]]),
+      async resolveConnectedAccountId(
+        this: { accounts: Map<string, string> },
+        _userId: string,
+        _slug: string,
+        ref: string,
+      ) {
+        return this.accounts.get(ref);
+      },
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
   });
 
   it("reports a superseded connection as revoked instead of failing", async () => {
@@ -6915,7 +6969,7 @@ describe("routines.update", () => {
     expect(response.status).toBe(200);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "routine-1", bot: { archivedAt: null } },
+        where: { id: "routine-1", bot: { archivedAt: null }, nextRunAt: null },
         data: expect.objectContaining({ active: true }),
       }),
     );
@@ -6923,7 +6977,8 @@ describe("routines.update", () => {
   });
 
   it("does not re-arm when the bot is archived between the read and the write", async () => {
-    const { enqueue, call } = fixture(false, true);
+    const { enqueue, call, findFirst } = fixture(false, true);
+    findFirst.mockResolvedValueOnce(routine).mockResolvedValueOnce(null);
     const { response } = await call();
     expect(response.status).toBe(404);
     expect(enqueue).not.toHaveBeenCalled();
@@ -6937,7 +6992,9 @@ describe("routines.update", () => {
 
   it("leaves model columns out of unrelated updates", async () => {
     const { call, update } = fixture(false, false, ownModel);
-    expect((await call({ name: "Renamed" })).response.status).toBe(200);
+    expect(
+      (await call({ name: "Renamed", active: undefined, runAt: undefined })).response.status,
+    ).toBe(200);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "routine-1", bot: { archivedAt: null } } }),
     );
@@ -7019,6 +7076,75 @@ describe("routines.update", () => {
     const { call, update } = fixture(false);
     expect((await call({ thinkingLevel: "high" })).response.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  const recurring = {
+    crons: ["0 9 * * *"],
+    active: true,
+    nextRunAt: new Date("2026-09-02T09:00:00.000Z"),
+  };
+
+  it("leaves the schedule alone when an edit does not change it", async () => {
+    const { call, update, enqueue } = fixture(false, false, recurring);
+    expect((await call({ name: "Renamed", runAt: undefined })).response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
+    expect(update.mock.calls[0]![0].where).not.toHaveProperty("nextRunAt");
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects a schedule change when the routine fired after the read", async () => {
+    const { call, update, enqueue } = fixture(false, false, recurring);
+    update.mockImplementationOnce(async (args) => {
+      expect(args.where).toMatchObject({ nextRunAt: recurring.nextRunAt });
+      throw Object.assign(new Error("not found"), { code: "P2025" });
+    });
+    expect((await call({ crons: ["0 10 * * *"], runAt: undefined })).response.status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("routines.remove", () => {
+  function fixture() {
+    const routine = { id: "routine-1", botId: "bot-1", spaceId: "space-1", userId: "user-a" };
+    const remove = vi.fn(async () => routine);
+    const cancel = vi.fn(async () => undefined);
+    const router = createRouter({
+      prisma: {
+        routine: {
+          findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+            Object.entries(where).every(
+              ([key, value]) => routine[key as keyof typeof routine] === value,
+            )
+              ? routine
+              : null,
+          ),
+          delete: remove,
+        },
+      },
+      env: { sandboxProvider: "fake" },
+      jobs: { cancel },
+    } as unknown as RouterDeps);
+    const as = (userId: string) =>
+      createRouterClient(router, {
+        context: { actor: { spaceId: "space-1", userId } } as never,
+      });
+    return { as, remove, cancel };
+  }
+
+  it("does not let another Space member delete a routine", async () => {
+    const { as, remove, cancel } = fixture();
+    await expect(as("user-b").routines.remove({ routineId: "routine-1" })).rejects.toThrow();
+    expect(remove).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("deletes the owner's routine", async () => {
+    const { as, remove, cancel } = fixture();
+    await expect(as("user-a").routines.remove({ routineId: "routine-1" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(remove).toHaveBeenCalledWith({ where: { id: "routine-1" } });
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
 

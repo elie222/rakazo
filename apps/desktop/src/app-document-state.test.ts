@@ -58,13 +58,13 @@ describe("waiting for the app document", () => {
     expect(executeJavaScript).toHaveBeenCalledTimes(3);
   });
 
-  it("still times out when every check fails", async () => {
+  it("answers pending when the page is still loading at the deadline", async () => {
     await expect(
       waitForMountedAppDocument(
         { executeJavaScript: disposed, isCrashed: () => false, isDestroyed: () => false },
         200,
       ),
-    ).rejects.toThrow("did not become ready");
+    ).resolves.toBe("pending");
   });
 
   it("gives up at once when the window is gone", async () => {

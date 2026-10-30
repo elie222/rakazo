@@ -377,6 +377,44 @@ class PageBrowserTest(unittest.TestCase):
                 helper.act(Mock(), "session", [{"kind": "fill", "ref": "first"}])
             ensure.assert_not_called()
 
+    def test_contenteditable_fill_inserts_the_whole_text_once(self):
+        for text in ["hello", "", "שלום 😀\nparagraph " * 1000]:
+            with self.subTest(length=len(text)):
+                client = Mock()
+                with patch.object(helper, "ensure_helpers"), \
+                        patch.object(helper, "snapshot", return_value={"ok": True}), \
+                        patch.object(helper, "wait_for_action", return_value=True), \
+                        patch.object(helper, "eval_json", side_effect=[True, {"insertText": True}]):
+                    result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": text}])
+                self.assertEqual(result["completed"], 1)
+                client.call.assert_any_call("Input.insertText", {"text": text}, session_id="session")
+                self.assertEqual(sum(call.args[0] == "Input.insertText" for call in client.call.call_args_list), 1)
+
+    def test_plain_fill_does_not_insert_into_the_focused_element(self):
+        client = Mock()
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value={"ok": True}), \
+                patch.object(helper, "wait_for_action", return_value=True), \
+                patch.object(helper, "eval_json", side_effect=[True, {}]):
+            result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": "hello"}])
+        self.assertEqual(result["completed"], 1)
+        self.assertFalse(any(call.args[0] == "Input.insertText" for call in client.call.call_args_list))
+
+    def test_contenteditable_fill_is_uncertain_if_insertion_response_is_lost(self):
+        client = Mock()
+        def call(method, *args, **kwargs):
+            if method == "Input.insertText":
+                raise TimeoutError("lost response")
+            return {}
+        client.call.side_effect = call
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value={}), \
+                patch.object(helper, "eval_json", side_effect=[True, {"insertText": True}]):
+            result = helper.act(client, "session", [{"kind": "fill", "ref": "e1", "text": "hello"}])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["completed"], 0)
+        self.assertTrue(result["uncertain"])
+
     def test_binds_saved_login_fill_to_its_origin_in_the_same_evaluation(self):
         with patch.object(helper, "ensure_helpers"), patch.object(helper, "snapshot", return_value={"ok": True}), \
                 patch.object(helper, "eval_json") as evaluate:
@@ -635,7 +673,7 @@ class PageBrowserTest(unittest.TestCase):
                     helper.act(Mock(), "session", [step])
                 ensure.assert_not_called()
 
-    def test_key_events_press_printable_characters_and_insert_the_rest(self):
+    def test_key_events_preserve_ascii_key_mappings_and_control_insertion(self):
         self.assertEqual(helper.key_event("6"),
                          {"key": "6", "code": "Digit6", "text": "6", "windowsVirtualKeyCode": 54})
         self.assertEqual(helper.key_event("q")["code"], "KeyQ")
@@ -644,7 +682,9 @@ class PageBrowserTest(unittest.TestCase):
         self.assertEqual(helper.key_event("\n"), {"key": "Enter", "code": "Enter", "text": "\r",
                                                   "windowsVirtualKeyCode": 13, "modifiers": 8})
         self.assertEqual(helper.key_event("@"), {"key": "@", "text": "@"})
-        self.assertIsNone(helper.key_event("é"))
+        for char in ("\t", "\x00", "\x7f", "", "ab"):
+            with self.subTest(char=char):
+                self.assertIsNone(helper.key_event(char))
 
     def type_once(self, focus, text, typed=True, after_key=None, more=(), on_clear=None, page=None):
         """Runs one type step against a stand-in browser.
@@ -705,8 +745,31 @@ class PageBrowserTest(unittest.TestCase):
             ("Input.dispatchKeyEvent", {"type": "keyDown", "key": "6", "code": "Digit6", "text": "6",
                                         "windowsVirtualKeyCode": 54, "unmodifiedText": "6"}),
             ("Input.dispatchKeyEvent", {"type": "keyUp", "key": "6", "code": "Digit6", "windowsVirtualKeyCode": 54}),
-            ("Input.insertText", {"text": "é"}),
+            ("Input.dispatchKeyEvent", {"type": "keyDown", "key": "é", "text": "é", "unmodifiedText": "é"}),
+            ("Input.dispatchKeyEvent", {"type": "keyUp", "key": "é"}),
         ])
+
+    def test_type_dispatches_unicode_as_keys_without_ascii_physical_mappings(self):
+        # Include non-ASCII letters/digits, combining marks and a ZWJ emoji, one code point at a time.
+        text = "caféüñ€日本１２e\u0301👩\u200d💻"
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, text)
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertTrue(all(method == "Input.dispatchKeyEvent" for method, _ in sent))
+        self.assertEqual([params["key"] for _, params in sent if params["type"] == "keyDown"], list(text))
+        self.assertEqual([params["key"] for _, params in sent if params["type"] == "keyUp"], list(text))
+        for char, ((_, down), (_, up)) in zip(text, zip(sent[::2], sent[1::2])):
+            self.assertEqual(down["text"], char)
+            self.assertEqual(down["unmodifiedText"], char)
+            self.assertNotIn("text", up)
+            if ord(char) > 127:
+                self.assertEqual(down, {"type": "keyDown", "key": char, "text": char, "unmodifiedText": char})
+                self.assertEqual(up, {"type": "keyUp", "key": char})
+
+    def test_type_still_inserts_a_literal_tab_without_changing_focus(self):
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "a\tb")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(sent[2], ("Input.insertText", {"text": "\t"}))
+        self.assertEqual([params["key"] for _, params in sent if params.get("type") == "keyDown"], ["a", "b"])
 
     def test_type_of_one_character_replaces_only_the_box_it_is_typed_into(self):
         result, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "8")

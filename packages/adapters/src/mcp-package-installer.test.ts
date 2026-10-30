@@ -105,13 +105,15 @@ describe("defaultMcpPackagesRoot", () => {
 
 /**
  * A stand-in for npm: installs `<name>` from the last argument into `--prefix`, logging each
- * run. NPM_CONFIG_FAKE_MODE=hang writes half a package and never exits; fail exits 1 with output.
+ * run, and refuses an install that would run package scripts. NPM_CONFIG_FAKE_MODE=hang
+ * writes half a package and never exits; fail exits 1 with output.
  */
 const FAKE_NPM = `#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
 if (process.env.API_KEY) throw new Error("server secret leaked to npm");
 const args = process.argv.slice(2);
+if (!args.includes("--ignore-scripts")) { console.error("npm install would run package scripts"); process.exit(1); }
 const prefix = args[args.indexOf("--prefix") + 1];
 const target = args.at(-1);
 const name = target.startsWith("@") ? "@" + target.slice(1).split("@")[0] : target.split("@")[0];

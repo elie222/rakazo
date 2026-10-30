@@ -914,6 +914,14 @@ describe("MCP connector session cache", () => {
         () => Response.json({ error: { code: "model_required" } }, { status: 400 }),
       ],
       ["a redirect", () => new Response(null, { status: 302, headers: { location: "/login" } })],
+      [
+        "a server error page",
+        () =>
+          new Response("<html><title>500 Internal Server Error</title></html>", {
+            status: 500,
+            headers: { "content-type": "text/html" },
+          }),
+      ],
     ])("warns when the endpoint answers with %s", async (_, answer) => {
       vi.stubGlobal(
         "fetch",
@@ -934,8 +942,13 @@ describe("MCP connector session cache", () => {
       }
     });
 
-    it("still reports an unexpected server failure as an error", async () => {
-      vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
+    it("still reports an unexpected failure as an error", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new TypeError("boom");
+        }),
+      );
       const connector = connectorWith(SERVER);
       const error = vi.spyOn(getLogger(), "error");
       try {

@@ -8,7 +8,7 @@ import {
   getHomeCopy,
 } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
-import { APP_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
+import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -192,9 +192,9 @@ export const PLUGIN_SUBMIT_MARKDOWN = `# Submit a plugin to Rakazo
 
 List a plugin in the Rakazo marketplace. We review every submission and email the result.
 
-The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), or \`.cursor-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
+The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), \`.cursor-plugin/plugin.json\`, or \`.grok-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
 
-[Build a plugin](https://rakazo.com/docs/build-a-plugin/) describes the format and what review checks. The [hello world plugin](https://github.com/elie222/rakazo/tree/main/examples/plugins/hello-world) is a complete example.
+[Build a plugin](https://rakazo.com/docs/build-a-plugin/) starts with a hosted MCP server and covers configuration, testing, and marketplace submission. Copy the [MCP server example](${GITHUB_URL}/tree/main/examples/plugins/mcp-server) for hosted tools, or the [hello world example](${GITHUB_URL}/tree/main/examples/plugins/hello-world) for skills only.
 
 ## Submit with the API
 
@@ -217,7 +217,7 @@ curl -X POST ${PLUGIN_SUBMISSIONS_URL} \\
   -d '{"email":"you@example.com","name":"Acme","logo":"https://example.com/logo.svg","source":"https://github.com/acme/rakazo-plugin","description":"Search Acme tickets.","testing":"Install it and ask a bot to find ticket 42.","tested":true}'
 \`\`\`
 
-A new submission returns \`201\` with \`{"id","status":"pending"}\`. Resubmitting the same repository while it waits updates it and returns \`200\`. Invalid input returns \`400\` with an \`issues\` list naming each field.
+A new submission returns \`201\` with \`{"id","status":"pending"}\`. Resubmitting the same source URL with the same email while it waits updates it and returns \`200\`. Invalid input returns \`400\` with an \`issues\` list naming each field.
 `;
 
 export const NOT_FOUND_MARKDOWN = `# Page not found

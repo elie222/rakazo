@@ -14,10 +14,12 @@ import {
   avatarSchedulePose,
   avatarThinkingDot,
   avatarWorkingDot,
+  botAvatarActivity,
   isRunWorking,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_CENTER,
   SHIPPED_BOT_AVATAR_VIEWBOX,
+  usesLogoAvatar,
 } from "@rakazo/core";
 import { botEyeColor } from "@rakazo/ui-tokens";
 import { memo, useSyncExternalStore } from "react";
@@ -123,8 +125,7 @@ export interface BotAvatarProps {
 
 /** Missing set metadata deliberately preserves every existing avatar. */
 export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
-  const parsed = mobileBotAvatarPresentation(props.color);
-  if (props.avatarSet === "rakazo" && parsed.kind !== "image" && parsed.kind !== "shape") {
+  if (usesLogoAvatar(props)) {
     return <RakazoBotAvatar {...props} />;
   }
   return <LegacyBotAvatar {...props} />;
@@ -146,11 +147,13 @@ function RakazoBotAvatar({
     () => mobileLogoAvatarActivity.getActivity(identity ?? "", status),
     (): LogoAvatarActivity => "idle",
   );
-  const resolved =
+  const resolved = botAvatarActivity(
+    { color, avatarSet: "rakazo" },
     activity ??
-    (composing && (liveActivity === "working" || liveActivity === "idle")
-      ? "writing"
-      : liveActivity);
+      (composing && (liveActivity === "working" || liveActivity === "idle")
+        ? "writing"
+        : liveActivity),
+  );
   const working = isRunWorking(status) && resolved !== "writing" && motion !== "running";
   return (
     <View style={{ width: size, height: size }}>

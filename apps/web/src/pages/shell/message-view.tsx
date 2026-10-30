@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, LinkifiedText, withBlockMentions } from "@rakazo/chat-ui/web";
 import type {
@@ -6,7 +7,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { ChildBotBlock } from "@rakazo/core";
+import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isSecretAskBlock, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
@@ -54,8 +55,7 @@ export const MessageView = memo(function MessageView({
   onAnswer,
   onOpenBot,
   onOpenPeerMessages,
-  peerReplies,
-  onTogglePeerReplies,
+  peerExchange,
   speakerName,
   memberName,
   peerBot,
@@ -90,9 +90,8 @@ export const MessageView = memo(function MessageView({
   ) => Promise<void>;
   onOpenBot: (botId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
-  /** Set on a received marker whose peer run has folded replies. */
-  peerReplies?: "collapsed" | "expanded";
-  onTogglePeerReplies: (markerId: string) => void;
+  /** The adjacent receipts represented by this peer line. */
+  peerExchange?: PeerExchange;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (
@@ -318,28 +317,31 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
             const sent = block.kind === "bot_message_sent";
-            const peer = sent ? block.toBotName : block.fromBotName;
+            if (
+              i !==
+              blocks.findIndex(
+                (b) => b.kind === "bot_message_sent" || b.kind === "bot_message_received",
+              )
+            )
+              return null;
+            const peer = peerExchange?.peerBotName ?? (sent ? block.toBotName : block.fromBotName);
             const peerBotId = sent ? block.toBotId : block.fromBotId;
-            const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
+            const count = peerExchange?.count ?? 1;
+            const label =
+              count > 1
+                ? t`${plural(count, { one: `# message with ${peer}`, other: `# messages with ${peer}` })}`
+                : sent
+                  ? t`Messaged ${peer}`
+                  : t`Message from ${peer}`;
             return (
               <CollaborationMarker
                 key={i}
-                ariaLabel={label}
+                peerName={peer}
                 color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
                 avatarSet={peerBot(peerBotId)?.avatarSet}
                 identity={peerBotId}
                 label={label}
                 onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
-                replies={
-                  !sent && peerReplies
-                    ? {
-                        expanded: peerReplies === "expanded",
-                        label:
-                          peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
-                        onToggle: () => onTogglePeerReplies(message.id),
-                      }
-                    : undefined
-                }
               />
             );
           }
@@ -597,7 +599,13 @@ export const MessageView = memo(function MessageView({
                           : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
                     }
                   >
-                    {block.state}
+                    {block.state === "Needs you"
+                      ? t`Needs you`
+                      : block.state === "Skipped"
+                        ? t`Skipped`
+                        : block.state === "Done"
+                          ? t`Done`
+                          : block.state}
                   </span>
                 </div>
                 <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">

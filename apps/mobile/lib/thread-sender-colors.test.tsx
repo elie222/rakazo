@@ -74,7 +74,6 @@ function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
       onOpenComputer={() => undefined}
       onPreviewMarkdown={() => undefined}
       onPreviewImage={() => undefined}
-      onTogglePeerReplies={() => undefined}
       onOpenPeerChat={() => undefined}
       actionProps={{}}
       {...props}

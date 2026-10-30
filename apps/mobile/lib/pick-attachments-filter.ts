@@ -12,8 +12,8 @@ export type PickedAttachment = {
 
 export type PickSkip = { name: string; reason: string };
 
-export function attachmentCountSkipReason(): string {
-  return `max ${ATTACHMENT_MAX_COUNT} attachments`;
+export function attachmentCountSkipReason(maxCount = ATTACHMENT_MAX_COUNT): string {
+  return `max ${maxCount} attachments`;
 }
 
 export function attachmentSizeSkipReason(maxBytes: number): string {
@@ -29,9 +29,10 @@ export function attachmentSkipReason(
   existingCount: number,
   acceptedCount: number,
   maxBytes = ATTACHMENT_MAX_BYTES,
+  maxCount = ATTACHMENT_MAX_COUNT,
 ): string | null {
-  if (existingCount + acceptedCount >= ATTACHMENT_MAX_COUNT) {
-    return attachmentCountSkipReason();
+  if (existingCount + acceptedCount >= maxCount) {
+    return attachmentCountSkipReason(maxCount);
   }
   if (candidate.size > maxBytes) return attachmentSizeSkipReason(maxBytes);
   if (!candidate.mimeType) return "unsupported type";
@@ -48,11 +49,18 @@ export function filterPickedAttachments(
     previewUri?: string;
   }>,
   maxBytes = ATTACHMENT_MAX_BYTES,
+  maxCount = ATTACHMENT_MAX_COUNT,
 ): { attachments: PickedAttachment[]; skipped: PickSkip[] } {
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const candidate of candidates) {
-    const reason = attachmentSkipReason(candidate, existingCount, attachments.length, maxBytes);
+    const reason = attachmentSkipReason(
+      candidate,
+      existingCount,
+      attachments.length,
+      maxBytes,
+      maxCount,
+    );
     if (reason) {
       skipped.push({ name: candidate.name, reason });
       continue;

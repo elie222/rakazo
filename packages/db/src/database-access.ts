@@ -1,3 +1,4 @@
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { Client, escapeIdentifier, escapeLiteral } from "pg";
 import type { PrismaClient } from "./generated/prisma/client.js";
 
@@ -28,7 +29,7 @@ function loginOf(url: string): string {
 }
 
 export const SINGLE_DATABASE_URL_WARNING =
-  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host.md#database-roles).";
+  "DATABASE_URL is used for both migrations and the app, so row-level security is not enforced. Set DATABASE_MIGRATION_URL to the owner role and DATABASE_URL to a runtime login (docs/self-host-configuration.md#database-roles).";
 
 /**
  * Create or update the runtime login named in `runtimeUrl` and give it the
@@ -118,7 +119,7 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw cannotChange();
   }
   const name = escapeIdentifier(login);
-  const secret = password ? `PASSWORD ${escapeLiteral(password)}` : "";
+  const secret = password ? `PASSWORD ${escapeLiteral(scramSha256Verifier(password))}` : "";
   // Only a superuser may set SUPERUSER, BYPASSRLS or REPLICATION, even to false. A
   // CREATEROLE owner leaves them at their defaults (off), and a login that already has
   // one of them was returned above.
@@ -136,6 +137,26 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw error;
   }
   return {};
+}
+
+/**
+ * The SCRAM-SHA-256 verifier PostgreSQL would store for `password`. Sending it
+ * instead of the password keeps the plaintext out of server logs and audit trails.
+ */
+export function scramSha256Verifier(password: string, salt = randomBytes(16), iterations = 4096) {
+  // SASLprep's mappings (RFC 4013), as PostgreSQL and pg apply them.
+  const prepared = password
+    .replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g, " ")
+    .replace(
+      /\u00AD|\u034F|\u1806|[\u180B-\u180D]|\u200C|\u200D|\u2060|[\uFE00-\uFE0F]|\uFEFF/g,
+      "",
+    )
+    .normalize("NFKC");
+  const salted = pbkdf2Sync(prepared, salt, iterations, 32, "sha256");
+  const hmac = (text: string) => createHmac("sha256", salted).update(text).digest();
+  const storedKey = createHash("sha256").update(hmac("Client Key")).digest("base64");
+  const serverKey = hmac("Server Key").toString("base64");
+  return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${storedKey}:${serverKey}`;
 }
 
 /** Policy on each graphile-worker table that lets the runtime role use the job queue. */
@@ -223,5 +244,5 @@ export async function describeRowSecurity(prisma: PrismaClient): Promise<RowSecu
 
 export function rowSecurityWarning(status: RowSecurityStatus): string | undefined {
   if (status.enforced) return undefined;
-  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host.md#database-roles).`;
+  return `Row-level security is not enforced: the app connects as ${status.role}, which ${status.reason}. Point DATABASE_URL at a runtime login and DATABASE_MIGRATION_URL at the owner (docs/self-host-configuration.md#database-roles).`;
 }

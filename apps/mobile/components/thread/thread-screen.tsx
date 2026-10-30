@@ -139,7 +139,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const history = useThreadSnapshot();
   const { snap, composingBots, showingSaved } = history;
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [uploadConfig, setUploadConfig] = useState<{ maxUploadSizeBytes?: number }>();
+  const [uploadConfig, setUploadConfig] = useState<{
+    maxUploadSizeBytes?: number;
+    maxAttachmentsPerMessage?: number;
+  }>();
   const [needsModel, setNeedsModel] = useState<boolean>();
   // Re-read on focus so returning from Models settings updates unsent missing-model messages.
   useFocusEffect(
@@ -192,8 +195,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   );
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
-  const visibleMessages = reactionView.visibleMessages;
-  const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
+  const visibleMessages = transcript.visibleMessages;
+  const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
@@ -431,10 +434,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       if (!botId) return;
       router.push({
         pathname: "/peer-chat",
-        params: { botId, botName: displayName, ...peer },
+        params: {
+          botId,
+          botName: displayName,
+          botColor: currentBot?.color,
+          peerBotColor: mentionBots.find((bot) => bot.id === peer.peerBotId)?.color,
+          ...peer,
+        },
       });
     },
-    togglePeerReplies: transcript.togglePeerReplies,
     layout: scroll.layoutJumpRow,
   });
 

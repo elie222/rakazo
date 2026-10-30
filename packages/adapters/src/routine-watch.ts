@@ -27,7 +27,7 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -446,8 +446,9 @@ async function readComputer(
           },
         })
       : undefined;
-    const shellEnvironment =
-      bot.computer.kind === "desktop" ? await deps.sandbox.environment?.(computer, ctx) : undefined;
+    const shellEnvironment = usesNativeShell(bot.computer.kind)
+      ? await deps.sandbox.environment?.(computer, ctx)
+      : undefined;
     const argv = shellEnvironment
       ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
       : ["sh", "-lc", watch.command ?? ""];

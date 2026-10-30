@@ -17,6 +17,49 @@ Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults 
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
 and remote providers. This stack credential does not replace a remote provider's API key.
 
+## Choosing a provider
+
+The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the local operator can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` is a separate, development-only configuration for backends running directly on the intended host.
+
+Native file reads and workspace exports are limited to 8 MiB per file. A larger workspace file fails the checkpoint and preserves the previous saved workspace; local files remain on the computer. Writes are bounded by the 12 MiB encoded request limit.
+
+- **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
+  local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
+  Optional: set `e2b`, `novita`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
+- **Docker** is the quick-start default for published images and for a source checkout / full local
+  Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
+  optional. Keep the supervisor private, as the included Compose files do.
+- **E2B** runs bot computers away from the Rakazo host and is a good choice for public or multi-user
+  production deployments. Rakazo checkpoints the portable workspace and browser-profile directory to
+  `DATA_DIR`; the E2B disk is a runtime cache, not the durable source of truth.
+- **Daytona** provides the same remote-computer contract through Daytona sandboxes. Configure
+  `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` / `DAYTONA_TARGET` / `DAYTONA_SNAPSHOT`.
+- **CreateOS** provides the same remote-computer contract through CreateOS desktop sandboxes.
+  Configure `CREATEOS_SANDBOX_API_KEY` and optionally `CREATEOS_SANDBOX_BASE_URL`,
+  `CREATEOS_SANDBOX_SHAPE`, or `CREATEOS_SANDBOX_ROOTFS`. Rakazo defaults to
+  `https://api.sb.createos.sh`, `s-2vcpu-2gb`, and `desktop:1`.
+- **Boat** provides a managed Linux desktop through `BOAT_API_KEY` and optionally
+  `BOAT_API_URL`. Rakazo always creates or resumes sandboxes with `noEnv: true`, keeps the portable
+  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Boat uses the shared Linux
+  desktop runtime and protected port routes for concurrent bot desktops. Each bot has its own
+  persistent Chrome profile; logins are not shared between bots.
+- **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
+  or Linux through the native bridge. Bots can read/change local files and launch installed apps
+  through OS commands, subject to your account and OS permissions. Portable file tools and
+  checkpoints remain scoped to bot workspaces; use commands for other local folders. Graphical
+  screen control is unavailable. Permission is remembered locally and can be revoked from the
+  app menu. Only enable this for a trusted personal instance: every bot on that instance can use
+  your account’s permissions.
+- **Desktop provider** (`SANDBOX_PROVIDER=desktop`) runs commands directly on the API/worker host,
+  with only a minimal shell environment (no server secrets). The API and worker refuse it unless
+  `NODE_ENV` is `development` or `test`, so a production server never runs bot commands on itself.
+  Setting this inside a container does not grant access to the physical computer. Docker deployments
+  use the authenticated native bridge when local computer access is selected; they never silently
+  fall back to executing on the backend host.
+- **Fake** is only an emulator for verification.
+- **None** boots the product without a computer host (fallback when Docker/supervisor is not
+  configured, or when a remote provider is selected without its API key).
+
 ## `docker` (in-stack supervisor)
 
 Compose starts a **sandbox supervisor** (from the app image) on the internal
@@ -39,6 +82,9 @@ curl -fsS http://127.0.0.1:3100/internal/health
 Missing supervisor token is a **setup failure**: do not treat `sandbox: "none"` as success for this path.
 
 Signup and local Docker computers work **without** an E2B (or other remote) account.
+
+Resource ceilings, network isolation and shared folders for these computers are covered in
+[Docker computers](./self-host-docker-computers.md).
 
 ### Bot browser
 
@@ -118,6 +164,42 @@ Bind it to the service account the API and worker run as with a `RoleBinding`. A
 that admits only the API, worker and web pods to the computer pods, and denies their egress to
 private ranges, is recommended.
 
+## `wuying`
+
+Bot computers run on one existing Wuying (无影) cloud computer. Each computer's home is a folder
+under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
+keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
+screenshots and input go through the desktop's MCP gateway. Stopping the computer powers the
+desktop off; deleting it removes only its home folder, never the desktop.
+
+| Variable | Notes |
+| --- | --- |
+| `WUYING_ACCESS_KEY_ID` / `WUYING_ACCESS_KEY_SECRET` | RAM user allowed `ecd:DescribeDesktops`, `ecd:StartDesktops`, `ecd:StopDesktops` and `appstream-center:GetAuthCode`. API and worker only |
+| `WUYING_REGION_ID` | Defaults to `cn-hangzhou` |
+| `WUYING_DESKTOP_ID` | The cloud computer, assigned to the end user below |
+| `WUYING_END_USER_ID` | Screen logins are issued for this user |
+| `WUYING_MCP_URL` / `WUYING_MCP_TOKEN` | The desktop's MCP gateway and its bearer token |
+
+The web and Electron screen is drawn by the Wuying Web SDK in `/wuying/screen.html`, served by
+the web app. Mobile rejects the custom screen URL and does not embed this SDK. The
+SDK is not committed; fetch the pinned release before building the web app:
+
+```bash
+node scripts/wuying-web-sdk.mjs
+```
+
+The SDK runs in an opaque-origin sandboxed frame with an in-memory storage shim and a no-op
+cookie accessor in both its launcher and nested runtime. A CSP scoped to `/wuying/` permits
+the vendor hosts, blob workers and WebAssembly compilation. The one-time login code stays
+only in the URL fragment, outside HTTP requests and Referer.
+
+All bots, users and spaces configured with this provider, including Private Computers, share
+the same Windows desktop and account permissions, including files outside their workspace
+folders. Use it only in a trusted deployment.
+The gateway bounds each call to one minute, 16 KiB of command output and 1,000 folder entries.
+A command allowed longer than a minute runs detached with its output in files under
+`%USERPROFILE%\rakazo\.runs`, read back every second and removed when it ends or is cancelled.
+
 ## `none`
 
 Runs API/web without provisioning bot computers.
@@ -133,6 +215,9 @@ Set `SANDBOX_PROVIDER` to exactly one of:
 | `daytona` | `DAYTONA_API_KEY` | Optional `DAYTONA_API_URL`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` |
 | `boat` | `BOAT_API_KEY` | Optional `BOAT_API_URL` (see `.env.example`) |
 | `boxd` | `BOXD_API_KEY` | Optional `BOXD_ORG` to create computers in a boxd organization |
+| `createos` | `CREATEOS_SANDBOX_API_KEY` | Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, `CREATEOS_SANDBOX_ROOTFS` |
+| `railway` | `RAILWAY_API_TOKEN` and `RAILWAY_ENVIRONMENT_ID` | Optional `RAILWAY_SANDBOX_REGION`; `RAILWAY_MAX_WORKSPACE_FILE_BYTES` (default 64 MiB) caps each workspace file Rakazo reads or saves. Railway supplies the environment ID when Rakazo runs there; see the [Railway template](../infra/railway/README.md) |
+| `wuying` | `WUYING_*` (below) | One existing Wuying cloud computer (Windows) |
 
 Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer

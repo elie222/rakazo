@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { SecurityEvent, SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
 import { SECURITY_EVENT_TYPES, SecurityEventTypeSchema } from "@rakazo/contracts";
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
@@ -20,12 +21,14 @@ export interface SecurityEventInput {
   metadata?: Record<string, string | number | boolean | null | undefined>;
 }
 
-/** Log-context keys a request middleware sets so every event and log line carries the caller. */
-export function securityRequestBindings(request: { ip?: string; userAgent?: string }) {
-  return {
-    ...(request.ip ? { "client.ip": request.ip } : {}),
-    ...(request.userAgent ? { "user_agent.original": request.userAgent } : {}),
-  };
+const securityRequest = new AsyncLocalStorage<{ ip?: string; userAgent?: string }>();
+
+/** Keep caller details available only to security events within this request. */
+export function withSecurityRequest<T>(
+  caller: { ip?: string; userAgent?: string },
+  fn: () => T,
+): T {
+  return securityRequest.run(caller, fn);
 }
 
 const FAILURE_TYPES = new Set<SecurityEventType>([
@@ -53,12 +56,13 @@ export function installSecurityEventStore(db: SecurityEventDb | undefined): void
  */
 export async function recordSecurityEvent(input: SecurityEventInput): Promise<void> {
   const context = getLogContext();
+  const caller = securityRequest.getStore();
   const event = {
     type: input.type,
     userId: bounded(input.userId ?? context["user.id"], 128),
     spaceId: bounded(input.spaceId ?? context["space.id"], 128),
-    ip: bounded(input.ip ?? context["client.ip"], 64),
-    userAgent: bounded(input.userAgent ?? context["user_agent.original"], 512),
+    ip: bounded(input.ip ?? caller?.ip, 64),
+    userAgent: bounded(input.userAgent ?? caller?.userAgent, 512),
     metadata: securityEventMetadata(input.metadata),
   };
   const level = FAILURE_TYPES.has(event.type) ? "warn" : "info";

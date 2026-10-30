@@ -19,9 +19,8 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { assertMcpRemoteEndpoint } from "./mcp-servers.js";
-import { hasBuiltinSkillName } from "./plugin-installs.js";
 import type { RouterDeps } from "./router.js";
-import { windowCounter } from "./window-counter.js";
+import { throttleKey, windowCounter } from "./window-counter.js";
 
 const PLUGIN_REGISTRY = "Rakazo";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -94,7 +93,7 @@ export function pluginSubmissionRoutes(
     c.json({ error: "Invalid submission", issues }, 400);
 
   app.post(PLUGIN_SUBMISSIONS_PATH, async (c) => {
-    if (submissions(`ip:${deps.clientIp(c) ?? "unknown"}`) > SUBMISSIONS_PER_IP_PER_HOUR) {
+    if (submissions(throttleKey(deps.clientIp(c))) > SUBMISSIONS_PER_IP_PER_HOUR) {
       return c.json({ error: "Too many submissions. Try again later." }, 429, {
         "retry-after": String(HOUR_MS / 1000),
       });
@@ -199,11 +198,6 @@ export async function reviewPluginSubmission(
     }
     if (!preview.skills.length && !preview.mcpServers.length) {
       throw new ORPCError("BAD_REQUEST", { message: "This plugin has no skills or MCP servers" });
-    }
-    if (hasBuiltinSkillName(preview.skills)) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Plugin skill conflicts with a built-in skill",
-      });
     }
     listing = {
       pinnedSource: sourceString(preview.source, preview.resolvedSha),

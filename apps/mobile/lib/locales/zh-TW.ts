@@ -430,6 +430,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Description: "描述",
   "Don’t have an account?": "還沒有帳號？",
   Done: "完成",
+  "Needs you": "需要你處理",
+  Skipped: "已跳過",
   "Disconnect {name}?": "中斷 {name}？",
   Disconnect: "中斷",
   "Disconnect Self-hosted": "中斷自架服務的連線",
@@ -1229,3 +1231,5 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{count} free months earned": "已獲得 {count} 個月免費",
   "Submit a plugin": "提交外掛程式",
 };
+
+export const PEER_MESSAGE_FORMS = { other: "與{peer}的 {count} 則訊息" };

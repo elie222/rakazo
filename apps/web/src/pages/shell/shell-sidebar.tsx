@@ -179,7 +179,12 @@ export function ShellSidebar({
                 else setQuery(e.target.value);
               }}
               onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
+                if (
+                  event.key !== "Escape" ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                )
+                  return;
                 if (activityMode) {
                   setActivityFilters({ ...activityFilters, query: "" });
                   return;

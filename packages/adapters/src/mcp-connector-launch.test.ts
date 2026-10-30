@@ -203,6 +203,27 @@ describe("MCP connector managed stdio launch", () => {
     },
   );
 
+  it.each([
+    [["-c", "echo hi"]],
+    [["--call", "echo hi"]],
+    [["--shell", "sh"]],
+    [["-y", "./local-server"]],
+    [["-p", "a", "-p", "b", "bin"]],
+  ])("refuses an npx launch it can't reduce to a registry package: %j", async (args) => {
+    const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+    const installs = vi.spyOn(installer, "ensureMcpPackage");
+    const connector = connectorFor({ server: { ...SERVER, args } });
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+      expect(tools[0]?.description).toContain("This npx command isn't supported here");
+      expect(launches).not.toHaveBeenCalled();
+      expect(installs).not.toHaveBeenCalled();
+    } finally {
+      await connector.close();
+    }
+  });
+
   it("tells the model why an assigned server is unavailable, with secrets redacted", async () => {
     await publishPackage(root);
     env = {
@@ -217,12 +238,10 @@ describe("MCP connector managed stdio launch", () => {
       const [placeholder] = tools;
       expect(placeholder?.name).toBe("mcp__mail__unavailable");
       expect(placeholder?.description).toContain('"Mail" is assigned to you but is unavailable');
-      expect(placeholder?.description).toContain(
-        "auth failed for [redacted] as person@example.test",
-      );
+      expect(placeholder?.description).toContain("auth failed for [redacted] as [redacted]");
       const visible = JSON.stringify({ tools, health: healthWrites() });
       expect(visible).not.toContain("sk-live-0123456789abcdef");
-      expect(visible).toContain("person@example.test");
+      expect(visible).not.toContain("person@example.test");
 
       const events = await callTool(connector, placeholder!);
       expect(events).toEqual([

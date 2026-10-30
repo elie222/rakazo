@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, RoutineHistory } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test(
@@ -66,13 +66,30 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await captureScreenshot(page, testInfo, "33-routine-scheduled");
 
   await routine.click();
+  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
+    (item) => item.name === "Daily verification",
+  );
+  const runs = async () =>
+    (await rpc<RoutineHistory>(page, "routines/history", { routineId: created?.id })).runs;
   await page.getByRole("button", { name: "Test run" }).click();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
+  // The open editor's instruction already shows the marker text, so wait on the run itself
+  // and read the marker from the bot reply the run recorded.
+  await expect
+    .poll(async () => (await runs()).map((run) => run.status), { timeout: 30_000 })
+    .toEqual(["completed"]);
+  const messageId = (await runs())[0]?.messageId;
+  expect(messageId).toBeTruthy();
+  const reply = page
+    .getByTestId("transcript")
+    .locator(`[data-message-id="${messageId}"]`)
+    .getByTestId("message-bot-bubble");
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await captureScreenshot(page, testInfo, "34-routine-run-completed");
 
   await page.reload();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible();
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await expect(page.getByRole("button", { name: /Daily verification/ })).toContainText(
     "Weekdays at 9:00 AM",
@@ -80,16 +97,68 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.getByRole("button", { name: /Daily verification/ }).click();
   const history = page.getByTestId("routine-run-history");
   await expect(history.getByTestId("routine-run-row")).toHaveCount(1);
-  const created = (await rpc<Routine[]>(page, "routines/list", { botId })).find(
-    (item) => item.name === "Daily verification",
-  );
-  const ran = await rpc<{ runs: Array<{ status: string }> }>(page, "routines/history", {
-    routineId: created?.id,
-  });
-  expect(ran.runs.map((run) => run.status)).toEqual(["completed"]);
+  expect((await runs()).map((run) => run.status)).toEqual(["completed"]);
   await expect(history.getByText("No runs yet")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "36-routine-run-history");
   await history.getByTestId("routine-run-row").getByRole("link").click();
-  await expect(page.getByText(/routine-run-now-ok/i).first()).toBeVisible();
+  await expect(reply).toBeVisible();
+  await expect(reply).toContainText(/routine-run-now-ok/i);
   await captureScreenshot(page, testInfo, "35-routine-run-persisted");
+});
+
+test("a routine run that failed to start shows the error in Details", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-failed-${stamp}@rakazo.test`, "password12", "Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc<Routine>(page, "routines/create", {
+    botId,
+    name: "Nightly check",
+    prompt: "Check the site",
+    crons: ["0 9 * * *"],
+    timezone: "UTC",
+    active: false,
+    notify: false,
+  });
+  // The e2e stack runs no supervisor egress probe. A real run stores what the Docker provider
+  // throws for the supervisor's 500 response, so the history response carries that form.
+  const message =
+    "No SANDBOX_COMPUTER_DNS server answered from a restricted computer network; set servers reachable from there, such as public resolvers (see docs/self-host-docker-computers.md)";
+  const error = `sandbox provision failed: 500 ${JSON.stringify({ error: message })}`;
+  const at = new Date().toISOString();
+  await page.route("**/rpc/routines/history", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          runs: [
+            {
+              id: `run-${stamp}`,
+              botId,
+              groupId: null,
+              status: "failed",
+              error,
+              createdAt: at,
+              startedAt: at,
+              completedAt: at,
+              messageId: null,
+            },
+          ],
+          nextCursor: null,
+        },
+      }),
+    }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // Details then opens without the slide transition, so the capture shows the whole error.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await page.getByRole("button", { name: /Nightly check/ }).click();
+  const history = page.getByTestId("routine-run-history");
+  await history.getByText("Details", { exact: true }).click();
+  await expect(history.locator("pre")).toHaveText(error);
+  await captureScreenshot(page, testInfo, "routine-run-computer-dns-error");
 });

@@ -399,12 +399,14 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     app: string,
     accessToken: string,
   ): Record<string, string> {
+    const accountId = approvedAccountId(context, app);
     return {
       authorization: `Bearer ${accessToken}`,
       "x-pd-project-id": this.config.projectId,
       "x-pd-environment": this.config.environment,
       "x-pd-external-user-id": this.externalUserId(context),
       "x-pd-app-slug": app,
+      ...(accountId ? { "x-pd-account-id": accountId } : {}),
     };
   }
 
@@ -528,6 +530,24 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     };
     return body.access_token;
   }
+}
+
+/**
+ * The one account the workspace approved for `app`, so Pipedream cannot act as
+ * a different account of the same user. Rows still holding only the app slug
+ * cannot name theirs, and several approved accounts share one tool route, so
+ * those cases stay unpinned.
+ */
+function approvedAccountId(context: AdapterContext, app: string): string | undefined {
+  const refs = new Set(
+    context.connectedConnections
+      ?.filter(
+        (connection) => connection.connectorId === "pipedream" && connection.externalId === app,
+      )
+      .map((connection) => connection.providerRef?.trim() || app),
+  );
+  const [ref] = refs;
+  return refs.size === 1 && ref !== app ? ref : undefined;
 }
 
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {

@@ -1974,7 +1974,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2043,7 +2047,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2118,7 +2126,11 @@ describe("createRunExecutor", () => {
               findUnique: vi.fn(async () => claimedModel),
             },
             task: { create: taskCreate },
-            run: { create: runCreate, findMany: vi.fn(async () => []) },
+            run: {
+              create: runCreate,
+              findMany: vi.fn(async () => []),
+              findUnique: vi.fn(async () => null),
+            },
           }),
         ),
       } as unknown as PrismaClient;
@@ -2268,7 +2280,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2340,7 +2356,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
