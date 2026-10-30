@@ -5,6 +5,7 @@ import {
   DEFAULT_SANDBOX_HOURLY_COST_MICROS,
   sandboxAllowance,
   sandboxHourlyCostMicros,
+  sandboxHoursLeft,
 } from "./sandbox-allowance.js";
 
 function allowanceDeps(input: {
@@ -103,5 +104,20 @@ describe("computer hourly cost", () => {
   it("never charges for a host computer", () => {
     const sandbox = { billsWhileRunning: () => true } as never;
     expect(sandboxHourlyCostMicros(sandbox, { kind: "desktop" })).toBe(0);
+  });
+});
+
+describe("computer hours left", () => {
+  it("shows whole hours, rounded down", () => {
+    expect(sandboxHoursLeft({ limitMicros: 5_000_000, usedMicros: 2_250_000 })).toBe(13);
+    expect(sandboxHoursLeft({ limitMicros: 5_000_000, usedMicros: 0 })).toBe(25);
+  });
+
+  it("shows tenths when less than an hour is left", () => {
+    expect(sandboxHoursLeft({ limitMicros: 5_000_000, usedMicros: 4_900_000 })).toBe(0.5);
+  });
+
+  it("never goes below zero once spent", () => {
+    expect(sandboxHoursLeft({ limitMicros: 5_000_000, usedMicros: 6_000_000 })).toBe(0);
   });
 });

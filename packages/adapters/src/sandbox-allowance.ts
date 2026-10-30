@@ -50,6 +50,13 @@ export async function sandboxAllowance(
   };
 }
 
+/** Whole hours, or tenths under one hour, so time that is left never reads as zero. */
+export function sandboxHoursLeft(allowance: { limitMicros: number; usedMicros: number }): number {
+  const hours =
+    Math.max(0, allowance.limitMicros - allowance.usedMicros) / DEFAULT_SANDBOX_HOURLY_COST_MICROS;
+  return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
+}
+
 /** Whether a computer of this kind bills and its organization spent this month's allowance. */
 export async function sandboxAllowanceUsedUp(
   deps: AllowanceDeps,

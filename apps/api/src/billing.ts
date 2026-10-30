@@ -11,7 +11,7 @@ import {
   BillingCustomerNotFoundError,
   BillingNoMonthlyCreditsError,
 } from "@rakazo/adapter-kit";
-import { DEFAULT_SANDBOX_HOURLY_COST_MICROS, sandboxAllowance } from "@rakazo/adapters";
+import { sandboxAllowance, sandboxHoursLeft } from "@rakazo/adapters";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
@@ -393,7 +393,7 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          computerHoursLeft: computerAllowance && hoursLeft(computerAllowance),
+          computerHoursLeft: computerAllowance && sandboxHoursLeft(computerAllowance),
           referral: await referrals.status(organizationId, isOwner),
         };
       }
@@ -498,11 +498,4 @@ export function createBillingService(deps: {
       }
     },
   };
-}
-
-/** Whole hours, or tenths under one hour, so time that is left never reads as zero. */
-function hoursLeft(allowance: { limitMicros: number; usedMicros: number }): number {
-  const hours =
-    Math.max(0, allowance.limitMicros - allowance.usedMicros) / DEFAULT_SANDBOX_HOURLY_COST_MICROS;
-  return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
 }
