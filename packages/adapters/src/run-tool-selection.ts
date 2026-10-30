@@ -80,7 +80,7 @@ export function selectBuiltinToolsForRun(options: {
   userComputer?: boolean;
 }) {
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
-  const fleetToolsAllowed = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
+  const ownerStartedRun = isOwnerStartedRun(options.trigger, Boolean(options.followUpFromUser));
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
@@ -102,7 +102,8 @@ export function selectBuiltinToolsForRun(options: {
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
-        (Boolean(options.fleetManagement) && fleetToolsAllowed)) &&
+        (Boolean(options.fleetManagement) && ownerStartedRun)) &&
+      (ownerStartedRun || tool.name !== "update_preferences") &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&

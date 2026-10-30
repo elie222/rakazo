@@ -81,7 +81,7 @@ export const ToolChoiceCaseSchema = z
   );
 export type ToolChoiceCase = z.infer<typeof ToolChoiceCaseSchema>;
 
-const SETTINGS_TOOLS = ["update_bot"];
+const SETTINGS_TOOLS = ["update_bot", "update_preferences"];
 
 function matches(expected: Matcher, actual: unknown): boolean {
   if (Array.isArray(expected)) return expected.some((option) => matches(option, actual));

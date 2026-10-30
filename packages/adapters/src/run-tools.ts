@@ -12,6 +12,7 @@ import { fleetTools } from "./run-tools-fleet.js";
 import { cloudAgentTool, connectorTool, integrationTools } from "./run-tools-integrations.js";
 import { memoryTools } from "./run-tools-memory.js";
 import { messagingTools } from "./run-tools-messaging.js";
+import { preferenceTools } from "./run-tools-preferences.js";
 import { purchaseTools } from "./run-tools-purchases.js";
 import { secretTools } from "./run-tools-secrets.js";
 import { taskTools } from "./run-tools-tasks.js";
@@ -29,6 +30,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(fleetTools),
   [USER_COMPUTER_SHELL_TOOL, userComputerShell],
   ...Object.entries(purchaseTools),
+  ...Object.entries(preferenceTools),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 

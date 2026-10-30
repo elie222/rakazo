@@ -1608,6 +1608,25 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["message"],
     },
   },
+  {
+    name: "update_preferences",
+    description:
+      "Read or change the user's own account preferences: timezone and Rakazo marketing emails. Change them only when the user asks. Call with no fields to read the current values. Email, password, sign-in, billing and account deletion are only in the app's settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timezone: {
+          type: "string",
+          description: 'IANA timezone, e.g. "America/New_York".',
+        },
+        marketingEmails: {
+          type: "boolean",
+          description: "false unsubscribes from Rakazo's product emails; true resubscribes.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** Agent-connection tools, exposed only when the messaging surface is enabled. */
