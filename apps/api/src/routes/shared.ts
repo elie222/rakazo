@@ -7,7 +7,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
-import { isAdmin } from "../plugin-submissions.js";
+import { isAdmin } from "../admins.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";

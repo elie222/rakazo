@@ -8,8 +8,10 @@ vi.mock("@rakazo/adapters", async (original) => ({
   previewPluginInstall: preview,
 }));
 
-const { approvedPluginEntries, isAdmin, pluginSubmissionRoutes, reviewPluginSubmission } =
-  await import("./plugin-submissions.js");
+const { approvedPluginEntries, pluginSubmissionRoutes, reviewPluginSubmission } = await import(
+  "./plugin-submissions.js"
+);
+const { isAdmin } = await import("./admins.js");
 
 const SHA = "a".repeat(40);
 const valid = {

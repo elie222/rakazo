@@ -33,6 +33,7 @@ import {
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { applyAccessGrants } from "./access-grants.js";
 import { createReferrals } from "./referrals.js";
 
 export const TRIAL_DAYS = 7;
@@ -345,6 +346,10 @@ export function createBillingService(deps: {
     async status(actor) {
       if (modelCredits) {
         const { organizationId, isOwner } = await organization(actor);
+        if (isOwner)
+          await applyAccessGrants(prisma, { ...actor, organizationId }).catch((error) =>
+            getLogger().error("access grant failed", error),
+          );
         await expireModelCredits(prisma, organizationId);
         const [credits, account] = await Promise.all([
           creditAccount(prisma, organizationId),
