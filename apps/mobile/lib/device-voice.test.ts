@@ -32,10 +32,24 @@ describe("device voice preference", () => {
     });
   });
 
-  it("defaults to on until a hosted voice is ready", async () => {
+  it("defaults to on, and keeps that answer, when no hosted voice is ready", async () => {
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(true);
+    status.ready = true;
+    expect(await loadDeviceVoiceEnabled()).toBe(true);
+  });
+
+  it("keeps a hosted voice that is already ready", async () => {
+    status.ready = true;
+    const { loadDeviceVoiceEnabled } = await import("./device-voice");
+    expect(await loadDeviceVoiceEnabled()).toBe(false);
+    status.ready = false;
+    expect(await loadDeviceVoiceEnabled()).toBe(false);
+  });
+
+  it("uses this device without remembering it when the server cannot answer", async () => {
     status.fail = true;
+    const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(true);
     status.fail = false;
     status.ready = true;
