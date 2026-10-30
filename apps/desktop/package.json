@@ -10,7 +10,7 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "pnpm build && electron .",
-    "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs && node scripts/fetch-screen-driver.mjs",
+    "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
     "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json",
@@ -78,19 +78,7 @@
         {
           "from": "build/speech/rakazo-speech",
           "to": "speech/rakazo-speech"
-        },
-        {
-          "from": "build/screen-driver",
-          "to": "screen-driver",
-          "filter": [
-            "cua-driver",
-            "LICENSE",
-            "THIRD_PARTY_NOTICES.md"
-          ]
         }
-      ],
-      "signIgnore": [
-        "screen-driver/cua-driver$"
       ],
       "target": [
         "dmg",

@@ -1,10 +1,17 @@
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
 import { createCuaHostScreen, cuaDriverConnector } from "@rakazo/adapters/cua-host-screen";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { HostScreenError } from "@rakazo/adapters/host-screen";
 
 export const SCREEN_LOCKED_MESSAGE =
   "The user's screen is locked, so their apps can't be seen or used. Ask them to unlock it, then try again.";
+export const SCREEN_DRIVER_DOWNLOAD_MESSAGE =
+  "Screen control couldn't be set up on this computer. Ask the user to check their internet connection, then try again.";
 export const SCREEN_PERMISSION_MESSAGE =
   "Rakazo needs Accessibility and Screen Recording access on this Mac. Ask the user to allow Rakazo in System Settings > Privacy & Security, quit and reopen Rakazo, then try again.";
 
@@ -28,18 +35,74 @@ export async function ensureScreenPermissions(api: ScreenPermissionApi) {
     throw new HostScreenError(SCREEN_PERMISSION_MESSAGE);
 }
 
-/** Screen control for this Mac, or undefined where no driver is bundled. */
+/** The one driver release this app runs. Changing it is a reviewed edit to this pin. */
+export const SCREEN_DRIVER_RELEASE = {
+  url: "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.38.0/cua-driver-rs-0.38.0-darwin-universal-binary.tar.gz",
+  sha256: "2bb8dc4a7e69185ffd04c4a9c0eab590bd2c54b72c2c1be13ab675be4f487732",
+};
+
+/**
+ * Downloads the pinned driver into `dir` the first time it is needed, so only people who use
+ * screen control pay for it, and returns its path. Any other download is refused, and earlier
+ * versions are removed.
+ */
+export function screenDriverInstaller(options: {
+  dir: string;
+  fetch: (url: string) => Promise<Response>;
+  release?: typeof SCREEN_DRIVER_RELEASE;
+}): () => Promise<string> {
+  const release = options.release ?? SCREEN_DRIVER_RELEASE;
+  const command = path.join(options.dir, release.sha256, "cua-driver");
+  let pending: Promise<string> | undefined;
+
+  async function install() {
+    await mkdir(options.dir, { recursive: true });
+    const staging = await mkdtemp(path.join(options.dir, ".download-"));
+    try {
+      const response = await options.fetch(release.url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const archive = Buffer.from(await response.arrayBuffer());
+      if (createHash("sha256").update(archive).digest("hex") !== release.sha256)
+        throw new Error("checksum mismatch");
+      const archivePath = path.join(staging, "driver.tar.gz");
+      await writeFile(archivePath, archive);
+      await promisify(execFile)("/usr/bin/tar", ["-xzf", archivePath, "-C", staging, "cua-driver"]);
+      await rm(archivePath);
+      for (const entry of await readdir(options.dir))
+        if (entry !== path.basename(staging))
+          await rm(path.join(options.dir, entry), { recursive: true, force: true });
+      await rename(staging, path.dirname(command));
+      return command;
+    } catch {
+      throw new HostScreenError(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+
+  return () => {
+    if (existsSync(command)) return Promise.resolve(command);
+    pending ??= install().finally(() => {
+      pending = undefined;
+    });
+    return pending;
+  };
+}
+
+/** Screen control for this Mac, or undefined on other platforms. */
 export function createDesktopHostScreen(options: {
   platform: NodeJS.Platform;
-  command: string;
+  /** Resolves to the driver executable, fetching it first if needed. */
+  driver: () => Promise<string>;
   home: string;
   permissions: ScreenPermissionApi;
   /** A locked Mac hides every window, so apps opened behind the lock screen show none. */
   locked: () => boolean;
 }): HostScreen | undefined {
-  if (options.platform !== "darwin" || !existsSync(options.command)) return undefined;
+  if (options.platform !== "darwin") return undefined;
   const screen = createCuaHostScreen({
-    connect: cuaDriverConnector({ command: options.command, home: options.home }),
+    connect: async () =>
+      cuaDriverConnector({ command: await options.driver(), home: options.home })(),
     permissions: () => ensureScreenPermissions(options.permissions),
     selfPid: process.pid,
   });

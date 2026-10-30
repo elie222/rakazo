@@ -32,7 +32,7 @@ import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
-import { createDesktopHostScreen } from "./host-screen.js";
+import { createDesktopHostScreen, screenDriverInstaller } from "./host-screen.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -1176,11 +1176,11 @@ app.whenReady().then(async () => {
   }
   hostScreen = createDesktopHostScreen({
     platform: process.platform,
-    // Installed builds ship the driver as an extra resource; `pnpm build` downloads it for development.
-    command: app.isPackaged
-      ? path.join(process.resourcesPath, "screen-driver", "cua-driver")
-      : path.join(app.getAppPath(), "build", "screen-driver", "cua-driver"),
-    home: path.join(userDataDir, "screen-driver"),
+    driver: screenDriverInstaller({
+      dir: path.join(userDataDir, "screen-driver", "bin"),
+      fetch: (url) => net.fetch(url),
+    }),
+    home: path.join(userDataDir, "screen-driver", "home"),
     permissions: {
       isTrustedAccessibilityClient: (prompt) =>
         systemPreferences.isTrustedAccessibilityClient(prompt),

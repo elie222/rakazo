@@ -66,7 +66,7 @@ const LAUNCH_WAIT_MS = 4_000;
 // Long screenshot edge. Larger images cost model tokens without making text easier to read.
 const MAX_IMAGE_DIMENSION = 1_568;
 
-/** Starts the bundled driver as this app's child, so the OS credits its permissions to this app. */
+/** Starts the driver as this app's child, so the OS credits its permissions to this app. */
 export function cuaDriverConnector(options: {
   command: string;
   /** The driver's own state and config, kept apart from any standalone install. */
@@ -131,7 +131,7 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
       try {
         result = await (await client).call(name, args, signal);
       } catch (error) {
-        if (signal.aborted) throw error;
+        if (signal.aborted || error instanceof HostScreenError) throw error;
         // A driver that crashed or hung starts fresh on the next call.
         release();
         throw new HostScreenError("Screen control stopped responding. Try again.");
