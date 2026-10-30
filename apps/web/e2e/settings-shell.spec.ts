@@ -58,7 +58,8 @@ test("narrow settings reveals the active section and offers scroll controls", as
       })
       .toBe(true);
     await expect(previous).toBeEnabled();
-    await expect(next).toBeDisabled();
+    // An owner's Audit log follows Usage.
+    await expect(next).toBeEnabled();
     await captureScreenshot(page, testInfo, `settings-tabs-${width}`);
     const offset = await nav.evaluate((node) => node.scrollLeft);
     await previous.click();

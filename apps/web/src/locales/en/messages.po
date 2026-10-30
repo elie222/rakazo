@@ -1940,10 +1940,6 @@ msgstr "Could not download {name}. Try again."
 msgid "Could not enable tools"
 msgstr "Could not enable tools"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not export the audit log"
-msgstr "Could not export the audit log"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Could not install connector"

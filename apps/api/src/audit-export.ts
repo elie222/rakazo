@@ -4,14 +4,21 @@ import type { PrismaClient } from "@rakazo/db";
 import { auditLogOrganization, exportAuditEvents, recordAuditEvent } from "@rakazo/db";
 import type { Hono } from "hono";
 
-/** `GET /api/audit-events/export`: the organization's audit log as JSON Lines, newest first. */
+/**
+ * `GET /api/audit-events/export`: the organization's audit log as JSON Lines, newest first. A plain
+ * navigation, so the browser streams the download to disk; `space` stands in for the space header.
+ */
 export function mountAuditExportRoute(
   app: Hono,
   deps: { prisma: PrismaClient; sessionActor: (request: Request) => Promise<Actor | null> },
 ): void {
   app.get("/api/audit-events/export", async (c) => {
     const headers = { "cache-control": "no-store" };
-    const actor = await deps.sessionActor(c.req.raw);
+    const space = c.req.query("space");
+    const request = new Request(c.req.raw);
+    if (space && !request.headers.has("x-rakazo-space-id"))
+      request.headers.set("x-rakazo-space-id", space);
+    const actor = await deps.sessionActor(request);
     if (!actor) return c.text("Unauthorized", 401, headers);
     const organizationId = await auditLogOrganization(deps.prisma, actor);
     if (!organizationId) return c.text("Forbidden", 403, headers);

@@ -157,6 +157,8 @@ async function post(
         ...(webhook.authorization ? { authorization: webhook.authorization } : {}),
       },
       body: `${lines.join("\n")}\n`,
+      // A redirect would resend the events, and possibly the credential, somewhere unconfigured.
+      redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     await response.body?.cancel();

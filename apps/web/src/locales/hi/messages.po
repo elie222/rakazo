@@ -1940,10 +1940,6 @@ msgstr "{name} डाउनलोड नहीं हो सका। पुन�
 msgid "Could not enable tools"
 msgstr ""
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not export the audit log"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "कनेक्टर इंस्टॉल नहीं हो सका"

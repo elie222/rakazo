@@ -1940,10 +1940,6 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not enable tools"
 msgstr "无法启用工具"
 
-#: src/pages/AuditLogSettingsPanel.tsx
-msgid "Could not export the audit log"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "无法安装连接器"

@@ -24,6 +24,9 @@ identifiers. Labels are copied when the event is written, so the record still re
 the space, chat, run, bot or account is deleted. Events never include message content, tool
 arguments, or secret values.
 
+Actor labels (a person's email), client addresses and user agents stay in the log after the account
+is deleted, until retention prunes them, and in any SIEM they were forwarded to.
+
 Rows are never updated. Postgres rejects updates, and the only delete is retention pruning.
 Failed sign-ins, rate limits and refused destinations have no organization to belong to; they stay
 in the deployment's [security events](./self-host-observability.md#security-events).

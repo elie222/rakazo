@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AuditEvent } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { Button, Skeleton } from "@rakazo/ui-web";
 import {
   Table,
   TableBody,
@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@rakazo/ui-web/components/ui/table";
 import { useEffect, useState } from "react";
-import { rpc, withSpaceHeaders } from "../lib/rpc";
+import { rpc, selectedSpaceId } from "../lib/rpc";
 
 export function AuditLogSettingsPanel() {
   const { t, i18n } = useLingui();
@@ -51,29 +51,17 @@ export function AuditLogSettingsPanel() {
     }
   }
 
-  async function exportLog() {
-    setError(null);
-    try {
-      const response = await fetch("/api/audit-events/export", {
-        headers: withSpaceHeaders(),
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error(String(response.status));
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `rakazo-audit-log-${new Date().toISOString().slice(0, 10)}.jsonl`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setError(t`Could not export the audit log`);
-    }
+  function exportLog() {
+    const link = document.createElement("a");
+    const space = selectedSpaceId();
+    link.href = `/api/audit-events/export${space ? `?space=${encodeURIComponent(space)}` : ""}`;
+    link.click();
   }
 
   return (
     <div data-testid="audit-log-settings">
       <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => void exportLog()}>
+        <Button variant="outline" size="sm" onClick={exportLog}>
           <Trans>Export</Trans>
         </Button>
       </div>
@@ -129,7 +117,9 @@ export function AuditLogSettingsPanel() {
         <p className="mt-3 text-[13px] text-muted-foreground">
           <Trans>No events yet</Trans>
         </p>
-      ) : null}
+      ) : error ? null : (
+        <Skeleton className="mt-3 h-40 rounded-xl" />
+      )}
       {nextCursor ? (
         <div className="mt-3 flex justify-center">
           <Button
