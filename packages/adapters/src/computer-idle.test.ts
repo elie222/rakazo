@@ -1242,12 +1242,12 @@ describe("monthly computer allowance", () => {
   });
 
   it("saves and stops a computer once the month's allowance is spent, and says so once", async () => {
-    // $5 at the default $0.10 an hour.
+    // $5 at the default $0.20 an hour.
     const harness = idleHarness({
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
       backgroundWorkProbeCode: 0,
-      computerHours: 50,
+      computerHours: 25,
     });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
 
@@ -1282,13 +1282,27 @@ describe("monthly computer allowance", () => {
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
       backgroundWorkProbeCode: 0,
-      computerHours: 49,
+      computerHours: 24,
     });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.computer.state).toBe("running");
+  });
+
+  it("stops a computer whose allowance is spent even while a coding agent works", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      codingAgent: "codex",
+      computerHours: 25,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
   });
 
   it("never limits a computer that does not bill while running", async () => {
