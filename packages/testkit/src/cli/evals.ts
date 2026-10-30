@@ -175,7 +175,7 @@ async function main() {
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
       "Silence reply meaning uses a calibrated LLM judge; other suites retain their existing task-specific graders.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
-      "Tool trace contains names and statuses only; raw requests and responses are omitted.",
+      "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
     trials,
     summary: summarize(trials),

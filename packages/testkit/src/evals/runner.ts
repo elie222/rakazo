@@ -637,10 +637,10 @@ export async function runTrial(
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
         throw new EvalFailure("incomplete", lastText);
-      // Provider failures surface as a short notice; a long answer may mention a status code.
+      // A bare status code can appear in a real answer; only count it next to an error word.
       if (
-        lastText.length < 400 &&
-        /unknown model|invalid api.?key|authentication.*(?:failed|error)|\b(?:401|402|403|429)\b/i.test(
+        /unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText) ||
+        /\b(?:401|402|403|429)\b[^.\n]{0,40}(?:error|rate.?limit|quota|unauthori[sz]ed|forbidden|payment)|(?:error|rate.?limit|quota|unauthori[sz]ed|forbidden|payment)[^.\n]{0,40}\b(?:401|402|403|429)\b/i.test(
           lastText,
         )
       )
