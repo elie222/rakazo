@@ -1,3 +1,4 @@
+import type { InferRouterInitialContext } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -150,9 +151,9 @@ function messagingDeps(
         }) => {
           // Handlers scope by every linked identity, so bot filters arrive
           // as { in: [...] } lists.
-          const matches = (filter: string | { in: string[] } | undefined, value: string) =>
+          const matches = (filter: string | { in: string[] } | undefined, value: unknown) =>
             filter === undefined ||
-            (typeof filter === "string" ? filter === value : filter.in.includes(value));
+            (typeof filter === "string" ? filter === value : filter.in.some((id) => id === value));
           if (!connection) return null;
           if (where?.id && connection.id !== where.id) return null;
           if (!matches(where?.targetBotId, connection.targetBotId)) return null;
@@ -292,7 +293,12 @@ function messagingDeps(
   };
 }
 
-async function call(handler: RPCHandler<never>, actor: Actor, path: string, body: unknown = {}) {
+async function call(
+  handler: RPCHandler<InferRouterInitialContext<ReturnType<typeof createRouter>>>,
+  actor: Actor,
+  path: string,
+  body: unknown = {},
+) {
   const { response } = await handler.handle(
     new Request(`http://127.0.0.1/rpc/${path}`, {
       method: "POST",
@@ -301,6 +307,7 @@ async function call(handler: RPCHandler<never>, actor: Actor, path: string, body
     }),
     { prefix: "/rpc", context: { actor } },
   );
+  if (!response) throw new Error("no response");
   return response;
 }
 

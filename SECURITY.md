@@ -38,7 +38,7 @@ Pages, search results, files, connector data and inbound messages can carry text
 
 Known gaps:
 
-- **Shell and browser.** Commands and pages on a bot computer can reach any public host. `SANDBOX_COMPUTER_EGRESS=restricted` (see [self-hosting](docs/self-host.md#restricted-computer-egress)) blocks private networks and cloud metadata, not public hosts. A bot that runs `curl` or opens a page can send data anywhere the computer can reach, and page scripts can too.
+- **Shell and browser.** Commands and pages on a bot computer can reach any public host. `SANDBOX_COMPUTER_EGRESS=restricted` (see [self-hosting](docs/self-host-docker-computers.md#restricted-computer-egress)) blocks private networks and cloud metadata, not public hosts. A bot that runs `curl` or opens a page can send data anywhere the computer can reach, and page scripts can too.
 - **Open redirects and trusted sites.** Once a site is trusted for a run, any URL on it is allowed, including a redirect on that site to another host.
 - **Saved state.** Memory, skills and earlier conversation are treated as yours. Text that an earlier run saved there is not flagged as outside content, including a skill a routine's instructions pull in, whose sites that routine's runs may fetch.
 - **Auto Review on new sites.** The reviewer is a model judging whether a site fits your words. It never reads what the run took in, but injected text can still pick the URL it judges, so it may pass a site that looks plausible for the task or data hidden in an innocent-looking URL. Turn Auto Review off to have a person approve every new site in runs you can answer; webhook runs then refuse every new site.

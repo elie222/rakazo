@@ -42,18 +42,27 @@ describe("screenshotMatchesSpecStem", () => {
       ),
     ).toBe(false);
   });
+
+  it("matches output directories nested under a project folder", () => {
+    expect(
+      screenshotMatchesSpecStem(
+        "www-marketing/homepage-screenshots-plugin-pages-chromium/07-submit.png",
+        "homepage-screenshots",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("selectPlaywrightPrFeatureFrames", () => {
-  it("prefers NEW checkpoints over everything else", () => {
+  it("lists NEW checkpoints before CHANGED ones", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: [],
+      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
       screenshots: [
         screenshot({
           comparison: "changed",
-          fileName: "images/001-onboarding.png",
-          source: "onboarding-x/01.png",
-          title: "onboarding drift",
+          fileName: "images/001-shell-idle.png",
+          source: "tool-activity-shell-x/shell-idle.png",
+          title: "shell idle",
         }),
         screenshot({
           comparison: "new",
@@ -70,9 +79,29 @@ describe("selectPlaywrightPrFeatureFrames", () => {
           kind: "new",
           title: "shell live",
         }),
+        expect.objectContaining({
+          kind: "changed",
+          title: "shell idle",
+        }),
       ],
       omittedCount: 0,
     });
+  });
+
+  it("skips NEW checkpoints from specs outside the PR diff", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedPaths: ["apps/web/e2e/plugin-marketplace.spec.ts"],
+      screenshots: [
+        screenshot({
+          comparison: "new",
+          fileName: "images/001-group-mentions.png",
+          source: "group-chats-create-group-f-23e27-chromium/group-mentions.png",
+          title: "group mentions",
+        }),
+      ],
+    });
+
+    expect(selection).toEqual({ frames: [], omittedCount: 0 });
   });
 
   it("includes CHANGED checkpoints only when their spec is in the PR diff", () => {
@@ -171,7 +200,7 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     sha: "abcdef1234567890",
   };
 
-  it("names NEW frames with direct PNG links and keeps gallery links secondary", () => {
+  it("shows NEW frames inline and keeps gallery links secondary", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
       changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
@@ -189,20 +218,22 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     expect(body).toContain("### Playwright screenshots");
     expect(body).toContain("Feature frames for this PR:");
     expect(body).toContain(
-      "- [shell live collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live-collapsed-desktop-1440x900.png) (new)",
+      "**shell live collapsed desktop 1440x900** (new)\n\n![shell live collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live-collapsed-desktop-1440x900.png)",
     );
     expect(body).toContain(
       "[Open screenshot gallery](https://example.com/playwright/prs/452/index.html) · [Dashboard](https://example.com/playwright/index.html) · [CI run](https://github.com/example/rakazo/actions/runs/1)",
     );
     expect(body).toContain("Updated for commit `abcdef1`.");
-    expect(body).not.toContain("![");
     expect(body).not.toContain("—");
   });
 
   it("includes spec-touched CHANGED frames after NEW frames", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/e2e/tool-activity-disclosure.spec.ts"],
+      changedPaths: [
+        "apps/web/e2e/tool-activity-disclosure.spec.ts",
+        "apps/web/e2e/tool-activity-shell.spec.ts",
+      ],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -226,11 +257,9 @@ describe("buildPlaywrightPrScreenshotComment", () => {
       ],
     });
 
-    expect(body).toContain(
-      "- [shell live](https://example.com/playwright/runs/1-1/screenshots/images/010-shell-live.png) (new)",
-    );
-    expect(body).toContain(
-      "- [complete collapsed desktop 1440x900](https://example.com/playwright/runs/1-1/screenshots/images/020-complete-collapsed-desktop-1440x900.png) (changed)",
+    expect(body.indexOf("**shell live** (new)")).toBeGreaterThan(-1);
+    expect(body.indexOf("**complete collapsed desktop 1440x900** (changed)")).toBeGreaterThan(
+      body.indexOf("**shell live** (new)"),
     );
     expect(body).not.toContain("onboarding");
   });
@@ -272,16 +301,16 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     });
 
     expect(body).toContain(
-      "- [frame 8](https://example.com/playwright/runs/1-1/screenshots/images/008-frame.png) (new)",
+      "![frame 8](https://example.com/playwright/runs/1-1/screenshots/images/008-frame.png)",
     );
     expect(body).not.toContain("frame 9");
-    expect(body).toContain("- +2 more in the gallery");
+    expect(body).toContain("+2 more in the gallery");
   });
 
   it("neutralizes Markdown and HTML syntax in contributor-controlled titles", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: [],
+      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
       screenshots: [
         screenshot({
           comparison: "new",
@@ -292,8 +321,11 @@ describe("buildPlaywrightPrScreenshotComment", () => {
       ],
     });
 
+    const label =
+      "evil\\] \\*\\*bold\\*\\* \\`code\\` \\_em\\_ \\#heading \\[link\\] &lt;details&gt;&amp;";
+    expect(body).toContain(`**${label}** (new)`);
     expect(body).toContain(
-      "- [evil\\] \\*\\*bold\\*\\* \\`code\\` \\_em\\_ \\#heading \\[link\\] &lt;details&gt;&amp;](https://example.com/playwright/runs/1-1/screenshots/images/010-crafted.png) (new)",
+      `![${label}](https://example.com/playwright/runs/1-1/screenshots/images/010-crafted.png)`,
     );
     expect(body).not.toContain("\n**bold**");
     expect(body).not.toContain("`code`");

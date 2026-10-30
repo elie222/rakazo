@@ -6,7 +6,12 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerControlExpireJobKey } from "@rakazo/adapter-kit";
+import {
+  computerControlExpireJobKey,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { ComputerUpdate } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -33,7 +38,6 @@ import {
 import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
-  deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   mountsServerHome,
   removeDeletedBotWorkspaces,
@@ -188,11 +192,15 @@ export async function provisionComputer(
     }
   }
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
-  await mkdir(homePath, { recursive: true });
 
   // Re-provisioning a live computer enters booting and revokes its screen URLs.
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
-  if (existing.state === "running" && existing.providerRef && deps.sandbox.isRunning) {
+  if (
+    existing.state === "running" &&
+    existing.providerRef &&
+    !existing.restorePending &&
+    deps.sandbox.isRunning
+  ) {
     const ref = toComputerRef(existing);
     if (await confirmedRunning(deps.sandbox, ref, context)) {
       context.signal.throwIfAborted();
@@ -339,6 +347,8 @@ export async function provisionComputer(
     where: {
       id: computerId,
       ...claimWhere,
+      // A start this one reclaims from may have marked its new machine since it was read.
+      restorePending: existing.restorePending,
       maintenanceId: existing.maintenanceId ?? null,
       ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
     },
@@ -346,17 +356,32 @@ export async function provisionComputer(
   });
   if (claimed.count !== 1) throw new ComputerBusyError();
   let provisioned: ComputerRef | undefined;
+  let incomplete = false;
+  // A start that took over an abandoned boot cannot tell how far that boot restored, so it restores.
+  const replaces = (ref: ComputerRef) =>
+    reclaimStamp !== null ||
+    existing.restorePending ||
+    ref.fresh === true ||
+    !existing.providerRef ||
+    existing.providerRef !== ref.providerRef ||
+    existing.kind !== ref.kind;
   try {
-    // On a start that is not a reconnect, a computer that mounts the server's home boots on the
-    // object store's cached copy, so that copy must hold the stored revision before provision.
-    // The kind is the one provision will produce; any other computer downloads the revision
-    // only if a replacement restores it below.
-    const cache =
-      !reconnecting && deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
+    // A computer that mounts the server's home boots on the object store's cached copy, so that
+    // copy must hold the stored revision before provision. The kind is the one provision will
+    // produce; any other computer downloads the revision only if a replacement restores it below.
+    // Only a Docker computer's own reconnect may find its live copy there.
+    const cache = deps.home instanceof ObjectAgentHomeStore ? deps.home : undefined;
+    // Once this start holds the claim and before anything recreates the folder, so a deleted
+    // cache comes back downloaded, never as an empty folder taken for the stored revision.
+    await cache?.forgetMissingCache(existing.homeKey);
     const hydrated =
       cache !== undefined &&
       mountsServerHome((await deps.sandbox.provisionKind?.()) ?? deps.sandbox.describe().id);
-    if (hydrated) await cache.hydrate(existing.homeKey);
+    if (hydrated)
+      await cache.hydrate(existing.homeKey, {
+        keepLiveCache: reconnecting && existing.kind === "docker",
+      });
+    await mkdir(homePath, { recursive: true });
     await onProgress?.("recreating");
     const provision = () =>
       getLogger().withContext(
@@ -377,8 +402,33 @@ export async function provisionComputer(
             context,
           ),
       );
+    // A new machine under the stored name, or any machine of a reclaimed boot, is incomplete until
+    // restored. Mark it as soon as the provider returns it, so a start that fails or dies after that
+    // point leaves the row marked; a failed start records the mark even if this write did not land.
+    const markReplacement = async (next: ComputerRef) => {
+      if (
+        reclaimStamp === null &&
+        (next.fresh !== true ||
+          next.providerRef !== existing.providerRef ||
+          next.kind !== existing.kind)
+      )
+        return;
+      incomplete = true;
+      const claim = await deps.prisma.computer.updateMany({
+        where: {
+          id: computerId,
+          state: "booting",
+          updatedAt: claimStamp,
+          ...previousRef,
+          maintenanceId: existing.maintenanceId ?? null,
+        },
+        data: { restorePending: true, updatedAt: claimStamp },
+      });
+      if (claim.count !== 1) throw new ComputerBusyError();
+    };
     let ref = await provision();
     provisioned = ref;
+    await markReplacement(ref);
     try {
       await deps.sandbox.prepare(ref, context);
     } catch (error) {
@@ -397,6 +447,7 @@ export async function provisionComputer(
         else await deps.sandbox.stop(ref, context, { discardUnsaved: true });
         ref = await provision();
         provisioned = ref;
+        await markReplacement(ref);
         await deps.sandbox.prepare(ref, context);
       } catch (failure) {
         log.warn("computer.auto_recover", { provider: ref.kind, step: "failed", error: failure });
@@ -413,11 +464,7 @@ export async function provisionComputer(
     // that was not brought up to date. Failing rolls this computer back; the next start downloads.
     if (cache && !hydrated && mountsServerHome(ref.kind))
       throw new Error("Computer host changed while it was starting");
-    const replacement =
-      ref.fresh === true ||
-      !existing.providerRef ||
-      existing.providerRef !== ref.providerRef ||
-      existing.kind !== ref.kind;
+    const replacement = replaces(ref);
     if (replacement) {
       await onProgress?.("restoring");
       await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, ref, context);
@@ -455,6 +502,7 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
+        restorePending: false,
         runningSince,
         ...(!reconnecting
           ? {
@@ -513,14 +561,19 @@ export async function provisionComputer(
           state:
             (reconnecting || rollbackError) && unsafeStop
               ? "quarantined"
-              : reconnecting
+              : reconnecting && !existing.restorePending && !incomplete
                 ? "running"
                 : "error",
           ...((!reconnecting || (unsafeStop && provisioned?.fresh === true)) &&
           rollbackError &&
           provisioned
-            ? { providerRef: provisioned.providerRef, kind: provisioned.kind }
+            ? {
+                providerRef: provisioned.providerRef,
+                kind: provisioned.kind,
+                restorePending: replaces(provisioned),
+              }
             : {}),
+          ...(incomplete ? { restorePending: true } : {}),
         },
       });
     } catch (recordError) {
@@ -530,6 +583,15 @@ export async function provisionComputer(
       );
     }
     if (rollbackError) {
+      // The provider was still down for the cleanup, which adds nothing to why the start failed.
+      if (
+        rollbackError instanceof SandboxUnresponsiveError ||
+        rollbackError instanceof SandboxUnavailableError ||
+        rollbackError instanceof SandboxRateLimitError
+      ) {
+        log.warn("computer.rollback_failed", { provider: provisioned?.kind, error: rollbackError });
+        throw error;
+      }
       throw new AggregateError(
         [error, rollbackError],
         "Computer provisioning failed and its sandbox could not be rolled back",
@@ -885,7 +947,7 @@ function isUniqueConstraintError(error: unknown) {
 export type ComputerReplaceMode = "recover" | "reset" | "update";
 
 export function computerSupportsUpdate(kind: string): boolean {
-  return kind !== "desktop";
+  return kind !== "desktop" && kind !== "wuying";
 }
 
 /** Kinds whose provider opens a user terminal through the shared Linux screen gateway. */
@@ -1125,10 +1187,12 @@ export async function replaceComputer(
           existing.homeKey,
           oldRef,
           context,
-          // Called once the export has finished, just before the files are stored.
-          () => {
-            exported = true;
-            return deletedTeamBotFolders(deps.prisma, existing);
+          {
+            prisma: deps.prisma,
+            computer: existing,
+            onExported: () => {
+              exported = true;
+            },
           },
         );
       } catch (error) {

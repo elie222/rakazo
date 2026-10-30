@@ -639,6 +639,31 @@ describe("sandbox idle", () => {
     );
   });
 
+  it("keeps a computer its provider is slow to stop running and checks again later", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.sandbox.stop.mockRejectedValueOnce(
+      new SandboxUnresponsiveError("Boat sandbox did not reach archived"),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.computer.homeRevision).toBe("rev-checkpoint");
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "unresponsive",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
   it("schedules the next idle check when stopping fails", async () => {
     const harness = idleHarness();
     harness.sandbox.stop.mockRejectedValueOnce(new Error("stop refused"));
@@ -1228,6 +1253,43 @@ describe("background work launch and probe", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32").each([true, false])(
+    "sweeps every stale marker with held background work: %s",
+    async (held) => {
+      const markerId = `computer-sweep-${randomUUID()}`;
+      const activeMarker = `/tmp/rakazo-background-${markerId}-run-1-a-held`;
+      const staleMarkers = [
+        `/tmp/rakazo-background-${markerId}-run-1-b-stale`,
+        `/tmp/rakazo-background-${markerId}-run-2-c-stale`,
+      ];
+      for (const marker of [activeMarker, ...staleMarkers]) markers.add(marker);
+
+      if (held) {
+        const active = spawn(
+          "bash",
+          [
+            "-c",
+            BACKGROUND_WORK_LAUNCH,
+            "rakazo-background-launch",
+            markerId,
+            "run-1",
+            "a-held",
+            "exec sleep 30",
+          ],
+          { stdio: "ignore", detached: true },
+        );
+        children.push(active);
+        await expect.poll(() => existsSync(activeMarker)).toBe(true);
+      }
+      for (const marker of staleMarkers) writeFileSync(marker, "");
+
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
+      for (const marker of staleMarkers) expect(existsSync(marker)).toBe(false);
+      expect(existsSync(activeMarker)).toBe(held);
+      expect(await probeBackgroundWork(markerId)).toBe(held ? 0 : 1);
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "cleans a completed marker without blocking a later launch",
     async () => {
@@ -1555,6 +1617,11 @@ function idleHarness(
       }),
     },
     computer: {
+      findFirst: vi.fn(async () => ({
+        state: "running",
+        restorePending: false,
+        screenGeneration: 0,
+      })),
       findUnique: vi.fn(async () => ({ ...computer })),
       updateMany: vi.fn(async (args) => {
         if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())

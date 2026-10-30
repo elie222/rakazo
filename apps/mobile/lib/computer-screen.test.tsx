@@ -23,7 +23,7 @@ const screens = vi.hoisted(() => ({
     | ((event: { nativeEvent: { data: string; url?: string } }) => void)
     | undefined,
   source: "",
-  onLoadStart: undefined as (() => void) | undefined,
+  onLoadStart: undefined as ((event?: { nativeEvent: { url: string } }) => void) | undefined,
 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -125,7 +125,7 @@ vi.mock("react-native-webview", () => {
       onMessage?: (event: { nativeEvent: { data: string; url?: string } }) => void;
       onError?: () => void;
       source?: { uri: string };
-      onLoadStart?: () => void;
+      onLoadStart?: (event?: { nativeEvent: { url: string } }) => void;
     }) => {
       screens.onMessage = props.onMessage;
       screens.error = props.onError;
@@ -349,6 +349,39 @@ describe("computer screen", () => {
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(view.textContent).toContain("Could not connect to the computer screen");
     expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("keeps an Android sandboxed screen connected past the state-report deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const screen = "https://screen.example.test/novnc/session/view/1.t/vnc.html";
+    respond(botWorking, screen);
+    const view = await render();
+    await act(async () => {
+      screens.onLoadStart?.({ nativeEvent: { url: screen } });
+      screens.onMessage?.({
+        nativeEvent: { url: "null", data: '{"rakazoScreen":"connected"}' },
+      });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(16_000));
+    expect(view.querySelector("iframe")).not.toBeNull();
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(view.textContent).not.toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("rejects opaque state reports after navigating away from the authorized screen", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking, "https://screen.example.test/novnc/session/view/1.t/vnc.html");
+    const view = await render();
+    await act(async () => {
+      screens.onLoadStart?.({ nativeEvent: { url: "https://elsewhere.example.test/" } });
+      screens.onMessage?.({
+        nativeEvent: { url: "null", data: '{"rakazoScreen":"connected"}' },
+      });
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(16_000));
+    expect(view.textContent).toContain("Could not connect to the computer screen");
     vi.useRealTimers();
   });
 

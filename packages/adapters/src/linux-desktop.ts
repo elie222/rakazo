@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
+  CommandRequest,
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
@@ -19,6 +20,7 @@ import {
   desktopUrl,
   managedDesktopCommand,
   releaseDesktopCommand,
+  screenDisplayArgv,
   screenPorts,
   shellQuote,
   stopAllDesktopBrowsersCommand,
@@ -49,6 +51,25 @@ export interface LinuxDesktopHost {
     context: AdapterContext,
   ): Promise<{ code: number; stdout: string; stderr?: string }>;
   screenUrl(computer: ComputerRef, port: number, context: AdapterContext): Promise<string>;
+}
+
+/** Point a bot's commands at its own screen, as Docker computers do, unless the caller chose a display. */
+export function onBotScreen(
+  request: CommandRequest,
+  context: AdapterContext,
+  displayStart: number,
+): CommandRequest {
+  if (
+    !context.botId ||
+    !request.argv.length ||
+    Object.hasOwn(request.env ?? {}, "DISPLAY") ||
+    request.unsetEnv?.includes("DISPLAY")
+  )
+    return request;
+  return {
+    ...request,
+    argv: screenDisplayArgv(request.argv, screenSessionKey(context), displayStart),
+  };
 }
 
 /** Provider SDKs supply only command execution, workspace paths, and protected port URLs. */

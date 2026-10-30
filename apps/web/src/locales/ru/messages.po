@@ -146,11 +146,6 @@ msgstr "{0} ТБ"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} по-прежнему будет отвечать на прямые упоминания."
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "Экран {0}"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr ""
@@ -170,6 +165,10 @@ msgstr "{commandVariable} зарезервирована и не может ис
 #: src/pages/PluginsOverlay.tsx
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr ""
+
+#: src/pages/shell/message-view.tsx
+msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+msgstr "{count, plural, one {# сообщение с {peer}} few {# сообщения с {peer}} many {# сообщений с {peer}} other {# сообщения с {peer}}}"
 
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -225,6 +224,10 @@ msgstr "{minutes} мин назад"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
 msgstr ""
 
 #: src/lib/activity-list-filters.ts
@@ -404,12 +407,6 @@ msgstr "{toolCount, plural, one {# инструмент} few {# инструме
 msgid "@{0}"
 msgstr "@{0}"
 
-#. placeholder {0}: amount / 100
-#. placeholder {0}: status.byokPriceCents / 100
-#: src/components/ModelCredits.tsx
-msgid "${0} / month"
-msgstr ""
-
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -527,6 +524,10 @@ msgstr "Добавьте команду stdio."
 msgid "Add a trigger to run this routine."
 msgstr "Добавьте триггер для запуска этой процедуры."
 
+#: src/lib/tts.ts
+msgid "Add a voice provider key and pick a voice in Voice settings."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Добавьте URL-адрес HTTPS-сервера."
@@ -630,10 +631,6 @@ msgstr "Расширенные"
 msgid "Advanced..."
 msgstr "Расширенные..."
 
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "Компьютер агента"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "Агенты:"
@@ -642,10 +639,9 @@ msgstr "Агенты:"
 msgid "All"
 msgstr ""
 
-#. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
-msgid "All ${0} goes to model usage."
-msgstr "Все ${0} идут на использование моделей."
+msgid "All {credit} goes to model usage."
+msgstr "Все {credit} идут на использование моделей."
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -680,6 +676,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Разрешить один раз"
+
+#: src/lib/dictation.ts
+msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
+msgstr ""
 
 #: src/components/ApprovalRulePreview.tsx
 msgid "Allow rule"
@@ -804,6 +804,10 @@ msgstr "Ключи API"
 msgid "Appearance"
 msgstr "Внешний вид"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "Применить"
@@ -816,7 +820,7 @@ msgstr "Границы одобрения"
 msgid "Approval model"
 msgstr "Модель проверки действий"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "Подтверждения"
@@ -991,7 +995,7 @@ msgstr ""
 msgid "Bearer token"
 msgstr "Bearer-токен"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr ""
 
@@ -1028,6 +1032,7 @@ msgstr "бот"
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Bot"
 msgstr "Бот"
 
@@ -1428,10 +1433,6 @@ msgstr "Код"
 msgid "Collapse {0}"
 msgstr "Свернуть {0}"
 
-#: src/pages/shell/message-view.tsx
-msgid "Collapse {label}"
-msgstr "Свернуть {label}"
-
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Цвет"
@@ -1456,6 +1457,10 @@ msgstr "Скоро"
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "Команда"
+
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
@@ -1482,7 +1487,7 @@ msgstr "Завершить"
 msgid "Completed"
 msgstr "Завершено"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1584,6 +1589,7 @@ msgid "Connect API key"
 msgstr "Подключить API-ключ"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "Подключить приложения"
 
@@ -1797,6 +1803,7 @@ msgstr "Не удалось завершить обновление. Попро�
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Не удалось подключиться"
 
@@ -2207,6 +2214,10 @@ msgstr "Не смог взять под контроль"
 msgid "Could not test MCP server"
 msgstr "Не удалось проверить MCP-сервер"
 
+#: src/lib/dictation.ts
+msgid "Could not transcribe that recording."
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "Не удалось обновить"
@@ -2366,6 +2377,7 @@ msgid "Customize bot avatar"
 msgstr "Настроить аватар бота"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "Тёмная"
 
@@ -2523,6 +2535,18 @@ msgstr "Подробности"
 msgid "Developer"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Dictation ended unexpectedly."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed: {code}"
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Отключить инструмент"
@@ -2616,6 +2640,7 @@ msgstr "У вас нет учетной записи?"
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/import-setup-card.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "Готово"
 
@@ -2772,6 +2797,10 @@ msgstr "Каждую неделю: {0} и {1}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "каждые {intervalAmountSelect} {intervalUnitSelect}"
 
+#: src/lib/cron.ts
+msgid "Every {n} hours at :{minute}"
+msgstr "Раз в {n} ч, на {minute}-й минуте"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Все боты в этом пространстве читают эти заметки и поддерживают их в актуальном состоянии."
@@ -2819,10 +2848,6 @@ msgstr "Развернуть"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "Развернуть {0}"
-
-#: src/pages/shell/message-view.tsx
-msgid "Expand {label}"
-msgstr "Развернуть {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -2894,6 +2919,7 @@ msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Поля для сравнения, например id, modifiedTime (необязательно)"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "Файл"
 
@@ -2993,6 +3019,7 @@ msgstr "Полноэкранный"
 msgid "Gateway ID"
 msgstr "ID шлюза"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "Общие"
@@ -3013,10 +3040,15 @@ msgstr "Подготовка"
 msgid "Git event"
 msgstr "Git-событие"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "На главную"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Group"
 msgstr "Группа"
 
@@ -3363,12 +3395,17 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "Позволяет ботам сохранять и находить факты по смыслу в дополнение к MEMORY.md."
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "Светлая"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
 msgstr "Задача Linear"
+
+#: src/pages/SpaceSearch.tsx
+msgid "Link"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -3601,7 +3638,7 @@ msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Память"
@@ -3636,6 +3673,7 @@ msgstr "Упоминает: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Message"
 msgstr "Сообщение"
 
@@ -3672,11 +3710,12 @@ msgstr "Сообщение…"
 msgid "Messaged {peer}"
 msgstr "Отправлено сообщение {peer}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "Обмен сообщениями"
 
 #: src/lib/call-session.ts
+#: src/lib/dictation.ts
 msgid "Microphone failed"
 msgstr "Ошибка микрофона"
 
@@ -3748,7 +3787,7 @@ msgid "Model options"
 msgstr "Варианты модели"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "Модели"
@@ -3875,6 +3914,7 @@ msgstr "Требуется передача управления"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "Требуется ваше участие"
 
@@ -3900,6 +3940,7 @@ msgstr "Новый бот"
 msgid "New group"
 msgstr "Новая группа"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "Новый групповой чат"
@@ -3917,6 +3958,7 @@ msgstr "Новая задача"
 msgid "New password"
 msgstr "Новый пароль"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "Новое личное пространство"
@@ -3961,10 +4003,6 @@ msgstr "Нет авторизации"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "Нет аутентификации"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr "Нет ботов"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4023,6 +4061,7 @@ msgstr "Удаленные MCP-серверы не найдены"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Нет результатов"
@@ -4063,7 +4102,7 @@ msgstr ""
 msgid "Not a valid skill"
 msgstr "Недопустимый навык"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr ""
@@ -4284,6 +4323,10 @@ msgstr "Владелец"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Страница {page} из {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "Страница не найдена"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4917,6 +4960,7 @@ msgid "Return to call with {0}"
 msgstr "Вернуться к звонку с {0}"
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Вернуться в Rakazo"
 
@@ -4939,11 +4983,12 @@ msgstr "Сменить ключ"
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
+#: src/pages/SpaceSearch.tsx
 msgid "Routine"
 msgstr "Задача"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Задачи"
 
@@ -5109,8 +5154,8 @@ msgid "Search artifacts…"
 msgstr ""
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
-msgstr "Искать ботов и переключать диалоги"
+msgid "Search bots, actions, and settings"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
@@ -5236,6 +5281,10 @@ msgstr "URL-адрес сервера"
 msgid "Settings"
 msgstr "Настройки"
 
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr ""
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "Настройки: Общие"
@@ -5282,10 +5331,6 @@ msgstr ""
 msgid "Show bots"
 msgstr "Показать ботов"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr ""
@@ -5303,10 +5348,6 @@ msgstr "Показать пароль"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr ""
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "Показать настройки"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
@@ -5386,6 +5427,7 @@ msgstr "Навык {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "Навыки"
@@ -5401,6 +5443,10 @@ msgstr "Пропустить"
 #: src/lib/localized-provider-hint.ts
 msgid "Skip or deploy key"
 msgstr "Пропустить или добавить ключ"
+
+#: src/pages/shell/message-view.tsx
+msgid "Skipped"
+msgstr ""
 
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/shell/use-composer-actions.ts
@@ -5581,10 +5627,9 @@ msgstr ""
 msgid "Subscribe"
 msgstr "Оформить подписку"
 
-#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
-msgid "Subscribe for ${0} / month"
-msgstr "Подписаться за ${0} / месяц"
+msgid "Subscribe for {price} / month"
+msgstr "Подписаться за {price} / месяц"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe to Rakazo credits"
@@ -5616,15 +5661,12 @@ msgstr "Поддерживает рассуждения"
 msgid "Switch"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr "Сменить бота"
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Переключение…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "Системная"
 
@@ -5693,6 +5735,10 @@ msgstr "Проверка…"
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Бот сможет использовать файл, но не увидит изображение."
+
+#: src/lib/dictation.ts
+msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -5777,6 +5823,14 @@ msgstr "Этот бот"
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Этот бот работает на этом компьютере, а не на рабочем столе Linux. Оболочка и файлы используют вашу домашнюю папку."
 
+#: src/lib/dictation.ts
+msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
+msgstr ""
+
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
 msgstr "Этот звонок уже не активен."
@@ -5790,10 +5844,6 @@ msgstr "Это действие нельзя отменить."
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Это невозможно отменить."
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "This chat is view-only"
-msgstr "Этот чат доступен только для просмотра"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
@@ -5968,6 +6018,14 @@ msgstr "Расшифровка"
 msgid "Transcription model"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Transcription request timed out."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Transcription response is too large."
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "Считать человеком"
@@ -6079,7 +6137,7 @@ msgstr "Ход обновления"
 msgid "Updated {updated}"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "Обновления"
 
@@ -6113,7 +6171,7 @@ msgid "Urgent"
 msgstr ""
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Использование"
 
@@ -6211,7 +6269,7 @@ msgstr "Используется ваш API-ключ. Бесплатный та�
 msgid "Value"
 msgstr "Значение"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "Хранилище"
@@ -6236,12 +6294,16 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "Голос"
+
+#: src/lib/tts.ts
+msgid "Voice request timed out."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -6255,7 +6317,7 @@ msgstr "Ожидание в очереди…"
 msgid "Waiting…"
 msgstr "Ожидание…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr ""
 

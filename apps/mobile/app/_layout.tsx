@@ -477,7 +477,8 @@ function LayoutContent() {
                       name="image"
                       options={{
                         headerShown: false,
-                        presentation: "fullScreenModal",
+                        presentation: "transparentModal",
+                        contentStyle: { backgroundColor: "transparent" },
                         animation: "fade",
                       }}
                     />

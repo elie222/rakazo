@@ -1119,7 +1119,7 @@ async function clearGoneSandbox(
   error: unknown,
 ): Promise<null> {
   if (!isSandboxGoneError(error)) throw error;
-  getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+  getLogger().warn(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, { error });
   const cleared = await deps.prisma.computer.updateMany({
     where: { id: computer.id, providerRef: computer.providerRef },
     data: { state: "stopped", providerRef: null },

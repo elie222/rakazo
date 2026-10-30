@@ -47,6 +47,8 @@ export function simpleCommand(
       } else break;
     }
   }
+  // onBotScreen's wrapper: no fake computer has a screen slot, so the inherited DISPLAY stays.
+  if (rest[0] === "sh" && rest[1] === "-c" && rest[2]?.endsWith('exec "$@"')) rest = rest.slice(4);
   const [program, ...args] = rest;
   if (program === "echo") return { stdout: `${args.join(" ")}\n` };
   if (program === "printenv") {

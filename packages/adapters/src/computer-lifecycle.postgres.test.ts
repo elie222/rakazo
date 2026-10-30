@@ -1,14 +1,25 @@
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@rakazo/db";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { asSystem, createDb, provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sleepComputerIfIdle } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
   ComputerBusyError,
   holdComputerExecutionLeaseForTakeover,
+  provisionComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
+  replaceComputer,
 } from "./computer-lifecycle.js";
+import { toComputerRef } from "./computer-support.js";
+import { checkpointAndStopComputer, checkpointRunComputerWorkspace } from "./computer-workspace.js";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { LocalAgentHomeStore } from "./home.js";
 import { takeoverContinuePlan } from "./takeover-resume.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -46,6 +57,392 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
   });
 
   afterAll(async () => close?.());
+
+  it.each([
+    "update",
+    "start",
+    "stop",
+    "reconnect",
+    "running",
+    "vanished",
+    "crashed",
+    "lost",
+    "unprepared",
+  ] as const)(
+    "does not save a half-restored replacement over the last good save (next %s)",
+    async (next) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-unrestored-"));
+      const sandbox = new FakeSandboxProvider();
+      const home = new LocalAgentHomeStore(dataDir);
+      const deps = {
+        prisma,
+        sandbox,
+        home,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        events: { append: vi.fn() } as unknown as ThreadEvents,
+        dataDir,
+      };
+      const context = {
+        operationId: "update",
+        traceId: "update",
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        signal: new AbortController().signal,
+      } satisfies AdapterContext;
+      const row = () => prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+      const homeFiles = async () => {
+        const names: string[] = [];
+        for await (const file of home.exportHome((await row()).homeKey, context))
+          names.push(file.path);
+        return names.sort();
+      };
+      // The restore stops after one file.
+      const failRestore = () => {
+        const importWorkspace = sandbox.importWorkspace.bind(sandbox);
+        vi.spyOn(sandbox, "importWorkspace").mockImplementationOnce(async (ref, files, ctx) => {
+          await importWorkspace(
+            ref,
+            (async function* () {
+              for await (const file of files) {
+                yield file;
+                return;
+              }
+            })(),
+            ctx,
+          );
+          throw new Error("restore interrupted");
+        });
+      };
+      try {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+        });
+        const first = await provisionComputer(deps, computerId, context);
+        for (const name of ["a.txt", "b.txt"]) {
+          await sandbox.writeFile(
+            first,
+            { path: name, content: new TextEncoder().encode(name) },
+            context,
+          );
+        }
+        await replaceComputer(deps, computerId, "update", context);
+        expect(await homeFiles()).toEqual(["a.txt", "b.txt"]);
+
+        if (next === "crashed" || next === "lost") {
+          // The machine disappears and is recreated under the same name, and the worker dies
+          // part-way through the restore, or inside the provider call before it returns, so no
+          // failure handling runs.
+          sandbox.boxes.delete(first.id);
+          let importing!: () => void;
+          const started = new Promise<void>((resolve) => {
+            importing = resolve;
+          });
+          if (next === "lost") {
+            const provision = sandbox.provision.bind(sandbox);
+            vi.spyOn(sandbox, "provision").mockImplementationOnce(async (...args) => {
+              await provision(...args);
+              importing();
+              return new Promise(() => undefined);
+            });
+          } else {
+            const importWorkspace = sandbox.importWorkspace.bind(sandbox);
+            vi.spyOn(sandbox, "importWorkspace").mockImplementationOnce(async (ref, files, ctx) => {
+              await importWorkspace(
+                ref,
+                (async function* () {
+                  for await (const file of files) {
+                    yield file;
+                    return;
+                  }
+                })(),
+                ctx,
+              );
+              importing();
+              await new Promise(() => undefined);
+            });
+          }
+          void provisionComputer(deps, computerId, context);
+          await started;
+          await prisma.computer.update({
+            where: { id: computerId },
+            data: { updatedAt: new Date(0) },
+          });
+          // Reclaiming the abandoned start retries the restore; this one is interrupted too.
+          failRestore();
+          await expect(provisionComputer(deps, computerId, context)).rejects.toThrow();
+        } else if (next === "unprepared") {
+          // The machine disappears and is recreated under the same name, setting it up fails before
+          // any restore, and it cannot be deleted.
+          sandbox.boxes.delete(first.id);
+          vi.spyOn(sandbox, "prepare").mockRejectedValueOnce(new Error("setup failed"));
+          vi.spyOn(sandbox, "destroy").mockRejectedValueOnce(new Error("provider deletion failed"));
+          await expect(provisionComputer(deps, computerId, context)).rejects.toThrow();
+        } else if (next === "vanished") {
+          // The running machine disappears; the provider recreates it under the same name, the
+          // restore fails, and the new machine cannot be deleted.
+          sandbox.boxes.delete(first.id);
+          failRestore();
+          vi.spyOn(sandbox, "destroy").mockRejectedValueOnce(new Error("provider deletion failed"));
+          await expect(provisionComputer(deps, computerId, context)).rejects.toThrow();
+        } else {
+          // The next update's restore fails, and the broken replacement cannot be deleted.
+          failRestore();
+          const destroy = sandbox.destroy.bind(sandbox);
+          vi.spyOn(sandbox, "destroy")
+            .mockImplementationOnce(destroy)
+            .mockRejectedValueOnce(new Error("provider deletion failed"));
+          await expect(replaceComputer(deps, computerId, "update", context)).rejects.toThrow();
+        }
+        expect(await row()).toMatchObject({
+          state: "error",
+          providerRef: first.providerRef,
+          restorePending: true,
+        });
+        const { homeRevisionAt: savedAt } = await row();
+
+        const expected = ["a.txt", "b.txt"];
+        if (next === "start") {
+          const started = await provisionComputer(deps, computerId, context);
+          await sandbox.writeFile(
+            started,
+            { path: "c.txt", content: new TextEncoder().encode("c.txt") },
+            context,
+          );
+          expected.push("c.txt");
+        } else if (next === "stop") {
+          const stopping = await row();
+          await checkpointAndStopComputer(deps, stopping, toComputerRef(stopping), context);
+          expect(await homeFiles()).toEqual(expected);
+          expect(await row()).toMatchObject({ restorePending: true, homeRevisionAt: savedAt });
+        } else if (next === "reconnect") {
+          // A Reset that claimed it died, and the restore fails again on the reclaim.
+          await prisma.computer.update({
+            where: { id: computerId },
+            data: { state: "suspending", updatedAt: new Date(0) },
+          });
+          failRestore();
+          await expect(provisionComputer(deps, computerId, context)).rejects.toThrow();
+          expect(await row()).toMatchObject({ state: "error", restorePending: true });
+          // Idle sleep stops an abandoned claim on it without saving.
+          await prisma.computer.update({
+            where: { id: computerId },
+            data: { state: "suspending", updatedAt: new Date(0) },
+          });
+          await sleepComputerIfIdle(deps, computerId);
+          expect(await homeFiles()).toEqual(expected);
+          expect(await row()).toMatchObject({
+            state: "suspended",
+            restorePending: true,
+            homeRevisionAt: savedAt,
+          });
+        } else if (next === "crashed" || next === "lost") {
+          const started = await provisionComputer(deps, computerId, context);
+          expect([...sandbox.boxes.get(started.id)!.files.keys()].sort()).toEqual(expected);
+          expect(await homeFiles()).toEqual(expected);
+        } else if (next === "vanished") {
+          const stopping = await row();
+          await checkpointAndStopComputer(deps, stopping, toComputerRef(stopping), context);
+          await prisma.computer.update({
+            where: { id: computerId },
+            data: { state: "suspending", updatedAt: new Date(0) },
+          });
+          await sleepComputerIfIdle(deps, computerId);
+          expect(await homeFiles()).toEqual(expected);
+          expect(await row()).toMatchObject({ restorePending: true, homeRevisionAt: savedAt });
+          const started = await provisionComputer(deps, computerId, context);
+          expect([...sandbox.boxes.get(started.id)!.files.keys()].sort()).toEqual(expected);
+        } else if (next === "running") {
+          // An older release running beside this one activated it without clearing the mark.
+          await prisma.computer.update({ where: { id: computerId }, data: { state: "running" } });
+          const started = await provisionComputer(deps, computerId, context);
+          expect([...sandbox.boxes.get(started.id)!.files.keys()].sort()).toEqual(expected);
+        }
+        const replacement = await replaceComputer(deps, computerId, "update", context);
+        expect(await homeFiles()).toEqual(expected);
+        if (next === "update") expect((await row()).homeRevisionAt).toEqual(savedAt);
+        expect([...sandbox.boxes.get(replacement.id)!.files.keys()].sort()).toEqual(expected);
+      } finally {
+        vi.restoreAllMocks();
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(["before", "during"] as const)(
+    "does not save a run's export when a start that replaces and restores the machine began %s it",
+    async (when) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-run-save-aba-"));
+      const sandbox = new FakeSandboxProvider();
+      const home = new LocalAgentHomeStore(dataDir);
+      const deps = {
+        prisma,
+        sandbox,
+        home,
+        jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+        events: { append: vi.fn() } as unknown as ThreadEvents,
+        dataDir,
+      };
+      const context = {
+        operationId: "run",
+        traceId: "run",
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        signal: new AbortController().signal,
+      } satisfies AdapterContext;
+      const { scope } = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+      const homeFiles = async (homeKey: string) => {
+        const names: string[] = [];
+        for await (const file of home.exportHome(homeKey, context)) names.push(file.path);
+        return names.sort();
+      };
+      try {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: {
+            kind: "fake",
+            scope: "dedicated",
+            state: "stopped",
+            providerRef: null,
+            restorePending: false,
+          },
+        });
+        const first = await provisionComputer(deps, computerId, context);
+        for (const name of ["a.txt", "b.txt"]) {
+          await sandbox.writeFile(
+            first,
+            { path: name, content: new TextEncoder().encode(name) },
+            context,
+          );
+        }
+        const running = await replaceComputer(deps, computerId, "update", context);
+        const saved = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+        expect(await homeFiles(saved.homeKey)).toEqual(["a.txt", "b.txt"]);
+
+        // The machine is lost and a start recreates it under the same name and restores it. The
+        // start has either already claimed the computer when the run's save begins, or begins
+        // during the export; the save streams the old machine's first file only.
+        sandbox.boxes.delete(running.id);
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const provision = sandbox.provision.bind(sandbox);
+        const provisioning = vi
+          .spyOn(sandbox, "provision")
+          .mockImplementationOnce(async (...args) => {
+            await gate;
+            return provision(...args);
+          });
+        let start: Promise<unknown> | undefined;
+        const begin = () => {
+          start = provisionComputer(deps, computerId, context);
+        };
+        if (when === "before") {
+          begin();
+          await vi.waitFor(() => expect(provisioning).toHaveBeenCalled());
+        }
+        vi.spyOn(sandbox, "exportWorkspace").mockImplementationOnce(async function* () {
+          yield { path: "a.txt", content: new TextEncoder().encode("a.txt") };
+          if (!start) begin();
+          release();
+          await start;
+        });
+        await expect(
+          checkpointRunComputerWorkspace(deps, saved, running, context),
+        ).resolves.toBeUndefined();
+        release();
+        await start;
+
+        const after = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+        expect(after).toMatchObject({
+          state: "running",
+          restorePending: false,
+          homeRevision: saved.homeRevision,
+        });
+        expect(after.screenGeneration).not.toBe(saved.screenGeneration);
+        expect(await homeFiles(saved.homeKey)).toEqual(["a.txt", "b.txt"]);
+        expect([...sandbox.boxes.get(running.id)!.files.keys()].sort()).toEqual(["a.txt", "b.txt"]);
+      } finally {
+        vi.restoreAllMocks();
+        await prisma.computer.update({ where: { id: computerId }, data: { scope } });
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("does not let a stale-start reclaim activate a machine the start marked meanwhile", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-reclaim-marked-"));
+    const sandbox = new FakeSandboxProvider();
+    const home = new LocalAgentHomeStore(dataDir);
+    const deps = {
+      prisma,
+      sandbox,
+      home,
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() } as unknown as JobPublisher,
+      events: { append: vi.fn() } as unknown as ThreadEvents,
+      dataDir,
+    };
+    const context = {
+      operationId: "reclaim",
+      traceId: "reclaim",
+      spaceId: identity.spaceId,
+      userId: identity.userId,
+      botId: identity.botId,
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    try {
+      await prisma.computer.update({
+        where: { id: computerId },
+        data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+      });
+      const first = await provisionComputer(deps, computerId, context);
+      for (const name of ["a.txt", "b.txt"]) {
+        await sandbox.writeFile(
+          first,
+          { path: name, content: new TextEncoder().encode(name) },
+          context,
+        );
+      }
+      const running = await replaceComputer(deps, computerId, "update", context);
+      // An older start claimed the computer long ago, the provider recreated its machine under
+      // the same name, and only part of the restore has landed yet.
+      sandbox.boxes.get(running.id)!.files.delete("b.txt");
+      const stale = await prisma.computer.update({
+        where: { id: computerId },
+        data: { state: "booting", updatedAt: new Date(0) },
+      });
+      // That start marks the machine just after this reclaim last read the row.
+      const findRun = prisma.run.findFirst.bind(prisma.run);
+      vi.spyOn(prisma.run, "findFirst")
+        .mockImplementationOnce(findRun)
+        .mockImplementationOnce((async (args: Parameters<typeof findRun>[0]) => {
+          await prisma.computer.update({
+            where: { id: computerId },
+            data: { restorePending: true, updatedAt: stale.updatedAt },
+          });
+          return findRun(args);
+        }) as never);
+      await expect(provisionComputer(deps, computerId, context)).rejects.toBeInstanceOf(
+        ComputerBusyError,
+      );
+      vi.restoreAllMocks();
+      expect(await prisma.computer.findUniqueOrThrow({ where: { id: computerId } })).toMatchObject({
+        state: "booting",
+        restorePending: true,
+      });
+
+      // The older start fails and leaves it marked; the next start restores it.
+      await prisma.computer.update({ where: { id: computerId }, data: { state: "error" } });
+      const restored = await provisionComputer(deps, computerId, context);
+      expect([...sandbox.boxes.get(restored.id)!.files.keys()].sort()).toEqual(["a.txt", "b.txt"]);
+    } finally {
+      vi.restoreAllMocks();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
 
   it("lets API operations acquire new or expired leases without a worker claim", async () => {
     const input = { computerId, botId: identity.botId, runId: "boot:fixture" };

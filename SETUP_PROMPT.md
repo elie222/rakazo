@@ -27,7 +27,7 @@ Before making changes, ask me these concise questions:
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want remote computers instead of local Docker? If yes, choose E2B (`E2B_API_KEY`), Daytona (`DAYTONA_API_KEY`), or Boat (`BOAT_API_KEY`) and set `SANDBOX_PROVIDER` accordingly. If no, keep the default `SANDBOX_PROVIDER=docker` (local computers via the in-stack supervisor).
 
-Ask which email address I want for the initial account. Do not create an administrator: app accounts never administer the server, and signup order grants no privileges. Keep server configuration in `.env`; manage logs and updates through server tooling. If email delivery is unavailable, keep `SIGNUPS_ENABLED=false`, create the intended ordinary account using the server-side `bootstrap-owner` command documented in `docs/self-host.md`, and never verify a public signup without either mailbox proof or the matching existing password.
+Ask which email address I want for the initial account. Do not create an administrator: app accounts never administer the server, and signup order grants no privileges. Keep server configuration in `.env`; manage logs and updates through server tooling. If email delivery is unavailable, keep `SIGNUPS_ENABLED=false`, create the intended ordinary account using the server-side `bootstrap-owner` command documented in `docs/self-host-accounts.md`, and never verify a public signup without either mailbox proof or the matching existing password.
 
 Do not ask me to invent secrets; generate strong random values with openssl yourself.
 

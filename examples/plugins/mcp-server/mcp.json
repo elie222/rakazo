@@ -3,8 +3,7 @@
   "mcpServers": {
     "docs": {
       "type": "streamable-http",
-      "url": "https://mcp.example.com/mcp",
-      "headers": { "X-Docs-Collection": "public" }
+      "url": "https://mcp.example.com/mcp"
     }
   }
 }

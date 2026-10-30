@@ -1881,6 +1881,42 @@ describe("command watch creation approval", () => {
   );
 });
 
+describe("tool watch creation", () => {
+  const search = { name: "web_search", args: { query: "news" }, executionId: "call-1" };
+  const watchCall = {
+    name: "schedule_create",
+    args: {
+      name: "Check",
+      prompt: "Summarize changes",
+      watch: { kind: "tool", tool: "demo_get_item", args: { id: "item-1" } },
+    },
+    executionId: "call-2",
+  };
+  beforeEach(() => reviewMock.mockReset());
+
+  it("reviews a watched read once outside content entered the run", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+    const f = fixture({ autoReview: true });
+    f.setCalls([search, watchCall]);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+  });
+
+  it("keeps a watched read free on a connector the run used before outside content", async () => {
+    const f = fixture({ autoReview: true });
+    f.setCalls([
+      { args: { id: "item-1" }, executionId: "call-0" },
+      search,
+      { ...watchCall, executionId: "call-3" },
+    ]);
+    // Saving the routine itself is outside this fixture; only the gate is under test.
+    await f.run(true);
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+});
+
 describe("outbound destinations", () => {
   const pausedCard = (f: ReturnType<typeof fixture>) =>
     (

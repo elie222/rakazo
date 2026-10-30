@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   classifySerenityEndpointTrust,
   createSerenityPrivateLanFetch,
+  forgetSerenity,
   MAX_SERENITY_FACT_BYTES,
   normalizeSerenityEndpoint,
   parseSerenityEndpoint,
@@ -460,6 +461,42 @@ describe("serenity verbs", () => {
       error:
         "Serenity recall failed: limit_exceeded Upgrade your plan. Resets at 2026-10-01T00:00:00Z.",
     });
+  });
+
+  it("never surfaces its own token from server errors or results", async () => {
+    const echoing = fakeSerenityFetch(() => ({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ message: `bad token ${TOKEN}; got Bearer ${TOKEN}` }),
+        },
+      ],
+    }));
+    const recalled = await recallSerenity(LOOPBACK, { network: { fetch: echoing.fetch } });
+    expect(recalled.ok).toBe(false);
+    expect(JSON.stringify(recalled)).not.toContain(TOKEN);
+
+    const rejecting = vi.fn(
+      async () => new Response(`unauthorized: Authorization: Bearer ${TOKEN}`, { status: 500 }),
+    );
+    const forgotten = await forgetSerenity("fact-1", LOOPBACK, { network: { fetch: rejecting } });
+    expect(forgotten.ok).toBe(false);
+    expect(JSON.stringify(forgotten)).not.toContain(TOKEN);
+
+    const statusEcho = fakeSerenityFetch(() => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ id: "fact-1", status: "inserted", status_text: `as ${TOKEN}` }),
+        },
+      ],
+    }));
+    const remembered = await rememberSerenity("Use metric units.", "rakazo", LOOPBACK, {
+      network: { fetch: statusEcho.fetch },
+    });
+    expect(remembered.ok).toBe(true);
+    expect(JSON.stringify(remembered)).not.toContain(TOKEN);
   });
 
   it("reports gateway rate limits with the retry delay", async () => {

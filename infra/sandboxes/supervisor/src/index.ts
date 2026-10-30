@@ -297,7 +297,7 @@ app.post("/computers", async (c) => {
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
-          computerMountsMatch(info.HostConfig.Mounts, computerMounts) &&
+          computerMountsMatch(info, computerMounts) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -1219,12 +1219,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
 // `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
 // otherwise open with a warning, which is how computers ran before the rules existed. A probe
 // that could not finish decides nothing: the provision fails and the next one probes again.
+// In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
+// answers fails the provision the same way, so the next one probes again.
 let restrictedEgressVerified: Promise<void> | undefined;
 let autoEgressSettled: Promise<void> | undefined;
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
-    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).then(
+    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
       () => {
         computerEgressMode = "restricted";
         getLogger().info("restricted computer egress verified");
@@ -1242,10 +1244,12 @@ async function ensureRestrictedEgressEnforced() {
     return autoEgressSettled;
   }
   if (computerEgressMode !== "restricted") return;
-  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).catch((error) => {
-    restrictedEgressVerified = undefined;
-    throw error;
-  });
+  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).catch(
+    (error) => {
+      restrictedEgressVerified = undefined;
+      throw error;
+    },
+  );
   await restrictedEgressVerified;
 }
 

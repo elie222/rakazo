@@ -60,6 +60,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Next: "Weiter",
   "Ex: Project Falcon": "Z. B. Projekt Falcon",
   "Search bots": "Bots suchen",
+  "{count} messages with {peer}": "{count} Nachrichten mit {peer}",
   "About {label}": "Über {label}",
   "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
   "Allow cross-space bot communication":
@@ -305,6 +306,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Delete…": "Löschen…",
   Denied: "Abgelehnt",
   Done: "Fertig",
+  "Needs you": "Wartet auf dich",
+  Skipped: "Übersprungen",
   Failed: "Fehlgeschlagen",
   "Failed to refresh": "Aktualisieren fehlgeschlagen",
   "Failed to send message": "Nachricht konnte nicht gesendet werden",
@@ -1202,6 +1205,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not add skills": "Skills konnten nicht hinzugefügt werden",
   "Could not remove skills": "Skills konnten nicht entfernt werden",
   "Not added: {list}": "Nicht hinzugefügt: {list}",
+  "{name} (same name as a built-in skill)": "{name} (gleicher Name wie ein integrierter Skill)",
   "Remove skills": "Skills entfernen",
   "Search skills": "Skills suchen",
   "Your skills": "Deine Skills",
@@ -1222,4 +1226,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 Gratismonat verdient",
   "{count} free months earned": "{count} Gratismonate verdient",
   "Submit a plugin": "Plugin einreichen",
+};
+
+export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
+  other: DE_MESSAGES["{count} messages with {peer}"],
+  one: "{count} Nachricht mit {peer}",
 };

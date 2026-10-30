@@ -222,10 +222,10 @@ export function resolveComputerEgressMode(
 /**
  * DNS servers for computers, from SANDBOX_COMPUTER_DNS (comma-separated IP addresses).
  * Unset keeps Docker's default: a computer on its own network asks Docker's embedded
- * resolver, which forwards to the host's resolvers from inside the computer's network.
- * Restricted egress drops that forward when the host's resolver has a private address
- * (a cloud VPC resolver, a LAN router), so every name lookup times out; servers set here
- * replace the host's as the forward target, and public ones stay reachable.
+ * resolver, which forwards to the host's configured resolvers.
+ * Docker 28+ forwards host DNS from the host namespace. Older Docker and explicit
+ * container/daemon DNS forward from the computer network, where restricted egress
+ * drops private resolvers. Servers set here replace that target.
  */
 export function resolveComputerDns(value = process.env.SANDBOX_COMPUTER_DNS): string[] | undefined {
   const servers = (value ?? "")
@@ -366,22 +366,43 @@ function computerMountSettings(mount: ComputerMount): Docker.MountSettings {
 }
 
 /**
+ * Label holding each mount's configured source by target. Docker Desktop stores a bind source
+ * as its own VM path when the container also mounts a volume, as every Compose computer's home
+ * does, so the inspected Source cannot be compared with the setting.
+ */
+const MOUNT_SOURCES_LABEL = "rakazo.mountSources";
+
+function mountSourcesLabel(mounts: ComputerMount[]) {
+  return JSON.stringify(Object.fromEntries(mounts.map((mount) => [mount.target, mount.source])));
+}
+
+function labeledMountSources(labels: Record<string, string> | undefined): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(labels?.[MOUNT_SOURCES_LABEL] ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Whether a container carries exactly the configured host mounts. Mounts are fixed when a
  * container is created, so an added, changed or removed entry replaces the computer.
  */
 export function computerMountsMatch(
-  current: Docker.ContainerInspectInfo["HostConfig"]["Mounts"],
+  info: Pick<Docker.ContainerInspectInfo, "Config" | "HostConfig">,
   desired: ComputerMount[],
 ) {
-  const binds = (current ?? []).filter(
+  const binds = (info.HostConfig.Mounts ?? []).filter(
     (mount) => mount.Type === "bind" && mount.Target !== "/home/rakazo",
   );
+  const sources = labeledMountSources(info.Config.Labels);
   return (
     binds.length === desired.length &&
     desired.every((want) =>
       binds.some(
         (have) =>
-          have.Source === want.source &&
+          sources[want.target] === want.source &&
           have.Target === want.target &&
           Boolean(have.ReadOnly) === want.readOnly &&
           (have.BindOptions?.Propagation ?? undefined) === want.propagation,
@@ -565,6 +586,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "rakazo.managed": "true",
       "rakazo.botId": input.botId,
       "rakazo.spaceId": input.spaceId,
+      ...(input.mounts?.length ? { [MOUNT_SOURCES_LABEL]: mountSourcesLabel(input.mounts) } : {}),
     },
     ExposedPorts: ports.ExposedPorts,
     HostConfig: {

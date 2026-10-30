@@ -3,7 +3,8 @@ import {
   legacyScopedToolEffectIdempotencyKey,
   stableJsonValue,
 } from "@rakazo/core/node/approval-effect-key";
-import { RUN_TURN_CHECKPOINT_KIND } from "@rakazo/db";
+import type { Prisma } from "@rakazo/db";
+import { assertRunCanWriteHistory, RUN_TURN_CHECKPOINT_KIND } from "@rakazo/db";
 import {
   boundDirectApprovalDetails,
   catalogApprovalConnectorId,
@@ -11,11 +12,14 @@ import {
   catalogApprovalInnerArgs,
   catalogExecuteToolName,
   catalogIdForRoute,
+  claimApprovedEffect,
+  claimIntendedEffect,
   completeExternalEffect,
   parseCatalogApprovalTarget,
 } from "./approval-effect.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { uniquifyInstalledToolName } from "./lazy-tool-catalog.js";
+import { runLeaseFor } from "./run-messages.js";
 
 /** Effects that got past the approval gate: approved, allowed by a rule or review, or run. */
 export const PASSED_EFFECT_STATUSES = ["approved", "executing", "uncertain", "completed"];
@@ -261,19 +265,46 @@ export async function recordEffect(
     return { duplicate: true, effect: legacy };
   }
 
-  const effect = await deps.prisma.externalEffect.create({
-    data: {
-      spaceId: run.spaceId,
-      runId: run.id,
-      kind,
-      idempotencyKey,
-      status: "intended",
-      request: request as never,
-      ...(batchActions ? { batchActions } : {}),
-    },
-  });
+  const effect = await underRunLease(deps, run.id, (tx) =>
+    tx.externalEffect.create({
+      data: {
+        spaceId: run.spaceId,
+        runId: run.id,
+        kind,
+        idempotencyKey,
+        status: "intended",
+        request: request as never,
+        ...(batchActions ? { batchActions } : {}),
+      },
+    }),
+  );
   consumedIds?.add(effect.id);
   return { duplicate: false, effect };
+}
+
+/** Move an effect to executing. A superseded attempt is refused before its tool runs. */
+export function claimEffect(
+  deps: ExecutorDeps,
+  runId: string,
+  effectId: string,
+  from: "approved" | "intended",
+) {
+  const claim = from === "approved" ? claimApprovedEffect : claimIntendedEffect;
+  return underRunLease(deps, runId, (tx) => claim(tx, effectId));
+}
+
+/** Writes that let a tool's side effect go ahead check the attempt's lease in the same transaction. */
+function underRunLease<T>(
+  deps: ExecutorDeps,
+  runId: string,
+  write: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  const lease = runLeaseFor(deps, runId);
+  if (!lease) return write(deps.prisma);
+  return deps.prisma.$transaction(async (tx) => {
+    await assertRunCanWriteHistory(tx, runId, { lease });
+    return write(tx);
+  });
 }
 
 export async function completeEffect(

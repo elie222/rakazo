@@ -131,6 +131,9 @@ export function buildModelConnectPlaintext(
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(input.apiProtocol !== undefined || compatiblePrevious?.apiProtocol !== undefined
+        ? { apiProtocol: input.apiProtocol ?? compatiblePrevious?.apiProtocol }
+        : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
@@ -323,6 +326,7 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...(parsed.apiProtocol !== undefined ? { apiProtocol: parsed.apiProtocol } : {}),
     ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
     ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined

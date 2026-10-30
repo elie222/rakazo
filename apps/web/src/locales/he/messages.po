@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} ימשיך להגיב לאזכורים ישירים."
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "המסך של {0}"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -170,6 +165,10 @@ msgstr "{commandVariable} שמור ואי אפשר להשתמש בו כמשתנ�
 #: src/pages/PluginsOverlay.tsx
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr ""
+
+#: src/pages/shell/message-view.tsx
+msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+msgstr "{count, plural, one {הודעה אחת עם {peer}} two {# הודעות עם {peer}} other {# הודעות עם {peer}}}"
 
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -225,6 +224,10 @@ msgstr "לפני {minutes} דק׳"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
 msgstr ""
 
 #: src/lib/activity-list-filters.ts
@@ -404,12 +407,6 @@ msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
 msgid "@{0}"
 msgstr "@{0}"
 
-#. placeholder {0}: amount / 100
-#. placeholder {0}: status.byokPriceCents / 100
-#: src/components/ModelCredits.tsx
-msgid "${0} / month"
-msgstr ""
-
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -527,6 +524,10 @@ msgstr "יש להוסיף פקודת stdio."
 msgid "Add a trigger to run this routine."
 msgstr ""
 
+#: src/lib/tts.ts
+msgid "Add a voice provider key and pick a voice in Voice settings."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "יש להוסיף URL של שרת HTTPS."
@@ -630,10 +631,6 @@ msgstr "מתקדם"
 msgid "Advanced..."
 msgstr "מתקדם..."
 
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "מחשב הסוכן"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "סוכנים:"
@@ -642,10 +639,9 @@ msgstr "סוכנים:"
 msgid "All"
 msgstr ""
 
-#. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
-msgid "All ${0} goes to model usage."
-msgstr "כל ${0} הולכים לשימוש במודלים."
+msgid "All {credit} goes to model usage."
+msgstr "כל {credit} הולכים לשימוש במודלים."
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -680,6 +676,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "אישור חד-פעמי"
+
+#: src/lib/dictation.ts
+msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
+msgstr ""
 
 #: src/components/ApprovalRulePreview.tsx
 msgid "Allow rule"
@@ -804,6 +804,10 @@ msgstr "מפתחות API"
 msgid "Appearance"
 msgstr "מראה"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "החלה"
@@ -816,7 +820,7 @@ msgstr "גבולות אישור"
 msgid "Approval model"
 msgstr "מודל אישור"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "אישורים"
@@ -991,7 +995,7 @@ msgstr "Basic auth ({username})"
 msgid "Bearer token"
 msgstr "Bearer token"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "חיוב"
 
@@ -1028,6 +1032,7 @@ msgstr "בוט"
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Bot"
 msgstr "בוט"
 
@@ -1428,10 +1433,6 @@ msgstr "קוד"
 msgid "Collapse {0}"
 msgstr "כיווץ {0}"
 
-#: src/pages/shell/message-view.tsx
-msgid "Collapse {label}"
-msgstr "כיווץ {label}"
-
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "צבע"
@@ -1456,6 +1457,10 @@ msgstr "בקרוב"
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "פקודה"
+
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
@@ -1482,7 +1487,7 @@ msgstr "הושלם"
 msgid "Completed"
 msgstr "הושלם"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1584,6 +1589,7 @@ msgid "Connect API key"
 msgstr "חיבור מפתח API"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "חיבור אפליקציות"
 
@@ -1797,6 +1803,7 @@ msgstr "לא ניתן להשלים את העדכון. אפשר לנסות שוב
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "לא ניתן להתחבר"
 
@@ -2207,6 +2214,10 @@ msgstr "לא ניתן להשתלט"
 msgid "Could not test MCP server"
 msgstr "לא ניתן לבדוק את שרת ה-MCP"
 
+#: src/lib/dictation.ts
+msgid "Could not transcribe that recording."
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "לא ניתן לעדכן"
@@ -2366,6 +2377,7 @@ msgid "Customize bot avatar"
 msgstr "התאמת תמונת הבוט"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "כהה"
 
@@ -2523,6 +2535,18 @@ msgstr "פרטים"
 msgid "Developer"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Dictation ended unexpectedly."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed: {code}"
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "השבתת כלי"
@@ -2616,6 +2640,7 @@ msgstr "אין חשבון?"
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/import-setup-card.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "הושלם"
 
@@ -2772,6 +2797,10 @@ msgstr "כל {0} ו-{1}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "כל {intervalAmountSelect} {intervalUnitSelect}"
 
+#: src/lib/cron.ts
+msgid "Every {n} hours at :{minute}"
+msgstr "כל {n} שעות בדקה {minute}"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
@@ -2819,10 +2848,6 @@ msgstr "הרחבה"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "הרחבת {0}"
-
-#: src/pages/shell/message-view.tsx
-msgid "Expand {label}"
-msgstr "הרחבת {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -2894,6 +2919,7 @@ msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "קובץ"
 
@@ -2993,6 +3019,7 @@ msgstr "מסך מלא"
 msgid "Gateway ID"
 msgstr "Gateway ID"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "כללי"
@@ -3013,10 +3040,15 @@ msgstr "מתכונן"
 msgid "Git event"
 msgstr "אירוע Git"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "לדף הבית"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Group"
 msgstr "קבוצה"
 
@@ -3363,12 +3395,17 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "מאפשר לבוטים לשמור ולשלוף עובדות לפי משמעות, לצד MEMORY.md."
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "בהיר"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
 msgstr "Issue ב-Linear"
+
+#: src/pages/SpaceSearch.tsx
+msgid "Link"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -3601,7 +3638,7 @@ msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "זיכרון"
@@ -3636,6 +3673,7 @@ msgstr "מזכיר: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Message"
 msgstr "הודעה"
 
@@ -3672,11 +3710,12 @@ msgstr "הודעה…"
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "הודעות"
 
 #: src/lib/call-session.ts
+#: src/lib/dictation.ts
 msgid "Microphone failed"
 msgstr "המיקרופון נכשל"
 
@@ -3748,7 +3787,7 @@ msgid "Model options"
 msgstr "אפשרויות מודל"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "מודלים"
@@ -3875,6 +3914,7 @@ msgstr "נדרשת השתלטות"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "נדרשת פעולה"
 
@@ -3900,6 +3940,7 @@ msgstr "בוט חדש"
 msgid "New group"
 msgstr "קבוצה חדשה"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "צ'אט קבוצתי חדש"
@@ -3917,6 +3958,7 @@ msgstr "פריט עבודה פתוחה חדש"
 msgid "New password"
 msgstr "סיסמה חדשה"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "מרחב פרטי חדש"
@@ -3961,10 +4003,6 @@ msgstr "ללא אימות"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "ללא אימות"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr "אין בוטים"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4023,6 +4061,7 @@ msgstr "לא נמצאו שרתי MCP מרוחקים"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "אין תוצאות"
@@ -4063,7 +4102,7 @@ msgstr "רגיל"
 msgid "Not a valid skill"
 msgstr "מיומנות לא תקינה"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr ""
@@ -4284,6 +4323,10 @@ msgstr "בעלים"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "עמוד {page} מתוך {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "הדף לא נמצא"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4917,6 +4960,7 @@ msgid "Return to call with {0}"
 msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "חזרה ל-Rakazo"
 
@@ -4939,11 +4983,12 @@ msgstr "החלפת מפתח"
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
+#: src/pages/SpaceSearch.tsx
 msgid "Routine"
 msgstr "רוטינה"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "רוטינות"
 
@@ -5109,8 +5154,8 @@ msgid "Search artifacts…"
 msgstr "חיפוש תוצרים…"
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
-msgstr "חיפוש בוטים ומעבר בין שיחות"
+msgid "Search bots, actions, and settings"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
@@ -5236,6 +5281,10 @@ msgstr "URL של השרת"
 msgid "Settings"
 msgstr "הגדרות"
 
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr ""
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "הגדרות: כללי"
@@ -5282,10 +5331,6 @@ msgstr ""
 msgid "Show bots"
 msgstr "הצגת בוטים"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "הצגת המחשב"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "הצגת רשימה"
@@ -5303,10 +5348,6 @@ msgstr "הצגת סיסמה"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr ""
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "הצגת הגדרות"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
@@ -5386,6 +5427,7 @@ msgstr "מיומנות {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "מיומנויות"
@@ -5401,6 +5443,10 @@ msgstr "דילוג"
 #: src/lib/localized-provider-hint.ts
 msgid "Skip or deploy key"
 msgstr "דילוג או מפתח התקנה"
+
+#: src/pages/shell/message-view.tsx
+msgid "Skipped"
+msgstr ""
 
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/shell/use-composer-actions.ts
@@ -5581,10 +5627,9 @@ msgstr ""
 msgid "Subscribe"
 msgstr "הרשמה למנוי"
 
-#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
-msgid "Subscribe for ${0} / month"
-msgstr "הרשמה במחיר ${0} לחודש"
+msgid "Subscribe for {price} / month"
+msgstr "הרשמה במחיר {price} לחודש"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe to Rakazo credits"
@@ -5616,15 +5661,12 @@ msgstr "תומך בחשיבה"
 msgid "Switch"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr "החלפת בוט"
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "מחליף…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "מערכת"
 
@@ -5693,6 +5735,10 @@ msgstr "בודק…"
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
+
+#: src/lib/dictation.ts
+msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -5777,6 +5823,14 @@ msgstr "הבוט הזה"
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "הבוט הזה פועל על המחשב הזה, לא על שולחן עבודה של Linux. המעטפת והקבצים משתמשים בתיקיית הבית."
 
+#: src/lib/dictation.ts
+msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
+msgstr ""
+
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
 msgstr ""
@@ -5790,10 +5844,6 @@ msgstr "לא ניתן לבטל פעולה זו."
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "This chat is view-only"
-msgstr "הצ׳אט הזה לקריאה בלבד"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
@@ -5968,6 +6018,14 @@ msgstr "תמליל"
 msgid "Transcription model"
 msgstr "מודל תמלול"
 
+#: src/lib/dictation.ts
+msgid "Transcription request timed out."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Transcription response is too large."
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "התייחסות כמו לאדם"
@@ -6079,7 +6137,7 @@ msgstr "התקדמות העדכון"
 msgid "Updated {updated}"
 msgstr "עודכן {updated}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "עדכונים"
 
@@ -6113,7 +6171,7 @@ msgid "Urgent"
 msgstr "דחוף"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "שימוש"
 
@@ -6211,7 +6269,7 @@ msgstr "נעשה שימוש במפתח ה-API שלך. התוכנית החינמ�
 msgid "Value"
 msgstr "ערך"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "כספת"
@@ -6236,12 +6294,16 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "קול"
+
+#: src/lib/tts.ts
+msgid "Voice request timed out."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -6255,7 +6317,7 @@ msgstr "ממתין בתור…"
 msgid "Waiting…"
 msgstr "ממתין…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr ""
 

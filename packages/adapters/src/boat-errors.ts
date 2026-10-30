@@ -59,7 +59,8 @@ const UNSENT_CODES = new Set([
   "ENETUNREACH",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
-const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
+// 520-526 and 530 come from Cloudflare in front of Boat when it gets no usable answer from Boat.
+const TRANSIENT_STATUSES = new Set([500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530]);
 
 /**
  * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.
@@ -67,6 +68,7 @@ const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
  * `idempotent` call that Boat failed on its side. A sandbox that took the request and did not
  * answer in time would only time out again, so that is never resent. A server error that
  * remains is an outage at Boat, reported as unresponsive like a connection Boat never answered.
+ * So is Boat refusing to serve the operator's account until it is paid for: users can only wait.
  * Only idempotent calls are resent after a rate limit: create and command start have no
  * idempotency key and could duplicate billed sandboxes or command effects. Limits that clear
  * within a minute get one retry after the wait plus jitter, bounded by the caller's signal.
@@ -127,7 +129,7 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await attemptWithRetry(...args);
     } catch (error) {
-      if (failedAtBoat(error)) {
+      if (failedAtBoat(error) || billingRequired(error)) {
         throw new SandboxUnresponsiveError(error.message, { cause: error });
       }
       throw error;
@@ -185,6 +187,10 @@ function aborted(error: FetchError, signal: AbortSignal | undefined): boolean {
 
 function failedAtBoat(error: unknown): error is BoatApiError {
   return error instanceof BoatApiError && TRANSIENT_STATUSES.has(error.response.status);
+}
+
+function billingRequired(error: unknown): error is BoatApiError {
+  return error instanceof BoatApiError && error.response.status === 402;
 }
 
 export async function boatResponseError(

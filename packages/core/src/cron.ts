@@ -564,6 +564,25 @@ function parseClock(time: string): { hour: number; minute: number } {
   return { hour, minute };
 }
 
+/**
+ * A schedule time ("9:00 PM") the way `locale` writes clock times ("21:00"). Presets keep
+ * the English form as their value.
+ */
+export function localizedClock(time: string, locale: string): string {
+  if (!/^\d{1,2}:\d{2}(?:\s[AP]M)?$/i.test(time)) return time;
+  const { hour, minute } = parseClock(time);
+  const rawHour = Number(time.split(":")[0]);
+  if (minute > 59 || hour > 23 || (/[AP]M/i.test(time) && (rawHour < 1 || rawHour > 12)))
+    return time;
+  try {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(
+      new Date(2000, 0, 1, hour, minute),
+    );
+  } catch {
+    return time;
+  }
+}
+
 function formatClock(hour: number, minute: number): string {
   const period = hour >= 12 ? "PM" : "AM";
   const h12 = hour % 12 === 0 ? 12 : hour % 12;

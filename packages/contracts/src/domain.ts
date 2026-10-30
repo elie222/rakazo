@@ -847,6 +847,8 @@ export const PluginPreviewSchema = z.object({
   skills: z.array(PluginPreviewSkillSchema),
   mcpServers: z.array(PluginPreviewMcpServerSchema),
   skipped: z.array(PluginPreviewSkippedSchema),
+  /** Skills left out because a built-in skill has the same name; clients released before it ignore it. */
+  builtinNames: z.array(z.string()).optional(),
 });
 export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
 
@@ -1006,6 +1008,7 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("stdio"),
     command: z.string().min(1).max(512),
+    /** Update: send none to keep the stored arguments while the command is unchanged. */
     args: z.array(z.string().max(2048)).max(64).default([]),
     env: z
       .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string().max(4096))
@@ -1048,7 +1051,8 @@ export const McpServerSchema = z.object({
   transport: McpTransportSchema,
   endpoint: z.string().url().nullable(),
   command: z.string().nullable(),
-  args: z.array(z.string()),
+  /** Arguments are stored encrypted and never returned. */
+  hasArgs: z.boolean(),
   envKeys: z.array(z.string()),
   /** Env variables that receive a credential file's path instead of a value. */
   fileKeys: z.array(z.string()),
@@ -1358,6 +1362,10 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/** Wire protocol selected for one OpenAI-compatible connection. */
+export const ModelApiProtocolSchema = z.enum(["chat-completions", "responses"]);
+export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
+
 export const ModelCredentialSchema = z.object({
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
@@ -1369,6 +1377,7 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
   modelId: z.string().optional(),
@@ -1441,6 +1450,7 @@ export const ModelConnectInputSchema = z
     gatewayId: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
+    apiProtocol: ModelApiProtocolSchema.optional(),
     label: z.string().optional(),
     /**
      * The connection this save updates; null adds another connection for the provider.
@@ -1754,7 +1764,7 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
-  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions. */
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions, adds stdio MCP servers. */
   isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
@@ -1766,7 +1776,7 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
-  /** Whether this deployment runs stdio MCP servers. Absent from older servers. */
+  /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
   /**

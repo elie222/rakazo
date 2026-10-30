@@ -614,35 +614,19 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "add_mcp_server",
     description:
-      "Connect an MCP tool server to this Space when the user asks you to add one and provides the details (URL or command, optional token/headers/env). The server is created immediately and an approval card appears in the chat; its tools reach you once the user approves it there. Do not invent endpoints; only use details the user provided.",
+      "Connect a remote MCP tool server to this Space when the user asks you to add one and provides the details (URL, optional token/headers). The server is created immediately and an approval card appears in the chat; its tools reach you once the user approves it there. Do not invent endpoints; only use details the user provided. Local (stdio) servers can only be added by an admin in Settings.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: 'Display name, e.g. "Brex".' },
         transport: {
           type: "string",
-          enum: ["streamable_http", "sse", "stdio"],
-          description:
-            "streamable_http for modern HTTP servers, sse for legacy HTTP servers, stdio for local commands.",
+          enum: ["streamable_http", "sse"],
+          description: "streamable_http for modern HTTP servers, sse for legacy HTTP servers.",
         },
         endpoint: {
           type: "string",
-          description: "HTTPS URL of the remote MCP server (required unless transport is stdio).",
-        },
-        command: {
-          type: "string",
-          description:
-            "Executable path for stdio transport (required for stdio). Must be allowlisted by the deployment.",
-        },
-        args: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Arguments for the stdio command. A single space-separated string also works.",
-        },
-        env: {
-          type: "object",
-          description: 'Environment variables for stdio transport, e.g. {"API_KEY": "..."}.',
+          description: "HTTPS URL of the remote MCP server.",
         },
         headers: {
           type: "object",
@@ -658,7 +642,7 @@ export const builtinAgentTools: ConnectorTool[] = [
             "Assign the server to you so its tools are usable in this conversation (default true).",
         },
       },
-      required: ["name", "transport"],
+      required: ["name", "transport", "endpoint"],
     },
   },
   {

@@ -96,6 +96,7 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: new Proxy({}, { get: (_target, name) => String(name) }),
   useResolvedAppearance: () => "light",
+  useMobileTokens: () => ({}),
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./user-error", () => ({

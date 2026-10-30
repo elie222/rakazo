@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr ""
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr ""
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr ""
@@ -170,6 +165,10 @@ msgstr "{commandVariable} ayrılmıştır ve komut değişkeni olarak kullanıla
 #: src/pages/PluginsOverlay.tsx
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr ""
+
+#: src/pages/shell/message-view.tsx
+msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+msgstr "{count, plural, one {{peer} ile # mesaj} other {{peer} ile # mesaj}}"
 
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -225,6 +224,10 @@ msgstr "{minutes} dk önce"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
 msgstr ""
 
 #: src/lib/activity-list-filters.ts
@@ -404,12 +407,6 @@ msgstr "{toolCount, plural, one {# araç} other {# araç}}"
 msgid "@{0}"
 msgstr "@{0}"
 
-#. placeholder {0}: amount / 100
-#. placeholder {0}: status.byokPriceCents / 100
-#: src/components/ModelCredits.tsx
-msgid "${0} / month"
-msgstr ""
-
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -527,6 +524,10 @@ msgstr "Bir stdio komutu gir."
 msgid "Add a trigger to run this routine."
 msgstr "Bu rutini çalıştırmak için bir tetikleyici ekleyin."
 
+#: src/lib/tts.ts
+msgid "Add a voice provider key and pick a voice in Voice settings."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Bir HTTPS sunucu URL'si gir."
@@ -630,10 +631,6 @@ msgstr "Gelişmiş"
 msgid "Advanced..."
 msgstr ""
 
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "Agent bilgisayarı"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "Agent'lar:"
@@ -642,10 +639,9 @@ msgstr "Agent'lar:"
 msgid "All"
 msgstr ""
 
-#. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
-msgid "All ${0} goes to model usage."
-msgstr "${0} tutarın tamamı model kullanımına gider."
+msgid "All {credit} goes to model usage."
+msgstr "{credit} tutarın tamamı model kullanımına gider."
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -680,6 +676,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Bir kez izin ver"
+
+#: src/lib/dictation.ts
+msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
+msgstr ""
 
 #: src/components/ApprovalRulePreview.tsx
 msgid "Allow rule"
@@ -804,6 +804,10 @@ msgstr "API anahtarları"
 msgid "Appearance"
 msgstr "Görünüm"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "Uygula"
@@ -816,7 +820,7 @@ msgstr "Onay sınırları"
 msgid "Approval model"
 msgstr "Onay modeli"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "Onaylar"
@@ -991,7 +995,7 @@ msgstr ""
 msgid "Bearer token"
 msgstr "Bearer token"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr ""
 
@@ -1028,6 +1032,7 @@ msgstr "bot"
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Bot"
 msgstr "Bot"
 
@@ -1428,10 +1433,6 @@ msgstr "Kod"
 msgid "Collapse {0}"
 msgstr ""
 
-#: src/pages/shell/message-view.tsx
-msgid "Collapse {label}"
-msgstr "{label} daralt"
-
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Renk"
@@ -1456,6 +1457,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "Komut"
+
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
@@ -1482,7 +1487,7 @@ msgstr "Tamamlandı"
 msgid "Completed"
 msgstr "Tamamlandı"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1584,6 +1589,7 @@ msgid "Connect API key"
 msgstr "API anahtarıyla bağlan"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "Uygulamaları bağla"
 
@@ -1797,6 +1803,7 @@ msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "Bağlanılamadı"
 
@@ -2207,6 +2214,10 @@ msgstr "Kontrol alınamadı"
 msgid "Could not test MCP server"
 msgstr "MCP sunucusu test edilemedi"
 
+#: src/lib/dictation.ts
+msgid "Could not transcribe that recording."
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "Güncellenemedi"
@@ -2366,6 +2377,7 @@ msgid "Customize bot avatar"
 msgstr "Bot avatarını özelleştir"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "Koyu"
 
@@ -2523,6 +2535,18 @@ msgstr "Ayrıntılar"
 msgid "Developer"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Dictation ended unexpectedly."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed: {code}"
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "Bir aracı devre dışı bırak"
@@ -2616,6 +2640,7 @@ msgstr "Hesabın yok mu?"
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/import-setup-card.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "Bitti"
 
@@ -2772,6 +2797,10 @@ msgstr "Her {0} ve {1}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "her {intervalAmountSelect} {intervalUnitSelect}"
 
+#: src/lib/cron.ts
+msgid "Every {n} hours at :{minute}"
+msgstr "Her {n} saatte bir :{minute}"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Bu alandaki tüm botlar bu notları okur ve güncel tutar."
@@ -2819,10 +2848,6 @@ msgstr "Genişlet"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr ""
-
-#: src/pages/shell/message-view.tsx
-msgid "Expand {label}"
-msgstr "{label} genişlet"
 
 #: src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -2894,6 +2919,7 @@ msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Karşılaştırılacak alanlar, ör. id, modifiedTime (isteğe bağlı)"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "Dosya"
 
@@ -2993,6 +3019,7 @@ msgstr "Tam ekran"
 msgid "Gateway ID"
 msgstr "Ağ geçidi kimliği"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "Genel"
@@ -3013,10 +3040,15 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "Ana sayfaya git"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Group"
 msgstr "Grup"
 
@@ -3363,11 +3395,16 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "Botların MEMORY.md'ye ek olarak bilgileri anlamına göre kaydedip hatırlamasını sağlar."
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "Açık"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
+msgstr ""
+
+#: src/pages/SpaceSearch.tsx
+msgid "Link"
 msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
@@ -3601,7 +3638,7 @@ msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Hafıza"
@@ -3636,6 +3673,7 @@ msgstr "Bahsedilenler: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Message"
 msgstr "Mesaj"
 
@@ -3672,11 +3710,12 @@ msgstr "Mesaj…"
 msgid "Messaged {peer}"
 msgstr "{peer} botuna mesaj gönderildi"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr ""
 
 #: src/lib/call-session.ts
+#: src/lib/dictation.ts
 msgid "Microphone failed"
 msgstr "Mikrofon hatası"
 
@@ -3748,7 +3787,7 @@ msgid "Model options"
 msgstr "Model seçenekleri"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "Modeller"
@@ -3875,6 +3914,7 @@ msgstr "Devralma bekliyor"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr ""
 
@@ -3900,6 +3940,7 @@ msgstr "Yeni bot"
 msgid "New group"
 msgstr "Yeni grup"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "Yeni grup sohbeti"
@@ -3917,6 +3958,7 @@ msgstr "Yeni açık iş öğesi"
 msgid "New password"
 msgstr "Yeni parola"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "Yeni özel alan"
@@ -3961,10 +4003,6 @@ msgstr "Kimlik doğrulamasız"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "Kimlik doğrulaması yok"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4023,6 +4061,7 @@ msgstr ""
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Sonuç yok"
@@ -4063,7 +4102,7 @@ msgstr ""
 msgid "Not a valid skill"
 msgstr "Geçerli bir beceri değil"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr ""
@@ -4284,6 +4323,10 @@ msgstr "Sahip"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "Sayfa {page} / {count}"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "Sayfa bulunamadı"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4917,6 +4960,7 @@ msgid "Return to call with {0}"
 msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Rakazo'ya dön"
 
@@ -4939,11 +4983,12 @@ msgstr ""
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
+#: src/pages/SpaceSearch.tsx
 msgid "Routine"
 msgstr "Rutin"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Rutinler"
 
@@ -5109,7 +5154,7 @@ msgid "Search artifacts…"
 msgstr ""
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
+msgid "Search bots, actions, and settings"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -5236,6 +5281,10 @@ msgstr "Sunucu URL'si"
 msgid "Settings"
 msgstr "Ayarlar"
 
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr ""
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "Ayarlar: Genel"
@@ -5282,10 +5331,6 @@ msgstr ""
 msgid "Show bots"
 msgstr ""
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr ""
@@ -5303,10 +5348,6 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr ""
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "Ayarları göster"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
@@ -5386,6 +5427,7 @@ msgstr "Beceri {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "Beceriler"
@@ -5401,6 +5443,10 @@ msgstr "Atla"
 #: src/lib/localized-provider-hint.ts
 msgid "Skip or deploy key"
 msgstr "Atla veya dağıtım anahtarı kullan"
+
+#: src/pages/shell/message-view.tsx
+msgid "Skipped"
+msgstr ""
 
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/shell/use-composer-actions.ts
@@ -5581,10 +5627,9 @@ msgstr ""
 msgid "Subscribe"
 msgstr "Abone ol"
 
-#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
-msgid "Subscribe for ${0} / month"
-msgstr "Aylık ${0} ile abone ol"
+msgid "Subscribe for {price} / month"
+msgstr "Aylık {price} ile abone ol"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe to Rakazo credits"
@@ -5616,15 +5661,12 @@ msgstr "Düşünmeyi destekler"
 msgid "Switch"
 msgstr ""
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr ""
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Geçiliyor…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "Sistem"
 
@@ -5693,6 +5735,10 @@ msgstr "Test ediliyor…"
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot dosyayı kullanabilir ama resmi göremez."
+
+#: src/lib/dictation.ts
+msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -5777,6 +5823,14 @@ msgstr "Bu bot"
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Bu bot bir Linux masaüstünde değil, bu bilgisayarda çalışır. Kabuk ve dosyalar senin kullanıcı klasörünü kullanır."
 
+#: src/lib/dictation.ts
+msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
+msgstr ""
+
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
 msgstr ""
@@ -5790,10 +5844,6 @@ msgstr "Bu işlem geri alınamaz."
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "Bu işlem geri alınamaz."
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "This chat is view-only"
-msgstr "Bu sohbet yalnızca görüntülenebilir"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
@@ -5968,6 +6018,14 @@ msgstr "Döküm"
 msgid "Transcription model"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Transcription request timed out."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Transcription response is too large."
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr ""
@@ -6079,7 +6137,7 @@ msgstr ""
 msgid "Updated {updated}"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "Güncellemeler"
 
@@ -6113,7 +6171,7 @@ msgid "Urgent"
 msgstr ""
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Kullanım"
 
@@ -6211,7 +6269,7 @@ msgstr "Kendi API anahtarın kullanılıyor. Ücretsiz plan {freeUntil} tarihind
 msgid "Value"
 msgstr "Değer"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "Kasa"
@@ -6236,12 +6294,16 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "Ses"
+
+#: src/lib/tts.ts
+msgid "Voice request timed out."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -6255,7 +6317,7 @@ msgstr "Sırada bekleniyor…"
 msgid "Waiting…"
 msgstr "Bekleniyor…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr ""
 

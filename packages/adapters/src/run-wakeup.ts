@@ -12,6 +12,7 @@ import { endTakeoverWaits, isTooManyDatabaseConnections, runAsSystem } from "@ra
 import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import type { Pool } from "pg";
 import { RunExecutionHost } from "./run-execution.js";
+import { findRunRecoveryBlockers } from "./run-recovery.js";
 
 const RUN_READY_TOPIC = "runs:ready";
 const INTERACTIVE_QUEUE_WARNING_MS = 30_000;
@@ -379,30 +380,16 @@ export class RunWorkerHost implements JobWorkerHost {
         bot: { select: { computerId: true } },
       },
     });
-    // Leave resource waits queued. Reclaiming them on every scan changes their
-    // age, hides stuck-work reminders, and produces false execution starts.
     // The executor still acquires the lease atomically to handle races here.
-    const leases = rows.length
-      ? await this.prisma.computerExecutionLease.findMany({
-          where: { botId: { in: rows.map((row) => row.botId) }, expiresAt: { gt: now } },
-          select: { computerId: true, botId: true, runId: true },
-        })
-      : [];
-    const blockingLease = (row: (typeof rows)[number]) =>
-      leases.find(
-        (lease) =>
-          lease.botId === row.botId &&
-          lease.computerId === row.bot.computerId &&
-          lease.runId !== row.id,
-      );
-    const runnable = rows.filter((row) => !blockingLease(row));
+    const blockers = await findRunRecoveryBlockers(this.prisma, rows, now);
+    const runnable = rows.filter((row) => !blockers.has(row.id));
     // A takeover request holds its bot's computer. Chat work must not wait behind one the user
     // has not acted on, so end it; the freed rows start on the next scan.
     if (lane === "interactive") {
       const holders = new Set(
         rows.flatMap((row) => {
-          const lease = row.status === "queued" ? blockingLease(row) : undefined;
-          return lease ? [lease.runId] : [];
+          const holder = row.status === "queued" ? blockers.get(row.id) : undefined;
+          return holder ? [holder] : [];
         }),
       );
       if (holders.size) {

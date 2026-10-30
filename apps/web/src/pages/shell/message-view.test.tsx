@@ -14,6 +14,11 @@ const skills = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/rpc", () => ({ rpc: { skills } }));
 
+vi.mock("@lingui/core/macro", () => ({
+  plural: (count: number, forms: { one: string; other: string }) =>
+    (count === 1 ? forms.one : forms.other).replace("#", String(count)),
+}));
+
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
   useLingui: () => ({
@@ -75,7 +80,6 @@ function renderView(
         onAnswer={vi.fn()}
         onOpenBot={vi.fn()}
         onOpenPeerMessages={vi.fn()}
-        onTogglePeerReplies={vi.fn()}
         peerBot={existingBot}
         onRefresh={vi.fn()}
         onBotChanged={vi.fn()}
@@ -208,7 +212,6 @@ it("keeps an edit made after a save when the saved status arrives late", async (
         onAnswer={vi.fn()}
         onOpenBot={vi.fn()}
         onOpenPeerMessages={vi.fn()}
-        onTogglePeerReplies={vi.fn()}
         peerBot={existingBot}
         onRefresh={() => Promise.reject(new Error("offline"))}
         onBotChanged={vi.fn()}
@@ -252,4 +255,26 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   act(() => render({ ...draft, skillId: "other", name: "Other", status: "saved" }));
   expect(input.value).toBe("Newer");
   expect(button().textContent).toBe("Saved");
+});
+
+it("opens one counted peer line without an inline reply toggle", () => {
+  const open = vi.fn();
+  renderView(
+    "bot",
+    [{ kind: "bot_message_sent", toBotId: "peer", toBotName: "Researcher", text: "Request" }],
+    {
+      peerExchange: {
+        peerBotId: "peer",
+        peerBotName: "Researcher",
+        count: 3,
+        direction: "sent",
+      },
+      onOpenPeerMessages: open,
+    },
+  );
+  const line = container.querySelector<HTMLButtonElement>('[data-testid="peer-receipt-chip"]');
+  expect(line?.getAttribute("aria-label")).toBe("3 messages with Researcher");
+  expect(container.querySelector('[data-testid="peer-replies-toggle"]')).toBeNull();
+  act(() => line?.click());
+  expect(open).toHaveBeenCalledWith({ peerBotId: "peer", peerBotName: "Researcher" });
 });

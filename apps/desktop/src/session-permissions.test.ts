@@ -1,4 +1,4 @@
-import type { Session, WebContents } from "electron";
+import type { MediaAccessPermissionRequest, Session, WebContents } from "electron";
 import { describe, expect, it, vi } from "vitest";
 import { installSessionPermissions } from "./session-permissions.js";
 import { shouldOpenInAppPopup } from "./window-open.js";
@@ -142,14 +142,16 @@ describe("desktop session permissions", () => {
     expect(policy.check("media", { embeddingOrigin: url })).toBe(false);
   });
 
-  it.each([undefined, [], ["video"], ["audio", "video"], ["unknown"]])(
-    "rejects camera and ambiguous media requests: %j",
-    (mediaTypes) => {
-      expect(policyFixture().request("media", { mediaTypes })).toBe(false);
-    },
-  );
+  it.each<MediaAccessPermissionRequest["mediaTypes"]>([
+    undefined,
+    [],
+    ["video"],
+    ["audio", "video"],
+  ])("rejects camera and ambiguous media requests: %j", (mediaTypes) => {
+    expect(policyFixture().request("media", { mediaTypes })).toBe(false);
+  });
 
-  it.each([undefined, "video", "unknown"])("rejects media checks for %s", (mediaType) => {
+  it.each([undefined, "video", "unknown"] as const)("rejects media checks for %s", (mediaType) => {
     expect(policyFixture().check("media", { mediaType })).toBe(false);
   });
 

@@ -177,3 +177,29 @@ describe("native attachment reads", () => {
     await expect(pickDocuments()).rejects.toThrow("read failed");
   });
 });
+
+it.each([
+  ["xls", "application/vnd.ms-excel", "application/octet-stream"],
+  ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", undefined],
+])("keeps %s documents reported by native pickers", async (extension, mimeType, reportedType) => {
+  file.size = 5;
+  vi.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({
+    canceled: false,
+    assets: [
+      {
+        name: `statement.${extension}`,
+        uri: "file:///fake/statement",
+        mimeType: reportedType,
+        lastModified: 0,
+      },
+    ],
+  });
+  const result = await pickDocuments();
+  expect(result.skipped).toEqual([]);
+  expect(result.attachments).toHaveLength(1);
+  expect(result.attachments[0]).toMatchObject({
+    name: `statement.${extension}`,
+    mimeType,
+    contentBase64: "aGVsbG8=",
+  });
+});

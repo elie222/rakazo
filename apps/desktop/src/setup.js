@@ -81,8 +81,10 @@
   }
 
   /** A save in flight cannot be cancelled, so the choice it commits must not change under it. */
-  function lockMode(locked) {
+  function lockChoice(locked) {
     for (const input of form.querySelectorAll('input[name="mode"]')) input.disabled = locked;
+    serverUrl.disabled = locked;
+    serverHeaders.disabled = locked;
   }
 
   function syncPanels() {
@@ -195,8 +197,10 @@
 
   async function save(mode, url, headers) {
     const generation = ++requestGeneration;
+    // Locking the address blurs it; a failed save hands focus back so Enter can retry.
+    const focused = document.activeElement;
     setBusy(true);
-    lockMode(true);
+    lockChoice(true);
     setStatus("Connecting…");
     try {
       const saved = await bridge.save({ mode, serverUrl: url, ...(headers ? { headers } : {}) });
@@ -204,7 +208,9 @@
     } catch {
       setStatus("Could not save that address. Try again.", "error");
     } finally {
-      lockMode(false);
+      lockChoice(false);
+      if (focused instanceof HTMLElement && document.activeElement === document.body)
+        focused.focus();
       // A newer run may own the controls by now; only their owner unlocks them.
       if (generation === requestGeneration) setBusy(false);
     }

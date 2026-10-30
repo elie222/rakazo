@@ -146,11 +146,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0}は直接のメンションには引き続き応答します。"
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "{0}の画面"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -170,6 +165,10 @@ msgstr "{commandVariable}は予約済みのため、コマンド変数として�
 #: src/pages/PluginsOverlay.tsx
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr ""
+
+#: src/pages/shell/message-view.tsx
+msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+msgstr "{count, plural, other {{peer}とのメッセージ#件}}"
 
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
@@ -226,6 +225,10 @@ msgstr "{minutes}分前"
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {#個のボットがスペースのデフォルトを使用するようになりました。} other {#個のボットがスペースのデフォルトを使用するようになりました。}}"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
+msgstr ""
 
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -404,12 +407,6 @@ msgstr "{toolCount, plural, one {#個のツール} other {#個のツール}}"
 msgid "@{0}"
 msgstr "@{0}"
 
-#. placeholder {0}: amount / 100
-#. placeholder {0}: status.byokPriceCents / 100
-#: src/components/ModelCredits.tsx
-msgid "${0} / month"
-msgstr "${0} / 月"
-
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr ""
@@ -527,6 +524,10 @@ msgstr "stdioコマンドを追加してください。"
 msgid "Add a trigger to run this routine."
 msgstr "このルーティンを実行するトリガーを追加してください。"
 
+#: src/lib/tts.ts
+msgid "Add a voice provider key and pick a voice in Voice settings."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "HTTPSのサーバーURLを追加してください。"
@@ -630,10 +631,6 @@ msgstr "詳細設定"
 msgid "Advanced..."
 msgstr "詳細設定..."
 
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "エージェントのコンピューター"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "エージェント:"
@@ -642,10 +639,9 @@ msgstr "エージェント:"
 msgid "All"
 msgstr ""
 
-#. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
-msgid "All ${0} goes to model usage."
-msgstr "${0} はすべてモデルの利用に充てられます。"
+msgid "All {credit} goes to model usage."
+msgstr "{credit} はすべてモデルの利用に充てられます。"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -680,6 +676,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "今回のみ許可"
+
+#: src/lib/dictation.ts
+msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
+msgstr ""
 
 #: src/components/ApprovalRulePreview.tsx
 msgid "Allow rule"
@@ -804,6 +804,10 @@ msgstr "APIキー"
 msgid "Appearance"
 msgstr "外観"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "適用"
@@ -816,7 +820,7 @@ msgstr "承認の範囲"
 msgid "Approval model"
 msgstr "承認モデル"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "承認"
@@ -991,7 +995,7 @@ msgstr "Basic認証（{username}）"
 msgid "Bearer token"
 msgstr "Bearerトークン"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "請求"
 
@@ -1028,6 +1032,7 @@ msgstr "ボット"
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Bot"
 msgstr "ボット"
 
@@ -1428,10 +1433,6 @@ msgstr "コード"
 msgid "Collapse {0}"
 msgstr "{0}を折りたたむ"
 
-#: src/pages/shell/message-view.tsx
-msgid "Collapse {label}"
-msgstr "{label}を折りたたむ"
-
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "色"
@@ -1456,6 +1457,10 @@ msgstr "近日公開"
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "コマンド"
+
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
@@ -1482,7 +1487,7 @@ msgstr "完了"
 msgid "Completed"
 msgstr "完了"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1584,6 +1589,7 @@ msgid "Connect API key"
 msgstr "APIキーを接続"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "アプリを接続"
 
@@ -1797,6 +1803,7 @@ msgstr "アップデートを完了できませんでした。もう一度お試
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "接続できませんでした"
 
@@ -2207,6 +2214,10 @@ msgstr "操作を引き継げませんでした"
 msgid "Could not test MCP server"
 msgstr "MCPサーバーをテストできませんでした"
 
+#: src/lib/dictation.ts
+msgid "Could not transcribe that recording."
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "更新できませんでした"
@@ -2366,6 +2377,7 @@ msgid "Customize bot avatar"
 msgstr "ボットのアバターをカスタマイズ"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "ダーク"
 
@@ -2523,6 +2535,18 @@ msgstr "詳細"
 msgid "Developer"
 msgstr ""
 
+#: src/lib/dictation.ts
+msgid "Dictation ended unexpectedly."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed: {code}"
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "ツールを無効にする"
@@ -2616,6 +2640,7 @@ msgstr "アカウントをお持ちでないですか？"
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/import-setup-card.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "完了"
 
@@ -2772,6 +2797,10 @@ msgstr "毎週{0}と{1}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "{intervalAmountSelect}{intervalUnitSelect}ごと"
 
+#: src/lib/cron.ts
+msgid "Every {n} hours at :{minute}"
+msgstr "{n}時間ごと、{minute}分"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "このスペースのすべてのボットがこのメモを読み、最新の状態に保ちます。"
@@ -2819,10 +2848,6 @@ msgstr "展開"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "{0}を展開"
-
-#: src/pages/shell/message-view.tsx
-msgid "Expand {label}"
-msgstr "{label}を展開"
 
 #: src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -2894,6 +2919,7 @@ msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "比較するフィールド（例: id, modifiedTime）（任意）"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "ファイル"
 
@@ -2993,6 +3019,7 @@ msgstr "フルスクリーン"
 msgid "Gateway ID"
 msgstr "ゲートウェイID"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "一般"
@@ -3013,10 +3040,15 @@ msgstr "準備中"
 msgid "Git event"
 msgstr "Gitイベント"
 
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "ホームへ"
+
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Group"
 msgstr "グループ"
 
@@ -3363,12 +3395,17 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "MEMORY.md に加えて、ボットが意味に基づいて事実を保存・想起できるようにします。"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "ライト"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
 msgstr "Linear課題"
+
+#: src/pages/SpaceSearch.tsx
+msgid "Link"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
@@ -3601,7 +3638,7 @@ msgstr "メンバー（{0}）"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "メモリ"
@@ -3636,6 +3673,7 @@ msgstr "言及: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Message"
 msgstr "メッセージ"
 
@@ -3672,11 +3710,12 @@ msgstr "メッセージ…"
 msgid "Messaged {peer}"
 msgstr "{peer}にメッセージを送信しました"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "メッセージ"
 
 #: src/lib/call-session.ts
+#: src/lib/dictation.ts
 msgid "Microphone failed"
 msgstr "マイクのエラー"
 
@@ -3748,7 +3787,7 @@ msgid "Model options"
 msgstr "モデルのオプション"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "モデル"
@@ -3875,6 +3914,7 @@ msgstr "引き継ぎが必要"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "対応が必要"
 
@@ -3900,6 +3940,7 @@ msgstr "新しいボット"
 msgid "New group"
 msgstr "新しいグループ"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "新しいグループチャット"
@@ -3917,6 +3958,7 @@ msgstr "新しい未完了の作業"
 msgid "New password"
 msgstr "新しいパスワード"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "新しいプライベートスペース"
@@ -3961,10 +4003,6 @@ msgstr "認証なし"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "認証なし"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr "ボットなし"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4023,6 +4061,7 @@ msgstr "リモートMCPサーバーが見つかりません"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "結果なし"
@@ -4063,7 +4102,7 @@ msgstr "通常"
 msgid "Not a valid skill"
 msgstr "有効なスキルではありません"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr ""
@@ -4284,6 +4323,10 @@ msgstr "オーナー"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "{page} / {count} ページ"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "ページが見つかりません"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -4917,6 +4960,7 @@ msgid "Return to call with {0}"
 msgstr "{0}との通話に戻る"
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Rakazoに戻る"
 
@@ -4939,11 +4983,12 @@ msgstr "キーをローテーション"
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
+#: src/pages/SpaceSearch.tsx
 msgid "Routine"
 msgstr "ルーティン"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "ルーティン"
 
@@ -5109,8 +5154,8 @@ msgid "Search artifacts…"
 msgstr "アーティファクトを検索…"
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
-msgstr "ボットを検索して会話を切り替え"
+msgid "Search bots, actions, and settings"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
@@ -5236,6 +5281,10 @@ msgstr "サーバーURL"
 msgid "Settings"
 msgstr "設定"
 
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr ""
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "設定: 一般"
@@ -5282,10 +5331,6 @@ msgstr "すべて表示"
 msgid "Show bots"
 msgstr "ボットを表示"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "コンピューターを表示"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "一覧を表示"
@@ -5303,10 +5348,6 @@ msgstr "パスワードを表示"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr "選択中を表示"
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "設定を表示"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
@@ -5386,6 +5427,7 @@ msgstr "スキル {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "スキル"
@@ -5401,6 +5443,10 @@ msgstr "スキップ"
 #: src/lib/localized-provider-hint.ts
 msgid "Skip or deploy key"
 msgstr "スキップまたはデプロイキーを使用"
+
+#: src/pages/shell/message-view.tsx
+msgid "Skipped"
+msgstr ""
 
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/shell/use-composer-actions.ts
@@ -5581,10 +5627,9 @@ msgstr ""
 msgid "Subscribe"
 msgstr "申し込む"
 
-#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
-msgid "Subscribe for ${0} / month"
-msgstr "月額 ${0} で登録"
+msgid "Subscribe for {price} / month"
+msgstr "月額 {price} で登録"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe to Rakazo credits"
@@ -5616,15 +5661,12 @@ msgstr "思考に対応"
 msgid "Switch"
 msgstr "切り替え"
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr "ボットを切り替え"
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "切り替え中…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "システム"
 
@@ -5693,6 +5735,10 @@ msgstr "テスト中…"
 #: src/pages/shell/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
 msgstr "ボットはファイルを利用できますが、画像の内容は見えません。"
+
+#: src/lib/dictation.ts
+msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -5777,6 +5823,14 @@ msgstr "このボット"
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "このボットはLinuxデスクトップではなく、このコンピューター上で動作します。シェルとファイルはホームフォルダーを使用します。"
 
+#: src/lib/dictation.ts
+msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
+msgstr ""
+
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
 msgstr "この通話の呼び出しは終了しました。"
@@ -5790,10 +5844,6 @@ msgstr "この操作は元に戻せません。"
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "この操作は元に戻せません。"
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "This chat is view-only"
-msgstr "このチャットは閲覧のみです"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
@@ -5968,6 +6018,14 @@ msgstr "文字起こし"
 msgid "Transcription model"
 msgstr "文字起こしモデル"
 
+#: src/lib/dictation.ts
+msgid "Transcription request timed out."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Transcription response is too large."
+msgstr ""
+
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
 msgstr "人と同じように扱う"
@@ -6079,7 +6137,7 @@ msgstr "更新の進行状況"
 msgid "Updated {updated}"
 msgstr "更新日: {updated}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "アップデート"
 
@@ -6113,7 +6171,7 @@ msgid "Urgent"
 msgstr "緊急"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "使用量"
 
@@ -6211,7 +6269,7 @@ msgstr "自分の API キーを使用中。無料プランは{freeUntil}に終�
 msgid "Value"
 msgstr "値"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "保管庫"
@@ -6236,12 +6294,16 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "音声"
+
+#: src/lib/tts.ts
+msgid "Voice request timed out."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -6255,7 +6317,7 @@ msgstr "順番待ち…"
 msgid "Waiting…"
 msgstr "待機中…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr ""
 

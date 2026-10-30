@@ -9,6 +9,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -59,6 +60,7 @@ import {
   DEFAULT_MCP_INSTALL_TIMEOUT_MS,
   defaultMcpPackagesRoot,
   ensureMcpPackage,
+  isNpxCommand,
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
@@ -145,11 +147,15 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
   if (error instanceof StreamableHTTPError) {
-    if (error.code === 408 || error.code === 429) return "unreachable";
+    // A timeout, rate limit or server error is the server's own outage.
+    if (error.code === 408 || error.code === 429 || (error.code ?? 0) >= 500) return "unreachable";
     // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
     if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
       return "reconnect";
   }
+  // JSON-RPC reserves -32000 to -32099 for server errors, such as a proxy's failed upstream.
+  if (error instanceof McpError && error.code <= -32000 && error.code >= -32099)
+    return "unreachable";
   if (error instanceof ConnectorRedirectError) return "reconnect";
   // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
   if (
@@ -393,7 +399,16 @@ export class McpConnector implements ConnectorProvider {
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const tools = await this.authorizedTools(context);
+    const startedAt = Date.now();
+    let tools: ConnectorTool[];
+    try {
+      tools = await this.authorizedTools(context);
+    } catch (error) {
+      // The registry logs and drops a connector that throws, so the run would lose every
+      // assigned server's tools with nothing in the thread to say so.
+      await this.recordDiscoveryFailure(undefined, error, context, startedAt, []);
+      throw error;
+    }
     if (tools.length <= DIRECT_TOOL_LIMIT) return tools;
     // Keep wrappers off "mcp_": see lazyCatalogTools.
     return lazyCatalogTools(catalogToolPrefix("mcp"), "mcp", "MCP", catalogEntries(tools));
@@ -519,7 +534,8 @@ export class McpConnector implements ConnectorProvider {
                 "connector.id": assignment.server.id,
               },
             );
-          await this.evict(key);
+          // Cleanup must not turn one server's failure into losing every server's tools.
+          await this.evict(key).catch(() => undefined);
           this.unavailable.set(key, reason);
           // A cancelled run says nothing about the server, and an install that outlived the
           // deadline is still on its way.
@@ -562,7 +578,7 @@ export class McpConnector implements ConnectorProvider {
    * there the log line stays the only trace.
    */
   private async recordDiscoveryFailure(
-    slug: string,
+    slug: string | undefined,
     error: unknown,
     context: AdapterContext,
     startedAt: number,
@@ -583,8 +599,8 @@ export class McpConnector implements ConnectorProvider {
         runId: context.runId,
       },
       {
-        name: `mcp__${slug}__discovery`,
-        executionId: `mcp-discovery-${slug}-${context.runId}-${this.discoverySeq++}`,
+        name: slug ? `mcp__${slug}__discovery` : "mcp__discovery",
+        executionId: `mcp-discovery-${slug ?? "all"}-${context.runId}-${this.discoverySeq++}`,
         durationMs: Date.now() - startedAt,
         error,
       },
@@ -1021,7 +1037,8 @@ export class McpConnector implements ConnectorProvider {
       let digest = plaintext === undefined ? undefined : credentialDigest(plaintext);
       material = plaintext === undefined ? {} : (JSON.parse(plaintext) as OAuthMaterial);
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
-      const args = Array.isArray(server.args) ? server.args.map(String) : [];
+      // Rows saved before arguments moved into the secret still hold them in plaintext.
+      const args = material.args ?? (Array.isArray(server.args) ? server.args.map(String) : []);
       const env = { ...(material.env ?? {}) };
       const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
         ref = record.ref;
@@ -1037,6 +1054,8 @@ export class McpConnector implements ConnectorProvider {
         const refusal = mcpStdioRefusal(command, this.options);
         if (refusal) throw new McpConnectFailure(refusal, "reconnect");
         const npx = parseNpxLaunch(command, args);
+        if (!npx && isNpxCommand(command))
+          throw new McpConnectFailure("This npx command isn't supported here", "reconnect");
         let installedBin: InstalledMcpBin | undefined;
         if (npx) {
           // Install outside the startup timeout, once per package, into the shared volume.

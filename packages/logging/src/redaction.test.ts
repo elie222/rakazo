@@ -276,6 +276,46 @@ describe("redaction", () => {
     expect(redacted).toContain('"authorization":"[Redacted]"');
   });
 
+  it.each([
+    "Authorization: Basic ZmFrZTpmaXh0dXJl",
+    "Authorization: token fixture-credential",
+    "proxy-authorization=Digest fixture-credential",
+    "x-api-key: fixture-credential",
+    "X-API-KEY=fixture-credential",
+  ])("redacts header credentials in free text: %s", (header) => {
+    const redacted = redactSensitiveText(`request failed with ${header} attached`);
+    expect(redacted).toContain("=[Redacted] attached");
+    expect(redacted).not.toMatch(/ZmFrZTpmaXh0dXJl|fixture-credential/);
+  });
+
+  it("redacts quoted JSON fields whose names contain a secret name", () => {
+    expect(
+      redactSensitiveText(
+        'Raw body: {"access_token":"fixture-a","refresh_token":"fixture-r","client_secret":"fixture-s","x-api-key":"fixture-k","client_id":"public-id"}',
+      ),
+    ).toBe(
+      'Raw body: {"access_token":"[Redacted]","refresh_token":"[Redacted]","client_secret":"[Redacted]","x-api-key":"[Redacted]","client_id":"public-id"}',
+    );
+  });
+
+  it("handles a long word made of secret names without blocking", () => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = "token".repeat(200 * 1024) + ' "' + "secret".repeat(100 * 1024);
+         process.stdout.write(String(redactSensitiveText(text) === text));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
+
   it("redacts user profile paths in free text", () => {
     expect(redactSensitiveText("cannot open /home/example-user/app.db")).toBe(
       "cannot open /[user]/app.db",

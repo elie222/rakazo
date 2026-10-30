@@ -47,6 +47,22 @@ describe("native crash metadata", () => {
     expect(mocks.readdir).toHaveBeenCalledTimes(3);
   });
 
+  it("names the child process that stopped unexpectedly", async () => {
+    mocks.readPrivateFile.mockResolvedValue(null);
+    const capture = vi.fn();
+    const native = await import("./native-crashes.js");
+    native.configureNativeCrashReporting(base, capture);
+    const gone = mocks.on.mock.calls.find(([name]) => name === "child-process-gone")?.[1];
+    gone?.({}, { type: "Utility", reason: "abnormal-exit", exitCode: 1, name: "Audio Service" });
+    gone?.({}, { type: "Utility", reason: "clean-exit", exitCode: 0 });
+    expect(capture).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Child process stopped (Utility, abnormal-exit)" }),
+      "desktop.child",
+      { "native.crash": "true", "process.name": "Audio Service", "process.exit_code": "1" },
+    );
+  });
+
   it.each([null, { ...checkpoint, enabled: false }])(
     "skips dump scans for an inactive checkpoint: %j",
     async (saved) => {

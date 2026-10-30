@@ -288,6 +288,7 @@ describe("normalizeRunError", () => {
       '401 {"status":401,"title":"Unauthorized","detail":"Invalid unsecured/JWS/JWE header: Invalid JSON object"}',
       'xai API error (400): 400 "Incorrect API key provided. You can obtain an API key from the console."',
       "Your authentication token has expired. Please try refreshing it.",
+      "Provided authentication token is expired.",
       "Encountered invalidated oauth token for user, failing request",
       // A key pasted with code around it; the code's words are not provider signals.
       'Headers.append: "Bearer example-key\nclient = Client(timeout=30, credits=5, rate_limit=1)" is an invalid header value.',
@@ -335,6 +336,7 @@ describe("normalizeRunError", () => {
       '404: {"message":"example/model:batch cannot be used with the chat/completions endpoint.","code":404}',
       '400: {"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}',
       '400: {"message":"`tool calling` is not supported with this model","type":"invalid_request_error","param":"tool calling"}',
+      `400: {"message":"feature 'tool calls' is not currently supported"}`,
       `{"detail":"The 'example-model' model is not supported when using Codex with a ChatGPT account."}`,
       "Validation error: Invocation of model ID example.model-v1 with on-demand throughput isn’t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
       "Validation error: This model doesn't support the image field for user messages.",
@@ -384,6 +386,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
       MODEL_OUTPUT_LIMIT_ERROR,
+      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
       expect(normalizeRunError(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
@@ -409,7 +412,6 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
-      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',
@@ -731,6 +733,29 @@ describe("the one action that fixes a failed run", () => {
       period: "weekly",
       recovery: "connection",
     });
+  });
+
+  it("waits out a 429 that resets hours from now instead of calling it a rate limit", () => {
+    const daily = (reset: number) =>
+      `429 ${JSON.stringify({
+        error: {
+          message: "Rate limit exceeded: free-models-per-day",
+          code: 429,
+          metadata: {
+            headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(reset) },
+            limit_source: "openrouter_free_tier_daily",
+          },
+        },
+      })}`;
+    const tomorrow = Date.parse("2026-10-02T00:00:00Z");
+    expect(normalizeRunError(daily(tomorrow), undefined, "en", now)).toMatchObject({
+      summary: "Your OpenRouter reached its daily credit limit. Resets Oct 2.",
+      kind: "credit",
+      period: "daily",
+      recovery: "model",
+      resetAt: tomorrow,
+    });
+    expect(action(daily(now + 30_000))).toMatchObject({ kind: "rate" });
   });
 
   it.each([

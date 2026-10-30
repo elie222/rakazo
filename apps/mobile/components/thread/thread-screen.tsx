@@ -23,6 +23,7 @@ import { useAppForeground } from "../../lib/app-foreground";
 import { mobileTokens } from "../../lib/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
+import { composerDraftScope } from "../../lib/composer-draft";
 import { cronLabels } from "../../lib/cron";
 import { useI18n } from "../../lib/i18n";
 import { useThemedStyles } from "../../lib/native";
@@ -176,6 +177,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     mentionBots,
   );
   const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig });
+  const draftScope = useMemo(
+    () => composerDraftScope(userId, botId, groupId),
+    [userId, botId, groupId],
+  );
   const echoed = useMemo(
     () =>
       snap && (snap.groupId ?? snap.botId) === threadKey
@@ -195,8 +200,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   );
   const transcript = useThreadTranscript(snap?.messages, inGroup);
   const { reactionView, peerTranscript, setExpandedPeerMarkers } = transcript;
-  const visibleMessages = reactionView.visibleMessages;
-  const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
+  const visibleMessages = transcript.visibleMessages;
+  const latestMessage = latestArrivalMessage(reactionView.visibleMessages, peerTranscript.markerOf);
   const composerMentionTargets = useMemo(
     () =>
       buildComposerMentionOptions({
@@ -434,10 +439,15 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       if (!botId) return;
       router.push({
         pathname: "/peer-chat",
-        params: { botId, botName: displayName, ...peer },
+        params: {
+          botId,
+          botName: displayName,
+          botColor: currentBot?.color,
+          peerBotColor: mentionBots.find((bot) => bot.id === peer.peerBotId)?.color,
+          ...peer,
+        },
       });
     },
-    togglePeerReplies: transcript.togglePeerReplies,
     layout: scroll.layoutJumpRow,
   });
 
@@ -585,6 +595,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           <ThreadComposer
             key={threadKey}
             ref={composer.composerRef}
+            draftScope={draftScope}
             agentSkills={agentSkills}
             composerMentionTargets={composerMentionTargets}
             onMentionRequested={onMentionRequested}

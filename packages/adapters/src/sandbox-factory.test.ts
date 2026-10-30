@@ -11,57 +11,61 @@ const ctx = {
 };
 
 describe("createSandboxProvider", () => {
-  it("returns fake sandbox when explicitly requested", () => {
-    const sandbox = createSandboxProvider("fake", {});
+  it("returns fake sandbox when explicitly requested", async () => {
+    const sandbox = await createSandboxProvider("fake", {});
     expect(sandbox.describe().id).toBe("fake");
   });
 
   it("returns none when requested or when the kind is empty", async () => {
-    expect(createSandboxProvider("none", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("", {}).describe().id).toBe("none");
+    expect((await createSandboxProvider("none", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("", {})).describe().id).toBe("none");
     await expect(
-      createSandboxProvider("none", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
+      (await createSandboxProvider("none", {})).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(NO_SANDBOX_MESSAGE);
   });
 
   it("boots without a remote key and keeps computers unavailable", async () => {
-    expect(createSandboxProvider("e2b", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("novita", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("daytona", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("createos", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("boat", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("boxd", {}).describe().id).toBe("none");
+    expect((await createSandboxProvider("e2b", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("novita", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("daytona", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("createos", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("boat", {})).describe().id).toBe("none");
+    expect((await createSandboxProvider("boxd", {})).describe().id).toBe("none");
     await expect(
-      createSandboxProvider("e2b", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
+      (await createSandboxProvider("e2b", {})).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
     await expect(
-      createSandboxProvider("createos", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
+      (await createSandboxProvider("createos", {})).provision(
+        { botId: "b", homePath: "/tmp" },
+        ctx,
+      ),
     ).rejects.toThrow(/CREATEOS_SANDBOX_API_KEY/);
     expect(
-      createSandboxProvider("createos", { createosApiKey: "test-createos-key" }).describe().id,
+      (await createSandboxProvider("createos", { createosApiKey: "test-createos-key" })).describe()
+        .id,
     ).toBe("createos");
-    expect(createSandboxProvider("boat", { boatApiKey: "test-boat-key" }).describe().id).toBe(
-      "boat",
-    );
-    expect(createSandboxProvider("boxd", { boxdApiKey: "test-boxd-key" }).describe().id).toBe(
-      "boxd",
-    );
+    expect(
+      (await createSandboxProvider("boat", { boatApiKey: "test-boat-key" })).describe().id,
+    ).toBe("boat");
+    expect(
+      (await createSandboxProvider("boxd", { boxdApiKey: "test-boxd-key" })).describe().id,
+    ).toBe("boxd");
   });
 
-  it("refuses the desktop provider in a production server process", () => {
+  it("refuses the desktop provider in a production server process", async () => {
     vi.stubEnv("NODE_ENV", "production");
     try {
-      expect(() => createSandboxProvider("desktop", {})).toThrow(
+      await expect(createSandboxProvider("desktop", {})).rejects.toThrow(
         "SANDBOX_PROVIDER=desktop runs bot commands directly on this host",
       );
     } finally {
       vi.unstubAllEnvs();
     }
-    expect(createSandboxProvider("desktop", {}).describe().id).toBe("desktop");
+    expect((await createSandboxProvider("desktop", {})).describe().id).toBe("desktop");
   });
 
-  it("returns the Kubernetes provider without contacting the cluster", () => {
-    const sandbox = createSandboxProvider("kubernetes", {
+  it("returns the Kubernetes provider without contacting the cluster", async () => {
+    const sandbox = await createSandboxProvider("kubernetes", {
       kubernetesNamespace: "rakazo-computers",
       kubernetesRuntimeClassName: "kata",
     });
@@ -71,24 +75,42 @@ describe("createSandboxProvider", () => {
     });
   });
 
+  it("returns the Wuying provider without contacting Alibaba Cloud", async () => {
+    const sandbox = await createSandboxProvider("wuying", {
+      wuyingAccessKeyId: "test-id",
+      wuyingAccessKeySecret: "test-secret",
+      wuyingDesktopId: "ecd-test",
+      wuyingEndUserId: "test-user",
+      wuyingMcpUrl: "https://gateway.example.com/mcp",
+      wuyingMcpToken: "test-token",
+    });
+    expect(sandbox.describe()).toMatchObject({
+      id: "wuying",
+      capabilities: { graphical: true, takeover: true, persistentHome: true },
+    });
+    expect(
+      (await createSandboxProvider("wuying", { wuyingAccessKeyId: "test-id" })).describe().id,
+    ).toBe("none");
+  });
+
   it("selects Novita without using E2B credentials", async () => {
     expect(
-      createSandboxProvider("novita", { novitaApiKey: "test-novita-key" }).describe(),
+      (await createSandboxProvider("novita", { novitaApiKey: "test-novita-key" })).describe(),
     ).toMatchObject({
       id: "novita",
       capabilities: { graphical: true, persistentHome: true, multiScreen: true },
     });
     await expect(
-      createSandboxProvider("novita", { e2bApiKey: "test-e2b-key" }).provision(
+      (await createSandboxProvider("novita", { e2bApiKey: "test-e2b-key" })).provision(
         { botId: "b", homePath: "/unused" },
         ctx,
       ),
     ).rejects.toThrow(/NOVITA_API_KEY/);
   });
 
-  it("throws on unknown provider", () => {
-    expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | desktop | fake.',
+  it("throws on unknown provider", async () => {
+    await expect(createSandboxProvider("bogus", {})).rejects.toThrow(
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.',
     );
   });
 });

@@ -659,7 +659,7 @@ export const Composer = memo(function Composer({
                 onClick={() => insertMention(mention)}
                 // Opening the list under a stationary pointer must not steal the keyboard highlight.
                 onMouseMove={() => setMentionHighlightKey(mentionChipKey(mention))}
-                className={`flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent ${
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent ${
                   highlighted ? "bg-accent" : ""
                 }`}
               >
@@ -690,9 +690,9 @@ export const Composer = memo(function Composer({
               type="button"
               aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-accent"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-accent"
             >
-              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <Box size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0">
                 <span dir="auto" className="block text-[14px] text-foreground">
                   {skill.name}

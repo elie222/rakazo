@@ -26,6 +26,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { isAdmin } from "../admins.js";
 import {
   assertNameFreeWhereAvailable,
   lockOwner,
@@ -38,10 +39,11 @@ import {
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
 } from "../mcp-approval.js";
-import { buildMcpUpdateMaterial } from "../mcp-material.js";
+import { buildMcpUpdateMaterial, legacyMcpArgs } from "../mcp-material.js";
 import {
   assertMcpOAuthTemplates,
   assertMcpRemoteEndpoint,
+  assertMcpStdioAdmin,
   assertMcpStdioCommand,
   MCP_OAUTH_PENDING_MESSAGE,
   mayUsePrivateEndpoint,
@@ -58,7 +60,6 @@ import {
 import { installPlugin, lockPluginInstalls, setPluginParts } from "../plugin-installs.js";
 import {
   approvedPluginEntries,
-  isAdmin,
   listPluginSubmissions,
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
@@ -473,13 +474,17 @@ export function mcpRoutes(ctx: RouterContext) {
               await assertMcpRemoteEndpoint(nextEndpoint, deps);
             }
             if (config.transport === "stdio") {
-              assertMcpStdioCommand(config.command, deps);
+              await assertMcpStdioCommand(config.command, context.actor, deps);
               await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
+            } else if (existing.transport === "stdio") {
+              await assertMcpStdioAdmin(context.actor, deps);
             }
             const endpointChanged = existing.endpoint !== nextEndpoint;
+            existingMaterial.args ??= legacyMcpArgs(existing.args);
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: endpointChanged,
               endpointChanged,
+              commandChanged: existing.command !== ("command" in config ? config.command : null),
             });
             if (update.action === "store" && config.transport === "stdio") {
               await assertMcpRemoteEndpoint(
@@ -564,7 +569,8 @@ export function mcpRoutes(ctx: RouterContext) {
                       transport: config.transport,
                       endpoint: nextEndpoint,
                       command: "command" in config ? config.command : null,
-                      args: ("args" in config ? config.args : []) as Prisma.InputJsonValue,
+                      args: [],
+                      hasArgs: update.action === "store" && Boolean(update.material.args?.length),
                       env: ("env" in config
                         ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,

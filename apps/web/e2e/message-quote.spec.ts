@@ -197,12 +197,13 @@ test("an armed reply survives the parent paging out of the transcript", async ({
     reaction: "👍",
     clientNonce: `qr-${stamp}`,
   });
-  const computerButton = page.getByRole("button", { name: "Agent computer", exact: true });
+  // Opening the bot panel on its computer refreshes the thread.
+  const panelButton = page.getByTestId("bot-settings-trigger");
   await expect(async () => {
-    if ((await computerButton.getAttribute("data-active")) !== null) {
-      await computerButton.click();
+    if ((await panelButton.getAttribute("aria-expanded")) === "true") {
+      await panelButton.click();
     }
-    await computerButton.click();
+    await panelButton.click();
     await expect(parentRow).toHaveCount(0, { timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   await expect(replyChip).toBeVisible();

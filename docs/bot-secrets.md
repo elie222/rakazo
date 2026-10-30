@@ -63,7 +63,7 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 **The bot's shell reads this value.** A command variable is a convenience for the bot, not a boundary against it: the shell command the bot runs, and the code that command starts, can print, encode or send the value. Redaction stops it appearing in a result the model reads; it does not stop a permitted bot, or anything the bot runs, from using it. There is no secrecy from the bot that was given the credential, so treat a command variable as shared with that bot and save only values you would let it use unattended, scoped to what it needs.
 
-Command variables are managed with the same Credentials section as other reusable credentials: web and the Electron-hosted web UI can add, replace and remove one. Mobile has no credentials settings screen, but the request card a bot opens in a thread shows a command variable's variable name in place of a site, so a bot can obtain a command variable value on the phone; listing, adding, replacing and removing one is web and desktop only.
+Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
 
 ## Saved website logins
 
@@ -106,16 +106,11 @@ Logins saved before fields existed read as a visible Username and a hidden Passw
 
 ## Managing saved credentials
 
-Owners can read back what is saved without asking the bot. In the web app, open a bot's settings,
-expand **Advanced**, and use the **Credentials** section. It lists each credential's name, origin
-and authentication type and never its value. From there you can add a credential, replace its value
-on the same destination, or remove one after confirming. Remove deletes the saved value immediately.
-The Electron desktop app hosts the same web UI, so it has the same section.
-
-Mobile does not host that web settings shell, so it has no credential management screen.
-The thread credential card still works on the phone, including website logins, and that is how a
-bot obtains a value there. Listing, replacing, and removing saved credentials stays on the web
-section. Asking the bot to `forget_secret` a name only removes it; it does not list or replace one.
+Owners can manage what is saved without asking the bot. Open **Settings → Vault** on web, the
+desktop app or mobile. It lists each credential's name, origin and authentication type. From there
+you can show a value, replace it on the same destination, or remove one after confirming. Remove
+deletes the saved value immediately. Asking the bot to `forget_secret` a name only removes it; it
+does not list or replace one.
 
 A sign-in without a password, such as an ID number and phone number, uses the same login card. Texted or emailed one-time codes, CAPTCHA and passkeys still use `request_takeover`, so a code is typed on the live screen rather than saved, as is any sign-in you prefer to do yourself.
 

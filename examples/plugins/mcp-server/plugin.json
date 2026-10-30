@@ -2,8 +2,5 @@
   "$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
   "name": "mcp-server",
   "version": "1.0.0",
-  "description": "Search documentation through a hosted MCP server.",
-  "author": { "name": "Example" },
-  "license": "Apache-2.0",
-  "keywords": ["docs", "mcp"]
+  "description": "Search documentation through a hosted MCP server."
 }

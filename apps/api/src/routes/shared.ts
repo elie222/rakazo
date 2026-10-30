@@ -7,7 +7,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
-import { isAdmin } from "../plugin-submissions.js";
+import { isAdmin } from "../admins.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -58,10 +58,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer:
       Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
-    mcpStdioEnabled: mcpStdioAvailable({
-      stdioEnabled: deps.env.mcpStdioEnabled,
-      allowedCommands: deps.env.mcpStdioAllowedCommands,
-    }),
+    mcpStdioEnabled:
+      admin &&
+      mcpStdioAvailable({
+        stdioEnabled: deps.env.mcpStdioEnabled,
+        allowedCommands: deps.env.mcpStdioAllowedCommands,
+      }),
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),

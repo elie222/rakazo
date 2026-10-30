@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
@@ -38,6 +39,7 @@ import {
 } from "./local-stack.js";
 import {
   configureDesktopMonitoring,
+  desktopReportsErrors,
   disableDesktopMonitoring,
   installDesktopEarlyErrorReporting,
   refreshDesktopMonitoringUser,
@@ -72,6 +74,7 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
+import { createSystemSpeech } from "./system-speech.js";
 import type { UserDeviceAccess } from "./user-device.js";
 import { createUserDeviceAccess, deviceName } from "./user-device.js";
 import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
@@ -117,8 +120,10 @@ let warmWindowTimer: NodeJS.Timeout | undefined;
 let liveProbeWindows = 0;
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
 
+const reportsErrors = desktopReportsErrors(app.isPackaged);
 const updaterEnvironment = {
-  packaged: app.isPackaged,
+  // A `--dir` build has no update feed to read.
+  packaged: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
 };
@@ -908,6 +913,7 @@ function activateDesktopMonitoring(url: string | undefined, targetSession?: Sess
   void configureDesktopMonitoring(fetchMonitoringConfig, {
     version: app.getVersion(),
     base: url,
+    reportsErrors,
   });
 }
 
@@ -946,9 +952,13 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     );
     const created = createWindow(targetUrl, target.partition);
     win = created.win;
-    // On launch the web app's error screen stays up so its Refresh can recover;
-    // switching to a server that cannot render keeps the previous one instead.
-    if ((await created.loaded) === "failed" && switching) {
+    // On launch the window stays up: the web app shows its own loading, reconnecting or error
+    // screen and recovers from it. Switching to a server that is not ready keeps the previous one.
+    const state = await created.loaded;
+    if (switching && state === "pending") {
+      throw new ServerUnavailable("The server page did not become ready.");
+    }
+    if (switching && state === "failed") {
       throw new Error("The server page did not become ready.");
     }
     currentTargetUrl = targetUrl;
@@ -1367,8 +1377,25 @@ app.whenReady().then(async () => {
     "desktop.badge.set",
     createBadgeHandler(permissionTarget, (count) => app.setBadgeCount(count)),
   );
+  if (process.platform === "darwin") {
+    // Installed builds ship the helper as an extra resource; `pnpm build` compiles it for development.
+    const helper = app.isPackaged
+      ? path.join(process.resourcesPath, "speech", "rakazo-speech")
+      : path.join(app.getAppPath(), "build", "speech", "rakazo-speech");
+    const speech = createSystemSpeech(permissionTarget, (language) =>
+      spawn(helper, [language], { stdio: "pipe" }),
+    );
+    ipcMain.handle("desktop.speech.start", (event, language: unknown, session: unknown) =>
+      speech.start(event, language, session),
+    );
+    ipcMain.handle("desktop.speech.stop", (event, session: unknown) => speech.stop(event, session));
+    ipcMain.handle("desktop.speech.abort", (event, session: unknown) =>
+      speech.abort(event, session),
+    );
+  }
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
+  ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();
   });

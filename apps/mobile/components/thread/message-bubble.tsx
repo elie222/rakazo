@@ -1,7 +1,7 @@
 import { ChatMarkdown, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
-import type { ChildBotBlock } from "@rakazo/core";
+import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   formatFileSize,
   isApprovalAskBlock,
@@ -20,10 +20,9 @@ import type { MobileArtifactTarget } from "../../lib/artifact-open";
 import { openMobileArtifact } from "../../lib/artifact-open";
 import { plainAskTitle } from "../../lib/ask-title";
 import { t, useI18n } from "../../lib/i18n";
-import { isInlineImageMimeType } from "../../lib/inline-image";
+import { isInlineImageBlock } from "../../lib/inline-image";
 import { messagePresentationSegments } from "../../lib/message-presentation";
 import { useResolvedAppearance } from "../../lib/native";
-import { peerChipPress } from "../../lib/peer-chip";
 import { speakerColorFor } from "../../lib/thread-message-text";
 import type { UserBubble } from "../../lib/user-bubble";
 import { withUserBubble } from "../../lib/user-bubble";
@@ -31,7 +30,6 @@ import { errorText } from "../../lib/user-error";
 import { AppConnectCard } from "../AppConnectCard";
 import { AskActions } from "../AskActions";
 import { AudioAttachment } from "../audio-attachment";
-import { BotAvatar } from "../bot-avatar";
 import { MessageMentions } from "../bot-mention";
 import { ChoiceCard } from "../ChoiceCard";
 import { ComputerCard } from "../ComputerCard";
@@ -42,6 +40,7 @@ import { McpApprovalCard } from "../McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../markdown-artifact-preview";
 import { MessageCaption } from "../message-caption";
 import { NativeSymbol } from "../native-symbol";
+import { PeerReceiptLine } from "../peer-receipt-line";
 import { AskBlock } from "./ask-block";
 import type { MessageRowActions } from "./message-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
@@ -159,8 +158,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed,
   onPreviewMarkdown,
   onPreviewImage,
-  peerReplies,
-  onTogglePeerReplies,
+  peerExchange,
   onOpenPeerChat,
   actionProps,
   doubleTapSurface = false,
@@ -188,8 +186,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed?: (question: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
-  peerReplies?: "collapsed" | "expanded";
-  onTogglePeerReplies: (markerId: string) => void;
+  peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
   doubleTapSurface?: boolean;
@@ -288,70 +285,24 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     const sent = peerMessage.kind === "bot_message_sent";
     const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
     const peerBotId = sent ? peerMessage.toBotId : peerMessage.fromBotId;
-    const label = sent
-      ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
-      : t("Message from {peer}", { peer: peer ?? t("Bot") });
-    const peerAvatarSet =
-      bots.find((bot) => bot.id === peerBotId)?.avatarSet ??
-      members?.find((member) => member.botId === peerBotId)?.avatarSet;
-    const peerColor =
-      bots.find((bot) => bot.id === peerBotId)?.color ??
-      members?.find((member) => member.botId === peerBotId)?.color ??
-      tokens.mutedForeground;
-    // A received chip with folded replies expands them in place; otherwise, in a bot's own chat,
-    // the chip opens the view-only bot-to-bot exchange, as on web.
-    const replies = sent ? undefined : peerReplies;
-    const press = peerChipPress({
-      sent,
-      replies,
-      threadBotId: groupId ? undefined : botId,
-      peerBotId,
-    });
+    const peerBot = bots.find((bot) => bot.id === peerBotId);
+    const peerMember = members?.find((member) => member.botId === peerBotId);
+    const peerColor = peerBot?.color ?? peerMember?.color ?? tokens.mutedForeground;
     return (
-      <Pressable
-        {...actionProps}
-        accessible
+      <PeerReceiptLine
+        peerBotId={peerBotId}
+        peerBotName={peerExchange?.peerBotName ?? peer ?? t("Bot")}
+        color={peerColor}
+        avatarSet={peerBot?.avatarSet ?? peerMember?.avatarSet}
+        count={peerExchange?.count ?? 1}
+        direction={sent ? "sent" : "received"}
+        actionProps={actionProps}
         onPress={
-          press === "toggle"
-            ? () => onTogglePeerReplies(message.id)
-            : press === "open"
-              ? () => onOpenPeerChat({ peerBotId, peerBotName: peer ?? t("Bot") })
-              : undefined
+          !groupId && botId && peerBotId !== botId
+            ? () => onOpenPeerChat({ peerBotId, peerBotName: peer ?? t("Bot") })
+            : undefined
         }
-        accessibilityRole={press ? "button" : undefined}
-        accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
-        accessibilityLabel={
-          replies === "expanded"
-            ? t("Hide {label}", { label })
-            : replies === "collapsed"
-              ? t("Show {label}", { label })
-              : label
-        }
-        style={{
-          width: "100%",
-          paddingVertical: 4,
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "row",
-          gap: 6,
-        }}
-      >
-        <BotAvatar color={peerColor} avatarSet={peerAvatarSet} identity={peerBotId} size={16} />
-        <Text
-          numberOfLines={1}
-          style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}
-        >
-          {label}
-        </Text>
-        {press ? (
-          <NativeSymbol
-            ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
-            android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
-            size={12}
-            color={tokens.mutedForeground}
-          />
-        ) : null}
-      </Pressable>
+      />
     );
   }
   const channelMessage = message.blocks.find(
@@ -531,64 +482,116 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       message.role === "bot" ? (memberName(members, message.botId) ?? botName) : undefined;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
+    const hasInlineImages = attachments.some(isInlineImageBlock);
+    const bubbleStyle = {
+      maxWidth: "100%",
+      borderRadius: 20,
+      backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 8,
+    } as const;
     return (
-      <View
-        style={{
-          maxWidth: "100%",
-          borderRadius: 20,
-          backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          gap: 8,
-        }}
-      >
-        {showBotSenderName && speaker ? (
-          <Text style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}>
-            {speaker}
-          </Text>
+      <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
+        {(showBotSenderName && speaker) || caption ? (
+          <View style={hasInlineImages ? bubbleStyle : undefined}>
+            {showBotSenderName && speaker ? (
+              <Text
+                style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
+              >
+                {speaker}
+              </Text>
+            ) : null}
+            {caption ? (
+              <MessageCaption
+                role={message.role}
+                text={caption}
+                tokens={tokens}
+                colorScheme={colorScheme}
+                streaming={message.id.startsWith("progress:")}
+              />
+            ) : null}
+          </View>
         ) : null}
-        {caption ? (
-          <MessageCaption
-            role={message.role}
-            text={caption}
-            tokens={tokens}
-            colorScheme={colorScheme}
-            streaming={message.id.startsWith("progress:")}
-          />
-        ) : null}
-        {attachments.map((attachment, index) =>
-          attachment.kind === "image" ? (
-            attachment.artifactId && isInlineImageMimeType(attachment.mimeType) ? (
-              <InlineImageAttachment
-                key={`${attachment.artifactId}-${index}`}
-                threadTarget={artifactTarget}
-                artifactId={attachment.artifactId}
-                name={attachment.name ?? t("Image")}
-                mimeType={attachment.mimeType ?? "image/png"}
-                labelColor={message.role === "user" ? tokens.chatUserForeground : tokens.foreground}
+        {attachments.map((attachment, index) => (
+          <View
+            key={`${attachment.artifactId ?? attachment.name ?? attachment.kind}-${index}`}
+            style={hasInlineImages && !isInlineImageBlock(attachment) ? bubbleStyle : undefined}
+          >
+            {attachment.kind === "image" ? (
+              isInlineImageBlock(attachment) ? (
+                <InlineImageAttachment
+                  threadTarget={artifactTarget}
+                  artifactId={attachment.artifactId}
+                  name={attachment.name ?? t("Image")}
+                  mimeType={attachment.mimeType ?? "image/png"}
+                  labelColor={
+                    message.role === "user" ? tokens.chatUserForeground : tokens.foreground
+                  }
+                  pressableProps={actionProps}
+                  onOpen={() =>
+                    onPreviewImage({
+                      artifactId: attachment.artifactId!,
+                      name: attachment.name ?? t("Image"),
+                      mimeType: attachment.mimeType ?? "image/png",
+                    })
+                  }
+                />
+              ) : (
+                <Pressable
+                  {...actionProps}
+                  onPress={() =>
+                    attachment.artifactId
+                      ? void openMobileArtifact(
+                          artifactTarget,
+                          attachment.artifactId,
+                          attachment.name ?? t("Image"),
+                          attachment.mimeType ?? "image/png",
+                        ).catch((err) =>
+                          Alert.alert(t("Could not open image"), errorText(err, t("Try again."))),
+                        )
+                      : undefined
+                  }
+                >
+                  <Text
+                    style={{
+                      color:
+                        message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
+                      fontSize: 15,
+                    }}
+                  >
+                    🖼 {attachment.name ?? t("Image")}
+                  </Text>
+                </Pressable>
+              )
+            ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
+              <AudioAttachment
                 pressableProps={actionProps}
-                onOpen={() =>
-                  onPreviewImage({
-                    artifactId: attachment.artifactId!,
-                    name: attachment.name ?? t("Image"),
-                    mimeType: attachment.mimeType ?? "image/png",
-                  })
-                }
+                target={artifactTarget}
+                artifactId={attachment.artifactId}
+                name={attachment.name ?? t("File")}
+                mimeType={attachment.mimeType!}
+                labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
               />
             ) : (
               <Pressable
                 {...actionProps}
-                key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
                 onPress={() =>
                   attachment.artifactId
-                    ? void openMobileArtifact(
-                        artifactTarget,
-                        attachment.artifactId,
-                        attachment.name ?? t("Image"),
-                        attachment.mimeType ?? "image/png",
-                      ).catch((err) =>
-                        Alert.alert(t("Could not open image"), errorText(err, t("Try again."))),
-                      )
+                    ? attachment.mimeType === "text/markdown"
+                      ? onPreviewMarkdown({
+                          artifactId: attachment.artifactId,
+                          name: attachment.name ?? t("Markdown file"),
+                          mimeType: attachment.mimeType,
+                        })
+                      : void openMobileArtifact(
+                          artifactTarget,
+                          attachment.artifactId,
+                          attachment.name ?? t("File"),
+                          attachment.mimeType ?? "text/plain",
+                        ).catch((err) =>
+                          Alert.alert(t("Could not open file"), errorText(err, t("Try again."))),
+                        )
                     : undefined
                 }
               >
@@ -598,66 +601,26 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     fontSize: 15,
                   }}
                 >
-                  🖼 {attachment.name ?? t("Image")}
+                  📎 {attachment.name ?? t("File")}
                 </Text>
+                {formatFileSize(attachment.size) ? (
+                  <Text
+                    style={{
+                      color:
+                        message.role === "user"
+                          ? tokens.chatUserForeground
+                          : tokens.mutedForeground,
+                      marginTop: 4,
+                      fontSize: 13,
+                    }}
+                  >
+                    {formatFileSize(attachment.size)}
+                  </Text>
+                ) : null}
               </Pressable>
-            )
-          ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
-            <AudioAttachment
-              pressableProps={actionProps}
-              key={`${attachment.artifactId}-${index}`}
-              target={artifactTarget}
-              artifactId={attachment.artifactId}
-              name={attachment.name ?? t("File")}
-              mimeType={attachment.mimeType!}
-              labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
-            />
-          ) : (
-            <Pressable
-              {...actionProps}
-              key={`${attachment.artifactId ?? attachment.name ?? "file"}-${index}`}
-              onPress={() =>
-                attachment.artifactId
-                  ? attachment.mimeType === "text/markdown"
-                    ? onPreviewMarkdown({
-                        artifactId: attachment.artifactId,
-                        name: attachment.name ?? t("Markdown file"),
-                        mimeType: attachment.mimeType,
-                      })
-                    : void openMobileArtifact(
-                        artifactTarget,
-                        attachment.artifactId,
-                        attachment.name ?? t("File"),
-                        attachment.mimeType ?? "text/plain",
-                      ).catch((err) =>
-                        Alert.alert(t("Could not open file"), errorText(err, t("Try again."))),
-                      )
-                  : undefined
-              }
-            >
-              <Text
-                style={{
-                  color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
-                  fontSize: 15,
-                }}
-              >
-                📎 {attachment.name ?? t("File")}
-              </Text>
-              {formatFileSize(attachment.size) ? (
-                <Text
-                  style={{
-                    color:
-                      message.role === "user" ? tokens.chatUserForeground : tokens.mutedForeground,
-                    marginTop: 4,
-                    fontSize: 13,
-                  }}
-                >
-                  {formatFileSize(attachment.size)}
-                </Text>
-              ) : null}
-            </Pressable>
-          ),
-        )}
+            )}
+          </View>
+        ))}
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard
             key={`${block.provider}-${index}`}

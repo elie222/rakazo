@@ -34,8 +34,6 @@ import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
 import {
   boundDirectApprovalDetails,
-  claimApprovedEffect,
-  claimIntendedEffect,
   DENIED_ACTION_ERROR,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
@@ -62,6 +60,7 @@ import {
 } from "./run-context.js";
 import {
   CATALOG_APPROVAL_TOOL,
+  claimEffect,
   completeEffect,
   recordEffect,
   uncertainEffectError,
@@ -74,7 +73,7 @@ import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-sele
 import { callMediaTool } from "./run-tools-files.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
-import { commandWatchFromTool } from "./schedule-tools.js";
+import { watchFromTool } from "./schedule-tools.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -199,21 +198,34 @@ export async function gateToolCall(
           rules: await ctx.trust.loadApprovalRules(),
         })
       : "allow";
+  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
+  // A tool watch repeats its read unattended, so it passes the read check that call would now.
+  const watchedTool = watch?.kind === "tool" ? watch.tool : undefined;
+  const readTrusts = watchedTool
+    ? connectorTrustKeys(
+        undefined,
+        ctx.tools.connector.get(watchedTool)?.route,
+        connectorKindFromToolName(watchedTool, connectorProviders),
+        connectorProviders,
+      )
+    : viaConnector &&
+        !unidentifiedAction &&
+        approvalToolNames.every(
+          (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+        )
+      ? connectorTrusts
+      : undefined;
   const connectorReadGated =
-    viaConnector &&
-    !unidentifiedAction &&
-    approvalToolNames.every(
-      (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
-    ) &&
+    readTrusts !== undefined &&
     connectorReadRequiresApproval({
       tainted: await isRunTainted(ctx),
       connectorTrusted: await ctx.trust
         .loadTrustedConnectors()
-        .then((trusted) => connectorTrusts.every((trust) => trusted.has(trust))),
+        .then((trusted) => readTrusts.every((trust) => trusted.has(trust))),
     });
   // This schedules unattended shell execution; require a person to approve
   // the command once, rather than letting an allow rule or reviewer schedule it.
-  const commandWatch = name === "schedule_create" && commandWatchFromTool(args.watch) !== undefined;
+  const commandWatch = watch?.kind === "command";
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
   // ones its runs may fetch. Once outside content entered this run, a routine naming a
   // site this run was not given needs a person: a reviewer would judge it on this run's
@@ -568,8 +580,7 @@ function createToolCall(
     finish: async (result) =>
       (await call.persistEffectResult(result)) ? result : uncertainEffectResult(name, args),
     claimOrReturn: async (from) => {
-      const claim = from === "approved" ? claimApprovedEffect : claimIntendedEffect;
-      if (await claim(deps.prisma, applied!.effect.id)) {
+      if (await claimEffect(deps, ctx.runId, applied!.effect.id, from)) {
         call.claimedEffect = true;
         return undefined;
       }

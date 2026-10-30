@@ -57,6 +57,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Next: "Volgende",
   "Ex: Project Falcon": "Bijv. Project Falcon",
   "Search bots": "Bots zoeken",
+  "{count} messages with {peer}": "{count} berichten met {peer}",
   "About {label}": "Over {label}",
   "Manage the bots it creates": "De bots beheren die deze bot maakt",
   "Allow cross-space bot communication":
@@ -300,6 +301,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Delete…": "Verwijderen…",
   Denied: "Geweigerd",
   Done: "Klaar",
+  "Needs you": "Heeft jou nodig",
+  Skipped: "Overgeslagen",
   Failed: "Mislukt",
   "Failed to refresh": "Vernieuwen mislukt",
   "Failed to send message": "Bericht verzenden mislukt",
@@ -1194,6 +1197,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not add skills": "Kon skills niet toevoegen",
   "Could not remove skills": "Kon skills niet verwijderen",
   "Not added: {list}": "Niet toegevoegd: {list}",
+  "{name} (same name as a built-in skill)": "{name} (zelfde naam als een ingebouwde skill)",
   "Remove skills": "Skills verwijderen",
   "Search skills": "Skills zoeken",
   "Your skills": "Jouw skills",
@@ -1214,4 +1218,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",
+};
+
+export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
+  other: NL_MESSAGES["{count} messages with {peer}"],
+  one: "{count} bericht met {peer}",
 };

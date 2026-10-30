@@ -104,7 +104,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { signupPolicyFromEnv } from "@rakazo/core";
+import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   createBoardEvents,
@@ -160,6 +160,7 @@ import { loadEnv } from "./env.js";
 import { healthRoutes } from "./health.js";
 import { mountLocalComputerHost } from "./local-settings.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./marketing-email.js";
+import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
 import {
   createMessagingInboundHandler,
   teamChatSenderCanWakeMessageRoutines,
@@ -169,6 +170,7 @@ import { createMessagingReceipts } from "./messaging-receipts.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { monitoringRoutes } from "./monitoring.js";
 import { pluginSubmissionRoutes } from "./plugin-submissions.js";
+import { sendReferralEmails, startReferralEmails } from "./referral-email.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
@@ -292,6 +294,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const weakEncryptionKey = encryptionKeyWarning(process.env);
+  if (weakEncryptionKey) logger.warn(weakEncryptionKey);
   const realtime =
     realtimeOverride ??
     (created.pool
@@ -370,7 +374,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const sandbox: SandboxProvider =
     sandboxOverride ??
-    createRunSandbox(env.sandboxProvider, {
+    (await createRunSandbox(env.sandboxProvider, {
       ...sandboxProviderOptionsFromEnv(),
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
@@ -384,7 +388,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
-    });
+    }));
   const mcpOAuth = new McpOAuthBroker(
     prisma,
     secrets,
@@ -573,6 +577,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const oauthTokenUpgrade = auth
     .encryptStoredOAuthTokens()
     .catch((error) => getLogger().error("oauth token encryption upgrade failed", error));
+  const mcpArgsMove = moveMcpArgsIntoSecrets(prisma, secrets, { signal: shutdown.signal })
+    .then(({ moved }) => {
+      if (moved) getLogger().info("mcp server arguments encrypted", { count: moved });
+    })
+    .catch((error) => {
+      if (!shutdown.signal.aborted) getLogger().error("mcp server arguments move failed", error);
+    });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection({
     CLOUD_AGENT_PROVIDER: env.cloudAgentProvider,
@@ -627,7 +638,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     secretStore: secrets,
     secretHttp: remoteConnectors,
     mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
-    mcpStdio: { stdioEnabled: env.mcpStdioEnabled, allowedCommands: env.mcpStdioAllowedCommands },
     deploymentModelKey: env.deploymentModelKey,
     deploymentModelConfigured: env.deploymentModelConfigured,
     dataDir: env.dataDir,
@@ -692,6 +702,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       })
     : undefined;
   reconciler?.start();
+  const stopReferralEmails =
+    email && env.welcomeEmailEnabled && billing?.referralsEnabled
+      ? startReferralEmails(
+          sendReferralEmails({
+            prisma,
+            email,
+            appUrl: new URL("/app", env.webOrigin).href,
+            origin: env.authUrl,
+            secret: env.authSecret,
+            onError: onEmailError,
+          }),
+          onEmailError,
+        )
+      : undefined;
 
   const router = createRouter({
     speechSummary:
@@ -900,16 +924,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   }
   if (messagingInstallations) {
-    app.get("/api/v1/messaging/install/slack/callback", async (c) => {
-      try {
-        await messagingInstallations.complete(
-          c.req.query("state") ?? "",
-          c.req.query("code") ?? "",
-        );
-        return c.redirect(new URL("/app?settings=messaging", env.webOrigin).toString());
-      } catch {
-        return c.text("Slack connection failed. Return to Rakazo and try again.", 400);
-      }
+    // Slack's registered redirect; the signed-in app finishes it so only the installer can.
+    app.get("/api/v1/messaging/install/slack/callback", (c) => {
+      const target = new URL("/messaging/slack/callback", env.webOrigin);
+      target.search = new URL(c.req.url).search;
+      return c.redirect(target.toString());
     });
   }
   app.use(
@@ -1399,9 +1418,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await messaging?.shutdown?.();
       await teamChatBridge?.stop();
       await stopInstalledBridges?.();
+      await stopReferralEmails?.();
       await email?.drain?.();
       await reconciler?.stop();
       await oauthTokenUpgrade;
+      await mcpArgsMove;
       await runsStopped;
       await jobs.close();
       await secrets.close();

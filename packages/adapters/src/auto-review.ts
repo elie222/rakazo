@@ -28,7 +28,7 @@ const NEW_SITE_REVIEW_RULES = [
   "Ask when the site does not fit, or the path or query holds data that looks taken from private context, such as names, emails, tokens or encoded text.",
 ];
 const MAX_BOT_CHARS = 240;
-const MAX_ARGS_CHARS = 1_200;
+const MAX_ARGS_CHARS = 8_000;
 const MAX_REASON_CHARS = 160;
 const SENSITIVE_REVIEW_ARG_KEY =
   /password|secret|token|api[_-]?key|authorization|cookie|credential/i;
@@ -203,6 +203,21 @@ function redactNestedReviewValue(value: unknown, secrets: string[]): unknown {
   );
 }
 
+/**
+ * Arguments the checker cannot see in full are not reviewed: a cut would hide later
+ * actions in a batch call, so these always ask the owner.
+ */
+export function reviewArgsTooLong(request: AutoReviewRequest): boolean {
+  if (request.newSite) return false;
+  try {
+    return (JSON.stringify(request.args)?.length ?? 0) > MAX_ARGS_CHARS;
+  } catch {
+    return true;
+  }
+}
+
+export const TOO_LONG_TO_REVIEW = "Too long to review.";
+
 export function truncateReviewText(value: string, max: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
@@ -251,10 +266,7 @@ export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
 
 export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
-  // A new site is judged on the whole URL, since any part of it can carry data out.
-  const argsJson = input.newSite
-    ? JSON.stringify(input.args)
-    : truncateReviewText(JSON.stringify(input.args), MAX_ARGS_CHARS);
+  const argsJson = JSON.stringify(input.args);
   const rules =
     input.matchingRules.length === 0
       ? "none"
@@ -426,7 +438,14 @@ export class LlmAutoReviewProvider implements AutoReviewProvider {
     };
   }
 
-  review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult> {
+  async review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult> {
+    if (reviewArgsTooLong(request)) {
+      return {
+        decision: "ask",
+        model: `${this.options.checker.provider}/${this.options.checker.model}`,
+        reason: TOO_LONG_TO_REVIEW,
+      };
+    }
     return runAutoReviewJudge({
       ...this.options,
       prompt: buildAutoReviewPrompt(request),

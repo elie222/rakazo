@@ -250,6 +250,9 @@ model BillingAccount {
   endedAt             DateTime?
   subscribedAt        DateTime?
   syncedAt            DateTime?
+  /// Held while a recurring checkout opens, so only one opens per organization at a time.
+  checkoutLeaseId     String?
+  checkoutLeaseExpiresAt DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -886,6 +889,7 @@ model Run {
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  @@index([threadId, createdAt, id])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   @@index([routineId])
@@ -1312,6 +1316,9 @@ model Computer {
   /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
   /// until a later save shows the computer works again.
   autoRecoveredAt         DateTime?
+  /// The machine at `providerRef` came from a start whose restore never finished, so it holds no
+  /// full copy of the saved home: nothing is saved from it, and the next start restores it.
+  restorePending          Boolean                  @default(false)
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique
@@ -1522,7 +1529,9 @@ model McpServer {
   transport     String
   endpoint      String?
   command       String?
+  /// Legacy plaintext; arguments now live in the encrypted secret, and `hasArgs` marks them.
   args          Json              @default("[]")
+  hasArgs       Boolean           @default(false)
   env           Json              @default("{}")
   files         Json              @default("{}")
   headers       Json              @default("{}")

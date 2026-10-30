@@ -3,10 +3,9 @@ import type { BillingStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { CreditChoice } from "../components/ModelCredits";
 import { formatBillingPrice } from "../lib/billing";
-import { clearSpaceSelection, rpc } from "../lib/rpc";
+import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AuthFrame, submitClass } from "./Auth";
 
@@ -27,13 +26,9 @@ export function PaywallPage({
 
 function LegacyPaywallPage({ status }: { status: BillingStatus }) {
   const { t, i18n } = useLingui();
-  const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { signingOut, logOut } = useSignOut(() => {
-    clearSpaceSelection();
-    navigate("/");
-  }, setError);
+  const { signingOut, logOut } = useSignOut("/sign-in", setError);
   // An unpaid or paused subscription resumes from the portal; a new checkout would bill twice.
   const resumable = status.state === "unpaid" || status.state === "paused";
   const showCheckout = status.canManage && !resumable;

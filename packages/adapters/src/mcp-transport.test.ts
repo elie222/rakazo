@@ -6,6 +6,7 @@ import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
   McpStdioLaunchError,
+  mcpStdioRefusal,
   secureFetch,
   validateUrl,
   withEndpointOriginFallback,
@@ -86,6 +87,9 @@ describe("MCP transport seam", () => {
         installedBin: { binPath: process.execPath },
       }),
     ).rejects.toThrow("not installed by Rakazo");
+    await expect(
+      session.connectStdio({ command: "npx", args: ["-c", "echo hi"], allowedCommands: ["npx"] }),
+    ).rejects.toThrow("npx only launches");
     // The launcher itself must still be allowlisted.
     await expect(
       session.connectStdio({
@@ -95,6 +99,39 @@ describe("MCP transport seam", () => {
       }),
     ).rejects.toThrow("allowlist");
     await session.close();
+  });
+
+  const RUNNERS = [
+    "bunx",
+    "pnpx",
+    "uvx",
+    "pipx",
+    "/usr/local/bin/pnpm",
+    "npm",
+    "yarn",
+    "bun",
+    "deno",
+    "uv",
+    "pnpm.cmd",
+    "BUNX.exe",
+  ];
+
+  it.each(RUNNERS)("refuses package runner %s even when allowlisted", async (command) => {
+    expect(mcpStdioRefusal(command, { stdioEnabled: true, allowedCommands: [command] })).toBe(
+      "Only npx can launch packages here",
+    );
+    const session = new McpSession();
+    await expect(
+      session.connectStdio({ command, args: ["dlx", "pkg"], allowedCommands: [command] }),
+    ).rejects.toThrow("Only npx can launch packages here");
+    await session.close();
+  });
+
+  it("still allows npx and plain allowlisted binaries", () => {
+    const policy = { stdioEnabled: true, allowedCommands: ["npx", "/opt/mcp/server", "node"] };
+    expect(mcpStdioRefusal("npx", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("/opt/mcp/server", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("node", policy)).toBeUndefined();
   });
 
   it("rejects remote endpoints that resolve to a private address", async () => {
@@ -460,7 +497,15 @@ describe("MCP transport seam", () => {
       access_token: "fresh-access",
       refresh_token: "rotated-refresh",
     });
-    expect(persisted).toHaveLength(1);
+    // The SDK records the issuer on the stored client first, then the rotation lands once.
+    expect(persisted).toMatchObject([
+      { oauth: { clientInformation: { issuer: "https://auth.example.test" } } },
+      {
+        oauth: {
+          tokens: { refresh_token: "rotated-refresh", issuer: "https://auth.example.test" },
+        },
+      },
+    ]);
     await session.close();
   });
 
