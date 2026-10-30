@@ -13,9 +13,6 @@ export type DiagnosticsServer = {
   id: string;
   spaceId: string;
   userId: string;
-  /** Only used to strip the server's own name from its health message. */
-  name: string;
-  slug: string;
   transport: string;
   enabled: boolean;
   allSpaces: boolean;
@@ -193,7 +190,7 @@ function serverRow(server: DiagnosticsServer, problems: string[]): string {
     server.healthToolCount ?? "-",
     server.healthCheckedAt?.toISOString() ?? "-",
     problems.length ? problems.join("; ") : "ok",
-    server.healthMessage ? safeMessage(server.healthMessage, [server.name, server.slug]) : "-",
+    server.healthMessage ? safeMessage(server.healthMessage) : "-",
   ].join(" | ")} |`;
 }
 
@@ -202,23 +199,30 @@ export function opaque(id: string): string {
   return createHash("sha256").update(id).digest("hex").slice(0, 8);
 }
 
-const SENTENCE_WORD = /^[A-Z][a-z]+$/;
-const LOWER_WORD = /^[a-z]+(?:-[a-z]+)*$/;
+// Words seen in MCP launch, transport, OAuth and network errors. Anything else is dropped, so a
+// user, package or command name in free-form error text never reaches the report.
+const MESSAGE_VOCABULARY = new Set(
+  `a about after allowed allowlist already an and any api are as at auth authorization authorized be because before
+  bin by call called calling can cannot changed check client closed code command configured connect
+  connected connecting connection could credentials declare denied did does during endpoint error
+  exceeds exited expired explicitly failed file final fetch for found fragment from handshake has
+  have host http https in install installed installing invalid is it its json key launch launches
+  list listing missing mcp must name network no not npm npx oauth of on only or package permission
+  permitted pkce process protocol redirect redirects refresh refused registration request required
+  reset response retry run running secret server session signal spawn state status stdio stopped
+  supported the this timed timeout to token tools too try unauthorized unavailable unknown unreachable
+  url use was while with`.split(/\s+/),
+);
 const ERROR_CODE = /^E[A-Z]{2,}$/;
 const NUMBER = /^-?\d{1,5}$/;
 const MESSAGE_MAX_WORDS = 40;
 
 /**
- * Keeps only plain words, error codes and short numbers from an error message; anything else
- * (URLs, paths, emails, tokens, anything quoted) becomes "…". Capitalized words survive only at
- * the start of a sentence, so a person or product name mid-sentence is dropped too.
+ * Keeps only words from a fixed vocabulary, error codes and short numbers from an error message;
+ * every other word (names, URLs, paths, emails, tokens, anything quoted) becomes "…".
  */
-export function safeMessage(message: string, known: string[] = []): string {
-  const knownWords = new Set(
-    known.flatMap((value) => value.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length > 2),
-  );
+export function safeMessage(message: string): string {
   const out: string[] = [];
-  let sentenceStart = true;
   let quoted = false;
   for (const raw of message.split(/\s+/).filter(Boolean).slice(0, MESSAGE_MAX_WORDS)) {
     const quotes = raw.match(/["'`]/g)?.length ?? 0;
@@ -229,14 +233,9 @@ export function safeMessage(message: string, known: string[] = []): string {
     const trailing = match[3]!.replace(/[^.,:;!?]/g, "");
     const kept =
       !inQuote &&
-      !knownWords.has(core.toLowerCase()) &&
-      (LOWER_WORD.test(core) ||
-        ERROR_CODE.test(core) ||
-        NUMBER.test(core) ||
-        (sentenceStart && SENTENCE_WORD.test(core)));
+      (MESSAGE_VOCABULARY.has(core.toLowerCase()) || ERROR_CODE.test(core) || NUMBER.test(core));
     const next = kept ? core + trailing : "…";
     if (!(next === "…" && out.at(-1) === "…")) out.push(next);
-    sentenceStart = /[.:;!?]$/.test(raw);
   }
   return out.join(" ");
 }

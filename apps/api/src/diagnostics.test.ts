@@ -23,8 +23,6 @@ function server(overrides: Partial<DiagnosticsServer> = {}): DiagnosticsServer {
     id: "server_private_1",
     spaceId: "space_private_1",
     userId: "user_private_1",
-    name: "Acme Payroll",
-    slug: "acme-payroll",
     transport: "stdio",
     enabled: true,
     allSpaces: false,
@@ -160,19 +158,21 @@ describe("diagnostics report", () => {
 });
 
 describe("safeMessage", () => {
-  it("keeps plain error wording, codes and short numbers", () => {
+  it("keeps error wording, codes and short numbers", () => {
     expect(safeMessage("Connection closed. MCP error -32000: Connection closed")).toBe(
-      "Connection closed. … error -32000: Connection closed",
+      "Connection closed. MCP error -32000: Connection closed",
     );
     expect(safeMessage("connect ECONNREFUSED 127.0.0.1:3000")).toBe("connect ECONNREFUSED …");
     expect(safeMessage("Request failed with status 401")).toBe("Request failed with status 401");
   });
 
-  it("drops names mid-sentence, quoted values and the server's own name", () => {
-    expect(safeMessage("Token for Alice expired", [])).toBe("Token for … expired");
+  it("drops names, commands, packages and quoted values", () => {
+    expect(safeMessage("Token for Alice expired")).toBe("Token for … expired");
+    expect(safeMessage("user alice not found")).toBe("… not found");
+    expect(safeMessage("spawn acme-mcp ENOENT")).toBe("spawn … ENOENT");
+    expect(safeMessage("package secret-pkg not found")).toBe("package … not found");
     expect(safeMessage("command 'npx --yes secret-pkg' is not allowed")).toBe(
       "command … is not allowed",
     );
-    expect(safeMessage("payroll server crashed", ["Acme Payroll"])).toBe("… server crashed");
   });
 });
