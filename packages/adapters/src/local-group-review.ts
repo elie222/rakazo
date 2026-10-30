@@ -77,6 +77,7 @@ async function resolveGoalOrigin(
   round: number;
   createdAt: Date;
   sourceMessageId: string;
+  sourceMessageSeq: number;
 }> {
   const visited = new Set<string>();
   let cursor: string | null = terminalRunId;
@@ -93,7 +94,13 @@ async function resolveGoalOrigin(
       clientNonce: string | null;
       createdAt: Date;
       sourceMessageId: string | null;
-      sourceMessage: { role: string; runId: string | null; blocks: unknown } | null;
+      sourceMessage: {
+        role: string;
+        seq: number;
+        threadId: string;
+        runId: string | null;
+        blocks: unknown;
+      } | null;
     } | null = await tx.run.findUnique({
       where: { id: cursor },
       select: {
@@ -106,7 +113,9 @@ async function resolveGoalOrigin(
         clientNonce: true,
         createdAt: true,
         sourceMessageId: true,
-        sourceMessage: { select: { role: true, runId: true, blocks: true } },
+        sourceMessage: {
+          select: { role: true, seq: true, threadId: true, runId: true, blocks: true },
+        },
       },
     });
     if (
@@ -129,7 +138,7 @@ async function resolveGoalOrigin(
           threadId: true,
           createdAt: true,
           sourceMessageId: true,
-          sourceMessage: { select: { role: true } },
+          sourceMessage: { select: { role: true, seq: true, threadId: true } },
         },
       });
       if (
@@ -138,6 +147,7 @@ async function resolveGoalOrigin(
         root.spaceId === spaceId &&
         root.userId === userId &&
         root.sourceMessage?.role === "user" &&
+        root.sourceMessage.threadId === root.threadId &&
         root.sourceMessageId
       ) {
         return {
@@ -146,6 +156,7 @@ async function resolveGoalOrigin(
           round: Number(parsed[2]),
           createdAt: root.createdAt,
           sourceMessageId: root.sourceMessageId,
+          sourceMessageSeq: root.sourceMessage.seq,
         };
       }
       break;
@@ -158,6 +169,7 @@ async function resolveGoalOrigin(
       break;
     if (
       currentRun.sourceMessage?.role === "user" &&
+      currentRun.sourceMessage.threadId === currentRun.threadId &&
       (currentRun.trigger === "user" || currentRun.trigger === "follow_up") &&
       currentRun.sourceMessageId
     ) {
@@ -167,6 +179,7 @@ async function resolveGoalOrigin(
         round: 0,
         createdAt: currentRun.createdAt,
         sourceMessageId: currentRun.sourceMessageId,
+        sourceMessageSeq: currentRun.sourceMessage.seq,
       };
     }
     if (!currentRun.sourceMessage || !containsHandoff(currentRun.sourceMessage.blocks)) break;
@@ -231,7 +244,7 @@ export async function scheduleLocalGroupReview(
     } catch {
       return markChecked();
     }
-    const { rootId, botId, round, createdAt, sourceMessageId } = origin;
+    const { rootId, botId, round, createdAt, sourceMessageId, sourceMessageSeq } = origin;
     if (!Number.isInteger(round) || round < 0 || round > LOCAL_AUTONOMY_MAX_ROUNDS) {
       return markChecked();
     }
@@ -245,8 +258,7 @@ export async function scheduleLocalGroupReview(
       where: {
         threadId: finished.threadId,
         role: "user",
-        createdAt: { gt: createdAt },
-        id: { not: sourceMessageId },
+        seq: { gt: sourceMessageSeq },
       },
       select: { id: true },
     });

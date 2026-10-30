@@ -257,19 +257,27 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // the coordinator schedules its next stage.
         const root = await deps.prisma.run.findUnique({
           where: { id: groupRootId },
-          select: { id: true, createdAt: true, threadId: true, spaceId: true, userId: true },
+          select: {
+            id: true,
+            threadId: true,
+            spaceId: true,
+            userId: true,
+            sourceMessage: { select: { role: true, seq: true, threadId: true } },
+          },
         });
         const superseded =
           !root ||
           root.threadId !== run.threadId ||
           root.spaceId !== run.spaceId ||
           root.userId !== run.userId ||
+          root.sourceMessage?.role !== "user" ||
+          root.sourceMessage.threadId !== root.threadId ||
           Boolean(
             await deps.prisma.message.findFirst({
               where: {
                 threadId: root.threadId,
                 role: "user",
-                createdAt: { gt: root.createdAt },
+                seq: { gt: root.sourceMessage.seq },
               },
               select: { id: true },
             }),

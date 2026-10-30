@@ -21,7 +21,7 @@ const root = {
   spaceId: "space",
   threadId: "thread",
   sourceMessageId: "message",
-  sourceMessage: { role: "user" },
+  sourceMessage: { role: "user", seq: 1, threadId: "thread" },
   createdAt: new Date(),
   trigger: "user",
   status: "completed",
@@ -62,7 +62,15 @@ function harness(
     run: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
         where.id === "root"
-          ? { ...root, sourceMessage: { role: "user", blocks: opts.sourceBlocks ?? [] } }
+          ? {
+              ...root,
+              sourceMessage: {
+                role: "user",
+                seq: 1,
+                threadId: "thread",
+                blocks: opts.sourceBlocks ?? [],
+              },
+            }
           : where.id === "peer1"
             ? current
             : null,
@@ -194,6 +202,9 @@ describe("generic, bounded group collaboration", () => {
     expect(h.created.every((c) => c.data.sourceMessageId === "message")).toBe(true);
     expect(h.marked).toEqual(["root"]);
     expect(h.jobs.enqueue).toHaveBeenCalledTimes(3);
+    expect(h.tx.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ seq: { gt: 1 } }) }),
+    );
     expect(h.tx.task.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ prompt: expect.stringContaining('Group: "株探索"') }),

@@ -22,6 +22,8 @@ function harness(
   const originalMessage = {
     id: "original-message",
     role: "user",
+    seq: 1,
+    threadId: "thread",
     runId: "root",
     blocks: [{ kind: "text", text: "Review dividend sustainability." }],
   };
@@ -156,6 +158,9 @@ describe("bounded local goal orchestration", () => {
       }),
     ]);
     expect(h.jobs.enqueue).toHaveBeenCalledTimes(1);
+    expect(h.tx.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ seq: { gt: 1 } }) }),
+    );
     expect(h.completed.groupReviewScheduledAt).toBeInstanceOf(Date);
     // Idempotent across reconciler restarts.
     expect(await scheduleLocalGroupReview(h.deps as never, "root")).toEqual({ scheduled: false });

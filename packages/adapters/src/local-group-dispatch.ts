@@ -161,12 +161,13 @@ export async function advanceGroupTeam(
         botId: true,
         createdAt: true,
         sourceMessageId: true,
-        sourceMessage: { select: { role: true, blocks: true } },
+        sourceMessage: { select: { role: true, seq: true, threadId: true, blocks: true } },
       },
     });
     if (
       !root ||
       root.sourceMessage?.role !== "user" ||
+      root.sourceMessage.threadId !== root.threadId ||
       !root.sourceMessageId ||
       root.threadId !== current.threadId ||
       root.spaceId !== current.spaceId ||
@@ -185,8 +186,7 @@ export async function advanceGroupTeam(
       where: {
         threadId: root.threadId,
         role: "user",
-        id: { not: root.sourceMessageId },
-        createdAt: { gt: root.createdAt },
+        seq: { gt: root.sourceMessage.seq },
       },
       select: { id: true },
     });

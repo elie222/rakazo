@@ -147,4 +147,55 @@ describePostgres("group fanout across independent PostgreSQL workers", () => {
       firstPublisher.enqueue.mock.calls.length + secondPublisher.enqueue.mock.calls.length,
     ).toBe(3);
   });
+
+  it("does not dispatch a request superseded by a later sequence with an earlier timestamp", async () => {
+    const db = asSystem(first.prisma);
+    const now = new Date();
+    const source = await db.message.create({
+      data: {
+        threadId: groupThreadId,
+        seq: 50,
+        role: "user",
+        createdAt: now,
+        blocks: [{ kind: "text", text: "First request" }],
+      },
+    });
+    const task = await db.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: rootBotId,
+        threadId: groupThreadId,
+        status: "completed",
+        prompt: "First request",
+      },
+    });
+    const root = await db.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: rootBotId,
+        threadId: groupThreadId,
+        taskId: task.id,
+        status: "completed",
+        trigger: "user",
+        sourceMessageId: source.id,
+        completedAt: now,
+      },
+    });
+    await db.message.create({
+      data: {
+        threadId: groupThreadId,
+        seq: 51,
+        role: "user",
+        createdAt: new Date(now.getTime() - 60_000),
+        blocks: [{ kind: "text", text: "Replacement request" }],
+      },
+    });
+    const jobs = { enqueue: vi.fn(async () => {}) };
+    expect(
+      await advanceGroupTeam({ prisma: asSystem(first.prisma), jobs } as never, root.id),
+    ).toMatchObject({ handled: true, stage: "superseded" });
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
 });
