@@ -1431,6 +1431,9 @@ describe("MCP pre-registered OAuth client", () => {
           return { count: 1 };
         }),
       },
+      user: {
+        findUnique: vi.fn(async () => ({ email: "owner@rakazo.test", emailVerified: true })),
+      },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
       $queryRaw: vi.fn(async () => []),
@@ -1456,6 +1459,7 @@ describe("MCP pre-registered OAuth client", () => {
         mcpAllowPrivateEndpoint: isDeploymentOwner,
         mcpStdioEnabled: true,
         mcpStdioAllowedCommands: ["npx"],
+        adminEmails: ["owner@rakazo.test"],
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -2089,6 +2093,10 @@ describe("MCP server health", () => {
       },
       mcpServerSpace: { findMany: vi.fn(async () => []) },
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+      user: {
+        findUnique: vi.fn(async () => ({ email: "owner@rakazo.test", emailVerified: true })),
+        findUniqueOrThrow: vi.fn(async () => ({ email: "owner@rakazo.test", name: "Owner" })),
+      },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
       $executeRaw: vi.fn(async () => 1),
       $queryRaw: vi.fn(async () => []),
@@ -2109,6 +2117,7 @@ describe("MCP server health", () => {
         sandboxProvider: "fake",
         mcpStdioEnabled: true,
         mcpStdioAllowedCommands: ["npx"],
+        adminEmails: ["owner@rakazo.test"],
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -2180,12 +2189,35 @@ describe("MCP server health", () => {
 
   it("reports stdio support with the account", async () => {
     const h = harness();
-    (h.deps.prisma as unknown as Record<string, unknown>).user = {
-      findUniqueOrThrow: vi.fn(async () => ({ email: "owner@rakazo.test", name: "Owner" })),
-    };
     expect((await h.client.me()).mcpStdioEnabled).toBe(true);
     Object.assign(h.deps.env, { mcpStdioEnabled: false });
     expect((await h.client.me()).mcpStdioEnabled).toBe(false);
+  });
+
+  it("lets only admins add or change stdio servers", async () => {
+    const h = harness();
+    Object.assign(h.deps.env, { adminEmails: ["someone-else@rakazo.test"] });
+    const refusal = { code: "FORBIDDEN", message: "Only admins can add local MCP servers" };
+
+    expect((await h.client.me()).mcpStdioEnabled).toBe(false);
+    await expect(h.client.mcp.servers.create(stdioInput)).rejects.toMatchObject(refusal);
+    await expect(
+      h.client.mcp.servers.update({
+        id: "server-1",
+        config: { ...stdioInput, enabled: true, description: "", env: {} },
+      }),
+    ).rejects.toMatchObject(refusal);
+    expect(h.deps.prisma.mcpServer.create).not.toHaveBeenCalled();
+    expect(h.deps.prisma.mcpServer.update).not.toHaveBeenCalled();
+
+    await expect(
+      h.client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "remote",
+        name: "Remote",
+        endpoint: "https://mcp.example.test/mcp",
+      }),
+    ).resolves.toMatchObject({ transport: "streamable_http" });
   });
 
   it("lists servers with their health", async () => {

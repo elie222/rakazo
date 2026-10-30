@@ -17,8 +17,9 @@ server integration credentials, or deployment updates, and cannot read deploymen
 
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions. An account
-counts only once its email is verified. It grants nothing else.
+`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions and add
+stdio MCP servers ([integrations](self-host-integrations.md)). An account counts only once its
+email is verified. It grants nothing else.
 
 ## Email verification and sign-in codes
 

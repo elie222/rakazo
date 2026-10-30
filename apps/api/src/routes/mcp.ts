@@ -26,6 +26,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { isAdmin } from "../admins.js";
 import {
   assertNameFreeWhereAvailable,
   lockOwner,
@@ -58,7 +59,6 @@ import {
 import { installPlugin, lockPluginInstalls, setPluginParts } from "../plugin-installs.js";
 import {
   approvedPluginEntries,
-  isAdmin,
   listPluginSubmissions,
   reviewPluginSubmission,
 } from "../plugin-submissions.js";
@@ -473,7 +473,7 @@ export function mcpRoutes(ctx: RouterContext) {
               await assertMcpRemoteEndpoint(nextEndpoint, deps);
             }
             if (config.transport === "stdio") {
-              assertMcpStdioCommand(config.command, deps);
+              await assertMcpStdioCommand(config.command, context.actor, deps);
               await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
             }
             const endpointChanged = existing.endpoint !== nextEndpoint;

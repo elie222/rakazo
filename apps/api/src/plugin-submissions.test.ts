@@ -8,8 +8,9 @@ vi.mock("@rakazo/adapters", async (original) => ({
   previewPluginInstall: preview,
 }));
 
-const { approvedPluginEntries, isAdmin, pluginSubmissionRoutes, reviewPluginSubmission } =
-  await import("./plugin-submissions.js");
+const { approvedPluginEntries, pluginSubmissionRoutes, reviewPluginSubmission } = await import(
+  "./plugin-submissions.js"
+);
 
 const SHA = "a".repeat(40);
 const valid = {
@@ -169,21 +170,6 @@ describe("public plugin submissions", () => {
     }
     expect(statuses.slice(0, 10).every((status) => status === 201)).toBe(true);
     expect(statuses[10]).toBe(429);
-  });
-});
-
-describe("isAdmin", () => {
-  const users = [
-    { id: "verified", email: "Admin@Example.test", emailVerified: true },
-    { id: "unverified", email: "admin@example.test", emailVerified: false },
-  ];
-
-  it("requires a listed, verified email", async () => {
-    const { prisma } = fakePrisma(users);
-    const deps = { prisma, env: { adminEmails: ["admin@example.test"] } };
-    expect(await isAdmin(deps, "verified")).toBe(true);
-    expect(await isAdmin(deps, "unverified")).toBe(false);
-    expect(await isAdmin({ prisma, env: {} }, "verified")).toBe(false);
   });
 });
 
