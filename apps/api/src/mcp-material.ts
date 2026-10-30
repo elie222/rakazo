@@ -115,6 +115,13 @@ export function buildMcpUpdateMaterial(
       hasFiles,
   );
   if (!existingHasMaterial && !suppliesMaterial) {
+    // A stored blob of only empty containers is not a credential, but its row still
+    // reports one and nothing in this update can clear it. Clear it here so the caller
+    // deletes the row. A material without container keys belongs to a row without a
+    // stored secret, so keep stays keep and the caller writes nothing.
+    if ("env" in existing || "headers" in existing || "files" in existing) {
+      return { action: "store", material: {} };
+    }
     return clearedOAuth ? { action: "store", material } : { action: "keep" };
   }
   const stored: McpSecretMaterial = {

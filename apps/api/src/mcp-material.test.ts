@@ -25,6 +25,41 @@ describe("buildMcpUpdateMaterial", () => {
     ).toEqual({ action: "keep" });
   });
 
+  it("clears a stored blob that holds only an empty env record", () => {
+    expect(
+      buildMcpUpdateMaterial(
+        { env: {} },
+        { transport: "stdio", slug: "x", name: "x", command: "/bin/mcp", args: [], env: {} },
+      ),
+    ).toEqual({ action: "store", material: {} });
+  });
+
+  it("clears a stored blob that holds only an empty headers record", () => {
+    expect(
+      buildMcpUpdateMaterial(
+        { headers: {} },
+        {
+          transport: "streamable_http",
+          slug: "x",
+          name: "x",
+          endpoint: "https://mcp.example.test",
+          headers: {},
+        },
+      ),
+    ).toEqual({ action: "store", material: {} });
+  });
+
+  it("keeps a material without container keys when nothing is supplied", () => {
+    // A secret-less row reaches the builder as {} or with only synthesized empty
+    // arguments; keep must stay keep so the caller neither stores nor clears a row.
+    expect(
+      buildMcpUpdateMaterial(
+        { args: [] },
+        { transport: "stdio", slug: "x", name: "x", command: "/bin/mcp", args: [], env: {} },
+      ),
+    ).toEqual({ action: "keep" });
+  });
+
   it("stores a merged blob when a new secret is supplied, preserving OAuth state", () => {
     const existing = { secret: "old-token", oauth: { tokens: { access_token: "t" } } };
     const result = buildMcpUpdateMaterial(existing, {

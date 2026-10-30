@@ -1935,6 +1935,22 @@ describe("MCP pre-registered OAuth client", () => {
           expect.objectContaining({ where: expect.objectContaining({ id: "secret-0" }) }),
         );
       });
+
+      it("deletes a stored credential that holds only an empty env record", async () => {
+        const { client, server, secrets, prisma } = harness(true, { env: {} });
+
+        const updated = await client.mcp.servers.update({
+          ...update,
+          config: { ...stdio, args: [], env: {}, enabled: true, description: "" },
+        });
+
+        expect(updated.hasSecret).toBe(false);
+        expect(server()?.secretId).toBeNull();
+        expect(secrets.put).not.toHaveBeenCalled();
+        expect(prisma.secret.deleteMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: "secret-0" }) }),
+        );
+      });
     });
 
     it("allows a private authorization server only with operator configuration", async () => {
