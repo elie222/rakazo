@@ -32,6 +32,13 @@ beforeEach(() => {
 });
 
 describe("desktop monitoring", () => {
+  it("reports only from packaged release-workflow builds", async () => {
+    const { desktopReportsErrors } = await import("./monitoring.js");
+    expect(desktopReportsErrors(true, "1")).toBe(true);
+    expect(desktopReportsErrors(true, "")).toBe(false);
+    expect(desktopReportsErrors(false, "1")).toBe(false);
+  });
+
   it("initializes observers once, switches transports, and disables reporting with the server", async () => {
     const monitor = await import("./monitoring.js");
     const error = new Error("startup");

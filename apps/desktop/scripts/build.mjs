@@ -12,4 +12,8 @@ await build({
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
   external: ["electron", "electron-updater", "koffi", "@sentry/electron"],
+  // Only the release workflow's builds report errors; local and agent builds never do.
+  define: {
+    "process.env.RAKAZO_DESKTOP_RELEASE": JSON.stringify(process.env.RAKAZO_DESKTOP_RELEASE ?? ""),
+  },
 });

@@ -39,6 +39,7 @@ import {
 } from "./local-stack.js";
 import {
   configureDesktopMonitoring,
+  desktopReportsErrors,
   disableDesktopMonitoring,
   installDesktopEarlyErrorReporting,
   refreshDesktopMonitoringUser,
@@ -119,8 +120,10 @@ let warmWindowTimer: NodeJS.Timeout | undefined;
 let liveProbeWindows = 0;
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
 
+const reportsErrors = desktopReportsErrors(app.isPackaged);
 const updaterEnvironment = {
-  packaged: app.isPackaged,
+  // A `--dir` build has no update feed to read.
+  packaged: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
 };
@@ -892,7 +895,7 @@ function activateDesktopMonitoring(url: string | undefined, targetSession?: Sess
   stopMonitoringSession = undefined;
   monitoringTargetUrl = url;
   monitoringSession = targetSession;
-  if (!url || !targetSession) {
+  if (!url || !targetSession || !reportsErrors) {
     disableDesktopMonitoring();
     return;
   }
@@ -1391,6 +1394,7 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
+  ipcMain.handle("desktop.monitoring.enabled", () => reportsErrors);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();
   });
