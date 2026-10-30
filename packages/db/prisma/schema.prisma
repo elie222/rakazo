@@ -38,6 +38,7 @@ model User {
   accounts                    Account[]
   passkeys                    Passkey[]
   members                     Member[]
+  accessGrants                AccessGrant[]
   invitations                 Invitation[]
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
@@ -281,16 +282,13 @@ model Referral {
   @@map("referrals")
 }
 
-/// Credits or free own-key months an admin gives an email address, which an owner with that
-/// verified email receives in their organization, whether they signed up before or after.
 model AccessGrant {
   id             String    @id @default(cuid())
   email          String
   creditCents    Int       @default(0)
   freeMonths     Int       @default(0)
-  /// The admin's email.
-  createdBy      String
-  /// Claimed before applying, so an interrupted apply finishes in the same organization.
+  createdById    String?
+  createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   organizationId String?
   appliedAt      DateTime?
   revokedAt      DateTime?

@@ -170,17 +170,16 @@ function AccessGrantsPanel() {
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[14px] font-medium">{item.email}</div>
-                <div className="truncate text-muted-foreground">
-                  {item.creditCents > 0
-                    ? `${formatBillingAmount(item.creditCents, "usd", i18n.locale)} · `
-                    : null}
-                  {item.freeMonths > 0 ? (
-                    <>
-                      <Plural value={item.freeMonths} one="# free month" other="# free months" />
-                      {" · "}
-                    </>
+                <div className="flex min-w-0 gap-3 text-muted-foreground">
+                  {item.creditCents > 0 ? (
+                    <span>{formatBillingAmount(item.creditCents, "usd", i18n.locale)}</span>
                   ) : null}
-                  {item.createdBy}
+                  {item.freeMonths > 0 ? (
+                    <span>
+                      <Plural value={item.freeMonths} one="# free month" other="# free months" />
+                    </span>
+                  ) : null}
+                  {item.createdBy ? <span className="truncate">{item.createdBy}</span> : null}
                 </div>
               </div>
               <GrantStatus status={item.status} />

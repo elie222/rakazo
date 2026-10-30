@@ -18,6 +18,7 @@ dbTests("access grants", () => {
   let prisma: PrismaClient;
   let db: ReturnType<typeof createDb>;
   let service: ReturnType<typeof createBillingService>;
+  let admin: Actor;
 
   async function signUp(name: string, emailVerified = true): Promise<Actor> {
     const id = `grant-${name}-${stamp}`;
@@ -38,12 +39,13 @@ dbTests("access grants", () => {
 
   const emailFor = (name: string) => `grant-${name}-${stamp}@rakazo.test`;
   const grant = (email: string, input: { creditCents?: number; freeMonths?: number }) =>
-    createAccessGrant(prisma, "admin@rakazo.test", { email: email.toUpperCase(), ...input });
+    createAccessGrant(prisma, admin.userId, { email: email.toUpperCase(), ...input });
 
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = asSystem(db.prisma);
     service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    admin = await signUp("admin");
   });
 
   afterAll(async () => {
@@ -56,7 +58,11 @@ dbTests("access grants", () => {
 
   it("gives credits made out before signup once, to the owner's organization", async () => {
     const created = await grant(emailFor("later"), { creditCents: 5000 });
-    expect(created).toMatchObject({ email: emailFor("later"), status: "pending" });
+    expect(created).toMatchObject({
+      email: emailFor("later"),
+      createdBy: admin.email,
+      status: "pending",
+    });
     const actor = await signUp("later");
     await expect(service.status(actor)).resolves.toMatchObject({
       access: true,

@@ -62,7 +62,8 @@ test("an admin grants free access to an email", async ({ page }, testInfo) => {
   await expect(list.getByRole("listitem")).toHaveCount(2);
   expect(created).toEqual([{ email: "friend@example.test", creditCents: 2500, freeMonths: 2 }]);
   const pending = list.getByRole("listitem", { name: "friend@example.test" });
-  await expect(pending).toContainText("$25 · 2 free months");
+  await expect(pending).toContainText("$25");
+  await expect(pending).toContainText("2 free months");
   await expect(pending).toContainText("Pending");
   await captureScreenshot(page, testInfo, "admin-access-grants");
 

@@ -122,7 +122,7 @@ export function accountRoutes(ctx: RouterContext) {
       }),
       create: authed.accessGrants.create.handler(async ({ context, input }) => {
         await requireGrantAdmin(deps, context.actor);
-        return createAccessGrant(deps.prisma, context.actor.email, input);
+        return createAccessGrant(deps.prisma, context.actor.userId, input);
       }),
       revoke: authed.accessGrants.revoke.handler(async ({ context, input }) => {
         await requireGrantAdmin(deps, context.actor);
@@ -437,7 +437,6 @@ function requireBilling(deps: RouterDeps): BillingService {
   return deps.billing;
 }
 
-/** Grants hand out model credits, so only deployments that sell them have any. */
 async function requireGrantAdmin(deps: RouterDeps, actor: Actor) {
   await requireAdmin(deps, actor.userId);
   if (!deps.billing?.modelCreditsEnabled)

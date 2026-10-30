@@ -355,7 +355,6 @@ export async function presentMainDeploymentDefault(page: Page, provider: string,
   });
 }
 
-/** Marks the signed-in account as an admin in `me` and `bootstrap`, as RAKAZO_ADMIN_EMAILS would. */
 export async function makeAdmin(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
   const body = (await response.json()) as { json?: Record<string, unknown> };

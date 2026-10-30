@@ -33,7 +33,7 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
 
 export const FREE_MONTH_DAYS = 30;
 
-/** Adds free own-key days from the later of now and the current end; one statement, so concurrent grants each add theirs. */
+/** One statement, so concurrent grants each add their days. */
 export function extendByokFreePeriod(
   tx: Prisma.TransactionClient,
   organizationId: string,

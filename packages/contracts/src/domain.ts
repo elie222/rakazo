@@ -937,7 +937,7 @@ export const AccessGrantSchema = z.object({
   email: z.string(),
   creditCents: z.number().int(),
   freeMonths: z.number().int(),
-  createdBy: z.string(),
+  createdBy: z.string().nullable(),
   status: z.enum(["pending", "applied", "revoked"]),
   createdAt: z.string(),
   appliedAt: z.string().nullable(),
