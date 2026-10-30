@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Socket } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -216,13 +217,13 @@ describe("web SSRF policy", () => {
   it("refuses a host that rebinds to loopback between the check and the connection", async () => {
     // No fetch seam: the real dispatcher and its connect-time lookup run against a real
     // listener. The name checks out as public, then resolves to the listener at connect time.
-    let connections = 0;
     const listener = createServer((_request, response) => response.end("reached"));
-    listener.on("connection", () => {
-      connections += 1;
-    });
     await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
     const { port } = listener.address() as AddressInfo;
+    // Count TCP connections this process opens to the listener, whatever happens on
+    // the socket afterwards: a local tool probing the port runs in another process and
+    // cannot change the count, while a dispatcher that connects before failing counts.
+    const clientConnections = trackConnectionsTo(port);
     let resolutions = 0;
     try {
       await expect(
@@ -236,8 +237,9 @@ describe("web SSRF policy", () => {
         }),
       ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/private address/) } });
       expect(resolutions).toBe(2);
-      expect(connections).toBe(0);
+      expect(clientConnections.count()).toBe(0);
     } finally {
+      clientConnections.restore();
       await new Promise<void>((resolve) => listener.close(() => resolve()));
     }
   });
@@ -554,3 +556,37 @@ describe("web SSRF policy", () => {
     expect(resolveCalls).toBe(1);
   });
 });
+
+/**
+ * Counts TCP connections this process opens to `port` by watching every socket the
+ * process itself connects, independent of HTTP: a local tool probing the port from
+ * another process never passes through here, and a socket that connected and then
+ * failed still counts.
+ */
+function trackConnectionsTo(port: number) {
+  const realConnect = Socket.prototype.connect as (...args: unknown[]) => unknown;
+  let connections = 0;
+  const countSocket = function (this: Socket, ...args: unknown[]) {
+    if (connectTargetPort(args) === port) {
+      this.on("connect", () => {
+        connections += 1;
+      });
+    }
+    return realConnect.apply(this, args);
+  };
+  const spy = vi.spyOn(Socket.prototype, "connect").mockImplementation(countSocket as never);
+  return { count: () => connections, restore: () => spy.mockRestore() };
+}
+
+/** The destination port of a `Socket.prototype.connect` call, in either argument shape. */
+function connectTargetPort(args: unknown[]): number | undefined {
+  let [first] = args;
+  if (Array.isArray(first)) [first] = first; // node's normalized [options, listener] pair
+  if (typeof first === "number") return first;
+  if (first && typeof first === "object" && "port" in first) {
+    const { port } = first as { port?: number | string };
+    if (typeof port === "number") return port;
+    if (typeof port === "string") return Number.parseInt(port, 10);
+  }
+  return undefined;
+}

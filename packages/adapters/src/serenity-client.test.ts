@@ -299,7 +299,13 @@ describe("serenity SSRF fetch path", () => {
     // response proves the package fetch accepted the Agent.
     expect(undiciFetch).not.toBe(globalThis.fetch);
     let hits = 0;
-    const server = createServer((_request, response) => {
+    const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only Serenity calls are counted.
+      if (request.method !== "GET" || request.url !== "/mcp") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       hits += 1;
       response.writeHead(204);
       response.end();
