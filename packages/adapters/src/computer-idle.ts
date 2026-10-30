@@ -49,6 +49,7 @@ export const TAKEOVER_IDLE_GRACE_MS = 30 * 60 * 1000;
  */
 export const ABANDONED_SUSPEND_CLAIM_MS = 60 * 60 * 1000;
 const IDLE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const STATUS_CHECK_TIMEOUT_MS = 15_000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -432,7 +433,9 @@ export async function sleepComputerIfIdle(
     botId: computer.controlBotId ?? undefined,
     signal: new AbortController().signal,
   };
-  if (await deps.sandbox.isRunning?.(ref, ctx).catch(() => false)) {
+  // A status read that never answers counts as not seen rather than holding up the check.
+  const statusCtx = { ...ctx, signal: AbortSignal.timeout(STATUS_CHECK_TIMEOUT_MS) };
+  if (await deps.sandbox.isRunning?.(ref, statusCtx).catch(() => false)) {
     await recordComputerRunSeen(deps.prisma, computer);
   }
   // Past the lifetime limit only a run executing right now holds the computer up; waiting
