@@ -46,7 +46,6 @@ export function scopeToGroupGoalWithSource<T extends { seq: number }>(
   return scoped;
 }
 
-
 /** Keep the originating request even when newer messages exhaust the model
  * history window. Input and output are oldest-first, matching executor history.
  * The source consumes one slot; never append it past the configured budget. */

@@ -3721,7 +3721,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const updated = await tx.run.updateMany({
               where: {
                 id: runId,
-                status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+                status: {
+                  in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
+                },
               },
               data: { status: "cancelled", completedAt: cancelledAt },
             });

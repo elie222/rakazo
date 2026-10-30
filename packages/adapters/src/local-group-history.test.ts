@@ -41,7 +41,9 @@ describe("goal-scoped parallel group context", () => {
       isGroupGoalScopedRun("local-agent-goal:root:2", "[Internal goal assessment, round 2/3]"),
     ).toBe(true);
     expect(isGroupGoalScopedRun("local-agent-goal:root:2", "Normal goal review")).toBe(true);
-    expect(isGroupGoalScopedRun("local-agent-goal:root:not-a-round", "Normal goal review")).toBe(false);
+    expect(isGroupGoalScopedRun("local-agent-goal:root:not-a-round", "Normal goal review")).toBe(
+      false,
+    );
     expect(isGroupGoalScopedRun("send:human", "Human prompt")).toBe(false);
   });
   it("keeps the source request after trimming 200 newer messages", () => {
@@ -57,9 +59,7 @@ describe("goal-scoped parallel group context", () => {
     expect(trimmed.at(-1)).toEqual(newer.at(-1));
     expect(trimGroupHistoryWithSource([source, ...newer], "original", 1)).toEqual([source]);
     // If the source already falls inside the window, don't introduce duplicates.
-    expect(trimGroupHistoryWithSource([...newer, source], "original", 200).at(-1)).toEqual(
-      source,
-    );
+    expect(trimGroupHistoryWithSource([...newer, source], "original", 200).at(-1)).toEqual(source);
     expect(trimGroupHistoryWithSource(newer, "missing", 200)).toEqual(newer);
   });
   it("never includes old unrelated attachments or replies before the current goal", () => {
