@@ -9,7 +9,8 @@ import {
   seededLogoAvatarColor,
   shippedBotAvatarShapePath,
 } from "@rakazo/core";
-import { botEyeColor } from "@rakazo/ui-tokens";
+import type { ColorTokens } from "@rakazo/ui-tokens";
+import { botEyeColor, tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement, useRef } from "react";
 import type { Root } from "react-dom/client";
@@ -21,6 +22,7 @@ import { AvatarScreenFocus } from "./avatar-life";
 import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
 
 const nativeProps = vi.hoisted(() => [] as Array<() => Record<string, unknown>>);
+const mobileTokens = vi.hoisted(() => ({ current: undefined as ColorTokens | undefined }));
 const nativeMotion = vi.hoisted(() => ({
   reduced: true,
   styles: [] as Array<() => { transform: unknown[] }>,
@@ -28,7 +30,24 @@ const nativeMotion = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
+  View: ({
+    children,
+    accessibilityLabel,
+    style,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    style?: { borderColor?: string; backgroundColor?: string };
+  }) =>
+    createElement(
+      "div",
+      {
+        "aria-label": accessibilityLabel,
+        "data-border": style?.borderColor,
+        "data-background": style?.backgroundColor,
+      },
+      children,
+    ),
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
   Pressable: ({
     children,
@@ -111,16 +130,19 @@ vi.mock("react-native-svg", () => {
   };
 });
 
-vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../components/native-symbol", () => ({
+  NativeSymbol: ({ color }: { color: string }) => createElement("i", { "data-color": color }),
+}));
 vi.mock("./native", () => ({
-  useMobileTokens: () => ({
-    background: "#FFF",
-    foreground: "#141414",
-    sidebar: "#F1F1F1",
-    border: "#CCCCCC",
-    workingDot: "#3FA266",
-    secondary: "#7676801F",
-  }),
+  useMobileTokens: () =>
+    mobileTokens.current ?? {
+      background: "#FFF",
+      foreground: "#141414",
+      sidebar: "#F1F1F1",
+      border: "#CCCCCC",
+      workingDot: "#3FA266",
+      secondary: "#7676801F",
+    },
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
@@ -176,6 +198,7 @@ describe("BotAvatar", () => {
     nativeMotion.styles.length = 0;
     nativeMotion.timings.length = 0;
     mobileLogoAvatarActivity.clear();
+    mobileTokens.current = undefined;
   });
 
   function render(
@@ -327,5 +350,25 @@ describe("BotAvatar", () => {
     expect(
       Array.from(view.querySelectorAll("ellipse"), (eye) => eye.getAttribute("data-fill")),
     ).toEqual(["#FFF", "#FFF"]);
+  });
+
+  it.each([
+    ["light", "data:image/png;base64,abc"],
+    ["dark", "data:image/png;base64,abc"],
+    ["light", "#3EC5A8"],
+    ["dark", "#3EC5A8"],
+  ] as const)("draws the muted badge with the %s theme tokens for %s", (appearance, color) => {
+    const tokens = tokensForAppearance(appearance);
+    mobileTokens.current = tokens;
+    const badge = render(color, undefined, { muted: true }).querySelector<HTMLElement>(
+      '[aria-label="Notifications silenced"]',
+    );
+    // An opaque backing keeps the picture from showing through the translucent fill.
+    expect(badge?.dataset).toMatchObject({
+      border: tokens.background,
+      background: tokens.background,
+    });
+    expect(badge?.querySelector<HTMLElement>("div")?.dataset.background).toBe(tokens.secondary);
+    expect(badge?.querySelector("i")?.dataset.color).toBe(tokens.foreground);
   });
 });
