@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   confirmDelete: vi.fn(),
   modal: vi.fn(),
   keyboardAvoider: vi.fn(),
+  viewPositionInWindow: vi.fn(),
+  keyboardEvents: new Map<string, () => void>(),
   views: vi.fn(),
   listeners: new Map<string, (event: { endCoordinates: { height: number } }) => void>(),
   styles: [] as Record<string, unknown>[],
@@ -79,8 +81,16 @@ vi.mock("react-native-keyboard-controller", () => ({
     mocks.keyboardAvoider(props);
     return createElement("div", null, props.children);
   },
+  KeyboardControllerNative: { viewPositionInWindow: mocks.viewPositionInWindow },
+  KeyboardEvents: {
+    addListener: (name: string, callback: () => void) => {
+      mocks.keyboardEvents.set(name, callback);
+      return { remove: () => mocks.keyboardEvents.delete(name) };
+    },
+  },
 }));
 vi.mock("react-native", () => ({
+  findNodeHandle: () => 1,
   StyleSheet: { create: (styles: unknown) => styles },
   Text: ({ children }: { children: ReactNode }) => createElement("span", null, children),
   Pressable: ({
@@ -480,11 +490,26 @@ describe("inbox organization actions", () => {
       onRequestClose: props.onClose,
     });
     expect(modal.transparent).toBeUndefined();
-    // The sheet sits below the top of the screen, so keyboard avoidance must offset for it.
-    expect(mocks.keyboardAvoider.mock.lastCall?.[0]).toMatchObject({ automaticOffset: true });
     await click("Second");
     expect(props.onUpdate).toHaveBeenCalledWith({ sectionId: "two" });
     expect(props.onClose).toHaveBeenCalledOnce();
+  });
+  it("offsets the iOS form sheet by its window position measured when the keyboard shows", async () => {
+    mocks.platform = "ios";
+    await loadComponents();
+    await organize();
+    // The first measurement can fail while the sheet is still being presented.
+    mocks.viewPositionInWindow.mockRejectedValueOnce(new Error("Could not find view for tag"));
+    await act(async () => mocks.keyboardAvoider.mock.lastCall?.[0].onLayout?.());
+    expect(mocks.keyboardAvoider.mock.lastCall?.[0]).toMatchObject({ keyboardVerticalOffset: 0 });
+    mocks.viewPositionInWindow.mockResolvedValueOnce({ x: 0, y: 62, width: 400, height: 938 });
+    await act(async () => mocks.keyboardEvents.get("keyboardWillShow")?.());
+    expect(mocks.viewPositionInWindow).toHaveBeenLastCalledWith(1);
+    expect(mocks.keyboardAvoider.mock.lastCall?.[0]).toMatchObject({
+      behavior: "padding",
+      keyboardVerticalOffset: 62,
+    });
+    expect(mocks.keyboardAvoider.mock.lastCall?.[0].automaticOffset).toBeUndefined();
   });
   it("keeps the original fade Modal when native views are unavailable", async () => {
     mocks.missing = "SlotView";
