@@ -2207,6 +2207,20 @@ describe("MCP server health", () => {
         config: { ...stdioInput, enabled: true, description: "", env: {} },
       }),
     ).rejects.toMatchObject(refusal);
+    await expect(
+      h.client.mcp.servers.update({
+        id: "server-1",
+        config: {
+          transport: "streamable_http",
+          slug: "gmail",
+          name: "Gmail",
+          description: "",
+          enabled: true,
+          endpoint: "https://mcp.example.test/mcp",
+          headers: {},
+        },
+      }),
+    ).rejects.toMatchObject(refusal);
     expect(h.deps.prisma.mcpServer.create).not.toHaveBeenCalled();
     expect(h.deps.prisma.mcpServer.update).not.toHaveBeenCalled();
 
