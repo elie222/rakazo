@@ -163,6 +163,14 @@ name you wrote, pick the frame, and edit the description
 Playwright workflow did not run for that SHA, there is no gallery; say so in
 the description instead of waiting for one.
 
+Screens you captured yourself (a native simulator, emulator, or a local browser)
+go in the description too. Check each for private data first: real names,
+emails, hostnames, server URLs, tokens. There is no API for GitHub's image
+upload, so push the images to an orphan branch named `pr-assets/<n>`, holding
+only the images, and embed them by commit SHA
+(`https://raw.githubusercontent.com/{owner}/{repo}/<sha>/<file>.png`, sized
+with `<img width>`). Keep that branch after merge so the images keep loading.
+
 Report the PR link, final head, waits, fix rounds, what feedback you handled and
 declined, what you validated, any unresolved threads, and whether you finished
 clean or stopped at a limit. If you stopped at a limit, say what was pending.
