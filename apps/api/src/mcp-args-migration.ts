@@ -85,7 +85,10 @@ export async function moveMcpArgsIntoSecrets(
       } catch (error) {
         signal.throwIfAborted();
         counts.failed++;
-        getLogger().error("mcp server arguments move failed", error, { mcpServerId: row.id });
+        // A parse error quotes the decrypted text it choked on.
+        const logged =
+          error instanceof SyntaxError ? new Error("Stored credentials are not JSON") : error;
+        getLogger().error("mcp server arguments move failed", logged, { mcpServerId: row.id });
       }
     }
     if (rows.length < 100) return counts;

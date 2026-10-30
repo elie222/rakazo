@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { EncryptedSecretStore, FakeSandboxProvider, withSecretPersistence } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
@@ -143,18 +144,30 @@ describe
 
     it("skips a server it cannot move and keeps going", () =>
       runAsSystem("mcp args migration", async () => {
+        const sink = createTestSink();
+        installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
         await prisma.secret.create({
           data: { id: `unreadable-${suffix}`, userId, spaceId, kind: "mcp", ciphertext: "fake" },
+        });
+        const notJson = await secrets.put("leak1 is not json", context);
+        await prisma.secret.create({
+          data: { id: notJson.id, userId, spaceId, kind: "mcp", ciphertext: notJson.ciphertext },
         });
         const broken = await server("a-broken", {
           args: ["--broken"],
           secretId: `unreadable-${suffix}`,
         });
+        await server("b-not-json", { args: ["--not-json"], secretId: notJson.id });
         const healthy = await server("z-healthy", { args: ["--healthy"] });
 
-        const counts = await moveMcpArgsIntoSecrets(prisma, secrets);
+        try {
+          const counts = await moveMcpArgsIntoSecrets(prisma, secrets);
 
-        expect(counts.failed).toBeGreaterThan(0);
+          expect(counts.failed).toBeGreaterThanOrEqual(2);
+          expect(JSON.stringify(sink.events)).not.toContain("leak1");
+        } finally {
+          installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+        }
         expect(
           await prisma.mcpServer.findUniqueOrThrow({ where: { id: broken.id } }),
         ).toMatchObject({ args: ["--broken"], secretId: `unreadable-${suffix}` });
