@@ -139,6 +139,7 @@ import {
   isTooManyDatabaseConnections,
   listApprovalRules,
   loadRunHistoryMessages,
+  loadRunHistorySourceMessage,
   loadRunTurnCheckpoint,
   parseComputerMode,
   RUN_TURN_CHECKPOINT_KIND,
@@ -414,7 +415,11 @@ import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-che
 export { selectRunConnections } from "./connection-context.js";
 
 import { parsePeerJobNonce } from "./local-group-dispatch.js";
-import { isGroupGoalScopedRun, scopeToGroupGoal } from "./local-group-history.js";
+import {
+  groupGoalRootId,
+  isGroupGoalScopedRun,
+  scopeToGroupGoalWithSource,
+} from "./local-group-history.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
@@ -3683,19 +3688,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
-      const groupPeer = parsePeerJobNonce(run.clientNonce);
-      if (groupPeer) {
+      const groupRootId = groupGoalRootId(run.clientNonce);
+      if (groupRootId) {
         // A queued worker must not start an obsolete assignment after a newer
         // user request. Recheck just before claiming the run, not only when
         // the coordinator schedules its next stage.
         const root = await deps.prisma.run.findUnique({
-          where: { id: groupPeer.rootId },
-          select: { id: true, createdAt: true, threadId: true, spaceId: true },
+          where: { id: groupRootId },
+          select: { id: true, createdAt: true, threadId: true, spaceId: true, userId: true },
         });
         const superseded =
           !root ||
           root.threadId !== run.threadId ||
           root.spaceId !== run.spaceId ||
+          root.userId !== run.userId ||
           Boolean(
             await deps.prisma.message.findFirst({
               where: {
@@ -3990,21 +3996,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // later teammate messages. Old unrelated group uploads and compressed
         // summaries must not silently become evidence for the latest goal.
         const goalScopedTeamRun = isGroupGoalScopedRun(run.clientNonce, task.prompt);
-        const goalStartSeq =
+        // The 200-message rolling window may no longer contain the original
+        // human request. Fetch that specific source with the full history
+        // projection, including attachment blocks, instead of only its seq.
+        const windowSource =
           goalScopedTeamRun && run.sourceMessageId
-            ? (messages.find((m) => m.id === run.sourceMessageId)?.seq ??
-              (
-                await deps.prisma.message.findUnique({
-                  where: { id: run.sourceMessageId, threadId: thread.id },
-                  select: { seq: true },
-                })
-              )?.seq)
+            ? messages.find((message) => message.id === run.sourceMessageId && message.role === "user")
+            : undefined;
+        const omittedSource =
+          goalScopedTeamRun && run.sourceMessageId && !windowSource
+            ? await loadRunHistorySourceMessage(deps.prisma, thread.id, run.sourceMessageId)
             : null;
+        const goalStartSeq = goalScopedTeamRun
+          ? (windowSource?.seq ?? omittedSource?.seq ?? null)
+          : null;
         if (goalScopedTeamRun && goalStartSeq == null) {
           throw new Error("Cannot resolve the current user request for group delegation");
         }
         const scopedRunMessages =
-          goalStartSeq == null ? messages : scopeToGroupGoal(messages, goalStartSeq);
+          goalStartSeq == null
+            ? messages
+            : scopeToGroupGoalWithSource(messages, goalStartSeq, omittedSource);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??

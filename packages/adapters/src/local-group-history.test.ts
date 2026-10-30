@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { isGroupGoalScopedRun, scopeToGroupGoal } from "./local-group-history.js";
+import {
+  groupGoalRootId,
+  isGroupGoalScopedRun,
+  scopeToGroupGoal,
+  scopeToGroupGoalWithSource,
+} from "./local-group-history.js";
 
 describe("goal-scoped parallel group context", () => {
+  it("checks both peer and owner synthesis nonces against the original request", () => {
+    expect(groupGoalRootId("local-group-team:root1:peer2")).toBe("root1");
+    expect(groupGoalRootId("local-agent-goal:root1:1")).toBe("root1");
+    expect(groupGoalRootId("local-agent-goal:root1:3")).toBe("root1");
+    expect(groupGoalRootId("local-agent-goal:root1:invalid")).toBeNull();
+    expect(groupGoalRootId("local-group-team:root1:")).toBeNull();
+    expect(groupGoalRootId("send:root1")).toBeNull();
+  });
+  it("restores the original request and attachments beyond a 200-message window", () => {
+    const source = { seq: 1, role: "user", blocks: [{ kind: "file", id: "attachment" }] };
+    const latest = Array.from({ length: 200 }, (_, index) => ({
+      seq: 202 - index,
+      role: "bot",
+      blocks: [] as { kind: string; id?: string }[],
+    }));
+    const scoped = scopeToGroupGoalWithSource(latest, 1, source);
+    expect(scoped).toHaveLength(201);
+    expect(scoped.at(-1)).toEqual(source);
+    expect(scopeToGroupGoalWithSource([...latest, source], 1, source)).toHaveLength(201);
+    expect(scopeToGroupGoalWithSource(latest, 1, { ...source, seq: 0 })).toEqual(latest);
+  });
   it("isolates internal peer and synthesis runs but not regular user messages", () => {
     expect(isGroupGoalScopedRun("local-group-team:root:peer", "worker prompt")).toBe(true);
     expect(

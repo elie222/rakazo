@@ -2,6 +2,22 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
+/** These columns must be identical for the window and its original user message. */
+const RUN_HISTORY_MESSAGE_SELECT = {
+  id: true,
+  threadId: true,
+  seq: true,
+  role: true,
+  botId: true,
+  runId: true,
+  blocks: true,
+  createdAt: true,
+  replyToMessageId: true,
+  replyQuote: true,
+  replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+  clientNonce: true,
+} as const satisfies Prisma.MessageSelect;
+
 /** Group turns use channel inputs and their own outputs, never private thread history. */
 export function loadRunHistoryMessages(
   prisma: PrismaClient,
@@ -26,20 +42,22 @@ export function loadRunHistoryMessages(
     },
     orderBy: { seq: "desc" },
     take: limit,
-    select: {
-      id: true,
-      threadId: true,
-      seq: true,
-      role: true,
-      botId: true,
-      runId: true,
-      blocks: true,
-      createdAt: true,
-      replyToMessageId: true,
-      replyQuote: true,
-      replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
-      clientNonce: true,
-    },
+    select: RUN_HISTORY_MESSAGE_SELECT,
+  });
+}
+
+/** Restore only the original user request when it is older than the history window.
+ * Constrain both the thread and the role so a synthetic run cannot pull in a
+ * private message from another conversation or an unrelated Bot response.
+ */
+export function loadRunHistorySourceMessage(
+  prisma: PrismaClient,
+  threadId: string,
+  sourceMessageId: string,
+) {
+  return prisma.message.findFirst({
+    where: { id: sourceMessageId, threadId, role: "user" },
+    select: RUN_HISTORY_MESSAGE_SELECT,
   });
 }
 
