@@ -74,7 +74,7 @@ async function failRun(scenario: Scenario) {
     throw scenario.error;
   });
   const prisma = {
-    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
+    $queryRaw: vi.fn(async (..._args: unknown[]) => [{ id: run.botId }]),
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
