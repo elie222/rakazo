@@ -1,3 +1,4 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
@@ -196,6 +197,12 @@ describe("prepareOwnBotSettings voice", () => {
     };
     expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, failing)).toEqual({
       error: "Could not list voices right now; try again.",
+    });
+    const refused = async () => {
+      throw new VoiceAccountError(undefined, "The voice provider rejected the API key.");
+    };
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, refused)).toEqual({
+      error: "The voice provider rejected the API key.",
     });
   });
 

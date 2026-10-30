@@ -1,4 +1,5 @@
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -144,7 +145,8 @@ export async function prepareOwnBotSettings(
     let voices: VoiceInfo[] | null;
     try {
       voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
-    } catch {
+    } catch (error) {
+      if (error instanceof VoiceAccountError) return { error: error.message };
       return { error: "Could not list voices right now; try again." };
     }
     if (!voices) return { error: "Connect a voice provider first." };
