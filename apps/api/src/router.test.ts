@@ -4294,6 +4294,22 @@ describe("OpenAI-compatible model probes", () => {
     expect(JSON.stringify(fetch.mock.calls[0]?.[1]?.headers)).not.toContain("fake-saved-key");
   });
 
+  it("keeps a typed key on the default protocol without a connection id", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiProtocol: "anthropic-messages",
+        apiKey: "fake-saved-key",
+      }),
+    );
+    await client.models.probeOpenAiCompatible({ baseUrl, apiKey: "fake-typed-key" });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("authorization")).toBe("Bearer fake-typed-key");
+    expect(headers.get("x-api-key")).toBeNull();
+  });
+
   it("reuses saved headers for the same endpoint without exposing them", async () => {
     const { client, fetch, load } = fixture();
     load.mockResolvedValue(

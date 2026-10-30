@@ -264,7 +264,7 @@ export function modelsRoutes(ctx: RouterContext) {
                   // borrow from another row.
                   if (!apiKey?.trim()) apiKey = savedKey;
                   headers ??= savedHeaders;
-                  apiProtocol ??= savedProtocol;
+                  if (!input.apiKey?.trim() || input.credentialId) apiProtocol ??= savedProtocol;
                   break;
                 } catch {
                   // An unreadable secret must not prevent trying the remaining credentials.
