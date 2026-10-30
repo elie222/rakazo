@@ -9,6 +9,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -152,6 +153,9 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
     if (error.code === -1 || (error.code !== undefined && error.code >= 400 && error.code < 500))
       return "reconnect";
   }
+  // JSON-RPC reserves -32000 to -32099 for server errors, such as a proxy's failed upstream.
+  if (error instanceof McpError && error.code <= -32000 && error.code >= -32099)
+    return "unreachable";
   if (error instanceof ConnectorRedirectError) return "reconnect";
   // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
   if (

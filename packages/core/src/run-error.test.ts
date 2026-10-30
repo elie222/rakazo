@@ -386,6 +386,7 @@ describe("normalizeRunError", () => {
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',
       "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
       MODEL_OUTPUT_LIMIT_ERROR,
+      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
       expect(normalizeRunError(details)).toEqual({
         summary: "The model returned an unusable response. Try again.",
@@ -411,7 +412,6 @@ describe("normalizeRunError", () => {
       '400: {"message":"failed to template request: Unexpected message role.","type":"invalid_request_error"}',
       '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
       "Approved tool requests were not fully replayed",
-      "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       '500: {"message":"Internal error"}',
       '503: {"message":"The model is unavailable right now."}',
       '503: {"message":"Unsupported model fixture-model"}',

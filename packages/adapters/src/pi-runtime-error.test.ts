@@ -120,6 +120,7 @@ describe("Pi runtime errors", () => {
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
     MODEL_OUTPUT_LIMIT_ERROR,
+    "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
   ])("marks unusable model output as the model's failure: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();

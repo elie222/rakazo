@@ -184,6 +184,9 @@ export function parseModelFallbackFailure(
 const MODEL_OUTPUT_FAILURE =
   /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b|The model refused to complete the request\b|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
 
+/** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
+const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
+
 /**
  * Fetch refuses to send a key that is not a valid header value, such as one pasted with a code
  * sample around it or with non-Latin characters. Its message quotes the key, so it is checked
@@ -469,7 +472,8 @@ export function normalizeRunError(
   } else if (
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
     MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message)
+    MODEL_OUTPUT_FAILURE.test(message) ||
+    MODEL_OUTPUT_LIMIT_REACHED.test(message)
   ) {
     recovery = "model";
     kind = "output";

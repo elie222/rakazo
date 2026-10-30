@@ -1009,6 +1009,35 @@ describe("MCP connector session cache", () => {
       }
     });
 
+    it.each([
+      [-32000, "warn"],
+      [-32602, "error"],
+    ])("logs a JSON-RPC error %i from the server at %s", async (code, level) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          const { id } = (await request.json()) as { id?: number };
+          return Response.json({
+            jsonrpc: "2.0",
+            id,
+            error: { code, message: "Upstream MCP server error" },
+          });
+        }),
+      );
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(level === "warn" ? error : warn).not.toHaveBeenCalled();
+        expect(level === "warn" ? warn : error).toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
     it("still reports an unexpected failure as an error", async () => {
       vi.stubGlobal(
         "fetch",
