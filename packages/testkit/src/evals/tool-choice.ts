@@ -67,7 +67,13 @@ export const ToolChoiceCaseSchema = z
     prompt: z.string().min(1),
     expect: ExpectSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ kind, expect }) =>
+      kind === "control" ||
+      Boolean(expect.calls?.length || expect.anyOf || expect.bot || expect.user || expect.order),
+    { message: "A guard needs a call, setting or order it must produce, not only prohibitions" },
+  );
 export type ToolChoiceCase = z.infer<typeof ToolChoiceCaseSchema>;
 
 const SETTINGS_TOOLS = ["update_bot", "propose_instructions_update"];

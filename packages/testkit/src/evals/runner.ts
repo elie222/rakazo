@@ -639,13 +639,9 @@ export async function runTrial(
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
         throw new EvalFailure("incomplete", lastText);
-      // A bare status code can appear in a real answer; only count it next to an error word.
-      if (
-        /unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText) ||
-        /\b(?:401|402|403|429)\b[^.\n]{0,40}(?:error|rate.?limit|quota|unauthori[sz]ed|forbidden|payment)|(?:error|rate.?limit|quota|unauthori[sz]ed|forbidden|payment)[^.\n]{0,40}\b(?:401|402|403|429)\b/i.test(
-          lastText,
-        )
-      )
+      // Provider failures end the run as failed (classified above); a reply can only carry
+      // the product's own fixed notices, never a bare status code from an explanation.
+      if (/unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText))
         throw new EvalFailure("provider", lastText);
     }
     const files: Evidence["files"] = {};
@@ -814,11 +810,12 @@ export async function runTrial(
         ? [...handles.toolLoopDiagnostics]
         : [];
       const lists = handles.toolLists ?? [];
-      if (lists.length)
-        result.offeredTools = {
-          count: Math.max(...lists.map((list) => list.count)),
-          bytes: Math.max(...lists.map((list) => list.bytes)),
-        };
+      if (lists.length) {
+        const { count, bytes } = lists.reduce((largest, list) =>
+          list.bytes > largest.bytes ? list : largest,
+        );
+        result.offeredTools = { count, bytes };
+      }
       // Include interrupted and cleared-run calls without retaining raw arguments or ids in reports.
       await captureTools().catch(() => undefined);
       const events = [...seenTools.values()];

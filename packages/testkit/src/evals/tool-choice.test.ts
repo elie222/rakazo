@@ -148,5 +148,19 @@ describe("tool-choice grading", () => {
       ]),
     );
     expect(() => loadToolChoiceCases(file)).toThrow();
+    writeFileSync(
+      file,
+      JSON.stringify([
+        {
+          id: "only-bans",
+          area: "x",
+          kind: "guard",
+          purpose: "x",
+          prompt: "x",
+          expect: { notCalls: ["*"] },
+        },
+      ]),
+    );
+    expect(() => loadToolChoiceCases(file)).toThrow(/guard needs/);
   });
 });
