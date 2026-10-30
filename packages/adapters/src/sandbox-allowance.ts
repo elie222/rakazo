@@ -8,10 +8,11 @@ import {
 } from "@rakazo/db";
 
 /**
- * Placeholder hourly cost, $0.10, for providers that bill while running but do not declare
- * their own price through `hourlyCostMicros`.
+ * What an hour of a billed computer counts against the allowance, $0.20, unless its provider
+ * declares its own price through `hourlyCostMicros`: above a small cloud machine's raw price,
+ * so the allowance also covers storage and saves, and a $5 allowance is about 25 hours.
  */
-export const DEFAULT_SANDBOX_HOURLY_COST_MICROS = 100_000;
+export const DEFAULT_SANDBOX_HOURLY_COST_MICROS = 200_000;
 
 type AllowanceDeps = { prisma: PrismaClient; sandbox: SandboxProvider };
 
