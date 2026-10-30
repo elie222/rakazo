@@ -109,6 +109,8 @@ async function runRoutine(
     yield { type: "done" as const, text: "Inbox is clear." };
   });
   const prisma = {
+    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(prisma)),
+    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -139,7 +141,9 @@ async function runRoutine(
     },
     routine: { findUnique: vi.fn(async () => ({ notify: false, nextRunAt: null })) },
     event: { count: vi.fn(async () => 0) },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
         name: "Assistant",

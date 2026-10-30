@@ -254,7 +254,9 @@ function fixture({
         return { count: 1 };
       }),
     },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
       findUniqueOrThrow: vi.fn(async () => ({
         ...instructionState,
         id: run.botId,

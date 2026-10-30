@@ -63,6 +63,10 @@ export function fakeDatabase() {
           ownVaults.has(where.spaceId_userId_setting.spaceId) ? { setting: "credentials" } : null,
       ),
     },
+    bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
+    },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     secret: { count: vi.fn(async () => 0), findFirst: vi.fn(async () => null) },
     // The previous release's table, still counted before a stored value is deleted.
     botSecret: { count: vi.fn(async () => 0) },

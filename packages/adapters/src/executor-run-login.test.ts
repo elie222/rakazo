@@ -46,7 +46,11 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
         }
         // The member's settings lock always finds the membership row.
         if (model === "$queryRaw") return async () => [{ locked: 1 }];
-        const methods = models[model] ?? {};
+        const methods = model === "bot"
+          ? { findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }), ...models[model] }
+          : model === "botRuntimeProfile"
+            ? { findUnique: async () => null, ...models[model] }
+            : models[model] ?? {};
         return new Proxy(methods, {
           get: (target, method: string) => {
             const impl = (target[method] ?? fallback[method]) as

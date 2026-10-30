@@ -142,6 +142,8 @@ async function runWithModel(
     yield { type: "done" as const, text: "Done" };
   });
   const prisma = {
+    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(prisma)),
+    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
@@ -153,7 +155,9 @@ async function runWithModel(
       }),
     },
     chatGroup: { findMany: vi.fn(async () => []) },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
         name: "Assistant",

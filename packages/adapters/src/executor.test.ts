@@ -1160,13 +1160,19 @@ function pinnedRoutineRunPrisma(modelId: string) {
     memoryScope: "isolated",
     computer: { id: "computer-1", scope: "private" },
   };
-  return {
+  const prisma = {
+    $transaction: vi.fn(
+      async (work: (tx: unknown) => Promise<unknown>): Promise<unknown> => work(prisma),
+    ),
+    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
     bot: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
       findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
         args.select?.computerId ? { computerId: "computer-1", computerSwitching: false } : bot,
       ),
@@ -1194,6 +1200,7 @@ function pinnedRoutineRunPrisma(modelId: string) {
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
   };
+  return prisma;
 }
 
 async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
@@ -2894,7 +2901,12 @@ description: Prepare standup notes
           findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
           updateMany: vi.fn(async () => ({ count: 1 })),
         },
-        bot: { findUniqueOrThrow: botLookup },
+        botRuntimeProfile: { findUnique: vi.fn(async () => null) },
+        $queryRaw: vi.fn(async () => [{ id: run.botId }]),
+        $transaction: vi.fn(
+          async (work: (tx: unknown) => Promise<unknown>): Promise<unknown> => work(prisma),
+        ),
+        bot: { findUniqueOrThrow: botLookup, findFirst: vi.fn(async () => ({ id: run.botId })) },
         computer: {
           findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })),
         },
@@ -3012,7 +3024,13 @@ description: Prepare standup notes
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      botRuntimeProfile: { findUnique: vi.fn(async () => null) },
+      $queryRaw: vi.fn(async () => [{ id: run.botId }]),
+      $transaction: vi.fn(
+        async (work: (tx: unknown) => Promise<unknown>): Promise<unknown> => work(prisma),
+      ),
       bot: {
+        findFirst: vi.fn(async () => ({ id: run.botId })),
         findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
           args.select?.computerId
             ? { computerId: "computer-1", computerSwitching: false }
@@ -3117,7 +3135,13 @@ description: Prepare standup notes
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      botRuntimeProfile: { findUnique: vi.fn(async () => null) },
+      $queryRaw: vi.fn(async () => [{ id: run.botId }]),
+      $transaction: vi.fn(
+        async (work: (tx: unknown) => Promise<unknown>): Promise<unknown> => work(prisma),
+      ),
       bot: {
+        findFirst: vi.fn(async () => ({ id: run.botId })),
         findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
           args.select?.computerId
             ? { computerId: "computer-1", computerSwitching: false }

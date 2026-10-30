@@ -98,6 +98,10 @@ async function runTurn({
       (row) => row.userId === where.userId && matchesProvider(where.provider, row.provider),
     );
   const tx = {
+    bot: { findFirst: vi.fn(async () => ({ id: run.botId })) },
+    botRuntimeProfile: { findUnique: vi.fn(async () => null) },
+    agentSkill: { findMany: vi.fn(async () => []) },
+    $queryRaw: vi.fn(async () => [{ id: run.botId }]),
     userModelCredential: {
       findFirst: vi.fn(
         async (args: { where: { id: string } }) =>
@@ -130,6 +134,7 @@ async function runTurn({
   const prisma = withModelRoles(
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+      $queryRaw: vi.fn(async () => [{ id: run.botId }]),
       user: { findUnique: vi.fn(async () => null) },
       run: {
         findUnique: vi.fn(async () => run),
@@ -144,7 +149,9 @@ async function runTurn({
         }),
       },
       chatGroup: { findMany: vi.fn(async () => []) },
+      botRuntimeProfile: { findUnique: vi.fn(async () => null) },
       bot: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
         findUniqueOrThrow: vi.fn(async () => ({
           id: "bot-1",
           name: "Assistant",

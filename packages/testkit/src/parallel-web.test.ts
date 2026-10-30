@@ -46,7 +46,9 @@ function executorFixture(
         return { count: 1 };
       },
     },
+    botRuntimeProfile: { findUnique: async () => null },
     bot: {
+      findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }),
       findUniqueOrThrow: async () => ({
         id: "bot",
         name: "Researcher",
@@ -91,6 +93,7 @@ function executorFixture(
     externalEffect: { findMany: async () => [] },
     usageRecord: { createMany: async () => ({ count: 1 }) },
     modelCreditEntry: { findUnique: async () => null },
+    $queryRaw: async () => [{ id: run.botId }],
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));

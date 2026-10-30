@@ -52,7 +52,11 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
           return async (fn: (tx: unknown) => unknown) => fn(prisma);
         }
         if (model === "$queryRaw") return async () => [];
-        const methods = models[model] ?? {};
+        const methods = model === "bot"
+          ? { findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }), ...models[model] }
+          : model === "botRuntimeProfile"
+            ? { findUnique: async () => null, ...models[model] }
+            : models[model] ?? {};
         return new Proxy(methods, {
           get: (target, method: string) => {
             const impl = (target[method] ?? fallback[method]) as

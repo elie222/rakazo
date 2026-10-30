@@ -91,6 +91,7 @@ function fixture(
             }
           : undefined,
       spaceSettingOverride: { findUnique: async () => null },
+      botRuntimeProfile: { findUnique: async () => null },
       userActionApprovalRule: {
         findMany: async () => [
           {
@@ -140,6 +141,7 @@ function fixture(
       task: { findUniqueOrThrow: async () => task, updateMany: async () => ({ count: 1 }) },
       bot: {
         ...empty,
+        findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id }),
         update: async () => ({}),
         findUniqueOrThrow: async () => ({
           id: run.botId,
