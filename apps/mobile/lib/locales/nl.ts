@@ -1218,6 +1218,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "1 free month earned": "1 gratis maand verdiend",
   "{count} free months earned": "{count} gratis maanden verdiend",
   "Submit a plugin": "Plugin indienen",
+  Board: "Bord",
+  "To do": "Te doen",
+  "In progress": "Bezig",
+  "In review": "In beoordeling",
+  Blocked: "Geblokkeerd",
+  "Won't do": "Wordt niet gedaan",
+  "Could not move the ticket": "Kon ticket niet verplaatsen",
+  "No tickets yet.": "Nog geen tickets.",
 };
 
 export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
