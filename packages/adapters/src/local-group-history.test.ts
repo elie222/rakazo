@@ -4,6 +4,7 @@ import {
   isGroupGoalScopedRun,
   scopeToGroupGoal,
   scopeToGroupGoalWithSource,
+  trimGroupHistoryWithSource,
 } from "./local-group-history.js";
 
 describe("goal-scoped parallel group context", () => {
@@ -36,8 +37,30 @@ describe("goal-scoped parallel group context", () => {
         "[Internal group coordination — final synthesis]",
       ),
     ).toBe(true);
-    expect(isGroupGoalScopedRun("local-agent-goal:root:2", "Normal goal review")).toBe(false);
+    expect(
+      isGroupGoalScopedRun("local-agent-goal:root:2", "[Internal goal assessment, round 2/3]"),
+    ).toBe(true);
+    expect(isGroupGoalScopedRun("local-agent-goal:root:2", "Normal goal review")).toBe(true);
+    expect(isGroupGoalScopedRun("local-agent-goal:root:not-a-round", "Normal goal review")).toBe(false);
     expect(isGroupGoalScopedRun("send:human", "Human prompt")).toBe(false);
+  });
+  it("keeps the source request after trimming 200 newer messages", () => {
+    const source = { id: "original", role: "user", content: "request + attachment" };
+    const newer = Array.from({ length: 200 }, (_, index) => ({
+      id: `reply-${index}`,
+      role: "assistant",
+      content: "peer response",
+    }));
+    const trimmed = trimGroupHistoryWithSource([source, ...newer], "original", 200);
+    expect(trimmed).toHaveLength(200);
+    expect(trimmed[0]).toEqual(source);
+    expect(trimmed.at(-1)).toEqual(newer.at(-1));
+    expect(trimGroupHistoryWithSource([source, ...newer], "original", 1)).toEqual([source]);
+    // If the source already falls inside the window, don't introduce duplicates.
+    expect(trimGroupHistoryWithSource([...newer, source], "original", 200).at(-1)).toEqual(
+      source,
+    );
+    expect(trimGroupHistoryWithSource(newer, "missing", 200)).toEqual(newer);
   });
   it("never includes old unrelated attachments or replies before the current goal", () => {
     const latestFirst = [

@@ -127,6 +127,7 @@ import {
 import type { McpServer, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  cancelRunsInTransaction,
   countUnreadInboxChats,
   createSpaceForMember,
   createThreadMessageInTransaction,
@@ -418,6 +419,7 @@ import {
   groupGoalRootId,
   isGroupGoalScopedRun,
   scopeToGroupGoalWithSource,
+  trimGroupHistoryWithSource,
 } from "./local-group-history.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
@@ -3712,12 +3714,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         if (superseded) {
-          await deps.prisma.run.updateMany({
-            where: {
-              id: runId,
-              status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
-            },
-            data: { status: "cancelled", completedAt: new Date() },
+          // The status guard and cleanup must be atomic. A concurrent worker may
+          // have ended the run since it was read; do not cancel its task then.
+          await deps.prisma.$transaction(async (tx) => {
+            const cancelledAt = new Date();
+            const updated = await tx.run.updateMany({
+              where: {
+                id: runId,
+                status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+              },
+              data: { status: "cancelled", completedAt: cancelledAt },
+            });
+            if (updated.count !== 1) return;
+            await cancelRunsInTransaction(
+              tx,
+              [{ id: run.id, taskId: run.taskId, userId: run.userId, spaceId: run.spaceId }],
+              cancelledAt,
+            );
           });
           return;
         }
@@ -4223,13 +4236,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
         if (!compactedHistory.usedLocalSummary) {
-          history = history.slice(
-            -historyWindowSize({
-              semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
-              compacted: thread.historyCompactedUpToSeq != null,
-              recallSucceeded,
-            }),
-          );
+          const windowSize = historyWindowSize({
+            semanticMemoryEnabled: semanticMemoryEnabled && !thread.historyCompactionSummary,
+            compacted: thread.historyCompactedUpToSeq != null,
+            recallSucceeded,
+          });
+          history =
+            goalScopedTeamRun && run.sourceMessageId
+              ? trimGroupHistoryWithSource(history, run.sourceMessageId, windowSize)
+              : history.slice(-windowSize);
         }
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);

@@ -5,11 +5,10 @@ export function isGroupGoalScopedRun(
   clientNonce: string | null | undefined,
   taskPrompt: string,
 ): boolean {
-  return Boolean(
-    clientNonce?.startsWith("local-group-team:") ||
-      (clientNonce?.startsWith("local-agent-goal:") &&
-        taskPrompt.startsWith("[Internal group coordination")),
-  );
+  // The nonce is assigned by the scheduler and identifies peer tasks,
+  // synthesis, and later goal assessments regardless of their prompt wording.
+  void taskPrompt;
+  return groupGoalRootId(clientNonce) !== null;
 }
 
 export function scopeToGroupGoal<T extends { seq: number }>(
@@ -45,4 +44,21 @@ export function scopeToGroupGoalWithSource<T extends { seq: number }>(
     return [...scoped, sourceMessage];
   }
   return scoped;
+}
+
+
+/** Keep the originating request even when newer messages exhaust the model
+ * history window. Input and output are oldest-first, matching executor history.
+ * The source consumes one slot; never append it past the configured budget. */
+export function trimGroupHistoryWithSource<T extends { id: string }>(
+  history: readonly T[],
+  sourceMessageId: string,
+  limit: number,
+): T[] {
+  if (!Number.isInteger(limit) || limit < 1) return [];
+  const recent = history.slice(-limit);
+  if (recent.some((message) => message.id === sourceMessageId)) return recent;
+  const original = history.find((message) => message.id === sourceMessageId);
+  if (!original) return recent;
+  return [original, ...recent.slice(1)];
 }
