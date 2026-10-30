@@ -158,13 +158,24 @@ describe
           secretId: `unreadable-${suffix}`,
         });
         await server("b-not-json", { args: ["--not-json"], secretId: notJson.id });
+        const notObject = await secrets.put(JSON.stringify("leak2"), context);
+        await prisma.secret.create({
+          data: {
+            id: notObject.id,
+            userId,
+            spaceId,
+            kind: "mcp",
+            ciphertext: notObject.ciphertext,
+          },
+        });
+        await server("c-not-object", { args: ["--not-object"], secretId: notObject.id });
         const healthy = await server("z-healthy", { args: ["--healthy"] });
 
         try {
           const counts = await moveMcpArgsIntoSecrets(prisma, secrets);
 
-          expect(counts.failed).toBeGreaterThanOrEqual(2);
-          expect(JSON.stringify(sink.events)).not.toContain("leak1");
+          expect(counts.failed).toBeGreaterThanOrEqual(3);
+          expect(JSON.stringify(sink.events)).not.toMatch(/leak1|leak2/);
         } finally {
           installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
         }

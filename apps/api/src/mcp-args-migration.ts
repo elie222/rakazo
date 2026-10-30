@@ -36,7 +36,7 @@ export async function moveMcpArgsIntoSecrets(
           ? await prisma.secret.findUnique({ where: { id: row.secretId } })
           : null;
         const material: McpSecretMaterial = secret
-          ? JSON.parse(await secrets.load(secret.ciphertext, { recordId: secret.id, signal }))
+          ? parseMaterial(await secrets.load(secret.ciphertext, { recordId: secret.id, signal }))
           : {};
         material.args ??= legacyMcpArgs(row.args);
         const stored = await secrets.put(JSON.stringify(material), {
@@ -85,13 +85,21 @@ export async function moveMcpArgsIntoSecrets(
       } catch (error) {
         signal.throwIfAborted();
         counts.failed++;
-        // A parse error quotes the decrypted text it choked on.
-        const logged =
-          error instanceof SyntaxError ? new Error("Stored credentials are not JSON") : error;
-        getLogger().error("mcp server arguments move failed", logged, { mcpServerId: row.id });
+        getLogger().error("mcp server arguments move failed", error, { mcpServerId: row.id });
       }
     }
     if (rows.length < 100) return counts;
     cursor = rows.at(-1)?.id;
   }
+}
+
+/** Parse and shape errors would quote the decrypted text, so neither reaches the log. */
+function parseMaterial(text: string): McpSecretMaterial {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {}
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Stored MCP credentials are not a JSON object");
+  return value as McpSecretMaterial;
 }
