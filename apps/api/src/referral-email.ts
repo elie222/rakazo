@@ -31,34 +31,33 @@ export function sendReferralEmails(deps: {
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: 100,
     });
-    await Promise.all(
-      users.map(async (user) => {
-        // Member roles are comma-separated, so "not-owner" must not match.
-        const owner = user.members.some(({ role }) =>
-          role.split(",").some((value) => value.trim() === "owner"),
+    // One at a time: a burst would trip the provider's rate limit, and a claimed send is never retried.
+    for (const user of users) {
+      // Member roles are comma-separated, so "not-owner" must not match.
+      const owner = user.members.some(({ role }) =>
+        role.split(",").some((value) => value.trim() === "owner"),
+      );
+      if (!owner || !ActorSchema.shape.email.safeParse(user.email).success) continue;
+      try {
+        const message = await referralEmail(
+          user,
+          deps.appUrl,
+          unsubscribeUrl(deps.origin, deps.secret, user.id),
         );
-        if (!owner || !ActorSchema.shape.email.safeParse(user.email).success) return;
-        try {
-          const message = await referralEmail(
-            user,
-            deps.appUrl,
-            unsubscribeUrl(deps.origin, deps.secret, user.id),
-          );
-          // Claim before sending: concurrent instances race on (userId, kind), and an
-          // uncertain delivery is never retried.
-          const claim = await deps.prisma.emailSend.createMany({
-            data: { userId: user.id, kind: KIND },
-            skipDuplicates: true,
-          });
-          if (claim.count > 0) await deps.email.send(message);
-        } catch (error) {
-          // Account deletion may race the foreign-key insert.
-          if (error && typeof error === "object" && "code" in error && error.code === "P2003")
-            return;
-          deps.onError(error);
-        }
-      }),
-    );
+        // Claim before sending: concurrent instances race on (userId, kind), and an
+        // uncertain delivery is never retried.
+        const claim = await deps.prisma.emailSend.createMany({
+          data: { userId: user.id, kind: KIND },
+          skipDuplicates: true,
+        });
+        if (claim.count > 0) await deps.email.send(message);
+      } catch (error) {
+        // Account deletion may race the foreign-key insert.
+        if (error && typeof error === "object" && "code" in error && error.code === "P2003")
+          continue;
+        deps.onError(error);
+      }
+    }
   };
 }
 
