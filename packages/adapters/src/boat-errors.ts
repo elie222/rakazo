@@ -59,7 +59,8 @@ const UNSENT_CODES = new Set([
   "ENETUNREACH",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
-const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
+// 520-526 and 530 come from Cloudflare in front of Boat when it gets no usable answer from Boat.
+const TRANSIENT_STATUSES = new Set([500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530]);
 
 /**
  * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.

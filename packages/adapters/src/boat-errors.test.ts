@@ -330,6 +330,10 @@ describe("Boat API errors", () => {
     expect((outage as Error).message).toContain("HTTP 500, internal");
     expect((outage as Error).cause).toMatchObject({ response: { status: 500 } });
 
+    const edge = await failing(525, "ssl_handshake_failed")().catch((failure: unknown) => failure);
+    expect(edge).toBeInstanceOf(SandboxUnresponsiveError);
+    expect((edge as Error).cause).toMatchObject({ response: { status: 525 } });
+
     const billing = await failing(402, "billing_required")().catch((failure: unknown) => failure);
     expect(billing).toBeInstanceOf(SandboxUnresponsiveError);
     expect((billing as Error).cause).toMatchObject({ code: "billing_required" });
