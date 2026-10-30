@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { preferenceTools } from "./run-tools-preferences.js";
 
-function fakeAccount(ownerStartedRun = true) {
+function fakeAccount(ownerStartedRun = true, tainted = false) {
   const users = {
     starter: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
     other: { timezone: "UTC" as string | null, marketingEmailOptOutAt: null as Date | null },
@@ -23,6 +23,8 @@ function fakeAccount(ownerStartedRun = true) {
     },
     run: { userId: "starter" },
     source: { ownerStartedRun },
+    state: { tainted },
+    trust: { receivedOutsideMessage: async () => false },
   };
   const call = (args: Record<string, unknown>) =>
     preferenceTools.update_preferences!(
@@ -30,6 +32,7 @@ function fakeAccount(ownerStartedRun = true) {
       {
         name: "update_preferences",
         args,
+        executionId: "call-1",
         finish: async (result: unknown) => result,
       } as never,
     );
@@ -81,6 +84,15 @@ describe("update_preferences", () => {
     const { users, call } = fakeAccount(false);
     await expect(call({ timezone: "Asia/Tokyo" })).resolves.toHaveProperty("error");
     expect(users.starter.timezone).toBe("UTC");
+  });
+
+  it("reads but no longer writes once outside content entered the run", async () => {
+    const { users, call } = fakeAccount(true, true);
+    await expect(call({ marketingEmails: false })).resolves.toEqual({
+      error: expect.stringContaining("outside content"),
+    });
+    expect(users.starter.marketingEmailOptOutAt).toBeNull();
+    await expect(call({})).resolves.toEqual({ timezone: "UTC", marketingEmails: true });
   });
 
   it("is offered only on runs the account owner started", () => {

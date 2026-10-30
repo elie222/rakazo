@@ -1,6 +1,7 @@
 import { TimeZoneSchema } from "@rakazo/contracts";
 import { z } from "zod";
 import type { RunContext } from "./run-context.js";
+import { isSubagentToolExecution } from "./run-effects.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
 const PreferencesPatchSchema = z
@@ -23,20 +24,27 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
         .join(" "),
     });
   const { timezone, marketingEmails } = parsed.data;
+  const write = timezone !== undefined || marketingEmails !== undefined;
+  if (write && isSubagentToolExecution(call.executionId))
+    return call.finish({ error: "Helpers cannot change account preferences." });
+  if (write && (ctx.state.tainted || (await ctx.trust.receivedOutsideMessage())))
+    return call.finish({
+      error:
+        "Account preferences are blocked for the rest of this run because it read outside content.",
+    });
   const select = { timezone: true, marketingEmailOptOutAt: true } as const;
-  const user =
-    timezone === undefined && marketingEmails === undefined
-      ? await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select })
-      : await deps.prisma.user.update({
-          where: { id: run.userId },
-          data: {
-            timezone,
-            ...(marketingEmails === undefined
-              ? {}
-              : { marketingEmailOptOutAt: marketingEmails ? null : new Date() }),
-          },
-          select,
-        });
+  const user = !write
+    ? await deps.prisma.user.findUniqueOrThrow({ where: { id: run.userId }, select })
+    : await deps.prisma.user.update({
+        where: { id: run.userId },
+        data: {
+          timezone,
+          ...(marketingEmails === undefined
+            ? {}
+            : { marketingEmailOptOutAt: marketingEmails ? null : new Date() }),
+        },
+        select,
+      });
   return call.finish({
     timezone: user.timezone,
     marketingEmails: user.marketingEmailOptOutAt === null,
