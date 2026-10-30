@@ -131,9 +131,10 @@ export async function listen(opts: {
   signal?: AbortSignal;
   lang?: string;
 }): Promise<void> {
+  // A cancelled request can arrive after a newer session started; it must not stop that one.
+  if (opts.signal?.aborted) return;
   stop();
   const mine = token;
-  if (opts.signal?.aborted) return;
   const recognizer = await load();
   const lang = supportedSpeechTag(opts.lang || "en-US", await supportedLocales(recognizer));
   // A hang-up or a newer session landed while the native module was loading.

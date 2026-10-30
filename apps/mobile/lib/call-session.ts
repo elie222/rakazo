@@ -671,21 +671,30 @@ async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Pr
   return true;
 }
 
+// The turn whose recording owns the shared audio mode. A hung-up turn that finishes
+// late must not switch recording off under the next call's recorder.
+let recordingTurn: AbortSignal | undefined;
+
 /** Records one hands-free turn: wait for speech, stop once the speaker goes quiet. */
 async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets, setAudioModeAsync } = await import("expo-audio");
+  if (signal.aborted) return null;
   const permission = await AudioModule.requestRecordingPermissionsAsync();
+  // The call can end while the microphone prompt is open.
+  if (signal.aborted) return null;
   if (!permission.granted)
     throw new ExpectedTurnFailure(t("Allow microphone access to call a bot."));
   let recorder: AudioRecorder | undefined;
   let heardSpeech = false;
   try {
+    recordingTurn = signal;
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     recorder = new AudioModule.AudioRecorder({
       ...RecordingPresets.HIGH_QUALITY,
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
+    if (signal.aborted) return null;
     recorder.record();
     let quietMs = 0;
     for (let elapsed = 0; elapsed < MAX_CLIP_MS && !signal.aborted; elapsed += METER_POLL_MS) {
@@ -713,7 +722,10 @@ async function recordClip(signal: AbortSignal): Promise<CallClip | null> {
     return { base64, mimeType: "audio/m4a" };
   } finally {
     recorder?.release();
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    if (recordingTurn === signal) {
+      recordingTurn = undefined;
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    }
   }
 }
 

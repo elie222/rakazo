@@ -34,6 +34,30 @@ vi.mock("./voice", () => ({
   stopSpeaking: vi.fn(),
 }));
 vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
+// The production recorder, with each step it awaits held by the test.
+const audio = vi.hoisted(() => ({
+  permission: Promise.resolve({ granted: true }),
+  prepared: Promise.resolve(),
+  record: vi.fn(),
+  release: vi.fn(),
+  setAudioMode: vi.fn(),
+}));
+const expoAudioMock = vi.hoisted(() => () => ({
+  AudioModule: {
+    requestRecordingPermissionsAsync: () => audio.permission,
+    AudioRecorder: class {
+      uri = null;
+      prepareToRecordAsync = () => audio.prepared;
+      record = audio.record;
+      stop = async () => undefined;
+      release = audio.release;
+      getStatus = () => ({});
+    },
+  },
+  RecordingPresets: { HIGH_QUALITY: {} },
+  setAudioModeAsync: async (mode: unknown) => audio.setAudioMode(mode),
+}));
+vi.mock("expo-audio", () => expoAudioMock());
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   blockText: vi.fn(),
@@ -1397,5 +1421,132 @@ describe("mobile call session on a timer", () => {
     expect(vi.mocked(subscribeThread).mock.calls[1]?.[1]).toBe(7);
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
+  });
+});
+
+describe("mobile call microphone after hang-up", () => {
+  afterEach(() => {
+    endCall();
+    stopDictation();
+    setSpeechRecognizer(null);
+    audio.permission = Promise.resolve({ granted: true });
+    audio.prepared = Promise.resolve();
+    audio.record.mockClear();
+    audio.release.mockClear();
+    audio.setAudioMode.mockClear();
+  });
+
+  it("keeps the next call's recognition when a hung-up call's permission resolves late", async () => {
+    const permissions: Array<Deferred<{ granted: boolean }>> = [];
+    const start = vi.fn();
+    const abort = vi.fn();
+    setSpeechRecognizer({
+      start,
+      stop: vi.fn(),
+      abort,
+      isRecognitionAvailable: () => true,
+      requestPermissionsAsync: () => {
+        const next = deferred<{ granted: boolean }>();
+        permissions.push(next);
+        return next.promise;
+      },
+      getSupportedLocales: async () => ({ locales: [] }),
+      addListener: () => ({ remove: () => undefined }),
+    });
+    const { dictate: _first, ...firstDeps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, firstDeps);
+    await flush();
+    expect(permissions).toHaveLength(1);
+    endCall();
+
+    const { dictate: _second, ...secondDeps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, secondDeps);
+    await flush();
+    permissions[1]?.resolve({ granted: true });
+    await flush();
+    expect(start).toHaveBeenCalledOnce();
+
+    permissions[0]?.resolve({ granted: true });
+    await flush();
+
+    expect(abort).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it.each(["permission", "prepared"] as const)(
+    "never starts recording after the call ends while %s is pending",
+    async (step) => {
+      const pending = deferred<never>();
+      audio[step] = pending.promise;
+      const { record: _record, ...deps } = fakes().deps;
+      startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await flush();
+
+      endCall();
+      pending.resolve((step === "permission" ? { granted: true } : undefined) as never);
+      await flush();
+
+      expect(audio.record).not.toHaveBeenCalled();
+      if (step === "prepared") expect(audio.release).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("leaves the next call's recording on when a hung-up call's recorder finishes preparing", async () => {
+    const preparing = deferred<void>();
+    audio.prepared = preparing.promise;
+    const { record: _first, ...firstDeps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, firstDeps);
+    await flush();
+    endCall();
+
+    audio.prepared = Promise.resolve();
+    const { record: _second, ...secondDeps } = fakes().deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, secondDeps);
+    await flush();
+    expect(audio.record).toHaveBeenCalledOnce();
+    audio.setAudioMode.mockClear();
+
+    preparing.resolve();
+    await flush();
+
+    expect(audio.release).toHaveBeenCalledOnce();
+    expect(audio.setAudioMode).not.toHaveBeenCalledWith(
+      expect.objectContaining({ allowsRecording: false }),
+    );
+  });
+
+  it("does not ask for the microphone when the call ends during the audio import", async () => {
+    vi.resetModules();
+    const requestPermission = vi.fn(async () => ({ granted: true }));
+    let finishImport!: () => void;
+    let importStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      importStarted = resolve;
+    });
+    const pendingImport = new Promise<void>((resolve) => {
+      finishImport = resolve;
+    });
+    vi.doMock("expo-audio", async () => {
+      importStarted();
+      await pendingImport;
+      return {
+        AudioModule: { requestRecordingPermissionsAsync: requestPermission },
+        RecordingPresets: { HIGH_QUALITY: {} },
+        setAudioModeAsync: async () => undefined,
+      };
+    });
+    try {
+      const session = await import("./call-session");
+      const { record: _record, ...deps } = fakes().deps;
+      session.startCall({ botId: "bot-1", botName: "Ada" }, deps);
+      await started;
+      session.endCall();
+      finishImport();
+      await flush();
+      expect(requestPermission).not.toHaveBeenCalled();
+    } finally {
+      vi.doMock("expo-audio", () => expoAudioMock());
+      vi.resetModules();
+    }
   });
 });
