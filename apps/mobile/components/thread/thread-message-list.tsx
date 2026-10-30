@@ -82,11 +82,19 @@ export function ThreadMessageList({
     () => ({
       paddingBottom: headerClearance.padding,
       paddingTop: bottomInset + 16,
-      ...columnPadding,
+      // An inverted Android list mirrors with scale: -1, so asymmetric padding swaps sides.
+      paddingLeft:
+        Platform.OS === "android" ? columnPadding.paddingRight : columnPadding.paddingLeft,
+      paddingRight:
+        Platform.OS === "android" ? columnPadding.paddingLeft : columnPadding.paddingRight,
     }),
     [headerClearance.padding, bottomInset, columnPadding],
   );
-  const jumpInset = threadColumnTrailingInset(columnPadding, I18nManager.isRTL);
+  const jumpInset = threadColumnTrailingInset(
+    columnPadding,
+    I18nManager.isRTL,
+    I18nManager.doLeftAndRightSwapInRTL,
+  );
 
   return (
     // The floor keeps a tall suggestion list from sliding under the transparent header.

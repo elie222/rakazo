@@ -23,12 +23,16 @@ export function threadColumnPadding(columnInsets: { left: number; right: number 
   };
 }
 
-/** How far the jump button sits in from the trailing screen edge to meet the column. */
+/**
+ * How far the jump button sits in from the trailing screen edge to meet the column.
+ * When React Native already swaps left and right, paddingRight is that trailing edge.
+ */
 export function threadColumnTrailingInset(
   padding: { paddingLeft: number; paddingRight: number },
   rtl: boolean,
+  swapLeftAndRight: boolean,
 ) {
-  return rtl ? padding.paddingLeft : padding.paddingRight;
+  return rtl && !swapLeftAndRight ? padding.paddingLeft : padding.paddingRight;
 }
 
 // The pill bottoms sit 10pt above the native header bottom; content rests 14pt below them.

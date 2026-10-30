@@ -97,6 +97,7 @@ it("pads the chat column inside the screen, including a cutout and a wide gutter
 
 it("keeps the jump button on the column's trailing edge in both directions", () => {
   const padding = threadColumnPadding({ left: 40, right: 8 });
-  expect(threadColumnTrailingInset(padding, false)).toBe(28);
-  expect(threadColumnTrailingInset(padding, true)).toBe(60);
+  expect(threadColumnTrailingInset(padding, false, false)).toBe(28);
+  expect(threadColumnTrailingInset(padding, true, false)).toBe(60);
+  expect(threadColumnTrailingInset(padding, true, true)).toBe(padding.paddingRight);
 });

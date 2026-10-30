@@ -23,6 +23,7 @@ vi.mock("react-native", async () => {
       return createElement("div", { "data-list": "flat" });
     },
     I18nManager: {
+      doLeftAndRightSwapInRTL: false,
       get isRTL() {
         return native.rtl;
       },
