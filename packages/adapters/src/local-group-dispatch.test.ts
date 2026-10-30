@@ -150,9 +150,9 @@ describe("generic, bounded group collaboration", () => {
     expect(chooseGroupTeammates(roster, "lead", ["lead"])).toEqual([]);
   });
   it("recognizes a mention followed by an ASCII period instead of broadcasting", () => {
-    expect(
-      requestedGroupParticipants([{ kind: "text", text: "Ask @Critic." }], bots),
-    ).toEqual(["b"]);
+    expect(requestedGroupParticipants([{ kind: "text", text: "Ask @Critic." }], bots)).toEqual([
+      "b",
+    ]);
     expect(
       chooseGroupTeammates(
         bots,
