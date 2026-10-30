@@ -331,6 +331,11 @@ describe("E2B computer backend", () => {
     async ({ method, status, outcome }) => {
       const requests: string[] = [];
       const server = createServer((request, response) => {
+        // Local tools can probe any listening loopback port; the SDK never calls the root.
+        if (request.url === "/") {
+          response.writeHead(404).end();
+          return;
+        }
         requests.push(`${request.method} ${request.url}`);
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify({ code: status, message: "sandbox unavailable" }));
