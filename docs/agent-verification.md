@@ -327,6 +327,28 @@ model-call timeout errors, mostly within two seconds rather than at the trial's
 three-minute deadline. The saved report lacks transport diagnostics to establish
 the cause. No live qualification of the suite or its judge is claimed.
 
+### Initiative evals
+
+```sh
+pnpm test:evals --suite initiative --list
+pnpm test:evals --live --suite initiative --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/initiative.json
+```
+
+The four cases check that a bot follows up on an open loop without being asked,
+and only then. A promise with a due time must create exactly one one-shot routine,
+due no earlier than the promised time and within three days of it, and its wake
+must speak once with a push. When the user delivers before it is due, the bot
+should cancel the follow-up (pausing leaves it in Routines); a wake that still
+happens must stay as silent as a quiet routine check. A dated item the user reports as already closed, and a
+declined reminder, must create no routine at all. The bot authors the routine
+itself, then the scheduler wakes it as in the silence suite. Creations are counted
+from `routine.created` events, because `schedule_cancel` deletes the routine.
+
+The `initiative-meaning-v1` rubric grades the follow-up's chat and push by meaning:
+they must ask about the outstanding item and offer help, without claiming it
+arrived or inventing details. Calibration anchors cover a paraphrase, another
+language, a false receipt, and a bare alert. No live baseline is claimed yet.
+
 ### Long conversation and cost evals
 
 List seeded long-chat cases without a database or model connection:
