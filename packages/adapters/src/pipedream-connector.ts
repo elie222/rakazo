@@ -172,7 +172,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
-          const accounts = await this.approvedAccounts(context, app);
+          const accounts = approvedAccounts(context, app);
           if (!accounts[0]) throw new Error("no approved account can be identified");
           const tools = await listRemoteMcpTools({
             endpoint: MCP_ENDPOINT,
@@ -244,7 +244,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
-      const accounts = await this.approvedAccounts(context, app);
+      const accounts = approvedAccounts(context, app);
       const { [ACCOUNT_ARGUMENT]: chosen, ...args } = call.args;
       const account =
         accounts.length === 1 ? accounts[0] : accounts.find(({ id }) => id === chosen);
@@ -414,33 +414,6 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       .digest("hex")}`;
   }
 
-  /**
-   * The accounts this workspace approved for `app`, so Pipedream never picks one
-   * itself. A row holding only the app slug predates stored account ids; it maps
-   * to the user's one remote account no other row claims, or to nothing.
-   */
-  private async approvedAccounts(context: AdapterContext, app: string): Promise<ApprovedAccount[]> {
-    const approved = new Map<string, string>();
-    const unresolved: string[] = [];
-    for (const connection of context.connectedConnections ?? []) {
-      if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
-      const ref = connection.providerRef?.trim();
-      if (ref && ref !== app) {
-        if (!approved.has(ref)) approved.set(ref, connection.displayName);
-      } else {
-        unresolved.push(connection.displayName);
-      }
-    }
-    if (unresolved.length === 1) {
-      const unclaimed = (await this.accounts(context, app))
-        .filter((account) => account.healthy !== false && account.dead !== true)
-        .map((account) => account.id)
-        .filter((id) => id && !approved.has(id));
-      if (unclaimed.length === 1) approved.set(unclaimed[0]!, unresolved[0]!);
-    }
-    return [...approved].map(([id, label]) => ({ id, label }));
-  }
-
   private mcpHeaders(
     context: AdapterContext,
     app: string,
@@ -577,6 +550,22 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     };
     return body.access_token;
   }
+}
+
+/**
+ * The accounts this workspace approved for `app`, so Pipedream never picks one
+ * itself. A row holding only the app slug cannot name its account and is skipped:
+ * the run context omits revoked and pending rows, so it cannot tell which remote
+ * account such a row stands for.
+ */
+function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
+  const approved = new Map<string, string>();
+  for (const connection of context.connectedConnections ?? []) {
+    if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
+    const ref = connection.providerRef?.trim();
+    if (ref && ref !== app && !approved.has(ref)) approved.set(ref, connection.displayName);
+  }
+  return [...approved].map(([id, label]) => ({ id, label }));
 }
 
 /** With several approved accounts the model must name one; with one there is nothing to choose. */
