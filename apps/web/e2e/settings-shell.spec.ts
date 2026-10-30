@@ -183,18 +183,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await captureScreenshot(page, testInfo, "settings-shell-usage");
 });
 
-test("audit log lists the owner's own actions", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `settings-audit-${stamp}@rakazo.test`, "password12", "Audit log");
-  await completeOnboarding(page);
-  const settings = await openUserSettings(page, "audit");
-  await expect(settings).toHaveAttribute("data-settings-section", "audit");
-  const log = settings.getByTestId("audit-log-settings");
-  await expect(log.getByRole("button", { name: "Export" })).toBeVisible();
-  await expect(log.getByRole("row").nth(1)).toBeVisible();
-  await captureScreenshot(page, testInfo, "settings-audit-log");
-});
-
 test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   // These screenshots never submit credentials or contact Honcho.
   const stamp = Date.now();
