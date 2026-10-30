@@ -23,6 +23,10 @@ import {
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
+import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
+import { observeToolCalls } from "../evals/tool-calls.js";
+import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
+import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
@@ -52,6 +56,7 @@ async function main() {
       "max-output-tokens": { type: "string" },
       trials: { type: "string", default: "3" },
       case: { type: "string", multiple: true },
+      "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
       "max-tool-calls": { type: "string", default: "30" },
       output: { type: "string", default: "test-report/evals/report.json" },
@@ -67,10 +72,20 @@ async function main() {
     product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
     history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
     silence: { cases: SILENCE_EVAL_CASES, fixtureVersion: SILENCE_FIXTURE_VERSION },
+    "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
-    throw new Error("Unknown suite; use product, history, silence, or approval");
-  const { cases, fixtureVersion } = suites[values.suite as keyof typeof suites];
+    throw new Error("Unknown suite; use product, history, silence, tool-choice, or approval");
+  const suite = suites[values.suite as keyof typeof suites];
+  if (values["cases-file"] && values.suite !== "tool-choice")
+    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
+  const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
+  const cases = [...suite.cases, ...extraCases];
+  const fixtureVersion = extraCases.length
+    ? `${suite.fixtureVersion}+${extraCases.length}-local`
+    : suite.fixtureVersion;
+  if (new Set(cases.map((c) => c.id)).size !== cases.length)
+    throw new Error("Case ids must be unique across the suite and --cases-file");
   if (values["wire-diagnostics"] && values.suite !== "history")
     throw new Error("Synthetic wire diagnostics require the history suite");
   const strategies = [...new Set(values.strategy?.length ? values.strategy : ["current"])];
@@ -546,8 +561,10 @@ async function main() {
               [connection.apiKey ?? "", connection.baseUrl ?? ""],
               toolLoopDiagnostics,
             );
+            const toolCallObservations: ObservedToolCall[] = [];
+            const toolLists: ObservedToolList[] = [];
             const handles = await createApp({
-              runtime: observedRuntime,
+              runtime: observeToolCalls(observedRuntime, toolCallObservations, toolLists),
               contextStrategy: planned.strategy as
                 | "current"
                 | "retrieval"
@@ -597,6 +614,8 @@ async function main() {
               cacheDecisions,
               historyDiagnostics,
               toolLoopDiagnostics,
+              toolCallObservations,
+              toolLists,
               finalizeBackground: async () => {
                 acceptingCalls = false;
                 await handles.jobs.close();
