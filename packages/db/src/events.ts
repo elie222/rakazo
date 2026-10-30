@@ -888,7 +888,7 @@ async function commitAnswerRunInput(
     if (!approvalEffect) return null;
     if (pendingAsk.instructionUpdate) {
       if (
-        approvalEffect.kind !== "propose_instructions_update" ||
+        approvalEffect.kind !== "update_bot" ||
         pendingAsk.instructionUpdate.botId !== run.botId ||
         (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
         run.userId !== input.answeredByUserId
@@ -964,11 +964,6 @@ async function commitAnswerRunInput(
           },
         });
       }
-      if (approvalAnswer === "deny")
-        await tx.bot.updateMany({
-          where: { id: run.botId, pendingInstructionsRunId: input.runId },
-          data: { pendingInstructionsRunId: null },
-        });
     }
     const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({

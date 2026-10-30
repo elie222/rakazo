@@ -4855,7 +4855,7 @@ describe("appendEvent", () => {
   });
 });
 
-describe("instruction proposal answers", () => {
+describe("held instruction answers", () => {
   function fixture() {
     const request = {
       instructions: "Draft only",
@@ -4892,13 +4892,12 @@ describe("instruction proposal answers", () => {
       externalEffect: {
         findFirst: vi.fn(async () => ({
           id: "effect-1",
-          kind: "propose_instructions_update",
+          kind: "update_bot",
           request,
         })),
         findUniqueOrThrow: vi.fn(async () => ({ request })),
         update: vi.fn(),
       },
-      bot: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
       thread: { update: vi.fn(async () => ({ nextEventSeq: 10 })) },
       event: {
@@ -4970,13 +4969,9 @@ describe("instruction proposal answers", () => {
     expect(f.tx.externalEffect.update).not.toHaveBeenCalled();
     expect(f.tx.run.updateMany).not.toHaveBeenCalled();
   });
-  it("dismisses and frees the bot reservation", async () => {
+  it("dismisses the change", async () => {
     const f = fixture();
     expect(await f.answer("deny")).toBe(true);
-    expect(f.tx.bot.updateMany).toHaveBeenCalledWith({
-      where: { id: "bot-1", pendingInstructionsRunId: "run-1" },
-      data: { pendingInstructionsRunId: null },
-    });
     expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
       where: { id: "effect-1" },
       data: { status: "denied" },

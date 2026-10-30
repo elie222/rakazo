@@ -36,6 +36,7 @@ import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.j
 import { createdByWhere, managedBotsWhere } from "./child-bots.js";
 import { stopCancelledGroupRuns } from "./computer-idle.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { resolveModelChoice } from "./model-choice.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
@@ -256,9 +257,9 @@ async function prepareChildModel(
   const thinkingLevel = text(args.thinking_level);
   const clear = args.clear === true;
   if (clear && (provider || model)) {
-    return refuse("Pass either clear: true or provider and model, not both.");
+    return refuse("Pass either clear: true or model, not both.");
   }
-  if (!clear && !(provider && model)) return refuse("Pass provider and model, or clear: true.");
+  if (!clear && !model) return refuse("Pass model, or clear: true.");
   // A model without catalog levels skips the shared check, so the level must be a real one first.
   if (thinkingLevel && !ThinkingLevelSchema.safeParse(thinkingLevel).success) {
     return refuse(`Thinking level must be one of: ${ThinkingLevelSchema.options.join(", ")}`);
@@ -271,13 +272,21 @@ async function prepareChildModel(
     model: child.modelId,
     thinkingLevel: child.thinkingLevel ?? null,
   };
+  const chosen = model
+    ? await resolveModelChoice({ prisma: deps.prisma, ...deps.modelChange }, run, {
+        model,
+        provider,
+        preferredProvider: child.modelProvider,
+      })
+    : undefined;
+  if (chosen && !chosen.ok) return refuse(chosen.error);
   const validated = await validateBotModelChange(
     { prisma: deps.prisma, ...deps.modelChange },
     {
       userId: run.userId,
       spaceId: run.spaceId,
-      provider: provider ?? null,
-      model: model ?? null,
+      provider: chosen?.provider ?? null,
+      model: chosen?.model ?? null,
       thinkingLevel: thinkingLevel ?? null,
       current: previous,
     },
@@ -1250,7 +1259,7 @@ function memberNames(members: Member[]): string {
   return members.map((member) => singleLine(member.name)).join(", ");
 }
 
-function modelLabel(provider: string | null, model: string | null): string {
+export function modelLabel(provider: string | null, model: string | null): string {
   if (!provider || !model) return "Default model";
   const catalog = [...listPiCatalog(), scriptedCatalogEntry];
   const catalogProvider = canonicalPiProviderId(provider);

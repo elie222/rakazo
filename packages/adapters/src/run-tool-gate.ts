@@ -235,6 +235,7 @@ export async function gateToolCall(
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const requiresApprovalByDefault =
+    request.ownerApproval ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
@@ -245,6 +246,7 @@ export async function gateToolCall(
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
+    request.ownerApproval ||
     commandWatch ||
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
@@ -650,7 +652,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
       buildApprovalAskBlock(
         applied!.effect.id,
         name,
-        name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
+        name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
         ctx.secrets,
         card,
       ),

@@ -23,8 +23,8 @@ export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "pa
 export type FleetCardSummary = { title: string; lines: string[] };
 
 /**
- * The instruction card shows the whole new text, like `propose_instructions_update`, so its detail
- * holds the longest instructions plus the two length lines above them.
+ * The child instruction card shows the whole new text, so its detail holds the longest
+ * instructions plus the two length lines above them.
  */
 export function approvalDetailLength(toolName: string): number {
   return toolName === "set_child_instructions"
@@ -81,7 +81,8 @@ export function buildApprovalAskBlock(
       ],
     };
   }
-  if (toolName === "propose_instructions_update") {
+  // Only an instruction change held for the owner carries the text it replaces.
+  if (toolName === "update_bot" && typeof args.previousInstructions === "string") {
     const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
     const after = redactSecrets(String(args.instructions ?? ""), secrets);
     const reason = redactSecrets(String(args.reason), secrets);

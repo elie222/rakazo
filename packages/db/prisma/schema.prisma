@@ -607,7 +607,6 @@ model Bot {
   description       String            @default("")
   instructions      String            @default("")
   instructionHistory Json @default("[]")
-  pendingInstructionsRunId String?
   color             String
   avatarSet         String            @default("organic")
   notifyOnFinish    Boolean           @default(true)

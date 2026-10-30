@@ -46,7 +46,6 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
   "create_space",
-  "propose_instructions_update",
   "create_group",
   "update_group",
   "set_child_instructions",

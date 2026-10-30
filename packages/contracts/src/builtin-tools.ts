@@ -81,7 +81,6 @@ export const BUILTIN_TOOL_NAMES = [
   "skill_update",
   "skill_delete",
   "run_subagent",
-  "propose_instructions_update",
   "create_space",
   "spawn_bot",
   "update_bot",

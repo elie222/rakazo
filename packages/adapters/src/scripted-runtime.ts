@@ -468,16 +468,12 @@ code-b
       },
     ];
   }
-  if (lower.includes("propose an instruction update")) {
+  const ownInstructions = /update your instructions to:\s*([^\n<&]+)/i.exec(prompt);
+  if (ownInstructions) {
     return [
       {
-        assistant: "",
-        toolCalls: [
-          {
-            name: "propose_instructions_update",
-            args: { instructions: "Draft only. Ask before sending.", reason: "Learned preference" },
-          },
-        ],
+        assistant: "updating my instructions.",
+        toolCalls: [{ name: "update_bot", args: { instructions: ownInstructions[1]!.trim() } }],
         complete: true,
       },
     ];

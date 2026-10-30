@@ -90,7 +90,7 @@ describe("tool-choice grading", () => {
     expect(passes(gradeToolChoice({ bot: { modelId: "b" } }, evidence({ settings: after })))).toBe(
       true,
     );
-    const read = [{ step: 2, name: "update_bot", args: {} }];
+    const read = [{ step: 2, name: "update_bot", args: { model: null, name: " " } }];
     expect(
       passes(
         gradeToolChoice(

@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import {
   normalizeOpenAiToolParameters,
@@ -110,6 +110,9 @@ function builtinParameters(tool: ConnectorTool) {
       artifact_id: Type.Optional(Type.String()),
       use_attached_image: Type.Optional(Type.Boolean()),
       notifyOnFinish: Type.Optional(Type.Boolean()),
+      model: Type.Optional(Type.String()),
+      thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
+      readAloud: Type.Optional(Type.Boolean()),
       bot_id: Type.Optional(Type.String()),
     });
   }
@@ -306,12 +309,19 @@ const FLEET_STRING_ARGS = [
   "provider",
   "model",
   "thinking_level",
+  "thinkingLevel",
   "section",
   "instructions",
   "expected_version",
 ] as const;
 const FLEET_LIST_ARGS = ["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"] as const;
-const FLEET_FLAG_ARGS = ["pinned", "clear_section", "clear", "use_attached_image"] as const;
+const FLEET_FLAG_ARGS = [
+  "pinned",
+  "clear_section",
+  "clear",
+  "use_attached_image",
+  "readAloud",
+] as const;
 
 /**
  * Keeps only the fleet and `update_bot` arguments a model sent, coerced to their declared types.

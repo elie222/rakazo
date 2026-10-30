@@ -1,6 +1,6 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { reserveInstructionProposal, validateInstructionProposal } from "@rakazo/db";
 import { prepareAgentConnectionResponse } from "./agent-connections.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import {
@@ -48,6 +48,8 @@ export interface ToolRequest {
   approvedEffectKey: string | undefined;
   replayEffectToolName: string;
   fleetSummary: FleetCardSummary | undefined;
+  /** The owner must approve this call whatever the space's rules say. */
+  ownerApproval: boolean;
 }
 
 type ToolError = { error: string };
@@ -256,6 +258,7 @@ export async function resolveToolRequest(
     approvedEffectKey,
     replayEffectToolName,
     fleetSummary: undefined,
+    ownerApproval: false,
   };
 }
 
@@ -303,7 +306,7 @@ export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
 ): Promise<ToolError | undefined> {
-  const { deps, run, runId, bot } = ctx;
+  const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
@@ -334,51 +337,16 @@ export async function prepareToolRequest(
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
       };
   }
-  if (name === "update_bot" && !argumentGiven(args.bot_id) && argumentGiven(args.instructions)) {
-    if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
-    // Only the owner's own words may become instructions unseen: no outside message, and no
-    // outside tool result in this attempt's context, restored or new. The creation intro has
-    // no tools that read outside content, and answering its question clears the checkpoint.
-    const ownWords =
-      !(await ctx.trust.receivedOutsideMessage()) &&
-      (run.trigger === "created" || (ctx.source.ownerStartedRun && !ctx.state.tainted)) &&
-      !(await threadHasOutsideHistory(deps.prisma, run.threadId, bot.id));
-    if (!ownWords) return { error: "Propose your instructions with propose_instructions_update." };
-    if (redactSecrets(String(args.instructions), ctx.secrets) !== args.instructions)
-      return { error: "Instructions cannot contain credentials." };
-  }
-  if (name === "propose_instructions_update") {
-    try {
-      if (run.trigger === "follow_up" && !ctx.source.ownerStartedRun)
-        return {
-          error: "Instruction updates are blocked for externally triggered runs.",
-        };
-      if (!nextApprovedTool) validateInstructionProposal(args, run.trigger);
-      else
-        validateInstructionProposal(
-          { instructions: args.instructions, reason: args.reason },
-          run.trigger,
-        );
-      if (
-        redactSecrets(String(args.instructions), ctx.secrets) !== args.instructions ||
-        redactSecrets(String(args.reason), ctx.secrets) !== args.reason
-      )
-        return { error: "Instruction proposals cannot contain credentials." };
-      const instructionProposalBot = await reserveInstructionProposal(deps.prisma, bot.id, runId);
-      if (!nextApprovedTool) {
-        args = { ...args, previousInstructions: instructionProposalBot.instructions };
-      }
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : "Invalid instruction proposal.",
-      };
-    }
+  if (name === "update_bot" && !argumentGiven(args.bot_id)) {
+    const refused = await prepareOwnBotUpdate(ctx, request);
+    if (refused) return refused;
+    args = request.args;
   }
   if (isFleetApprovalTool(name) && nextApprovedTool !== name) {
     // Resolve names, members, model and schedule now; an approved replay runs the stored
     // request above and never resolves them again.
     const prepared = await prepareFleetRequest(
-      fleetPrepareDeps(deps, run),
+      await fleetPrepareDeps(deps, run),
       ctx.fleetRun,
       name,
       args,
@@ -406,11 +374,84 @@ export async function prepareToolRequest(
     }
   }
   request.args = args;
-  if (
-    name === "propose_instructions_update" ||
-    name === "respond_agent_connection" ||
-    isFleetApprovalTool(name)
-  )
+  if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
     request.effectRequest = args;
+  return undefined;
+}
+
+/** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
+const OWNER_SETTINGS = ["model", "thinkingLevel", "readAloud"];
+
+/** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
+const OWN_FIELDS = new Set([
+  ...OWNER_SETTINGS,
+  "name",
+  "description",
+  "instructions",
+  "color",
+  "artifact_id",
+  "use_attached_image",
+  "notifyOnFinish",
+  "notify_on_finish",
+  "bot_id",
+]);
+
+/**
+ * `update_bot` on this bot itself. Instructions from the owner's own words are written at once;
+ * another run the owner set up holds them for the owner's approval, and outside runs cannot
+ * change them.
+ */
+async function prepareOwnBotUpdate(
+  ctx: RunContext,
+  request: ToolRequest,
+): Promise<ToolError | undefined> {
+  const { deps, run, bot } = ctx;
+  const { executionId, nextApprovedTool } = request;
+  if (nextApprovedTool === "update_bot") {
+    // The approved replay runs the stored request.
+    request.ownerApproval = typeof request.args.previousInstructions === "string";
+    return undefined;
+  }
+  const { previousInstructions: _previous, reason: _reason, ...args } = request.args;
+  request.args = args;
+  const settingsOnly = Object.keys(args).filter(
+    (key) => !OWN_FIELDS.has(key) && argumentGiven(args[key]),
+  );
+  if (settingsOnly.length)
+    return { error: `Only the owner can change ${settingsOnly.join(", ")}, in Settings.` };
+  if (OWNER_SETTINGS.some((key) => argumentGiven(args[key])) && !ctx.source.ownerStartedRun)
+    return {
+      error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
+    };
+  if (!argumentGiven(args.instructions)) return undefined;
+  if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
+  const instructions = String(args.instructions).trim();
+  if (instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH)
+    return { error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.` };
+  if (redactSecrets(instructions, ctx.secrets) !== instructions)
+    return { error: "Instructions cannot contain credentials." };
+  request.args = { ...args, instructions };
+  // Only the owner's own words may become instructions unseen: no outside message, and no
+  // outside tool result in this attempt's context, restored or new. The creation intro has
+  // no tools that read outside content, and answering its question clears the checkpoint.
+  const ownWords =
+    !(await ctx.trust.receivedOutsideMessage()) &&
+    (run.trigger === "created" || (ctx.source.ownerStartedRun && !ctx.state.tainted)) &&
+    !(await threadHasOutsideHistory(deps.prisma, run.threadId, bot.id));
+  if (ownWords) return undefined;
+  if (run.trigger !== "routine" && !ctx.source.ownerStartedRun)
+    return { error: "Instruction changes are blocked for runs someone else started." };
+  if (Object.keys(args).some((key) => key !== "instructions"))
+    return { error: "Change your instructions in their own update_bot call." };
+  const current = await deps.prisma.bot.findUniqueOrThrow({
+    where: { id: bot.id },
+    select: { instructions: true },
+  });
+  request.args = {
+    instructions,
+    reason: "Set in chat",
+    previousInstructions: current.instructions,
+  };
+  request.ownerApproval = true;
   return undefined;
 }

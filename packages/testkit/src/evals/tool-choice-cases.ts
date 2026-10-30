@@ -63,7 +63,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Write a requested instruction change directly.",
     bot: { instructions: "Answer questions about our product roadmap." },
     prompt: "Update your instructions so you always answer in bullet points.",
-    expect: { bot: { instructions: "~bullet" }, notCalls: ["propose_instructions_update"] },
+    expect: { bot: { instructions: "~bullet" } },
   },
   {
     id: "settings-instructions-replace",
@@ -72,7 +72,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Replace its instructions when asked.",
     bot: { instructions: "Help with travel planning." },
     prompt: "Replace your instructions with: You are a concise SQL tutor.",
-    expect: { bot: { instructions: "~sql tutor" }, notCalls: ["propose_instructions_update"] },
+    expect: { bot: { instructions: "~sql tutor" } },
   },
   {
     id: "settings-instructions-first",

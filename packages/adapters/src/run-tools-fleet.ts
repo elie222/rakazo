@@ -1,6 +1,6 @@
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import {
+  commitBotUpdate,
   createSpaceForMember,
   InstructionConflictError,
   InvalidSpaceNameError,
@@ -22,6 +22,7 @@ import {
   updateFleetGroup,
   updateOwnBotFromTool,
 } from "./fleet-tools.js";
+import { prepareOwnBotSettings, readOwnBotSettings } from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
@@ -75,7 +76,6 @@ async function commitOwnInstructions(
     instructions: string;
     reason: string;
     previousInstructions: string;
-    proposalRunId?: string;
   },
 ): Promise<{ ok: true } | { error: string }> {
   const { deps, run, runId, bot, context } = ctx;
@@ -93,15 +93,9 @@ async function commitOwnInstructions(
         instructions: input.instructions,
         reason: input.reason,
         expectedInstructions: input.previousInstructions,
-        proposalRunId: input.proposalRunId,
       });
     } catch (error) {
       if (!(error instanceof InstructionConflictError)) throw error;
-      if (input.proposalRunId)
-        await tx.bot.updateMany({
-          where: { id: bot.id, pendingInstructionsRunId: input.proposalRunId },
-          data: { pendingInstructionsRunId: null },
-        });
       return { error: error.message };
     }
     if (!undoVersionId) return null;
@@ -128,22 +122,8 @@ async function commitOwnInstructions(
   return { ok: true };
 }
 
-/** Instruction proposals, Spaces and the bots this bot manages. */
+/** This bot's own settings, Spaces and the bots this bot manages. */
 export const fleetTools: ToolHandlers = {
-  async propose_instructions_update(ctx, call) {
-    const { name, args, nextApprovedTool, bypassApproval } = call;
-    if ((nextApprovedTool !== name && !bypassApproval) || !call.claimedEffect) {
-      return call.finish({ error: "Instruction updates require human approval." });
-    }
-    return call.finish(
-      await commitOwnInstructions(ctx, {
-        instructions: String(args.instructions),
-        reason: String(args.reason),
-        previousInstructions: String(args.previousInstructions),
-        proposalRunId: ctx.runId,
-      }),
-    );
-  },
   async create_space(ctx, call) {
     const { deps, run } = ctx;
     const { args } = call;
@@ -246,7 +226,7 @@ export const fleetTools: ToolHandlers = {
   async set_child_bot_model(ctx, call) {
     const { deps, run } = ctx;
     const { args } = call;
-    const modelDeps = { ...fleetPrepareDeps(deps, run), events: deps.events };
+    const modelDeps = { ...(await fleetPrepareDeps(deps, run)), events: deps.events };
     return call.finish(await setChildBotModel(modelDeps, ctx.fleetRun, args));
   },
   async create_child_routine(ctx, call) {
@@ -262,30 +242,80 @@ export const fleetTools: ToolHandlers = {
         await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
       );
     }
-    const { instructions, ...profile } = args;
-    if (!argumentGiven(instructions))
-      return call.finish(await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context));
-    const first = String(instructions).trim();
-    if (first.length > BOT_INSTRUCTIONS_MAX_LENGTH)
-      return call.finish({
-        error: `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.`,
-      });
-    // The profile goes first, so a rejected field leaves the instructions unset for a retry.
-    const profileGiven = Object.values(profile).some(argumentGiven);
-    const updated = profileGiven
+    // A change held for the owner (see prepareOwnBotUpdate) runs only once they approve it.
+    if (typeof args.previousInstructions === "string") {
+      if ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
+        return call.finish({ error: "This instruction change needs the owner's approval." });
+      return call.finish(
+        await commitOwnInstructions(ctx, {
+          instructions: String(args.instructions),
+          reason: String(args.reason),
+          previousInstructions: args.previousInstructions,
+        }),
+      );
+    }
+    const { instructions, model, thinkingLevel, readAloud, ...profile } = args;
+    const modelDeps = await fleetPrepareDeps(deps, run);
+    const live = await deps.prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: {
+        name: true,
+        description: true,
+        instructions: true,
+        color: true,
+        notifyOnFinish: true,
+        modelProvider: true,
+        modelId: true,
+        thinkingLevel: true,
+        autoSpeak: true,
+      },
+    });
+    if (!Object.values(args).some(argumentGiven))
+      return call.finish(await readOwnBotSettings(modelDeps, run, live));
+    const settings = await prepareOwnBotSettings(modelDeps, run, live, {
+      model,
+      thinkingLevel,
+      readAloud,
+    });
+    if ("error" in settings) return call.finish(settings);
+    // The profile goes first, so a rejected field leaves everything else unchanged for a retry.
+    const updated = Object.values(profile).some(argumentGiven)
       ? await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context)
       : undefined;
     if (updated && "error" in updated) return call.finish(updated);
-    const set = await commitOwnInstructions(ctx, {
-      instructions: first,
-      reason: "Set in chat",
-      previousInstructions: "",
-    });
-    if ("error" in set)
-      return call.finish({
-        error: `${updated ? "Your profile was updated, but you" : "You"} already have instructions; change them with propose_instructions_update.`,
+    if (Object.keys(settings.data).length)
+      await commitBotUpdate({
+        prisma: deps.prisma,
+        notify: (threadId, seq) => deps.events.notify(threadId, seq),
+        spaceId: run.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        emitBotUpdated: true,
+        data: settings.data,
       });
-    return call.finish(updated ?? { ok: true });
+    if (argumentGiven(instructions)) {
+      const set = await commitOwnInstructions(ctx, {
+        instructions: String(instructions),
+        reason: "Set in chat",
+        previousInstructions: live.instructions,
+      });
+      if ("error" in set)
+        return call.finish({
+          error: `${updated || Object.keys(settings.data).length ? "Your other changes were saved, but your instructions were not: " : ""}${set.error}`,
+        });
+    }
+    return call.finish({
+      ok: true,
+      ...updated,
+      ...(settings.data.modelId !== undefined
+        ? { model: `${settings.data.modelProvider}/${settings.data.modelId}` }
+        : {}),
+      ...(settings.data.thinkingLevel !== undefined
+        ? { thinkingLevel: settings.data.thinkingLevel ?? "default" }
+        : {}),
+      ...(settings.data.autoSpeak !== undefined ? { readAloud: settings.data.autoSpeak } : {}),
+      ...(argumentGiven(instructions) ? { instructions: "updated" } : {}),
+    });
   },
   archive_bot: archiveBot,
   delete_bot: archiveBot,

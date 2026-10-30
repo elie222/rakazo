@@ -2,7 +2,6 @@ import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { toolResultTaintsRun } from "@rakazo/core";
 import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import type { RunContext } from "./run-context.js";
-import { pauseForApproval } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
@@ -49,31 +48,11 @@ export async function applyTool(
   observer?: AgentToolExecutionObserver,
 ) {
   try {
-    return await dispatchOneTool(ctx, name, args, executionId, observer);
+    return await dispatchTool(ctx, name, args, executionId, observer);
   } finally {
     // Editing its own profile returns only what this run wrote; a child's profile is another bot's.
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
     if (toolResultTaintsRun(name) && !ownProfile) ctx.state.tainted = true;
-  }
-}
-
-async function dispatchOneTool(
-  ctx: RunContext,
-  name: string,
-  args: Record<string, unknown>,
-  executionId: string,
-  observer: AgentToolExecutionObserver | undefined,
-) {
-  if (name !== "propose_instructions_update")
-    return dispatchTool(ctx, name, args, executionId, observer);
-  const { approval } = ctx.state;
-  if (approval.proposalInFlight)
-    return { error: "This bot already has a pending instruction proposal." };
-  approval.proposalInFlight = true;
-  try {
-    return await dispatchTool(ctx, name, args, executionId, observer);
-  } finally {
-    approval.proposalInFlight = false;
   }
 }
 
@@ -90,8 +69,6 @@ async function dispatchTool(
       error: "This stage was handed off. End the turn without more tool calls.",
     };
   }
-  if (name === "propose_instructions_update" && ctx.state.approval.pausePending)
-    return pauseForApproval(ctx);
   if (ctx.tools.disabled.has(name)) {
     return { error: "This tool is disabled for this bot." };
   }

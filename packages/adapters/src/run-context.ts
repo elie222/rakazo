@@ -121,8 +121,6 @@ export interface ApprovalState {
   pausePending: boolean;
   /** The first card of parallel calls that need approval; the others wait for it. */
   request: Promise<ApprovalPausedToolResult> | undefined;
-  /** Runtimes may dispatch parallel calls; a run can open only one proposal at a time. */
-  proposalInFlight: boolean;
 }
 
 /** Which occurrence of an identical effect each tool call claims, across pauses. */

@@ -51,8 +51,9 @@ Under **Advanced**:
 - **Voice**: **Read replies aloud** and the bot's voice.
 - **Permissions**: **Allow cross-space bot communication** and
   [**Manage the bots it creates**](./fleet-management.md).
-- **Instructions**: the bot's standing instructions. Bots can propose changes, which you approve
-  in the chat. **Instruction history** lets you restore an earlier version.
+- **Instructions**: the bot's standing instructions. You can also ask the bot in chat to change
+  them, or its name, model and thinking. **Instruction history** lets you restore an earlier
+  version.
 - **How other bots see it**: a short description other bots read when deciding whom to ask.
 - **Tools**: **Disable a tool** the bot should never use.
 - **Export** downloads the bot's setup as a file. **Clear conversation** empties the chat.
