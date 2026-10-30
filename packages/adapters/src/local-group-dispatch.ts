@@ -10,7 +10,7 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { MessageBlock } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import { cancelRunsInTransaction, type PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const FANOUT_NONCE_PREFIX = "local-group-team:";
@@ -35,7 +35,7 @@ export function requestedGroupParticipants(
       let cursor = text.indexOf(marker);
       while (cursor !== -1) {
         const next = text[cursor + marker.length];
-        if (next === undefined || /[\s,、，。;:!?！？）)]/.test(next)) return true;
+        if (next === undefined || /[\s,.、，。;:!?！？）)\'"]/.test(next)) return true;
         cursor = text.indexOf(marker, cursor + marker.length);
       }
       return false;
@@ -198,16 +198,16 @@ export async function advanceGroupTeam(
           clientNonce: { startsWith: `${FANOUT_NONCE_PREFIX}${root.id}:` },
           status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
         },
-        select: { id: true },
+        select: { id: true, taskId: true, userId: true, spaceId: true },
       });
       if (unfinished.length) {
+        // Cancel associated tasks/attempts, clear credentials and pending approvals,
+        // and stamp the review marker using the very same cancellation timestamp.
+        const cancelledAt = new Date();
+        await cancelRunsInTransaction(tx, unfinished, cancelledAt);
         await tx.run.updateMany({
           where: { id: { in: unfinished.map((run) => run.id) } },
-          data: {
-            status: "cancelled",
-            completedAt: new Date(),
-            groupReviewScheduledAt: new Date(),
-          },
+          data: { groupReviewScheduledAt: cancelledAt },
         });
       }
       await mark(current.id);

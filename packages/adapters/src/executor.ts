@@ -4197,7 +4197,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }),
           recallPromise,
         ]);
-        const semanticMemoryEnabled = Boolean(semanticMemory) && !messagingChannelRun;
+        const semanticMemoryEnabled =
+          Boolean(semanticMemory) && !messagingChannelRun && !goalScopedTeamRun;
         let recalledMemory = "";
         let recallSucceeded = false;
         if (recalled) {

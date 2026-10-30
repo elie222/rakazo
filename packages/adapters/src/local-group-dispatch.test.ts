@@ -73,7 +73,13 @@ function harness(
           : null,
       ),
       findMany: vi.fn(async () =>
-        (opts.statuses ?? []).map((status, i) => ({ id: `peer${i}`, status })),
+        (opts.statuses ?? []).map((status, i) => ({
+          id: `peer${i}`,
+          taskId: `task${i}`,
+          userId: "user",
+          spaceId: "space",
+          status,
+        })),
       ),
       updateMany: vi.fn(async () => ({ count: opts.statuses?.length ?? 0 })),
       create: vi.fn(
@@ -94,8 +100,20 @@ function harness(
       })),
     },
     event: { findFirst: vi.fn(async () => (opts.delegated ? { id: "handoff" } : null)) },
-    message: { findFirst: vi.fn(async () => (opts.superseded ? { id: "later" } : null)) },
-    task: { create: vi.fn(async () => ({ id: "task" })) },
+    message: {
+      findFirst: vi.fn(async () => (opts.superseded ? { id: "later" } : null)),
+      findMany: vi.fn(async () => []),
+    },
+    task: {
+      create: vi.fn(async () => ({ id: "task" })),
+      updateMany: vi.fn(async () => ({ count: opts.statuses?.length ?? 0 })),
+    },
+    attempt: { updateMany: vi.fn(async () => ({ count: 0 })) },
+    externalEffect: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
+    secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     $queryRaw: vi.fn(async () => [{ id: "root" }]),
   };
   const prisma = {
@@ -128,6 +146,18 @@ describe("generic, bounded group collaboration", () => {
     expect(chooseGroupTeammates(roster, "lead").map((bot) => bot.id)).toEqual(["a", "b", "c", "d"]);
     // Mentioning only the coordinator does not accidentally trigger an all-member broadcast.
     expect(chooseGroupTeammates(roster, "lead", ["lead"])).toEqual([]);
+  });
+  it("recognizes a mention followed by an ASCII period instead of broadcasting", () => {
+    expect(
+      requestedGroupParticipants([{ kind: "text", text: "Ask @Critic." }], bots),
+    ).toEqual(["b"]);
+    expect(
+      chooseGroupTeammates(
+        bots,
+        "lead",
+        requestedGroupParticipants([{ kind: "text", text: "Ask @Critic." }], bots),
+      ).map((bot) => bot.id),
+    ).toEqual(["b"]);
   });
   it("does not impose a second limit on a group of ten agents", () => {
     const roster = Array.from({ length: 10 }, (_, i) => ({
@@ -262,9 +292,31 @@ describe("generic, bounded group collaboration", () => {
     });
     expect(h.tx.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        data: expect.objectContaining({
+          status: "cancelled",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        }),
+      }),
+    );
+    const cancellation = h.tx.run.updateMany.mock.calls[0]![0];
+    expect(h.tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { groupReviewScheduledAt: cancellation.data.completedAt },
+      }),
+    );
+    expect(h.tx.attempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
         data: expect.objectContaining({ status: "cancelled" }),
       }),
     );
+    expect(h.tx.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: "cancelled" },
+      }),
+    );
+    expect(h.tx.externalEffect.deleteMany).toHaveBeenCalled();
+    expect(h.tx.secret.deleteMany).toHaveBeenCalled();
   });
   it("does not deadlock after one peer fails", async () => {
     const h = harness({ peer: true, statuses: ["completed", "failed", "completed"] });
