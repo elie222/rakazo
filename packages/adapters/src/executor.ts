@@ -57,7 +57,6 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
-import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
@@ -1136,7 +1135,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         });
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
-        const searchResultUrls = new Set<string>(RAKAZO_DOCS_URLS);
+        const searchResultUrls = new Set<string>();
         let turnCheckpoint: string | undefined;
         let checkpointLoadError: Error | undefined;
         try {
