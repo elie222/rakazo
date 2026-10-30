@@ -141,7 +141,12 @@ export async function prepareOwnBotSettings(
     data.autoSpeak = args.readAloud;
   }
   if (typeof args.voice === "string" && args.voice.trim()) {
-    const voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
+    let voices: VoiceInfo[] | null;
+    try {
+      voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
+    } catch {
+      return { error: "Could not list voices right now; try again." };
+    }
     if (!voices) return { error: "Connect a voice provider first." };
     const voice = resolveVoiceChoice(voices, args.voice);
     if (!voice.ok) return { error: voice.error };

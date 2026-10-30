@@ -190,6 +190,15 @@ describe("resolveVoiceChoice", () => {
 });
 
 describe("prepareOwnBotSettings voice", () => {
+  it("returns an error the bot can act on when listing voices fails", async () => {
+    const failing = async () => {
+      throw new Error("provider timeout");
+    };
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, failing)).toEqual({
+      error: "Could not list voices right now; try again.",
+    });
+  });
+
   it("resets to the default voice without a voice provider", async () => {
     expect(
       await prepareOwnBotSettings(deps(), scope, bot, { voice: "default" }, async () => null),
