@@ -16,6 +16,7 @@ import {
   isNonPublicAddress,
   normalizeHost,
 } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
 import { sensitiveQueryParameter } from "./connector-http.js";
@@ -251,6 +252,7 @@ export function createSafeRemoteFetch(
       });
     }
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new ConnectorRedirectError();
     }
     return response;
@@ -317,6 +319,7 @@ export function createPrivateNetworkFetch(
       });
     }
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new Error("Private fetch redirects are not allowed");
     }
     return response;
