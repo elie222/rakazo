@@ -164,12 +164,11 @@ Playwright workflow did not run for that SHA, there is no gallery; say so in
 the description instead of waiting for one.
 
 Screens you captured yourself (a native simulator, emulator, or a local browser)
-go in the description too. Check each for private data first: real names,
-emails, hostnames, server URLs, tokens. There is no API for GitHub's image
-upload, so push the images to an orphan branch named `pr-assets/<n>`, holding
-only the images, and embed them by commit SHA
-(`https://raw.githubusercontent.com/{owner}/{repo}/<sha>/<file>.png`, sized
-with `<img width>`). Keep that branch after merge so the images keep loading.
+that show the change go in the description too. Check each for private data
+first: real names, emails, hostnames, server URLs, tokens. Reference them as
+local files in the body and upload them with `gh pr edit <n> --body-file <file>
+--attach ./<file>.png` (gh 2.99 or newer), which rewrites each reference to
+the uploaded asset.
 
 Report the PR link, final head, waits, fix rounds, what feedback you handled and
 declined, what you validated, any unresolved threads, and whether you finished
