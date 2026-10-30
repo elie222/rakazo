@@ -3,6 +3,10 @@
 Rakazo encrypts user content before it reaches PostgreSQL or the artifact
 directory, so a copied database dump, backup or disk does not reveal it.
 
+## Runtime profile coverage
+
+The runtime-profile implementation adds profile settings, revision snapshots and run profile snapshots. These JSON fields are not currently covered by the content-encryption registry. Persona text in those records is protected by database access controls, not application-level encryption at rest. Do not place credentials in profiles. Profile revisions and run snapshots can retain earlier persona text until their owning bot and retention records are removed.
+
 ## What is encrypted
 
 | Data | Where |

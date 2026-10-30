@@ -57,6 +57,21 @@ Under **Advanced**:
 - **Tools**: **Disable a tool** the bot should never use.
 - **Export** downloads the bot's setup as a file. **Clear conversation** empties the chat.
 
+## Bot profile files (early access)
+
+The profile CLI supports local schema validation and comparison only. It does not read or update
+profiles on the server. Persona and explicit skill selection are not active yet.
+
+```sh
+pnpm bot:profile validate ./profile.json
+pnpm bot:profile diff ./before.json ./after.json
+```
+
+Both commands read JSON files. `diff` checks both files against the profile schema before it shows
+changes. Review output before sharing it. Fields that look sensitive are redacted, but this is a
+best-effort safeguard, not a complete secret detector. Do not put secrets or private data in profile
+files.
+
 ## Organize the sidebar
 
 Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as Unread**,

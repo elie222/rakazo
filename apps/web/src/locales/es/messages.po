@@ -416,6 +416,10 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr "1 espacio"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "Un poco de todo"
@@ -423,6 +427,10 @@ msgstr "Un poco de todo"
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "La salida de un comando"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
+msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -694,6 +702,7 @@ msgstr "Permite que Rakazo use el reconocimiento de voz y el micrófono en Ajust
 msgid "Allow rule"
 msgstr "Regla de permiso"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "Permitir escritura"
@@ -982,6 +991,10 @@ msgstr "Atrás"
 msgid "Back to sign in"
 msgstr "Volver a iniciar sesión"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "URL base"
@@ -999,6 +1012,10 @@ msgstr "Autenticación básica ({username})"
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "Token Bearer"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "Confirma que la URL es accesible desde esta sesión del navegador y vuel
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "Se conectó {0}."
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "No se pudieron cargar los servidores MCP"
 msgid "Could not load model settings"
 msgstr "No se pudo cargar la configuración de modelos"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr ""
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "No se pudo cargar el historial de ejecuciones"
@@ -2131,6 +2154,10 @@ msgstr "No se pudo guardar el grupo"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "No se pudo guardar el modelo"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "Denegado"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Denegar"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "Alto"
 msgid "High"
 msgstr "Alto"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr "Mantén pulsado para hablar"
@@ -3457,6 +3496,10 @@ msgstr "Cargando configuración de memoria…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Cargando catálogo de modelos…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr "Pendiente"
 msgid "Permissions"
 msgstr "Permisos"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "Personalidad"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr "Motivo"
 msgid "Reasoning effort"
 msgstr "Esfuerzo de razonamiento"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Recordar y escribir"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "Solo recordar"
@@ -4718,6 +4772,7 @@ msgstr "Rechazando…"
 msgid "Release control"
 msgstr "Ceder el control"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "Recargar"
@@ -5059,6 +5114,10 @@ msgstr "Guardar credencial"
 msgid "Save new value"
 msgstr "Guardar nuevo valor"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "Guardar el espacio de trabajo e instalar el software actual."
@@ -5073,6 +5132,11 @@ msgstr "Guardar en la bóveda"
 msgid "Saved"
 msgstr "Guardado"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "Guardado, pero falló la actualización de la lista"
@@ -5084,6 +5148,10 @@ msgstr "Guardado."
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Guardado. Rota para revelar."
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -5815,6 +5883,10 @@ msgstr "No se pudo leer esta copia de seguridad."
 msgid "This bot"
 msgstr "Este bot"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr ""
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Este bot se ejecuta en esta computadora, no en un escritorio Linux. El shell y los archivos usan tu carpeta de inicio."
@@ -6125,6 +6197,10 @@ msgstr "Actualización de {name}: {text}"
 msgid "Update instructions?"
 msgstr "¿Actualizar instrucciones?"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "Progreso de la actualización"
@@ -6189,6 +6265,10 @@ msgstr "Usa {oauthEnvReference} para el token de acceso."
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "Usar un modelo encontrado"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "Qué devolver"
@@ -6414,6 +6498,10 @@ msgstr "Cuándo usar"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "¿Dónde deben ejecutarse los bots?"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

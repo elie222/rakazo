@@ -118,6 +118,8 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "CapabilityInstallSpace",
   "AgentImport",
   "Bot",
+  "BotRuntimeProfile",
+  "BotRuntimeProfileRevision",
   "Run",
   "Task",
   "Routine",

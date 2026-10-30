@@ -136,6 +136,22 @@ become skills that instruct the bot to call `run_subagent`.
 
 ## Compatibility and updates
 
+### Runtime support matrix
+
+The profile work is an early, partial slice. It does not add an extension host or activate profile
+persona or explicit skill selection. Agents still integrate these features.
+
+| Surface | Support |
+| --- | --- |
+| Pi low-level `Agent` | A runtime building block, not a profile or plugin host. |
+| Pi `coding-agent` | The higher-level coding-agent layer; distinct from the low-level `Agent`. Its presence does not mean Rakazo runs arbitrary plugins. |
+| Rakazo plugin code | Trusted operator-only code. Users cannot install and execute arbitrary plugin code through profiles. |
+| Profile CLI | Local validation and diff only. Remote get and update are unavailable without standalone authenticated RPC support. |
+| Persona activation and explicit skill selection | Not supported yet; integration is in progress. |
+| New extension host | Not available. |
+| Unsupported plugin surfaces | No browser extensions, editor hooks, rule engines, automations, local MCP execution, skill scripts or binaries, or arbitrary extension runtime. |
+
+
 Rakazo also reads Agent Plugins 1.0.0 and legacy `.cursor-plugin/plugin.json` or
 `.grok-plugin/plugin.json` manifests. Legacy formats use `mcp.json` or `.mcp.json` and also
 accept `http` as an alias for `streamable-http`. Component locations are fixed; manifest

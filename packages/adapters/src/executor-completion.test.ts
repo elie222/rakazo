@@ -531,6 +531,14 @@ describe("runReplyGuidance", () => {
     expect(runIdentityInstruction(bot, "user")).toContain(bot.instructions);
   });
 
+  it("adds persona separately while keeping operational instructions private", () => {
+    const bot = { name: "Ada", description: "Reads mail.", instructions: "Ask before sending." };
+    const prompt = runIdentityInstruction(bot, "user", "A patient analyst.");
+    expect(prompt).toContain("Ada\nReads mail.\nOnly the name and description above are public.");
+    expect(prompt).toContain("Private persona:\nA patient analyst.");
+    expect(prompt).toContain("Operational instructions (private):\nAsk before sending.");
+  });
+
   it("keeps the public description and private instructions distinct on normal runs", () => {
     const bot = {
       name: "Ada",
@@ -539,7 +547,7 @@ describe("runReplyGuidance", () => {
     };
     const prompt = runIdentityInstruction(bot, "user");
     expect(prompt).toContain("Ada\nReads and sorts mail.");
-    expect(prompt).toContain("Teammates see only the profile above.");
+    expect(prompt).toContain("Teammates see only the profile above. These instructions are private to you:");
     expect(prompt.endsWith("Never send mail without asking.")).toBe(true);
   });
 

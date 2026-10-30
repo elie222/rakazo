@@ -416,6 +416,10 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr ""
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "いろいろ少しずつ"
@@ -423,6 +427,10 @@ msgstr "いろいろ少しずつ"
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "コマンドの出力"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
+msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -694,6 +702,7 @@ msgstr ""
 msgid "Allow rule"
 msgstr "許可ルール"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "書き込みを許可"
@@ -982,6 +991,10 @@ msgstr "戻る"
 msgid "Back to sign in"
 msgstr "ログインに戻る"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "ベースURL"
@@ -999,6 +1012,10 @@ msgstr "Basic認証（{username}）"
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "Bearerトークン"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "このブラウザセッションからURLにアクセスできること
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "{0}を接続しました。"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "MCPサーバーを読み込めませんでした"
 msgid "Could not load model settings"
 msgstr "モデル設定を読み込めませんでした"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr ""
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "実行履歴を読み込めませんでした"
@@ -2131,6 +2154,10 @@ msgstr "グループを保存できませんでした"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "モデルを保存できませんでした"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "拒否済み"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "拒否"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "高"
 msgid "High"
 msgstr "高"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr "長押しで話す"
@@ -3457,6 +3496,10 @@ msgstr "メモリ設定を読み込み中…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "モデルカタログを読み込み中…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr ""
 msgid "Permissions"
 msgstr "権限"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "ペルソナ"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr ""
 msgid "Reasoning effort"
 msgstr "推論レベル"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "参照と書き込み"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "参照のみ"
@@ -4718,6 +4772,7 @@ msgstr ""
 msgid "Release control"
 msgstr "操作を戻す"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "再読み込み"
@@ -5059,6 +5114,10 @@ msgstr "認証情報を保存"
 msgid "Save new value"
 msgstr "新しい値を保存"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "ワークスペースを保存して、最新のソフトウェアをインストールします。"
@@ -5073,6 +5132,11 @@ msgstr "保管庫に保存"
 msgid "Saved"
 msgstr "保存しました"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "保存しましたが、一覧を更新できませんでした"
@@ -5084,6 +5148,10 @@ msgstr "保存しました。"
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "保存しました。表示するにはローテーションしてください。"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -5815,6 +5883,10 @@ msgstr "このバックアップを読み込めませんでした。"
 msgid "This bot"
 msgstr "このボット"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr ""
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "このボットはLinuxデスクトップではなく、このコンピューター上で動作します。シェルとファイルはホームフォルダーを使用します。"
@@ -6125,6 +6197,10 @@ msgstr "{name}からの更新: {text}"
 msgid "Update instructions?"
 msgstr "指示を更新しますか？"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "更新の進行状況"
@@ -6189,6 +6265,10 @@ msgstr "アクセストークンには{oauthEnvReference}を使用してくだ�
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "見つかったモデルを使用"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr "このルーティンは実行のたびに何をしますか？"
 msgid "What this bot is for"
 msgstr "このボットの用途"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "返す内容"
@@ -6414,6 +6498,10 @@ msgstr "使用するタイミング"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "ボットをどこで実行しますか？"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

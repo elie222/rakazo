@@ -1,5 +1,6 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
+import { HindsightSettingsForm } from "./HindsightSettingsForm";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
@@ -40,6 +41,18 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
       const endpoint = config.settings.endpoint ?? "Serenity";
       const mode = config.settings.allowWrites === "true" ? "read/write" : "recall only";
       return `${label || endpoint}, ${mode}`;
+    },
+  },
+  {
+    id: "hindsight",
+    name: "Hindsight",
+    SettingsForm: HindsightSettingsForm,
+    connectedLabel: (config) => {
+      const bank = config.settings.bank || "life";
+      const baseUrl = config.settings.baseUrl || "Hindsight";
+      const mode = config.settings.allowWrites === "false" ? "recall only" : "recall and write";
+      const scope = config.settings.readScope === "bot" ? "this bot" : "whole bank";
+      return `${baseUrl} · ${bank}, ${scope}, ${mode}`;
     },
   },
   {

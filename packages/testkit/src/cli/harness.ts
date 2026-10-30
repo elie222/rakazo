@@ -131,6 +131,7 @@ async function main() {
         "packages/testkit/src/executor-lifecycle.test.ts",
         "packages/testkit/src/connections.test.ts",
         "packages/testkit/src/bot-secrets.test.ts",
+        "packages/testkit/src/bot-runtime-profiles.integration.test.ts",
       ];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;

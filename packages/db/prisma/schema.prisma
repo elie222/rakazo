@@ -657,6 +657,7 @@ model Bot {
   ticketComments    TicketComment[]   @relation("TicketCommentAuthorBot")
 
   externalConversations ExternalConversation[]
+  runtimeProfile    BotRuntimeProfile?
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -666,6 +667,33 @@ model Bot {
   @@map("bots")
   messagingInstallations MessagingInstallation[]
   messagingInstallSessions MessagingInstallSession[]
+}
+
+model BotRuntimeProfile {
+  botId     String                       @id
+  bot       Bot                          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  revision  Int                          @default(1)
+  settings  Json
+  createdAt DateTime                     @default(now())
+  updatedAt DateTime                     @updatedAt
+  revisions BotRuntimeProfileRevision[]
+
+  @@map("bot_runtime_profiles")
+}
+
+model BotRuntimeProfileRevision {
+  id         String           @id @default(cuid())
+  botId      String
+  profile    BotRuntimeProfile @relation(fields: [botId], references: [botId], onDelete: Cascade)
+  revision   Int
+  settings   Json
+  actorUserId String
+  reason     String
+  createdAt  DateTime         @default(now())
+
+  @@unique([botId, revision])
+  @@index([actorUserId, createdAt])
+  @@map("bot_runtime_profile_revisions")
 }
 
 model BotSection {
@@ -855,6 +883,7 @@ model Run {
   leaseFence           Int               @default(0)
   leaseExpiresAt       DateTime?
   checkpoint           String?
+  runtimeProfileSnapshot Json?
   clientNonce          String?
   sourceMessageId      String?
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)

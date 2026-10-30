@@ -423,22 +423,34 @@ export function runIdentityInstruction(
     instructions?: string | null;
   },
   trigger: string,
+  persona = "",
 ): string {
   const description = bot.description?.trim() ?? "";
   const rawInstructions = bot.instructions ?? "";
   const instructions = rawInstructions.trim();
   if (trigger !== "created") {
     const identity = description ? `${bot.name}\n${description}` : bot.name;
+    // Preserve the legacy prompt byte for byte when no profile persona exists.
+    if (!persona.trim()) {
+      if (!instructions || instructions === description) return identity;
+      return [
+        identity,
+        "Teammates see only the profile above. These instructions are private to you:",
+        instructions,
+      ].join("\n");
+    }
     // Older bots saved one text as both fields; do not repeat it.
-    if (!instructions || instructions === description) return identity;
-    return [
-      identity,
-      "Teammates see only the profile above. These instructions are private to you:",
-      instructions,
-    ].join("\n");
+    const privateSections = [
+      `Private persona:\n${persona.trim()}`,
+      ...(!instructions || instructions === description
+        ? []
+        : ["Operational instructions (private):", instructions]),
+    ];
+    return [identity, "Only the name and description above are public.", ...privateSections].join("\n");
   }
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
+    ...(persona.trim() ? [`Persona:\n${persona.trim()}`] : []),
     `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");

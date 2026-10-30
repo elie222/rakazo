@@ -416,12 +416,20 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr ""
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "קצת מהכול"
 
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
+msgstr ""
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
 msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
@@ -694,6 +702,7 @@ msgstr ""
 msgid "Allow rule"
 msgstr "כלל הרשאה"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "לאפשר כתיבה"
@@ -982,6 +991,10 @@ msgstr "חזרה"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -999,6 +1012,10 @@ msgstr "Basic auth ({username})"
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הד�
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "{0} מחובר."
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "לא ניתן לטעון את שרתי ה-MCP"
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr ""
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "לא ניתן לטעון את היסטוריית ההרצות"
@@ -2131,6 +2154,10 @@ msgstr "לא ניתן לשמור את הקבוצה"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "לא ניתן לשמור את המודל"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "נדחה"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "דחייה"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "גבוהה"
 msgid "High"
 msgstr "גבוה"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr ""
@@ -3457,6 +3496,10 @@ msgstr "טוען הגדרות זיכרון…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "טוען קטלוג מודלים…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr ""
 msgid "Permissions"
 msgstr "הרשאות"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "פרסונה"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr ""
 msgid "Reasoning effort"
 msgstr "רמת חשיבה"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "שליפה וכתיבה"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "שליפה בלבד"
@@ -4718,6 +4772,7 @@ msgstr ""
 msgid "Release control"
 msgstr "שחרור השליטה"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "טעינה מחדש"
@@ -5059,6 +5114,10 @@ msgstr "שמירת פרטי הגישה"
 msgid "Save new value"
 msgstr "שמירת הערך החדש"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "שמירת סביבת העבודה והתקנת התוכנה העדכנית."
@@ -5073,6 +5132,11 @@ msgstr "שמירה בכספת"
 msgid "Saved"
 msgstr "נשמר"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "נשמר, אבל רענון הרשימה נכשל"
@@ -5084,6 +5148,10 @@ msgstr "נשמר."
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "נשמר. יש להחליף את המפתח כדי להציג אותו."
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -5815,6 +5883,10 @@ msgstr "לא ניתן לקרוא את הגיבוי הזה."
 msgid "This bot"
 msgstr "הבוט הזה"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr ""
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "הבוט הזה פועל על המחשב הזה, לא על שולחן עבודה של Linux. המעטפת והקבצים משתמשים בתיקיית הבית."
@@ -6125,6 +6197,10 @@ msgstr "עדכון מאת {name}: {text}"
 msgid "Update instructions?"
 msgstr "לעדכן את ההוראות?"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "התקדמות העדכון"
@@ -6189,6 +6265,10 @@ msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "שימוש במודל שנמצא"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr "מה הרוטינה הזו צריכה לעשות בכל הרצה?"
 msgid "What this bot is for"
 msgstr "למה הבוט הזה משמש"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "מה להחזיר"
@@ -6414,6 +6498,10 @@ msgstr "מתי להשתמש"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "איפה הבוטים ירוצו?"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

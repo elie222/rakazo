@@ -416,6 +416,10 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr "1 个工作区"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "什么都做一点"
@@ -423,6 +427,10 @@ msgstr "什么都做一点"
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "命令的输出"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
+msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -694,6 +702,7 @@ msgstr ""
 msgid "Allow rule"
 msgstr "允许规则"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "允许写入"
@@ -982,6 +991,10 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登录"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -999,6 +1012,10 @@ msgstr "基本认证（{username}）"
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "已连接 {0}。"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "无法加载 MCP 服务器"
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr ""
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "无法加载运行历史记录"
@@ -2131,6 +2154,10 @@ msgstr "无法保存群组"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "无法保存模型"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "已拒绝"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "拒绝"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "高"
 msgid "High"
 msgstr "高"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr "按住说话"
@@ -3457,6 +3496,10 @@ msgstr "正在加载记忆设置…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr "待处理"
 msgid "Permissions"
 msgstr "权限"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "人设"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr "原因"
 msgid "Reasoning effort"
 msgstr "推理强度"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "读取并写入"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "只读取"
@@ -4718,6 +4772,7 @@ msgstr "正在拒绝…"
 msgid "Release control"
 msgstr "交还控制权"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "重新加载"
@@ -5059,6 +5114,10 @@ msgstr "保存凭据"
 msgid "Save new value"
 msgstr "保存新值"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "保存工作区并安装最新软件。"
@@ -5073,6 +5132,11 @@ msgstr "保存到保管库"
 msgid "Saved"
 msgstr "已保存"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "已保存，但列表刷新失败"
@@ -5084,6 +5148,10 @@ msgstr "已保存。"
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "已保存。轮换后可查看。"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
+msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -5815,6 +5883,10 @@ msgstr "无法读取此备份。"
 msgid "This bot"
 msgstr "此 Bot"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr ""
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文件使用你的主目录。"
@@ -6125,6 +6197,10 @@ msgstr "来自 {name} 的更新：{text}"
 msgid "Update instructions?"
 msgstr "更新指令？"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "更新进度"
@@ -6189,6 +6265,10 @@ msgstr "访问令牌请使用 {oauthEnvReference}。"
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "使用找到的模型"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr "每次运行时，这个例行任务应做什么？"
 msgid "What this bot is for"
 msgstr "这个 Bot 是做什么的"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "返回什么"
@@ -6414,6 +6498,10 @@ msgstr "何时使用"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Bot 应在哪里运行？"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

@@ -47,6 +47,7 @@ import type { AgentImportServices } from "../agent-import.js";
 import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
 import { changedBotSettings } from "../bot-setting-analytics.js";
+import { botRuntimeProfileRouteEntries } from "./bot-runtime-profile.js";
 import { requireIdentityConfirmation } from "../identity-confirmation.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
@@ -245,6 +246,7 @@ export function botsRoutes(ctx: RouterContext) {
     ctx;
   return {
     bots: {
+      ...botRuntimeProfileRouteEntries(ctx),
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
       listArchived: authed.bots.listArchived.handler(async ({ context }) =>
         repos.listBots(context.actor, { archived: true }),

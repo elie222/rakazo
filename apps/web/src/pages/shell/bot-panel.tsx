@@ -42,6 +42,7 @@ import { ChevronDown, Download, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
+import { BotPersonaSettings } from "../../components/BotPersonaSettings";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
@@ -740,6 +741,7 @@ export function BotSettings({
               </div>
             </SettingsGroup>
             <InstructionSettings key={bot.id} bot={bot} />
+            <BotPersonaSettings key={`${bot.id}-persona`} botId={bot.id} />
             <SettingsGroup label={t`How other bots see it`} plain>
               <Textarea
                 id={`${ids}-description`}

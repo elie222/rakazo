@@ -416,6 +416,10 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr ""
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr ""
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr ""
@@ -423,6 +427,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "कमांड का आउटपुट"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
+msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -694,6 +702,7 @@ msgstr ""
 msgid "Allow rule"
 msgstr "अनुमति नियम"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr ""
@@ -982,6 +991,10 @@ msgstr "वापस"
 msgid "Back to sign in"
 msgstr "साइन इन पर वापस जाएँ"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "बेस URL"
@@ -999,6 +1012,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "बियरर टोकन"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "पुष्टि करें कि यह URL इस ब्राउ
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "{0} कनेक्ट किया गया।"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "MCP सर्वर लोड नहीं हो सके"
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr ""
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "रन का इतिहास लोड नहीं हो सका"
@@ -2131,6 +2154,10 @@ msgstr "समूह सहेजा नहीं जा सका"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "मॉडल सहेजा नहीं जा सका"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "अस्वीकृत"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "अस्वीकार करें"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "उच्च"
 msgid "High"
 msgstr "उच्च"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr "बोलने के लिए दबाए रखें"
@@ -3457,6 +3496,10 @@ msgstr "मेमोरी सेटिंग्स लोड हो रही �
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "मॉडल कैटलॉग लोड हो रहा है…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr ""
 msgid "Permissions"
 msgstr "अनुमतियाँ"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "व्यक्तित्व"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr ""
 msgid "Reasoning effort"
 msgstr "रीज़निंग प्रयास"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr ""
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr ""
@@ -4718,6 +4772,7 @@ msgstr ""
 msgid "Release control"
 msgstr "नियंत्रण छोड़ें"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "फिर से लोड करें"
@@ -5059,6 +5114,10 @@ msgstr ""
 msgid "Save new value"
 msgstr ""
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "कार्यक्षेत्र सहेजें और नवीनतम सॉफ़्टवेयर इंस्टॉल करें।"
@@ -5073,6 +5132,11 @@ msgstr "वॉल्ट में सहेजें"
 msgid "Saved"
 msgstr "सहेजा गया"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "सहेजा गया, लेकिन सूची रिफ़्रेश विफल रही"
@@ -5083,6 +5147,10 @@ msgstr "सहेजा गया।"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
+msgstr ""
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
 msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
@@ -5815,6 +5883,10 @@ msgstr "यह बैकअप पढ़ा नहीं जा सका।"
 msgid "This bot"
 msgstr "यह बॉट"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr ""
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "यह बॉट इसी कंप्यूटर पर चलता है, किसी Linux डेस्कटॉप पर नहीं। शेल और फ़ाइलें आपके होम फ़ोल्डर का उपयोग करती हैं।"
@@ -6125,6 +6197,10 @@ msgstr "{name} से अपडेट: {text}"
 msgid "Update instructions?"
 msgstr "निर्देश अपडेट करें?"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr ""
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
@@ -6189,6 +6265,10 @@ msgstr "एक्सेस टोकन के लिए {oauthEnvReference} क
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "मिला हुआ मॉडल उपयोग करें"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr ""
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "क्या लौटाना है"
@@ -6414,6 +6498,10 @@ msgstr "कब उपयोग करें"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "बॉट कहां चलने चाहिए?"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr ""
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

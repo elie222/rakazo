@@ -249,13 +249,14 @@ export const taskTools: ToolHandlers = {
     return call.finish(cancelled);
   },
   async skill_read(ctx, call) {
-    const { deps, run } = ctx;
+    const { deps, run, bot } = ctx;
     const { args } = call;
     return skillReadFromTool(
       deps.prisma,
       {
         spaceId: run.spaceId,
         userId: run.userId,
+        botId: bot.id,
       },
       {
         name: args.name ? String(args.name) : undefined,
@@ -265,7 +266,7 @@ export const taskTools: ToolHandlers = {
     );
   },
   async skill_create(ctx, call) {
-    const { deps, run } = ctx;
+    const { deps, run, bot } = ctx;
     const { args } = call;
     return call.finish(
       await skillCreateFromTool(
@@ -273,6 +274,7 @@ export const taskTools: ToolHandlers = {
         {
           spaceId: run.spaceId,
           userId: run.userId,
+          botId: bot.id,
         },
         {
           name: args.name ? String(args.name) : undefined,
@@ -284,7 +286,7 @@ export const taskTools: ToolHandlers = {
     );
   },
   async skill_update(ctx, call) {
-    const { deps, run } = ctx;
+    const { deps, run, bot } = ctx;
     const { args } = call;
     return call.finish(
       await skillUpdateFromTool(
@@ -292,6 +294,7 @@ export const taskTools: ToolHandlers = {
         {
           spaceId: run.spaceId,
           userId: run.userId,
+          botId: bot.id,
         },
         {
           name: args.name ? String(args.name) : undefined,
@@ -305,7 +308,7 @@ export const taskTools: ToolHandlers = {
     );
   },
   async skill_delete(ctx, call) {
-    const { deps, run } = ctx;
+    const { deps, run, bot } = ctx;
     const { args } = call;
     return call.finish(
       await skillDeleteFromTool(
@@ -313,6 +316,7 @@ export const taskTools: ToolHandlers = {
         {
           spaceId: run.spaceId,
           userId: run.userId,
+          botId: bot.id,
         },
         {
           name: args.name ? String(args.name) : undefined,

@@ -416,6 +416,10 @@ msgstr "@{0}"
 msgid "1 space"
 msgstr "1 space"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+msgstr "A bank name holds up to 64 letters, digits, dots, dashes or underscores."
+
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr "A bit of everything"
@@ -423,6 +427,10 @@ msgstr "A bit of everything"
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "A command's output"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "A Hindsight address is required."
+msgstr "A Hindsight address is required."
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -694,6 +702,7 @@ msgstr "Allow Rakazo to use Speech Recognition and the microphone in System Sett
 msgid "Allow rule"
 msgstr "Allow rule"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "Allow writing"
@@ -982,6 +991,10 @@ msgstr "Back"
 msgid "Back to sign in"
 msgstr "Back to sign in"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bank"
+msgstr "Bank"
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -999,6 +1012,10 @@ msgstr "Basic auth ({username})"
 #: src/pages/PluginsOverlay.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Bearer token (optional)"
+msgstr "Bearer token (optional)"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
@@ -1557,6 +1574,7 @@ msgstr "Confirm the URL is reachable from this browser session, then test again.
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/components/integrations/plugin-marketplace.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1636,6 +1654,7 @@ msgstr "Connected {0}."
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1980,6 +1999,10 @@ msgstr "Could not load MCP servers"
 msgid "Could not load model settings"
 msgstr "Could not load model settings"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not load persona"
+msgstr "Could not load persona"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "Could not load run history"
@@ -2131,6 +2154,10 @@ msgstr "Could not save group"
 #: src/pages/Onboarding.tsx
 msgid "Could not save model"
 msgstr "Could not save model"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Could not save persona"
+msgstr "Could not save persona"
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -2507,6 +2534,14 @@ msgstr "Denied"
 #: src/components/AskCard.tsx
 msgid "Deny"
 msgstr "Deny"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe the bot's style and point of view. This is separate from operational instructions."
+msgstr "Describe the bot's style and point of view. This is separate from operational instructions."
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Describe this bot's voice and perspective"
+msgstr "Describe this bot's voice and perspective"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3125,6 +3160,10 @@ msgstr "High"
 msgid "High"
 msgstr "High"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Hindsight address"
+msgstr "Hindsight address"
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
 msgstr "Hold to talk"
@@ -3457,6 +3496,10 @@ msgstr "Loading memory settings…"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Loading model catalog…"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Loading persona"
+msgstr "Loading persona"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Loading plugins…"
@@ -4399,9 +4442,18 @@ msgstr "Pending"
 msgid "Permissions"
 msgstr "Permissions"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
 msgstr "Persona"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona saved"
+msgstr "Persona saved"
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
+msgstr "Persona support is partial. Skill selection, extensions, learning, initiative, and routing are not active here."
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4581,10 +4633,12 @@ msgstr "Reason"
 msgid "Reasoning effort"
 msgstr "Reasoning effort"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall and write"
 msgstr "Recall and write"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "Recall only"
@@ -4718,6 +4772,7 @@ msgstr "Rejecting…"
 msgid "Release control"
 msgstr "Release control"
 
+#: src/components/BotPersonaSettings.tsx
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "Reload"
@@ -5059,6 +5114,10 @@ msgstr "Save credential"
 msgid "Save new value"
 msgstr "Save new value"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Save persona"
+msgstr "Save persona"
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Save the workspace and install current software."
 msgstr "Save the workspace and install current software."
@@ -5073,6 +5132,11 @@ msgstr "Save to Vault"
 msgid "Saved"
 msgstr "Saved"
 
+#. placeholder {0}: profile.revision
+#: src/components/BotPersonaSettings.tsx
+msgid "Saved revision {0}"
+msgstr "Saved revision {0}"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Saved, but list refresh failed"
 msgstr "Saved, but list refresh failed"
@@ -5084,6 +5148,10 @@ msgstr "Saved."
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
 msgstr "Saved. Rotate to reveal."
+
+#: src/components/BotPersonaSettings.tsx
+msgid "Saving"
+msgstr "Saving"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -5815,6 +5883,10 @@ msgstr "This backup could not be read."
 msgid "This bot"
 msgstr "This bot"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "This bot only"
+msgstr "This bot only"
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -6125,6 +6197,10 @@ msgstr "Update from {name}: {text}"
 msgid "Update instructions?"
 msgstr "Update instructions?"
 
+#: src/components/BotPersonaSettings.tsx
+msgid "Update persona"
+msgstr "Update persona"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "Update progress"
@@ -6189,6 +6265,10 @@ msgstr "Use {oauthEnvReference} for the access token."
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "Use a found model"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Use an address that starts with http:// or https://."
+msgstr "Use an address that starts with http:// or https://."
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
@@ -6383,6 +6463,10 @@ msgstr "What should this routine do each time it runs?"
 msgid "What this bot is for"
 msgstr "What this bot is for"
 
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "What this Space reads"
+msgstr "What this Space reads"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "What to return"
 msgstr "What to return"
@@ -6414,6 +6498,10 @@ msgstr "When to use"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
+
+#: src/pages/memory-providers/HindsightSettingsForm.tsx
+msgid "Whole bank"
+msgstr "Whole bank"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

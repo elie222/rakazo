@@ -18,9 +18,9 @@ function inScope(row: Record<string, unknown>, where: Scope): boolean {
   return true;
 }
 
-function makePrisma(rows: Array<Record<string, unknown>> = []) {
+function makePrisma(rows: Array<Record<string, unknown>> = [], settings: unknown = null) {
   const store = [...rows];
-  return {
+  const prisma = {
     agentSkill: {
       findMany: vi.fn(async ({ where }: { where?: Scope } = {}) =>
         store.filter((row) => !where || inScope(row, where)).map((row) => ({ ...row })),
@@ -87,8 +87,20 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
         return { count: 1 };
       }),
     },
+    bot: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; spaceId: string; userId: string } }) =>
+          where.id && where.spaceId && where.userId ? { id: where.id } : null,
+      ),
+    },
+    $queryRaw: vi.fn(async () => [{ id: "bot-1" }]),
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
+    botRuntimeProfile: {
+      findUnique: vi.fn(async () => (settings === null ? null : { settings })),
+    },
     _store: store,
   };
+  return prisma;
 }
 
 const owner = { spaceId: "ws-1", userId: "user-1" };
@@ -98,6 +110,150 @@ describe("skill tools", () => {
 
   beforeEach(() => {
     prisma = makePrisma();
+  });
+
+  it("enforces current explicit skill assignments for listing and tool access", async () => {
+    const rows = [
+      {
+        id: "skill-picked",
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        name: "Picked",
+        description: "ok",
+        content: buildSkillMd({ name: "Picked", description: "ok", body: "picked body" }),
+        source: "user",
+      },
+      {
+        id: "skill-other",
+        spaceId: owner.spaceId,
+        userId: owner.userId,
+        name: "Other",
+        description: "ok",
+        content: buildSkillMd({ name: "Other", description: "ok", body: "secret body" }),
+        source: "user",
+      },
+    ];
+    const settings = { schemaVersion: 1, skills: { mode: "explicit", skillIds: ["skill-picked"] } };
+    const prisma = makePrisma(rows, settings);
+    const selectedOwner = { ...owner, botId: "bot-1" };
+
+    expect(
+      (await listAgentSkillRecords(prisma as never, selectedOwner)).map(({ id }) => id),
+    ).toEqual(["skill-picked"]);
+    expect(await skillReadFromTool(prisma as never, selectedOwner, { name: "Other" })).toEqual({
+      error: "Skill not found.",
+    });
+    expect(
+      await skillReadFromTool(prisma as never, selectedOwner, { skillId: "skill-other" }),
+    ).toEqual({ error: "Skill not found." });
+    expect(
+      await skillUpdateFromTool(prisma as never, selectedOwner, {
+        skillId: "skill-other",
+        body: "changed",
+      }),
+    ).toEqual({ error: "Skill not found." });
+    expect(
+      await skillUpdateFromTool(prisma as never, selectedOwner, {
+        name: "Other",
+        body: "changed",
+      }),
+    ).toEqual({ error: "Skill not found." });
+    expect(
+      await skillDeleteFromTool(prisma as never, selectedOwner, { skillId: "skill-other" }),
+    ).toEqual({ error: "Skill not found." });
+    expect(await skillDeleteFromTool(prisma as never, selectedOwner, { name: "Other" })).toEqual({
+      error: "Skill not found.",
+    });
+    expect(prisma._store).toHaveLength(2);
+  });
+
+  it("rechecks revoked assignment on the next call and validates bot scope", async () => {
+    const settings = { schemaVersion: 1, skills: { mode: "explicit", skillIds: ["skill-picked"] } };
+    const row = {
+      id: "skill-picked",
+      spaceId: owner.spaceId,
+      userId: owner.userId,
+      name: "Picked",
+      description: "ok",
+      content: buildSkillMd({ name: "Picked", description: "ok", body: "private" }),
+      source: "user",
+    };
+    const prisma = makePrisma([row], settings);
+    const botOwner = { ...owner, botId: "bot-1" };
+    expect(
+      await skillReadFromTool(prisma as never, botOwner, { skillId: row.id }),
+    ).not.toHaveProperty("error");
+    settings.skills.skillIds.splice(0);
+    expect(await skillReadFromTool(prisma as never, botOwner, { skillId: row.id })).toEqual({
+      error: "Skill not found.",
+    });
+
+    const scoped = makePrisma([row], settings);
+    scoped.$queryRaw.mockResolvedValue([]);
+    scoped.botRuntimeProfile.findUnique.mockClear();
+    expect(await listAgentSkillRecords(scoped as never, botOwner)).toEqual([]);
+    expect(scoped.botRuntimeProfile.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit assignment for builtin IDs and rejects invalid profiles closed", async () => {
+    const builtinId = `builtin:${BUILTIN_AGENT_SKILLS[0]!.name}`;
+    const explicit = makePrisma([], {
+      schemaVersion: 1,
+      skills: { mode: "explicit", skillIds: [builtinId] },
+    });
+    const botOwner = { ...owner, botId: "bot-1" };
+    expect(
+      (await listAgentSkillRecords(explicit as never, botOwner)).some(
+        (skill) => skill.id === builtinId,
+      ),
+    ).toBe(true);
+    expect(
+      await skillReadFromTool(explicit as never, botOwner, { skillId: builtinId }),
+    ).not.toHaveProperty("error");
+
+    const notAssigned = makePrisma([], {
+      schemaVersion: 1,
+      skills: { mode: "explicit", skillIds: [] },
+    });
+    expect(
+      (await listAgentSkillRecords(notAssigned as never, botOwner)).some(
+        (skill) => skill.id === builtinId,
+      ),
+    ).toBe(false);
+    expect(
+      await skillReadFromTool(notAssigned as never, botOwner, {
+        name: BUILTIN_AGENT_SKILLS[0]!.name,
+      }),
+    ).toEqual({ error: "Skill not found." });
+
+    const invalid = makePrisma([], { schemaVersion: 99 });
+    expect(await listAgentSkillRecords(invalid as never, botOwner)).toEqual([]);
+    expect(
+      await skillCreateFromTool(invalid as never, botOwner, { name: "No", description: "No" }),
+    ).toHaveProperty("error");
+  });
+
+  it("keeps legacy library access and does not assign newly created skills", async () => {
+    const botOwner = { ...owner, botId: "bot-1" };
+    const legacy = makePrisma([], { schemaVersion: 1, skills: { mode: "legacy-library" } });
+    expect((await listAgentSkillRecords(legacy as never, botOwner)).length).toBeGreaterThan(0);
+    const explicit = makePrisma([], {
+      schemaVersion: 1,
+      skills: { mode: "explicit", skillIds: [] },
+    });
+    const created = await skillCreateFromTool(explicit as never, botOwner, {
+      name: "New",
+      description: "Private",
+    });
+    expect(created).toMatchObject({ ok: true });
+    expect(
+      (await listAgentSkillRecords(explicit as never, botOwner)).some(
+        (skill) => skill.name === "New",
+      ),
+    ).toBe(false);
+    expect(await skillReadFromTool(explicit as never, botOwner, { name: "New" })).toEqual({
+      error: "Skill not found.",
+    });
   });
 
   it("creates, reads, updates, and deletes user skills", async () => {

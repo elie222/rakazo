@@ -42,6 +42,7 @@ import {
   VaultRevealed,
   VaultRevealInput,
 } from "./bot-secrets.js";
+import { BotRuntimeProfile } from "./bot-runtime-profile.js";
 import {
   AccountItemSchema,
   ActionApprovalRuleSchema,
@@ -164,6 +165,26 @@ import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-ev
 import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 
 const botId = z.object({ botId: Id });
+const BotRuntimeProfileResponse = z.object({
+  botId: Id,
+  revision: z.number().int().nonnegative(),
+  settings: BotRuntimeProfile,
+  activationStatus: z.enum(["draft-only", "partial"]),
+  supportedCapabilities: z.array(z.string()),
+});
+const BotRuntimeProfileValidationInput = z.object({ botId: Id, settings: z.unknown() });
+const BotRuntimeProfileValidationResult = z.object({
+  valid: z.boolean(),
+  activationStatus: z.enum(["draft-only", "partial"]),
+  supportedCapabilities: z.array(z.string()),
+  issues: z.array(z.string()),
+});
+const BotRuntimeProfileUpdateInput = z.object({
+  botId: Id,
+  expectedRevision: z.number().int().nonnegative(),
+  reason: z.string().trim().min(1).max(500),
+  settings: BotRuntimeProfile,
+});
 const groupId = z.object({ groupId: Id });
 
 const threadTarget = z
@@ -423,6 +444,9 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {
+    runtimeProfileGet: oc.input(botId).output(BotRuntimeProfileResponse),
+    runtimeProfileValidate: oc.input(BotRuntimeProfileValidationInput).output(BotRuntimeProfileValidationResult),
+    runtimeProfileUpdate: oc.input(BotRuntimeProfileUpdateInput).output(BotRuntimeProfileResponse),
     list: oc.output(z.array(BotSchema)),
     listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),

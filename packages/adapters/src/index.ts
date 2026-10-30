@@ -74,6 +74,7 @@ export * from "./fleet-tools.js";
 export * from "./github-webhook-emulator.js";
 export * from "./graphql-connectors.js";
 export * from "./group-handoff.js";
+export { HindsightMemoryProvider } from "./hindsight-memory-provider.js";
 export * from "./home.js";
 export * from "./home-object-store.js";
 export { HonchoMemoryProvider } from "./honcho-memory-provider.js";
