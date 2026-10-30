@@ -311,7 +311,7 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.home.commit).toHaveBeenCalledOnce();
-    expect(harness.sandbox.execute).toHaveBeenCalledTimes(2);
+    expect(backgroundProbes(harness)).toHaveLength(2);
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
@@ -323,7 +323,7 @@ describe("sandbox idle", () => {
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.sandbox.inspectBackgroundWork).toHaveBeenCalledTimes(2);
-    expect(harness.sandbox.execute).not.toHaveBeenCalled();
+    expect(backgroundProbes(harness)).toHaveLength(0);
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
@@ -1002,6 +1002,23 @@ describe("maximum active lifetime", () => {
     );
   });
 
+  it("keeps a billed computer past the limit while a coding agent works", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      codingAgent: "codex",
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(backgroundProbes(harness)).toHaveLength(0);
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+    );
+  });
+
   it("keeps a viewed computer alive within the limit", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: recently });
 
@@ -1584,6 +1601,7 @@ function idleHarness(
     backgroundWorkProbeCode?: number;
     backgroundWorkProbeCodes?: number[];
     backgroundWorkProbeFailed?: boolean;
+    codingAgent?: string;
     exportError?: Error;
     probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
@@ -1675,8 +1693,14 @@ function idleHarness(
   const sandbox = {
     billsWhileRunning:
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
-    execute: vi.fn(async function* () {
+    execute: vi.fn(async function* (_computer: unknown, request: { argv: string[] }) {
       if (options.probeError) throw options.probeError;
+      if (request.argv[3] === "rakazo-coding-agent-probe") {
+        if (options.codingAgent)
+          yield { type: "stdout", data: `${options.codingAgent}\n` } as const;
+        yield { type: "exit", code: options.codingAgent ? 0 : 1 } as const;
+        return;
+      }
       const code = backgroundWorkProbeCodes.shift() ?? options.backgroundWorkProbeCode ?? 1;
       if (code === 1 && !options.backgroundWorkProbeFailed) {
         yield { type: "stdout", data: "rakazo-background-idle\n" } as const;
@@ -1726,6 +1750,12 @@ function idleHarness(
       events: events as unknown as ThreadEvents,
     },
   };
+}
+
+function backgroundProbes(harness: ReturnType<typeof idleHarness>) {
+  return harness.sandbox.execute.mock.calls.filter(
+    ([, request]) => request.argv[3] === "rakazo-background-probe",
+  );
 }
 
 function processExit(child: ReturnType<typeof spawn>): Promise<number> {

@@ -23,6 +23,7 @@ import {
   recordComputerRunSeen,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
@@ -32,7 +33,8 @@ import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
  * Default uptime cap for providers that bill while running. Background work and viewers
- * do not extend it; executing runs and active user control leases defer suspension.
+ * do not extend it; executing runs, active user control leases, and a working coding agent
+ * defer suspension.
  * COMPUTER_MAX_ACTIVE_MS configures the limit; 0 disables it.
  */
 export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
@@ -439,9 +441,10 @@ export async function sleepComputerIfIdle(
   if (status && (await withAbort(status, statusSignal).catch(() => false))) {
     await recordComputerRunSeen(deps.prisma, computer);
   }
-  // Past the lifetime limit only a run executing right now holds the computer up; waiting
-  // runs and background work start it again when they next need it. A user in control is
-  // left alone: control leases expire on their own, and that release resumes the waiting run.
+  // Past the lifetime limit only a run executing right now, or a coding agent CLI still writing
+  // its session, holds the computer up. Waiting runs and other background work start it again
+  // when they next need it. A user in control is left alone: control leases expire on their
+  // own, and that release resumes the waiting run.
   // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
   const activeControl = hasActiveComputerControl(computer);
   const limitReached =
@@ -452,10 +455,9 @@ export async function sleepComputerIfIdle(
       ? [...QUEUE_HOLDING_RUN_STATUSES]
       : QUEUE_HOLDING_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
   const runHolds = () => findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
-  const backgroundHolds = () =>
-    limitReached
-      ? Promise.resolve(false)
-      : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
+  const backgroundHolds = async () =>
+    (!limitReached && (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId))) ||
+    (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined;
   const graceEndsAt = () =>
     activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
       ? Promise.resolve(null)
