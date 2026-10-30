@@ -2397,7 +2397,9 @@ describe("computer execution leases", () => {
       },
       run: {
         findMany: vi.fn().mockResolvedValue([{ id: "run-1", taskId: "task-1" }]),
-        updateMany: vi.fn(),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },

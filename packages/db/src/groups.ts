@@ -510,11 +510,9 @@ export function createGroupRepos(prisma: PrismaClient) {
               select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
-        const runIds = activeRuns.map((run) => run.id);
-        if (activeRuns.length) {
-          const now = new Date();
-          await cancelRunsInTransaction(tx, activeRuns, now);
-        }
+        const runIds = (await cancelRunsInTransaction(tx, activeRuns, new Date())).map(
+          (run) => run.id,
+        );
         // After cancelling: its row locks keep these runs from acquiring a computer, so every
         // lease they hold is in the snapshot.
         const { targets } = await snapshotRunTeardownTargets(tx, runIds);
@@ -580,10 +578,9 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
           select: { id: true, taskId: true, userId: true, spaceId: true },
         });
-        const runIds = activeRuns.map((run) => run.id);
         const now = new Date();
+        const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
         if (runIds.length) {
-          await cancelRunsInTransaction(tx, activeRuns, now);
           await tx.event.deleteMany({
             where: { ...transientRunEventsWhere(), runId: { in: runIds } },
           });
