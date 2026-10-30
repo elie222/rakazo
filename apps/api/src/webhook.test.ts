@@ -453,9 +453,10 @@ describe("inbound webhook HTTP route", () => {
         body,
       });
     const paid = JSON.stringify({ id: "order-42", status: "paid" });
-    await post(paid);
-    await post(paid);
-    await post(JSON.stringify({ id: "order-42", status: "shipped" }));
+    expect((await post(paid)).status).toBe(200);
+    expect((await post(paid)).status).toBe(200);
+    expect((await post(JSON.stringify({ id: "order-42", status: "shipped" }))).status).toBe(200);
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(3);
     const nonces = deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce);
     expect(nonces[0]).toBeDefined();
     expect(nonces[1]).toBe(nonces[0]);
@@ -466,7 +467,7 @@ describe("inbound webhook HTTP route", () => {
     const deps = createDeps();
     const app = mount(deps);
     for (const status of ["paid", "shipped"]) {
-      await app.request("/api/v1/bots/bot-1/webhook", {
+      const res = await app.request("/api/v1/bots/bot-1/webhook", {
         method: "POST",
         headers: {
           authorization: `Bearer ${SECRET}`,
@@ -475,7 +476,9 @@ describe("inbound webhook HTTP route", () => {
         },
         body: JSON.stringify({ id: "order-42", status }),
       });
+      expect(res.status).toBe(200);
     }
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
     const digest = createHash("sha256").update("msg_delivery-1").digest("base64url");
     for (const call of deps.sendUserMessage.mock.calls) {
       expect(call[0].clientNonce).toBe(`webhook:bot-1:${digest}`);
