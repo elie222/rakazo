@@ -34,7 +34,7 @@ import {
 import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
-  isModelAccountRefusal,
+  modelAccountRefusal,
 } from "./routine-backoff.js";
 import type { RunContext } from "./run-context.js";
 import { persistTurnCheckpoint } from "./run-context.js";
@@ -936,13 +936,10 @@ export async function failRun(
     ).catch((returnError) => getLogger().error("bot message failure return", returnError));
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
-  if (
-    run.trigger === "routine" &&
-    run.routineId &&
-    model.ownCredential &&
-    isModelAccountRefusal(error)
-  ) {
-    await backOffRoutineAfterAccountError(deps, run.routineId);
+  const refusal =
+    run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
+  if (run.routineId && refusal) {
+    await backOffRoutineAfterAccountError(deps, run.routineId, new Date(), refusal.resetAt);
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
   if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {

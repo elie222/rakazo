@@ -19,9 +19,10 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { runLeaseFor } from "./run-messages.js";
 
 export async function handoffToGroupBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
     id: string;
     spaceId: string;
@@ -171,6 +172,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       runId: inGroup ? run.id : undefined,
       clientNonce: deliveryKey,
+      lease: inGroup ? runLeaseFor(deps, run.id) : undefined,
     });
     const task = await tx.task.create({
       data: {
@@ -200,6 +202,7 @@ export async function handoffToGroupBot(
       botId: run.botId,
       type: "group.handoff",
       runId: inGroup ? run.id : undefined,
+      lease: inGroup ? runLeaseFor(deps, run.id) : undefined,
       payload: {
         messageId: message.id,
         fromBotId: run.botId,

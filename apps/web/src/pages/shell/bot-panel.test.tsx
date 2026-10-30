@@ -76,6 +76,20 @@ vi.mock("@rakazo/ui-web", () => ({
       {props.children}
     </button>
   ),
+  Tabs: ({
+    value: _value,
+    onValueChange: _onValueChange,
+    ...props
+  }: ComponentProps<"div"> & { value?: string; onValueChange?: (value: string) => void }) => (
+    <div {...props} />
+  ),
+  TabsList: (props: ComponentProps<"div">) => <div role="tablist" {...props} />,
+  TabsTrigger: ({ value: _value, ...props }: ComponentProps<"button"> & { value: string }) => (
+    <button type="button" role="tab" {...props} />
+  ),
+  TabsContent: ({ value: _value, ...props }: ComponentProps<"div"> & { value: string }) => (
+    <div {...props} />
+  ),
 }));
 vi.mock("./avatar-studio-popover", () => ({
   AvatarStudioPopover: ({
@@ -186,14 +200,6 @@ async function render(
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
-async function expandAdvanced() {
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="bot-settings-advanced"] button')!
-      .click(),
-  );
-}
-
 function descriptionField(): HTMLTextAreaElement {
   const textarea =
     container.querySelector<HTMLTextAreaElement>('textarea[id$="-description"]') ??
@@ -203,11 +209,6 @@ function descriptionField(): HTMLTextAreaElement {
 }
 
 async function setDescription(value: string) {
-  if (
-    container.querySelector('[data-testid="bot-settings"]') &&
-    !container.querySelector('[id$="-description"]')
-  )
-    await expandAdvanced();
   const textarea = descriptionField();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -247,7 +248,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the main sections and keeps only rare controls in Advanced", async () => {
+it("shows the profile and the Advanced tab's controls", async () => {
   vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
     { id: "fixture-voice", label: "Fixture voice" },
   ]);
@@ -256,22 +257,15 @@ it("shows the main sections and keeps only rare controls in Advanced", async () 
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect(container.querySelector('[id$="-description"]')).toBeNull();
-  expect(container.querySelector('[id$="-disabled-tools"]')).toBeNull();
+  expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    "Computer",
+    "Routines",
+    "Advanced",
+  ]);
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
   const advanced = container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
-  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "false",
-  );
-  expect(container.querySelector('[id$="-model"]')).toBeNull();
-  expect(container.querySelector('[id$="-thinking"]')).toBeNull();
-  expect(container.querySelector('[id$="-auto-speak"]')).toBeNull();
-  expect(container.querySelector('textarea[id$="-instructions"]')).toBeNull();
-  await act(async () =>
-    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click(),
-  );
   expect(advanced.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
   expect(
     container
@@ -304,12 +298,6 @@ it("shows the main sections and keeps only rare controls in Advanced", async () 
     "readAloud",
     "fleetManagement",
   ]);
-  await act(async () =>
-    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click(),
-  );
-  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "false",
-  );
 });
 
 describe("BotSettings model choices", () => {
@@ -421,7 +409,6 @@ describe("BotSettings bot management saves", () => {
 
   it("restores the toggle when the immediate save fails", async () => {
     await render();
-    await expandAdvanced();
     onSave.mockRejectedValueOnce(new Error("offline"));
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
@@ -433,7 +420,6 @@ describe("BotSettings bot management saves", () => {
 
   it("shows a failed export instead of leaving it unhandled", async () => {
     await render();
-    await expandAdvanced();
     onExport.mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }));
     const exportButton = [...container.querySelectorAll("button")].find(
       (node) => node.textContent === "Export",
@@ -447,7 +433,6 @@ describe("BotSettings bot management saves", () => {
 
   it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
     await render("Billing", { fleetManagement: enabled });
-    await expandAdvanced();
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
     await act(async () => {
@@ -648,11 +633,8 @@ it("cancels an inline name edit", async () => {
   expect(onSave).not.toHaveBeenCalled();
 });
 
-it("opens Advanced for a model deep link and focuses the model control", async () => {
+it("focuses the model control for a model deep link", async () => {
   await render("", {}, false, 1);
-  expect(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
-    "true",
-  );
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 
@@ -758,7 +740,6 @@ describe("BotSettings cached data", () => {
       .mockClear()
       .mockReturnValueOnce(new Promise(() => undefined));
     await render();
-    await expandAdvanced();
     expect(container.querySelector('[id$="-voice"]')?.textContent).toContain("Cached voice");
     expect(rpc.voice.voices).toHaveBeenCalledTimes(1);
   });

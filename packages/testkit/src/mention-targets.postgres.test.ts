@@ -97,11 +97,270 @@ describeWithDatabase("structured @ mention targets", () => {
       clientNonce: nonce,
     });
     expect(second.runId).toBe(first.runId);
-    expect(
-      await prisma.run.count({
-        where: { clientNonce: `routine-test:${nonce}` },
-      }),
-    ).toBe(1);
+    const run = await prisma.run.findUniqueOrThrow({ where: { id: first.runId } });
+    expect(run.clientNonce).toBe(`routine-run:${run.userId}:${nonce}`);
+
+    // The previous release stored the key without the user id; its retry replays that run.
+    const legacyNonce = `routine-mention:${stamp}:legacy`;
+    const task = await prisma.task.create({
+      data: {
+        spaceId: run.spaceId,
+        botId: run.botId,
+        threadId: run.threadId,
+        userId: run.userId,
+        prompt: "Replay inbox",
+        status: "queued",
+      },
+    });
+    const legacy = await prisma.run.create({
+      data: {
+        spaceId: run.spaceId,
+        botId: run.botId,
+        threadId: run.threadId,
+        taskId: task.id,
+        userId: run.userId,
+        status: "queued",
+        trigger: "routine",
+        routineId: routine.id,
+        clientNonce: `routine-test:${legacyNonce}`,
+      },
+    });
+    const retried = await rpc<{ runId: string }>(app, cookie, "routines/testRun", {
+      routineId: routine.id,
+      clientNonce: legacyNonce,
+    });
+    expect(retried.runId).toBe(legacy.id);
+    expect(await prisma.run.count({ where: { routineId: routine.id } })).toBe(2);
+  });
+
+  describe("send with routines", () => {
+    type Receipt = { routineRunIds: string[]; send?: { runId: string; taskId: string } };
+
+    async function owner(name: string) {
+      const cookie = await signup(app, `send-routines-${name}-${stamp}@rakazo.test`, name);
+      const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+        name: "Chief",
+        title: "",
+        description: "",
+        instructions: "",
+        notifyOnFinish: true,
+      });
+      const routine = (routineName: string) =>
+        rpc<{ id: string }>(app, cookie, "routines/create", {
+          botId: bot.id,
+          name: routineName,
+          prompt: `Run ${routineName}`,
+          crons: ["0 9 * * 1"],
+          timezone: "UTC",
+          notify: false,
+          active: false,
+        });
+      return { cookie, bot, digest: await routine("Digest"), review: await routine("Review") };
+    }
+
+    it("saves the message and runs once for a repeated or concurrent nonce", async () => {
+      const { cookie, bot, digest, review } = await owner("Once");
+      const clientNonce = `send-routines-${stamp}`;
+      const input = {
+        botId: bot.id,
+        clientNonce,
+        text: "and the notes",
+        routineIds: [digest.id, review.id],
+      };
+      const concurrent = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          rpc<Receipt>(app, cookie, "threads/sendWithRoutines", input),
+        ),
+      );
+      const retried = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", input);
+
+      const [first] = concurrent;
+      expect(first?.routineRunIds).toHaveLength(2);
+      for (const receipt of [...concurrent, retried]) expect(receipt).toEqual(first);
+      const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+      expect(await prisma.message.count({ where: { threadId: thread.id, clientNonce } })).toBe(1);
+      expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(1);
+      expect(await prisma.run.count({ where: { routineId: review.id } })).toBe(1);
+      expect(await prisma.task.count({ where: { threadId: thread.id } })).toBe(
+        await prisma.run.count({ where: { threadId: thread.id } }),
+      );
+
+      const routinesOnly = {
+        botId: bot.id,
+        clientNonce: `${clientNonce}-only`,
+        routineIds: [digest.id],
+      };
+      const [ran, ...others] = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          rpc<Receipt>(app, cookie, "threads/sendWithRoutines", routinesOnly),
+        ),
+      );
+      expect(ran?.send).toBeUndefined();
+      for (const receipt of others) expect(receipt).toEqual(ran);
+      expect(await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", routinesOnly)).toEqual(
+        ran,
+      );
+      expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(2);
+    });
+
+    it.each([
+      ["routines-only", {}],
+      ["with-text", { text: "and the notes" }],
+    ])("replays a saved submission when a retry adds a routine (%s)", async (name, extra) => {
+      const { cookie, bot, digest, review } = await owner(`Grow-${name}`);
+      // A backslash must not change which submission the nonce names.
+      const input = { botId: bot.id, clientNonce: `send-grow\\${name}-${stamp}`, ...extra };
+      const first = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
+        ...input,
+        routineIds: [digest.id],
+      });
+      const retried = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
+        ...input,
+        routineIds: [digest.id, review.id],
+      });
+
+      expect(retried).toEqual(first);
+      expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(1);
+      expect(await prisma.run.count({ where: { routineId: review.id } })).toBe(0);
+    });
+
+    it.each([
+      ["routines-only", undefined],
+      ["with-text", "and the notes"],
+    ])(
+      "lets one of two concurrent sends win while the other waits mid-transaction (%s)",
+      async (name, text) => {
+        const { cookie, bot, digest } = await owner(`Race-${name}`);
+        const createBot = (botName: string) =>
+          rpc<{ id: string }>(app, cookie, "bots/create", {
+            name: botName,
+            title: "",
+            description: "",
+            instructions: "",
+            notifyOnFinish: true,
+          });
+        const slow = await createBot("Slow");
+        const other = await createBot("Other");
+        const late = await rpc<{ id: string }>(app, cookie, "routines/create", {
+          botId: slow.id,
+          name: "Late",
+          prompt: "Run late",
+          crons: ["0 9 * * 1"],
+          timezone: "UTC",
+          notify: false,
+          active: false,
+        });
+        const slowThread = await prisma.thread.findUniqueOrThrow({ where: { botId: slow.id } });
+        const clientNonce = `send-race-${name}-${stamp}`;
+        // Holding the slow bot's thread stops B on its first run insert, after its saved-run lookup.
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let locked!: () => void;
+        const holding = new Promise<void>((resolve) => {
+          locked = resolve;
+        });
+        const holder = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`SELECT id FROM threads WHERE id = ${slowThread.id} FOR UPDATE`;
+            locked();
+            await released;
+          },
+          { timeout: 20_000 },
+        );
+        await holding;
+        const second = raw(app, cookie, "threads/sendWithRoutines", {
+          botId: other.id,
+          clientNonce,
+          text,
+          routineIds: [late.id, digest.id],
+        });
+        for (let tries = 0; ; tries += 1) {
+          const [waiting] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT count(*) AS count FROM pg_locks WHERE NOT granted`;
+          if (Number(waiting?.count) > 0) break;
+          if (tries > 100) throw new Error("the second send never waited");
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        const first = await rpc<Receipt>(app, cookie, "threads/sendWithRoutines", {
+          botId: bot.id,
+          clientNonce,
+          text,
+          routineIds: [digest.id],
+        });
+        release();
+        await holder;
+        const response = await second;
+
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { json: Receipt }).json.routineRunIds).toEqual(
+          first.routineRunIds,
+        );
+        expect(await prisma.run.count({ where: { routineId: digest.id } })).toBe(1);
+        expect(await prisma.run.count({ where: { routineId: late.id } })).toBe(0);
+        expect(await prisma.message.count({ where: { clientNonce } })).toBe(text ? 1 : 0);
+      },
+    );
+
+    it("rolls back the message and every run when the last step fails", async () => {
+      const { cookie, bot, digest, review } = await owner("Rollback");
+      const clientNonce = `send-rollback-${stamp}`;
+      const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
+      // An event already holds the next sequence number, so appending the message's event, the
+      // send's last write, fails after the message and the runs were inserted.
+      await prisma.event.create({
+        data: {
+          spaceId: thread.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          seq: thread.nextEventSeq,
+          type: "thread.meta",
+          payload: {},
+        },
+      });
+      const tasksBefore = await prisma.task.count({ where: { threadId: thread.id } });
+
+      const response = await raw(app, cookie, "threads/sendWithRoutines", {
+        botId: bot.id,
+        clientNonce,
+        text: "and the notes",
+        routineIds: [digest.id, review.id],
+      });
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await prisma.message.count({ where: { threadId: thread.id, clientNonce } })).toBe(0);
+      expect(await prisma.run.count({ where: { routineId: { in: [digest.id, review.id] } } })).toBe(
+        0,
+      );
+      expect(await prisma.task.count({ where: { threadId: thread.id } })).toBe(tasksBefore);
+      expect(await prisma.thread.findUniqueOrThrow({ where: { id: thread.id } })).toMatchObject({
+        nextEventSeq: thread.nextEventSeq,
+        nextMessageSeq: thread.nextMessageSeq,
+      });
+    });
+
+    it("rejects the whole send when one routine is not the caller's", async () => {
+      const victim = await owner("Victim");
+      const caller = await owner("Caller");
+      const clientNonce = `send-foreign-${stamp}`;
+
+      const response = await raw(app, caller.cookie, "threads/sendWithRoutines", {
+        botId: caller.bot.id,
+        clientNonce,
+        text: "and the notes",
+        routineIds: [caller.digest.id, victim.digest.id],
+      });
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: caller.bot.id } });
+      expect(await prisma.message.count({ where: { threadId: thread.id, clientNonce } })).toBe(0);
+      expect(
+        await prisma.run.count({
+          where: { routineId: { in: [caller.digest.id, victim.digest.id] } },
+        }),
+      ).toBe(0);
+    });
   });
 
   it("includes connector intent on a 1:1 send prompt", async () => {

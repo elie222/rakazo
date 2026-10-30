@@ -12,6 +12,7 @@ import {
 } from "@rakazo/logging/monitoring";
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
+import { desktopBridge } from "./desktop";
 import { importChunk, recoveringByReload } from "./preload-recovery";
 
 // Load the SDK only when the connected API enables reporting.
@@ -120,8 +121,11 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
     // The API is unreachable; the app shows its own connection error.
     return undefined;
   }
-  explicitlyDisabled = !config.dsn;
-  if (!config.dsn) return undefined;
+  const desktopReports = await desktopBridge()
+    ?.monitoring?.enabled()
+    .catch(() => false);
+  explicitlyDisabled = !config.dsn || desktopReports === false;
+  if (!config.dsn || explicitlyDisabled) return undefined;
   // Errors queued during startup count the user too, unless a sign-out or a newer answer came first.
   if (signedInState !== false && userId === undefined && isMonitoringUserId(config.userId))
     userId = config.userId;

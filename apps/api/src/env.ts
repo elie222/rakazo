@@ -61,7 +61,8 @@ export interface AppEnv {
   userDevicesEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
   navLinks?: NavLink[];
-  /** Verified accounts that review plugins and grant access (RAKAZO_ADMIN_EMAILS), lowercased. */
+  /** Verified accounts that review plugin submissions, add stdio MCP servers, and grant access
+   * (RAKAZO_ADMIN_EMAILS), lowercased. */
   adminEmails: string[];
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;

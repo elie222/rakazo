@@ -353,23 +353,18 @@ export function useComposerActions({
           cancelFocusPrompt();
         }
       };
-      // Keep the draft cleared once any part of the submission is confirmed accepted.
+      // Keep the draft cleared once the submission is confirmed accepted.
       let accepted = false;
       try {
-        if (plan.shouldRunRoutines) {
-          // Settle every run first so one that was accepted is never repeated.
-          const runs = await Promise.allSettled(
-            plan.routineIds.map((routineId) =>
-              rpc.routines.testRun({
-                routineId,
-                clientNonce: `routine-mention:${clientNonce}:${routineId}`,
-              }),
-            ),
-          );
-          accepted = runs.some((run) => run.status === "fulfilled");
-          for (const run of runs) if (run.status === "rejected") throw run.reason;
-        }
         if (!plan.shouldSend) {
+          if (plan.shouldRunRoutines) {
+            await rpc.threads.sendWithRoutines({
+              ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+              clientNonce,
+              routineIds: plan.routineIds,
+            });
+            accepted = true;
+          }
           dropDelayedSetup();
           clearReply();
           revokePendingAttachmentPreviews(attachments);
@@ -412,43 +407,33 @@ export function useComposerActions({
           uploaded.set(pending.file, artifact.id);
           artifactIds.push(artifact.id);
         }
-        if (groupTarget) {
-          await rpc.threads.send({
-            groupId: groupTarget,
-            clientNonce,
-            imageHandling: imageHandling ?? "confirm",
-            text: trimmed || undefined,
-            mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
-            artifactIds: artifactIds.length ? artifactIds : undefined,
-            replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
-            replyQuote: reroutedToGroup ? undefined : (activeReplyQuote ?? undefined),
-          });
-          accepted = true;
-        } else if (botTarget) {
-          const sent = await rpc.threads.send({
-            botId: botTarget,
-            clientNonce,
-            imageHandling: imageHandling ?? "confirm",
-            text: trimmed || undefined,
-            mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
-            artifactIds: artifactIds.length ? artifactIds : undefined,
-            replyToMessageId: activeReplyTarget?.id,
-            replyQuote: activeReplyQuote ?? undefined,
-          });
-          accepted = true;
-          if (activeBotId.current === botTarget) {
-            updateSnapshot((current) =>
-              applyThreadSendReceipt(
-                current,
-                {
-                  botId: botTarget,
-                  runId: sent.runId,
-                  taskId: sent.taskId,
-                },
-                terminalRunReceipts.current,
-              ),
-            );
-          }
+        const payload = {
+          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+          clientNonce,
+          imageHandling: imageHandling ?? "confirm",
+          text: trimmed || undefined,
+          mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
+          artifactIds: artifactIds.length ? artifactIds : undefined,
+          replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
+          replyQuote: reroutedToGroup ? undefined : (activeReplyQuote ?? undefined),
+        } as const;
+        // The routines run in the same server operation as the message: both or neither.
+        const sent = plan.shouldRunRoutines
+          ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
+          : await rpc.threads.send(payload);
+        accepted = true;
+        if (sent && botTarget && activeBotId.current === botTarget) {
+          updateSnapshot((current) =>
+            applyThreadSendReceipt(
+              current,
+              {
+                botId: botTarget,
+                runId: sent.runId,
+                taskId: sent.taskId,
+              },
+              terminalRunReceipts.current,
+            ),
+          );
         }
         uploadedSendArtifacts.current.delete(clientNonce);
         dropDelayedSetup();

@@ -177,8 +177,8 @@ function setup(
   } as unknown as RouterDeps;
   const actor = options.actor ?? owner;
   const handler = new RPCHandler(createRouter(deps));
-  const call = async (procedure: string, input: unknown) =>
-    handler.handle(
+  const call = async (procedure: string, input: unknown) => {
+    const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/${procedure}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -186,6 +186,9 @@ function setup(
       }),
       { prefix: "/rpc", context: { actor } },
     );
+    if (!response) throw new Error(`no response for ${procedure}`);
+    return { response };
+  };
   const roles = () => roleRows;
   // The main model's fallbacks in the shape `existing` takes.
   const rows = () =>

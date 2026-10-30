@@ -14,7 +14,17 @@ import {
   CommandShortcut,
   Kbd,
 } from "@rakazo/ui-web";
+import { Check } from "lucide-react";
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+
+export type CommandPaletteAction = {
+  id: string;
+  label: string;
+  icon: ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean }>;
+  checked?: boolean;
+  onSelect: () => void;
+};
 
 function isApplePlatform() {
   if (typeof navigator === "undefined") return false;
@@ -35,11 +45,13 @@ export function CommandPalette({
   onOpenChange,
   bots,
   onSelectBot,
+  actions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   bots: Bot[];
   onSelectBot: (botId: string) => void;
+  actions: CommandPaletteAction[];
 }) {
   const [search, setSearch] = useState("");
   const [modKey, setModKey] = useState("⌘");
@@ -57,6 +69,12 @@ export function CommandPalette({
     if (!needle) return bots;
     return bots.filter((bot) => botSearchText(bot).includes(needle));
   }, [bots, search]);
+
+  const filteredActions = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return actions;
+    return actions.filter((action) => action.label.toLowerCase().includes(needle));
+  }, [actions, search]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,8 +97,8 @@ export function CommandPalette({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t`Switch bot`}
-      description={t`Search bots and switch conversations`}
+      title={t`Command menu`}
+      description={t`Search bots, actions, and settings`}
       className="sm:max-w-xl"
     >
       <Command
@@ -96,7 +114,7 @@ export function CommandPalette({
         />
         <CommandList className="max-h-80" data-testid="command-palette-list">
           <CommandEmpty>
-            <Trans>No bots</Trans>
+            <Trans>No results</Trans>
           </CommandEmpty>
           <CommandGroup>
             {filteredBots.map((bot, index) => {
@@ -139,6 +157,38 @@ export function CommandPalette({
               );
             })}
           </CommandGroup>
+          {filteredActions.length > 0 ? (
+            <CommandGroup>
+              {filteredActions.map((action) => (
+                <CommandItem
+                  key={action.id}
+                  value={action.id}
+                  aria-checked={action.checked}
+                  data-testid={`command-palette-action-${action.id}`}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    action.onSelect();
+                  }}
+                  className="items-center gap-3 rounded-xl! px-2.5 py-2.5"
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <action.icon size={16} strokeWidth={1.8} aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {action.label}
+                  </span>
+                  {action.checked ? (
+                    <Check
+                      size={16}
+                      strokeWidth={1.8}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                  ) : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
         </CommandList>
       </Command>
     </CommandDialog>

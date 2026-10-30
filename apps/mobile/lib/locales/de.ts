@@ -1205,6 +1205,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not add skills": "Skills konnten nicht hinzugefügt werden",
   "Could not remove skills": "Skills konnten nicht entfernt werden",
   "Not added: {list}": "Nicht hinzugefügt: {list}",
+  "{name} (same name as a built-in skill)": "{name} (gleicher Name wie ein integrierter Skill)",
   "Remove skills": "Skills entfernen",
   "Search skills": "Skills suchen",
   "Your skills": "Deine Skills",

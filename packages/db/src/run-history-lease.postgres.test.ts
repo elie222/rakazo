@@ -1,7 +1,8 @@
+import { TAKEOVER_COMPUTER_PENDING_STATE, TAKEOVER_COMPUTER_SKIPPED_STATE } from "@rakazo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { appendEvent } from "./events.js";
+import { appendEvent, settleReleasedTakeoverCards } from "./events.js";
 import type { RunLease } from "./messages.js";
 import { createThreadMessage, RunHistoryWriteError } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
@@ -114,5 +115,65 @@ describePostgres("run history writes under a lease (PostgreSQL)", () => {
     expect(
       await system.event.findMany({ where: { runId: run.id }, select: { payload: true } }),
     ).toEqual([{ payload: { name: "shell", executionId: "worker-2" } }]);
+  });
+
+  it("keeps a superseded attempt from settling the current attempt's takeover card", async () => {
+    const task = await system.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "sign in", status: "running" },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId,
+        botId,
+        threadId,
+        taskId: task.id,
+        userId,
+        status: "running",
+        trigger: "user",
+        startedAt: new Date(),
+        leaseOwner: "worker-2",
+        leaseFence: 2,
+      },
+    });
+    const card = await runAsTenant({ spaceId, userId }, () =>
+      createThreadMessage(prisma, {
+        threadId,
+        role: "bot",
+        blocks: [
+          {
+            kind: "computer",
+            state: TAKEOVER_COMPUTER_PENDING_STATE,
+            text: "Sign in to continue.",
+          },
+        ],
+        botId,
+        runId: run.id,
+      }),
+    );
+    const settle = (lease: RunLease) =>
+      runAsTenant({ spaceId, userId }, () =>
+        settleReleasedTakeoverCards(prisma, {
+          spaceId,
+          threadId,
+          botId,
+          runId: run.id,
+          reason: "takeover-skipped",
+          lease,
+        }),
+      );
+    const cardState = async () =>
+      (
+        (await system.message.findUniqueOrThrow({ where: { id: card.id } })).blocks as Array<{
+          state?: string;
+        }>
+      )[0]?.state;
+
+    await expect(settle({ owner: "worker-1", fence: 1 })).rejects.toBeInstanceOf(
+      RunHistoryWriteError,
+    );
+    expect(await cardState()).toBe(TAKEOVER_COMPUTER_PENDING_STATE);
+
+    await settle({ owner: "worker-2", fence: 2 });
+    expect(await cardState()).toBe(TAKEOVER_COMPUTER_SKIPPED_STATE);
   });
 });

@@ -48,6 +48,7 @@ describe("desktop preload bridge", () => {
       "badge",
       "computer",
       "device",
+      "monitoring",
       "nativeWindowFrame",
       "oauth",
       "passkeys",
@@ -72,6 +73,7 @@ describe("desktop preload bridge", () => {
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
     await bridge.oauth.open?.("https://provider.example.com/authorize");
     await bridge.oauth.cancel?.("https://provider.example.com/authorize");
+    await bridge.monitoring?.enabled();
     await bridge.passkeys?.rpIds();
     await bridge.window.close();
     await bridge.window.minimize();
@@ -87,6 +89,7 @@ describe("desktop preload bridge", () => {
       "desktop.device.setAllowed",
       "desktop.oauth.open",
       "desktop.oauth.cancel",
+      "desktop.monitoring.enabled",
       "desktop.passkeys.rpIds",
       "desktop.window.close",
       "desktop.window.minimize",

@@ -21,7 +21,7 @@ import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Lock, Monitor, Moon, Plug, Plus, ScrollText, Sun, Users } from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -51,6 +51,7 @@ import {
   getComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
+import { computersAreUnavailable } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
@@ -60,12 +61,17 @@ import { createSpaceRpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
 import { activeThreadRuns } from "../lib/thread-events";
 import { getToolActivityEnabled, subscribeToolActivity } from "../lib/tool-activity-preference";
+import type { AppearancePreference } from "../lib/ui-appearance";
+import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
 import { useDesktopBadge } from "../lib/use-desktop-badge";
 import { HostComputerPrompt } from "./HostComputerPrompt";
+import { RoutineList } from "./RoutineEditor";
+import { useSettingsNavItems } from "./settings-nav";
 import { ArchivedChats } from "./shell/archived-chats";
 import { ChatContextMenu } from "./shell/chat-context-menu";
 import { ChatHeader } from "./shell/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
+import type { CommandPaletteAction } from "./shell/command-palette";
 import { Composer } from "./shell/composer";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
@@ -245,6 +251,9 @@ function SpaceShell() {
   }, [settingsSpaceGone]);
 
   const inGroup = Boolean(groupId);
+  const chatPanelOpen = inGroup
+    ? panel === "group-settings"
+    : panel === "computer" || panel === "routines" || panel === "settings" || panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -625,6 +634,65 @@ function SpaceShell() {
     openSettings("space", spaceId);
   }
 
+  const settingsNavItems = useSettingsNavItems({
+    messaging: messagingSurfaceEnabled,
+    wallet: Boolean(bootstrapMe?.paymentWalletProvider),
+    computer: computersAreUnavailable(bootstrapMe?.sandboxProvider),
+    billing: bootstrapMe?.billingEnabled === true,
+    updates: Boolean(desktopBridge()?.update),
+  });
+  const paletteActions: CommandPaletteAction[] = [
+    {
+      id: "new-bot",
+      label: t`New bot`,
+      icon: Plus,
+      onSelect: () => dialogs.setCreateBotOpen(true),
+    },
+    {
+      id: "new-group",
+      label: t`New group chat`,
+      icon: Users,
+      onSelect: () => setPanel("create-group"),
+    },
+    {
+      id: "new-space",
+      label: t`New private space`,
+      icon: Lock,
+      onSelect: () => dialogs.setNewSpaceOpen(true),
+    },
+    {
+      id: "integrations",
+      label: t`Connect apps`,
+      icon: Plug,
+      onSelect: () => setOverlay({ kind: "integrations" }),
+    },
+    {
+      id: "skills",
+      label: t`Skills`,
+      icon: ScrollText,
+      onSelect: () => setOverlay({ kind: "skills" }),
+    },
+    ...settingsNavItems.map(({ id, label, icon }) => ({
+      id: `settings-${id}`,
+      label: t`Settings: ${label}`,
+      icon,
+      onSelect: () => openSettings(id),
+    })),
+    ...(
+      [
+        { value: "system", label: t`System`, icon: Monitor },
+        { value: "light", label: t`Light`, icon: Sun },
+        { value: "dark", label: t`Dark`, icon: Moon },
+      ] satisfies { value: AppearancePreference; label: string; icon: typeof Sun }[]
+    ).map(({ value, label, icon }) => ({
+      id: `appearance-${value}`,
+      label: t`Appearance: ${label}`,
+      icon,
+      checked: getUiAppearancePreference() === value,
+      onSelect: () => setUiAppearance(value),
+    })),
+  ];
+
   async function renameSpace(spaceId: string, name: string) {
     await commitSpaceRename({
       rename: async () => {
@@ -805,23 +873,23 @@ function SpaceShell() {
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
             inCall={Boolean(active) && call?.botId === active?.id}
-            computerPanelOpen={panel === "computer"}
+            panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
-            onOpenChatSettings={() => setPanel(inGroup ? "group-settings" : "settings")}
+            onTogglePanel={() => {
+              if (chatPanelOpen) setPanel(null);
+              else if (inGroup) setPanel("group-settings");
+              else if (active) {
+                setPanel("computer");
+                // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
+                void refreshThread(active.id).catch(() => undefined);
+              }
+            }}
             onCall={(bot) => {
               if (call?.botId === bot.id) {
                 setCallMinimized(false);
                 return;
               }
               callBot(bot);
-            }}
-            onToggleComputer={(bot) => {
-              const next = panel === "computer" ? null : "computer";
-              setPanel(next);
-              if (next === "computer") {
-                // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
-                void refreshThread(bot.id).catch(() => undefined);
-              }
             }}
           />
           {!active && !activeGroup && initialBotsLoaded ? (
@@ -1016,17 +1084,21 @@ function SpaceShell() {
               onRecoveryDismissed={computerControls.releaseComputerRecovery}
               onOpenComputerSettings={() => openSettings("computer")}
               onOpen={() => void openComputer()}
-              routines={activeRoutines}
-              runningRoutineId={
-                snapshot?.run && isActive(snapshot.run.status)
-                  ? (snapshot.run.routineId ?? undefined)
-                  : undefined
-              }
-              onCreateRoutine={() => startRoutine()}
-              onEditRoutine={startRoutine}
-              onStopRun={() => void stopRun()}
             />
           ) : null
+        }
+        routinesPanel={
+          <RoutineList
+            routines={activeRoutines}
+            runningRoutineId={
+              snapshot?.run && isActive(snapshot.run.status)
+                ? (snapshot.run.routineId ?? undefined)
+                : undefined
+            }
+            onCreate={() => startRoutine()}
+            onEdit={startRoutine}
+            onStop={() => void stopRun()}
+          />
         }
         routineEditorProps={routineEditorProps}
         openBot={openBot}
@@ -1061,6 +1133,7 @@ function SpaceShell() {
             );
           }}
           deleteRoutineDialogProps={deleteRoutineDialogProps}
+          paletteActions={paletteActions}
         />
         <AppOverlays
           overlay={overlay}

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
+import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
 import { isCommandPaletteHotkey } from "./command-palette-hotkey";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
@@ -109,6 +110,7 @@ export function ShellDialogs({
   createBot,
   clearOpenThread,
   deleteRoutineDialogProps,
+  paletteActions,
 }: {
   dialogs: ShellDialogsState;
   rpc: ReturnType<typeof createSpaceRpc>;
@@ -126,6 +128,7 @@ export function ShellDialogs({
   createBot: (input: CreateBotDialogInput) => Promise<void>;
   clearOpenThread: () => void;
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
+  paletteActions: CommandPaletteAction[];
 }) {
   const { t } = useLingui();
   const {
@@ -307,6 +310,13 @@ export function ShellDialogs({
           closeMobileSidebar();
           navigate(`/app/${id}`);
         }}
+        actions={paletteActions.map((action) => ({
+          ...action,
+          onSelect: () => {
+            closeMobileSidebar();
+            action.onSelect();
+          },
+        }))}
       />
 
       {createBotOpen ? (

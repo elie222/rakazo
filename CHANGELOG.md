@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Arguments of a stdio MCP server, which can carry tokens, are stored encrypted with its other credentials and are no longer returned to clients; leaving them blank when editing keeps them. Arguments saved earlier move into encrypted storage automatically when the API starts.
 - Approval rules judge each action in a Composio batch even when Composio is connected as an MCP server, so "Always allow" on one action no longer allows every other action through that server.
 - Mobile threads now show work started by another client as soon as the run starts, without hiding waiting runs or another group member's error.
 - Hovering a message no longer places its entire row above the floating chat header and other higher-priority controls.
@@ -45,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Only admins listed in `RAKAZO_ADMIN_EMAILS` can add or edit stdio MCP servers, and bots can add remote servers only. Deployments that use stdio servers should set `RAKAZO_ADMIN_EMAILS` before upgrading; existing stdio servers keep running ([integrations](docs/self-host-integrations.md)).
 - Compose runs database migrations in a one-shot `migrate` container, the only one given the database owner login. Code running in the API or worker can no longer read that login from the container and bypass row-level security. Railway restarts its start script without the login after migrating.
 - Mobile routine and connector mention suggestions load only when requested, with bounded routine-request concurrency.
 - MCP result truncation no longer allocates an encoded copy of the full oversized result.

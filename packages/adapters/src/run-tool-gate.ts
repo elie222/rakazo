@@ -34,8 +34,6 @@ import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
 import {
   boundDirectApprovalDetails,
-  claimApprovedEffect,
-  claimIntendedEffect,
   DENIED_ACTION_ERROR,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
@@ -62,6 +60,7 @@ import {
 } from "./run-context.js";
 import {
   CATALOG_APPROVAL_TOOL,
+  claimEffect,
   completeEffect,
   recordEffect,
   uncertainEffectError,
@@ -581,8 +580,7 @@ function createToolCall(
     finish: async (result) =>
       (await call.persistEffectResult(result)) ? result : uncertainEffectResult(name, args),
     claimOrReturn: async (from) => {
-      const claim = from === "approved" ? claimApprovedEffect : claimIntendedEffect;
-      if (await claim(deps.prisma, applied!.effect.id)) {
+      if (await claimEffect(deps, ctx.runId, applied!.effect.id, from)) {
         call.claimedEffect = true;
         return undefined;
       }

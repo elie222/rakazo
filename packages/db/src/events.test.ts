@@ -4326,6 +4326,32 @@ describe("claimSteering", () => {
       }),
     );
   });
+
+  it("retries a claim whose transaction could not get a connection in time", async () => {
+    const tx = {
+      $queryRaw: vi.fn(),
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const $transaction = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Transaction API error: Unable to start a transaction in the given time."),
+      )
+      .mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
+    const prisma = { $transaction } as unknown as PrismaClient;
+
+    await expect(
+      claimSteering(prisma, {
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        seenIds: [],
+      }),
+    ).resolves.toEqual([]);
+    expect($transaction).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("clearThread", () => {

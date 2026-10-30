@@ -34,6 +34,8 @@ const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
 const DIRECTORY_TTL_MS = 10 * 60_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_PIPEDREAM_RESPONSE_BYTES = 2 * 1024 * 1024;
+/** Tool argument naming which approved account runs the call when an app has several. */
+const ACCOUNT_ARGUMENT = "connected_account";
 
 export interface PipedreamConnectorConfig {
   clientId: string;
@@ -71,6 +73,8 @@ type PipedreamApp = {
   name: string;
   img_src?: string;
 };
+
+type ApprovedAccount = { id: string; label: string };
 
 type PipedreamAccount = {
   id: string;
@@ -168,15 +172,18 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const groups = await Promise.all(
       [...new Set(apps)].map(async (app) => {
         try {
+          const accounts = approvedAccounts(context, app);
+          if (!accounts[0]) throw new Error("no approved account can be identified");
           const tools = await listRemoteMcpTools({
             endpoint: MCP_ENDPOINT,
-            headers: this.mcpHeaders(context, app, token),
+            headers: this.mcpHeaders(context, app, accounts[0].id, token),
             signal: context.signal,
             fetch: this.dependencies.fetch,
             resolveHostname: this.dependencies.resolveHostname,
           });
           return tools.map((tool) => ({
             ...tool,
+            inputSchema: withAccountChoice(tool.inputSchema, accounts),
             route: {
               connectorId: "pipedream",
               resourceId: app,
@@ -237,17 +244,30 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
     let token: string | undefined;
     try {
+      const accounts = approvedAccounts(context, app);
+      const { [ACCOUNT_ARGUMENT]: chosen, ...args } = call.args;
+      const account =
+        accounts.length === 1 ? accounts[0] : accounts.find(({ id }) => id === chosen);
+      if (!account) {
+        yield {
+          type: "error",
+          message: accounts.length
+            ? `Set ${ACCOUNT_ARGUMENT} to one of the accounts connected for ${app}.`
+            : `No connected ${app} account can be identified. Reconnect ${app}.`,
+        };
+        return;
+      }
       token = await this.token();
       const result = await callRemoteMcpTool(
         {
           endpoint: MCP_ENDPOINT,
-          headers: this.mcpHeaders(context, app, token),
+          headers: this.mcpHeaders(context, app, account.id, token),
           signal: context.signal,
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
         },
         call.route?.toolName ?? call.tool,
-        call.args,
+        accounts.length === 1 ? call.args : args,
       );
       yield {
         type: "result",
@@ -397,16 +417,16 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   private mcpHeaders(
     context: AdapterContext,
     app: string,
+    accountId: string,
     accessToken: string,
   ): Record<string, string> {
-    const accountId = approvedAccountId(context, app);
     return {
       authorization: `Bearer ${accessToken}`,
       "x-pd-project-id": this.config.projectId,
       "x-pd-environment": this.config.environment,
       "x-pd-external-user-id": this.externalUserId(context),
       "x-pd-app-slug": app,
-      ...(accountId ? { "x-pd-account-id": accountId } : {}),
+      "x-pd-account-id": accountId,
     };
   }
 
@@ -533,21 +553,43 @@ export class PipedreamConnector implements ManagedConnectorProvider {
 }
 
 /**
- * The one account the workspace approved for `app`, so Pipedream cannot act as
- * a different account of the same user. Rows still holding only the app slug
- * cannot name theirs, and several approved accounts share one tool route, so
- * those cases stay unpinned.
+ * The accounts this workspace approved for `app`, so Pipedream never picks one
+ * itself. A row holding only the app slug cannot name its account and is skipped:
+ * the run context omits revoked and pending rows, so it cannot tell which remote
+ * account such a row stands for.
  */
-function approvedAccountId(context: AdapterContext, app: string): string | undefined {
-  const refs = new Set(
-    context.connectedConnections
-      ?.filter(
-        (connection) => connection.connectorId === "pipedream" && connection.externalId === app,
-      )
-      .map((connection) => connection.providerRef?.trim() || app),
-  );
-  const [ref] = refs;
-  return refs.size === 1 && ref !== app ? ref : undefined;
+function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount[] {
+  const approved = new Map<string, string>();
+  for (const connection of context.connectedConnections ?? []) {
+    if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
+    const ref = connection.providerRef?.trim();
+    if (ref && ref !== app && !approved.has(ref)) approved.set(ref, connection.displayName);
+  }
+  return [...approved].map(([id, label]) => ({ id, label }));
+}
+
+/** With several approved accounts the model must name one; with one there is nothing to choose. */
+function withAccountChoice(
+  schema: Record<string, unknown>,
+  accounts: ApprovedAccount[],
+): Record<string, unknown> {
+  if (accounts.length < 2) return schema;
+  const properties = (schema.properties ?? {}) as Record<string, unknown>;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      [ACCOUNT_ARGUMENT]: {
+        type: "string",
+        enum: accounts.map(({ id }) => id),
+        description: `Connected account to use: ${accounts
+          .map(({ id, label }) => `${id} = ${JSON.stringify(label)}`)
+          .join(", ")}`,
+      },
+    },
+    required: [...required, ACCOUNT_ARGUMENT],
+  };
 }
 
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {

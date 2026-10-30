@@ -72,6 +72,10 @@ export interface RakazoDesktop {
     /** Turning it on asks with a native prompt the page cannot answer. */
     setAllowed: (allowed: boolean) => Promise<RakazoDesktopDevice | null>;
   };
+  /** False for local builds, whose errors must not reach production reporting. Absent on older releases. */
+  monitoring?: {
+    enabled: () => Promise<boolean>;
+  };
   /** Optional for compatibility with older desktop releases. */
   passkeys?: {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */

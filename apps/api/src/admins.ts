@@ -3,6 +3,7 @@ import type { RouterDeps } from "./router.js";
 
 type AdminDeps = Pick<RouterDeps, "prisma" | "env">;
 
+/** Accounts listed in RAKAZO_ADMIN_EMAILS, once their email is verified. */
 export async function isAdmin(deps: AdminDeps, userId: string): Promise<boolean> {
   const admins = deps.env.adminEmails ?? [];
   if (admins.length === 0) return false;

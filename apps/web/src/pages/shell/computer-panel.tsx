@@ -1,11 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Bot, ComputerStatus, Routine } from "@rakazo/contracts";
+import type { Bot, ComputerStatus } from "@rakazo/contracts";
 import { Maximize2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
 import { screenIframeSandbox } from "../../lib/computer-screen";
-import { RoutineListHeader, RoutineListRow } from "../RoutineEditor";
 import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
@@ -26,11 +25,6 @@ type ComputerPanelProps = {
   onRecoveryDismissed: () => void;
   onOpenComputerSettings?: () => void;
   onOpen: () => void;
-  routines: Routine[];
-  runningRoutineId?: string;
-  onCreateRoutine: () => void;
-  onEditRoutine: (routine: Routine) => void;
-  onStopRun: () => void;
 };
 
 export function ComputerPanel({
@@ -50,11 +44,6 @@ export function ComputerPanel({
   onRecoveryDismissed,
   onOpenComputerSettings,
   onOpen,
-  routines,
-  runningRoutineId,
-  onCreateRoutine,
-  onEditRoutine,
-  onStopRun,
 }: ComputerPanelProps) {
   const canOpen = !computerScreenError && !showingRecoveryHint;
   // The Open pill replaces the status text on hover; fade it so they never overlap.
@@ -127,20 +116,6 @@ export function ComputerPanel({
           </button>
         ) : null}
       </div>
-      <p className="mt-2 truncate text-[13.5px] text-muted-foreground" dir="auto">
-        {t`${bot.name}'s screen`}
-      </p>
-
-      <RoutineListHeader onCreate={onCreateRoutine} />
-      {routines.map((routine) => (
-        <RoutineListRow
-          key={routine.id}
-          routine={routine}
-          running={runningRoutineId === routine.id}
-          onOpen={() => onEditRoutine(routine)}
-          onStop={onStopRun}
-        />
-      ))}
     </div>
   );
 }

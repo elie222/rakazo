@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type { Routine, RoutineHistory } from "@rakazo/contracts";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openBotPanelTab,
+  rpc,
+  signup,
+} from "./helpers";
 
 test(
   "Korean webhook routine keeps technical field labels in English",
@@ -41,7 +48,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await completeOnboarding(page);
   const botId = activeBotId(page);
 
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Routines");
   await expect(page.getByRole("button", { name: "Test run" })).toHaveCount(0);
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Daily verification");
@@ -90,7 +97,7 @@ test("routine test-run completes and survives reload", async ({ page }, testInfo
   await page.reload();
   await expect(reply).toBeVisible();
   await expect(reply).toContainText(/routine-run-now-ok/i);
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Routines");
   await expect(page.getByRole("button", { name: /Daily verification/ })).toContainText(
     "Weekdays at 9:00 AM",
   );
@@ -155,7 +162,7 @@ test("a routine run that failed to start shows the error in Details", async ({
   // Details then opens without the slide transition, so the capture shows the whole error.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: /Nightly check/ }).click();
   const history = page.getByTestId("routine-run-history");
   await history.getByText("Details", { exact: true }).click();

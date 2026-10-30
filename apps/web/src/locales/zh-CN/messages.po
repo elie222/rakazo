@@ -151,11 +151,6 @@ msgstr "{0} TB"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} 被直接 @ 时仍会回复。"
 
-#. placeholder {0}: bot.name
-#: src/pages/shell/computer-panel.tsx
-msgid "{0}'s screen"
-msgstr "{0} 的屏幕"
-
 #: src/lib/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -235,6 +230,10 @@ msgstr "{minutes} 分钟前"
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {# 个 Bot 已改用工作区默认。} other {# 个 Bot 已改用工作区默认。}}"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
+msgstr ""
 
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -637,10 +636,6 @@ msgstr "高级"
 msgid "Advanced..."
 msgstr "高级..."
 
-#: src/pages/shell/chat-header.tsx
-msgid "Agent computer"
-msgstr "Agent 电脑"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "Agent："
@@ -814,6 +809,10 @@ msgstr "API 密钥"
 msgid "Appearance"
 msgstr "外观"
 
+#: src/pages/Shell.tsx
+msgid "Appearance: {label}"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Apply"
 msgstr "应用"
@@ -826,7 +825,7 @@ msgstr "审批边界"
 msgid "Approval model"
 msgstr "审批模型"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Approvals"
 msgstr "审批"
@@ -1002,7 +1001,7 @@ msgstr "基本认证（{username}）"
 msgid "Bearer token"
 msgstr "Bearer token"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Billing"
 msgstr "账单"
 
@@ -1465,6 +1464,10 @@ msgstr "即将推出"
 msgid "Command"
 msgstr "命令"
 
+#: src/pages/shell/command-palette.tsx
+msgid "Command menu"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
@@ -1490,7 +1493,7 @@ msgstr "完成"
 msgid "Completed"
 msgstr "已完成"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Computer"
@@ -1592,6 +1595,7 @@ msgid "Connect API key"
 msgstr "连接 API 密钥"
 
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 msgid "Connect apps"
 msgstr "连接应用"
 
@@ -2395,6 +2399,7 @@ msgid "Customize bot avatar"
 msgstr "自定义机器人头像"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Dark"
 msgstr "深色"
 
@@ -3045,6 +3050,7 @@ msgstr "全屏"
 msgid "Gateway ID"
 msgstr "网关 ID"
 
+#: src/pages/settings-nav.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "通用"
@@ -3064,6 +3070,10 @@ msgstr "正在准备"
 #: src/pages/RoutineEditor.tsx
 msgid "Git event"
 msgstr "Git 事件"
+
+#: src/pages/NotFound.tsx
+msgid "Go home"
+msgstr "返回首页"
 
 #: src/pages/AdminAccessPage.tsx
 msgid "Grant"
@@ -3424,6 +3434,7 @@ msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
 msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "Light"
 msgstr "浅色"
 
@@ -3667,7 +3678,7 @@ msgstr "成员（{0}）"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "记忆"
@@ -3739,7 +3750,7 @@ msgstr "消息…"
 msgid "Messaged {peer}"
 msgstr "已发给 {peer}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Messaging"
 msgstr "消息"
 
@@ -3816,7 +3827,7 @@ msgid "Model options"
 msgstr "模型选项"
 
 #: src/pages/ModelSettingsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "模型"
@@ -3969,6 +3980,7 @@ msgstr "新建 Bot"
 msgid "New group"
 msgstr "新建群组"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New group chat"
 msgstr "新建群聊"
@@ -3986,6 +3998,7 @@ msgstr "新的待办"
 msgid "New password"
 msgstr "新密码"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "New private space"
 msgstr "新建私人空间"
@@ -4030,10 +4043,6 @@ msgstr "无认证"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "无认证"
-
-#: src/pages/shell/command-palette.tsx
-msgid "No bots"
-msgstr "没有 Bot"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4092,6 +4101,7 @@ msgstr "没有找到远程 MCP 服务器"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/command-palette.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "无结果"
@@ -4132,7 +4142,7 @@ msgstr "普通"
 msgid "Not a valid skill"
 msgstr "不是有效的技能"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr "未添加：{0}"
@@ -4353,6 +4363,10 @@ msgstr "所有者"
 #: src/components/markdown-copy.tsx
 msgid "Page {page} of {count}"
 msgstr "第 {page} 页，共 {count} 页"
+
+#: src/pages/NotFound.tsx
+msgid "Page not found"
+msgstr "找不到页面"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -5024,8 +5038,8 @@ msgstr "轮换密钥"
 msgid "Routine"
 msgstr "例行任务"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "例行任务"
 
@@ -5191,8 +5205,8 @@ msgid "Search artifacts…"
 msgstr "搜索产物…"
 
 #: src/pages/shell/command-palette.tsx
-msgid "Search bots and switch conversations"
-msgstr "搜索 Bot 并切换对话"
+msgid "Search bots, actions, and settings"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Search by domain"
@@ -5318,6 +5332,10 @@ msgstr "服务器 URL"
 msgid "Settings"
 msgstr "设置"
 
+#: src/pages/Shell.tsx
+msgid "Settings: {label}"
+msgstr ""
+
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "设置：通用"
@@ -5364,10 +5382,6 @@ msgstr "显示全部"
 msgid "Show bots"
 msgstr "显示 Bot"
 
-#: src/pages/shell/side-panel.tsx
-msgid "Show computer"
-msgstr "显示电脑"
-
 #: src/pages/Artifacts.tsx
 msgid "Show list"
 msgstr "显示列表"
@@ -5385,10 +5399,6 @@ msgstr "显示密码"
 #: src/pages/GroupPanel.tsx
 msgid "Show selected"
 msgstr "显示已选"
-
-#: src/pages/shell/side-panel.tsx
-msgid "Show settings"
-msgstr "显示设置"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Show tool activity"
@@ -5468,6 +5478,7 @@ msgstr "技能 {position}"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/SidebarFooter.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "技能"
@@ -5701,15 +5712,12 @@ msgstr "支持思考"
 msgid "Switch"
 msgstr "切换"
 
-#: src/pages/shell/command-palette.tsx
-msgid "Switch bot"
-msgstr "切换 Bot"
-
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "正在切换…"
 
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/Shell.tsx
 msgid "System"
 msgstr "系统"
 
@@ -6180,7 +6188,7 @@ msgstr "更新进度"
 msgid "Updated {updated}"
 msgstr "更新于 {updated}"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Updates"
 msgstr "更新"
 
@@ -6214,7 +6222,7 @@ msgid "Urgent"
 msgstr "紧急"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
 
@@ -6312,7 +6320,7 @@ msgstr "正在使用你的 API 密钥。免费方案将于 {freeUntil} 结束。
 msgid "Value"
 msgstr "值"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Vault"
 msgstr "保管库"
@@ -6337,7 +6345,7 @@ msgstr "查看全部"
 msgid "View source"
 msgstr "查看源代码"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -6360,7 +6368,7 @@ msgstr "排队等候…"
 msgid "Waiting…"
 msgstr "等待中…"
 
-#: src/pages/SettingsOverlay.tsx
+#: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr "钱包"
 

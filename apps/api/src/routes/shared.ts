@@ -58,10 +58,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer:
       Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
-    mcpStdioEnabled: mcpStdioAvailable({
-      stdioEnabled: deps.env.mcpStdioEnabled,
-      allowedCommands: deps.env.mcpStdioAllowedCommands,
-    }),
+    mcpStdioEnabled:
+      admin &&
+      mcpStdioAvailable({
+        stdioEnabled: deps.env.mcpStdioEnabled,
+        allowedCommands: deps.env.mcpStdioAllowedCommands,
+      }),
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),

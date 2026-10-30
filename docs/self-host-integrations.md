@@ -63,8 +63,10 @@ Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP s
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
 the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
 `MCP_STDIO_ALLOWED_COMMANDS`. A stdio server runs inside the API and worker with their access,
-so enable stdio only where everyone who can add a server is trusted, never on a shared
-multi-user deployment. When adding the server, enter the OAuth client, its
+so only admins (verified accounts listed in `RAKAZO_ADMIN_EMAILS`) can add or edit one, in
+**Settings** or through an agent import; with no admins listed, nobody can. Bots never add stdio servers. Everyone can still add remote servers, and a
+stdio server an admin added keeps working for everyone it is available to. When adding the
+server, enter the OAuth client, its
 **Authorization server** (the issuer, for example `https://accounts.google.com`) and the
 **Scopes**, then click **Connect OAuth** as for a remote server. Some providers issue a refresh
 token only when asked through extra parameters: for Google, set **Authorization parameters** to
@@ -91,7 +93,11 @@ timeout, `MCP_STDIO_INSTALL_TIMEOUT_MS` (default 180000), separate from the hand
 `MCP_STDIO_STARTUP_TIMEOUT_MS` (default 30000). Pin a version so every start runs the same
 code; npm settings such as `NPM_CONFIG_REGISTRY` can be set in the server's environment
 variables. Any other `npx` form (local paths, git and tarball URLs, unknown `npx` flags) is
-refused. Each server runs as one process per user in each of the API and worker,
+refused. `npx` is the only supported package launcher: other package managers and runners
+(`npm`, `pnpm`, `yarn`, `bun`, `bunx`, `deno`, `uv`, `uvx`, `pipx` and the like) are refused
+even when allowlisted. To run a server from another ecosystem, install it on the host and
+allowlist its binary. An allowlisted interpreter or shell (`node`, `python`, `sh`) runs any
+code passed in its arguments, so allowlist it only where that is acceptable. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
@@ -102,6 +108,10 @@ A run never waits long on one server. It gives each server `MCP_DISCOVERY_TIMEOU
 background and its tools appear on a later turn. After a failure, runs skip that server for 30
 seconds, doubling up to 5 minutes while it keeps failing. A successful **Test connection** or
 discovery, or a change to the server's settings, ends the wait at once.
+
+If a server shows its tools in **Settings** but a bot never uses them, run the
+[diagnostics report](./self-host.md#reporting-a-problem). Its **Assignment** column names any
+space or owner mismatch that keeps the server's tools from that bot.
 
 ## Apps and connectors
 

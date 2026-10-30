@@ -1,32 +1,23 @@
 import type { McpTransport, MessageBlock } from "@rakazo/contracts";
-import {
-  McpRemoteEndpointSchema,
-  McpTransportSchema,
-  mcpOAuthEnvReferences,
-} from "@rakazo/contracts";
+import { McpRemoteEndpointSchema, McpTransportSchema } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
-import type { McpServer, Prisma } from "@rakazo/db";
+import type { McpServer } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor-deps.js";
-import { mcpStdioRefusal } from "./mcp-transport.js";
 import { toStringRecord } from "./memory-provider-factory.js";
 import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "./remote-mcp.js";
 import { isUniqueViolation, persistMessageInTransaction, runLeaseFor } from "./run-messages.js";
 
 export { deriveMcpSlug } from "@rakazo/core";
 
-const MAX_ENV_ENTRIES = 32;
-const MAX_ARGS = 64;
+const MAX_HEADERS = 32;
 
 export type ParsedMcpServerArgs = {
   slug: string;
   name: string;
   description: string;
-  transport: McpTransport;
-  endpoint?: string;
-  command?: string;
-  args: string[];
-  env: Record<string, string>;
+  transport: Exclude<McpTransport, "stdio">;
+  endpoint: string;
   headers: Record<string, string>;
   secret?: string;
   assignToSelf: boolean;
@@ -40,47 +31,14 @@ export function parseMcpServerToolArgs(
   const name = typeof args.name === "string" ? args.name.trim().slice(0, 120) : "";
   if (!name) return undefined;
   const parsedTransport = McpTransportSchema.safeParse(args.transport);
-  if (!parsedTransport.success) return undefined;
+  if (!parsedTransport.success || parsedTransport.data === "stdio") return undefined;
   const transport = parsedTransport.data;
 
-  let endpoint: string | undefined;
-  if (transport !== "stdio") {
-    endpoint = typeof args.endpoint === "string" ? args.endpoint.trim() : "";
-    if (!McpRemoteEndpointSchema.safeParse(endpoint).success) return undefined;
-  }
+  const endpoint = typeof args.endpoint === "string" ? args.endpoint.trim() : "";
+  if (!McpRemoteEndpointSchema.safeParse(endpoint).success) return undefined;
 
-  const command =
-    transport === "stdio"
-      ? typeof args.command === "string"
-        ? args.command.trim()
-        : ""
-      : undefined;
-  if (transport === "stdio" && !command) return undefined;
-
-  let toolArgs: string[] = [];
-  if (Array.isArray(args.args)) {
-    toolArgs = args.args
-      .filter((item): item is string => typeof item === "string")
-      .slice(0, MAX_ARGS);
-  } else if (typeof args.args === "string") {
-    toolArgs = args.args.split(/\s+/).filter(Boolean).slice(0, MAX_ARGS);
-  }
-
-  const env = toStringRecord(args.env);
   const headers = toStringRecord(args.headers);
-  if (Object.keys(env).length > MAX_ENV_ENTRIES || Object.keys(headers).length > MAX_ENV_ENTRIES) {
-    return undefined;
-  }
-
-  // This tool accepts static credentials only; OAuth templates need a configured client.
-  if (
-    transport === "stdio" &&
-    Object.values(env).some((value) => {
-      const references = mcpOAuthEnvReferences(value);
-      return references.fields.length > 0 || references.unknown.length > 0;
-    })
-  )
-    return undefined;
+  if (Object.keys(headers).length > MAX_HEADERS) return undefined;
 
   return {
     slug: deriveMcpSlug(name),
@@ -88,9 +46,6 @@ export function parseMcpServerToolArgs(
     description: typeof args.description === "string" ? args.description.slice(0, 2000) : "",
     transport,
     endpoint,
-    command,
-    args: toolArgs,
-    env,
     headers,
     secret:
       typeof args.secret === "string" && args.secret ? args.secret.slice(0, 16384) : undefined,
@@ -102,6 +57,8 @@ export function parseMcpServerToolArgs(
  * server has no static credential material. */
 export function buildMcpCredentialBlob(parsed: {
   secret?: string;
+  /** Stdio launch arguments, which may carry tokens. */
+  args?: string[];
   env?: Record<string, string>;
   files?: Record<string, string>;
   headers?: Record<string, string>;
@@ -116,9 +73,11 @@ export function buildMcpCredentialBlob(parsed: {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
   const files = parsed.files ?? {};
+  const args = parsed.args ?? [];
   const client = parsed.oauthClient;
   if (
     !parsed.secret &&
+    args.length === 0 &&
     !client &&
     Object.keys(env).length === 0 &&
     Object.keys(headers).length === 0 &&
@@ -131,6 +90,7 @@ export function buildMcpCredentialBlob(parsed: {
     env,
     headers,
     ...(Object.keys(files).length > 0 ? { files } : {}),
+    ...(args.length > 0 ? { args } : {}),
     ...(client
       ? {
           oauthClient: {
@@ -171,29 +131,28 @@ export async function addMcpServerFromTool(
   args: Record<string, unknown>,
   executionId: string,
 ) {
+  // A local server runs on the deployment's own hosts, so only an admin adds one.
+  if (args.transport === "stdio") {
+    return {
+      error: "Bots can't add local (stdio) MCP servers. Ask an admin to add it in Settings.",
+    };
+  }
   const parsed = parseMcpServerToolArgs(args);
   if (!parsed) {
     return {
       error:
-        "Invalid MCP server details. Required: name, transport (streamable_http|sse|stdio); endpoint for remote transports; command for stdio.",
+        "Invalid MCP server details. Required: name, transport (streamable_http|sse), and an endpoint URL.",
     };
   }
-  const stdioRefusal =
-    parsed.transport === "stdio"
-      ? mcpStdioRefusal(parsed.command ?? "", deps.mcpStdio ?? {})
-      : undefined;
-  if (stdioRefusal) return { error: stdioRefusal };
-  if (parsed.endpoint) {
-    try {
-      await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
-        allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
-      });
-      assertNoMcpEndpointCredential(parsed.endpoint);
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : "Invalid MCP endpoint",
-      };
-    }
+  try {
+    await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
+      allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
+    });
+    assertNoMcpEndpointCredential(parsed.endpoint);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Invalid MCP endpoint",
+    };
   }
   if (!deps.secretStore) {
     return {
@@ -237,10 +196,7 @@ export async function addMcpServerFromTool(
           name: parsed.name,
           description: parsed.description,
           transport: parsed.transport,
-          endpoint: parsed.endpoint ?? null,
-          command: parsed.command ?? null,
-          args: parsed.args as unknown as Prisma.InputJsonValue,
-          env: Object.fromEntries(Object.keys(parsed.env).map((key) => [key, true])),
+          endpoint: parsed.endpoint,
           headers: Object.fromEntries(Object.keys(parsed.headers).map((key) => [key, true])),
           secretId: storedCredential?.id,
           enabled: true,
@@ -253,7 +209,7 @@ export async function addMcpServerFromTool(
           name: server.name,
           serverId: server.id,
           transport: parsed.transport,
-          endpoint: parsed.endpoint ?? null,
+          endpoint: parsed.endpoint,
           needsOAuth: oauthLikely,
           status: "pending",
         },

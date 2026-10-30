@@ -19,6 +19,11 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("nl-BE")).toBe("nl");
     expect(normalizeUiLocale("ja")).toBe("ja");
     expect(normalizeUiLocale("ja-JP")).toBe("ja");
+    expect(normalizeUiLocale("es")).toBe("es");
+    expect(normalizeUiLocale("es-ES")).toBe("es");
+    expect(normalizeUiLocale("es-MX")).toBe("es");
+    expect(normalizeUiLocale("es-419")).toBe("es");
+    expect(normalizeUiLocale("es_CL")).toBe("es");
   });
 
   it.each([

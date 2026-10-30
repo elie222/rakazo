@@ -1197,6 +1197,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not add skills": "Kon skills niet toevoegen",
   "Could not remove skills": "Kon skills niet verwijderen",
   "Not added: {list}": "Niet toegevoegd: {list}",
+  "{name} (same name as a built-in skill)": "{name} (zelfde naam als een ingebouwde skill)",
   "Remove skills": "Skills verwijderen",
   "Search skills": "Skills zoeken",
   "Your skills": "Jouw skills",

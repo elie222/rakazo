@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "electron"]
+  },
+  "include": ["src/app-document-state.test.ts", "src/setup.test.ts"],
+  "exclude": []
+}

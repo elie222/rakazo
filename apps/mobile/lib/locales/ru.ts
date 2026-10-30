@@ -1236,6 +1236,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not add skills": "Не удалось добавить навыки",
   "Could not remove skills": "Не удалось удалить навыки",
   "Not added: {list}": "Не добавлено: {list}",
+  "{name} (same name as a built-in skill)": "{name} (то же имя, что у встроенного навыка)",
   "Remove skills": "Удалить навыки",
   "Search skills": "Поиск навыков",
   "Your skills": "Ваши навыки",
