@@ -17,6 +17,11 @@
   }
 
   report("connecting");
+  // The SDK can stall before connecting without reporting anything.
+  let connected = false;
+  setTimeout(() => {
+    if (!connected) report("failed");
+  }, 60_000);
   const session = window.Wuying.WebSDK.createSession("rakazo-desktop", {
     iframeId: "session",
     openType: "inline",
@@ -30,6 +35,7 @@
   session.addHandle("onConnected", () => {
     // Only the user holding control may type into the desktop; everyone else watches.
     session.enableInput(!viewOnly);
+    connected = true;
     report("connected");
   });
   session.addHandle("onDisConnected", () => report("disconnected"));

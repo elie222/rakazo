@@ -13,7 +13,7 @@ type ComputerPanelProps = {
   computerOpen: boolean;
   embeddedScreenUrl: string | null;
   /** Changes to load the screen again in a new frame. */
-  screenFrameKey?: number;
+  screenFrameKey?: string;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
