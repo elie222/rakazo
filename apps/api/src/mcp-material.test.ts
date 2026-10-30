@@ -463,7 +463,7 @@ describe("buildMcpUpdateMaterial", () => {
     it("stores supplied files with the rest of the material", () => {
       expect(
         buildMcpUpdateMaterial({}, { ...stdio, files: { CREDENTIALS_PATH: template } }),
-      ).toEqual({ action: "store", material: { env: {}, files: { CREDENTIALS_PATH: template } } });
+      ).toEqual({ action: "store", material: { files: { CREDENTIALS_PATH: template } } });
     });
 
     it("replaces the stored files with the supplied set", () => {
@@ -473,7 +473,7 @@ describe("buildMcpUpdateMaterial", () => {
       );
       expect(result).toEqual({
         action: "store",
-        material: { env: {}, files: { CREDENTIALS_PATH: template } },
+        material: { files: { CREDENTIALS_PATH: template } },
       });
     });
 
@@ -494,7 +494,7 @@ describe("buildMcpUpdateMaterial", () => {
           { secret: "s", files: { CREDENTIALS_PATH: template } },
           { ...stdio, files: {} },
         ),
-      ).toEqual({ action: "store", material: { secret: "s", env: {} } });
+      ).toEqual({ action: "store", material: { secret: "s" } });
     });
 
     it("drops the files when the static credential is cleared", () => {
@@ -535,14 +535,14 @@ describe("buildMcpUpdateMaterial", () => {
     it("stores new arguments in the material", () => {
       expect(buildMcpUpdateMaterial({}, { ...stdio, args: ["--api-key", "fake-key"] })).toEqual({
         action: "store",
-        material: { args: ["--api-key", "fake-key"], env: {} },
+        material: { args: ["--api-key", "fake-key"] },
       });
     });
 
     it("keeps the stored arguments when none are sent back", () => {
       expect(
         buildMcpUpdateMaterial({ args: ["--api-key", "fake-key"] }, { ...stdio, args: [] }),
-      ).toEqual({ action: "store", material: { args: ["--api-key", "fake-key"], env: {} } });
+      ).toEqual({ action: "store", material: { args: ["--api-key", "fake-key"] } });
     });
 
     it("does not hand stored arguments to a different command", () => {
@@ -552,7 +552,7 @@ describe("buildMcpUpdateMaterial", () => {
           { ...stdio, command: "uvx", args: [] },
           { commandChanged: true },
         ),
-      ).toEqual({ action: "store", material: { env: {} } });
+      ).toEqual({ action: "store", material: {} });
     });
 
     it("keeps the arguments when credentials are cleared", () => {

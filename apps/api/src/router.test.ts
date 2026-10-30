@@ -1389,7 +1389,11 @@ describe("MCP prepared credential updates", () => {
 });
 
 describe("MCP pre-registered OAuth client", () => {
-  function harness(isDeploymentOwner = true, storedMaterial?: Record<string, unknown>) {
+  function harness(
+    isDeploymentOwner = true,
+    storedMaterial?: Record<string, unknown>,
+    allowedCommands: readonly string[] = ["npx"],
+  ) {
     const values = new Map<string, string>();
     const secretRows = new Map<string, { id: string; ciphertext: string }>();
     let server: Record<string, unknown> | undefined;
@@ -1476,7 +1480,7 @@ describe("MCP pre-registered OAuth client", () => {
         sandboxProvider: "fake",
         mcpAllowPrivateEndpoint: isDeploymentOwner,
         mcpStdioEnabled: true,
-        mcpStdioAllowedCommands: ["npx"],
+        mcpStdioAllowedCommands: allowedCommands,
         adminEmails: ["owner@rakazo.test"],
       },
       dataDir: "/tmp/rakazo-router-test",
@@ -1909,6 +1913,27 @@ describe("MCP pre-registered OAuth client", () => {
           scope: "drive",
           authorization_server: "https://accounts.example.test/",
         });
+      });
+
+      it("clears the stored credential when the command changes and none is sent", async () => {
+        const { client, server, secrets, prisma } = harness(
+          true,
+          { args: [...stdio.args, "--token", "stored-token"] },
+          ["npx", "node"],
+        );
+
+        const updated = await client.mcp.servers.update({
+          ...update,
+          config: { ...stdio, command: "node", args: [], env: {}, enabled: true, description: "" },
+        });
+
+        expect(updated.hasSecret).toBe(false);
+        expect(updated.hasArgs).toBe(false);
+        expect(server()?.secretId).toBeNull();
+        expect(secrets.put).not.toHaveBeenCalled();
+        expect(prisma.secret.deleteMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: "secret-0" }) }),
+        );
       });
     });
 

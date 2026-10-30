@@ -117,17 +117,20 @@ export function buildMcpUpdateMaterial(
   if (!existingHasMaterial && !suppliesMaterial) {
     return clearedOAuth ? { action: "store", material } : { action: "keep" };
   }
-  return {
-    action: "store",
-    material: {
-      ...rest,
-      ...withArgs,
-      ...(secret ? { secret } : {}),
-      ...(env !== undefined ? { env } : {}),
-      ...(headers !== undefined ? { headers } : {}),
-      ...(hasFiles ? { files } : {}),
-    },
+  const stored: McpSecretMaterial = {
+    ...rest,
+    ...withArgs,
+    ...(secret ? { secret } : {}),
+    ...(env !== undefined ? { env } : {}),
+    ...(headers !== undefined ? { headers } : {}),
+    ...(hasFiles ? { files } : {}),
   };
+  // env is full-replace and the contract defaults it to {}, so an update without
+  // credentials replaces the stored names with nothing. An empty record is not a
+  // credential: dropping it lets an emptied material reach {} so the caller deletes
+  // the secret row instead of storing `{"env":{}}` and reporting a saved credential.
+  if (stored.env !== undefined && Object.keys(stored.env).length === 0) delete stored.env;
+  return { action: "store", material: stored };
 }
 
 /** Resolve the client an update asks for. A resent client ID without a secret
