@@ -1532,7 +1532,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 replyGuidance: runReplyGuidance(run.trigger),
                 disabledBuiltinTools,
                 offeredFleetTools: offeredFleetTools(builtins),
-                followUpsOffered: followUpsOffered(builtins, run.trigger),
+                followUpsOffered: followUpsOffered(builtins, ownerStartedRun),
                 userComputer,
               })
                 .filter((instruction): instruction is string => Boolean(instruction))

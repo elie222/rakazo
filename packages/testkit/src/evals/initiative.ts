@@ -1,5 +1,6 @@
-import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { nextCronDate, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
+import type { RoutineEvidence } from "./silence.js";
 import { hasVisibleMessage } from "./silence.js";
 
 export const INITIATIVE_FIXTURE_VERSION = "initiative-v1";
@@ -12,6 +13,19 @@ const DELIVERY =
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 const oneShotFollowUps = (e: Evidence) =>
   e.routines.filter((r) => r.crons.length === 1 && r.crons[0] === ONCE_ROUTINE_CRON);
+
+// COMMITMENT's due time, read in the timezone the bot scheduled in.
+const PROMISED_CRON = "0 17 * * 5";
+const LATE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Due no earlier than the next promised Friday 5pm after it was set, and within three days of it. */
+function dueWhenPromised(run: RoutineEvidence | undefined): boolean {
+  if (!run?.scheduled?.at) return false;
+  const { at, timezone, createdAt } = run.scheduled;
+  const promised = nextCronDate(PROMISED_CRON, new Date(createdAt), timezone).getTime();
+  const due = new Date(at).getTime();
+  return due >= promised && due <= promised + LATE_GRACE_MS;
+}
 
 export const INITIATIVE_JUDGE_VERSION = "initiative-meaning-v1";
 const rubric = `${INITIATIVE_JUDGE_VERSION}: The user promised to send the signed lease for unit 4B and has not sent it. This is the bot's own follow-up, sent without being asked.
@@ -54,8 +68,9 @@ export const INITIATIVE_JUDGE_CALIBRATION = [
 function wakes(e: Evidence, expected: "follow-up" | "silent"): Criterion[] {
   const run = e.routineRuns?.[0];
   if (expected === "silent") {
-    // Cancelling the follow-up once the loop closed is as good as a silent wake.
-    if (!run) return [check("follow-up-cancelled", !e.routines.some((r) => r.active))];
+    // Cancelling the follow-up once the loop closed is as good as a silent wake. Pausing it is
+    // not: it would still sit in Routines, and the bot authors no other routine here.
+    if (!run) return [check("follow-up-cancelled", e.routines.length === 0)];
     return [
       check("wake-observed", run.observedCompletion),
       check("wake-no-transient-progress", run.progress.length === 0),
@@ -84,6 +99,7 @@ export const INITIATIVE_EVAL_CASES: EvalCase[] = [
         "one-one-shot-follow-up",
         e.routinesCreated === 1 && e.routines.length === 1 && oneShotFollowUps(e).length === 1,
       ),
+      check("follow-up-due-when-promised", dueWhenPromised(e.routineRuns?.[0])),
       ...wakes(e, "follow-up"),
     ],
     judge,

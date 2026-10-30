@@ -359,6 +359,7 @@ export async function runTrial(
         await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
+      let scheduled: RoutineEvidence["scheduled"];
       if ("ask" in step) {
         runId = (
           await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text: step.ask })
@@ -426,6 +427,11 @@ export async function runTrial(
             },
             ...services.listGithubReleases(),
           ]);
+        scheduled = {
+          at: routine.nextRunAt?.toISOString() ?? null,
+          timezone: routine.timezone,
+          createdAt: routine.createdAt.toISOString(),
+        };
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },
@@ -599,6 +605,7 @@ export async function runTrial(
           calls: structuredClone(services.calls),
           observedCompletion:
             !realtime.failed && observed.some((event) => event.type === "run.completed"),
+          scheduled,
         });
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))

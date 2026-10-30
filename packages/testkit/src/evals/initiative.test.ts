@@ -25,6 +25,8 @@ function wake(run: Partial<RoutineEvidence> = {}): RoutineEvidence {
     notifications: [{ title: "Bot", body: "Did the signed lease for 4B come through?" }],
     calls: [],
     observedCompletion: true,
+    // Set on a Tuesday for the Friday at 5pm the user promised.
+    scheduled: { at: "2026-10-30T17:00:00Z", timezone: "UTC", createdAt: "2026-10-27T10:00:00Z" },
     ...run,
   } as RoutineEvidence;
 }
@@ -75,6 +77,28 @@ describe("initiative open loop grading", () => {
   it("rejects a follow-up that never woke", () =>
     expect(passes("initiative-open-loop", open({ routineRuns: [] }))).toBe(false));
   it.each([
+    [
+      "Friday at 5pm in the timezone it was set in",
+      "2026-10-30T17:00:00-04:00",
+      "America/New_York",
+      true,
+    ],
+    ["at 5pm UTC for a bot in New York", "2026-10-30T17:00:00Z", "America/New_York", false],
+    ["the next business morning", "2026-11-02T09:00:00Z", "UTC", true],
+    ["a day early", "2026-10-29T17:00:00Z", "UTC", false],
+    ["a week late", "2026-11-06T17:00:00Z", "UTC", false],
+    ["without a due time", null, "UTC", false],
+  ] as const)("grades a follow-up due %s", (_, at, timezone, pass) =>
+    expect(
+      passes(
+        "initiative-open-loop",
+        open({
+          routineRuns: [wake({ scheduled: { at, timezone, createdAt: "2026-10-27T10:00:00Z" } })],
+        }),
+      ),
+    ).toBe(pass),
+  );
+  it.each([
     { notifications: [] },
     { text: "NO_RESPONSE" },
     { progress: [{ text: "Checking...", streaming: true }] },
@@ -98,6 +122,10 @@ describe("initiative closed loop grading", () => {
     expect(passes("initiative-closed-loop", closed())).toBe(true));
   it("accepts a follow-up cancelled before it was due", () =>
     expect(passes("initiative-closed-loop", closed({ routines: [], routineRuns: [] }))).toBe(true));
+  it("rejects a follow-up paused instead of cancelled", () =>
+    expect(
+      passes("initiative-closed-loop", closed({ routines: [followUp(false)], routineRuns: [] })),
+    ).toBe(false));
   it("rejects an active follow-up that was never woken", () =>
     expect(passes("initiative-closed-loop", closed({ routineRuns: [] }))).toBe(false));
   it("rejects a closed loop that still speaks up", () =>

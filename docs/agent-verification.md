@@ -336,9 +336,10 @@ pnpm test:evals --live --suite initiative --connection <private-connection.json>
 
 The four cases check that a bot follows up on an open loop without being asked,
 and only then. A promise with a due time must create exactly one one-shot routine,
-and its wake must speak once with a push. When the user delivers before it is due,
-the bot should cancel the follow-up; a wake that still happens must stay as silent
-as a quiet routine check. A dated item the user reports as already closed, and a
+due no earlier than the promised time and within three days of it, and its wake
+must speak once with a push. When the user delivers before it is due, the bot
+should cancel the follow-up (pausing leaves it in Routines); a wake that still
+happens must stay as silent as a quiet routine check. A dated item the user reports as already closed, and a
 declined reminder, must create no routine at all. The bot authors the routine
 itself, then the scheduler wakes it as in the silence suite. Creations are counted
 from `routine.created` events, because `schedule_cancel` deletes the routine.

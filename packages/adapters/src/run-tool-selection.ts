@@ -3,7 +3,7 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { isBackgroundRunTrigger, isConversationalRun, isOwnerStartedRun } from "@rakazo/core";
+import { isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -170,13 +170,16 @@ const FOLLOW_UP_TOOL_NAMES = [
 ];
 
 /**
- * Whether this run can set its own follow-ups. Only a run that is the user's conversation
- * can tell what is still open with them; routines, webhooks, tickets and messages from
- * other bots are not, and some of them would need approval for every schedule.
+ * Whether this run can set its own follow-ups. Only a run the owner started can tell what is
+ * still open with them; routines, webhooks, channels, subagents and hand-offs from other bots
+ * are not, and some of them would need approval for every schedule.
  */
-export function followUpsOffered(tools: readonly { name: string }[], trigger: string): boolean {
+export function followUpsOffered(
+  tools: readonly { name: string }[],
+  ownerStartedRun: boolean,
+): boolean {
   return (
-    isConversationalRun(trigger) &&
+    ownerStartedRun &&
     FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
   );
 }

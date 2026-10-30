@@ -6,7 +6,7 @@ import {
   cloudflareModelConfigMessage,
   FLEET_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { ONCE_ROUTINE_CRON } from "@rakazo/core";
+import { isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -454,8 +454,8 @@ describe("run tool selection", () => {
     expect(toolNames("user")).toContain("task_catalog");
   });
 
-  it("offers self-set follow-ups only in the user's conversation, with tools to track them", () => {
-    const offered = (trigger: string, disabledBuiltinTools?: string[]) =>
+  it("offers self-set follow-ups only on runs the owner started, with tools to track them", () => {
+    const offered = (trigger: string, disabledBuiltinTools?: string[], followUpFromUser = true) =>
       followUpsOffered(
         selectBuiltinToolsForRun({
           graphicalToolsAllowed: true,
@@ -466,11 +466,22 @@ describe("run tool selection", () => {
           messagingChannelRun: false,
           disabledBuiltinTools,
         }),
-        trigger,
+        isOwnerStartedRun(trigger, followUpFromUser),
       );
     expect(offered("user")).toBe(true);
     expect(offered("follow_up")).toBe(true);
-    for (const trigger of ["routine", "webhook", "tickets", "bot_message", "created"]) {
+    expect(offered("call_end")).toBe(true);
+    // A group hand-off queues a follow_up whose source message another bot wrote.
+    expect(offered("follow_up", undefined, false)).toBe(false);
+    for (const trigger of [
+      "routine",
+      "webhook",
+      "tickets",
+      "bot_message",
+      "created",
+      "messaging",
+      "spawn",
+    ]) {
       expect(offered(trigger)).toBe(false);
     }
     for (const tool of [
