@@ -11,10 +11,19 @@ vi.mock("expo-secure-store", () => ({
     store.delete(key);
   }),
 }));
+const status = vi.hoisted(() => ({ ready: false, fail: false }));
+vi.mock("./api", () => ({
+  rpc: vi.fn(async () => {
+    if (status.fail) throw new Error("offline");
+    return { ready: status.ready };
+  }),
+}));
 
 describe("device voice preference", () => {
   beforeEach(() => {
     store.clear();
+    status.ready = false;
+    status.fail = false;
     vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key: string, value: string) => {
       store.set(key, value);
     });
@@ -23,8 +32,13 @@ describe("device voice preference", () => {
     });
   });
 
-  it("defaults to off", async () => {
+  it("defaults to on until a hosted voice is ready", async () => {
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
+    expect(await loadDeviceVoiceEnabled()).toBe(true);
+    status.fail = true;
+    expect(await loadDeviceVoiceEnabled()).toBe(true);
+    status.fail = false;
+    status.ready = true;
     expect(await loadDeviceVoiceEnabled()).toBe(false);
   });
 
@@ -40,6 +54,7 @@ describe("device voice preference", () => {
     vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("device locked"));
     const { saveDeviceVoiceEnabled, loadDeviceVoiceEnabled } = await import("./device-voice");
 
+    status.ready = true;
     await expect(saveDeviceVoiceEnabled(true)).rejects.toThrow("device locked");
     expect(await loadDeviceVoiceEnabled()).toBe(false);
   });

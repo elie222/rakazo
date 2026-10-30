@@ -607,18 +607,13 @@ export const JA_MESSAGES: Record<string, string> = {
   "Hear a sample": "サンプルを聴く",
   "Hi, this is how I'll sound when I read replies out loud.":
     "こんにちは。返信を読み上げるときは、このような声になります。",
-  "Free, works offline": "無料、オフラインで動作",
   "Paste a replacement key": "新しいキーを貼り付け",
   "Paste your API key": "APIキーを貼り付け",
   "Replace key": "キーを置き換え",
-  "Speak + transcribe": "読み上げ + 文字起こし",
-  "Speak only": "読み上げのみ",
   "Speech model": "音声合成モデル",
   "Transcription model": "文字起こしモデル",
   Reconnect: "再接続",
   "This device": "このデバイス",
-  "Your phone's built-in voice. Free, no account needed":
-    "スマートフォン内蔵の音声。無料、アカウント不要",
   "Agent messages": "エージェントのメッセージ",
   Appearance: "外観",
   Archived: "アーカイブ済み",

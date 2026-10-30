@@ -626,18 +626,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Hear a sample": "Beispiel anhören",
   "Hi, this is how I'll sound when I read replies out loud.":
     "Hallo, so klinge ich, wenn ich Antworten vorlese.",
-  "Free, works offline": "Kostenlos, funktioniert offline",
   "Paste a replacement key": "Ersatzschlüssel einfügen",
   "Paste your API key": "Füge deinen API-Schlüssel ein",
   "Replace key": "Schlüssel ersetzen",
-  "Speak + transcribe": "Sprechen + transkribieren",
-  "Speak only": "Nur sprechen",
   "Speech model": "Sprachmodell",
   "Transcription model": "Transkriptionsmodell",
   Reconnect: "Erneut verbinden",
   "This device": "Dieses Gerät",
-  "Your phone's built-in voice. Free, no account needed":
-    "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
   Archived: "Archiviert",

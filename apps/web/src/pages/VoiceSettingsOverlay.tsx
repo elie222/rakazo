@@ -365,14 +365,10 @@ export function VoiceSettingsOverlay({
           >
             {catalog.map((entry) => {
               const connected = credentials.some((cred) => cred.provider === entry.id);
-              const notes = [
-                ...(entry.transcribe ? [] : [t`Speak only`]),
-                ...(connected ? [t`Connected`] : []),
-              ];
               return (
                 <NativeSelectOption key={entry.id} value={entry.id}>
                   {entry.name}
-                  {notes.length ? ` (${notes.join(", ")})` : ""}
+                  {connected ? ` (${t`Connected`})` : ""}
                 </NativeSelectOption>
               );
             })}

@@ -584,18 +584,13 @@ export const ES_MESSAGES: Record<string, string> = {
   "Hear a sample": "Escuchar una muestra",
   "Hi, this is how I'll sound when I read replies out loud.":
     "Hola, así sonaré cuando lea las respuestas en voz alta.",
-  "Free, works offline": "Gratis, funciona sin conexión",
   "Paste a replacement key": "Pega una clave de reemplazo",
   "Paste your API key": "Pega tu clave de API",
   "Replace key": "Reemplazar clave",
-  "Speak + transcribe": "Hablar y transcribir",
-  "Speak only": "Solo hablar",
   "Speech model": "Modelo de habla",
   "Transcription model": "Modelo de transcripción",
   Reconnect: "Reconectar",
   "This device": "Este dispositivo",
-  "Your phone's built-in voice. Free, no account needed":
-    "La voz integrada de tu teléfono. Gratis, sin cuenta",
   "Agent messages": "Mensajes de agentes",
   Appearance: "Apariencia",
   Archived: "Archivado",

@@ -619,18 +619,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Hear a sample": "Luister naar een voorbeeld",
   "Hi, this is how I'll sound when I read replies out loud.":
     "Hoi, zo klink ik als ik antwoorden hardop voorlees.",
-  "Free, works offline": "Gratis, werkt offline",
   "Paste a replacement key": "Plak een vervangende sleutel",
   "Paste your API key": "Plak je API-sleutel",
   "Replace key": "Sleutel vervangen",
-  "Speak + transcribe": "Spreken en transcriberen",
-  "Speak only": "Alleen spreken",
   "Speech model": "Spraakmodel",
   "Transcription model": "Transcriptiemodel",
   Reconnect: "Opnieuw verbinden",
   "This device": "Dit apparaat",
-  "Your phone's built-in voice. Free, no account needed":
-    "De ingebouwde stem van je telefoon. Gratis, geen account nodig",
   "Agent messages": "Agentberichten",
   Appearance: "Weergave",
   Archived: "Gearchiveerd",

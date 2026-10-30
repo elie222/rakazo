@@ -766,7 +766,7 @@ it("saves a typed self-hosted voice on blur without dropping other unsaved edits
 it("connects a keyless provider without asking for a key", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog.mockResolvedValue([
-    { id: "macos", name: "macOS", description: "", transcribe: false, keyless: true },
+    { id: "macos", name: "Server (Mac)", description: "", transcribe: false, keyless: true },
   ]);
   voice.credentials.mockResolvedValue([]);
   voice.status.mockResolvedValue({
@@ -808,7 +808,7 @@ it.each(["account", "space"] as const)(
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     voice.catalog.mockResolvedValue([
       { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
-      { id: "macos", name: "macOS", description: "", transcribe: false, keyless: true },
+      { id: "macos", name: "Server (Mac)", description: "", transcribe: false, keyless: true },
     ]);
     voice.credentials.mockResolvedValue([
       fish,
