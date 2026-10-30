@@ -1291,6 +1291,27 @@ describe("monthly computer allowance", () => {
     expect(harness.computer.state).toBe("running");
   });
 
+  it("leaves a computer whose allowance is spent to a user in control until the lease ends", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 60_000),
+      computerHours: 25,
+    });
+    Object.assign(harness.computer, {
+      controlHolder: "user",
+      controlLeaseId: "lease",
+      controlLeaseExpiresAt: new Date(now + 60_000),
+    });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+  });
+
   it("stops a computer whose allowance is spent even while a coding agent works", async () => {
     const harness = idleHarness({
       billsWhileRunning: true,

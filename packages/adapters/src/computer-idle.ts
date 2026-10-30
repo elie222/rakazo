@@ -448,10 +448,10 @@ export async function sleepComputerIfIdle(
   // when they next need it. A user in control is left alone: control leases expire on their
   // own, and that release resumes the waiting run.
   // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
-  // Once its organization has spent the month's allowance, nothing, not even a working coding
-  // agent, holds the computer up.
+  // Once its organization has spent the month's allowance, nothing but a user still in control,
+  // not even a working coding agent, holds the computer up.
   const activeControl = hasActiveComputerControl(computer);
-  const allowanceUsed = await sandboxAllowanceUsedUp(deps, computer);
+  const allowanceUsed = !activeControl && (await sandboxAllowanceUsedUp(deps, computer));
   const limitReached =
     allowanceUsed ||
     (activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl);
