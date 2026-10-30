@@ -62,6 +62,8 @@ async function main() {
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
+  if (values["cases-file"] && values.suite !== "tool-choice")
+    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
@@ -77,8 +79,6 @@ async function main() {
   if (!Object.hasOwn(suites, values.suite!))
     throw new Error("Unknown suite; use product, history, silence, tool-choice, or approval");
   const suite = suites[values.suite as keyof typeof suites];
-  if (values["cases-file"] && values.suite !== "tool-choice")
-    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
   const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
   const cases = [...suite.cases, ...extraCases];
   const fixtureVersion = extraCases.length

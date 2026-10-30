@@ -61,6 +61,8 @@ export type TrialOptions = {
     witnesses: { notifications: CapturingNotificationProvider; realtime: SilenceObserver },
   ) => Promise<EvalApp>;
 };
+const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
+
 class EvalFailure extends Error {
   constructor(
     readonly category: FailureCategory,
@@ -515,7 +517,7 @@ export async function runTrial(
           (scenario.approvalTool || scenario.expectedClarification)
         )
           return run;
-        const waiting = run && ["waiting_input", "waiting_approval", "paused"].includes(run.status);
+        const waiting = run && WAITING_STATUSES.includes(run.status);
         if (waiting && scenario.pauseEndsTurn) return run;
         if (waiting)
           throw new EvalFailure("agent", "Agent requested assistance; no coaching supplied");
@@ -544,7 +546,7 @@ export async function runTrial(
       });
       if (
         terminal.status !== "completed" &&
-        !scenario.pauseEndsTurn &&
+        !(scenario.pauseEndsTurn && WAITING_STATUSES.includes(terminal.status)) &&
         !(
           (scenario.approvalTool || scenario.expectedClarification) &&
           terminal.status === "waiting_input"
