@@ -868,6 +868,20 @@ describe("toolResultTaintsRun", () => {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });
+
+  it("does not taint on confirmations of its own instruction and bot management changes", () => {
+    for (const tool of [
+      "propose_instructions_update",
+      "create_group",
+      "update_group",
+      "organize_bot",
+      "set_child_instructions",
+      "set_child_bot_model",
+      "create_child_routine",
+    ]) {
+      expect(toolResultTaintsRun(tool)).toBe(false);
+    }
+  });
 });
 
 it("classifies schedule_update like schedule_create", () => {

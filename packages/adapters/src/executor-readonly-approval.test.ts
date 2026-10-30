@@ -1439,6 +1439,49 @@ describe("self instruction proposals", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.instructionState.instructions).toBe("Draft only");
   });
+  it("applies in Never ask after the bot changed the bots it manages in the same run", async () => {
+    const f = fixture({
+      name: "propose_instructions_update",
+      builtin: true,
+      skipApprovals: true,
+      fleetManagement: true,
+      fleetBots: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    createFleetGroupMock.mockResolvedValueOnce({
+      groupId: "group-1",
+      threadId: "thread-group-1",
+      name: "Crew",
+      members: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    f.setCalls([
+      {
+        name: "create_group",
+        args: { name: "Crew", bot_names: ["Alpha", "Beta"] },
+        executionId: "call-1",
+      },
+      { name: "propose_instructions_update", args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(createFleetGroupMock).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(args.instructions);
+  });
+  it("is still refused in Never ask after a page entered the run", async () => {
+    const f = fixture({ name: "propose_instructions_update", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { name: "web_fetch", args: { url: "https://example.com/" }, executionId: "call-1" },
+      { name: "propose_instructions_update", args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(JSON.stringify(f.results[1])).toContain("never asks");
+    expect(f.instructionState.instructions).toBe("Draft only");
+  });
   it("requires human approval for an instruction proposal", async () => {
     const f = fixture({ name: "propose_instructions_update", builtin: true });
     f.setCalls([{ args, executionId: "call-1" }]);
@@ -1758,6 +1801,7 @@ describe("bot management tool gating", () => {
 });
 
 describe("bot management approvals", () => {
+  beforeEach(() => createFleetGroupMock.mockReset());
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
