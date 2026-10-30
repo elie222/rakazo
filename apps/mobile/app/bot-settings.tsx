@@ -76,6 +76,7 @@ export default function BotSettingsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const modelY = useRef(0);
   const [bot, setBot] = useState<Bot | null>(null);
+  const threadId = useRef<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -141,7 +142,7 @@ export default function BotSettingsScreen() {
               currentApiBase(),
               await loadSessionToken(),
               selectedSpaceId() ?? "",
-              { botId, notify },
+              { botId, threadId: threadId.current, notify },
             );
           } catch {
             // The server save succeeded; device reconciliation can retry later.
@@ -170,6 +171,7 @@ export default function BotSettingsScreen() {
     if (!botId) return;
     void rpc("bots/get", { botId })
       .then((next) => {
+        threadId.current = next.threadId;
         setBot(next);
         setName(next.name);
         nameSave.reset(next.name);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { BOT_COLORS, BOT_SETTINGS_SECTIONS } from "@rakazo/contracts";
+import * as Notifications from "expo-notifications";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -8,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BotSettingsScreen from "../app/bot-settings";
 import { MenuPicker } from "../components/menu-picker";
+import { afterChatNotifyChange } from "./live-notifications";
 
 const mocks = vi.hoisted(() => ({
   instructions: "",
@@ -25,7 +27,6 @@ const mocks = vi.hoisted(() => ({
   voiceForBot: vi.fn(),
   setVoiceForBot: vi.fn(),
   rpc: vi.fn(),
-  afterChatNotifyChange: vi.fn(async () => undefined),
   back: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock("./api", () => ({
     if (procedure === "bots/get")
       return {
         id: "bot-fixture",
+        threadId: "thread-fixture",
         name: "Fixture",
         title: "",
         instructions: mocks.instructions,
@@ -100,7 +102,12 @@ vi.mock("./api", () => ({
     return [];
   },
 }));
-vi.mock("./live-notifications", () => ({ afterChatNotifyChange: mocks.afterChatNotifyChange }));
+vi.mock("./live-notifications", { spy: true });
+vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
+vi.mock("expo-notifications", () => ({
+  getPresentedNotificationsAsync: vi.fn(async () => []),
+  dismissNotificationAsync: vi.fn(async () => undefined),
+}));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ back: mocks.back }),
@@ -349,6 +356,7 @@ describe("bot settings device voice menu", () => {
     mocks.crossSpaceCommunication = false;
     mocks.avatarSet = undefined;
     vi.clearAllMocks();
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([]);
     mocks.focus = undefined;
     mocks.instructions = "";
     mocks.description = "";
@@ -741,6 +749,20 @@ describe("bot settings device voice menu", () => {
   });
 
   it("propagates each saved notification choice from chat settings only after the save succeeds", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      {
+        request: {
+          identifier: "direct-chat",
+          content: { data: { botId: "bot-fixture", threadId: "thread-fixture" } },
+        },
+      },
+      {
+        request: {
+          identifier: "group-chat",
+          content: { data: { botId: "bot-fixture", threadId: "group-thread", groupId: "group" } },
+        },
+      },
+    ] as never);
     const first = deferredSave();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
@@ -752,20 +774,33 @@ describe("bot settings device voice menu", () => {
       botId: "bot-fixture",
       notifyOnFinish: false,
     });
-    expect(mocks.afterChatNotifyChange).not.toHaveBeenCalled();
+    expect(afterChatNotifyChange).not.toHaveBeenCalled();
+    expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
     await act(async () => first.resolve());
-    expect(mocks.afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+    expect(Notifications.dismissNotificationAsync).toHaveBeenCalledExactlyOnceWith("direct-chat");
+    expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
       "https://api.example.test",
       "token",
       "space-a",
-      { botId: "bot-fixture", notify: false },
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
     );
 
     await act(async () => toggle.click());
-    expect(mocks.afterChatNotifyChange.mock.calls).toEqual([
-      ["https://api.example.test", "token", "space-a", { botId: "bot-fixture", notify: false }],
-      ["https://api.example.test", "token", "space-a", { botId: "bot-fixture", notify: true }],
+    expect(vi.mocked(afterChatNotifyChange).mock.calls).toEqual([
+      [
+        "https://api.example.test",
+        "token",
+        "space-a",
+        { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
+      ],
+      [
+        "https://api.example.test",
+        "token",
+        "space-a",
+        { botId: "bot-fixture", threadId: "thread-fixture", notify: true },
+      ],
     ]);
+    expect(Notifications.dismissNotificationAsync).toHaveBeenCalledTimes(1);
   });
 
   it("does not propagate a notification change when saving from chat settings fails", async () => {
@@ -776,7 +811,8 @@ describe("bot settings device voice menu", () => {
     )!;
     await act(async () => toggle.click());
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(mocks.afterChatNotifyChange).not.toHaveBeenCalled();
+    expect(afterChatNotifyChange).not.toHaveBeenCalled();
+    expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
     expect(container.textContent).toContain("offline");
   });
 
