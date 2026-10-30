@@ -86,6 +86,13 @@ export function sanitizeNativeEvent(
     safeTags["mobile.platform"] = tags["mobile.platform"];
   if (surface === "mobile" && tags["startup.previous_launch"] === "true")
     safeTags["startup.previous_launch"] = "true";
+  if (surface === "desktop") {
+    for (const key of ["process.name", "process.exit_code"]) {
+      const value = tags[key];
+      if (typeof value === "string" && /^[a-zA-Z0-9_. -]{1,100}$/.test(value))
+        safeTags[key] = value;
+    }
+  }
   for (const key of [...CORRELATION_TAG_KEYS, "operation"]) {
     const value = tags[key];
     if (typeof value === "string" && value.length <= 200 && /^[a-zA-Z0-9_.:-]+$/.test(value))
