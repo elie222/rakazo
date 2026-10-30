@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createCuaHostScreen, cuaDriverConnector } from "@rakazo/adapters/cua-host-screen";
@@ -39,12 +38,24 @@ export async function ensureScreenPermissions(api: ScreenPermissionApi) {
 export const SCREEN_DRIVER_RELEASE = {
   url: "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.38.0/cua-driver-rs-0.38.0-darwin-universal-binary.tar.gz",
   sha256: "2bb8dc4a7e69185ffd04c4a9c0eab590bd2c54b72c2c1be13ab675be4f487732",
+  driverSha256: "92067848d0eeb9de76929fbd06a137af801b0ff6caedbb3109bd7a6cc84a1f9f",
 };
+
+async function fileSha256(file: string) {
+  try {
+    return createHash("sha256")
+      .update(await readFile(file))
+      .digest("hex");
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Downloads the pinned driver into `dir` the first time it is needed, so only people who use
  * screen control pay for it, and returns its path. Any other download is refused, and earlier
- * versions are removed.
+ * versions are removed. The driver runs with this app's macOS permissions, so it is checked
+ * again before every start and replaced if anything changed it.
  */
 export function screenDriverInstaller(options: {
   dir: string;
@@ -52,7 +63,7 @@ export function screenDriverInstaller(options: {
   release?: typeof SCREEN_DRIVER_RELEASE;
 }): () => Promise<string> {
   const release = options.release ?? SCREEN_DRIVER_RELEASE;
-  const command = path.join(options.dir, release.sha256, "cua-driver");
+  const command = path.join(options.dir, release.driverSha256, "cua-driver");
   let pending: Promise<string> | undefined;
 
   async function install() {
@@ -68,6 +79,8 @@ export function screenDriverInstaller(options: {
       await writeFile(archivePath, archive);
       await promisify(execFile)("/usr/bin/tar", ["-xzf", archivePath, "-C", staging, "cua-driver"]);
       await rm(archivePath);
+      if ((await fileSha256(path.join(staging, "cua-driver"))) !== release.driverSha256)
+        throw new Error("checksum mismatch");
       for (const entry of await readdir(options.dir))
         if (entry !== path.basename(staging))
           await rm(path.join(options.dir, entry), { recursive: true, force: true });
@@ -80,9 +93,12 @@ export function screenDriverInstaller(options: {
     }
   }
 
+  async function verified() {
+    return (await fileSha256(command)) === release.driverSha256 ? command : install();
+  }
+
   return () => {
-    if (existsSync(command)) return Promise.resolve(command);
-    pending ??= install().finally(() => {
+    pending ??= verified().finally(() => {
       pending = undefined;
     });
     return pending;

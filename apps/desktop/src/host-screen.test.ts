@@ -117,11 +117,19 @@ describe("screen driver download", () => {
     await mkdir(source);
     await writeFile(path.join(source, "cua-driver"), "#!/bin/sh\n", { mode: 0o755 });
     await writeFile(path.join(source, "libcua_driver_sdk.dylib"), "unused");
-    execFileSync("tar", ["-czf", path.join(dir, "driver.tar.gz"), "-C", source, "."]);
+    execFileSync("tar", [
+      "-czf",
+      path.join(dir, "driver.tar.gz"),
+      "-C",
+      source,
+      "cua-driver",
+      "libcua_driver_sdk.dylib",
+    ]);
     archive = await readFile(path.join(dir, "driver.tar.gz"));
     release = {
       url: "https://example.test/driver.tar.gz",
       sha256: createHash("sha256").update(archive).digest("hex"),
+      driverSha256: createHash("sha256").update("#!/bin/sh\n").digest("hex"),
     };
   });
   afterEach(async () => {
@@ -140,11 +148,22 @@ describe("screen driver download", () => {
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(release.url);
     expect(await readFile(command, "utf8")).toBe("#!/bin/sh\n");
-    expect(await readdir(bin)).toEqual([release.sha256]);
+    expect(await readdir(bin)).toEqual([release.driverSha256]);
     expect(await readdir(path.dirname(command))).toEqual(["cua-driver"]);
     const restarted = screenDriverInstaller({ dir: bin, fetch, release });
     await expect(restarted()).resolves.toBe(command);
     expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("replaces a cached driver that something else changed before starting it", async () => {
+    const bin = path.join(dir, "bin");
+    const fetch = serve(archive);
+    const install = screenDriverInstaller({ dir: bin, fetch, release });
+    const command = await install();
+    await writeFile(command, "#!/bin/sh\necho replaced\n");
+    await expect(install()).resolves.toBe(command);
+    expect(await readFile(command, "utf8")).toBe("#!/bin/sh\n");
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("refuses anything but the pinned archive and tries again next time", async () => {
@@ -156,7 +175,7 @@ describe("screen driver download", () => {
     fetch.mockImplementationOnce(async () => new Response("", { status: 503 }));
     await expect(install()).rejects.toThrow(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
     fetch.mockImplementationOnce(async () => new Response(new Uint8Array(archive)));
-    await expect(install()).resolves.toBe(path.join(bin, release.sha256, "cua-driver"));
+    await expect(install()).resolves.toBe(path.join(bin, release.driverSha256, "cua-driver"));
   });
 
   it("pins one checksummed release from the driver's publisher", () => {
@@ -164,5 +183,6 @@ describe("screen driver download", () => {
       /^https:\/\/github\.com\/trycua\/cua\/releases\/download\/cua-driver-rs-v[\d.]+\/cua-driver-rs-[\d.]+-darwin-universal-binary\.tar\.gz$/,
     );
     expect(SCREEN_DRIVER_RELEASE.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(SCREEN_DRIVER_RELEASE.driverSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 });
