@@ -9,9 +9,9 @@ export function NotFoundPage() {
         <WindowChrome />
       </div>
       <main className="flex flex-1 flex-col items-center justify-center gap-8 px-5 pb-[90px] text-center">
-        <div className="flex size-20 items-center justify-center gap-3 rounded-full bg-accent sm:size-24">
-          <span className="h-5 w-2.5 translate-x-1.5 -translate-y-1 rounded-full bg-card sm:h-6 sm:w-[11px]" />
-          <span className="h-5 w-2.5 translate-x-1.5 -translate-y-1 rounded-full bg-card sm:h-6 sm:w-[11px]" />
+        <div className="flex size-20 items-center justify-center gap-3 rounded-full bg-primary sm:size-24">
+          <span className="h-5 w-2.5 translate-x-1.5 -translate-y-1 rounded-full bg-primary-foreground sm:h-6 sm:w-[11px]" />
+          <span className="h-5 w-2.5 translate-x-1.5 -translate-y-1 rounded-full bg-primary-foreground sm:h-6 sm:w-[11px]" />
         </div>
         <div className="flex flex-col items-center gap-3">
           <p className="text-[15px] tracking-[0.2em] text-muted-foreground">404</p>
