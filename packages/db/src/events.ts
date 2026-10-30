@@ -629,6 +629,14 @@ export async function claimSteering(
   prisma: PrismaClient,
   input: ClaimSteeringInput,
 ): Promise<ClaimedSteeringMessage[]> {
+  // Runs claim before every model turn, so a briefly saturated pool must not fail the run.
+  return withTransactionRetry(() => claimSteeringOnce(prisma, input));
+}
+
+async function claimSteeringOnce(
+  prisma: PrismaClient,
+  input: ClaimSteeringInput,
+): Promise<ClaimedSteeringMessage[]> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     const run = await tx.run.findFirst({
