@@ -20,6 +20,7 @@ import {
   createGroupRepos,
   createThreadMessageInTransaction,
   recordComputerRunEnd,
+  recordComputerRunSeen,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
@@ -431,6 +432,9 @@ export async function sleepComputerIfIdle(
     botId: computer.controlBotId ?? undefined,
     signal: new AbortController().signal,
   };
+  if (await deps.sandbox.isRunning?.(ref, ctx).catch(() => false)) {
+    await recordComputerRunSeen(deps.prisma, computer);
+  }
   // Past the lifetime limit only a run executing right now holds the computer up; waiting
   // runs and background work start it again when they next need it. A user in control is
   // left alone: control leases expire on their own, and that release resumes the waiting run.

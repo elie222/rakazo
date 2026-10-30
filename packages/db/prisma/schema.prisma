@@ -1372,6 +1372,8 @@ model ComputerRun {
   endedAt    DateTime?
   /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
   endReason  String?
+  /// When Rakazo last saw this stretch running: at its start and at each idle check.
+  lastSeenAt DateTime?
 
   @@unique([computerId, startedAt])
   @@index([spaceId, userId, startedAt])

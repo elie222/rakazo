@@ -3626,7 +3626,7 @@ describe("computer screen url", () => {
     connectScreen: () => Promise<unknown>,
     updateMany = vi.fn().mockResolvedValue({ count: 1 }),
   ) => {
-    const endRun = vi.fn().mockResolvedValue({ count: 1 });
+    const endRun = vi.fn().mockResolvedValue(1);
     const prisma = {
       bot: {
         findFirst: vi.fn().mockResolvedValue({
@@ -3637,7 +3637,7 @@ describe("computer screen url", () => {
         }),
       },
       computer: { updateMany },
-      computerRun: { updateMany: endRun },
+      $executeRaw: endRun,
       computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
@@ -3710,9 +3710,7 @@ describe("computer screen url", () => {
       where: { id: "computer-1", providerRef: "sandbox-ref-1" },
       data: { state: "stopped", providerRef: null },
     });
-    expect(endRun).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ endReason: "gone" }) }),
-    );
+    expect(endRun.mock.calls.map(([, , reason]) => reason)).toEqual(["gone"]);
   });
 
   it("keeps a transport blip an error and leaves the row alone", async () => {

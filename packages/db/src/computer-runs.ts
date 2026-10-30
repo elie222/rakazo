@@ -6,10 +6,13 @@ import type { PrismaClient } from "./generated/prisma/client.js";
  * - `stopped`: stopped on request (the stop button, a computer switch, an archived bot).
  * - `idle` / `active_limit`: idle shutdown, or the cap on one continuous stretch.
  * - `replaced`: torn down by update, recovery or reset; the replacement starts a new run.
- * - `gone`: the provider had already stopped or lost the sandbox. The end is when Rakazo noticed.
+ * - `gone`: the provider had already stopped or lost the sandbox.
  * - `deleted`: destroyed with its computer, bot, space or account.
  * - `reconciled`: the end was never seen; a later start or the reconciler found the computer
- *   no longer running. The end is when that was detected.
+ *   no longer running.
+ *
+ * An end Rakazo only noticed later (`gone`, `reconciled`, and runs the reconciler closes) is the
+ * run's `lastSeenAt` when there is one, else when it was noticed.
  */
 export type ComputerRunEnd =
   | "stopped"
@@ -20,7 +23,7 @@ export type ComputerRunEnd =
   | "deleted"
   | "reconciled";
 
-type RunsClient = Pick<PrismaClient, "computerRun">;
+type RunsClient = Pick<PrismaClient, "computerRun" | "$executeRaw">;
 
 /**
  * Records the run that began at the computer's `runningSince`, and closes an earlier run whose
@@ -42,10 +45,11 @@ export async function recordComputerRunStart(
   // Host computers run on the user's own machine, and Electron, not Rakazo, sees them stop.
   if (computer.kind === "desktop") return;
   try {
-    await prisma.computerRun.updateMany({
-      where: { computerId: computer.id, endedAt: null, startedAt: { lt: startedAt } },
-      data: { endedAt: startedAt, endReason: previousEnd },
-    });
+    await prisma.$executeRaw`
+      UPDATE "computer_runs"
+      SET "endedAt" = COALESCE("lastSeenAt", ${startedAt}::timestamp(3)), "endReason" = ${previousEnd}
+      WHERE "computerId" = ${computer.id} AND "endedAt" IS NULL
+        AND "startedAt" < ${startedAt}::timestamp(3)`;
     await prisma.computerRun.createMany({
       data: [
         {
@@ -65,6 +69,29 @@ export async function recordComputerRunStart(
       transition: "start",
     });
   }
+  await recordComputerRunSeen(prisma, { id: computer.id, runningSince: startedAt });
+}
+
+/**
+ * Notes that the stretch that began at `runningSince` was just seen running, so an end noticed
+ * only later is placed here rather than at the moment it was noticed. Never fails its caller.
+ */
+export async function recordComputerRunSeen(
+  prisma: RunsClient,
+  computer: { id: string; runningSince?: Date | null },
+): Promise<void> {
+  if (!computer.runningSince) return;
+  try {
+    await prisma.computerRun.updateMany({
+      where: { computerId: computer.id, startedAt: computer.runningSince, endedAt: null },
+      data: { lastSeenAt: new Date() },
+    });
+  } catch (error) {
+    getLogger().error("computer.run_record_failed", error, {
+      "computer.id": computer.id,
+      transition: "seen",
+    });
+  }
 }
 
 /**
@@ -80,6 +107,17 @@ export async function recordComputerRunEnd(
 ): Promise<void> {
   const endedAt = new Date();
   try {
+    if (reason === "gone") {
+      const runningSince = computer.runningSince ?? null;
+      await prisma.$executeRaw`
+        UPDATE "computer_runs"
+        SET "endedAt" = COALESCE("lastSeenAt", ${endedAt}::timestamp(3)), "endReason" = ${reason}
+        WHERE "computerId" = ${computer.id} AND "endedAt" IS NULL
+          AND CASE WHEN ${runningSince}::timestamp(3) IS NULL
+            THEN "startedAt" <= ${endedAt}::timestamp(3)
+            ELSE "startedAt" = ${runningSince}::timestamp(3) END`;
+      return;
+    }
     await prisma.computerRun.updateMany({
       where: {
         computerId: computer.id,
@@ -109,7 +147,7 @@ export async function reconcileComputerRuns(
 ): Promise<void> {
   await prisma.$executeRaw`
     UPDATE "computer_runs" AS r
-    SET "endedAt" = GREATEST(${now}::timestamp(3), r."startedAt"),
+    SET "endedAt" = GREATEST(COALESCE(r."lastSeenAt", ${now}::timestamp(3)), r."startedAt"),
         "endReason" = CASE WHEN c."id" IS NULL THEN 'deleted' ELSE 'reconciled' END
     FROM "computer_runs" AS o
     LEFT JOIN "computers" AS c ON c."id" = o."computerId"

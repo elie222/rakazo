@@ -1919,6 +1919,7 @@ describe("Team Computer wake", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      $executeRaw: vi.fn().mockResolvedValue(0),
       botDeletion: { findMany },
     } as unknown as PrismaClient;
     const sandbox = {
@@ -1998,10 +1999,8 @@ describe("Team Computer wake", () => {
     await boot(harness);
 
     const startedAt = activation(harness)?.runningSince as Date;
-    expect(vi.mocked(harness.prisma.computerRun.updateMany)).toHaveBeenCalledWith({
-      where: { computerId: "computer-1", endedAt: null, startedAt: { lt: startedAt } },
-      data: { endedAt: startedAt, endReason: "reconciled" },
-    });
+    // Earlier open runs end when last seen running, or at this start when never seen.
+    expect(closedRuns(harness)).toEqual([[startedAt, "reconciled", "computer-1", startedAt]]);
     expect(vi.mocked(harness.prisma.computerRun.createMany)).toHaveBeenCalledWith({
       data: [
         {
@@ -2042,6 +2041,10 @@ describe("Team Computer wake", () => {
     expect(vi.mocked(harness.prisma.computerRun.createMany)).toHaveBeenCalledWith(
       expect.objectContaining({ data: [expect.objectContaining({ startedAt: runningSince })] }),
     );
+    expect(vi.mocked(harness.prisma.computerRun.updateMany)).toHaveBeenCalledWith({
+      where: { computerId: "computer-1", startedAt: runningSince, endedAt: null },
+      data: { lastSeenAt: expect.any(Date) },
+    });
   });
 
   it("ends a run the provider stopped on its own when reconnecting has to start it again", async () => {
@@ -2055,9 +2058,7 @@ describe("Team Computer wake", () => {
     await boot(harness);
 
     const startedAt = activation(harness)?.runningSince as Date;
-    expect(vi.mocked(harness.prisma.computerRun.updateMany)).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { endedAt: startedAt, endReason: "gone" } }),
-    );
+    expect(closedRuns(harness)).toEqual([[startedAt, "gone", "computer-1", startedAt]]);
   });
 
   it("starts the computer even when the usage write fails", async () => {
@@ -3951,3 +3952,8 @@ describe("computer terminal capability", () => {
     expect(computerSupportsTerminal("unknown")).toBe(false);
   });
 });
+
+/** The values of each raw run-closing statement, in order. */
+function closedRuns(harness: { prisma: PrismaClient }) {
+  return vi.mocked(harness.prisma.$executeRaw).mock.calls.map(([, ...values]) => values);
+}

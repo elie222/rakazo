@@ -521,9 +521,7 @@ describe("sandbox idle", () => {
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
       expect(harness.home.commit).not.toHaveBeenCalled();
       expect(harness.computer.providerRef).toBe("computer");
-      expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ endReason: "gone" }) }),
-      );
+      expect(goneRuns(harness)).toEqual([harness.computer.id]);
       expect(harness.events.append).toHaveBeenCalledWith(
         expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
       );
@@ -769,14 +767,29 @@ describe("sandbox idle", () => {
     expect(harness.home.commit).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(goneRuns(harness)).toEqual([harness.computer.id]);
+  });
+
+  it("notes when the provider last reported the computer running", async () => {
+    const runningSince = new Date(Date.now() - 30 * 60_000);
+    const harness = idleHarness({ runningAtProvider: true, runningSince });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
     expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith({
-      where: {
-        computerId: harness.computer.id,
-        endedAt: null,
-        startedAt: { lte: expect.any(Date) },
-      },
-      data: { endedAt: expect.any(Date), endReason: "gone" },
+      where: { computerId: harness.computer.id, startedAt: runningSince, endedAt: null },
+      data: { lastSeenAt: expect.any(Date) },
     });
+  });
+
+  it("does not note a computer the provider no longer reports running", async () => {
+    const harness = idleHarness({ runningAtProvider: false, runningSince: new Date() });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computerRun.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { lastSeenAt: expect.any(Date) } }),
+    );
   });
 
   it("ends the computer's run when idle shutdown suspends it", async () => {
@@ -1581,6 +1594,7 @@ function idleHarness(
     homeRevisionAt?: Date | null;
     runSinceSave?: boolean;
     takeoverSinceSave?: boolean;
+    runningAtProvider?: boolean;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -1653,6 +1667,7 @@ function idleHarness(
     computerExecutionLease: { findMany: vi.fn().mockResolvedValue([]) },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    $executeRaw: vi.fn().mockResolvedValue(1),
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),
     },
@@ -1675,6 +1690,9 @@ function idleHarness(
     }),
     stop: vi.fn().mockResolvedValue(undefined),
     ...(options.stoppedAtProvider ? { isStopped: vi.fn().mockResolvedValue(true) } : {}),
+    ...(options.runningAtProvider === undefined
+      ? {}
+      : { isRunning: vi.fn().mockResolvedValue(options.runningAtProvider) }),
     ...(options.providerBackgroundWorkStatus
       ? {
           inspectBackgroundWork: vi.fn().mockResolvedValue(options.providerBackgroundWorkStatus),
@@ -1715,4 +1733,11 @@ function processExit(child: ReturnType<typeof spawn>): Promise<number> {
     child.on("error", reject);
     child.on("close", (code) => resolve(code ?? 1));
   });
+}
+
+/** The computers whose open run each raw `gone` end closed, in order. */
+function goneRuns(harness: { prisma: { $executeRaw: ReturnType<typeof vi.fn> } }) {
+  return harness.prisma.$executeRaw.mock.calls
+    .filter(([, , reason]) => reason === "gone")
+    .map(([, , , computerId]) => computerId);
 }
