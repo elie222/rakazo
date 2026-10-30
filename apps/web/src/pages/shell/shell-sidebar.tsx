@@ -19,7 +19,6 @@ import { useBilling } from "../../components/SubscriptionGate";
 import { formatBillingDate } from "../../lib/billing";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import type { Panel } from "../../lib/right-panel-state";
-import { clearSpaceSelection } from "../../lib/rpc";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
 import { SpaceSearchResults } from "../SpaceSearch";
@@ -302,10 +301,11 @@ function ShellSidebarFooter({
   const [inviteOpen, setInviteOpen] = useState(false);
   const referral = billing?.referral;
   const [logOutError, setLogOutError] = useState<string | null>(null);
-  const { signingOut, logOut } = useSignOut(() => {
-    clearSpaceSelection();
-    navigate("/");
-  }, setLogOutError);
+  const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
+    // A failed sign-out reloads the page: reopen the menu so its error shows.
+    setMenuOpen(true);
+    setLogOutError(message);
+  });
   const { label: userName, initial: initials } = accountDisplay(user ?? {}, t`You`);
   const day = freeUntil ? formatBillingDate(freeUntil, i18n.locale || "en") : "";
   return (

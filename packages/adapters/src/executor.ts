@@ -1568,6 +1568,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                apiProtocol: resolved.apiProtocol,
                 headers: resolved.headers,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,

@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/client";
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import type * as CoreModule from "@rakazo/core";
 import {
@@ -10,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pickUp } from "./call-pickup.js";
 import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
 import { dictation } from "./dictation.js";
-import { rpc } from "./rpc.js";
+import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
 import { reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 
@@ -46,6 +47,7 @@ vi.mock("./tts.js", () => ({
 }));
 
 vi.mock("./rpc.js", () => ({
+  recheckSessionOnUnauthorized: vi.fn(),
   rpc: {
     threads: {
       answer: vi.fn(),
@@ -1281,3 +1283,67 @@ describe("answered incoming call", () => {
     );
   });
 });
+
+describe("session ends during a call", () => {
+  beforeEach(() => {
+    endCall();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    isSpeaking.mockReturnValue(false);
+    listen.mockResolvedValue(undefined);
+    getThread.mockResolvedValue(snapshot([]) as never);
+    endCallRpc.mockResolvedValue({ ok: true } as never);
+  });
+
+  afterEach(() => {
+    endCall();
+    vi.useRealTimers();
+  });
+
+  it("ends the call and rechecks the session when its stream reports the session gone", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    vi.mocked(rpc.threads.subscribe).mockResolvedValue(
+      (async function* () {
+        yield* [];
+        throw new ORPCError("UNAUTHORIZED");
+      })() as never,
+    );
+    const events = await feed.subscribe(3, new AbortController().signal);
+    await expect(
+      (async () => {
+        for await (const _event of events);
+      })(),
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(getSnapshot()).toBeNull();
+    expect(dictation.stop).toHaveBeenCalledWith("cancel");
+    expect(recheckSessionOnUnauthorized).toHaveBeenCalledWith(401);
+    expect(endCallRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "stream connect",
+      () => vi.mocked(rpc.threads.subscribe),
+      (feed: Feed) => feed.subscribe(3, new AbortController().signal),
+    ],
+    ["snapshot", () => getThread, (feed: Feed) => feed.refresh()],
+    ["head", () => vi.mocked(rpc.threads.head), (feed: Feed) => feed.loadHead()],
+  ] as const)(
+    "ends the call when its %s request is refused as unauthorized",
+    async (_name, request, run) => {
+      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      request().mockRejectedValue(new ORPCError("UNAUTHORIZED"));
+      vi.mocked(dictation.stop).mockClear();
+
+      await expect(run(feed)).rejects.toMatchObject({ status: 401 });
+      expect(getSnapshot()).toBeNull();
+      expect(dictation.stop).toHaveBeenCalledWith("cancel");
+      expect(endCallRpc).not.toHaveBeenCalled();
+    },
+  );
+});
+
+type Feed = Parameters<typeof runThreadSubscription>[0];

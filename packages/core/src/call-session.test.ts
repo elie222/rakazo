@@ -49,8 +49,7 @@ describe("call send tracker", () => {
   it("swallows a failed close", async () => {
     const sends = createCallSendTracker();
     const close = vi.fn(() => Promise.reject(new Error("gone")));
-    sends.closeAfterSends("call-1", close);
-    await Promise.resolve();
+    await expect(sends.closeAfterSends("call-1", close)).resolves.toBeUndefined();
     expect(close).toHaveBeenCalledTimes(1);
   });
 });

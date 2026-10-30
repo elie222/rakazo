@@ -1,11 +1,12 @@
 import { t } from "@lingui/core/macro";
-import type { BotAvatarSet, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type { BotAvatarSet, ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
   createCallSendTracker,
   createInterimBargeIn,
+  errorStatus,
   isCallBargeIn,
   isFarewell,
   isSecretAskBlock,
@@ -15,6 +16,7 @@ import {
   spokenDecision,
   spokenMemory,
 } from "@rakazo/core";
+import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
 import { pickUp } from "./call-pickup.js";
 import { dictation } from "./dictation.js";
@@ -24,7 +26,7 @@ import {
   webLogoAvatarActivity,
 } from "./logo-avatar-activity.js";
 import { reportClientError } from "./monitoring";
-import { rpc } from "./rpc.js";
+import { recheckSessionOnUnauthorized, rpc } from "./rpc.js";
 import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 import { errorText } from "./user-error";
@@ -56,7 +58,20 @@ const RUN_ACTIVE = ["running", "queued", "leased"];
  * if a measured tail actually outruns it.
  */
 export const ECHO_GUARD_MS = 600;
+/** Longest sign-out waits for pending hang-ups while the session still exists. */
+export const SIGN_OUT_HANG_UP_MS = 3_000;
+/**
+ * The last signed-in user a tab confirmed. Signing in elsewhere sends no Better Auth message,
+ * so other tabs learn of a new account from this key's storage event.
+ */
+export const SIGNED_IN_USER_KEY = "rakazo.signedInUser";
 let state: CallState | null = null;
+/** The signed-in user this page belongs to; undefined until the session first resolves. */
+let identity: string | null | undefined;
+/** Other tabs' sign-outs and account changes are watched once a user is signed in. */
+let watchingOtherTabs = false;
+/** The page is being left for a new session: an answer arriving before it unloads starts nothing. */
+let leaving = false;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
 let callId = "";
 /** Cancels the ringing of a call that is hung up before it picks up. */
@@ -65,6 +80,10 @@ let pickup: AbortController | null = null;
 let openingPending = false;
 /** Requests for this call that must persist before its server-side hang-up. */
 const callSends = createCallSendTracker();
+/** Server-side hang-ups still waiting on sends or in flight. */
+const hangUps = new Set<Promise<void>>();
+/** Bumped when the session ends: a hang-up still queued then would run signed out or as someone else. */
+let sessionEpoch = 0;
 let transcribe: boolean | undefined;
 let thread: ThreadSnapshot | null = null;
 let feed: {
@@ -131,6 +150,7 @@ export function startCall(call: {
   /** The bot called and the user picked up: no ringing, and the bot speaks first. */
   answered?: { callId: string; opening: string };
 }): void {
+  if (leaving) return;
   endCall();
   callId = call.answered?.callId ?? newClientId();
   transcribe = call.transcribe;
@@ -214,16 +234,26 @@ export function endCall(): void {
   if (state && !botEndedCall) {
     const { botId, connectedAt } = state;
     const closingCallId = callId;
+    const epoch = sessionEpoch;
     const durationSeconds =
       connectedAt === null ? undefined : Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
-    const closeServerCall = () =>
-      rpc.threads.endCall({
+    const closeServerCall = async () => {
+      if (epoch !== sessionEpoch) return;
+      await rpc.threads.endCall({
         botId,
         callId: closingCallId,
         ...(durationSeconds === undefined ? {} : { durationSeconds }),
       });
-    callSends.closeAfterSends(closingCallId, closeServerCall);
+    };
+    const closed = callSends.closeAfterSends(closingCallId, closeServerCall);
+    hangUps.add(closed);
+    void closed.then(() => hangUps.delete(closed));
   }
+  dropCall();
+}
+
+/** Stops the call on this device only. */
+function dropCall(): void {
   pickup?.abort();
   pickup = null;
   openingPending = false;
@@ -248,9 +278,101 @@ export function endCall(): void {
   thread = null;
   spokenMessageIds.clear();
   spokenMemory.clear();
-  if (!state) return;
-  state = null;
-  emit();
+  if (state) {
+    state = null;
+    emit();
+  }
+}
+
+/** Set once the session changed under this page; a pending sign-out then reloads instead. */
+let sessionChangedHere = false;
+export function sessionChangedUnderPage(): boolean {
+  return sessionChangedHere;
+}
+
+/** The session is already gone: end the call without a hang-up the old user can no longer send. */
+function endCallSignedOut(): void {
+  sessionEpoch += 1;
+  dropCall();
+}
+
+/**
+ * The session changed under this page: end the call here, then load a fresh page so nothing
+ * from the old session, such as a pending call start or a queued request, survives.
+ */
+function reloadForNewSession(): void {
+  endCallSignedOut();
+  // A sign-out still waiting to send must not send it with the new session's cookie.
+  sessionChangedHere = true;
+  // Already leaving, for example signing out: that page load is fresh too.
+  if (leaving) return;
+  leaving = true;
+  window.location.reload();
+}
+
+/**
+ * Hangs up while the session still exists, waiting at most `SIGN_OUT_HANG_UP_MS` for pending
+ * sends and hang-ups. Hang-ups still queued after that are dropped: by the time they run, the
+ * cookie they send may belong to no one or to another user. The page is left right after.
+ */
+export async function endCallBeforeSignOut(): Promise<void> {
+  leaving = true;
+  endCall();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.all(hangUps),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, SIGN_OUT_HANG_UP_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  sessionEpoch += 1;
+}
+
+/** The page is being left for a new session: nothing more may be sent for the old one. */
+export function isLeavingSession(): boolean {
+  return leaving;
+}
+
+/** A call belongs to the signed-in user: when that user changes or signs out, the page reloads. */
+export function syncCallIdentity(userId: string | null): void {
+  const previous = identity;
+  if (previous === userId) return;
+  identity = userId;
+  publishSignedInUser(userId);
+  if (typeof previous === "string") reloadForNewSession();
+  else if (userId !== null) watchOtherTabs();
+}
+
+/** This page signed out and leaves on its own: other tabs reload, this one does not. */
+export function forgetSignedInUser(): void {
+  identity = null;
+  publishSignedInUser(null);
+}
+
+/**
+ * Another tab signed out or confirmed another user: this tab's session lookup may stall or
+ * still report the old user, so reload before anything runs with the other session's cookie.
+ */
+function watchOtherTabs(): void {
+  if (watchingOtherTabs) return;
+  watchingOtherTabs = true;
+  getGlobalBroadcastChannel().subscribe((message) => {
+    if (message.data?.trigger === "signout" && typeof identity === "string") reloadForNewSession();
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== SIGNED_IN_USER_KEY || typeof identity !== "string") return;
+    if (event.newValue !== identity) reloadForNewSession();
+  });
+}
+
+function publishSignedInUser(userId: string | null): void {
+  try {
+    if (userId === null) localStorage.removeItem(SIGNED_IN_USER_KEY);
+    else localStorage.setItem(SIGNED_IN_USER_KEY, userId);
+  } catch {
+    // No storage (private mode, tests): other tabs still see sign-outs from Better Auth.
+  }
 }
 
 export function toggleMute(): void {
@@ -300,16 +422,37 @@ function watchThread(botId: string) {
     webLogoAvatarActivity.reconcile(next);
     return commit(next);
   };
-  feed = { controller, load };
+  // The subscription stops retrying on a 401 and a stalled session lookup may never route to
+  // sign-in, so the call ends on any refused request. A session that expires mid-stream arrives
+  // as an error inside an HTTP 200, which the response hook never sees: recheck it here too.
+  const endOnUnauthorized = (error: unknown): never => {
+    if (errorStatus(error) === 401 && isCurrent()) {
+      recheckSessionOnUnauthorized(401);
+      endCallSignedOut();
+    }
+    throw error;
+  };
+  const loadOrEnd = () => load().catch(endOnUnauthorized);
+  feed = { controller, load: loadOrEnd };
+  async function* endOnUnauthorizedEvents(events: AsyncIterable<ProductEvent>) {
+    try {
+      yield* events;
+    } catch (error) {
+      endOnUnauthorized(error);
+    }
+  }
   void runThreadSubscription({
     signal: controller.signal,
-    loadInitial: load,
-    loadHead: () => rpc.threads.head({ botId }, { signal: controller.signal }),
-    refresh: load,
+    loadInitial: loadOrEnd,
+    loadHead: () =>
+      rpc.threads.head({ botId }, { signal: controller.signal }).catch(endOnUnauthorized),
+    refresh: loadOrEnd,
     currentSnapshot: () => thread,
-    subscribe: (cursor, signal) =>
-      openLogoAvatarActivityFeed(avatarSource, thread, cursor, signal, () =>
-        rpc.threads.subscribe({ botId, cursor }, { signal }),
+    subscribe: async (cursor, signal) =>
+      endOnUnauthorizedEvents(
+        await openLogoAvatarActivityFeed(avatarSource, thread, cursor, signal, () =>
+          rpc.threads.subscribe({ botId, cursor }, { signal }),
+        ).catch(endOnUnauthorized),
       ),
     beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
     applyEvent: (event) => {

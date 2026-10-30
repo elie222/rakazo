@@ -6,6 +6,7 @@ import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
   McpStdioLaunchError,
+  mcpStdioRefusal,
   secureFetch,
   validateUrl,
   withEndpointOriginFallback,
@@ -98,6 +99,39 @@ describe("MCP transport seam", () => {
       }),
     ).rejects.toThrow("allowlist");
     await session.close();
+  });
+
+  const RUNNERS = [
+    "bunx",
+    "pnpx",
+    "uvx",
+    "pipx",
+    "/usr/local/bin/pnpm",
+    "npm",
+    "yarn",
+    "bun",
+    "deno",
+    "uv",
+    "pnpm.cmd",
+    "BUNX.exe",
+  ];
+
+  it.each(RUNNERS)("refuses package runner %s even when allowlisted", async (command) => {
+    expect(mcpStdioRefusal(command, { stdioEnabled: true, allowedCommands: [command] })).toBe(
+      "Only npx can launch packages here",
+    );
+    const session = new McpSession();
+    await expect(
+      session.connectStdio({ command, args: ["dlx", "pkg"], allowedCommands: [command] }),
+    ).rejects.toThrow("Only npx can launch packages here");
+    await session.close();
+  });
+
+  it("still allows npx and plain allowlisted binaries", () => {
+    const policy = { stdioEnabled: true, allowedCommands: ["npx", "/opt/mcp/server", "node"] };
+    expect(mcpStdioRefusal("npx", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("/opt/mcp/server", policy)).toBeUndefined();
+    expect(mcpStdioRefusal("node", policy)).toBeUndefined();
   });
 
   it("rejects remote endpoints that resolve to a private address", async () => {

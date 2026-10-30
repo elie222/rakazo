@@ -3,7 +3,7 @@ import type { Bot } from "@rakazo/contracts";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { startCall, useCallSession } from "../../lib/call-session";
+import { isLeavingSession, startCall, useCallSession } from "../../lib/call-session";
 import { rpc, selectedSpaceId } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { CallWindow } from "./CallWindow";
@@ -129,6 +129,8 @@ export function IncomingCall({
   if (!bot || !call) return null;
 
   const settle = async () => {
+    // The page reloads for another session: its cookie may belong to someone else now.
+    if (isLeavingSession()) return;
     setBusy(true);
     setError(null);
     try {
@@ -142,12 +144,15 @@ export function IncomingCall({
   };
 
   const answer = async () => {
+    if (isLeavingSession()) return;
     setBusy(true);
     setError(null);
     const target = { botId: bot.id, callId: call.callId };
     const context = { spaceId: selectedSpaceId() };
     try {
       const answered = await rpc.threads.answerCall(target, { context });
+      // The page reloads for another session: a hang-up now would carry that session's cookie.
+      if (isLeavingSession()) return;
       if (!mounted.current) {
         // Nobody is left to talk to: hang up the call the server now holds as answered.
         void rpc.threads.endCall(target, { context }).catch(() => undefined);

@@ -98,6 +98,15 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
   await expect(close.locator("svg")).toBeVisible();
   await expect(close).toHaveText("");
   const assertHeaderLayout = async () => {
+    // The dialog zooms in as it opens; boxes measured before that ends are scaled.
+    await expect
+      .poll(() =>
+        // Only the popup's own animation: the header avatars animate without end.
+        view.evaluate((dialog) =>
+          dialog.getAnimations().every((animation) => animation.playState !== "running"),
+        ),
+      )
+      .toBe(true);
     const viewBox = await view.boundingBox();
     const headingBox = await view.getByRole("heading").boundingBox();
     const buttonBox = await close.boundingBox();
