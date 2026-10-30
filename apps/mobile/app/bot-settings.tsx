@@ -133,7 +133,8 @@ export default function BotSettingsScreen() {
     () =>
       createQueuedSave<boolean>(true, {
         save: async (notifyOnFinish) => {
-          await rpc("bots/update", { botId, notifyOnFinish });
+          const next = await rpc("bots/update", { botId, notifyOnFinish });
+          threadId.current = next.threadId;
         },
         onChange: setNotifyOnFinish,
         onSaved: async (notify) => {

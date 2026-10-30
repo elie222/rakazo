@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   voiceForBot: vi.fn(),
   setVoiceForBot: vi.fn(),
   rpc: vi.fn(),
+  loadBot: vi.fn(),
   back: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
@@ -43,10 +44,10 @@ const offered = [
   { identifier: "voice-b", name: "Beth", language: "en-GB" },
 ];
 
-function deferredSave() {
-  let resolve!: () => void;
+function deferredSave<T = void>() {
+  let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
-  const promise = new Promise<void>((resolveSave, rejectSave) => {
+  const promise = new Promise<T>((resolveSave, rejectSave) => {
     resolve = resolveSave;
     reject = rejectSave;
   });
@@ -80,7 +81,8 @@ vi.mock("./api", () => ({
       ].includes(procedure)
     )
       return mocks.rpc(procedure, input);
-    if (procedure === "bots/get")
+    if (procedure === "bots/get") {
+      await mocks.loadBot();
       return {
         id: "bot-fixture",
         threadId: "thread-fixture",
@@ -96,6 +98,7 @@ vi.mock("./api", () => ({
         fleetManagement: false,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
       };
+    }
     if (procedure === "scratchpad/list") return mocks.work;
     if (procedure === "memory/list") return mocks.docs;
     if (procedure === "me") return {};
@@ -356,6 +359,7 @@ describe("bot settings device voice menu", () => {
     mocks.crossSpaceCommunication = false;
     mocks.avatarSet = undefined;
     vi.clearAllMocks();
+    mocks.loadBot.mockReset();
     vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([]);
     mocks.focus = undefined;
     mocks.instructions = "";
@@ -763,7 +767,7 @@ describe("bot settings device voice menu", () => {
         },
       },
     ] as never);
-    const first = deferredSave();
+    const first = deferredSave<{ threadId: string }>();
     mocks.rpc.mockReturnValueOnce(first.promise);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -776,7 +780,7 @@ describe("bot settings device voice menu", () => {
     });
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
     expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
-    await act(async () => first.resolve());
+    await act(async () => first.resolve({ threadId: "thread-fixture" }));
     expect(Notifications.dismissNotificationAsync).toHaveBeenCalledExactlyOnceWith("direct-chat");
     expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
       "https://api.example.test",
@@ -785,6 +789,7 @@ describe("bot settings device voice menu", () => {
       { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
     );
 
+    mocks.rpc.mockResolvedValueOnce({ threadId: "thread-fixture" });
     await act(async () => toggle.click());
     expect(vi.mocked(afterChatNotifyChange).mock.calls).toEqual([
       [
@@ -800,6 +805,44 @@ describe("bot settings device voice menu", () => {
         { botId: "bot-fixture", threadId: "thread-fixture", notify: true },
       ],
     ]);
+    expect(Notifications.dismissNotificationAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismisses direct-chat notifications when muting before the bot loads", async () => {
+    const loading = deferredSave();
+    mocks.loadBot.mockReturnValueOnce(loading.promise);
+    mocks.rpc.mockResolvedValueOnce({ threadId: "thread-fixture" });
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      {
+        request: {
+          identifier: "direct-chat",
+          content: { data: { "rakazo.botId": "bot-fixture", "rakazo.threadId": "thread-fixture" } },
+        },
+      },
+      {
+        request: {
+          identifier: "group-chat",
+          content: { data: { "rakazo.botId": "bot-fixture", "rakazo.threadId": "group-thread" } },
+        },
+      },
+    ] as never);
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="When it finishes or needs input"]',
+    )!;
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      notifyOnFinish: false,
+    });
+    expect(Notifications.dismissNotificationAsync).toHaveBeenCalledExactlyOnceWith("direct-chat");
+    expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example.test",
+      "token",
+      "space-a",
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
+    );
+    await act(async () => loading.resolve());
     expect(Notifications.dismissNotificationAsync).toHaveBeenCalledTimes(1);
   });
 
@@ -827,7 +870,7 @@ describe("bot settings device voice menu", () => {
     await act(async () => toggle.click());
     await act(async () => toggle.click());
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    mocks.rpc.mockResolvedValueOnce(undefined);
+    mocks.rpc.mockResolvedValueOnce({ threadId: "thread-fixture" });
     await act(async () => first.reject(new Error("older failure")));
     expect(mocks.rpc).toHaveBeenLastCalledWith("bots/update", {
       botId: "bot-fixture",
