@@ -209,6 +209,7 @@ export async function openUserSettings(
     | "vault"
     | "wallet"
     | "usage"
+    | "audit"
     | "computer"
     | "billing"
     | "updates",

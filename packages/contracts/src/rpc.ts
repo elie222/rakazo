@@ -18,6 +18,7 @@ import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_COUNT_CEILING,
 } from "./attachments.js";
+import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import {
   BoardEventSchema,
   BoardSchema,
@@ -330,6 +331,10 @@ export const appContract = {
   /** Deployment-owner view of the append-only security event log, newest first. */
   security: {
     events: oc.input(SecurityEventListInputSchema).output(z.array(SecurityEventSchema)),
+  },
+  /** The organization's audit log, newest first. Organization owners and admins only. */
+  audit: {
+    events: oc.input(AuditEventListInputSchema).output(AuditEventPageSchema),
   },
   /**
    * Deployment-owner product updates. When the Compose updater sidecar is reachable, these proxy

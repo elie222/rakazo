@@ -458,6 +458,10 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name} için hesap menüsü"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Action"
+msgstr ""
+
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -478,6 +482,10 @@ msgstr ""
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Etkinlik"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Actor"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -894,6 +902,10 @@ msgstr "Dosya ekle"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "Ek"
+
+#: src/pages/settings-nav.ts
+msgid "Audit log"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -1928,6 +1940,10 @@ msgstr "{name} indirilemedi. Tekrar dene."
 msgid "Could not enable tools"
 msgstr ""
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not export the audit log"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Bağlayıcı kurulamadı"
@@ -1993,6 +2009,10 @@ msgstr "Giriş seçenekleri yüklenemedi"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Beceri yüklenemedi"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not load the audit log"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2502,6 +2522,7 @@ msgid "Deletion code"
 msgstr "Silme kodu"
 
 #: src/components/AskCard.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "Reddedildi"
 
@@ -2857,6 +2878,7 @@ msgstr "Tabloyu genişlet"
 msgid "expired"
 msgstr "süresi doldu"
 
+#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Dışa aktar"
@@ -2890,6 +2912,7 @@ msgstr "başarısız"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "Başarısız"
 
@@ -3437,6 +3460,7 @@ msgid "Load earlier messages"
 msgstr "Önceki mesajları yükle"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr ""
 
@@ -4007,6 +4031,10 @@ msgstr "Kimlik doğrulaması yok"
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
+msgstr ""
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "No events yet"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -5678,6 +5706,10 @@ msgstr "Tablo"
 msgid "Take control"
 msgstr "Kontrolü al"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Görev öğret"
@@ -5941,6 +5973,10 @@ msgstr ""
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "Perşembe"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Time"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

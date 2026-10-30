@@ -458,6 +458,10 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name} का खाता मेन्यू"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Action"
+msgstr ""
+
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -478,6 +482,10 @@ msgstr ""
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "गतिविधि"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Actor"
+msgstr ""
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -894,6 +902,10 @@ msgstr "फ़ाइल संलग्न करें"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "अटैचमेंट"
+
+#: src/pages/settings-nav.ts
+msgid "Audit log"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -1928,6 +1940,10 @@ msgstr "{name} डाउनलोड नहीं हो सका। पुन�
 msgid "Could not enable tools"
 msgstr ""
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not export the audit log"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "कनेक्टर इंस्टॉल नहीं हो सका"
@@ -1993,6 +2009,10 @@ msgstr "साइन इन के विकल्प लोड नहीं ह
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "स्किल लोड नहीं हो सकी"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not load the audit log"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2502,6 +2522,7 @@ msgid "Deletion code"
 msgstr "हटाने का कोड"
 
 #: src/components/AskCard.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "अस्वीकृत"
 
@@ -2857,6 +2878,7 @@ msgstr "तालिका बड़ी करें"
 msgid "expired"
 msgstr "समाप्त"
 
+#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "एक्सपोर्ट करें"
@@ -2890,6 +2912,7 @@ msgstr "असफल"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "विफल"
 
@@ -3437,6 +3460,7 @@ msgid "Load earlier messages"
 msgstr "पुराने संदेश लोड करें"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr ""
 
@@ -4007,6 +4031,10 @@ msgstr "कोई प्रमाणीकरण नहीं"
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
+msgstr ""
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "No events yet"
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -5678,6 +5706,10 @@ msgstr "तालिका"
 msgid "Take control"
 msgstr "नियंत्रण लें"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Target"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "कोई कार्य सिखाएं"
@@ -5941,6 +5973,10 @@ msgstr ""
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "गुरुवार"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Time"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

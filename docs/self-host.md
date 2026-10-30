@@ -121,6 +121,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
 - [Backup and restore](./self-host-backups.md) and [upgrading](./self-host-upgrading.md).
 - [Logs and monitoring](./self-host-observability.md): logs, error reports, traces, security events
   and alerts.
+- [Audit log](./self-host-audit-log.md): who did what in each organization, retention, export
+  and SIEM forwarding.
 - [Apps and clients](./self-host-clients.md): mobile and desktop apps, push, client updates and web
   page settings.
 - [Billing](./self-host-billing.md): optional Stripe plans and model credits.

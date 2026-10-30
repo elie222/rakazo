@@ -4,6 +4,7 @@ export * from "./agent-import-settings.js";
 export * from "./ai-consent.js";
 export * from "./artifact-store-factory.js";
 export * from "./artifacts.js";
+export * from "./audit-forwarding.js";
 export * from "./auto-review.js";
 export * from "./auto-review-factory.js";
 export * from "./aws-kms-key-provider.js";

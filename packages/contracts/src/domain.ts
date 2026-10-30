@@ -1766,6 +1766,8 @@ export const MeSchema = z.object({
   isDeploymentOwner: z.boolean(),
   /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions, adds stdio MCP servers. */
   isAdmin: z.boolean().default(false),
+  /** Owns or administers the organization, so it can read the audit log. Absent from older servers. */
+  canViewAuditLog: z.boolean().optional(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),

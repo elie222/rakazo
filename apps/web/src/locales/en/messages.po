@@ -458,6 +458,10 @@ msgstr "Account label"
 msgid "Account menu for {name}"
 msgstr "Account menu for {name}"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Action"
+msgstr "Action"
+
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -478,6 +482,10 @@ msgstr "Active"
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Activity"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Actor"
+msgstr "Actor"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -894,6 +902,10 @@ msgstr "Attach file"
 #: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "Attachment"
+
+#: src/pages/settings-nav.ts
+msgid "Audit log"
+msgstr "Audit log"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Authentication"
@@ -1928,6 +1940,10 @@ msgstr "Could not download {name}. Try again."
 msgid "Could not enable tools"
 msgstr "Could not enable tools"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not export the audit log"
+msgstr "Could not export the audit log"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Could not install connector"
@@ -1993,6 +2009,10 @@ msgstr "Could not load sign-in options"
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Could not load skill"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Could not load the audit log"
+msgstr "Could not load the audit log"
 
 #: src/pages/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -2502,6 +2522,7 @@ msgid "Deletion code"
 msgstr "Deletion code"
 
 #: src/components/AskCard.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Denied"
 msgstr "Denied"
 
@@ -2857,6 +2878,7 @@ msgstr "Expand table"
 msgid "expired"
 msgstr "expired"
 
+#: src/pages/AuditLogSettingsPanel.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Export"
@@ -2890,6 +2912,7 @@ msgstr "failed"
 
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Failed"
 msgstr "Failed"
 
@@ -3437,6 +3460,7 @@ msgid "Load earlier messages"
 msgstr "Load earlier messages"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/AuditLogSettingsPanel.tsx
 msgid "Load more"
 msgstr "Load more"
 
@@ -4008,6 +4032,10 @@ msgstr "No authentication"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "No bots match"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "No events yet"
+msgstr "No events yet"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -5678,6 +5706,10 @@ msgstr "Table"
 msgid "Take control"
 msgstr "Take control"
 
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Target"
+msgstr "Target"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Teach a task"
@@ -5941,6 +5973,10 @@ msgstr "This week"
 #: src/lib/cron.ts
 msgid "Thursday"
 msgstr "Thursday"
+
+#: src/pages/AuditLogSettingsPanel.tsx
+msgid "Time"
+msgstr "Time"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"

@@ -28,7 +28,8 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import type { AuditEventInput } from "@rakazo/db";
+import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
@@ -314,6 +315,9 @@ export async function gateToolCall(
           newDestination: siteGate === "new",
         });
   if (plan === "deny") {
+    await auditToolCall(ctx, name, "denied", {
+      reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
+    });
     return {
       result: {
         error:
@@ -550,6 +554,28 @@ export async function gateToolCall(
   return { call };
 }
 
+/** A bot's consequential tool call, recorded in its organization's audit log. */
+export async function auditToolCall(
+  ctx: RunContext,
+  tool: string,
+  outcome: "success" | "failure" | "denied",
+  metadata: AuditEventInput["metadata"],
+  recorded: Pick<AuditEventInput, "action" | "actor"> = {
+    action: "tool.call",
+    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
+  },
+): Promise<void> {
+  await recordAuditEvent({
+    ...recorded,
+    spaceId: ctx.run.spaceId,
+    target: { type: "tool", id: tool, label: humanizeToolName(tool) },
+    outcome,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    metadata,
+  });
+}
+
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
@@ -774,6 +800,7 @@ async function reviewToolCall(
         },
       });
     }
+    await auditAutoReview(ctx, name, applied, judge.decision, judge.model);
     return verdict;
   } catch {
     // Cancellation must not write a review the next attempt would reuse.
@@ -784,18 +811,32 @@ async function reviewToolCall(
       reason: reviewReason,
       decision: applyJudgeDecision({ decision: "error", consequential: gated }),
     };
+    const reviewModel = checker
+      ? `${checker.provider}/${checker.model}`
+      : (injectedReview?.describe().id ?? "auto-review");
     if (applied) {
       await deps.prisma.externalEffect.update({
         where: { id: applied.effect.id },
-        data: {
-          reviewDecision: "error",
-          reviewReason,
-          reviewModel: checker
-            ? `${checker.provider}/${checker.model}`
-            : (injectedReview?.describe().id ?? "auto-review"),
-        },
+        data: { reviewDecision: "error", reviewReason, reviewModel },
       });
     }
+    await auditAutoReview(ctx, name, applied, "error", reviewModel);
     return verdict;
   }
+}
+
+function auditAutoReview(
+  ctx: RunContext,
+  tool: string,
+  applied: AppliedEffect | undefined,
+  decision: string,
+  model: string | undefined,
+): Promise<void> {
+  return auditToolCall(
+    ctx,
+    tool,
+    decision === "error" ? "failure" : "success",
+    { effectId: applied?.effect.id, decision },
+    { action: "approval.auto_reviewed", actor: { type: "system", label: model } },
+  );
 }

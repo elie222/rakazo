@@ -7,6 +7,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
+import { auditLogReaderWhere } from "@rakazo/db";
 import { isAdmin } from "../admins.js";
 import type { RouterDeps } from "../router.js";
 
@@ -27,6 +28,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         name: true,
         timezone: true,
         signupSurvey: { select: { userId: true } },
+        members: { where: auditLogReaderWhere(actor.spaceId), select: { id: true } },
       },
     }),
     modelSetup(deps, actor),
@@ -44,6 +46,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     spaceId: actor.spaceId,
     isDeploymentOwner: false,
     isAdmin: admin,
+    canViewAuditLog: Boolean(user.members?.length),
     needsModel: setup.needsModel,
     defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
     defaultModel: setup.model?.modelId ?? deps.env.defaultModel,

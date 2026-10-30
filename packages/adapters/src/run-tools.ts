@@ -4,7 +4,7 @@ import { IMAGE_RETURNING_COMPUTER_TOOLS, MODEL_CANNOT_SEE_MESSAGE } from "./mode
 import type { RunContext } from "./run-context.js";
 import { pauseForApproval } from "./run-context.js";
 import type { ToolHandler } from "./run-tool-gate.js";
-import { gateToolCall } from "./run-tool-gate.js";
+import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
@@ -107,5 +107,20 @@ async function dispatchTool(
   if (refused) return refused;
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) return gate.result;
-  return toolHandler(gate.call.name)(ctx, gate.call);
+  if (!gate.call.applied) return toolHandler(gate.call.name)(ctx, gate.call);
+  let outcome: "success" | "failure" = "failure";
+  try {
+    const result = await toolHandler(gate.call.name)(ctx, gate.call);
+    if (!isToolError(result)) outcome = "success";
+    return result;
+  } finally {
+    await auditToolCall(ctx, gate.call.name, outcome, {
+      effectId: gate.call.applied.effect.id,
+      autoApproved: gate.call.bypassApproval,
+    });
+  }
+}
+
+function isToolError(result: unknown): boolean {
+  return typeof result === "object" && result !== null && "error" in result;
 }

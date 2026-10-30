@@ -640,6 +640,7 @@ function SpaceShell() {
     computer: computersAreUnavailable(bootstrapMe?.sandboxProvider),
     billing: bootstrapMe?.billingEnabled === true,
     updates: Boolean(desktopBridge()?.update),
+    audit: bootstrapMe?.canViewAuditLog === true,
   });
   const paletteActions: CommandPaletteAction[] = [
     {

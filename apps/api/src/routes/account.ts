@@ -13,16 +13,19 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
+  auditLogOrganization,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
   listApprovalRules,
+  listAuditEvents,
   listVoicePreferences,
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
   removeApprovalRule,
+  runAsSystem,
   saveApprovalRule,
   saveAutoReviewPreference,
   selectVoicePreference,
@@ -145,6 +148,15 @@ export function accountRoutes(ctx: RouterContext) {
     security: {
       events: authed.security.events.handler(() => {
         throw new ORPCError("FORBIDDEN");
+      }),
+    },
+    audit: {
+      events: authed.audit.events.handler(async ({ context, input }) => {
+        const organizationId = await auditLogOrganization(deps.prisma, context.actor);
+        if (!organizationId) throw new ORPCError("FORBIDDEN");
+        return runAsSystem("read the organization's audit log", () =>
+          listAuditEvents(deps.prisma, organizationId, input),
+        );
       }),
     },
     updater: {

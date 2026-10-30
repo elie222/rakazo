@@ -152,6 +152,7 @@ The API and worker append a row to `security_events` and write a `security.event
 Each event has the user, space, client address, user agent, time, and a few identifiers. Events
 never include message content, secrets, or tokens. Rows older than `SECURITY_EVENT_RETENTION_DAYS`
 (default 90) are deleted, and Postgres rejects updates to the rows that remain.
+An account's own events are also written to its organization's [audit log](./self-host-audit-log.md).
 
 Operators read recent events through server-side database/log tooling. For example, query Postgres:
 

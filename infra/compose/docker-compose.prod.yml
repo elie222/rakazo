@@ -64,6 +64,9 @@ x-app-environment: &app-environment
   # Logs, errors, traces and analytics
   LOG_LEVEL:
   SECURITY_EVENT_RETENTION_DAYS:
+  AUDIT_EVENT_RETENTION_DAYS:
+  AUDIT_LOG_WEBHOOK_URL:
+  AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
   AXIOM_TOKEN:
   AXIOM_DATASET:

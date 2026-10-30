@@ -509,6 +509,47 @@ model SecurityEvent {
   @@map("security_events")
 }
 
+/// The organization's record of who did what. No foreign keys, so deleting a space, chat,
+/// run, bot, or account keeps its history; ids dangle and the labels are copied at write time.
+/// Append-only: retention pruning is the only delete. Never stores message content or secrets.
+model AuditEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  spaceId        String?
+  spaceName      String?
+  actorType      String
+  actorId        String?
+  actorLabel     String?
+  action         String
+  targetType     String?
+  targetId       String?
+  targetLabel    String?
+  outcome        String
+  runId          String?
+  threadId       String?
+  ip             String?
+  userAgent      String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([spaceId, createdAt])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+/// How far the audit log has been forwarded to the deployment's webhook.
+model AuditEventForwarding {
+  id            String    @id @default("default")
+  lastCreatedAt DateTime?
+  lastEventId   String?
+  failures      Int       @default(0)
+  nextAttemptAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@map("audit_event_forwarding")
+}
+
 model UserModelCredential {
   id          String                 @id @default(cuid())
   userId      String
