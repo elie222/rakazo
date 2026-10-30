@@ -419,10 +419,17 @@ async function prepareOwnBotUpdate(
   );
   if (settingsOnly.length)
     return { error: `Only the owner can change ${settingsOnly.join(", ")}, in Settings.` };
-  if (OWNER_SETTINGS.some((key) => argumentGiven(args[key])) && !ctx.source.ownerStartedRun)
-    return {
-      error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
-    };
+  if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
+    if (!ctx.source.ownerStartedRun || isSubagentToolExecution(executionId))
+      return {
+        error: "Only the owner can change your model, thinking or read-aloud, from their own chat.",
+      };
+    if (ctx.state.tainted || (await ctx.trust.receivedOutsideMessage()))
+      return {
+        error:
+          "Model, thinking and read-aloud changes are blocked for the rest of this run because it read outside content.",
+      };
+  }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId)) return { error: "Helpers cannot set instructions." };
   const instructions = String(args.instructions).trim();

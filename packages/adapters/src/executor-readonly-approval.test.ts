@@ -1557,6 +1557,14 @@ describe("own settings through update_bot", () => {
     ]);
     expect(f.effects).toEqual([]);
   });
+  it("keeps the model once outside content entered the run", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { thinkingLevel: "high" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("outside content") });
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
   it("reads its settings when called with no fields", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { name: null, model: "" }, executionId: "call-1" }]);
