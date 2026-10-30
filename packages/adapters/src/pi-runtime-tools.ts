@@ -125,6 +125,8 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "shell") return `Running: ${detail(record.command)}`;
   if (toolName === "user_computer_shell")
     return `Running on your computer: ${detail(record.command)}`;
+  if (toolName === "user_computer_observe") return `Looking at ${detail(record.app)}`;
+  if (toolName === "user_computer_act") return `Using ${detail(record.app)}`;
   if (toolName === "read_file") return `Reading ${detail(record.path)}`;
   if (toolName === "write_file") return `Writing ${detail(record.path)}`;
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;

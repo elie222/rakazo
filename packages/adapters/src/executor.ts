@@ -1070,13 +1070,18 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           botUserId: bot.userId,
         });
         let userComputer: UserComputerState;
+        let userComputerScreen = false;
         if (
           userComputerOwnerId &&
           deps.userDevices &&
           !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
         ) {
-          if (await deps.userDevices.connected(userComputerOwnerId).catch(() => null))
+          const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
+          if (device) {
             userComputer = "connected";
+            // Only the macOS desktop bundles a screen driver so far.
+            userComputerScreen = device.platform === "darwin";
+          }
           // A chat that used the computer earlier may continue from another device after it closed.
           else if (await deps.userDevices.hasDevice(userComputerOwnerId).catch(() => false))
             userComputer = "offline";
@@ -1102,6 +1107,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputer === "connected",
+            userComputerScreen,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&

@@ -11,6 +11,7 @@ import {
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
+import { USER_COMPUTER_SCREEN_TOOLS, userComputerAppName } from "./run-tools-user-computer.js";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
@@ -101,6 +102,29 @@ export function buildApprovalAskBlock(
       actions: [
         { id: "allow", label: "Apply" },
         { id: "deny", label: "Dismiss" },
+      ],
+    };
+  }
+  if (USER_COMPUTER_SCREEN_TOOLS.has(toolName)) {
+    const app = userComputerAppName(args.app).replace(
+      new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"),
+      "\\$&",
+    );
+    const steps = Array.isArray(args.actions) ? args.actions.map(screenActionLine) : [];
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: `Use ${app || "an app"} on your computer?`,
+      ...(steps.length
+        ? {
+            detail: truncate(redactSecrets(steps.join("\n"), secrets), MAX_APPROVAL_DETAIL_LENGTH),
+            detailFormat: "code" as const,
+          }
+        : {}),
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow for this chat" },
+        { id: "deny", label: "Deny" },
       ],
     };
   }
@@ -255,4 +279,30 @@ function pickScopeLabel(args: Record<string, unknown>): string | undefined {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function screenActionLine(value: unknown): string {
+  const action = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const at =
+    action.element !== undefined
+      ? ` [${String(action.element)}]`
+      : action.x !== undefined
+        ? ` ${String(action.x)},${String(action.y)}`
+        : "";
+  switch (action.kind) {
+    case "type":
+      return `type ${JSON.stringify(String(action.text ?? ""))}${at}`;
+    case "set":
+      return `set${at} to ${JSON.stringify(String(action.value ?? ""))}`;
+    case "key":
+      return `key ${[...(Array.isArray(action.modifiers) ? action.modifiers : []), action.key].join("+")}`;
+    case "scroll":
+      return `scroll ${String(action.direction ?? "")}${at}`;
+    case "menu":
+      return `menu ${(Array.isArray(action.path) ? action.path : []).join(" > ")}`;
+    case "wait":
+      return `wait ${String(action.ms ?? 0)}ms`;
+    default:
+      return `${String(action.kind ?? "action")}${at}`;
+  }
 }

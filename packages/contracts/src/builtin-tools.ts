@@ -28,6 +28,8 @@ export const BUILTIN_TOOL_NAMES = [
   "attach_file",
   "shell",
   "user_computer_shell",
+  "user_computer_observe",
+  "user_computer_act",
   "open_path",
   "launch_app",
   "request_takeover",

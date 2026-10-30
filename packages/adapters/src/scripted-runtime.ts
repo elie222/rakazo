@@ -227,6 +227,37 @@ export function inferScript(
       },
     ];
   }
+  const lookAt = /look at (.+?) on my computer/i.exec(prompt)?.[1]?.trim();
+  if (lookAt) {
+    return [
+      {
+        assistant: `looking at ${lookAt}.`,
+        toolCalls: [{ name: "user_computer_observe", args: { app: lookAt } }],
+        complete: true,
+      },
+    ];
+  }
+  const typeIn = /type "([^"]+)" in a new (.+?) document on my computer/i.exec(prompt);
+  if (typeIn) {
+    return [
+      {
+        assistant: `typing in ${typeIn[2]}.`,
+        toolCalls: [
+          {
+            name: "user_computer_act",
+            args: {
+              app: typeIn[2],
+              actions: [
+                { kind: "menu", path: ["File", "New"] },
+                { kind: "type", text: typeIn[1] },
+              ],
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     const name = namedBot(prompt) ?? "Peer";
     const message =

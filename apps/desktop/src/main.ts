@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
 import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
 import { parseServerHeaders } from "@rakazo/contracts";
@@ -10,14 +11,17 @@ import type { Session } from "electron";
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   dialog,
   ipcMain,
   Menu,
   net,
+  powerMonitor,
   safeStorage,
   screen,
   session,
   shell,
+  systemPreferences,
 } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
@@ -28,6 +32,7 @@ import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
+import { createDesktopHostScreen } from "./host-screen.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -144,6 +149,7 @@ let localStack: LocalStackController;
 let hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
 let requestingComputerAccess = false;
 let userDevices: UserDeviceAccess | undefined;
+let hostScreen: HostScreen | undefined;
 
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
@@ -1168,6 +1174,29 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
+  let screenLocked = false;
+  powerMonitor.on("lock-screen", () => {
+    screenLocked = true;
+  });
+  powerMonitor.on("unlock-screen", () => {
+    screenLocked = false;
+  });
+  hostScreen = createDesktopHostScreen({
+    platform: process.platform,
+    // Installed builds ship the driver as an extra resource; `pnpm build` downloads it for development.
+    command: app.isPackaged
+      ? path.join(process.resourcesPath, "screen-driver", "cua-driver")
+      : path.join(app.getAppPath(), "build", "screen-driver", "cua-driver"),
+    home: path.join(userDataDir, "screen-driver"),
+    permissions: {
+      isTrustedAccessibilityClient: (prompt) =>
+        systemPreferences.isTrustedAccessibilityClient(prompt),
+      getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
+      requestScreenCapture: () =>
+        desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
+    },
+    locked: () => screenLocked,
+  });
   userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -1188,6 +1217,7 @@ app.whenReady().then(async () => {
         serverUrl: origin,
         token,
         root: path.join(userDataDir, "computers"),
+        screen: hostScreen,
         ...events,
       }),
   });
@@ -1625,5 +1655,6 @@ app.on("before-quit", () => {
   hostComputer?.activate(false);
   void hostComputer?.close();
   userDevices?.close();
+  void hostScreen?.close();
   localStack?.abort();
 });

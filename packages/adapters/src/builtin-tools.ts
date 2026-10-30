@@ -452,6 +452,62 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "user_computer_observe",
+    description:
+      "Look at one app on the user's own computer without disturbing them: opens it in the background if needed and returns its window as numbered accessibility rows ([N]) and a screenshot. query narrows the rows. Use only when the task needs an app on their computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", minLength: 1, maxLength: 200 },
+        query: { type: "string", maxLength: 200 },
+      },
+      required: ["app"],
+    },
+  },
+  {
+    name: "user_computer_act",
+    description:
+      'Act in one app on the user\'s own computer, in the background, and return its window afterwards. Observe it first. Up to 24 ordered actions: click (element, or x,y in screenshot pixels; button, double), type (text, into element or the focused field), set (value of element: a pop-up\'s choice, a field\'s whole text), key (key such as return, tab, escape, up, a; modifiers cmd, shift, option, ctrl), scroll (direction, amount, at element or x,y), menu (path from the menu bar, like ["File","New"]; use it instead of shortcuts), wait (ms). Element numbers come from the latest observation of that app.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", minLength: 1, maxLength: 200 },
+        actions: {
+          type: "array",
+          minItems: 1,
+          maxItems: 24,
+          items: {
+            type: "object",
+            properties: {
+              kind: {
+                type: "string",
+                enum: ["click", "type", "set", "key", "scroll", "menu", "wait"],
+              },
+              element: { type: "integer", minimum: 0 },
+              x: { type: "number" },
+              y: { type: "number" },
+              button: { type: "string", enum: ["left", "right"] },
+              double: { type: "boolean" },
+              text: { type: "string" },
+              value: { type: "string" },
+              key: { type: "string" },
+              modifiers: {
+                type: "array",
+                items: { type: "string", enum: ["cmd", "shift", "option", "ctrl"] },
+              },
+              direction: { type: "string", enum: ["up", "down", "left", "right"] },
+              amount: { type: "integer", minimum: 1, maximum: 20 },
+              path: { type: "array", items: { type: "string" } },
+              ms: { type: "integer", minimum: 0, maximum: 5000 },
+            },
+            required: ["kind"],
+          },
+        },
+      },
+      required: ["app", "actions"],
+    },
+  },
+  {
     name: "open_path",
     description:
       "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",

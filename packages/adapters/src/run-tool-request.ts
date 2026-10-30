@@ -29,7 +29,7 @@ import {
 } from "./run-effects.js";
 import { fleetPrepareDeps } from "./run-model.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
-import { USER_COMPUTER_SHELL_TOOL } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
@@ -307,7 +307,7 @@ export async function prepareToolRequest(
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
-  if (name === USER_COMPUTER_SHELL_TOOL) {
+  if (USER_COMPUTER_TOOLS.has(name)) {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
       return { error: "The user's computer is not available in this run." };
     if (isSubagentToolExecution(executionId))

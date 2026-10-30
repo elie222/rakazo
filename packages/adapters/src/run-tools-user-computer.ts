@@ -1,7 +1,14 @@
 import path from "node:path";
-import type { ProcessEvent } from "@rakazo/adapter-kit";
+import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
 import { redactSecrets, sandboxCommandTimeoutMs } from "@rakazo/core";
+import { z } from "zod";
 import type { HostComputerEnvironment } from "./host-computer-protocol.js";
+import type {
+  HostScreenAction,
+  HostScreenActResult,
+  HostScreenObservation,
+} from "./host-screen.js";
+import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "./host-screen.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
@@ -12,6 +19,17 @@ import {
 } from "./shell-command-stream.js";
 
 export const USER_COMPUTER_SHELL_TOOL = "user_computer_shell";
+export const USER_COMPUTER_OBSERVE_TOOL = "user_computer_observe";
+export const USER_COMPUTER_ACT_TOOL = "user_computer_act";
+/** Both look at or drive one app, so one approval covers that app for the chat. */
+export const USER_COMPUTER_SCREEN_TOOLS: ReadonlySet<string> = new Set([
+  USER_COMPUTER_OBSERVE_TOOL,
+  USER_COMPUTER_ACT_TOOL,
+]);
+export const USER_COMPUTER_TOOLS: ReadonlySet<string> = new Set([
+  USER_COMPUTER_SHELL_TOOL,
+  ...USER_COMPUTER_SCREEN_TOOLS,
+]);
 
 /** Whether the run's owner has their desktop connected, or paired but offline. */
 export type UserComputerState = "connected" | "offline" | undefined;
@@ -35,32 +53,59 @@ export function userComputerOwner(input: {
   return input.runUserId === input.botUserId ? input.runUserId : undefined;
 }
 
+/** The app a screen call names, as its approval card shows it and later calls match it. */
+export function userComputerAppName(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll(/[^\p{L}\p{N} .&'+-]/gu, "")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
 /**
  * The user's own computer always asks a person first, in every approval mode and whatever the
  * rules allow, until they choose "Allow for this chat"; a block still refuses it. Any effect of
  * this tool past "intended" in a run the owner started in this chat traces back to that approval.
- * Clearing the chat detaches those runs' messages, so it asks again.
+ * Screen control is approved per app. Clearing the chat detaches those runs' messages, so it
+ * asks again.
  */
 export async function userComputerGate(
   ctx: RunContext,
   blocked: boolean,
+  name: string,
+  args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
   const { deps, run, bot, thread } = ctx;
-  const allowed = await deps.prisma.externalEffect.findFirst({
-    where: {
-      spaceId: run.spaceId,
-      kind: USER_COMPUTER_SHELL_TOOL,
-      status: { in: ["approved", "executing", "completed", "uncertain"] },
-      run: {
-        threadId: thread.id,
-        botId: bot.id,
-        userId: run.userId,
-        sourceMessage: { is: { threadId: thread.id } },
-      },
+  const where = {
+    spaceId: run.spaceId,
+    status: { in: ["approved", "executing", "completed", "uncertain"] },
+    run: {
+      threadId: thread.id,
+      botId: bot.id,
+      userId: run.userId,
+      sourceMessage: { is: { threadId: thread.id } },
     },
-    select: { id: true },
+  };
+  if (!USER_COMPUTER_SCREEN_TOOLS.has(name)) {
+    const allowed = await deps.prisma.externalEffect.findFirst({
+      where: { ...where, kind: USER_COMPUTER_SHELL_TOOL },
+      select: { id: true },
+    });
+    return allowed ? "allow" : "ask";
+  }
+  const app = userComputerAppName(args.app).toLowerCase();
+  if (!app) return "ask";
+  const used = await deps.prisma.externalEffect.findMany({
+    where: { ...where, kind: { in: [...USER_COMPUTER_SCREEN_TOOLS] } },
+    select: { request: true },
+    orderBy: { createdAt: "desc" },
+    take: 200,
   });
+  const allowed = used.some(
+    (effect) =>
+      userComputerAppName((effect.request as { app?: unknown } | null)?.app).toLowerCase() === app,
+  );
   return allowed ? "allow" : "ask";
 }
 
@@ -86,16 +131,19 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
   return result.value;
 }
 
-export async function userComputerShell(ctx: RunContext, call: ToolCall) {
-  const { deps, bot, runId } = ctx;
+/** Checked again at execution: the desktop can disconnect or be revoked after the offer. */
+async function connectedUserComputer(ctx: RunContext) {
   const owner = ctx.source.userComputerOwner;
-  const devices = deps.userDevices;
-  // Checked again at execution: the desktop can disconnect or be revoked after the offer.
+  const devices = ctx.deps.userDevices;
   const device = owner && devices ? await devices.connected(owner).catch(() => null) : null;
-  if (!owner || !devices || !device) {
-    return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
-  }
-  const { deviceId } = device;
+  return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
+}
+
+export async function userComputerShell(ctx: RunContext, call: ToolCall) {
+  const { bot, runId } = ctx;
+  const connected = await connectedUserComputer(ctx);
+  if (!connected) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   const command = String(call.args.command ?? "");
   try {
@@ -142,4 +190,96 @@ export async function userComputerShell(ctx: RunContext, call: ToolCall) {
     );
     return call.finish({ error: `The user's computer did not finish the command: ${reason}` });
   }
+}
+
+const screenActions = z.array(hostScreenAction).min(1).max(HOST_SCREEN_MAX_ACTIONS);
+
+export function userComputerObserve(ctx: RunContext, call: ToolCall) {
+  const query = typeof call.args.query === "string" ? call.args.query.trim() : "";
+  return userComputerScreen(ctx, call, {
+    method: "screenObserve",
+    app: userComputerAppName(call.args.app),
+    ...(query ? { query } : {}),
+  });
+}
+
+export function userComputerAct(ctx: RunContext, call: ToolCall) {
+  const actions = screenActions.safeParse(call.args.actions);
+  if (!actions.success) {
+    const issue = actions.error.issues[0];
+    const where = issue?.path.length ? `actions.${issue.path.join(".")}: ` : "actions: ";
+    return call.finish({ error: `${where}${issue?.message ?? "invalid"}` });
+  }
+  return userComputerScreen(ctx, call, {
+    method: "screenAct",
+    app: userComputerAppName(call.args.app),
+    actions: actions.data,
+  });
+}
+
+type ScreenRequest =
+  | { method: "screenObserve"; app: string; query?: string }
+  | { method: "screenAct"; app: string; actions: HostScreenAction[] };
+
+/** The device gets the app name the approval card showed, never the raw argument. */
+async function userComputerScreen(ctx: RunContext, call: ToolCall, request: ScreenRequest) {
+  if (!request.app) return call.finish({ error: "app must name an app on the user's computer." });
+  const connected = await connectedUserComputer(ctx);
+  if (!connected) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
+  const { owner, devices, deviceId } = connected;
+  const { signal } = ctx.context;
+  try {
+    const value = await lastValue(
+      devices.request<HostScreenObservation | HostScreenActResult>(
+        owner,
+        { ...request, botId: ctx.bot.id, runId: ctx.runId },
+        signal,
+        deviceId,
+      ),
+    );
+    if (request.method === "screenObserve")
+      return call.finish(screenToolResult(ctx, value as HostScreenObservation, "observed"));
+    const acted = value as HostScreenActResult;
+    const total = request.actions.length;
+    const note = `completed ${acted.completed} of ${total} action${total === 1 ? "" : "s"}${
+      acted.error ? `; stopped: ${redactSecrets(acted.error, ctx.secrets)}` : ""
+    }`;
+    return call.finish(
+      acted.observation
+        ? screenToolResult(ctx, acted.observation, note)
+        : { completed: acted.completed, ...(acted.error ? { error: note } : {}) },
+    );
+  } catch (error) {
+    if (signal.aborted) throw error;
+    const reason = redactSecrets(
+      error instanceof Error ? error.message : "screen control failed",
+      ctx.secrets,
+    );
+    return call.finish({ error: `The user's computer did not finish: ${reason}` });
+  }
+}
+
+/** Only the window's name and size are stored; the rows and screenshot reach the model alone. */
+function screenToolResult(
+  ctx: RunContext,
+  observation: HostScreenObservation,
+  note: string,
+): AgentToolExecutionResult {
+  const image = ctx.computer.acceptsImages ? observation.image : undefined;
+  const details = {
+    app: observation.app,
+    ...(observation.title ? { title: redactSecrets(observation.title, ctx.secrets) } : {}),
+    ...(image ? { width: image.width, height: image.height } : {}),
+  };
+  return {
+    kind: "agent_tool_result",
+    content: [
+      {
+        type: "text",
+        text: `${note}\n${JSON.stringify(details)}\n${redactSecrets(observation.tree, ctx.secrets)}`,
+      },
+      ...(image ? [{ type: "image" as const, data: image.data, mimeType: image.mimeType }] : []),
+    ],
+    details,
+  };
 }

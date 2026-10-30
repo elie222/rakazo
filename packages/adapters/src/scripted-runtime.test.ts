@@ -131,6 +131,26 @@ describe("inferScript user computer", () => {
       { name: "user_computer_shell", args: { command: "hostname" } },
     ]);
   });
+
+  it("looks at and types in an app on the user's computer", () => {
+    expect(inferScript("look at TextEdit on my computer")[0]?.toolCalls).toEqual([
+      { name: "user_computer_observe", args: { app: "TextEdit" } },
+    ]);
+    expect(
+      inferScript('type "Hello" in a new TextEdit document on my computer')[0]?.toolCalls,
+    ).toEqual([
+      {
+        name: "user_computer_act",
+        args: {
+          app: "TextEdit",
+          actions: [
+            { kind: "menu", path: ["File", "New"] },
+            { kind: "type", text: "Hello" },
+          ],
+        },
+      },
+    ]);
+  });
 });
 
 describe("inferScript quote markdown fixture", () => {

@@ -42,6 +42,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_reply",
   "cloud_agent_cancel",
   "user_computer_shell",
+  "user_computer_observe",
+  "user_computer_act",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",

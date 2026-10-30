@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./cua-host-screen": "./src/cua-host-screen.ts",
     "./host-computer-server": "./src/host-computer-server.ts",
+    "./host-screen": "./src/host-screen.ts",
     "./user-device-client": "./src/user-device-client.ts"
   },
   "scripts": {
