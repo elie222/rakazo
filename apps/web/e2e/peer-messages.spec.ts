@@ -129,11 +129,44 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
       ),
     )
     .toBe(true);
+  await page.setViewportSize({ width: 1800, height: 900 });
+  const regularContentWidth = await transcript.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return (
+      element.clientWidth -
+      Number.parseFloat(style.paddingLeft) -
+      Number.parseFloat(style.paddingRight)
+    );
+  });
+  const assertPeerWidth = async () => {
+    const layout = await peerTranscript.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        width:
+          element.clientWidth -
+          Number.parseFloat(style.paddingLeft) -
+          Number.parseFloat(style.paddingRight),
+        left: Number.parseFloat(style.paddingLeft),
+        right: Number.parseFloat(style.paddingRight),
+      };
+    });
+    expect(layout.width).toBeLessThanOrEqual(regularContentWidth + 1);
+    expect(Math.abs(layout.left - layout.right)).toBeLessThanOrEqual(1);
+    expect(layout.left).toBeGreaterThan(regularContentWidth / 4);
+    await assertTitleCentered();
+    const viewBox = await view.boundingBox();
+    const buttonBox = await close.boundingBox();
+    const headerBox = await view.locator(":scope > div").first().boundingBox();
+    expect(headerBox!.y).toBe(viewBox!.y);
+    expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
+    expect(viewBox!.x + viewBox!.width - (buttonBox!.x + buttonBox!.width)).toBeLessThan(24);
+  };
+  await assertPeerWidth();
   await captureScreenshot(page, testInfo, "peer-view-only");
 
   await view.getByRole("button", { name: "Close" }).click();
   await expect(view).toHaveCount(0);
-  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setViewportSize({ width: 1800, height: 900 });
   await page.evaluate(() => {
     const state = {
       phase: "idle",
@@ -171,6 +204,7 @@ test("shows peer lines in transcript and opens view-only peer chat", async ({ pa
     .evaluate((heading) => heading.getBoundingClientRect().left);
   // macOS draws the traffic lights from x=16 to about x=68 in the window's top-left corner.
   expect(avatarsLeft).toBeGreaterThan(80);
+  await assertPeerWidth();
   await captureScreenshot(page, testInfo, "peer-view-only-macos-desktop");
 });
 

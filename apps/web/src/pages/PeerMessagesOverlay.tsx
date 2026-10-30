@@ -18,6 +18,7 @@ import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { desktopBridge } from "../lib/desktop";
 import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
+import { TRANSCRIPT_CONTENT_PADDING } from "../lib/transcript-layout";
 import { transcriptIsNearEnd } from "../lib/transcript-scroll";
 import { ArtifactImage } from "./shell/message-cards";
 import { WindowChrome } from "./WindowChrome";
@@ -166,7 +167,7 @@ export function PeerMessagesOverlay({
             onScroll={(event) => {
               followingEnd.current = transcriptIsNearEnd(event.currentTarget);
             }}
-            className="rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+            className={`rk-scroll flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto py-5 md:py-6 ${TRANSCRIPT_CONTENT_PADDING}`}
           >
             {conversation.messages.map((peerMessage, index) => {
               const sent = peerMessage.direction === "sent";
