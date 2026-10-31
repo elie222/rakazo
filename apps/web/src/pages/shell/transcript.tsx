@@ -500,7 +500,7 @@ export const Transcript = memo(function Transcript({
                         : message.blocks.some(
                               (block) => block.kind === "ask" || block.kind === "mcp_approval",
                             )
-                          ? "relative w-full min-w-0 max-w-full"
+                          ? "relative w-full min-w-0 max-w-xl"
                           : `relative ${message.blocks.some((block) => block.kind === "app_connect") ? "w-full" : "w-fit"} min-w-0 ${bubbleFrameWidth(message.role)}`
                     }
                   >
