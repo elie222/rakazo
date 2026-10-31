@@ -18,6 +18,7 @@ import {
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_COUNT_CEILING,
 } from "./attachments.js";
+import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import {
   BoardEventSchema,
   BoardSchema,
@@ -43,6 +44,8 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccessGrantInputSchema,
+  AccessGrantSchema,
   AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
@@ -52,7 +55,6 @@ import {
   AgentSkillSchema,
   AppBootstrapSchema,
   ApprovalModeSchema,
-  ApprovalRulePreviewSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
@@ -127,7 +129,6 @@ import {
   SpaceSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
-  ThinkingLevelSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
   TimeZoneSchema,
@@ -143,7 +144,7 @@ import {
   VoiceStatusSchema,
 } from "./domain.js";
 import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
-import { Id, IsoDate } from "./ids.js";
+import { Id, IsoDate, ThinkingLevelSchema } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
@@ -288,6 +289,12 @@ export const appContract = {
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
   },
+  /** Admins only, on deployments that sell model credits. */
+  accessGrants: {
+    list: oc.output(z.array(AccessGrantSchema)),
+    create: oc.input(AccessGrantInputSchema).output(AccessGrantSchema),
+    revoke: oc.input(z.object({ id: Id })).output(AccessGrantSchema),
+  },
   preferences: {
     update: oc
       .input(
@@ -330,6 +337,10 @@ export const appContract = {
   /** Deployment-owner view of the append-only security event log, newest first. */
   security: {
     events: oc.input(SecurityEventListInputSchema).output(z.array(SecurityEventSchema)),
+  },
+  /** The organization's audit log, newest first. Organization owners and admins only. */
+  audit: {
+    events: oc.input(AuditEventListInputSchema).output(AuditEventPageSchema),
   },
   /**
    * Deployment-owner product updates. When the Compose updater sidecar is reachable, these proxy
@@ -972,6 +983,10 @@ export const appContract = {
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
       /** Launch the server once (installing a stdio package if needed), list its tools, close it. */
       test: oc.input(z.object({ id: Id })).output(McpServerSchema),
+      /** Which agents can use the server: all of them, or only `botIds`. */
+      agents: oc
+        .input(z.object({ id: Id, allBots: z.boolean(), botIds: z.array(Id).max(500).default([]) }))
+        .output(z.object({ server: McpServerSchema, assignments: z.array(BotMcpServerSchema) })),
     },
     assignments: {
       list: oc.input(botId).output(z.array(BotMcpServerSchema)),
@@ -1126,33 +1141,6 @@ export const appContract = {
   },
   approvalRules: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
-    preview: oc
-      .input(
-        settingsScopeInput.extend({
-          id: Id,
-          effect: z.enum(["always_allow", "deny", "remove"]),
-          sample: z.object({
-            tools: z
-              .array(
-                z.object({
-                  name: z.string().trim().min(1).max(200),
-                  connectorKind: z.string().trim().min(1).max(200).optional(),
-                  readOnly: z.boolean().optional(),
-                }),
-              )
-              .min(1)
-              .max(20),
-            wrapper: z
-              .object({
-                name: z.string().trim().min(1).max(200),
-                connectorKind: z.string().trim().min(1).max(200).optional(),
-              })
-              .optional(),
-            site: z.string().trim().min(1).max(253).optional(),
-          }),
-        }),
-      )
-      .output(ApprovalRulePreviewSchema),
     set: oc
       .input(
         settingsScopeInput.extend({

@@ -55,7 +55,7 @@ Important effects are verified independently, recovery preserves known-good user
 
 ## Current decisions
 
-App accounts never administer the server. Signup order, email address, and workspace ownership do not grant deployment privileges or billing exemptions; there is no app-admin role or `ADMINS` list. Operators configure the server through environment variables and manage updates, logs, and shared credentials through deployment tooling. Desktop host access is a separate local capability that requires native confirmation, is restricted to the app-managed local instance, and can be revoked locally.
+App accounts never administer the server. Signup order, email address, and workspace ownership do not grant deployment privileges or billing exemptions. The only admins are verified accounts the operator lists in `RAKAZO_ADMIN_EMAILS`; nothing in the app can add one, and they can only review plugin submissions, add stdio MCP servers, and give capped credits or free own-key months, never change the server or read other accounts. Operators configure the server through environment variables and manage updates, logs, and shared credentials through deployment tooling. Desktop host access is a separate local capability that requires native confirmation, is restricted to the app-managed local instance, and can be revoked locally.
 
 This file records current product truth rather than an append-only decision log, and Git history preserves decisions that are later replaced.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
@@ -81,7 +81,7 @@ Managed app connections stay with the space they were connected in for now, beca
 Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
 Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
 Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
-Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask and are refused in Never ask, which cannot wait for anyone.
+Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask. Never ask runs them, except that it refuses another owner's bot connecting when outside text could have asked for it.
 The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Scope

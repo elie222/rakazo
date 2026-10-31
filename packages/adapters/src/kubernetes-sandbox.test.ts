@@ -609,9 +609,15 @@ describe("KubernetesSandboxProvider", () => {
       .mockResolvedValue(readyPod);
     const provider = providerFor({ createNamespacedPod: create, readNamespacedPod: read });
     await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-    expect(create.mock.calls[0]?.[0].body?.spec).toMatchObject({
+    const spec = create.mock.calls[0]?.[0].body?.spec;
+    expect(spec).toMatchObject({
       automountServiceAccountToken: false,
       restartPolicy: "Never",
+    });
+    expect(spec?.containers[0]?.securityContext).toEqual({
+      allowPrivilegeEscalation: false,
+      capabilities: { drop: ["ALL"] },
+      seccompProfile: { type: "RuntimeDefault" },
     });
   });
 

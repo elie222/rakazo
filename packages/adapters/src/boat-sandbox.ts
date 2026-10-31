@@ -500,7 +500,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         timeoutMs,
         context.signal,
       );
-      envFileRemoved = !result.timedOut;
+      envFileRemoved = !envFile || !result.timedOut;
       if (context.signal.aborted) {
         yield { type: "stderr", data: "command aborted\n" };
         yield { type: "exit", code: 130 };

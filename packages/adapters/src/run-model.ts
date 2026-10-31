@@ -64,13 +64,17 @@ export function isTerminalModelSetupError(error: unknown): boolean {
   );
 }
 
-export function fleetPrepareDeps(
+export async function fleetPrepareDeps(
   deps: ExecutorDeps,
   scope: { userId: string; spaceId: string },
-): FleetPrepareDeps {
+): Promise<FleetPrepareDeps> {
+  const hostedProvider = (await modelCreditBillingEnabled(deps))
+    ? resolveDeploymentModel().provider
+    : undefined;
   return {
     prisma: deps.prisma,
     modelChange: {
+      hostedProvider,
       secretStore: deps.secretStore,
       codexCatalog: deps.codexCatalog,
       refreshExpiredCredential: (credentialScope, secretId, provider) =>
@@ -90,9 +94,7 @@ export function fleetPrepareDeps(
           override: null,
           overrideCredential: null,
           main,
-          hostedProvider: (await modelCreditBillingEnabled(deps))
-            ? resolveDeploymentModel().provider
-            : undefined,
+          hostedProvider,
           defaults: {
             settings,
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,

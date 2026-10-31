@@ -5,6 +5,13 @@ export const MAX_NOVNC_HTML_BYTES = 1024 * 1024;
 
 const NOVNC_PAGES = new Set(["vnc.html", "vnc_lite.html", "embed.html"]);
 
+/** Browser-extension script URLs. Their errors must not replace the screen. */
+export const NOVNC_EXTENSION_ERROR = /^[a-z-]+-extension:/;
+
+export function isNovncExtensionError(filename: string) {
+  return NOVNC_EXTENSION_ERROR.test(filename);
+}
+
 /** Whether an upstream path is a noVNC page, whichever provider serves it. */
 export function isNovncPage(path: string) {
   const { pathname } = new URL(path, "http://upstream.invalid");
@@ -89,7 +96,7 @@ export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) 
     Object.defineProperty(window, name, { configurable: true, value: memoryStorage() });
   }
   window.addEventListener("error", (event) => {
-    if (/^[a-z-]+-extension:/.test(String(event.filename))) event.stopImmediatePropagation();
+    if (/${NOVNC_EXTENSION_ERROR.source}/.test(String(event.filename))) event.stopImmediatePropagation();
   }, true);
   // noVNC probes WebCodecs H.264 support while its modules evaluate. On some Android devices
   // VideoDecoder.flush() never returns, so the page never starts. Screens never use H.264.

@@ -9,6 +9,8 @@ import {
   hostComputerDeadlineMs,
   hostComputerRequest,
 } from "./host-computer-protocol.js";
+import type { HostScreen } from "./host-screen.js";
+import { HostScreenError } from "./host-screen.js";
 
 /** Where one request's frames go. A write may wait for the transport to drain. */
 export interface HostComputerSink {
@@ -32,7 +34,7 @@ export interface HostComputerCall {
  * Runs host computer requests from any transport: the local HTTP listener and the outbound
  * device socket share validation, limits, cancellation, and error sanitizing.
  */
-export function createHostComputerRunner(options: { root: string }) {
+export function createHostComputerRunner(options: { root: string; screen?: HostScreen }) {
   let enabled = false;
   const active = new Map<
     AbortController,
@@ -55,12 +57,25 @@ export function createHostComputerRunner(options: { root: string }) {
     };
   }
 
+  function screen() {
+    if (!options.screen)
+      throw new HostScreenError("Screen control is not available on this computer.");
+    return options.screen;
+  }
+
   async function* dispatch(
     input: HostComputerRequest,
     context: AdapterContext,
   ): AsyncIterable<unknown> {
     const computer = ref(input.botId);
+    const scope = { botId: input.botId, signal: context.signal };
     switch (input.method) {
+      case "screenObserve":
+        yield await screen().observe(scope, input.app, { query: input.query });
+        break;
+      case "screenAct":
+        yield await screen().act(scope, input.app, input.actions);
+        break;
       case "environment":
         yield await provider.environment();
         break;
@@ -217,6 +232,7 @@ export function createHostComputerRunner(options: { root: string }) {
 
 /** Only messages that reveal nothing beyond the caller's own request leave this computer. */
 function hostComputerErrorMessage(error: unknown) {
+  if (error instanceof HostScreenError) return error.message;
   if (
     error instanceof Error &&
     (error.message === "Path escapes the computer workspace" ||

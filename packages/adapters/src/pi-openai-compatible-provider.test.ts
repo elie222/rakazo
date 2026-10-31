@@ -569,6 +569,12 @@ describe("openai-compatible provider", () => {
     process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
     let host: string | undefined;
     const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only model-list calls set the host.
+      if (request.method !== "GET" || request.url !== "/v1/models") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       host = request.headers.host;
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ data: [{ id: "local-model" }] }));

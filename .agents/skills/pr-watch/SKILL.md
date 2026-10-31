@@ -163,6 +163,13 @@ name you wrote, pick the frame, and edit the description
 Playwright workflow did not run for that SHA, there is no gallery; say so in
 the description instead of waiting for one.
 
+Screens you captured yourself (a native simulator, emulator, or a local browser)
+that show the change go in the description too. Leave out any that show private
+data: real names, emails, hostnames, server URLs, tokens. Reference the rest as
+local files in the body and upload them with `gh pr edit <n> --body-file
+<body.md> --attach ./<shot>.png` (gh 2.99 or newer), which rewrites each
+reference to the uploaded asset.
+
 Report the PR link, final head, waits, fix rounds, what feedback you handled and
 declined, what you validated, any unresolved threads, and whether you finished
 clean or stopped at a limit. If you stopped at a limit, say what was pending.

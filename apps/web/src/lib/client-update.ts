@@ -6,6 +6,7 @@ import {
 import { getSnapshot as activeCall } from "./call-session";
 import { CLIENT_BUILD } from "./client-build";
 import { composerHoldsUnsavedWork, hasUnsentComposerDraft } from "./composer-draft";
+import { hasOpenDialog } from "./has-open-dialog";
 import { recoveryReload } from "./preload-recovery";
 import { onRpcResponse } from "./rpc";
 
@@ -82,7 +83,7 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
   };
   const safe = (moment: Moment): boolean => {
     if (editing() || deps.holdsUnsavedWork()) return false;
-    if (deps.document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]')) {
+    if (hasOpenDialog(deps.document)) {
       return false;
     }
     if (moment !== "idle") return true;

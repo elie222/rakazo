@@ -75,3 +75,100 @@ test("photo avatar animations stay still when reduced motion is enabled", async 
   expect(first[1]?.animationName).toBe("none");
   expect(second).toEqual(first);
 });
+
+test("organic avatars morph only the shown layer and stop while offscreen or hidden", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/e2e/fixtures/avatar-motion.html");
+  const avatar = page.locator(".avatar-organic");
+  await expect(avatar).toBeVisible();
+  const motion = () =>
+    avatar.evaluate((svg: SVGSVGElement) => {
+      const states = (mode: string) =>
+        [
+          ...svg.querySelectorAll(
+            `.rakazo-organic-avatar-body-${mode}, .rakazo-organic-avatar-eyes-${mode}`,
+          ),
+        ].flatMap((element) =>
+          element
+            .getAnimations()
+            .filter((track) => track instanceof CSSAnimation)
+            .map((track) => track.playState),
+        );
+      return {
+        clockPaused: svg.animationsPaused(),
+        morphing: ["idle", "working"].filter((mode) =>
+          svg.querySelector(`.rakazo-organic-avatar-body-${mode} animate`),
+        ),
+        idle: [...new Set(states("idle"))],
+        working: [...new Set(states("working"))],
+      };
+    });
+  expect(await motion()).toEqual({
+    clockPaused: false,
+    morphing: ["idle"],
+    idle: ["running"],
+    working: ["paused"],
+  });
+  const clock = await avatar.evaluate((svg: SVGSVGElement) => svg.getCurrentTime());
+  await page.waitForTimeout(400);
+  expect(await avatar.evaluate((svg: SVGSVGElement) => svg.getCurrentTime())).toBeGreaterThan(
+    clock,
+  );
+
+  // The working layer joins the running morph instead of restarting it, and fades in.
+  const handoff = await avatar.evaluate(async (svg) => {
+    const body = (mode: string) =>
+      svg.querySelector<SVGPathElement>(`.rakazo-organic-avatar-body-${mode}`)!;
+    const before = svg.getCurrentTime();
+    svg.parentElement!.querySelector("button")!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return {
+      before,
+      time: svg.getCurrentTime(),
+      start: body("working").querySelector("animate")?.getStartTime(),
+      fading: body("working")
+        .getAnimations()
+        .some((track) => track instanceof CSSTransition && track.transitionProperty === "opacity"),
+    };
+  });
+  expect(handoff.time).toBeGreaterThanOrEqual(handoff.before);
+  expect(handoff.start).toBeLessThan(handoff.before);
+  expect(handoff.fading).toBe(true);
+  await expect(avatar).toHaveAttribute("data-working", "true");
+  expect(await motion()).toEqual({
+    clockPaused: false,
+    morphing: ["working"],
+    idle: ["paused"],
+    working: ["running"],
+  });
+
+  const stopped = {
+    clockPaused: true,
+    morphing: ["working"],
+    idle: ["paused"],
+    working: ["paused"],
+  };
+  await avatar.evaluate((svg) => {
+    svg.closest<HTMLElement>(".avatar-example")!.style.marginTop = "2200px";
+  });
+  await expect(avatar).toHaveAttribute("data-paused", "true");
+  expect(await motion()).toEqual(stopped);
+  await avatar.evaluate((svg) => {
+    svg.closest<HTMLElement>(".avatar-example")!.style.marginTop = "0";
+  });
+  await expect(avatar).toHaveAttribute("data-paused", "false");
+
+  const setHidden = (hidden: boolean) =>
+    page.evaluate((value) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => value });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, hidden);
+  await setHidden(true);
+  await expect(avatar).toHaveAttribute("data-paused", "true");
+  expect(await motion()).toEqual(stopped);
+  await setHidden(false);
+  await expect(avatar).toHaveAttribute("data-paused", "false");
+  expect((await motion()).clockPaused).toBe(false);
+});

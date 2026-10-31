@@ -122,6 +122,9 @@ The API and worker talk to the Kubernetes API with their own service account (or
 | `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
 
 Each pod runs the image's own user (uid 1000) with no service account token and no service links,
+with all Linux capabilities dropped, privilege escalation off and the runtime's default seccomp
+profile, like a Docker computer (these apply to newly created pods; a pod that was already running
+keeps its old spec until it is stopped and recreated),
 and is labelled `app.kubernetes.io/name=rakazo-computer` and `rakazo-bot-id=<bot id>`. Commands,
 file transfers and workspace save and restore go through `pods/exec`; save and restore stream the
 home as one tar archive. Screens use the image's desktop gateway on the pod IP, so the API, the
@@ -227,7 +230,9 @@ A run starts its computer only when it first uses a computer tool. With idle sle
 a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
 (E2B, Daytona, Boat, boxd, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
 (default 2 hours) up in one stretch, even with background work or an open screen, unless
-a run is executing on it or a user is in control of its screen. `0` turns the cap off.
+a run is executing on it, a user is in control of its screen, or a coding agent CLI (Codex,
+Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An agent waiting
+at its prompt writes nothing, so it does not hold the computer. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
 Docker and this-Mac computers are never capped. The next use resumes it. Asking for

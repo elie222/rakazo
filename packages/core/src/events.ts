@@ -429,7 +429,13 @@ export function withoutLastToolStepNotes(
   return next;
 }
 
-export type ToolCallStreak = { key: string | undefined; count: number };
+/** `shape` is the call with the digits in its text arguments blanked, so `echo n-1`, `echo n-2` match. */
+export type ToolCallStreak = {
+  key: string | undefined;
+  count: number;
+  shape?: string;
+  shapeCount?: number;
+};
 
 export function trackToolCallStreak(
   streak: ToolCallStreak,
@@ -437,7 +443,13 @@ export function trackToolCallStreak(
   args: unknown,
 ): ToolCallStreak {
   const key = `${name}:${JSON.stringify(args)}`;
-  return key === streak.key ? { key, count: streak.count + 1 } : { key, count: 1 };
+  const shape = `${name}:${JSON.stringify(args, (_, value) => (typeof value === "string" ? value.replace(/\d+/g, "#") : value))}`;
+  return {
+    key,
+    count: key === streak.key ? streak.count + 1 : 1,
+    shape,
+    shapeCount: shape === streak.shape ? (streak.shapeCount ?? 0) + 1 : 1,
+  };
 }
 
 export type ToolNameStreak = { name: string | undefined; count: number };

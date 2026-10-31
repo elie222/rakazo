@@ -333,6 +333,14 @@ export function ModelCreditsSettings({
           </div>
         ) : null}
       </div>
+      {status.computerHoursLeft != null ? (
+        <div className="rounded-xl border border-border p-5">
+          <h3 className="text-sm text-muted-foreground">
+            <Trans>Computer hours left</Trans>
+          </h3>
+          <p className="mt-2 text-3xl font-medium tabular-nums">{status.computerHoursLeft}</p>
+        </div>
+      ) : null}
       {status.canManage ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="font-medium">

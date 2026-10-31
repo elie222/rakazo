@@ -92,6 +92,7 @@ export function useComposerActions({
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork(sending || pendingAttachments.length > 0);
     return () => setComposerUnsavedWork(false);
@@ -347,6 +348,7 @@ export function useComposerActions({
       setSending(true);
       setSendError(null);
       clearReadBoundary();
+      setSentCount((count) => count + 1);
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -569,6 +571,7 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
+    sentCount,
     sendMessage,
     stopRun,
     answerMessage,

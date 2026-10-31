@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./cua-host-screen": "./src/cua-host-screen.ts",
     "./host-computer-server": "./src/host-computer-server.ts",
+    "./host-screen": "./src/host-screen.ts",
     "./user-device-client": "./src/user-device-client.ts"
   },
   "scripts": {
@@ -40,6 +42,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
     "@opentelemetry/resources": "2.12.0",
     "@opentelemetry/sdk-trace-node": "2.12.0",
+    "@photon-ai/chat-adapter-imessage": "3.2.0",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",

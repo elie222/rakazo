@@ -171,6 +171,19 @@ describe("BotAvatar", () => {
     expect(html).toContain("rakazo-organic-avatar");
   });
 
+  it("morphs only the organic layer that is shown", () => {
+    const morphing = (status: string) =>
+      [
+        ...renderToString(<BotAvatar color="#8B5CF6" status={status} />).matchAll(
+          /rakazo-organic-avatar-body-(idle|working)"[^>]*>(<animate)?/g,
+        ),
+      ]
+        .filter((match) => match[2])
+        .map((match) => match[1]);
+    expect(morphing("idle")).toEqual(["idle"]);
+    expect(morphing("running")).toEqual(["working"]);
+  });
+
   it("draws every plain-colour bot with the organic body", () => {
     const html = renderToString(<BotAvatar color={DEFAULT_BOT_AVATAR_COLOR} identity="maya" />);
     expect(html).toContain("rakazo-organic-avatar");

@@ -9,8 +9,8 @@ import {
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
-import { ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
+import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
+import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -54,17 +54,6 @@ export const TimeZoneSchema = z
   .max(64)
   .refine(isValidTimeZone, { message: "Unknown timezone" });
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
-
-export const ThinkingLevelSchema = z.enum([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
-export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
 
@@ -418,6 +407,8 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
+    /** Write only while these settings still hold, as an undo does. */
+    expectedSettings: BotSettingsValuesSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const providerProvided = value.modelProvider !== undefined;
@@ -771,12 +762,6 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
-export const ApprovalRulePreviewSchema = z.object({
-  before: z.enum(["always_allow", "require_approval", "deny", "default"]),
-  after: z.enum(["always_allow", "require_approval", "deny", "default"]),
-});
-export type ApprovalRulePreview = z.infer<typeof ApprovalRulePreviewSchema>;
-
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
@@ -923,6 +908,29 @@ export const PluginSubmissionReviewSchema = z.discriminatedUnion("decision", [
 ]);
 export type PluginSubmissionReview = z.infer<typeof PluginSubmissionReviewSchema>;
 
+export const AccessGrantInputSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().max(254).email(),
+    creditCents: z.number().int().min(0).max(100_000).default(0),
+    freeMonths: z.number().int().min(0).max(12).default(0),
+  })
+  .refine((grant) => grant.creditCents > 0 || grant.freeMonths > 0, {
+    message: "Grant credits, free months, or both",
+  });
+export type AccessGrantInput = z.input<typeof AccessGrantInputSchema>;
+
+export const AccessGrantSchema = z.object({
+  id: Id,
+  email: z.string(),
+  creditCents: z.number().int(),
+  freeMonths: z.number().int(),
+  createdBy: z.string().nullable(),
+  status: z.enum(["pending", "applied", "revoked"]),
+  createdAt: z.string(),
+  appliedAt: z.string().nullable(),
+});
+export type AccessGrant = z.infer<typeof AccessGrantSchema>;
+
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
   slug: z.string(),
@@ -1065,6 +1073,8 @@ export const McpServerSchema = z.object({
   enabled: z.boolean(),
   revision: z.number().int().positive(),
   availability: SpaceAvailabilitySchema.optional(),
+  /** Every agent can use it; when false, only the agents assigned to it. */
+  allBots: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -1296,12 +1306,16 @@ export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
-export const MAX_MODEL_MAX_TOKENS = 131_072;
-
 /** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
+
+/**
+ * Output limits follow the model; the only fixed bound is the context ceiling, and a connection's
+ * limit must still leave room for input (`modelOutputLeavesInputRoom`).
+ */
+export const MAX_MODEL_MAX_TOKENS = MAX_MODEL_CONTEXT_WINDOW;
 export function parseModelMaxImagesPerPrompt(
   value: string,
   supportsImages = true,
@@ -1764,7 +1778,7 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
-  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions, adds stdio MCP servers. */
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugins, adds stdio MCP servers, grants access. */
   isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
@@ -1792,10 +1806,10 @@ export const MeSchema = z.object({
 });
 export type Me = z.infer<typeof MeSchema>;
 
-export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000] as const;
+export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 3000, 5000, 10000, 20000, 50000] as const;
 /** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
 export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1000;
-export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 2000;
+export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
 );
@@ -1864,6 +1878,8 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
+  /** Computer hours left this calendar month; absent when computers have no limit. */
+  computerHoursLeft: z.number().nonnegative().nullable().optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })

@@ -40,6 +40,7 @@ export function mcpServerDto(
     installId?: string | null;
     allSpaces?: boolean;
     availableIn?: Array<{ spaceId: string }>;
+    allBots?: boolean;
     enabled: boolean;
     revision: number;
     healthStatus: string;
@@ -76,6 +77,7 @@ export function mcpServerDto(
     revision: row.revision,
     health: mcpServerHealthDto(row),
     availability: spaceAvailability({ ...row, allSpaces: row.allSpaces ?? false }),
+    allBots: row.allBots ?? false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -301,7 +303,7 @@ export function createMcpServers(
     actor: Actor,
     input: McpServerConfigInput,
     stored: Awaited<ReturnType<typeof prepareMcpServer>>,
-    // What the user adds reaches all their spaces; an import stays in its space.
+    // What the user adds reaches all their spaces and agents; an import stays with its agent.
     options: { everywhere?: boolean } = {},
   ) => {
     if (options.everywhere)
@@ -328,6 +330,7 @@ export function createMcpServers(
         spaceId: actor.spaceId,
         userId: actor.userId,
         allSpaces: options.everywhere ?? false,
+        allBots: options.everywhere ?? false,
         slug: input.slug,
         name: input.name,
         description: input.description,

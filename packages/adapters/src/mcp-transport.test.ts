@@ -334,6 +334,32 @@ describe("MCP transport seam", () => {
     },
   );
 
+  it("releases the body of a refused local redirect", async () => {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() {
+        cancels += 1;
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response(body, { status: 302, headers: { location: "http://10.9.9.9/" } }),
+    );
+    const safeFetch = secureFetch(
+      new URL("http://localhost:8123/mcp"),
+      { allowHttpLocalhost: true, allowPrivateEndpoint: true },
+      {},
+      { fetch: fetchImpl, resolveHostname: vi.fn() },
+    );
+    try {
+      await expect(safeFetch("http://localhost:8123/mcp")).rejects.toThrow(
+        "MCP redirects are not permitted",
+      );
+      expect(cancels).toBe(1);
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it.each(["localhost", "127.0.0.1", "[::1]"])(
     "refuses HTTP %s without the private-endpoint escape even when the hostname is local",
     async (host) => {

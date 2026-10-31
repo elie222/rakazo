@@ -54,6 +54,9 @@ x-app-environment: &app-environment
   # Logs, errors, traces and analytics
   LOG_LEVEL:
   SECURITY_EVENT_RETENTION_DAYS:
+  AUDIT_EVENT_RETENTION_DAYS:
+  AUDIT_LOG_WEBHOOK_URL:
+  AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
   AXIOM_TOKEN:
   AXIOM_DATASET:
@@ -240,6 +243,9 @@ x-app-environment: &app-environment
   LARK_VERIFICATION_TOKEN:
   LARK_ENCRYPT_KEY:
   LARK_DOMAIN:
+  PHOTON_PROJECT_ID:
+  PHOTON_PROJECT_SECRET:
+  PHOTON_WEBHOOK_SECRET:
   # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
   HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
   HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
@@ -474,7 +480,7 @@ services:
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
       CRISP_WEBSITE_ID:
     ports:
-      - "127.0.0.1:5173:5173"
+      - "${RAKAZO_WEB_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - api
 

@@ -30,6 +30,7 @@ interface DeviceRow {
   name: string;
   platform: string;
   tokenHash: string;
+  createdAt?: Date;
   revokedAt: Date | null;
   lastSeenAt: Date | null;
 }
@@ -151,6 +152,7 @@ function setup() {
   db.deviceRows.set(device.id, {
     ...device,
     tokenHash: hashUserDeviceToken("a".repeat(64)),
+    createdAt: new Date(0),
     revokedAt: null,
     lastSeenAt: null,
   });
@@ -256,8 +258,8 @@ describe("user device gateway in the holding process", () => {
     await hub.attach(device, new FakeSocket());
     connections.get(device.id)!.heartbeatAt = new Date(Date.now() - 10 * 60_000);
     await expect(devices.connected("user-1")).resolves.toBeNull();
-    await expect(devices.hasDevice("user-1")).resolves.toBe(true);
-    await expect(devices.hasDevice("user-2")).resolves.toBe(false);
+    await expect(devices.pairedSince("user-1")).resolves.toEqual(new Date(0));
+    await expect(devices.pairedSince("user-2")).resolves.toBeNull();
   });
 
   it("fails an in-flight request when the device disconnects and never resends it", async () => {

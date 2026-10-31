@@ -25,6 +25,9 @@ import { ComposedSecretStore } from "./secret-store-factory.js";
 import { infisicalFake } from "./secret-store-fake.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
+// No server is shared with every agent, so only assignments reach a bot.
+const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };
+
 afterEach(() => vi.unstubAllGlobals());
 
 /** Discovery of a failed server offers only its stand-in "unavailable" tool. */
@@ -164,6 +167,7 @@ describe("MCP connector session cache", () => {
     );
     const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -227,6 +231,7 @@ describe("MCP connector session cache", () => {
     );
     const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -282,6 +287,7 @@ describe("MCP connector session cache", () => {
     let current = { id: first.id, ciphertext: first.ciphertext };
     const assignment = () => ({ ...ASSIGNMENT, server: { ...SERVER, secretId: current.id } });
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment()]),
         findFirst: vi.fn(async () => assignment()),
@@ -334,6 +340,7 @@ describe("MCP connector session cache", () => {
     );
     const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -341,7 +348,9 @@ describe("MCP connector session cache", () => {
       secret: { findFirst: vi.fn(async () => ({ id: record.id, ciphertext: record.ref })) },
     };
     // Health writes succeed, so the only log lines are the ones this test is about.
-    Object.assign(prisma, { mcpServer: { updateMany: vi.fn(async () => ({ count: 1 })) } });
+    Object.assign(prisma, {
+      mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn(async () => ({ count: 1 })) },
+    });
     const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
     vi.stubGlobal("fetch", mcpFetch(state));
     const connector = new McpConnector(prisma as never, store, { network: TEST_NETWORK });
@@ -419,6 +428,7 @@ describe("MCP connector session cache", () => {
     const row = { id: record.id, ciphertext: record.ref };
     const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -478,6 +488,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -526,6 +537,7 @@ describe("MCP connector session cache", () => {
       vi.stubGlobal("fetch", mcpFetch(state));
       const connector = new McpConnector(
         {
+          mcpServer: NO_SHARED_SERVERS,
           botMcpServer: {
             findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
             findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -553,6 +565,7 @@ describe("MCP connector session cache", () => {
     vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
     const append = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
     };
@@ -591,6 +604,7 @@ describe("MCP connector session cache", () => {
   it("records a failed lookup of the bot's servers before the registry drops it", async () => {
     const append = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockRejectedValue(new Error("lookup failed")) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
     };
@@ -626,7 +640,7 @@ describe("MCP connector session cache", () => {
     const prisma = {
       botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
-      mcpServer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
     const connector = new McpConnector(prisma as never, {} as never, {
       network: TEST_NETWORK,
@@ -668,6 +682,7 @@ describe("MCP connector session cache", () => {
     );
     const append = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
@@ -709,6 +724,7 @@ describe("MCP connector session cache", () => {
     );
     const append = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([localAssignment]),
         findFirst: vi.fn().mockResolvedValue(localAssignment),
@@ -757,6 +773,7 @@ describe("MCP connector session cache", () => {
     vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
     const append = vi.fn().mockResolvedValue(undefined);
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
       run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
     };
@@ -800,7 +817,7 @@ describe("MCP connector session cache", () => {
           botMcpServer: {
             findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]),
           },
-          mcpServer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+          mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         } as never,
         {} as never,
         { network },
@@ -1063,7 +1080,10 @@ describe("MCP connector session cache", () => {
     vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
     const append = vi.fn().mockResolvedValue(undefined);
     const connector = new McpConnector(
-      { botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) } } as never,
+      {
+        mcpServer: NO_SHARED_SERVERS,
+        botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+      } as never,
       {} as never,
       { network: TEST_NETWORK, events: { append } },
     );
@@ -1083,7 +1103,10 @@ describe("MCP connector session cache", () => {
 
   it("returns no tools when the MCP catalog is empty", async () => {
     const connector = new McpConnector(
-      { botMcpServer: { findMany: vi.fn().mockResolvedValue([]) } } as never,
+      {
+        mcpServer: NO_SHARED_SERVERS,
+        botMcpServer: { findMany: vi.fn().mockResolvedValue([]) },
+      } as never,
       {} as never,
     );
     await expect(
@@ -1118,6 +1141,7 @@ describe("MCP connector session cache", () => {
       const prisma = {
         capabilityInstall: { findMany: vi.fn().mockResolvedValue([]) },
         integrationProviderConfig: { findUnique: vi.fn().mockResolvedValue(null) },
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: {
           findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
           findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1201,6 +1225,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1395,6 +1420,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1418,6 +1444,56 @@ describe("MCP connector session cache", () => {
       expect(events).toMatchObject([{ type: "result" }]);
     }
     expect(state.calls).toEqual(["__catalog_search", "__catalog_load", "__catalog_execute"]);
+    await connector.close();
+  });
+
+  it("gives a bot without an assignment every tool of a server shared with all agents", async () => {
+    const state = {
+      failNext: false,
+      initializations: 0,
+      calls: [] as string[],
+      tools: [{ name: "list_sites", inputSchema: { type: "object" } }],
+    };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const shared = { ...SERVER, allBots: true };
+    const prisma = {
+      mcpServer: {
+        findMany: vi.fn().mockResolvedValue([shared]),
+        findFirst: vi.fn().mockResolvedValue(shared),
+      },
+      botMcpServer: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const connector = new McpConnector(prisma as never, {} as never, {
+      network: TEST_NETWORK,
+    });
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+
+    const [tool] = await connector.discoverTools(context);
+    expect(tool).toMatchObject({ name: "mcp__demo__list_sites" });
+    expect(prisma.mcpServer.findMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        enabled: true,
+        allBots: true,
+        userId: "u1",
+        assignments: { none: { botId: "bot-1" } },
+      }),
+    });
+    const events = [];
+    const call = { tool: tool!.name, args: {}, executionId: "call", route: tool!.route };
+    for await (const event of connector.execute(call, context)) events.push(event);
+    expect(events).toMatchObject([{ type: "result" }]);
+    expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "server-1", allBots: true, userId: "u1" }),
+    });
+    expect(state.calls).toEqual(["list_sites"]);
     await connector.close();
   });
 
@@ -1456,7 +1532,10 @@ describe("MCP connector session cache", () => {
       );
       const invalidate = vi.spyOn(provider, "invalidateCredentials");
       const connector = new McpConnector(
-        { botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) } } as never,
+        {
+          mcpServer: NO_SHARED_SERVERS,
+          botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+        } as never,
         {} as never,
         {
           network: {
@@ -1516,6 +1595,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state, "http://localhost:8123/api/mcp"));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
@@ -1542,6 +1622,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state, "http://localhost:8123/api/mcp"));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
       deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
@@ -1574,6 +1655,7 @@ describe("MCP connector session cache", () => {
     const state = { failNext: false, initializations: 0 };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1622,6 +1704,7 @@ describe("MCP connector session cache", () => {
     };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1689,7 +1772,7 @@ describe("MCP connector session cache", () => {
         findMany: vi.fn().mockResolvedValue([assignment]),
         findFirst: vi.fn().mockResolvedValue(assignment),
       },
-      mcpServer: { findFirst: vi.fn(async () => ({ secretId: current })) },
+      mcpServer: { ...NO_SHARED_SERVERS, findFirst: vi.fn(async () => ({ secretId: current })) },
       secret: {
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
           where.id === current ? { id: current, ciphertext: current } : null,
@@ -1813,6 +1896,7 @@ describe("MCP connector session cache", () => {
     });
     const connector = new McpConnector(
       {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: {
           findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
           findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1887,6 +1971,7 @@ describe("MCP connector session cache", () => {
     });
     const connector = new McpConnector(
       {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: {
           findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
           findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -1935,7 +2020,10 @@ describe("MCP connector session cache", () => {
   it("keeps a server's tools when discovery finds the cached session expired", async () => {
     const state = { failNext: false, initializations: 0, sessionNotFound: 0 };
     vi.stubGlobal("fetch", mcpFetch(state));
-    const prisma = { botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) } };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+    };
     const connector = new McpConnector(prisma as never, {} as never, {
       network: TEST_NETWORK,
     });
@@ -1971,7 +2059,10 @@ describe("MCP connector session cache", () => {
       sessionNotFoundResponse: { status: 400, body },
     };
     vi.stubGlobal("fetch", mcpFetch(state));
-    const prisma = { botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) } };
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+    };
     const connector = new McpConnector(prisma as never, {} as never, {
       network: TEST_NETWORK,
     });
@@ -2004,6 +2095,7 @@ describe("MCP connector session cache", () => {
     const state = { failNext: false, initializations: 0 };
     vi.stubGlobal("fetch", mcpFetch(state));
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
         findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
@@ -2092,6 +2184,7 @@ describe("MCP connector stdio OAuth", () => {
   ) {
     const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -2413,6 +2506,7 @@ describe("MCP connector stdio credential files", () => {
   function connectorFor(load: () => OAuthMaterial, withBroker = true, refresh = false) {
     const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
     const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
       botMcpServer: {
         findMany: vi.fn(async () => [assignment]),
         findFirst: vi.fn(async () => assignment),
@@ -2801,6 +2895,7 @@ describe("MCP connector private endpoints", () => {
     vi.stubGlobal("fetch", fetch);
     const connector = new McpConnector(
       {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: { findMany: vi.fn().mockResolvedValue([privateAssignment]) },
         deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "owner" })) },
       } as never,
@@ -2825,6 +2920,7 @@ describe("MCP connector private endpoints", () => {
       vi.stubGlobal("fetch", fetch);
       const connector = new McpConnector(
         {
+          mcpServer: NO_SHARED_SERVERS,
           botMcpServer: {
             findMany: vi
               .fn()
@@ -2852,6 +2948,7 @@ describe("MCP connector private endpoints", () => {
     vi.stubGlobal("fetch", mcpFetch(state, "http://10.0.0.8:3927/mcp"));
     const connector = new McpConnector(
       {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: { findMany: vi.fn().mockResolvedValue([privateAssignment]) },
         deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
       } as never,
@@ -2879,6 +2976,7 @@ describe("MCP connector private endpoints", () => {
     vi.stubGlobal("fetch", mcpFetch(state, "https://mcp.lan.test/mcp"));
     const connector = new McpConnector(
       {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: { findMany: vi.fn().mockResolvedValue([lanDnsAssignment]) },
         deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
       } as never,
@@ -2938,7 +3036,10 @@ it("preserves explicit MCP read-only annotations for unattended consumers", asyn
   };
   vi.stubGlobal("fetch", mcpFetch(state));
   const connector = new McpConnector(
-    { botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) } } as never,
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+    } as never,
     new EncryptedSecretStore("fake-key"),
     { network: TEST_NETWORK },
   );
@@ -2968,7 +3069,10 @@ it("marks a Composio MCP server's multi-execute tool as a batch under its prefix
   };
   vi.stubGlobal("fetch", mcpFetch(state));
   const connector = new McpConnector(
-    { botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) } } as never,
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+    } as never,
     new EncryptedSecretStore("fake-key"),
     { network: TEST_NETWORK },
   );

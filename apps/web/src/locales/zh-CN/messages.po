@@ -37,6 +37,11 @@ msgstr "{0, plural, one {# 个文件} other {# 个文件}}"
 msgid "{0, plural, one {# free month earned} other {# free months earned}}"
 msgstr "{0, plural, one {已获得 # 个月免费} other {已获得 # 个月免费}}"
 
+#. placeholder {0}: item.freeMonths
+#: src/pages/AdminAccessPage.tsx
+msgid "{0, plural, one {# free month} other {# free months}}"
+msgstr ""
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -52,6 +57,11 @@ msgstr "{0, plural, one {# 个技能} other {# 个技能}}"
 #: src/components/integrations/space-availability.tsx
 msgid "{0, plural, one {# space} other {# spaces}}"
 msgstr "{0, plural, one {# 个工作区} other {# 个工作区}}"
+
+#. placeholder {0}: server.health.toolCount
+#: src/pages/McpServersOverlay.tsx
+msgid "{0, plural, one {# tool} other {# tools}}"
+msgstr ""
 
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
@@ -209,6 +219,10 @@ msgstr "{header}，第 {index} 列"
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr "{hidden, plural, one {+# 个更早的步骤} other {+# 个更早的步骤}}"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "{hiddenSelectedCount, plural, one {# selected model is hidden by your search.} other {# selected models are hidden by your search.}}"
+msgstr ""
 
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
@@ -396,7 +410,6 @@ msgstr "{title}，{label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}，保存为 {savedAs}"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
@@ -462,6 +475,7 @@ msgstr "{name} 的账户菜单"
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
@@ -616,7 +630,6 @@ msgstr "已添加"
 msgid "Adding…"
 msgstr "正在添加…"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -631,9 +644,9 @@ msgstr "高级"
 msgid "Advanced..."
 msgstr "高级..."
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Agents:"
-msgstr "Agent："
+#: src/components/AccountDataSettings.tsx
+msgid "Agent from another app"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
@@ -643,6 +656,7 @@ msgstr "全部"
 msgid "All {credit} goes to model usage."
 msgstr "全部 {credit} 都用于模型用量。"
 
+#: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -660,7 +674,6 @@ msgstr "全部状态"
 msgid "All time"
 msgstr "全部时间"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "允许"
@@ -670,8 +683,8 @@ msgid "Allow cross-space bot communication"
 msgstr "允许跨空间机器人通信"
 
 #: src/components/AskCard.tsx
-msgid "Allow for this chat"
-msgstr "允许本次聊天"
+msgid "Allow in this space"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Allow once"
@@ -681,17 +694,13 @@ msgstr "允许一次"
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Allow rule"
-msgstr "允许规则"
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
 msgstr "允许写入"
 
 #: src/components/AskCard.tsx
-msgid "Allowed for this chat"
-msgstr "已允许本次聊天"
+msgid "Allowed in this space"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Allowed once"
@@ -873,9 +882,9 @@ msgstr "产物"
 msgid "Ask"
 msgstr "询问"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Ask rule"
-msgstr "审批规则"
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "休眠中"
 
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
@@ -962,9 +971,11 @@ msgstr "头像工作室"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -999,14 +1010,9 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr "账单"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "阻止"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Block rule"
-msgstr "禁止规则"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1177,10 +1183,6 @@ msgstr "已取消"
 msgid "Cancelled"
 msgstr "已取消"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Candidate rule"
-msgstr "候选规则"
-
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr "卡片视图"
@@ -1208,6 +1210,10 @@ msgstr "正在修改…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "图表渲染失败：{error}"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat"
+msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1262,10 +1268,6 @@ msgstr "请自行检查"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "请查看邮箱"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "检查于 {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -1498,6 +1500,10 @@ msgstr "电脑"
 msgid "Computer failed to boot"
 msgstr "电脑启动失败"
 
+#: src/components/ModelCredits.tsx
+msgid "Computer hours left"
+msgstr "剩余电脑时长"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "电脑已休眠"
@@ -1528,12 +1534,7 @@ msgstr "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SU
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "要连接应用，请先在服务器上配置插件目录。"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Configured servers"
-msgstr "已配置的服务器"
-
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "确认删除"
 
@@ -1928,6 +1929,10 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not enable tools"
 msgstr "无法启用工具"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not grant access"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "无法安装连接器"
@@ -2029,10 +2034,6 @@ msgstr "无法播放测试片段"
 msgid "Could not preview plugin"
 msgstr "无法预览插件"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Could not preview rule"
-msgstr "无法预览规则"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "无法连接到模型服务器。"
@@ -2106,6 +2107,10 @@ msgstr "无法重置密码"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not revoke connection"
 msgstr "无法撤销连接"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not revoke grant"
+msgstr ""
 
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
@@ -2222,13 +2227,13 @@ msgstr ""
 msgid "Could not update"
 msgstr "无法更新"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "无法更新 Agent 权限"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
 msgstr "无法更新账单"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
@@ -2249,6 +2254,10 @@ msgstr "无法更新默认记忆范围"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "无法确认电脑是否就绪（{failureMessage}）。请修复连接后再检查一次。"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Couldn't load grants"
+msgstr ""
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
@@ -2322,7 +2331,6 @@ msgstr "正在创建…"
 msgid "Credential"
 msgstr "凭据"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "凭据已保存"
@@ -2339,6 +2347,10 @@ msgstr "凭据：{names}"
 msgid "Credit amount"
 msgstr "额度金额"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Credits ($)"
+msgstr ""
+
 #: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
@@ -2346,10 +2358,6 @@ msgstr "Cron"
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron expression"
 msgstr "Cron 表达式"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Current"
-msgstr "当前"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
@@ -2381,6 +2389,7 @@ msgstr "自定义机器人头像"
 msgid "Dark"
 msgstr "深色"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr "数据"
@@ -2429,6 +2438,7 @@ msgstr "OpenClaw 默认内容"
 msgid "Default scope"
 msgstr "默认范围"
 
+#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2457,7 +2467,9 @@ msgid "Delete {0}"
 msgstr "删除 {0}"
 
 #. placeholder {0}: bot.name
+#. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "删除 {0}？"
@@ -2704,6 +2716,7 @@ msgstr "编辑名称"
 msgid "Edit Profile"
 msgstr "编辑资料"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "邮箱"
@@ -2772,10 +2785,6 @@ msgstr "环境变量：{names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "出错"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "错误详情"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -2857,6 +2866,7 @@ msgstr "展开表格"
 msgid "expired"
 msgstr "已过期"
 
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "导出"
@@ -2988,6 +2998,14 @@ msgstr "忘记密码？"
 msgid "Free"
 msgstr "免费"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Free access"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Free months"
+msgstr ""
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Free plan ends {day}"
 msgstr "免费方案将于 {day} 结束"
@@ -3043,6 +3061,14 @@ msgstr "Git 事件"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "返回首页"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Grant"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Granting…"
+msgstr ""
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
@@ -3200,6 +3226,10 @@ msgstr "此模型尚未配置图片输入。"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "图片上传区域"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import"
+msgstr ""
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3480,6 +3510,7 @@ msgstr "正在加载语音提供方…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -4004,6 +4035,10 @@ msgstr "无认证"
 msgid "No authentication"
 msgstr "无认证"
 
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
+
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
@@ -4021,19 +4056,12 @@ msgstr "此部署未配置托管应用目录。"
 msgid "No matching artifacts on this page."
 msgstr "这一页没有匹配的产物。"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
 msgstr "没有匹配的模型"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "No matching rule"
-msgstr "未匹配规则"
-
-#: src/pages/McpServersOverlay.tsx
-msgid "No MCP servers yet."
-msgstr "还没有 MCP 服务器。"
 
 #: src/pages/GroupPanel.tsx
 msgid "No members yet"
@@ -4058,6 +4086,10 @@ msgstr "未找到 OpenClaw、Hermes 或 Agent 文档。"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr "没有找到远程 MCP 服务器"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "未回复"
 
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4164,7 +4196,6 @@ msgstr "OAuth 客户端 ID（可选）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客户端密钥（可选）"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth 已连接"
@@ -4173,7 +4204,6 @@ msgstr "OAuth 已连接"
 msgid "OAuth connection failed"
 msgstr "OAuth 连接失败"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "OAuth 已过期"
@@ -4400,6 +4430,7 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 msgid "Paused"
 msgstr "已暂停"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
@@ -4487,8 +4518,6 @@ msgstr "POST 到"
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/ApprovalRulePreview.tsx
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4598,6 +4627,10 @@ msgstr "读取并写入"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "只读取"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Received"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "Recent"
@@ -4732,7 +4765,6 @@ msgstr "交还控制权"
 msgid "Reload"
 msgstr "重新加载"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -4937,6 +4969,7 @@ msgstr "正在恢复工作区"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4968,9 +5001,14 @@ msgstr "返回 Rakazo"
 msgid "Review provider settings and test again."
 msgstr "请检查提供方设置并重新测试。"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "撤销"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Revoked"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -5000,6 +5038,10 @@ msgstr "你不在时也会运行的例行任务"
 msgid "Row"
 msgstr "行"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Rules"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "运行时间"
@@ -5016,7 +5058,6 @@ msgstr "运行时间必须是将来的时间。"
 msgid "running"
 msgstr "运行中"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
@@ -5132,6 +5173,7 @@ msgstr "范围（可选）"
 msgid "Screen not connected"
 msgstr "屏幕未连接"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5165,6 +5207,7 @@ msgstr "按域名搜索"
 msgid "Search integrations.sh"
 msgstr "搜索 integrations.sh"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
@@ -5280,6 +5323,10 @@ msgstr "服务器 URL"
 #: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "设置"
+
+#: src/components/AskCard.tsx
+msgid "Settings updated"
+msgstr "设置已更新"
 
 #: src/pages/Shell.tsx
 msgid "Settings: {label}"
@@ -5520,10 +5567,6 @@ msgstr "工作区"
 msgid "Speak"
 msgstr "朗读"
 
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak only"
-msgstr "仅朗读"
-
 #: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "朗读这条回复"
@@ -5535,6 +5578,10 @@ msgstr "正在说话"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "语音模型"
+
+#: src/components/AccountAccess.tsx
+msgid "SSO"
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
@@ -5715,10 +5762,6 @@ msgstr "测试 API 密钥"
 msgid "Test connection"
 msgstr "测试连接"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Test rule"
-msgstr "测试规则"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "测试运行"
@@ -5728,7 +5771,6 @@ msgid "Testing"
 msgstr "测试"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "正在测试…"
 
@@ -5996,7 +6038,6 @@ msgstr "工具参数必须是 JSON 对象"
 msgid "Tool arguments must be JSON"
 msgstr "工具参数必须是 JSON"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "工具名称"
@@ -6317,6 +6358,10 @@ msgstr "排队等候…"
 msgid "Waiting…"
 msgstr "等待中…"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "唤醒"
+
 #: src/pages/settings-nav.ts
 msgid "Wallet"
 msgstr "钱包"
@@ -6483,6 +6528,10 @@ msgstr "你已接管"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Your data"
+msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"
