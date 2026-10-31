@@ -21,6 +21,7 @@ import {
   connectionIdArgument,
   credentialArgument,
   loginFieldLabelsArgument,
+  oneTimeCodeArgument,
 } from "./bot-secrets.js";
 import { FIND_TOOL, findTools, partitionTools, USE_TOOL } from "./builtin-tool-bridge.js";
 import { shortenToolResultText } from "./context-selection.js";
@@ -299,6 +300,7 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
     purpose,
     ...(connectionId ? { connectionId } : {}),
     ...(credential !== undefined ? { credential } : {}),
+    ...(raw.oneTimeCode !== undefined ? { oneTimeCode: oneTimeCodeArgument(raw.oneTimeCode) } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
     ...(raw.fields != null ? { fields: loginFieldLabelsArgument(raw.fields) } : {}),
   };

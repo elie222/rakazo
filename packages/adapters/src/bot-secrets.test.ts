@@ -6,11 +6,16 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
+  encodeRunCode,
   encodeRunLogin,
   loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
   loadRunLoginRedactions,
   normalizeSecretDestination,
+  oneTimeCodeArgument,
+  oneTimeCodeRedactions,
   requestWithBotSecret,
+  resolveCodeFill,
   resolveLoginFill,
   resolveRequestSecretDestination,
   sameSecretDestination,
@@ -391,7 +396,8 @@ describe("resolveRequestSecretDestination", () => {
     expect(
       resolveRequestSecretDestination({ label: "Code", purpose: "otp", connectionId: "null" }),
     ).toEqual({
-      error: "Provide either a reusable credential destination or a connectionId.",
+      error:
+        "Provide either a reusable credential destination, a connectionId, or oneTimeCode for a code the page asked for.",
     });
   });
 
@@ -1186,5 +1192,199 @@ describe("logins kept for one run", () => {
     const redacted = redactSecrets(forms.join("\n"), redactions);
     for (const form of forms) expect(redacted).not.toContain(form);
     expect(await loadRunLoginRedactions(prisma, secretStore, scope, "run-2")).toEqual([]);
+  });
+});
+
+describe("a one-time code request", () => {
+  it("takes only the HTTPS origin of the page that asked, without its path or query", () => {
+    const asked = oneTimeCodeArgument({ origin: "https://login.example.test/verify?code=123456" });
+    expect(asked).toEqual({ origin: "https://login.example.test" });
+    expect(resolveRequestSecretDestination({ oneTimeCode: asked })).toEqual({
+      oneTimeCodeOrigin: "https://login.example.test",
+    });
+    // Userinfo never reaches the card or the stored request.
+    expect(oneTimeCodeArgument({ origin: "https://user:fake-pass@example.test" })).toEqual({
+      origin: "https://example.test",
+    });
+  });
+
+  it("tells the bot why an HTTP page is refused, so it can tell the user", () => {
+    for (const origin of ["http://login.example.test", "http://192.168.1.20"]) {
+      expect(
+        resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument({ origin }) }),
+      ).toEqual({
+        error:
+          "Codes can only be typed on HTTPS pages, and this page isn't HTTPS. Ask the user to take over and tell them that is why.",
+      });
+    }
+  });
+
+  it.each([{ origin: "" }, {}, "https://login.example.test", { origin: "ftp://example.test" }])(
+    "refuses %j, which cannot be a page a code is typed into",
+    (value) => {
+      expect(resolveRequestSecretDestination({ oneTimeCode: oneTimeCodeArgument(value) })).toEqual({
+        error: "oneTimeCode needs the HTTPS origin of the page that asked for the code.",
+      });
+    },
+  );
+
+  it("refuses a private-LAN HTTP origin even when the owner allows it for credentials", () => {
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(
+      resolveRequestSecretDestination({
+        oneTimeCode: oneTimeCodeArgument({ origin: "http://192.168.1.20" }),
+      }),
+    ).toMatchObject({ error: expect.any(String) });
+  });
+});
+
+describe("a code's redactions", () => {
+  const hidden = (text: string, code = "123456") =>
+    redactSecrets(text, oneTimeCodeRedactions(code));
+
+  it("hide a code a page draws one character at a time, with spaces or dashes, or in groups", () => {
+    // An innerText-style read of an input-otp widget: one slot per line.
+    for (const shown of [
+      "123456",
+      "1\n2\n3\n4\n5\n6",
+      "1\r\n2\r\n3\r\n4\r\n5\r\n6",
+      "1 2 3 4 5 6",
+      "1\t2\t3\t4\t5\t6",
+      "1-2-3-4-5-6",
+      "1 - 2 - 3 - 4 - 5 - 6",
+      "123 456",
+      "123-456",
+      "123 - 456",
+    ]) {
+      expect(hidden(`Enter code:\n${shown}\nResend`)).toBe("Enter code:\n[redacted]\nResend");
+    }
+  });
+
+  it("hide a code written with dashes both as sent and without them", () => {
+    expect(hidden("12-34-56", "12-34-56")).toBe("[redacted]");
+    expect(hidden("123456", "12-34-56")).toBe("[redacted]");
+    expect(hidden("1 2 3 4 5 6", "12-34-56")).toBe("[redacted]");
+  });
+
+  it("never include a form too short to be told from ordinary text", () => {
+    for (const code of ["1234", "123-456", "ab12-cd34"]) {
+      expect(oneTimeCodeRedactions(code).filter((form) => form.length < 4)).toEqual([]);
+    }
+  });
+
+  it("leave unrelated digits alone", () => {
+    expect(hidden("Order 98765 shipped on 12/34")).toBe("Order 98765 shipped on 12/34");
+  });
+});
+
+describe("resolveCodeFill", () => {
+  const codeScope = { userId: "user-1", spaceId: "space-1" };
+
+  async function codeFixture(origin = "https://login.example.test", runId = "run-1") {
+    const stored = await secretStore.put(
+      encodeRunCode(origin, "123456"),
+      { ...codeScope, operationId: runId, traceId: runId, signal: new AbortController().signal },
+      { ephemeral: true },
+    );
+    const rows: Array<Record<string, unknown>> = [
+      { ...codeScope, ...stored, kind: `run-code:${runId}` },
+    ];
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) =>
+        value && typeof value === "object" && "in" in value
+          ? (value.in as unknown[]).includes(row[key])
+          : row[key] === value,
+      );
+    const prisma = {
+      secret: {
+        findFirst: vi.fn(async ({ where }) => rows.find((row) => matches(row, where)) ?? null),
+        findMany: vi.fn(async ({ where }) => rows.filter((row) => matches(row, where))),
+        updateMany: vi.fn(async ({ where, data }) => {
+          const found = rows.filter((row) => matches(row, where));
+          for (const row of found) Object.assign(row, data);
+          return { count: found.length };
+        }),
+      },
+    } as unknown as PrismaClient;
+    return { prisma, rows };
+  }
+
+  it("gives the code with its site and every form to hide, without taking it", async () => {
+    const { prisma, rows } = await codeFixture();
+    const fill = await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" });
+    if ("error" in fill) throw new Error(fill.error);
+    expect(fill).toMatchObject({ text: "123456", origin: "https://login.example.test" });
+    expect(fill.redactions).toEqual(expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]));
+    expect(rows[0]).toMatchObject({ kind: "run-code:run-1" });
+  });
+
+  it("lets one of two fills take the code, and keeps it as a spent row", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const [first, second] = await Promise.all([resolveCodeFill(input), resolveCodeFill(input)]);
+    if ("error" in first || "error" in second) throw new Error("both fills should resolve");
+    const claims = await Promise.all([first.claim(), second.claim()]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
+    expect(await resolveCodeFill(input)).toEqual({
+      error:
+        "No code is waiting. Use request_secret with oneTimeCode to ask the user for it first.",
+    });
+  });
+
+  it("gives a refused code back for another try", async () => {
+    const { prisma, rows } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    expect(await fill.claim()).toBe(true);
+    await fill.restore();
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+    expect(await resolveCodeFill(input)).toMatchObject({ text: "123456" });
+  });
+
+  it("keeps hiding a spent code, and a waiting one, from the start of a later attempt", async () => {
+    const { prisma } = await codeFixture();
+    const input = { prisma, secretStore, scope: codeScope, runId: "run-1" };
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toEqual(
+      expect.arrayContaining(["123456", "1\n2\n3\n4\n5\n6"]),
+    );
+    const fill = await resolveCodeFill(input);
+    if ("error" in fill) throw new Error(fill.error);
+    await fill.claim();
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-1")).toContain(
+      "123456",
+    );
+    expect(await loadRunCodeRedactions(prisma, secretStore, codeScope, "run-2")).toEqual([]);
+  });
+
+  it("never gives another run's code", async () => {
+    const { prisma } = await codeFixture(undefined, "run-0");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toMatchObject({ error: expect.stringContaining("No code is waiting") });
+  });
+
+  it("refuses a code kept for a plain-HTTP site, with the reason", async () => {
+    const { prisma, rows } = await codeFixture("http://login.example.test");
+    expect(
+      await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+    ).toEqual({ error: expect.stringContaining("Ask the user to take over and tell them") });
+    expect(rows).toMatchObject([{ kind: "run-code:run-1" }]);
+  });
+
+  it("refuses a code it cannot read, logging only the error name", async () => {
+    const { prisma, rows } = await codeFixture();
+    rows[0]!.ciphertext = "not-a-ciphertext";
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(
+        await resolveCodeFill({ prisma, secretStore, scope: codeScope, runId: "run-1" }),
+      ).toEqual({ error: "This code could not be loaded." });
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { errorName: expect.any(String) });
+    } finally {
+      logger.mockRestore();
+    }
   });
 });

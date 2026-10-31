@@ -133,14 +133,16 @@ export function AskCard({
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // A login, credential or code is for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
-  const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
+  const ownerOnly = secretInput && Boolean(block.credential || block.oneTimeCode) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const shownLoginLabels = block.loginFields ?? [t`Username`, t`Password`];
   const loginReady = LoginSecretValue.safeParse({ fields: login }).success;
   const secretLabel = secretFieldLabel(block.purpose);
   const commandInput = secretInput && block.credential?.auth.type === "command";
+  const codeInput = secretInput && Boolean(block.oneTimeCode);
+  const codeHost = block.oneTimeCode ? new URL(block.oneTimeCode.origin).host : undefined;
 
   // A password field can't hold line breaks, so it would flatten a multi-line command variable
   // such as an SSH private key. That text is kept as is and the field turns read-only, so what
@@ -278,20 +280,26 @@ export function AskCard({
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {secretInput && block.credential ? (
+      {secretInput && (block.credential || block.oneTimeCode) ? (
         <div
           data-testid="secret-ask-destination"
-          className="mt-2 break-all text-[13px] text-muted-foreground"
+          // A code's line is a sentence, so it wraps between words; an address breaks anywhere.
+          className={`mt-2 ${codeHost ? "wrap-anywhere" : "break-all"} text-[13px] text-muted-foreground`}
         >
-          {block.credential.auth.type === "command" ? (
+          {block.credential?.auth.type === "command" ? (
             <span className="flex flex-wrap gap-x-2">
               <span>{t`Command variable`}</span>
               <span>${commandVariableName(block.credential.name)}</span>
             </span>
+          ) : codeHost ? (
+            t`Only enter a code ${codeHost} sent you.`
           ) : (
-            block.credential.origin
+            block.credential?.origin
           )}
         </div>
+      ) : null}
+      {codeInput && block.detail ? (
+        <div className="mt-2 break-words text-[13px] text-muted-foreground">{block.detail}</div>
       ) : null}
       {block.detail && !secretInput ? (
         <pre
@@ -367,7 +375,8 @@ export function AskCard({
                 approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
                 displayedDismissed,
-                displayedRemembered,
+                // A code is used once, never saved.
+                codeInput ? false : displayedRemembered,
               )}
         </div>
       ) : !canAnswer ? (
@@ -434,7 +443,8 @@ export function AskCard({
               className="w-full"
               aria-label={secretLabel}
               type="password"
-              autoComplete="off"
+              autoComplete={codeInput ? "one-time-code" : "off"}
+              {...(codeInput ? { inputMode: "numeric" as const } : {})}
               spellCheck={false}
               disabled={submitting}
               readOnly={pastedLines}
@@ -477,7 +487,7 @@ export function AskCard({
               type="submit"
               disabled={(loginInput ? !loginReady : answer.length === 0) || submitting}
             >
-              {loginInput && !remember ? (
+              {(loginInput && !remember) || codeInput ? (
                 pendingAction === "submit" ? (
                   <Trans>Sending…</Trans>
                 ) : (

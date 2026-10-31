@@ -7,7 +7,7 @@ import type { MobileMessage } from "../../lib/api";
 import { plainAskTitle } from "../../lib/ask-title";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
-import { secretDestinationLabel } from "../../lib/secret-destination";
+import { secretDestinationLabel, siteHost } from "../../lib/secret-destination";
 import { secretFieldTraits } from "../../lib/secret-field-traits";
 import { errorText } from "../../lib/user-error";
 import { NativeActionButton } from "../native-action-button";
@@ -48,9 +48,13 @@ export function AskBlock({
   const answered = saved || dismissed || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
-  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // A login, credential or code is for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
-  const ownerOnly = secretInput && Boolean(ask.credential) && !canDismiss;
+  const ownerOnly = secretInput && Boolean(ask.credential || ask.oneTimeCode) && !canDismiss;
+  const destination = ask.credential
+    ? secretDestinationLabel(ask.credential)
+    : ask.oneTimeCode &&
+      t("Only enter a code {host} sent you.", { host: siteHost(ask.oneTimeCode.origin) });
   const incomplete = secretInput ? answer.length === 0 : !answer.trim();
   const secretLabel =
     ask.purpose === "password"
@@ -58,7 +62,7 @@ export function AskBlock({
       : ask.purpose === "api_key"
         ? t("API key")
         : t("Code");
-  const submitLabel = secretInput ? t("Save") : t("Send answer");
+  const submitLabel = ask.oneTimeCode ? t("Continue") : secretInput ? t("Save") : t("Send answer");
 
   async function dismiss() {
     if (submitting) return;
@@ -112,12 +116,10 @@ export function AskBlock({
       >
         {plainAskTitle(ask.text)}
       </Text>
-      {secretInput && ask.credential ? (
-        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
-          {secretDestinationLabel(ask.credential)}
-        </Text>
+      {secretInput && destination ? (
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{destination}</Text>
       ) : null}
-      {ask.detail && !secretInput ? (
+      {ask.detail && (!secretInput || ask.oneTimeCode) ? (
         <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
       {answered ? (
@@ -134,7 +136,7 @@ export function AskBlock({
             ? t(
                 dismissed || ask.dismissed
                   ? "Dismissed"
-                  : sentOnce || ask.remembered === false
+                  : sentOnce || ask.remembered === false || ask.oneTimeCode
                     ? "Sent"
                     : "Saved",
               )
@@ -174,6 +176,7 @@ export function AskBlock({
             secureTextEntry={secretInput}
             autoComplete="off"
             {...(secretInput ? secretFieldTraits(ask.purpose, ask.credential) : {})}
+            keyboardType={ask.oneTimeCode ? "number-pad" : "default"}
             autoCorrect={secretInput ? false : undefined}
             autoCapitalize={secretInput ? "none" : "sentences"}
             editable={!submitting}
