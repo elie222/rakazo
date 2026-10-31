@@ -2,14 +2,14 @@
 
 A bot can set up your other bots the way you would: create groups, organize the sidebar, rewrite
 their instructions, pick their model and schedule them. This works on every bot of yours in the
-space, whoever created it. It is controlled per bot and is on by default.
+space, whoever created it. It is controlled per bot and is on for new bots.
 
 ## Turning it on
 
 Open a bot's settings, expand **Advanced** and turn on **Manage other bots**. The switch is on web,
 the Electron desktop app (which hosts the web UI) and mobile bot settings.
 
-- It is on for every new bot.
+- New bots start with it on. Older bots and imported bots keep the setting they had.
 - It is checked again each time a tool is called, so turning it off takes effect immediately.
 - Subagents get none of the bot management tools, not even `list_fleet`.
 
