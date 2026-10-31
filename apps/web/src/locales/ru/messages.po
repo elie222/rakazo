@@ -639,6 +639,7 @@ msgstr "Расширенные..."
 msgid "Agents:"
 msgstr "Агенты:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""

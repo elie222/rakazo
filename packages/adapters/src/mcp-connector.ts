@@ -299,6 +299,11 @@ export function allowlistDrift(
   };
 }
 
+/** A server every agent may use acts as an assignment that allows all its tools. */
+function sharedAssignment<Server extends { id: string }>(server: Server) {
+  return { serverId: server.id, allowAllTools: true, allowedTools: [] as unknown, server };
+}
+
 function reportAllowlistDrift(
   assignment: { allowAllTools: boolean; allowedTools: unknown; server: { slug: string } },
   offered: Array<{ name: string }>,
@@ -431,16 +436,23 @@ export class McpConnector implements ConnectorProvider {
 
   private async authorizedTools(context: AdapterContext): Promise<ConnectorTool[]> {
     if (!context.botId) return [];
-    const assignments = await this.prisma.botMcpServer.findMany({
-      where: {
-        botId: context.botId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        // A server no longer available in this space stays assigned but unused until it is again.
-        server: { enabled: true, ...availableInSpace(context) },
-      },
-      include: { server: true },
-    });
+    const usable = { enabled: true, ...availableInSpace(context) };
+    const [assigned, shared] = await Promise.all([
+      this.prisma.botMcpServer.findMany({
+        where: {
+          botId: context.botId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          // A server no longer available in this space stays assigned but unused until it is again.
+          server: usable,
+        },
+        include: { server: true },
+      }),
+      this.prisma.mcpServer.findMany({
+        where: { ...usable, allBots: true, assignments: { none: { botId: context.botId } } },
+      }),
+    ]);
+    const assignments = [...assigned, ...shared.map(sharedAssignment)];
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
@@ -633,16 +645,21 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tools require a bot context" };
       return;
     }
-    const assignment = await this.prisma.botMcpServer.findFirst({
-      where: {
-        botId: context.botId,
-        serverId: call.route.resourceId,
-        spaceId: context.spaceId,
-        userId: context.userId,
-        server: { enabled: true, ...availableInSpace(context) },
-      },
-      include: { server: true },
-    });
+    const usable = { enabled: true, ...availableInSpace(context) };
+    const assignment =
+      (await this.prisma.botMcpServer.findFirst({
+        where: {
+          botId: context.botId,
+          serverId: call.route.resourceId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          server: usable,
+        },
+        include: { server: true },
+      })) ??
+      (await this.prisma.mcpServer
+        .findFirst({ where: { ...usable, id: call.route.resourceId, allBots: true } })
+        .then((server) => (server ? sharedAssignment(server) : null)));
     if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
       const reason =
         this.unavailable.get(this.sessionKey(assignment.server, context)) ??

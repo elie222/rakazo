@@ -98,7 +98,6 @@ export function McpServersOverlay({
   const { t } = useLingui();
   const [editing, setEditing] = useState<McpServer | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
   const [transport, setTransport] = useState<McpTransport>("streamable_http");
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
@@ -188,12 +187,6 @@ export function McpServersOverlay({
     return () => channel.close();
   }, [queries]);
 
-  function toggleBot(id: string) {
-    setSelectedBotIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  }
-
   const duplicateNames = new Set(
     envRows
       .filter(
@@ -224,7 +217,6 @@ export function McpServersOverlay({
     setCommand("");
     setArgs("");
     setEnvRows([emptyEnvRow()]);
-    setSelectedBotIds([]);
   }
 
   /** Stored values are never sent back to the client, so a blank one keeps what is stored. */
@@ -256,7 +248,6 @@ export function McpServersOverlay({
 
   async function saveServer() {
     if (transport === "stdio" && duplicateNames.size > 0) return;
-    if (!editing && selectedBotIds.length > 0 && !assignmentsReady) return;
     setError(null);
     if (!name.trim()) {
       setError(t`Add a server name.`);
@@ -337,21 +328,6 @@ export function McpServersOverlay({
         return;
       }
       const created = await rpc.mcp.servers.create(config);
-      // replace() overwrites the bot's whole list, so merge with what it already has.
-      await Promise.all(
-        selectedBotIds.map((botId) => {
-          const existing = (botAssignments[botId] ?? []).filter(
-            (entry) => entry.serverId !== created.id,
-          );
-          return rpc.mcp.assignments.replace({
-            botId,
-            assignments: [
-              ...existing,
-              { serverId: created.id, allowAllTools: true, allowedTools: [] },
-            ],
-          });
-        }),
-      );
       await refresh();
       resetForm();
       // A remote server is checked in the background; wait for that check so a server
@@ -397,26 +373,42 @@ export function McpServersOverlay({
     }
   }
 
-  async function toggleAssignment(server: McpServer, botId: string) {
+  /** `botIds` limits the server to those agents; none shares it with every agent. */
+  async function setServerAgents(server: McpServer, botIds?: string[]) {
     if (!assignmentsReady) return;
     setError(null);
-    const current = botAssignments[botId] ?? [];
-    const assigned = current.some((entry) => entry.serverId === server.id);
-    const next = assigned
-      ? current.filter((entry) => entry.serverId !== server.id)
-      : [...current, { serverId: server.id, allowAllTools: true, allowedTools: [] }];
     try {
-      const updated = await rpc.mcp.assignments.replace({
-        botId,
-        assignments: next,
+      const updated = await rpc.mcp.servers.agents({
+        id: server.id,
+        allBots: !botIds,
+        botIds: botIds ?? [],
       });
-      await writeSaved(queryClient, assignmentsOptions.queryKey, (all) => [
-        ...(all ?? []).filter((entry) => entry.botId !== botId),
-        ...updated,
+      await Promise.all([
+        writeSaved(queryClient, serversOptions.queryKey, (current) =>
+          (current ?? []).map((item) => (item.id === server.id ? updated.server : item)),
+        ),
+        writeSaved(queryClient, assignmentsOptions.queryKey, (all) => [
+          ...(all ?? []).filter((entry) => entry.serverId !== server.id),
+          ...updated.assignments,
+        ]),
       ]);
     } catch (err) {
       setError(errorText(err, t`Could not update agent access`));
     }
+  }
+
+  function assignedBotIds(server: McpServer) {
+    return bots
+      .filter((bot) => (botAssignments[bot.id] ?? []).some((entry) => entry.serverId === server.id))
+      .map((bot) => bot.id);
+  }
+
+  function toggleAgent(server: McpServer, botId: string) {
+    const current = server.allBots ? bots.map((bot) => bot.id) : assignedBotIds(server);
+    void setServerAgents(
+      server,
+      current.includes(botId) ? current.filter((id) => id !== botId) : [...current, botId],
+    );
   }
 
   async function deleteServer(server: McpServer) {
@@ -794,41 +786,11 @@ export function McpServersOverlay({
                     ) : null}
                   </div>
                 </Disclosure>
-                {bots.length > 0 && !editing ? (
-                  <Field>
-                    <FieldTitle>
-                      <Trans>Agents:</Trans>
-                    </FieldTitle>
-                    <div className="flex flex-wrap gap-1.5">
-                      {bots.map((bot) => {
-                        const selected = selectedBotIds.includes(bot.id);
-                        return (
-                          <Button
-                            key={bot.id}
-                            type="button"
-                            variant={selected ? "default" : "outline"}
-                            size="xs"
-                            aria-pressed={selected}
-                            disabled={!assignmentsReady}
-                            onClick={() => toggleBot(bot.id)}
-                          >
-                            {selected ? <Check aria-hidden="true" /> : null}
-                            {bot.name}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  </Field>
-                ) : null}
               </FieldGroup>
               <Button
                 type="button"
                 className="mt-5 w-full"
-                disabled={
-                  saving ||
-                  (transport === "stdio" && duplicateNames.size > 0) ||
-                  (!editing && selectedBotIds.length > 0 && !assignmentsReady)
-                }
+                disabled={saving || (transport === "stdio" && duplicateNames.size > 0)}
                 onClick={() => void saveServer()}
               >
                 {editing ? (
@@ -895,10 +857,25 @@ export function McpServersOverlay({
                           <span className="text-[11px] text-muted-foreground">
                             <Trans>Agents:</Trans>
                           </span>
+                          <Button
+                            type="button"
+                            variant={server.allBots ? "default" : "outline"}
+                            size="xs"
+                            aria-pressed={server.allBots ?? false}
+                            disabled={!assignmentsReady}
+                            onClick={() =>
+                              void setServerAgents(
+                                server,
+                                server.allBots ? assignedBotIds(server) : undefined,
+                              )
+                            }
+                          >
+                            {server.allBots ? <Check aria-hidden="true" /> : null}
+                            <Trans>All</Trans>
+                          </Button>
                           {bots.map((bot) => {
-                            const assigned = (botAssignments[bot.id] ?? []).some(
-                              (entry) => entry.serverId === server.id,
-                            );
+                            const assigned =
+                              server.allBots || assignedBotIds(server).includes(bot.id);
                             return (
                               <Button
                                 key={bot.id}
@@ -907,7 +884,7 @@ export function McpServersOverlay({
                                 size="xs"
                                 aria-pressed={assigned}
                                 disabled={!assignmentsReady}
-                                onClick={() => void toggleAssignment(server, bot.id)}
+                                onClick={() => toggleAgent(server, bot.id)}
                               >
                                 {assigned ? <Check aria-hidden="true" /> : null}
                                 {bot.name}

@@ -639,6 +639,7 @@ msgstr "מתקדם..."
 msgid "Agents:"
 msgstr "סוכנים:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
