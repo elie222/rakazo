@@ -785,7 +785,7 @@ describe("tickRoutineWatch on a computer", () => {
         },
       });
     };
-    const output = `Signed in as watcher@example.test with ${password}, paid with ${card.replaceAll(" ", "")}`;
+    const output = `Signed in as watcher@example.test with ${password}, paid with ${card.replaceAll(" ", "")} and ${card.replaceAll(" ", "-")}`;
 
     vi.mocked(provisionComputer).mockResolvedValueOnce({
       id: "computer-1",
@@ -803,10 +803,11 @@ describe("tickRoutineWatch on a computer", () => {
     const tick = await tickRoutineWatch(changed.deps, changed.routine, target, scheduledAt);
     if (!tick.run) throw new Error("expected a run");
     expect(tick.note).toContain(
-      "Signed in as watcher@example.test with [redacted], paid with [redacted]",
+      "Signed in as watcher@example.test with [redacted], paid with [redacted] and [redacted]",
     );
     expect(tick.note).not.toContain(password);
     expect(tick.note).not.toContain("4242424242424242");
+    expect(tick.note).not.toContain("4242-4242-4242-4242");
 
     vi.mocked(provisionComputer).mockResolvedValueOnce({
       id: "computer-1",
@@ -824,10 +825,11 @@ describe("tickRoutineWatch on a computer", () => {
     await tickRoutineWatch(failed.deps, failed.routine, target, scheduledAt);
     const posted = JSON.stringify(failed.messages);
     expect(posted).toContain(
-      "Signed in as watcher@example.test with [redacted], paid with [redacted]",
+      "Signed in as watcher@example.test with [redacted], paid with [redacted] and [redacted]",
     );
     expect(posted).not.toContain(password);
     expect(posted).not.toContain("4242424242424242");
+    expect(posted).not.toContain("4242-4242-4242-4242");
 
     // An item saved before its value was hidden is named from the last reading when it goes.
     vi.mocked(provisionComputer).mockResolvedValueOnce({
