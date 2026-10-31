@@ -1129,7 +1129,6 @@ msgid "Can't reach the server."
 msgstr "無法連線伺服器。"
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "無法讀取影像"
@@ -2993,7 +2992,6 @@ msgid "Forgot password?"
 msgstr "忘記密碼？"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免費"
 
@@ -3769,7 +3767,6 @@ msgstr "模式"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3791,7 +3788,6 @@ msgid "Model id"
 msgstr "模型 ID"
 
 #: src/components/FoundModelPicker.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "模型選項"
@@ -4032,7 +4028,6 @@ msgid "No matching artifacts on this page."
 msgstr "此頁面沒有符合的成品。"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -5145,7 +5140,6 @@ msgstr "螢幕未連線"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5180,7 +5174,6 @@ msgstr "搜尋 integrations.sh"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"

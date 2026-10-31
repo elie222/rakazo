@@ -1128,7 +1128,6 @@ msgid "Can't reach the server."
 msgstr "서버에 연결할 수 없습니다."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "이미지를 읽을 수 없음"
@@ -2992,7 +2991,6 @@ msgid "Forgot password?"
 msgstr "비밀번호를 잊으셨나요?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "무료"
 
@@ -3768,7 +3766,6 @@ msgstr "모드"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3790,7 +3787,6 @@ msgid "Model id"
 msgstr "모델 ID"
 
 #: src/components/FoundModelPicker.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "모델 선택지"
@@ -4031,7 +4027,6 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -5144,7 +5139,6 @@ msgstr "화면이 연결되지 않음"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5179,7 +5173,6 @@ msgstr ""
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"

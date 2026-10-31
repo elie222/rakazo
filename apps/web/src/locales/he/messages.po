@@ -1128,7 +1128,6 @@ msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
@@ -2992,7 +2991,6 @@ msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -3768,7 +3766,6 @@ msgstr "מצב"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3790,7 +3787,6 @@ msgid "Model id"
 msgstr "מזהה מודל"
 
 #: src/components/FoundModelPicker.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
@@ -4031,7 +4027,6 @@ msgid "No matching artifacts on this page."
 msgstr "אין תוצרים תואמים בדף הזה."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -5144,7 +5139,6 @@ msgstr "המסך אינו מחובר"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5179,7 +5173,6 @@ msgstr "חיפוש ב-integrations.sh"
 
 #: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
