@@ -16,8 +16,10 @@ import {
   isNonPublicAddress,
   normalizeHost,
 } from "@rakazo/contracts";
+import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import { composioToolBatch } from "./composio-batch.js";
+import { sensitiveQueryParameter } from "./connector-http.js";
 import { combineSignals } from "./connector-safety.js";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
 import {
@@ -148,6 +150,12 @@ async function withRemoteMcpClient<T>(
   }
 }
 
+/** A saved MCP endpoint is stored and shown in plaintext, so its credentials belong in headers. */
+export function assertNoMcpEndpointCredential(endpoint: string): void {
+  const name = sensitiveQueryParameter(new URL(endpoint));
+  if (name) throw new Error(`Put ${name} in a header instead of the server URL`);
+}
+
 export async function assertSafeRemoteUrl(
   value: string,
   resolve: ResolveHostname = resolveHostname,
@@ -244,6 +252,7 @@ export function createSafeRemoteFetch(
       });
     }
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new ConnectorRedirectError();
     }
     return response;
@@ -310,6 +319,7 @@ export function createPrivateNetworkFetch(
       });
     }
     if (response.status >= 300 && response.status < 400) {
+      cancelResponseBody(response);
       throw new Error("Private fetch redirects are not allowed");
     }
     return response;

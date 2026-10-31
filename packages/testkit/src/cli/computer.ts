@@ -5,7 +5,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { computerTestSandbox } from "../computer-test-config.js";
-import { startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 async function main() {
@@ -19,8 +19,7 @@ async function main() {
   const database = await startPostgres();
   const env = {
     ...process.env,
-    DATABASE_URL: database.getConnectionUri(),
-    REALTIME_DATABASE_URL: database.getConnectionUri(),
+    ...disposableDatabaseEnv(database.getConnectionUri()),
     RUN_COMPUTER_E2E: "1",
     VERIFY_PROVIDERS: "1",
     VERIFY_LOGGING: "1",

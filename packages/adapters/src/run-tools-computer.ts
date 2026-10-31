@@ -34,7 +34,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -339,7 +339,7 @@ export const computerTools: ToolHandlers = {
       const computer = await ctx.computer.get("tool", name);
       const shellEnvironment =
         ctx.computer.hostEnvironment ??
-        (computer.kind === "desktop"
+        (usesNativeShell(computer.kind)
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
       const observed = await observeShellCommand(

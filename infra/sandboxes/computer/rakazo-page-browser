@@ -1149,8 +1149,14 @@ EVAL_HELPERS = r"""
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (el.isContentEditable) {
-        el.textContent = String(value);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        // Let Chromium deliver beforeinput and native editing, including editor cancellation.
+        // Select the existing content so one Input.insertText replaces it, even for long text.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return { insertText: true };
       } else {
         throw new Error(`Element is not fillable: ${ref}`);
       }
@@ -1428,10 +1434,14 @@ def wait_for_action(client: CdpClient, session_id: str, ended: float, seconds: f
 
 
 def key_event(char: str) -> dict[str, Any] | None:
-    """CDP keyDown parameters for one printable ASCII character, or None to insert it as text."""
+    """CDP keyDown parameters for one character, or None for an ASCII control inserted as text."""
     if char == "\n":
         # Shift+Enter breaks the line; many chat boxes send their message on a plain Enter.
         return {"key": "Enter", "code": "Enter", "text": "\r", "windowsVirtualKeyCode": 13, "modifiers": 8}
+    # Unicode has no assumed physical key mapping. Dispatch each code point without IME composition;
+    # combining sequences and ZWJ emoji are neither normalized nor grouped.
+    if len(char) == 1 and ord(char) > 127:
+        return {"key": char, "text": char}
     if len(char) != 1 or not " " <= char <= "~":
         return None
     if char.isdigit():
@@ -1926,6 +1936,8 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             data = eval_json(client, session_id, f"window.__rakazoPageBrowser.fill({arguments})")
             if not isinstance(data, dict):
                 raise RuntimeError("Action response unavailable")
+            if data.get("insertText"):
+                client.call("Input.insertText", {"text": step["text"]}, session_id=session_id)
             completed += 1
             uncertain = False
         ended = time.monotonic()

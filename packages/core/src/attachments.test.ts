@@ -13,6 +13,20 @@ import {
 
 describe("attachment helpers", () => {
   it.each([
+    ["xls", "application/vnd.ms-excel"],
+    ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  ])("accepts and preserves %s spreadsheet attachments", (extension, mimeType) => {
+    for (const reported of [undefined, "", mimeType, "application/octet-stream"]) {
+      expect(inferAttachmentMimeType(`statement.${extension}`, reported)).toBe(mimeType);
+      expect(inferAttachmentMimeType(`STATEMENT.${extension.toUpperCase()}`, reported)).toBe(
+        mimeType,
+      );
+    }
+    expect(attachmentExtensionForMimeType(mimeType)).toBe(`.${extension}`);
+    expect(() => validateAttachmentMimeType(mimeType)).not.toThrow();
+  });
+
+  it.each([
     ["mp3", "audio/mpeg"],
     ["wav", "audio/wav"],
     ["ogg", "audio/ogg"],
@@ -111,6 +125,18 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
+  });
+
+  it("keeps a CSV a CSV when Windows reports it as an Excel file", () => {
+    expect(inferAttachmentMimeType("sales.csv", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("SALES.CSV", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("sales.xls", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("statement", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("sales.csv", "application/pdf")).toBe("application/pdf");
   });
 
   it.each([

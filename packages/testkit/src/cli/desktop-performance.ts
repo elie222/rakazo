@@ -21,7 +21,7 @@ import {
   roundMetric,
   summarize,
 } from "../performance-report.js";
-import { startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 loadRootEnv();
 
@@ -148,8 +148,7 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     NODE_ENV: "production",
-    DATABASE_URL: databaseUrl,
-    REALTIME_DATABASE_URL: databaseUrl,
+    ...disposableDatabaseEnv(databaseUrl),
     VERIFY_DATABASE: "1",
     WAKEUP_DRIVER: "memory",
     SANDBOX_PROVIDER: "fake",

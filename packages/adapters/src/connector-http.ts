@@ -71,11 +71,14 @@ export function assertNoSensitiveQuery(value: string): void {
   } catch {
     throw new Error("Connector URL is invalid");
   }
-  for (const name of url.searchParams.keys()) {
-    if (/(auth|credential|key|password|secret|token)/i.test(name)) {
-      throw new Error(`Connector URL must put ${name} in the encrypted credential field`);
-    }
-  }
+  const name = sensitiveQueryParameter(url);
+  if (name) throw new Error(`Connector URL must put ${name} in the encrypted credential field`);
+}
+
+export function sensitiveQueryParameter(url: URL): string | undefined {
+  return [...url.searchParams.keys()].find((name) =>
+    /(auth|credential|key|password|secret|token)/i.test(name),
+  );
 }
 
 export async function readBoundedText(

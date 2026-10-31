@@ -83,6 +83,7 @@ export function createReferrals(deps: {
   }
 
   return {
+    enabled,
     async status(organizationId: string, isOwner: boolean): Promise<BillingStatus["referral"]> {
       if (!enabled || !isOwner) return null;
       const [code, rewards] = await Promise.all([

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { serve } from "@hono/node-server";
@@ -36,7 +37,11 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
         );
       }
       const { supervisorApp } = await import("@rakazo/sandbox-supervisor");
-      const server = serve({ fetch: supervisorApp.fetch, hostname: "127.0.0.1", port: 0 });
+      const server = serve({
+        fetch: supervisorApp.fetch,
+        hostname: "127.0.0.1",
+        port: 0,
+      }) as Server;
       try {
         if (!server.listening)
           await new Promise<void>((resolve, reject) => {

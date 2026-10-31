@@ -22,6 +22,7 @@ import {
   isSandboxGoneError,
   provisionComputer,
   queueComputerUpdate,
+  rateLimitEnds,
   releaseComputerExecutionLease,
   replaceComputer,
   resolveBotUploadPath,
@@ -31,6 +32,7 @@ import {
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
+  sleepDeferReason,
   takeoverLeaseMs,
   toComputerRef,
   touchRunningComputer,
@@ -148,7 +150,9 @@ export function computerRoutes(ctx: RouterContext) {
         const claimed = await deps.prisma.computer.updateMany({
           where: {
             id: bot.computer.id,
-            state: { notIn: ["suspending", "quarantined"] },
+            // Provision may resume the sandbox after Stop returns; let the boot finish first. Stop
+            // acts on the state it read, so one that changed since is busy too.
+            state: { equals: bot.computer.state, notIn: ["booting", "suspending", "quarantined"] },
             providerRef: bot.computer.providerRef,
             kind: bot.computer.kind,
             maintenanceId: null,
@@ -160,7 +164,7 @@ export function computerRoutes(ctx: RouterContext) {
         });
         if (claimed.count !== 1) {
           throw new ORPCError("CONFLICT", {
-            message: "Other Team bots are still using this computer",
+            message: "Computer is busy",
           });
         }
         const otherRun = await deps.prisma.run.findFirst({
@@ -184,13 +188,23 @@ export function computerRoutes(ctx: RouterContext) {
           computerId: bot.computer.id,
           botId: bot.id,
         });
+        let stopping = false;
         try {
           let end: ComputerRunEnd = "stopped";
           if (bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
             try {
-              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
+              if (bot.computer.state === "stopped" || bot.computer.state === "suspended") {
+                // It was saved when it went down and its provider keeps the disk, so a save would
+                // only wake it.
+                stopping = true;
+                await deps.sandbox.stop(ref, ctx);
+              } else {
+                await checkpointAndStopComputer(deps, bot.computer, ref, ctx, () => {
+                  stopping = true;
+                });
+              }
             } catch (error) {
               // The sandbox is already gone: nothing left to checkpoint or stop.
               if (!isSandboxGoneError(error)) throw error;
@@ -216,12 +230,17 @@ export function computerRoutes(ctx: RouterContext) {
           if (stopped.count !== 1) return computerStatus(deps, context.actor, input.botId);
           await recordComputerRunEnd(deps.prisma, bot.computer, end);
         } catch (error) {
+          // A failed save, or a stop the provider put off, leaves the computer up: hand it back
+          // to idle sleep and metering instead of hiding it as an error.
+          const stillUp = !stopping || sleepDeferReason(error) !== undefined;
           await deps.prisma.computer
             .updateMany({
               where: { id: bot.computer.id, state: "suspending" },
-              data: { state: "error" },
+              data: { state: stillUp ? bot.computer.state : "error" },
             })
             .catch(() => undefined);
+          if (stillUp)
+            scheduleComputerSleep(deps.jobs, bot.computer.id, undefined, rateLimitEnds(error));
           throw error;
         }
         await deps.jobs.cancel(
@@ -324,23 +343,7 @@ export function computerRoutes(ctx: RouterContext) {
           };
         }
         if (hasActiveComputerControl(bot.computer) && bot.computer.controlBotId !== bot.id) {
-          const previousBotId = bot.computer.controlBotId!;
-          await revokeScreenControl(
-            deps,
-            bot.computer,
-            computerContext(context.actor, previousBotId, "screen.release"),
-            bot.computer.controlLeaseId ?? undefined,
-          );
-          await deps.prisma.computer.updateMany({
-            where: { id: bot.computer.id, controlLeaseId: bot.computer.controlLeaseId },
-            data: {
-              controlHolder: "none",
-              controlLeaseId: null,
-              controlLeaseExpiresAt: null,
-              controlBotId: null,
-              controlRunId: null,
-            },
-          });
+          await releaseComputerControl(deps, context.actor, bot.computer.controlBotId!, "skipped");
           bot = await repos.getBot(context.actor, input.botId);
           if (!bot.computer) throw new IsolationError();
         }
@@ -1134,7 +1137,7 @@ async function clearGoneSandbox(
   error: unknown,
 ): Promise<null> {
   if (!isSandboxGoneError(error)) throw error;
-  getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+  getLogger().warn(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, { error });
   const cleared = await deps.prisma.computer.updateMany({
     where: { id: computer.id, providerRef: computer.providerRef },
     data: { state: "stopped", providerRef: null },

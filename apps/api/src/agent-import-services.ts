@@ -5,6 +5,7 @@ import { canonicalPiProviderId, ModelConnectInputSchema } from "@rakazo/contract
 import type { createRepos } from "@rakazo/db";
 import { findModelCredential, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { isAdmin } from "./admins.js";
 import type { AgentImportServices } from "./agent-import.js";
 import type { createMcpServers } from "./mcp-servers.js";
 import { mcpCredentialRecords, mcpStdioPolicy } from "./mcp-servers.js";
@@ -86,7 +87,10 @@ export function createAgentImportServices({
       });
       return result.ok ? null : result.error;
     },
-    stdioAllowed: (command) => !mcpStdioRefusal(command, mcpStdioPolicy(deps)),
+    stdioAllowed: async (actor) => {
+      const admin = await isAdmin(deps, actor.userId);
+      return (command) => admin && !mcpStdioRefusal(command, mcpStdioPolicy(deps));
+    },
     prepareModelKey: async (actor, input, signal) => {
       const connect = ModelConnectInputSchema.parse({ ...input, credentialId: null });
       const { plaintext } = await verifyModelConnection(actor, connect, signal);

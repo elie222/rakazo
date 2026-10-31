@@ -42,6 +42,10 @@ vi.mock("@rakazo/ui-web", () => {
     Button: ({ variant: _variant, ...props }: ComponentProps<"button"> & { variant?: string }) => (
       <button {...props} />
     ),
+    SectionHeading: ({
+      variant: _variant,
+      ...props
+    }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     Skeleton: Container,
     Tabs: Container,

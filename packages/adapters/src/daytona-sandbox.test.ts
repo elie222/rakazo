@@ -67,6 +67,38 @@ describe("DaytonaSandboxProvider", () => {
     );
   });
 
+  it("prunes excluded directories before listing their contents and keeps project core", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    for (const file of [
+      "project/node_modules/pkg/index.js",
+      ".cache/uv/data",
+      ".yarn/cache/pkg",
+      ".yarn/patches/fix.patch",
+      "packages/core/notes.txt",
+      "core.123",
+      "run.log",
+      ".browser-profiles/chromium/Cache/data",
+      ".browser-profiles/chromium/Default/Cookies",
+    ]) {
+      await provider.writeFile(computer, { path: file, content: Buffer.from("ok") }, context);
+    }
+    const listing = vi.spyOn(fixture.sandbox.fs, "listFiles");
+    const files = [];
+    for await (const file of provider.exportWorkspace(computer, context)) files.push(file.path);
+    expect(files.sort()).toEqual([
+      ".browser-profiles/chromium/Default/Cookies",
+      ".yarn/patches/fix.patch",
+      "packages/core/notes.txt",
+    ]);
+    const visited = listing.mock.calls.map(([directory]) => directory);
+    expect(visited).not.toContain("/home/daytona/rakazo-home/project/node_modules");
+    expect(visited).not.toContain("/home/daytona/rakazo-home/.cache");
+    expect(visited).not.toContain("/home/daytona/rakazo-home/.yarn/cache");
+    expect(visited).not.toContain("/home/daytona/rakazo-home/.browser-profiles/chromium/Cache");
+  });
+
   it("omits snapshot from create() when unset", async () => {
     vi.stubEnv("DAYTONA_SNAPSHOT", "   ");
     const fixture = daytonaFixture();

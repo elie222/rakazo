@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -96,6 +97,7 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: new Proxy({}, { get: (_target, name) => String(name) }),
   useResolvedAppearance: () => "light",
+  useMobileTokens: () => ({}),
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./user-error", () => ({
@@ -150,17 +152,20 @@ vi.mock("react-native", () => {
       value,
       onChangeText,
       secureTextEntry,
+      maxLength,
     }: {
       accessibilityLabel?: string;
       placeholder?: string;
       value: string;
       onChangeText: (value: string) => void;
       secureTextEntry?: boolean;
+      maxLength?: number;
     }) =>
       createElement("input", {
         "aria-label": accessibilityLabel,
         placeholder,
         value,
+        maxLength,
         type: secureTextEntry ? "password" : "text",
         onInput: (event: { currentTarget: HTMLInputElement }) =>
           onChangeText(event.currentTarget.value),
@@ -369,6 +374,11 @@ describe("a Space's model override", () => {
     expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
     expect(connect?.[2]).toEqual({ requestContext: otherSpace });
   });
+});
+
+it("lets the limit fields hold every value the server accepts", () => {
+  expect(field("Maximum output tokens")?.maxLength).toBe(String(MAX_MODEL_MAX_TOKENS).length);
+  expect(field("Context limit")?.maxLength).toBe(String(MAX_MODEL_CONTEXT_WINDOW).length);
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {

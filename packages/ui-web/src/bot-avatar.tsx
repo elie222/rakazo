@@ -16,8 +16,9 @@ import {
 } from "@rakazo/core";
 import { tokens } from "@rakazo/ui-tokens";
 import type { ComponentProps, CSSProperties } from "react";
-import { memo, useId, useMemo, useSyncExternalStore } from "react";
+import { memo, useEffect, useId, useMemo, useSyncExternalStore } from "react";
 import { useBotAvatarActivity } from "./bot-avatar-activity.js";
+import { useAvatarMotionVisibility } from "./hooks/use-avatar-motion-visibility.js";
 import { cn } from "./lib/utils.js";
 import { LogoAvatar } from "./logo-avatar.js";
 import "./styles.css";
@@ -270,6 +271,12 @@ function OrganicAvatar({
     reducedMotionSnapshot,
     () => false,
   );
+  const { ref, visible } = useAvatarMotionVisibility(!reducedMotion);
+  useEffect(() => {
+    // jsdom has no SMIL clock, so these are optional.
+    if (visible) ref.current?.unpauseAnimations?.();
+    else ref.current?.pauseAnimations?.();
+  }, [ref, visible]);
   const seed = avatarIdentitySeed(identity || color || DEFAULT_BOT_AVATAR_COLOR);
   const duration = `${4.8 + (seed % 24) / 10}s`;
   const shapeA = organicAvatarPath(seed);
@@ -277,10 +284,12 @@ function OrganicAvatar({
 
   return (
     <svg
+      ref={ref}
       viewBox="-60 -60 120 120"
       aria-hidden="true"
       className={cn("rakazo-organic-avatar overflow-visible select-none", className)}
       data-working={isWorking}
+      data-paused={!visible}
       data-shape-family={seed % 10}
       data-eye-pattern={seed % 4}
       style={{
@@ -305,7 +314,8 @@ function OrganicAvatar({
             } as CSSProperties
           }
         >
-          {!reducedMotion ? (
+          {/* Only the shown layer morphs. A late <animate> joins the svg clock mid-loop. */}
+          {!reducedMotion && (mode === "working") === isWorking ? (
             <animate
               attributeName="d"
               values={`${shapeA};${shapeB};${shapeA}`}

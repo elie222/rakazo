@@ -153,6 +153,14 @@ export function computerRetryDelay(fence: number): number {
 }
 
 /**
+ * An outage at the computer provider usually lasts minutes, so the retries a run gets before
+ * failing are spread over about a quarter of an hour instead of spent within seconds.
+ */
+export function providerOutageRetryDelay(priorFailures: number): number {
+  return Math.min(5 * 60_000, 15_000 * 2 ** Math.min(priorFailures, 5));
+}
+
+/**
  * A bot uses its computer for one run at a time, and runs that found it held wait without
  * a retry timer. The run releasing it starts the next one due. Runs backing off after a
  * failure keep their delay.
@@ -297,6 +305,7 @@ export async function requeueComputerRun(
   heldForTakeover = false,
   untilReleased = false,
 ): Promise<void> {
+  const retryAt = new Date(Date.now() + computerRetryDelay(fence));
   const released = await writeComputerRunRequeue(
     deps,
     runId,
@@ -305,11 +314,11 @@ export async function requeueComputerRun(
     resumeCheckpoint,
     heldForTakeover,
     null,
-    untilReleased ? null : undefined,
+    untilReleased ? null : retryAt,
   );
   if (!released || untilReleased) return;
   await deps.jobs.enqueue({
     ...runContinueJob(runId),
-    availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+    availableAt: retryAt,
   });
 }

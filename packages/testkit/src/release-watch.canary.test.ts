@@ -191,7 +191,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
   }, 420_000);
 });
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type Snap = {
   messages: Array<{ role: string; blocks: unknown[] }>;
   run: {

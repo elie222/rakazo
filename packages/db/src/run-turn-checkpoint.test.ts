@@ -27,7 +27,11 @@ function fixture() {
       ring: { encryptWrites: true, current: async () => key, byId: async () => key },
     }),
     $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(client),
-    run: { updateMany: locked, findMany: vi.fn(async () => []) },
+    run: {
+      updateMany: locked,
+      updateManyAndReturn: vi.fn(async () => [{ id: run.id }]),
+      findMany: vi.fn(async () => []),
+    },
     message: { findMany: vi.fn(async () => []) },
     externalEffect: {
       upsert,

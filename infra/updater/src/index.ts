@@ -266,10 +266,10 @@ export function createUpdaterApp(
           upToDate: target.imageTag === tags.currentTag,
           checkout,
         };
-      })();
-      planInFlight = work.finally(() => {
+      })().finally(() => {
         planInFlight = null;
       });
+      planInFlight = work;
       return c.json(await work);
     } catch (error) {
       return refusal(c, error);

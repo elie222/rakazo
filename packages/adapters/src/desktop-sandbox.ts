@@ -50,6 +50,7 @@ import {
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { hostCommandEnvironment } from "./sandbox-command-environment.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
@@ -90,8 +91,19 @@ type ContainedHandle = Awaited<ReturnType<typeof open>> | Win32FileHandle;
 interface DesktopBox {
   ref: ComputerRef;
   home: string;
-  running: boolean;
   screen: string;
+}
+
+/** Beside the home, not in it, so workspace listings, checkpoints and restores never carry it. */
+function stoppedMarker(home: string) {
+  return `${home}.stopped`;
+}
+
+async function markStopped(home: string) {
+  // Without a parent folder there is no home either, which already reads as stopped.
+  await writeFile(stoppedMarker(home), "").catch((error) => {
+    if (!hasErrorCode(error, "ENOENT")) throw error;
+  });
 }
 
 export class DesktopSandboxProvider implements SandboxProvider {
@@ -156,33 +168,27 @@ export class DesktopSandboxProvider implements SandboxProvider {
     request: { botId: string; homePath: string },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
-    const home = path.resolve(
-      this.opts.root ?? path.join(process.cwd(), "data"),
-      "desktop-computers",
-      request.botId,
-    );
+    const home = this.homeFor(request.botId);
+    await rm(stoppedMarker(home), { force: true });
+    // Recursive mkdir returns undefined when the directory already exists. This
+    // survives adapter/process restarts and distinguishes live files from a new home,
+    // including a home removed under a box this process still holds.
+    const fresh = (await mkdir(home, { recursive: true })) !== undefined;
     const existing = [...this.boxes.values()].find(
       (box) => box.ref.botId === request.botId || box.home === home,
     );
-    if (existing) {
-      existing.running = true;
-      return { ...existing.ref, fresh: false };
-    }
+    if (existing) return { ...existing.ref, fresh };
     const id = `desktop-${request.botId}`;
-    // Recursive mkdir returns undefined when the directory already exists. This
-    // survives adapter/process restarts and distinguishes live files from a new home.
-    const created = await mkdir(home, { recursive: true });
     const ref: ComputerRef = {
       id,
       botId: request.botId,
       kind: "desktop",
       providerRef: home,
-      fresh: created !== undefined,
+      fresh,
     };
     this.boxes.set(id, {
       ref,
       home,
-      running: true,
       screen: "ready",
     });
     return ref;
@@ -242,8 +248,23 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return entries;
   }
 
+  // Read from disk: the API and the worker each build their own provider over the same homes.
+  // A missing home reads as stopped, so the caller reconnects and restores it.
   async isRunning(computer: ComputerRef, _context: AdapterContext) {
-    return this.boxes.get(computer.id)?.running ?? false;
+    const home = this.homeFor(computer.botId);
+    if (!computer.providerRef || path.resolve(computer.providerRef) !== home) return false;
+    const [info, stopped] = await Promise.all([
+      stat(home).catch(() => undefined),
+      // Only a missing marker means not stopped; any other failure must not read as running.
+      lstat(stoppedMarker(home)).then(
+        () => true,
+        (error: unknown) => {
+          if (hasErrorCode(error, "ENOENT")) return false;
+          throw error;
+        },
+      ),
+    ]);
+    return Boolean(info?.isDirectory()) && !stopped;
   }
 
   async environment() {
@@ -341,11 +362,13 @@ export class DesktopSandboxProvider implements SandboxProvider {
     const entries = await readdir(target, { withFileTypes: true });
     const listed = await Promise.all(
       entries.map(async (entry) => {
+        // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
         const child = await localWorkspaceTarget(
           box.home,
           relative ? `${relative}/${entry.name}` : entry.name,
           true,
-        );
+        ).catch(() => null);
+        if (!child) return null;
         const info = await stat(child);
         return {
           path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
@@ -355,7 +378,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
         };
       }),
     );
-    return listed;
+    return listed.filter((entry) => entry !== null);
   }
 
   async readFile(
@@ -400,7 +423,10 @@ export class DesktopSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     _context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file);
+    for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      await this.writeFile(computer, file);
+    }
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
@@ -410,8 +436,8 @@ export class DesktopSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxFor(computer);
     if (box) {
-      box.running = false;
       this.cancelOwnedProcesses(box.home);
+      await markStopped(box.home);
     }
   }
 
@@ -423,13 +449,20 @@ export class DesktopSandboxProvider implements SandboxProvider {
     }
     this.boxes.delete(computer.id);
     if (box && this.opts.root) {
-      await writeFile(path.join(box.home, ".stopped"), new Date().toISOString(), "utf8").catch(
-        () => undefined,
-      );
+      // The home stays on disk, so record the stop or it would still read as running.
+      await markStopped(box.home);
     }
     if (box && !this.opts.root) {
       await rm(box.home, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  private homeFor(botId: string) {
+    return path.resolve(
+      this.opts.root ?? path.join(process.cwd(), "data"),
+      "desktop-computers",
+      botId,
+    );
   }
 
   private boxFor(computer: ComputerRef): DesktopBox | undefined {
@@ -442,7 +475,6 @@ export class DesktopSandboxProvider implements SandboxProvider {
     const box: DesktopBox = {
       ref: computer,
       home: path.resolve(computer.providerRef),
-      running: true,
       screen: "ready",
     };
     this.boxes.set(computer.id, box);
@@ -829,6 +861,7 @@ async function* walkDesktopWorkspace(
     const child = await localWorkspaceTarget(home, relative, true).catch(() => null);
     if (!child) continue;
     const info = await stat(child);
+    if (shouldSkipPortableWorkspaceFile(relative, info.isDirectory())) continue;
     if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative, maxFileBytes);
     else if (info.isFile()) {
       if (maxFileBytes !== undefined && info.size > maxFileBytes)
@@ -938,8 +971,8 @@ async function* streamLocalCommand(
       finish(1);
     }
   });
-  child.on("close", (code) => {
-    finish(code ?? 0);
+  child.on("close", (code, exitSignal) => {
+    finish(code ?? 1, exitSignal ? `command terminated by ${exitSignal}` : undefined);
   });
   if (signal.aborted) abort();
   try {

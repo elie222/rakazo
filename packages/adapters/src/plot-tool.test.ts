@@ -312,6 +312,47 @@ describe("render_plot", () => {
     }
   });
 
+  it.each([
+    {
+      position: "fixed",
+      inset: "0",
+      zIndex: "9999",
+      background: "url(https://example.test/a.png)",
+    },
+    "position:fixed;inset:0;background:url(https://example.test/a.png)",
+  ])("ignores page styles on the chart: %j", (style) => {
+    const spec = { style, className: "flex", marks: [linkedDot] } as unknown as PlotSpec;
+    const data = [{ x: 1, y: 2, url: "https://example.test" }];
+    const { plotted } = buildPlotParts(spec, data, dom());
+    expect(plotted.getAttribute("style") ?? "").not.toMatch(/fixed|url\(/);
+    expect(plotted.outerHTML).not.toContain(".flex");
+    expect(plotted.getAttribute("class")).not.toBe("flex");
+    const svg = renderPlotSpecToSvg(spec, data, dom());
+    expect(svg).not.toMatch(/fixed|url\(https|\.flex/);
+  });
+
+  it("keeps link targets and remote url() references out of the chart", () => {
+    const remote = "url(https://example.test/paint.svg#p)";
+    const spec: PlotSpec = {
+      color: { type: "ordinal", domain: ["a"], range: [remote] },
+      marks: [
+        {
+          type: "dot",
+          options: { x: "x", y: "y", fill: remote, href: "url", target: "_top", className: "flex" },
+        },
+        { type: "dot", options: { x: "x", y: "y", stroke: "k", imageFilter: remote, clip: true } },
+      ],
+    };
+    const data = [{ x: 1, y: 2, k: "a", url: "https://example.test" }];
+    const { plotted, swatches } = buildPlotParts(spec, data, dom());
+    expect(swatches).toEqual([]);
+    expect(plotted.querySelector("a")?.hasAttribute("target")).toBe(false);
+    expect(plotted.querySelector(".flex")).toBeNull();
+    expect(plotted.outerHTML).not.toContain("example.test/paint");
+    expect(plotted.querySelector("[clip-path]")?.getAttribute("clip-path")).toMatch(/^url\(#/);
+    expect(renderPlotSpecToSvg(spec, data, dom())).not.toContain("example.test/paint");
+  });
+
   it("supports transforms: binned histogram and grouped stacked bars", () => {
     const histogram = renderPlotSpecToSvg(
       {

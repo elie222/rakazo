@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Point-in-time recovery for the production Compose stack (docs/self-host.md#point-in-time-recovery).
+# Point-in-time recovery for the production Compose stack (docs/self-host-backups.md#point-in-time-recovery).
 #
 #   pitr.sh enable            give Postgres the replication login and settings, start the sidecar
 #   pitr.sh disable           stop the sidecar and release the WAL Postgres keeps for it

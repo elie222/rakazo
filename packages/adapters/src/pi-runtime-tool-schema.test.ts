@@ -6,7 +6,7 @@ import {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
-import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
+import { lazyCatalogTools, parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import {
   jsonSchemaParameters,
   parametersFor,
@@ -14,6 +14,24 @@ import {
 } from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("keeps the history query either/or guidance on the provider wire without a root union", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const field of ["query", "queries"]) {
+      expect(wire.properties[field].description).toContain("never both; one is required");
+    }
+    expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
+    expect(wire).not.toHaveProperty("oneOf");
+    // Root combinators cannot be sent to every provider; original-schema validation remains authoritative.
+    expect(() => parseConnectorToolArgs(tool.inputSchema, {})).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
+    ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
+      queries: ["a"],
+    });
+  });
+
   it.each([
     ["ticket_create", "title", TICKET_TITLE_MAX_LENGTH, { title: "Ship" }],
     ["ticket_create", "description", TICKET_DESCRIPTION_MAX_LENGTH, { title: "Ship" }],
@@ -273,6 +291,82 @@ describe("jsonSchemaParameters", () => {
         properties: { filter: { type: "object", enum: [{ kind: "all" }, ["x"]] } },
       }),
     ).not.toThrow();
+  });
+
+  it("leaves a free-form object without an empty properties map", () => {
+    const schema = jsonSchemaParameters({
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        arguments: { type: "object", description: "Arguments matching the loaded schema" },
+      },
+      required: ["id", "arguments"],
+    });
+    const wire = JSON.parse(JSON.stringify(schema));
+    expect(wire.properties.arguments).toEqual({
+      type: "object",
+      description: "Arguments matching the loaded schema",
+    });
+    expect(wire.properties.arguments).not.toHaveProperty("properties");
+    // Free-form only on the wire: connector validation still rejects a non-object.
+    expect(
+      parseConnectorToolArgs(wire, { id: "a", arguments: { query: "q", numResults: 3 } }),
+    ).toEqual({ id: "a", arguments: { query: "q", numResults: 3 } });
+    expect(() => parseConnectorToolArgs(wire, { id: "a", arguments: "q" })).toThrow();
+  });
+
+  it.each([undefined, false])(
+    "preserves root definitions for nested object references with additionalProperties=%s",
+    (additionalProperties) => {
+      const inputSchema = {
+        type: "object",
+        $defs: {
+          P: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+        },
+        properties: { arguments: { type: "object", $ref: "#/$defs/P" } },
+        required: ["arguments"],
+        ...(additionalProperties === false ? { additionalProperties } : {}),
+      };
+      const original = JSON.stringify(inputSchema);
+      const schema = jsonSchemaParameters(inputSchema, { description: "Tool parameters" });
+      const wire = JSON.parse(JSON.stringify(schema));
+      expect(wire).toEqual({ ...inputSchema, description: "Tool parameters" });
+      expect(parseConnectorToolArgs(wire, { arguments: { query: "q" } })).toEqual({
+        arguments: { query: "q" },
+      });
+      expect(() => parseConnectorToolArgs(wire, { arguments: {} })).toThrow();
+      expect(() => parseConnectorToolArgs(wire, {})).toThrow();
+      expect(JSON.stringify(inputSchema)).toBe(original);
+    },
+  );
+
+  it("keeps the lazy catalog's executed-tool arguments free-form", () => {
+    const execute = lazyCatalogTools("connectors", "mcp", "MCP").find(
+      (tool) => tool.name === "connectors_execute_tool",
+    )!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(execute)));
+    expect(wire.required).toEqual(["id", "arguments"]);
+    expect(wire.properties.arguments).toEqual({
+      type: "object",
+      description: "Arguments matching the loaded schema",
+    });
+    expect(parseConnectorToolArgs(wire, { id: "server:tool", arguments: { query: "q" } })).toEqual({
+      id: "server:tool",
+      arguments: { query: "q" },
+    });
+  });
+
+  it("keeps an explicitly closed empty object closed", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        jsonSchemaParameters({ type: "object", properties: {}, additionalProperties: false }),
+      ),
+    );
+    expect(wire).toEqual({ type: "object", properties: {}, additionalProperties: false });
   });
 });
 

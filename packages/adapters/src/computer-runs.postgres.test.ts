@@ -211,6 +211,53 @@ describePostgres("computer runs (PostgreSQL)", () => {
     ]);
   });
 
+  it("ends a run lost at the provider when it was last seen running, not when that was noticed", async () => {
+    const lostAtStart = await owner();
+    const lostBySleep = await owner();
+    const lostUnseen = await owner();
+    await Promise.all([lostAtStart.start(), lostBySleep.start(), lostUnseen.start()]);
+    const lastSeenAt = new Date(Date.now() - 3 * 60 * 60_000);
+    const startedAt = new Date(lastSeenAt.getTime() - 60 * 60_000);
+    for (const o of [lostAtStart, lostBySleep]) {
+      await system.computer.update({ where: { id: o.id }, data: { runningSince: startedAt } });
+      await system.computerRun.updateMany({
+        where: { computerId: o.id },
+        data: { startedAt, lastSeenAt },
+      });
+    }
+    await system.computer.update({
+      where: { id: lostUnseen.id },
+      data: { runningSince: startedAt },
+    });
+    await system.computerRun.updateMany({
+      where: { computerId: lostUnseen.id },
+      data: { startedAt, lastSeenAt: null },
+    });
+
+    // The next start has to bring the computer back, and the idle check finds it gone.
+    await runAsTenant(lostAtStart.tenant, () =>
+      recordComputerRunStart(db.prisma, lostAtStart.computer, new Date(), "gone"),
+    );
+    for (const o of [lostBySleep, lostUnseen]) {
+      o.sandbox.isRunning = async () => false;
+      o.sandbox.exportWorkspace = async function* () {
+        yield* [];
+        throw Object.assign(new Error("sandbox removed"), { name: "SandboxNotFoundError" });
+      };
+      await o.sleep();
+    }
+
+    const [lostAtStartRun] = await lostAtStart.runs();
+    expect(lostAtStartRun).toMatchObject({ endReason: "gone", endedAt: lastSeenAt });
+    expect(await lostBySleep.runs()).toEqual([
+      expect.objectContaining({ endReason: "gone", endedAt: lastSeenAt }),
+    ]);
+    // Never seen running: the end stays when it was noticed.
+    const [unseen] = await lostUnseen.runs();
+    expect(unseen!.endReason).toBe("gone");
+    expect(unseen!.endedAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  });
+
   it("closes the open runs of deleted and stopped computers, and leaves running ones open", async () => {
     const deleted = await owner();
     const stopped = await owner();
@@ -268,6 +315,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
         providerRef,
         startedAt: runningSince,
         endedAt: null,
+        lastSeenAt: runningSince,
       }),
     ]);
   });

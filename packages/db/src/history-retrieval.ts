@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
+import { HistoryQueriesSchema } from "@rakazo/contracts";
 import { shortenedTextLength, textBoundary } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -16,6 +17,10 @@ export interface HistoryScope {
   threadId: string;
   botId: string;
   channelId?: string;
+  /** Executor-only grant: direct human app runs, never external or background runs. */
+  allowMyChats?: boolean;
+  /** Run start: my_chats excludes later messages so offset pages stay stable. */
+  searchAt?: Date;
   /** Server-captured history boundary. Search excludes the active request and later messages. */
   searchBeforeSeq?: number;
 }
@@ -27,11 +32,15 @@ interface HistoryRow {
   replyToMessageId: string | null;
   createdAt: Date;
   blocks: Prisma.JsonValue;
+  threadId: string;
   groupId?: string | null;
+  botId?: string | null;
+  chatName?: string;
   indexed?: boolean;
 }
 /** Bounds the scan when blind-index collisions keep producing false candidates. */
 const MAX_SEARCH_SCANS = 20;
+const MAX_SEARCH_OFFSET = 10_000;
 // Bound complete JSON pages, including cursors. Current retains Pi's legacy 12k
 // result clipping; newer strategies preserve structured results within their context budget.
 const MAX_RESPONSE_BYTES = 10_000;
@@ -63,7 +72,18 @@ const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
   '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
-function visible(scope: HistoryScope): Prisma.Sql {
+function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
+  if (myChats)
+    return Prisma.sql`
+    t."spaceId" = ${scope.spaceId} AND t."userId" = ${scope.userId}
+    ${targetThreadId ? Prisma.sql`AND t.id = ${targetThreadId}` : Prisma.empty}
+    AND ((t."groupId" IS NULL AND EXISTS (
+      SELECT 1 FROM bots b WHERE b.id = t."botId" AND b."spaceId" = ${scope.spaceId}
+        AND b."userId" = ${scope.userId} AND b."archivedAt" IS NULL
+    )) OR (t."botId" IS NULL AND EXISTS (
+      SELECT 1 FROM chat_groups g WHERE g.id = t."groupId" AND g."spaceId" = ${scope.spaceId}
+        AND g."userId" = ${scope.userId} AND g."archivedAt" IS NULL
+    )))`;
   const channel = scope.channelId;
   return Prisma.sql`
     t.id = ${scope.threadId} AND t."spaceId" = ${scope.spaceId}
@@ -152,15 +172,30 @@ function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0)
   };
 }
 
-/** Blind-index (or full-text) search, descending sequence cursor, at most five excerpts. */
+/**
+ * Blind-index (or full-text) search, at most five excerpts. A single query in
+ * this chat pages by descending sequence; variants or my_chats page newest first
+ * by candidate offset.
+ */
 export async function searchHistory(
   prisma: PrismaClient,
   scope: HistoryScope,
   input: HistorySearchInput,
 ) {
-  const query = input.query.trim();
-  if (!query || query.length > 500)
+  const queries =
+    input.queries === undefined
+      ? [input.query?.trim() ?? ""]
+      : HistoryQueriesSchema.parse(input.queries);
+  if (
+    (input.query !== undefined) === (input.queries !== undefined) ||
+    queries.some((query) => !query || query.length > 500)
+  )
     throw new Error("History query must contain 1 to 500 characters");
+  const query = queries[0]!;
+  const myChats = input.scope === "my_chats";
+  if (myChats && (!scope.allowMyChats || scope.channelId))
+    throw new Error("my_chats is available only in direct human app runs; use this_chat.");
+  const byOffset = myChats || input.queries !== undefined;
   const limit = Math.min(pageSize(input.limit), 5);
   const before = date(input.before);
   const after = date(input.after);
@@ -175,18 +210,51 @@ export async function searchHistory(
     (!Number.isInteger(scope.searchBeforeSeq) || scope.searchBeforeSeq < 0)
   )
     throw new Error("Invalid history search boundary");
+  const offset = input.offset ?? 0;
+  if (!Number.isInteger(offset) || offset < 0 || offset > MAX_SEARCH_OFFSET)
+    throw new Error("Invalid history offset");
   const beforeSeq = Math.min(
     input.beforeSeq ?? Number.POSITIVE_INFINITY,
     scope.searchBeforeSeq ?? Number.POSITIVE_INFINITY,
   );
-  const match = await historyMatch(prisma, scope.spaceId, query);
+  const matches = await Promise.all(queries.map((q) => historyMatch(prisma, scope.spaceId, q)));
+  const kindFilter = input.kinds
+    ? Prisma.sql`AND (${Prisma.join(
+        input.kinds.map((kind) =>
+          kind === "bot_messages"
+            ? Prisma.sql`jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "bot_message_sent" || @.kind == "bot_message_received" || @.kind == "handoff")')`
+            : kind === "user_messages"
+              ? Prisma.sql`m.role = 'user' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text" || @.kind == "channel_message")')`
+              : Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "text")')`,
+        ),
+        " OR ",
+      )})`
+    : Prisma.empty;
+  const filters = Prisma.sql`
+    ${visible(scope, myChats)}
+    AND (${Prisma.join(matches, " OR ")})
+    ${
+      input.botId
+        ? Prisma.sql`AND (t."botId" = ${input.botId} OR EXISTS (
+      SELECT 1 FROM chat_group_members member JOIN bots b ON b.id = member."botId"
+      WHERE member."groupId" = t."groupId" AND b.id = ${input.botId}
+        AND b."spaceId" = ${scope.spaceId} AND b."userId" = ${scope.userId} AND b."archivedAt" IS NULL
+    ))`
+        : Prisma.empty
+    }
+    ${kindFilter}
+    ${before ? Prisma.sql`AND m."createdAt" < ${before}` : Prisma.empty}
+    ${after ? Prisma.sql`AND m."createdAt" >= ${after}` : Prisma.empty}
+    ${byOffset && Number.isFinite(beforeSeq) ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${beforeSeq})` : Prisma.empty}
+    ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}`;
   // Blind-index tokens are 32-bit and share the array with prefix tokens, so an
-  // indexed candidate is kept only if its decrypted text has every query word.
+  // indexed candidate is kept only if its decrypted text has every word of a query.
   // False candidates are skipped and the scan continues, so pages stay full.
-  const words = searchTerms(query);
+  const terms = queries.map(searchTerms);
   const indexed = contentEncryptionOf(prisma) ? INDEXED_MESSAGE : Prisma.sql`false`;
-  const rows: HistoryRow[] = [];
+  const rows: Array<HistoryRow & { matchedQueryIndexes: number[]; nextOffset: number }> = [];
   let cursor = beforeSeq;
+  let scanned = offset;
   // Set when the scan budget runs out with candidates left: the page continues from there.
   let unscanned = false;
   for (let scans = 0; rows.length <= limit; scans += 1) {
@@ -196,45 +264,75 @@ export async function searchHistory(
     }
     const batch = await messageRows(
       prisma,
-      Prisma.sql`
+      byOffset
+        ? Prisma.sql`
+    SELECT ${columns}, ${indexed} AS indexed, COALESCE(b.name, g.name) AS "chatName"
+    FROM messages m JOIN threads t ON t.id = m."threadId"
+    LEFT JOIN bots b ON b.id = t."botId" LEFT JOIN chat_groups g ON g.id = t."groupId"
+    WHERE ${filters}
+    ORDER BY m."createdAt" DESC, m.id DESC LIMIT ${limit + 1} OFFSET ${scanned}`
+        : Prisma.sql`
     SELECT ${columns}, ${indexed} AS indexed
     FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope)}
-      AND ${match}
-      ${before ? Prisma.sql`AND m."createdAt" < ${before}` : Prisma.empty}
-      ${after ? Prisma.sql`AND m."createdAt" >= ${after}` : Prisma.empty}
+    WHERE ${filters}
       ${Number.isFinite(cursor) ? Prisma.sql`AND m.seq < ${cursor}` : Prisma.empty}
-    ORDER BY m.seq DESC LIMIT ${limit + 1}
-  `,
+    ORDER BY m.seq DESC LIMIT ${limit + 1}`,
     );
     for (const row of batch) {
-      if (!row.indexed) rows.push(row);
-      else {
-        const text = new Set(searchTerms(historyMessageText(row.blocks)));
-        if (words.every((word) => text.has(word))) rows.push(row);
-      }
+      scanned += 1;
+      const text = new Set(searchTerms(historyMessageText(row.blocks)));
+      const matchedQueryIndexes = terms.flatMap((words, index) =>
+        words.every((word) => text.has(word)) ? [index] : [],
+      );
+      if (!row.indexed || matchedQueryIndexes.length)
+        rows.push({ ...row, matchedQueryIndexes, nextOffset: scanned });
     }
     if (batch.length <= limit) break;
     cursor = batch.at(-1)!.seq;
   }
   const page = rows.slice(0, limit);
+  const hasMore = rows.length > limit || unscanned;
+  const nextOffset = rows.length > limit ? page.at(-1)!.nextOffset : scanned;
+  const capped = byOffset && hasMore && nextOffset > MAX_SEARCH_OFFSET;
   const nextBeforeSeq =
-    rows.length > limit ? page.at(-1)!.seq : unscanned ? (cursor as number) : null;
+    byOffset || !hasMore ? null : rows.length > limit ? page.at(-1)!.seq : (cursor as number);
   return bounded({
     untrusted: true as const,
-    query,
+    query: byOffset ? undefined : query,
+    ...(byOffset
+      ? {
+          queries,
+          chats: [...new Set(page.map((row) => row.threadId))].map((threadId) => {
+            const hits = page.filter((row) => row.threadId === threadId);
+            return {
+              threadId,
+              name: hits[0]!.chatName,
+              lastHitAt: hits[0]!.createdAt.toISOString(),
+              messageIds: hits.map((row) => row.id),
+            };
+          }),
+        }
+      : {}),
     coverage: {
       scope: "requested_query_and_range" as const,
-      status: nextBeforeSeq === null ? ("exhausted" as const) : ("partial" as const),
+      status: hasMore ? ("partial" as const) : ("exhausted" as const),
+      ...(capped ? { capped: true } : {}),
     },
-    messages: page.map((row) => reference(row, query)),
+    messages: page.map((row) => ({
+      ...reference(row, queries[row.matchedQueryIndexes[0] ?? 0]),
+      ...(byOffset ? { threadId: row.threadId, matchedQueryIndexes: row.matchedQueryIndexes } : {}),
+    })),
     nextBeforeSeq,
     nextSearch:
-      nextBeforeSeq === null
+      !hasMore || capped
         ? null
         : {
-            query,
-            beforeSeq: nextBeforeSeq,
+            ...(input.queries ? { queries } : { query }),
+            ...(byOffset ? { offset: nextOffset } : { beforeSeq: nextBeforeSeq! }),
+            ...(byOffset && input.beforeSeq !== undefined ? { beforeSeq: input.beforeSeq } : {}),
+            ...(input.scope ? { scope: input.scope } : {}),
+            ...(input.botId ? { botId: input.botId } : {}),
+            ...(input.kinds ? { kinds: input.kinds } : {}),
             limit,
             ...(input.after !== undefined ? { after: input.after } : {}),
             ...(input.before !== undefined ? { before: input.before } : {}),
@@ -248,6 +346,10 @@ export async function readHistory(
   scope: HistoryScope,
   input: HistoryReadInput,
 ) {
+  const crossThread = input.threadId !== undefined && input.threadId !== scope.threadId;
+  const permitted = !crossThread || (scope.allowMyChats === true && !scope.channelId);
+  const targetThreadId = input.threadId ?? scope.threadId;
+  const authorized = permitted ? visible(scope, crossThread, targetThreadId) : Prisma.sql`FALSE`;
   const limit = Math.min(pageSize(input.limit), 5);
   const direction = input.direction ?? "around";
   if (
@@ -260,8 +362,8 @@ export async function readHistory(
   const anchors = await messageRows(
     prisma,
     Prisma.sql`
-    SELECT ${columns} FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope)} AND m.id = ${input.messageId} LIMIT 1
+    SELECT ${columns}, t."botId" FROM messages m JOIN threads t ON t.id = m."threadId"
+    WHERE ${authorized} AND m.id = ${input.messageId} LIMIT 1
   `,
   );
   const anchor = anchors[0];
@@ -277,6 +379,7 @@ export async function readHistory(
       olderMessageId: null,
       newerMessageId: null,
     };
+  scope = { ...scope, threadId: targetThreadId, botId: anchor.botId ?? scope.botId };
   const bound =
     direction === "older"
       ? Prisma.sql`m.seq < ${anchor.seq}`
@@ -290,7 +393,7 @@ export async function readHistory(
           prisma,
           Prisma.sql`
     SELECT ${columns} FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope)} AND ${bound}
+    WHERE ${authorized} AND ${bound}
     ORDER BY m.seq ${direction === "older" ? Prisma.sql`DESC` : Prisma.sql`ASC`} LIMIT ${limit}
   `,
         );
@@ -349,7 +452,7 @@ export async function readHistory(
           prisma,
           Prisma.sql`
     SELECT ${columns} FROM messages m JOIN threads t ON t.id = m."threadId"
-    WHERE ${visible(scope)} AND m.role = 'bot' AND m."runId" IN (${Prisma.join(runs.map((run) => run.id))})
+    WHERE ${authorized} AND m.role = 'bot' AND m."runId" IN (${Prisma.join(runs.map((run) => run.id))})
       ${input.outcomeAfterSeq !== undefined ? Prisma.sql`AND m.seq > ${input.outcomeAfterSeq}` : Prisma.empty}
     ORDER BY m.seq ASC LIMIT ${LINK_PAGE_SIZE + 1}
   `,

@@ -32,6 +32,7 @@ import {
 } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
 export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -512,7 +513,10 @@ export class DockerSandboxProvider implements SandboxProvider {
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ) {
-    for await (const file of files) await this.writeFile(computer, file, context);
+    for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+      await this.writeFile(computer, file, context);
+    }
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {
@@ -580,7 +584,9 @@ export class DockerSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): AsyncIterable<PortableFile> {
-    const entries = await this.listFiles(computer, directory, context);
+    const entries = (await this.listFiles(computer, directory, context)).filter(
+      (entry) => !shouldSkipPortableWorkspaceFile(entry.path, entry.kind === "dir"),
+    );
     for (let index = 0; index < entries.length; ) {
       const entry = entries[index]!;
       if (entry.kind === "dir") {

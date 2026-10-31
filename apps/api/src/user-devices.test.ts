@@ -34,7 +34,12 @@ function fakePrisma() {
     userDevice: {
       count: async ({ where }: { where: Partial<Row> }) =>
         rows.filter((row) => matches(row, where)).length,
-      create: async ({ data }: { data: Omit<Row, "id" | "createdAt"> }) => {
+      create: async ({
+        data,
+      }: {
+        data: Omit<Row, "id" | "createdAt" | "lastSeenAt" | "revokedAt"> &
+          Partial<Pick<Row, "lastSeenAt" | "revokedAt">>;
+      }) => {
         const row = {
           id: `device-${rows.length + 1}`,
           createdAt: new Date(),

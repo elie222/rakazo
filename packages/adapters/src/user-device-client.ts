@@ -4,6 +4,7 @@ import type { HostComputerFrame } from "./host-computer-protocol.js";
 import { HOST_COMPUTER_MAX_BYTES } from "./host-computer-protocol.js";
 import type { HostComputerCall } from "./host-computer-runner.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
+import type { HostScreen } from "./host-screen.js";
 import type { UserDeviceClientMessage } from "./user-device-protocol.js";
 import { userDeviceServerMessage } from "./user-device-protocol.js";
 
@@ -17,6 +18,8 @@ export interface UserDeviceClientOptions {
   serverUrl: string;
   token: string;
   root: string;
+  /** Drives this computer's apps. Owned by the caller, which closes it. */
+  screen?: HostScreen;
   /** The server revoked the device or rejected its token. The client has already stopped. */
   onRevoked: () => void;
   /** Whether this computer lets the server's bots run anything. Asked before every request. */
@@ -31,7 +34,7 @@ export interface UserDeviceClientOptions {
  */
 export function startUserDeviceClient(options: UserDeviceClientOptions) {
   const retry = options.retryMs ?? { min: 1_000, max: 60_000 };
-  const runner = createHostComputerRunner({ root: options.root });
+  const runner = createHostComputerRunner({ root: options.root, screen: options.screen });
   runner.setEnabled(true);
   const url = new URL(USER_DEVICE_CONNECT_PATH, options.serverUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

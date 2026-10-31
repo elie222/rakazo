@@ -67,6 +67,11 @@ export async function startModelEmulator(options: {
   const failures: Error[] = [];
   let stepIndex = 0;
   const server = createServer((request, response) => {
+    // Local tools can probe any listening loopback port; the runtime only calls under /v1.
+    if (!request.url?.startsWith("/v1/")) {
+      response.writeHead(404).end();
+      return;
+    }
     void (async () => {
       assert.equal(request.method, "POST", "Expected a model POST request");
       assert.equal(request.url, "/v1/chat/completions", "Unexpected model endpoint");

@@ -8,11 +8,14 @@ import {
   deleteSpaceTitle,
   inboxHasNoChats,
   inboxNeedsCreateHint,
+  inboxSignal,
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
   spaceInboxItems,
 } from "./inbox-spaces";
+import { mobileLogoAvatarActivity } from "./logo-avatar-activity";
+import { offscreenUnreads } from "./offscreen-unreads";
 
 vi.mock("./api", () => ({
   adoptDeletedSpaceFallback: vi.fn(),
@@ -419,5 +422,115 @@ describe("removeInboxSpace", () => {
     await expect(removeInboxSpace("space-work", refresh)).rejects.toThrow("Space is not empty");
     expect(selectSpace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe("inbox attention pills", () => {
+  beforeEach(() => mobileLogoAvatarActivity.clear());
+
+  it("does not count a read legacy row with a routine wait and no waiting indicator", () => {
+    const waiting = { ...bot, status: "waiting_input", sectionId: "custom" };
+    const items = spaceInboxItems([
+      space({
+        isDefault: true,
+        bots: [
+          waiting,
+          ...Array.from({ length: 20 }, (_, index) => ({ ...bot, id: `loose-${index}` })),
+        ],
+        botSections: [
+          {
+            id: "custom",
+            name: "Research",
+            position: 0,
+            createdAt: bot.updatedAt,
+            updatedAt: bot.updatedAt,
+          },
+        ],
+      }),
+    ]);
+    const signals = items.map(inboxSignal);
+    expect(signals.every((signal) => signal.unread === 0 && signal.attention === 0)).toBe(true);
+    expect(offscreenUnreads(signals, { first: 0, last: 0 })).toEqual({
+      above: undefined,
+      below: undefined,
+    });
+    expect(offscreenUnreads(signals, { first: 10, last: 20 })).toEqual({
+      above: undefined,
+      below: undefined,
+    });
+  });
+
+  it("still jumps to a genuinely waiting avatar above or below the viewport", () => {
+    const waiting = { ...bot, avatarSet: "rakazo" as const, status: "waiting_input" };
+    const signals = [
+      inboxSignal({ type: "heading", key: "custom", title: "Research" }),
+      inboxSignal({ type: "bot", bot: waiting }),
+      { unread: 0, attention: 0 },
+    ];
+    expect(offscreenUnreads(signals, { first: 0, last: 0 }).below).toEqual({
+      kind: "attention",
+      count: 1,
+      index: 1,
+    });
+    expect(offscreenUnreads(signals, { first: 2, last: 2 }).above).toEqual({
+      kind: "attention",
+      count: 1,
+      index: 1,
+    });
+    expect(inboxSignal({ type: "pinned", chats: [{ kind: "bot", bot: waiting }] })).toEqual({
+      unread: 0,
+      attention: 1,
+    });
+  });
+
+  it("honors live activity instead of a stale waiting status, including pinned chats", () => {
+    mobileLogoAvatarActivity.hydrate("test", {
+      threadId: bot.threadId,
+      botId: bot.id,
+      cursor: 1,
+      run: { id: "run", botId: bot.id, status: "running", trigger: "user" },
+    });
+    const waiting = { ...bot, avatarSet: "rakazo" as const, status: "waiting_input" };
+    expect(inboxSignal({ type: "bot", bot: waiting }).attention).toBe(0);
+    expect(inboxSignal({ type: "pinned", chats: [{ kind: "bot", bot: waiting }] }).attention).toBe(
+      0,
+    );
+    mobileLogoAvatarActivity.clear();
+  });
+
+  it("follows background suppression and live waits without changing unread counts", () => {
+    const waiting = { ...bot, avatarSet: "rakazo" as const, status: "waiting_input", unread: true };
+    const snapshot = {
+      threadId: bot.threadId,
+      botId: bot.id,
+      cursor: 1,
+      run: {
+        id: "run",
+        botId: bot.id,
+        status: "waiting_input" as const,
+        trigger: "tickets" as const,
+      },
+    };
+    mobileLogoAvatarActivity.hydrate("test", snapshot);
+    expect(inboxSignal({ type: "bot", bot: waiting })).toEqual({ unread: 1, attention: 0 });
+    mobileLogoAvatarActivity.hydrate("test", {
+      ...snapshot,
+      cursor: 2,
+      run: { ...snapshot.run, trigger: "user" },
+    });
+    expect(inboxSignal({ type: "bot", bot: { ...waiting, status: "idle" } })).toEqual({
+      unread: 1,
+      attention: 1,
+    });
+    mobileLogoAvatarActivity.clear();
+  });
+
+  it("does not count rows removed by a collapsed section or an archived avatar", () => {
+    const waiting = { ...bot, avatarSet: "rakazo" as const, pinned: true, status: "waiting_input" };
+    const items = spaceInboxItems([space({ bots: [waiting] })], new Set(["space-work:pinned"]));
+    expect(items.map(inboxSignal).every((signal) => signal.attention === 0)).toBe(true);
+    expect(
+      inboxSignal({ type: "bot", bot: { ...waiting, archivedAt: bot.updatedAt } }).attention,
+    ).toBe(0);
   });
 });

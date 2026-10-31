@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { startPostgres } from "./postgres.js";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
   loadRootEnv();
@@ -27,8 +27,7 @@ async function main() {
     if (runOpenRouter) postgres = await startPostgres();
     const env = {
       ...process.env,
-      DATABASE_URL: postgres?.getConnectionUri() ?? "",
-      REALTIME_DATABASE_URL: postgres?.getConnectionUri() ?? "",
+      ...disposableDatabaseEnv(postgres?.getConnectionUri() ?? ""),
       VERIFY_PROVIDERS: "1",
       WAKEUP_DRIVER: "memory",
       AGENT_RUNTIME: "pi",

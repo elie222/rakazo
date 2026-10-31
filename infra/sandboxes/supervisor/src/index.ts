@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import http from "node:http";
 import { homedir } from "node:os";
@@ -21,17 +21,19 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { computerImageEnsurer } from "./computer-image.js";
 import type { ComputerEgressMode } from "./computer-spec.js";
 import {
+  assertComputerMountSources,
   assertVolumeSubpathSupport,
   COMPUTER_GID,
   COMPUTER_IMAGE,
-  COMPUTER_IMAGE_CONTEXT_FILES,
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
   computerDnsMatches,
   computerHomeStorage,
+  computerMountsMatch,
   computerNetworkCreateOptions,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -47,6 +49,7 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
+  resolveComputerMounts,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   resolveSpaceComputerLimit,
@@ -110,9 +113,9 @@ const docker = dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) :
 const computerContext =
   process.env.RAKAZO_COMPUTER_CONTEXT ??
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
+const ensureComputerImage = computerImageEnsurer(docker, COMPUTER_IMAGE, computerContext);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
-let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 let dockerApiVersion: string | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
@@ -122,6 +125,15 @@ const computerEgressSetting = resolveComputerEgressMode();
 let computerEgressMode: ComputerEgressMode =
   computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
+const computerMounts = resolveComputerMounts(undefined, [dataDir, dockerSocketPath]);
+// Docker follows symlinks in a bind source, so also check where a locally visible source points.
+assertComputerMountSources(
+  computerMounts.map((mount) => ({
+    ...mount,
+    source: existsSync(mount.source) ? realpathSync(mount.source) : mount.source,
+  })),
+  [dataDir, dockerSocketPath],
+);
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.
@@ -220,6 +232,11 @@ app.post("/computers", async (c) => {
       await ensureComputerImage();
       await ensureRestrictedEgressEnforced();
       const runtimeInfo = await inspectSupervisorContainer();
+      // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
+      assertComputerMountSources(
+        computerMounts,
+        (runtimeInfo?.Mounts ?? []).map((mount) => mount.Source),
+      );
       const networkMode = computerNetworkName(body.botId, runtimeInfo);
       const networkOwner = computerNetworkOwnerFor(dataDir, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
@@ -279,6 +296,8 @@ app.post("/computers", async (c) => {
           info.Config.User === computerUser &&
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
+          // So are host mounts: an added, changed or removed one replaces the computer.
+          computerMountsMatch(info, computerMounts) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -350,6 +369,7 @@ app.post("/computers", async (c) => {
               controlToken: randomUUID(),
               publishControlPort: controlViaLoopback,
               dns: computerDns,
+              mounts: computerMounts,
             }),
           );
           await container.start();
@@ -1193,49 +1213,20 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   startSupervisor();
 }
 
-async function ensureComputerImage() {
-  if (!imageReady) {
-    imageReady = (async () => {
-      try {
-        await docker.getImage(COMPUTER_IMAGE).inspect();
-        return;
-      } catch {
-        // build below
-      }
-      const dockerfile = path.join(computerContext, "Dockerfile");
-      if (!existsSync(dockerfile)) {
-        throw new Error(
-          `Missing ${COMPUTER_IMAGE}. Build it with: docker build -t ${COMPUTER_IMAGE} infra/sandboxes/computer`,
-        );
-      }
-      const stream = await docker.buildImage(
-        {
-          context: computerContext,
-          src: [...COMPUTER_IMAGE_CONTEXT_FILES],
-        },
-        { t: COMPUTER_IMAGE },
-      );
-      await new Promise<void>((resolve, reject) => {
-        docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
-      });
-      await docker.getImage(COMPUTER_IMAGE).inspect();
-    })();
-  }
-  await imageReady;
-}
-
 // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
 // names the interfaces. Refuse restricted computers until a probe shows the host
 // rules are in place. Only success is cached, so installing the rules needs no restart.
 // `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
 // otherwise open with a warning, which is how computers ran before the rules existed. A probe
 // that could not finish decides nothing: the provision fails and the next one probes again.
+// In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
+// answers fails the provision the same way, so the next one probes again.
 let restrictedEgressVerified: Promise<void> | undefined;
 let autoEgressSettled: Promise<void> | undefined;
 async function ensureRestrictedEgressEnforced() {
   if (screenNetworkMode === "internal") return;
   if (computerEgressSetting === "auto") {
-    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).then(
+    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
       () => {
         computerEgressMode = "restricted";
         getLogger().info("restricted computer egress verified");
@@ -1253,10 +1244,12 @@ async function ensureRestrictedEgressEnforced() {
     return autoEgressSettled;
   }
   if (computerEgressMode !== "restricted") return;
-  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).catch((error) => {
-    restrictedEgressVerified = undefined;
-    throw error;
-  });
+  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).catch(
+    (error) => {
+      restrictedEgressVerified = undefined;
+      throw error;
+    },
+  );
   await restrictedEgressVerified;
 }
 

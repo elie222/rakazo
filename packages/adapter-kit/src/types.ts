@@ -1,6 +1,7 @@
 import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
+  ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
 } from "@rakazo/contracts";
@@ -481,6 +482,7 @@ export interface AgentRunModel {
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
@@ -648,7 +650,14 @@ export type AgentRuntimeEvent =
       /** Provider-generated tool status rather than assistant-authored narration. */
       activity?: true;
     }
-  | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      executionId: string;
+      /** The model reached this deferred built-in through use_tool. */
+      viaUseTool?: boolean;
+    }
   | {
       type: "ask";
       executionId?: string;

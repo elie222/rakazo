@@ -1,4 +1,5 @@
 import type { LogoAvatarActivity } from "./logo-avatar-activity.js";
+import { logoAvatarNeedsAttention } from "./logo-avatar-activity.js";
 import type { logoAvatarTraits } from "./logo-avatar-traits.js";
 
 type Track = readonly (readonly [number, number])[];
@@ -315,10 +316,10 @@ export function logoAvatarFrame(
     result.eyeY = -4;
     result.lid = 0.8;
   } else if (activity === "computer") result.lid = 1.12;
-  else if (activity === "waiting") result.lid = 0.9;
+  else if (logoAvatarNeedsAttention(activity)) result.lid = 0.9;
   else if (activity === "error") result.lid = 0.68;
   if (reduced) return result;
-  if (activity !== "waiting" && activity !== "error") {
+  if (!logoAvatarNeedsAttention(activity) && activity !== "error") {
     const time = phase(elapsedMs, traits.blinkDelayMs, traits.blinkMs) * traits.blinkMs;
     const starts = traits.blinkVariant === "three" ? BLINK_STARTS_THREE : BLINK_STARTS_FOUR;
     for (const start of starts) {

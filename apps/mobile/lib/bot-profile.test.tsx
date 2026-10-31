@@ -243,12 +243,14 @@ function profileRpc(
       throw new Error("unexpected routines/remove");
     },
     history = async () => ({ runs: [], nextCursor: null }),
+    computer = async () => ({ state: "stopped" }),
   }: {
     bot?: () => Promise<unknown>;
     update?: () => Promise<unknown>;
     updateRoutine?: (input: { routineId: string; active: boolean }) => Promise<unknown>;
     removeRoutine?: (input: { routineId: string }) => Promise<unknown>;
     history?: (input: { routineId: string; before?: unknown }) => Promise<unknown>;
+    computer?: () => Promise<unknown>;
   } = {},
 ) {
   rpc.mockImplementation((procedure: string, input: never) => {
@@ -258,6 +260,7 @@ function profileRpc(
     if (procedure === "routines/update") return updateRoutine(input);
     if (procedure === "routines/remove") return removeRoutine(input);
     if (procedure === "routines/history") return history(input);
+    if (procedure === "computer/status") return computer();
     return Promise.reject(new Error(`unexpected ${procedure}`));
   });
 }
@@ -271,7 +274,7 @@ describe("bot profile", () => {
     await render(createElement(BotProfile));
 
     expect(container.textContent).toContain("Fixture");
-    button("Chat settings").click();
+    button("Edit").click();
     routinesRow().click();
     button("Artifacts").click();
     button("Computer").click();
@@ -282,7 +285,17 @@ describe("bot profile", () => {
       [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
     ]);
     const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 4)).toEqual(["Chat settings", "Routines0 on", "Artifacts", "Computer"]);
+    expect(rows.slice(0, 4)).toEqual(["Edit", "Routines0 on", "Artifacts", "Computer"]);
+  });
+
+  it.each([
+    ["running", "Running"],
+    ["suspended", "Asleep"],
+    ["stopped", ""],
+  ])("shows a %s computer on its row", async (state, value) => {
+    profileRpc(async () => [], { computer: async () => ({ state }) });
+    await render(createElement(BotProfile));
+    expect(button("Computer").textContent).toBe(`Computer${value}`);
   });
 
   it.each([

@@ -7,6 +7,8 @@ import {
   createOwnedArtifact,
   deleteArtifactFamily,
   listSpaceArtifacts,
+  resolveGroupSendAttachments,
+  resolveSendAttachments,
   storeInboundAttachment,
 } from "./artifacts.js";
 
@@ -502,6 +504,18 @@ describe("storeInboundAttachment", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it("stores a CSV that a chat platform labelled as Excel as CSV", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(4));
+    await expect(
+      store({ name: "sales.csv", mimeType: "application/vnd.ms-excel", fetch }),
+    ).rejects.toBe(reachedStorage);
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: "text/csv" }),
+      expect.anything(),
+    );
+  });
+
   it("rejects unsupported types and oversize downloads before storage", async () => {
     const { put, store } = setup();
     const fetch = vi.fn(async () => new Uint8Array(9));
@@ -540,5 +554,37 @@ describe("storeInboundAttachment", () => {
     });
     expect(fetch).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
+  });
+});
+
+describe("send attachment count", () => {
+  it.each(["bot", "group"])("enforces the deployment limit for %s attachments", async (target) => {
+    const findMany = vi.fn().mockImplementation(async ({ where }) =>
+      where.id.in.map((id: string) => ({
+        id,
+        name: `${id}.txt`,
+        mimeType: "text/plain",
+        size: 1,
+        storageKey: id,
+      })),
+    );
+    const prisma = { artifact: { findMany } } as unknown as PrismaClient;
+    const send = (maxAttachmentsPerMessage: number | undefined, count: number) => {
+      const deps = { prisma, maxAttachmentsPerMessage };
+      const ids = Array.from({ length: count }, (_, i) => `artifact-${i}`);
+      return target === "bot"
+        ? resolveSendAttachments(deps, actor, "bot-1", ids)
+        : resolveGroupSendAttachments(deps, actor, "group-1", ["bot-1"], ids);
+    };
+    for (const limit of [undefined, 1, 8, 100]) {
+      findMany.mockClear();
+      const effective = limit ?? 4;
+      await expect(send(limit, effective + 1)).rejects.toThrow(
+        `At most ${effective} attachments per message`,
+      );
+      expect(findMany).not.toHaveBeenCalled();
+      await expect(send(limit, effective)).resolves.toMatchObject({ blocks: expect.any(Array) });
+      expect(findMany).toHaveBeenCalledOnce();
+    }
   });
 });

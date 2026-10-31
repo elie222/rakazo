@@ -18,14 +18,13 @@ import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
-import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
+import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const REMOTE_WORKSPACE = "/home/user/rakazo-home";
 const REMOTE_BROWSER_PROFILES = `${REMOTE_WORKSPACE}/.browser-profiles`;
 
@@ -133,7 +132,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       homeDir: "/home/user",
       workspaceDir: REMOTE_WORKSPACE,
       browserProfilesDir: REMOTE_BROWSER_PROFILES,
-      displayStart: 20,
+      displayStart: DISPLAY_START,
       portStart: 6100,
       // The provider port proxy reaches the isolated sandbox through its network interface.
       bindHost: "0.0.0.0",
@@ -328,9 +327,10 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     const result = await this.run(computer, sandboxCommandArgv(request).map(shellQuote).join(" "), {
       cwd: remoteCwd(request.cwd),
       envs: request.env,
@@ -453,6 +453,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (
         batch.length >= 32 ||
         batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES
@@ -655,7 +656,7 @@ async function* walkRemoteWorkspace(
   const directories: string[] = [];
   for (const entry of entries) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
-    if (shouldSkipPortableWorkspaceFile(relative)) continue;
+    if (shouldSkipPortableWorkspaceFile(relative, entry.type === "dir")) continue;
     if (entry.type === "dir") directories.push(relative);
     else if (entry.type === "file") files.push({ relative, mode: entry.mode });
   }

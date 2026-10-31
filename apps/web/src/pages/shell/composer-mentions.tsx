@@ -20,21 +20,21 @@ export function slashActionLabel(id: SlashActionId) {
 
 export function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />;
+    return <Clock size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-muted-foreground" />;
+    return <Puzzle size={16} strokeWidth={1.7} className="shrink-0 text-muted-foreground" />;
   }
   if (mention.kind === "group") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
+      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
         G
       </span>
     );
   }
   if (mention.kind === "everyone") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
+      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-[9px] text-foreground/75">
         @
       </span>
     );

@@ -117,6 +117,11 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
+      {status.computerHoursLeft != null ? (
+        <SettingsGroup>
+          <SettingsRow title={t("Computer hours left")} value={String(status.computerHoursLeft)} />
+        </SettingsGroup>
+      ) : null}
       {referral ? (
         <SettingsGroup footer={t("Get a free month for each friend who starts a trial.")}>
           <SettingsRow

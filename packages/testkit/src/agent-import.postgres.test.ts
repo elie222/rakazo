@@ -4,7 +4,7 @@ import path from "node:path";
 import { EncryptedSecretStore, InMemoryRealtimeFanout } from "@rakazo/adapters";
 import type { AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
 import { resolveEncryptionKey } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The app's own logger module (the API resolves `@rakazo/logging` to this file).
@@ -12,7 +12,7 @@ import { createLogger, createTestSink, installLogger } from "../../logging/src/i
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeIntegration = hasDb ? describe : describe.skip;
@@ -1062,7 +1062,7 @@ describeIntegration("agent import", () => {
 
     // A record without the requirements it was shown (older data) counts as not done.
     const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
-    const created = record.created as { mcpServers: Record<string, unknown>[] };
+    const created = record.created as { mcpServers: Record<string, Prisma.InputJsonValue>[] };
     await db.agentImport.update({
       where: { id: record.id },
       data: {

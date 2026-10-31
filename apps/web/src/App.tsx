@@ -19,6 +19,7 @@ import { PageLoading } from "./components/PageLoading";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { syncCallIdentity } from "./lib/call-session";
 import { desktopBridge } from "./lib/desktop";
 import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
 import { identifyMonitoringUser } from "./lib/monitoring";
@@ -34,11 +35,13 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
+import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
 
 const AuthPage = lazyComponent(() => import("./pages/Auth").then((module) => module.AuthPage));
 const PasswordResetPage = lazyComponent(() =>
@@ -49,6 +52,9 @@ const OnboardingPage = lazyComponent(() =>
 );
 const WelcomePage = lazyComponent(() =>
   import("./pages/Welcome").then((module) => module.WelcomePage),
+);
+const NotFoundPage = lazyComponent(() =>
+  import("./pages/NotFound").then((module) => module.NotFoundPage),
 );
 const ArtifactsPage = lazyComponent(() =>
   import("./pages/Artifacts").then((module) => module.ArtifactsPage),
@@ -97,6 +103,7 @@ export function App() {
 }
 
 const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
+const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 
 function SessionApp() {
   const [searchParams] = useSearchParams();
@@ -105,7 +112,8 @@ function SessionApp() {
   const signInDestination =
     next === "/integrations/setup" ||
     next === "/admin/plugins" ||
-    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`)
+    next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
+    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`)
       ? next
       : "/app";
   const ticketBoardEnabled = useSyncExternalStore(
@@ -138,8 +146,10 @@ function SessionApp() {
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
   useLayoutEffect(() => {
-    if (gate === "authenticated" || gate === "anonymous")
-      syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+    if (gate !== "authenticated" && gate !== "anonymous") return;
+    syncWebLogoAvatarIdentity(analyticsUserId ?? null);
+    syncCallIdentity(analyticsUserId ?? null);
+    syncLogOutFailure(gate === "authenticated");
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
@@ -209,6 +219,19 @@ function SessionApp() {
                 }
               />
               <Route
+                path={SLACK_INSTALL_CALLBACK_PATH}
+                element={
+                  user ? (
+                    <SlackInstallCallbackPage />
+                  ) : (
+                    <Navigate
+                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}
+                      replace
+                    />
+                  )
+                }
+              />
+              <Route
                 path="/integrations/setup"
                 element={
                   user ? (
@@ -248,6 +271,7 @@ function SessionApp() {
                 <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 <Route path="/app/:botId" element={<ShellPage />} />
               </Route>
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </div>

@@ -30,6 +30,23 @@ describe("app document state", () => {
     ).toBe("ready");
   });
 
+  it("is ready on the marked onboarding page in any language", () => {
+    expect(
+      stateOf(
+        '<div id="root"><div data-rakazo-app-state="ready"><div data-rakazo-surface="onboarding"><h1>Conectar un modelo</h1><div role="combobox" aria-label="Proveedor"></div></div></div></div>',
+      ),
+    ).toBe("ready");
+  });
+
+  it.each(["<button>Sign in</button>", '<input aria-label="Model id">'])(
+    "still finds an older server's unmarked English page: %s",
+    (surface) => {
+      expect(
+        stateOf(`<div id="root"><div data-rakazo-app-state="ready">${surface}</div></div>`),
+      ).toBe("ready");
+    },
+  );
+
   it("reports the web app's error screen so launch keeps its Refresh", () => {
     expect(
       stateOf(
@@ -58,13 +75,13 @@ describe("waiting for the app document", () => {
     expect(executeJavaScript).toHaveBeenCalledTimes(3);
   });
 
-  it("still times out when every check fails", async () => {
+  it("answers pending when the page is still loading at the deadline", async () => {
     await expect(
       waitForMountedAppDocument(
         { executeJavaScript: disposed, isCrashed: () => false, isDestroyed: () => false },
         200,
       ),
-    ).rejects.toThrow("did not become ready");
+    ).resolves.toBe("pending");
   });
 
   it("gives up at once when the window is gone", async () => {

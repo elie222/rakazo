@@ -48,6 +48,7 @@ services:
       # Test stack: CI runners do not install the host egress ruleset.
       SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-open}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
+      SANDBOX_COMPUTER_MOUNTS: ${SANDBOX_COMPUTER_MOUNTS:-}
       LOG_LEVEL: info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -79,6 +80,7 @@ services:
       - DATABASE_MIGRATION_URL=postgres://rakazo:topology-only-password@postgres:5432/rakazo pnpm db:deploy && exec node --enable-source-maps dist/index.js
     environment: &app-environment
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
+      MAX_ATTACHMENTS_PER_MESSAGE: ${MAX_ATTACHMENTS_PER_MESSAGE:-4}
       NODE_ENV: production
       DATABASE_URL: postgres://rakazo_app:topology-only-runtime-password@postgres:5432/rakazo
       DATA_DIR: /data
@@ -109,7 +111,7 @@ services:
       API_PORT: "3100"
       API_HOST: "0.0.0.0"
       # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
-      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      # proxy and a reverse proxy on the host. See docs/self-host-production.md#client-addresses.
       TRUSTED_PROXIES:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}

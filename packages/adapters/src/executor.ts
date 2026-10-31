@@ -1,4 +1,4 @@
-import type { AgentRunRequest, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, ComputerRef, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import {
   DEFAULT_CONTEXT_STRATEGY,
   isModelCredentialRejected,
@@ -38,6 +38,7 @@ import {
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   parseComputerMode,
+  RunHistoryWriteError,
   readRunTimingFields,
   recordUsage,
   settleReleasedTakeoverCards,
@@ -56,6 +57,7 @@ import {
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
+import { partitionTools } from "./builtin-tool-bridge.js";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { mergeConnectedPlugins, needsLivePluginSync } from "./composio-connector.js";
@@ -106,6 +108,7 @@ import {
   runModelChoice,
 } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
+import { usesNativeShell } from "./native-shell.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
@@ -136,6 +139,7 @@ import {
   createRunWorkspaceCheckpoint,
   failRunBeforeTurn,
   mayOpenModelStream,
+  providerOutageRetryDelay,
   RUN_SETUP_FAILURE_LIMIT,
   renewRunLease,
   requeueComputerRun,
@@ -144,6 +148,7 @@ import {
   startNextWaitingRun,
   writeComputerRunRequeue,
 } from "./run-lifecycle.js";
+import { withRunLease } from "./run-messages.js";
 import {
   cloudflareRunFields,
   isTerminalModelSetupError,
@@ -167,6 +172,7 @@ import {
   selectBuiltinToolsForRun,
 } from "./run-tool-selection.js";
 import { applyTool } from "./run-tools.js";
+import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "./run-tools-user-computer.js";
 import { createRunTrustLoaders } from "./run-trust.js";
@@ -201,22 +207,27 @@ import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
-export function createRunExecutor(deps: ExecutorDeps) {
-  const contextStrategy = deps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
-  const web = deps.web ?? createWebProvider();
-  const mediaGeneration = deps.mediaGeneration ?? createMediaGenerationProvider();
-  const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
-  const cloudAgent = deps.cloudAgent;
-  const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, deps);
+export function createRunExecutor(executorDeps: ExecutorDeps) {
+  const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
+  const web = executorDeps.web ?? createWebProvider();
+  const mediaGeneration = executorDeps.mediaGeneration ?? createMediaGenerationProvider();
+  const browser =
+    executorDeps.browser ?? createBrowserProvider(undefined, { sandbox: executorDeps.sandbox });
+  const cloudAgent = executorDeps.cloudAgent;
+  const resolveConnectedModel = resolveConnectedRunModel.bind(undefined, executorDeps);
   return {
     resolveConnectedModel,
     contextStrategy,
-    resolveModel: resolveRunModel.bind(undefined, deps),
-    wakeRoutine: wakeRoutine.bind(undefined, deps),
-    notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(undefined, deps),
-    retryRoutineRun: retryRoutineRun.bind(undefined, deps),
+    resolveModel: resolveRunModel.bind(undefined, executorDeps),
+    wakeRoutine: wakeRoutine.bind(undefined, executorDeps),
+    notifyRoutineRetryAttemptsExhausted: notifyRoutineRetryAttemptsExhausted.bind(
+      undefined,
+      executorDeps,
+    ),
+    retryRoutineRun: retryRoutineRun.bind(undefined, executorDeps),
 
     async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
+      let deps = executorDeps;
       // A stopping process must not claim work it cannot finish. The row stays
       // queued or expired for a worker that is still running.
       if (deps.shutdownSignal?.aborted) return;
@@ -231,8 +242,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
-      let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
-        takeoverContinuePlan(run);
+      let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);
 
       const fence = nextFence(run.leaseFence);
       const now = new Date();
@@ -296,17 +306,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
         return;
       }
       if (takeoverResume) {
-        await settleReleasedTakeoverCards(
-          deps.prisma,
-          {
-            spaceId: run.spaceId,
-            threadId: run.threadId,
-            botId: run.botId,
-            runId,
-            reason: takeoverResume.checkpoint,
-          },
-          (threadId, seq) => deps.events.notify(threadId, seq),
-        );
+        try {
+          await settleReleasedTakeoverCards(
+            deps.prisma,
+            {
+              spaceId: run.spaceId,
+              threadId: run.threadId,
+              botId: run.botId,
+              runId,
+              reason: takeoverResume.checkpoint,
+              lease: { owner: workerId, fence },
+            },
+            (threadId, seq) => deps.events.notify(threadId, seq),
+          );
+        } catch (error) {
+          // A newer claim owns the run and its takeover cards.
+          if (error instanceof RunHistoryWriteError) return;
+          throw error;
+        }
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
@@ -314,7 +331,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           computerId: leaseTarget.computerId,
           runId,
           botId: run.botId,
-          resumeHeldLease,
+          workerId,
+          runFence: fence,
         });
         if (!computerLease && leaseTarget.computer?.scope === "dedicated") {
           computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
@@ -373,6 +391,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         throw error;
       }
 
+      // A newer claim of this run now rejects this attempt's history writes.
+      deps = withRunLease(deps, runId, { owner: workerId, fence });
       const lease: RunLeaseState = {
         valid: true,
         completed: false,
@@ -1018,18 +1038,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             select: { status: true, checkpoint: true },
           });
           if (held) {
-            ({ resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
-              refreshTakeoverContinuePlan(
-                { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume },
-                held,
-              ));
+            ({ resumeCheckpoint, heldForTakeover, takeoverResume } = refreshTakeoverContinuePlan(
+              { resumeCheckpoint, heldForTakeover, takeoverResume },
+              held,
+            ));
           }
         }
         const sourceMessage =
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
                 where: { id: run.sourceMessageId },
-                select: { clientNonce: true, role: true, blocks: true },
+                select: { clientNonce: true, role: true, blocks: true, threadId: true },
               })
             : null;
         // Calls carry no schema flag: the sending client encodes them in the clientNonce.
@@ -1052,15 +1071,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
           botUserId: bot.userId,
         });
         let userComputer: UserComputerState;
+        let userComputerScreen = false;
         if (
           userComputerOwnerId &&
           deps.userDevices &&
           !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
         ) {
-          if (await deps.userDevices.connected(userComputerOwnerId).catch(() => null))
+          const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
+          if (device) {
             userComputer = "connected";
+            // Only the macOS desktop bundles a screen driver so far.
+            userComputerScreen = device.platform === "darwin";
+          }
           // A chat that used the computer earlier may continue from another device after it closed.
-          else if (await deps.userDevices.hasDevice(userComputerOwnerId).catch(() => false))
+          else if (await deps.userDevices.pairedSince(userComputerOwnerId).catch(() => null))
             userComputer = "offline";
         }
         const builtins = [
@@ -1084,6 +1108,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             fleetManagement: bot.fleetManagement,
             followUpFromUser: sourceMessage?.role === "user",
             userComputer: userComputer === "connected",
+            userComputerScreen,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&
@@ -1147,13 +1172,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           disabledBuiltinTools,
         );
         const hostEnvironment =
-          computerKind === "desktop"
+          computerKind && usesNativeShell(computerKind)
             ? await deps.sandbox
                 .environment?.(
                   {
                     id: storedComputer.providerRef ?? storedComputer.id,
                     botId: storedComputer.homeKey,
-                    kind: "desktop",
+                    kind: computerKind as ComputerRef["kind"],
                     providerRef: storedComputer.providerRef ?? "",
                   },
                   {
@@ -1163,9 +1188,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 )
                 .catch(() => undefined)
             : undefined;
-        const hostInstruction = hostEnvironment
-          ? `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash. Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`
+        const hostShell = hostEnvironment
+          ? `Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash.`
           : undefined;
+        const hostInstruction = !hostEnvironment
+          ? undefined
+          : computerKind === "wuying"
+            ? `Commands run on a Windows cloud computer. ${hostShell} Files outside the bot workspace can be accessed through commands. The screen shows the Windows desktop; use the graphical tools for apps without a command line.`
+            : `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. ${hostShell} Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`;
         const computerInstruction = [
           "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
           hostInstruction
@@ -1186,7 +1216,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           computerUse,
           runningHelpers,
           reply,
-          approval: { pausePending: false, request: undefined, proposalInFlight: false },
+          approval: { pausePending: false, request: undefined },
           effects: {
             counts: new Map(),
             occurrences: [],
@@ -1233,6 +1263,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
             messagingChannelRun,
             channelId,
             historySearchBeforeSeq,
+            myChatsAllowed: historyMyChatsAllowed(
+              run,
+              sourceMessage,
+              messagingChannelRun ||
+                Boolean(
+                  channelId ||
+                    thread.externalConversationId ||
+                    messagingChannelId(sourceMessage?.blocks as MessageBlock[] | undefined),
+                ),
+            ),
             voiceCall,
             callEndRun,
             callClientNonce: callClientNonceForRun,
@@ -1317,7 +1357,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           : buildApprovalContinuation(
               approvedEffects,
               (request) => redactSecrets(JSON.stringify(request), runSecrets),
-              { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
+              { exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)) },
             );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         let userTimeZone: string | null | undefined;
@@ -1543,6 +1583,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                apiProtocol: resolved.apiProtocol,
                 headers: resolved.headers,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,
@@ -1689,20 +1730,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         // An outage at the computer provider is retried like any setup failure, but is not a
         // Rakazo bug to report.
-        if (
+        const providerOutage =
           setupError instanceof SandboxUnavailableError ||
-          setupError instanceof SandboxUnresponsiveError
-        ) {
+          setupError instanceof SandboxUnresponsiveError;
+        // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
+        if (providerOutage || !lease.valid) {
           getLogger().warn("run setup failed", { error: reportedSetupError });
         } else if (!computerBusy) {
           getLogger().error("run setup failed", reportedSetupError);
         }
+        const priorFailures = retryForever ? 0 : await setupFailureStreak(deps.prisma, runId);
         // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
         // setup that fails every time would retry forever. End the run instead.
-        if (
-          !retryForever &&
-          (await setupFailureStreak(deps.prisma, runId)) >= RUN_SETUP_FAILURE_LIMIT - 1
-        ) {
+        if (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1) {
           const bot = await deps.prisma.bot.findUnique({
             where: { id: run.botId },
             select: { name: true },
@@ -1716,6 +1756,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
           return;
         }
+        const retryDelay = providerOutage
+          ? providerOutageRetryDelay(priorFailures)
+          : computerRetryDelay(fence);
+        // One instant for the run and its wake-up job, so neither runs before the other.
+        const retryAt = new Date(Date.now() + retryDelay);
         const released = await writeComputerRunRequeue(
           deps,
           runId,
@@ -1724,6 +1769,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           resumeCheckpoint,
           heldForTakeover,
           retryForever ? null : "Run setup failed; retrying",
+          retryAt,
         );
         if (released) {
           await deps.prisma.attempt.update({
@@ -1737,7 +1783,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (retryForever || dispatchHandedOff) {
             await deps.jobs.enqueue({
               ...runContinueJob(runId),
-              availableAt: new Date(Date.now() + computerRetryDelay(fence)),
+              availableAt: retryAt,
             });
             return;
           }

@@ -118,6 +118,8 @@ function fixture({
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    userDevice: { updateMany: vi.fn(async () => ({ count: 0 })) },
     passkey: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
         const rows = data.passkey!;
@@ -246,6 +248,7 @@ function fixture({
     codeSignIn,
     legacyAccount,
     sessionFor,
+    prisma,
     data,
     policy,
     messages,
@@ -1028,6 +1031,36 @@ describe("passkeys", () => {
     expect(deleted.status).toBe(200);
     expect(f.data.passkey).toHaveLength(0);
     expect((await f.signInWithPasskey()).status).toBe(401);
+  });
+
+  it("drops credentials an unverified account added before its mailbox owner signed in", async () => {
+    const f = passkeyFixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect((await f.register(token)).status).toBe(200);
+    const userId = f.data.user![0]!.id;
+    await f.sendCode();
+    expect((await f.codeSignIn(f.lastCode())).status).toBe(200);
+    expect(f.data.user![0]).toMatchObject({ id: userId, emailVerified: true });
+    expect(f.data.passkey).toHaveLength(0);
+    expect((await f.signInWithPasskey()).status).toBe(401);
+    expect(f.prisma.messagingIdentity.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(f.prisma.messagingLinkCode.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    expect(f.prisma.userDevice.updateMany).toHaveBeenCalledWith({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it("keeps a verified account's passkeys on code sign-in", async () => {
+    const f = passkeyFixture();
+    const { token } = (await (await f.signup()).json()) as { token: string };
+    expect((await f.register(token)).status).toBe(200);
+    f.data.user![0]!.emailVerified = true;
+    await f.sendCode();
+    expect((await f.codeSignIn(f.lastCode())).status).toBe(200);
+    expect(f.data.passkey).toHaveLength(1);
+    expect(f.prisma.userDevice.updateMany).not.toHaveBeenCalled();
+    expect((await f.signInWithPasskey()).status).toBe(200);
   });
 
   it("does not offer passkeys where a browser cannot create them", async () => {

@@ -1,4 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { foldPeerReplies } from "./message-visibility.js";
+import { unreturnedPeerReplies } from "./peer-exchanges.js";
 
 /** The fields peer exchanges read, so web and mobile message shapes both fit. */
 type PeerSource = { id: string; createdAt: string; blocks: readonly MessageBlock[] };
@@ -9,6 +11,7 @@ export interface PeerMessage {
   peerBotId: string;
   peerBotName: string;
   text: string;
+  blocks?: MessageBlock[];
   createdAt: string;
 }
 
@@ -28,6 +31,7 @@ export function isPeerBlock(block: MessageBlock): block is PeerBlock {
 
 export function peerMessagesFrom(messages: readonly PeerSource[]): PeerMessage[] {
   const collected: PeerMessage[] = [];
+  const byId = new Map(messages.map((message, index) => [message.id, { message, index }]));
   for (const message of messages) {
     for (const block of message.blocks) {
       if (!isPeerBlock(block)) continue;
@@ -52,7 +56,31 @@ export function peerMessagesFrom(messages: readonly PeerSource[]): PeerMessage[]
       );
     }
   }
-  return collected;
+  const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+  for (const [markerId, replies] of unreturnedPeerReplies(transcript)) {
+    const marker = byId.get(markerId)?.message;
+    const wake = marker?.blocks.find((block) => block.kind === "bot_message_received");
+    if (wake?.kind !== "bot_message_received") continue;
+    for (const reply of replies) {
+      const blocks = reply.blocks.filter(
+        (b) => b.kind === "text" || b.kind === "file" || b.kind === "image",
+      );
+      collected.push({
+        messageId: reply.id,
+        direction: "sent",
+        peerBotId: wake.fromBotId,
+        peerBotName: wake.fromBotName,
+        createdAt: reply.createdAt,
+        blocks,
+        text: blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n"),
+      });
+    }
+  }
+  return collected.sort(
+    (a, b) =>
+      a.createdAt.localeCompare(b.createdAt) ||
+      (byId.get(a.messageId)?.index ?? 0) - (byId.get(b.messageId)?.index ?? 0),
+  );
 }
 
 /** One conversation per peer, most recently active first. */

@@ -69,6 +69,10 @@ vi.mock("./api", () => ({
   captureApiRequestContext: vi.fn(),
   subscribeThread: vi.fn(),
 }));
+vi.mock("./session", () => ({
+  currentSessionGeneration: () => 0,
+  subscribeSessionGeneration: () => () => undefined,
+}));
 vi.mock("./i18n", () => ({
   useI18n: () => ({ t: (text: string) => text }),
   t: (text: string) => text,

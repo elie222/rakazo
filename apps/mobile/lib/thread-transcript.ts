@@ -1,6 +1,7 @@
 import {
   expandPeerReplies,
   foldPeerReplies,
+  peerExchangeLines,
   projectBotMentions,
   projectMessageReactions,
   shouldShowBotSenderName,
@@ -65,21 +66,29 @@ export function useThreadTranscript(messages: MobileMessage[] | undefined, inGro
     });
   }
 
-  function togglePeerReplies(markerId: string) {
-    setExpandedPeerMarkers((expanded) => {
-      const next = new Set(expanded);
-      if (!next.delete(markerId)) next.add(markerId);
-      return next;
-    });
-  }
+  const exchanges = useMemo(
+    () =>
+      peerExchangeLines({
+        ...peerTranscript,
+        messages: reactionView.visibleMessages,
+      }),
+    [peerTranscript, reactionView],
+  );
+  const visibleMessages = useMemo(
+    () =>
+      reactionView.visibleMessages.filter(
+        (message) => !exchanges.lineOf.has(message.id) || exchanges.lines.has(message.id),
+      ),
+    [reactionView, exchanges],
+  );
 
   return {
     showBotSenderName,
     peerTranscript,
     reactionView,
-    expandedPeerMarkers,
     setExpandedPeerMarkers,
     dismissChoice,
-    togglePeerReplies,
+    exchanges,
+    visibleMessages,
   };
 }

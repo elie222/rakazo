@@ -250,6 +250,9 @@ model BillingAccount {
   endedAt             DateTime?
   subscribedAt        DateTime?
   syncedAt            DateTime?
+  /// Held while a recurring checkout opens, so only one opens per organization at a time.
+  checkoutLeaseId     String?
+  checkoutLeaseExpiresAt DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -506,6 +509,46 @@ model SecurityEvent {
   @@map("security_events")
 }
 
+/// The organization's record of who did what. No foreign keys, so deleting a space, chat,
+/// run, bot, or account keeps its history; ids dangle and the labels are copied at write time.
+/// Append-only: retention pruning is the only delete. Never stores message content or secrets.
+model AuditEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  spaceId        String?
+  spaceName      String?
+  actorType      String
+  actorId        String?
+  actorLabel     String?
+  action         String
+  targetType     String?
+  targetId       String?
+  targetLabel    String?
+  outcome        String
+  runId          String?
+  threadId       String?
+  ip             String?
+  userAgent      String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+/// How far the audit log has been forwarded to the deployment's webhook.
+model AuditEventForwarding {
+  id            String    @id @default("default")
+  lastCreatedAt DateTime?
+  lastEventId   String?
+  failures      Int       @default(0)
+  nextAttemptAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@map("audit_event_forwarding")
+}
+
 model UserModelCredential {
   id          String                 @id @default(cuid())
   userId      String
@@ -604,7 +647,6 @@ model Bot {
   description       String            @default("")
   instructions      String            @default("")
   instructionHistory Json @default("[]")
-  pendingInstructionsRunId String?
   color             String
   avatarSet         String            @default("organic")
   notifyOnFinish    Boolean           @default(true)
@@ -757,6 +799,7 @@ model Thread {
   routines                    Routine[]
 
   @@index([spaceId])
+  @@index([spaceId, userId])
   @@map("threads")
 }
 
@@ -885,6 +928,7 @@ model Run {
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  @@index([threadId, createdAt, id])
   // Partial index runs_recent_activity_idx (recent foreground activity) is created in SQL.
   // Partial index runs_bot_outcome_pending_idx (unreturned bot-message outcomes) is created in SQL.
   @@index([routineId])
@@ -1041,6 +1085,7 @@ model ExternalEffect {
 
   @@unique([idempotencyKey])
   @@index([runId, status])
+  @@index([spaceId, kind, status])
   @@map("external_effects")
 }
 
@@ -1311,6 +1356,9 @@ model Computer {
   /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
   /// until a later save shows the computer works again.
   autoRecoveredAt         DateTime?
+  /// The machine at `providerRef` came from a start whose restore never finished, so it holds no
+  /// full copy of the saved home: nothing is saved from it, and the next start restores it.
+  restorePending          Boolean                  @default(false)
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique
@@ -1364,6 +1412,8 @@ model ComputerRun {
   endedAt    DateTime?
   /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
   endReason  String?
+  /// When Rakazo last saw this stretch running: at its start and at each idle check.
+  lastSeenAt DateTime?
 
   @@unique([computerId, startedAt])
   @@index([spaceId, userId, startedAt])
@@ -1521,7 +1571,9 @@ model McpServer {
   transport     String
   endpoint      String?
   command       String?
+  /// Legacy plaintext; arguments now live in the encrypted secret, and `hasArgs` marks them.
   args          Json              @default("[]")
+  hasArgs       Boolean           @default(false)
   env           Json              @default("{}")
   files         Json              @default("{}")
   headers       Json              @default("{}")
@@ -1544,6 +1596,8 @@ model McpServer {
   /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
   allSpaces     Boolean           @default(false)
   availableIn   McpServerSpace[]
+  /// Every agent of its owner can use it; otherwise only agents with an assignment.
+  allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])

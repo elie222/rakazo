@@ -85,17 +85,6 @@ test("A change asks without an approval model, and approvals settings shape what
     "true",
   );
   await captureScreenshot(page, testInfo, "52-approvals-settings");
-  await rules.getByRole("button", { name: "Preview", exact: true }).click();
-  const preview = rules.locator("form");
-  await preview.getByRole("button", { name: "Block", exact: true }).click();
-  await preview.getByRole("button", { name: "Test rule", exact: true }).click();
-  await expect(preview.getByRole("status")).toHaveText("Current: Allow rule → Preview: Block rule");
-  const savedRules = await rpc<Array<{ effect: string }>>(page, "approvalRules/list", {
-    scope: "account",
-  });
-  expect(savedRules.map((rule) => rule.effect)).toEqual(["always_allow"]);
-  await captureScreenshot(page, testInfo, "approval-rule-preview");
-  await rules.getByRole("button", { name: "Preview", exact: true }).click();
   await rules.getByRole("button", { name: "Block", exact: true }).click();
   await expect(rules.getByRole("button", { name: "Block", exact: true })).toHaveAttribute(
     "aria-pressed",

@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { CronLabels, CronUnit } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, russianInterval } from "@rakazo/core";
+import { ENGLISH_CRON_LABELS, localizedClock, russianInterval } from "@rakazo/core";
 
 export function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
@@ -62,15 +62,22 @@ export function cronLabels(locale: string): CronLabels {
       return { lead: t`Every`, detail: t`${preset.n} ${unitLabel}` };
     },
     atTime: (time) => {
-      const preset = { time };
+      const preset = { time: localizedClock(time, locale) };
       return t`at ${preset.time}`;
     },
     onThe1stAt: (time) => {
-      const preset = { time };
+      const preset = { time: localizedClock(time, locale) };
       return t`on the 1st at ${preset.time}`;
     },
-    onDayAt: (day, time) => t`on day ${day} at ${time}`,
+    onDayAt: (day, clock) => {
+      const time = localizedClock(clock, locale);
+      return t`on day ${day} at ${time}`;
+    },
     hourAtMinute: (minute) => t`Every hour at :${String(minute).padStart(2, "0")}`,
+    hoursAtMinute: (n, at) => {
+      const minute = String(at).padStart(2, "0");
+      return t`Every ${n} hours at :${minute}`;
+    },
     daySpan: (fromName, toName) => t`${fromName} to ${toName}`,
     everyDays: (names) =>
       names.length === 1

@@ -159,7 +159,7 @@ export async function revokeScreenControl(
   } catch (error) {
     if (!isSandboxGoneError(error)) throw error;
     if (opts?.clearGoneRef === false) return;
-    getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
+    getLogger().warn(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, { error });
     // Fence by lease + skip booting/suspending so a stale gone-cleanup cannot clobber an
     // in-flight replace/boot that still names this providerRef.
     const cleared = await deps.prisma.computer.updateMany({

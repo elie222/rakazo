@@ -1,6 +1,7 @@
 ---
 import SiteFrame from "../../components/SiteFrame.astro";
-import { PLUGIN_SUBMISSIONS_URL } from "../../site";
+import { docsPath } from "../../docs";
+import { GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "../../site";
 
 const fields = [
   { name: "email", label: "Email", placeholder: "you@acme.com", type: "email", required: true },
@@ -30,6 +31,14 @@ const fields = [
 >
   <h1>Submit a plugin</h1>
   <p>List your plugin or MCP server in the Rakazo marketplace. We review every submission.</p>
+  <h2>What a plugin looks like</h2>
+  <p>
+    A public GitHub repository, or a folder in one, with a <code>plugin.json</code> manifest and
+    a hosted MCP server in <code>mcp.json</code>, skills in <code>skills/&lt;name&gt;/SKILL.md</code>,
+    or both. Read <a href={docsPath("build-a-plugin")}>Build a plugin</a> or copy the{" "}
+    <a href={`${GITHUB_URL}/tree/main/examples/plugins/mcp-server`}>MCP server example</a> or{" "}
+    <a href={`${GITHUB_URL}/tree/main/examples/plugins/hello-world`}>skills-only example</a>.
+  </p>
   <form class="plugin-form" action={PLUGIN_SUBMISSIONS_URL} data-plugin-form>
     {
       fields.map((field) => (

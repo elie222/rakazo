@@ -569,6 +569,12 @@ describe("openai-compatible provider", () => {
     process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
     let host: string | undefined;
     const server = createServer((request, response) => {
+      // A local tool can probe any listening loopback port; only model-list calls set the host.
+      if (request.method !== "GET" || request.url !== "/v1/models") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       host = request.headers.host;
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ data: [{ id: "local-model" }] }));
@@ -1082,6 +1088,105 @@ describe("built-in public compatible host", () => {
     await expect(
       verifyOpenAiCompatibleApiKey({ baseUrl: "https://ollama.com/v1" }, transport),
     ).rejects.toThrow("API key was rejected");
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
+
+describe("per-connection wire protocol", () => {
+  const input = {
+    provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "fixture-model",
+  };
+  it("round-trips Responses, preserves it on same-endpoint edits, and resets at a new endpoint", () => {
+    const saved = connectAsOwner({ ...input, apiProtocol: "responses" });
+    expect(parseModelSecret(saved)).toMatchObject({ apiProtocol: "responses" });
+    expect(parseModelSecret(connectAsOwner(input, saved))).toMatchObject({
+      apiProtocol: "responses",
+    });
+    expect(
+      parseModelSecret(connectAsOwner({ ...input, baseUrl: "http://127.0.0.1:8001/v1" }, saved)),
+    ).not.toHaveProperty("apiProtocol");
+    expect(
+      parseModelSecret(connectAsOwner({ ...input, apiProtocol: "chat-completions" }, saved)),
+    ).toMatchObject({ apiProtocol: "chat-completions" });
+  });
+  it("rejects unsupported protocols at connection input and stored-secret boundaries", () => {
+    expect(ModelConnectInputSchema.safeParse({ ...input, apiProtocol: "unknown" }).success).toBe(
+      false,
+    );
+    expect(() =>
+      parseModelSecret(
+        JSON.stringify({
+          kind: "openai_compatible",
+          baseUrl: input.baseUrl,
+          apiProtocol: "unknown",
+        }),
+      ),
+    ).toThrow();
+  });
+  it.each(["stream", "streamSimple"] as const)(
+    "sends Responses through %s with the existing fetch guard",
+    async (method) => {
+      const models = registerOpenAiCompatibleRuntime(createModels(), {
+        ...input,
+        apiProtocol: "responses",
+        allowPrivate: true,
+        headers: { "x-session": "fake-session" },
+      });
+      const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+      const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
+      expect(model.api).toBe("openai-responses");
+      let requestUrl = "";
+      let body: Record<string, unknown> = {};
+      const result = await provider[method](model, normalizeContext({ messages: [] }), {
+        apiKey: "fake-api-key",
+        fetch: async (url, init) => {
+          requestUrl = String(url);
+          body = JSON.parse(String(init?.body));
+          expect(init?.redirect).toBe("error");
+          expect(new Headers(init?.headers).get("x-session")).toBe("fake-session");
+          const events = [
+            {
+              type: "response.created",
+              response: { id: "resp_fixture", model: "fixture-model", status: "in_progress" },
+            },
+            {
+              type: "response.completed",
+              response: {
+                id: "resp_fixture",
+                status: "completed",
+                output: [],
+                usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
+              },
+            },
+          ];
+          return new Response(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(""), {
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
+      }).result();
+      expect(requestUrl).toBe(`${input.baseUrl}/responses`);
+      expect(body).toHaveProperty("input");
+      expect(body).not.toHaveProperty("messages");
+      expect(result.stopReason, JSON.stringify(result)).not.toBe("error");
+    },
+  );
+  it("still blocks private Responses endpoints without operator opt-in", async () => {
+    const transport = vi.fn();
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      ...input,
+      apiProtocol: "responses",
+    });
+    const result = await models
+      .getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!
+      .streamSimple(
+        models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!,
+        normalizeContext({ messages: [] }),
+        { apiKey: "fake-api-key", fetch: transport },
+      )
+      .result();
+    expect(result.stopReason).toBe("error");
     expect(transport).not.toHaveBeenCalled();
   });
 });

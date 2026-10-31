@@ -26,19 +26,22 @@ import {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
-import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
+import {
+  shouldSkipPortableWorkspaceFile,
+  workspaceSaveFindExpression,
+} from "./workspace-save-policy.js";
 
+const DISPLAY_START = 20;
 const HOME = "/home/boxd";
 const WORKSPACE = `${HOME}/rakazo-home`;
 const BROWSER_PROFILES = `${WORKSPACE}/.browser-profiles`;
@@ -94,7 +97,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       homeDir: HOME,
       workspaceDir: WORKSPACE,
       browserProfilesDir: BROWSER_PROFILES,
-      displayStart: 20,
+      displayStart: DISPLAY_START,
       portStart: SCREEN_PORT,
       // boxd's HTTPS proxy reaches the machine through its network interface.
       bindHost: "0.0.0.0",
@@ -280,9 +283,10 @@ export class BoxdSandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     if (context.signal.aborted) {
       yield { type: "stderr", data: "command aborted\n" };
       yield { type: "exit", code: 130 };
@@ -468,6 +472,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
         await flush();
       batch.push(file);
@@ -829,7 +834,7 @@ function boxdCwd(cwd: string | undefined): string {
 }
 
 /** `path\0mode\0size\0` for every workspace file, relative to the workspace. */
-const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . -type f -printf '%P\\0%m\\0%s\\0'`;
+const LIST_WORKSPACE = `cd ${shellQuote(WORKSPACE)} && find . ${workspaceSaveFindExpression()} -printf '%P\\0%m\\0%s\\0'`;
 
 function parseWorkspaceListing(
   listing: string,

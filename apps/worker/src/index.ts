@@ -1,20 +1,28 @@
 import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  IntegrationProviderSettings,
+  unwrapEnvFromKeyManager,
+} from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { startWorkerHealth } from "./health.js";
+import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
+import { startWorkerHealth, watchEventLoopStalls } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 import {
+  auditLogConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createArtifactStore,
+  createAuditLogReconciler,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
@@ -79,7 +87,9 @@ import {
   createSecurityEventPruner,
   createThreadEvents,
   describeRowSecurity,
+  installAuditEventStore,
   installSecurityEventStore,
+  isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   pushSessionExpiresAt,
@@ -95,6 +105,7 @@ import { MarkdownMemoryStore } from "@rakazo/memory";
 const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
+  const stopStallWatch = watchEventLoopStalls();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
@@ -123,6 +134,7 @@ async function main() {
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
   installSecurityEventStore(prisma);
+  installAuditEventStore(prisma);
   const unreadableMasterKeys = await verifyContentKeys(prisma);
   if (unreadableMasterKeys.length)
     logger.error("Stored space keys need master keys that are not configured", undefined, {
@@ -144,7 +156,7 @@ async function main() {
   const { key: deploymentModelKey, configured: deploymentModelConfigured } =
     resolveDeploymentModel();
   const sandboxProvider = resolveSandboxProvider(process.env);
-  const sandbox = createRunSandbox(sandboxProvider, {
+  const sandbox = await createRunSandbox(sandboxProvider, {
     ...sandboxProviderOptionsFromEnv(process.env),
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     supervisorToken: sandboxProvider === "docker" ? resolveSupervisorToken(process.env) : undefined,
@@ -278,7 +290,6 @@ async function main() {
     ].filter(Boolean),
     secretStore: secrets,
     mcpAllowPrivateEndpoint: process.env.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
-    mcpStdio,
     deploymentModelKey,
     deploymentModelConfigured,
     dataDir,
@@ -354,6 +365,7 @@ async function main() {
       prisma,
       securityEventRetentionDays(),
     ),
+    reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
     reconcileHomeStorage: homeStorageSweeper(home),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
     reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
@@ -364,6 +376,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     shutdown.abort();
+    stopStallWatch();
     try {
       await stopHealth?.();
       await reconciler.stop();
@@ -380,21 +393,21 @@ async function main() {
       await logger.flush({ timeoutMs: 2_000 });
     }
   };
-  process.once("SIGTERM", () => void stop());
-  process.once("SIGINT", () => void stop());
-  // graphile-worker fires completeJob() without awaiting it. When pool.connect()
-  // then hits Postgres 53300, that rejection is unhandled. Exiting here is the
-  // crash loop: Docker restarts the process before Postgres has reaped the old
-  // backends, so the next boot cannot connect either. Stay up on that rejection
-  // only — do not resume after uncaughtException (Node leaves the process in an
-  // undefined state).
+  stopOnShutdownSignals(stop);
+  // graphile-worker fires completeJob()/failJobs() without awaiting them. When
+  // pool.connect() then hits Postgres 53300 or a saturated pool's checkout timeout,
+  // that rejection is unhandled. Exiting on 53300 is a crash loop: Docker restarts
+  // the process before Postgres has reaped the old backends. Exiting on a checkout
+  // timeout aborts every active run over one transient stall. Stay up on those
+  // rejections only — do not resume after uncaughtException (Node leaves the
+  // process in an undefined state).
   process.on("uncaughtException", (error) => {
     logger.error("uncaughtException", error);
     void stop().finally(() => process.exit(1));
   });
   process.on("unhandledRejection", (reason) => {
     logger.error("unhandledRejection", reason);
-    if (isTooManyDatabaseConnections(reason)) return;
+    if (isTooManyDatabaseConnections(reason) || isPoolCheckoutTimeout(reason)) return;
     void stop().finally(() => process.exit(1));
   });
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
+import { parseServerHeaders } from "@rakazo/contracts";
 import { isLoopbackHost, isPrivateNetworkHost } from "@rakazo/contracts/network-host";
 
 /** Managed desktop origin; development keeps its usual web/API ports. */
@@ -80,14 +81,32 @@ export function maySendDesktopStackToken(serverUrl: string): boolean {
 export function parseSetupInput(value: unknown): DesktopSetup | null {
   if (typeof value !== "object" || value === null) return null;
 
-  const { mode, serverUrl } = value as Record<string, unknown>;
+  const { mode, serverUrl, headers } = value as Record<string, unknown>;
   if (mode !== "new" && mode !== "existing") return null;
   if (typeof serverUrl !== "string") return null;
 
   const normalized = normalizeServerUrl(serverUrl);
   if (normalized === null) return null;
   if (mode === "new" && !isLoopbackHost(new URL(normalized).hostname)) return null;
-  return { mode, serverUrl: normalized };
+  if (headers === undefined) return { mode, serverUrl: normalized };
+  const parsed = parseServerHeaders(headers);
+  if (parsed === null || (mode === "new" && Object.keys(parsed).length > 0)) return null;
+  return Object.keys(parsed).length > 0
+    ? { mode, serverUrl: normalized, headers: parsed }
+    : { mode, serverUrl: normalized };
+}
+
+/** Configured headers for a request to the saved server, including its websockets; none elsewhere. */
+export function serverHeadersFor(url: string, setup: DesktopSetup | null): Record<string, string> {
+  if (!setup?.headers) return {};
+  try {
+    const target = new URL(url);
+    if (target.protocol === "ws:") target.protocol = "http:";
+    if (target.protocol === "wss:") target.protocol = "https:";
+    return target.origin === new URL(setup.serverUrl).origin ? setup.headers : {};
+  } catch {
+    return {};
+  }
 }
 
 export function parseStoredSetup(raw: string): DesktopSetup | null {

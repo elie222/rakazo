@@ -35,6 +35,7 @@ import { isTerminalModelSetupError } from "./run-model.js";
 import { runNotificationsEnabled } from "./run-notifications.js";
 import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
 import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import { historyMyChatsAllowed } from "./run-tools-memory.js";
 import {
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
@@ -53,6 +54,27 @@ const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
   createExecutor({ ...deps, prisma: withModelRoles(deps.prisma) });
 
 describe("bot tool permissions", () => {
+  it("describes bounded cross-chat keyword fanout and authorized reads", () => {
+    const tools = selectBuiltinToolsForRun({
+      historyRetrievalEnabled: true,
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    });
+    const search = tools.find((tool) => tool.name === "search_history")!;
+    expect(search.description).toContain("2–4 keyword variants");
+    expect(search.description).toContain("direct human app run");
+    expect(search.inputSchema).toMatchObject({
+      properties: { queries: { maxItems: 5 }, scope: { enum: ["this_chat", "my_chats"] } },
+      oneOf: [{ required: ["query"] }, { required: ["queries"] }],
+    });
+    expect(tools.find((tool) => tool.name === "read_history")?.inputSchema).toMatchObject({
+      properties: { threadId: { type: "string" } },
+    });
+  });
+
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
     expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] })).toEqual({
       patch: { name: "Scout" },
@@ -1297,7 +1319,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), description, avatar, and notifyOnFinish. Your description is the one-line public summary teammates see; your instructions are private and say how you do your job. When you have no instructions yet and your job becomes clear, set them with update_bot; after that, propose changes with propose_instructions_update. When the user asks you to rename yourself, change your description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; when you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
@@ -1345,6 +1367,7 @@ describe("userTurnInstructions", () => {
       archiveBot,
       "Connected plugins: none",
       "Agent skills",
+      expect.stringContaining("read the Rakazo skill"),
       "Taught skills",
       ...stableTail,
       "Group context",
@@ -1469,7 +1492,7 @@ describe("userTurnInstructions", () => {
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
     expect(clause).toContain(
-      "create_group, update_group, set_child_instructions, set_child_bot_model and create_child_routine need the owner's approval",
+      "set_child_instructions and set_child_bot_model need the owner's approval",
     );
     expect(clause).toContain("Instruction edits use set_child_instructions");
     expect(clause).toContain("expected_version");
@@ -1478,9 +1501,7 @@ describe("userTurnInstructions", () => {
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
-    expect(narrowed).toContain(
-      "update_group, set_child_bot_model and create_child_routine need the owner's approval",
-    );
+    expect(narrowed).toContain("set_child_bot_model needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
     expect(clauseFor("bot_message", true)).toBeUndefined();
@@ -1952,7 +1973,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2021,7 +2046,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2096,7 +2125,11 @@ describe("createRunExecutor", () => {
               findUnique: vi.fn(async () => claimedModel),
             },
             task: { create: taskCreate },
-            run: { create: runCreate, findMany: vi.fn(async () => []) },
+            run: {
+              create: runCreate,
+              findMany: vi.fn(async () => []),
+              findUnique: vi.fn(async () => null),
+            },
           }),
         ),
       } as unknown as PrismaClient;
@@ -2246,7 +2279,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -2318,7 +2355,11 @@ describe("createRunExecutor", () => {
             })),
           },
           task: { create: taskCreate },
-          run: { create: runCreate, findMany: vi.fn(async () => []) },
+          run: {
+            create: runCreate,
+            findMany: vi.fn(async () => []),
+            findUnique: vi.fn(async () => null),
+          },
         }),
       ),
     } as unknown as PrismaClient;
@@ -3436,6 +3477,21 @@ description: Prepare standup notes
     });
   });
 
+  it("carries the saved protocol into primary and connected model resolution", async () => {
+    const plaintext = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: COMPATIBLE_BASE_URL,
+      apiProtocol: "responses",
+      apiKey: "fake-api-key",
+    });
+    const executor = compatibleExecutor(compatiblePrismaParts("space-model", plaintext), plaintext);
+    const scope = { userId: "user-1", spaceId: "ws-1" };
+    expect(
+      await executor.resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "space-model"),
+    ).toMatchObject({ apiProtocol: "responses" });
+    expect(await executor.resolveModel(scope)).toMatchObject({ apiProtocol: "responses" });
+  });
+
   it("sends saved compatible headers from executor resolution to the model request", async () => {
     const plaintext = serializeModelSecret({
       kind: "openai_compatible",
@@ -4164,4 +4220,27 @@ describe("call_user availability", () => {
     expect(offered({ trigger: "tickets" })).toBe(false);
     expect(offered({ voiceCall: true })).toBe(false);
   });
+});
+
+describe("cross-chat history grant", () => {
+  it.each(["user", "follow_up"])("allows only human %s requests in the app thread", (trigger) => {
+    const run = { trigger, threadId: "thread" };
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "thread" }, false)).toBe(true);
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "thread" }, true)).toBe(false);
+    expect(historyMyChatsAllowed(run, { role: "bot", threadId: "thread" }, false)).toBe(false);
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "other" }, false)).toBe(false);
+    expect(historyMyChatsAllowed(run, null, false)).toBe(false);
+  });
+  it.each(["bot_message", "routine", "schedule", "messaging", "webhook", "created", "call_end"])(
+    "denies %s even with a human-looking source",
+    (trigger) => {
+      expect(
+        historyMyChatsAllowed(
+          { trigger, threadId: "thread" },
+          { role: "user", threadId: "thread" },
+          false,
+        ),
+      ).toBe(false);
+    },
+  );
 });

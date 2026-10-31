@@ -245,7 +245,7 @@ describe("production deploy script", () => {
     const deploy = fixture();
     commit(deploy.upstream, "next");
     expect(deploy.run().status).toBe(0);
-    const commands = deploy.commands().map((line) => line.split(" @ ")[0]);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
     expect(
       commands.slice(commands.findIndex((line) => line.endsWith(" up -d --remove-orphans")) + 1),
     ).toEqual([
@@ -321,7 +321,7 @@ describe("production deploy script", () => {
     const result = deploy.run({ FAIL_BUILD: "broken" });
     expect(result.status).toBe(1);
     expect(deploy.head()).toBe(deploy.first);
-    const commands = deploy.commands().map((line) => line.split(" @ ")[0]);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]!);
     expect(commands.filter((line) => line.startsWith(`${COMPOSE} build`))).toEqual([
       `${COMPOSE} build --build-arg GIT_SHA=${broken}`,
     ]);
@@ -349,7 +349,7 @@ describe("production deploy script", () => {
     const REGISTRY = "registry.example.test/rakazo/app";
     const published = (revision: string) => `${REGISTRY}:sha-${revision}`;
     const commandsOf = (deploy: ReturnType<typeof fixture>) =>
-      deploy.commands().map((line) => line.split(" @ ")[0]);
+      deploy.commands().map((line) => line.split(" @ ")[0]!);
 
     it("pulls the image published for the commit instead of building", () => {
       const deploy = fixture();

@@ -18,7 +18,7 @@ function windowChrome(platform: NodeJS.Platform) {
     backgroundColor: "#161616",
     show: true,
     autoHideMenuBar: true,
-    frame: mac,
+    frame: mac || platform === "win32",
     titleBarStyle: mac ? ("hiddenInset" as const) : undefined,
     trafficLightPosition: mac ? { x: 16, y: 16 } : undefined,
   };
@@ -43,7 +43,7 @@ export function developmentIconFile(platform: NodeJS.Platform) {
   return platform === "darwin" ? "icon-macos.png" : "icon.png";
 }
 
-/** The first-run setup window is smaller and keeps the same frameless chrome. */
+/** The first-run setup window is smaller and keeps the same platform chrome. */
 export function setupWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
   const width = Math.min(720, workArea.width);
   const height = Math.min(700, workArea.height);

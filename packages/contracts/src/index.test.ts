@@ -69,8 +69,11 @@ describe("contracts", () => {
   it("parses bounded model output-token limits", () => {
     expect(parseModelMaxTokens("1")).toBe(1);
     expect(parseModelMaxTokens("131072")).toBe(131072);
+    // Current models emit far more than 128K tokens in one reply (384K and up).
+    expect(parseModelMaxTokens("393216")).toBe(393216);
+    expect(parseModelMaxTokens("2147483647")).toBe(2147483647);
     expect(parseModelMaxTokens("0")).toBeUndefined();
-    expect(parseModelMaxTokens("131073")).toBeUndefined();
+    expect(parseModelMaxTokens("2147483648")).toBeUndefined();
     expect(parseModelMaxTokens("1.5")).toBeUndefined();
   });
 

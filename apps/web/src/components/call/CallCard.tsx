@@ -11,6 +11,7 @@ import {
   toggleTranscript,
   useCallSession,
 } from "../../lib/call-session";
+import { CallWindow } from "./CallWindow";
 
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
@@ -64,7 +65,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           ? t`Muted`
           : t`Listening`;
   return (
-    <div
+    <CallWindow
       data-testid="call-view"
       role="dialog"
       aria-label={t`Call with ${call.botName}`}
@@ -212,7 +213,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           <PhoneOff className="size-5" />
         </Button>
       </div>
-    </div>
+    </CallWindow>
   );
 }
 

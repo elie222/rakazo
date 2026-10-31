@@ -1,8 +1,9 @@
-import type { TelegramBotCredentials } from "@rakazo/adapters";
+import type { PhotonProjectCredentials, TelegramBotCredentials } from "@rakazo/adapters";
 import {
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
   mcpStdioOptionsFromEnv,
+  photonProjectsFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
@@ -14,6 +15,7 @@ import type { MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
+  attachmentCountFromEnv,
   phoneCallSettings,
   resolveAuthSecret,
   resolveContentEncryption,
@@ -60,12 +62,14 @@ export interface AppEnv {
   userDevicesEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
   navLinks?: NavLink[];
-  /** Verified accounts that review plugin submissions (RAKAZO_ADMIN_EMAILS), lowercased. */
+  /** Verified accounts that review plugin submissions and add stdio MCP servers
+   * (RAKAZO_ADMIN_EMAILS), lowercased. */
   adminEmails: string[];
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
   sandboxSupervisorUrl: string;
@@ -132,6 +136,11 @@ export interface AppEnv {
   larkVerificationToken: string | undefined;
   larkEncryptKey: string | undefined;
   larkDomain: string | undefined;
+  photonProjectId: string | undefined;
+  photonProjectSecret: string | undefined;
+  photonWebhookSecret: string | undefined;
+  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
+  photonProjects?: PhotonProjectCredentials[];
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
@@ -241,6 +250,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
@@ -303,6 +313,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
     larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
     larkDomain: optional(source.LARK_DOMAIN),
+    photonProjectId: optional(source.PHOTON_PROJECT_ID),
+    photonProjectSecret: optional(source.PHOTON_PROJECT_SECRET),
+    photonWebhookSecret: optional(source.PHOTON_WEBHOOK_SECRET),
+    photonProjects: photonProjectsFromEnv(source),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),

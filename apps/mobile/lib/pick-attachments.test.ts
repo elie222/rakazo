@@ -1,10 +1,27 @@
-import { attachmentMaxBytes } from "@rakazo/contracts";
+import { attachmentMaxBytes, attachmentMaxCount } from "@rakazo/contracts";
 import * as core from "@rakazo/core";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
+  it.each([undefined, 1, 8])(
+    "uses the advertised attachment count (%s)",
+    (maxAttachmentsPerMessage) => {
+      const candidates = Array.from({ length: 9 }, (_, i) => ({
+        name: `${i}.txt`,
+        mimeType: "text/plain",
+        size: 1,
+        contentBase64: "YQ==",
+      }));
+      const limit = attachmentMaxCount({ maxAttachmentsPerMessage });
+      const result = filterPickedAttachments(1, candidates, 10, limit);
+      expect(result.attachments).toHaveLength(limit - 1);
+      expect(result.skipped).toHaveLength(10 - limit);
+      expect(result.skipped[0]?.reason).toBe(`max ${limit} attachments`);
+    },
+  );
+
   it("accepts picked MP3 audio but retains the 10 MiB cap", () => {
     const candidate = {
       name: "song.mp3",

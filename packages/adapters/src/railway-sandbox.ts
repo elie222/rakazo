@@ -14,6 +14,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import type { ConnectOptions, SandboxStatus } from "railway";
 import {
   RailwayGraphQLError,
@@ -27,14 +28,21 @@ import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "./computer-workspace.js";
 import {
-  PORTABLE_TRANSFER_BATCH_BYTES,
-  shouldSkipPortableWorkspaceFile,
-} from "./computer-workspace.js";
-import { INSTALL_LINUX_BROWSER, LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+  INSTALL_LINUX_BROWSER,
+  LinuxDesktop,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+} from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
+import {
+  shouldSkipPortableWorkspaceFile,
+  workspaceSaveFindExpression,
+} from "./workspace-save-policy.js";
 
+const DISPLAY_START = 1;
 const WORKSPACE = "/home/rakazo";
 const SCREEN_PORT = 6080;
 const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
@@ -62,7 +70,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       homeDir: WORKSPACE,
       workspaceDir: WORKSPACE,
       browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-      displayStart: 1,
+      displayStart: DISPLAY_START,
       portStart: SCREEN_PORT,
       // The provider port proxy reaches the isolated sandbox through its network interface.
       bindHost: "0.0.0.0",
@@ -220,14 +228,15 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   async *execute(
     computer: ComputerRef,
-    request: CommandRequest,
+    requested: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    const request = onBotScreen(requested, context, DISPLAY_START);
     try {
       const sandbox = await this.connect(computer, context);
       const result = await sandbox.exec(sandboxCommandArgv(request).map(shellQuote).join(" "), {
         cwd: railwayCwd(request.cwd),
-        env: request.env,
+        env: { ...COMPUTER_CACHE_ENV, ...request.env },
         timeoutSec: boundedSandboxCommandTimeoutMs(request.timeoutMs) / 1_000,
         maxOutputBytes: MAX_RESPONSE_BYTES,
         signal: context.signal,
@@ -330,7 +339,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       [
         "set -euo pipefail",
         `cd ${shellQuote(WORKSPACE)}`,
-        'find . -type f -print0 | while IFS= read -r -d "" entry; do',
+        `find . ${workspaceSaveFindExpression()} -print0 | while IFS= read -r -d "" entry; do`,
         '  if [ -x "$entry" ]; then mode=700; else mode=600; fi',
         `  printf '%s\\0%s\\0%s\\0' "\${entry#./}" "$mode" "$(wc -c < "$entry")"`,
         "done",
@@ -441,6 +450,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       context.signal.throwIfAborted();
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
         await flush();
@@ -517,6 +527,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
   ) {
     const sandbox = await this.connect(computer, context);
     return sandbox.exec(`bash -c ${shellQuote(command)}`, {
+      env: COMPUTER_CACHE_ENV,
       timeoutSec: timeoutMs / 1_000,
       maxOutputBytes: MAX_RESPONSE_BYTES,
       signal: context.signal,

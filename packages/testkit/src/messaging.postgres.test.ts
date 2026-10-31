@@ -18,7 +18,9 @@ process.env.AGENT_RUNTIME = "scripted";
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeMessaging = hasDb ? describe.sequential : describe.skip;
 
-type App = { request: (input: string | Request, init?: RequestInit) => Promise<Response> };
+type App = {
+  request: (input: string | Request, init?: RequestInit) => Response | Promise<Response>;
+};
 
 // Offline journeys: injected SendBlueEmulator fetch, no live vendor or paid line.
 describeMessaging("messaging surface journeys", () => {
@@ -494,7 +496,9 @@ describeMessaging("messaging surface journeys", () => {
       }),
     );
     expect(response.status).toBe(200);
-    const linked = await waitForDatabase(() => findIdentity(newAddress));
+    const linked = await waitForDatabase<{ userId: string; botId: string }>(() =>
+      findIdentity(newAddress),
+    );
     expect(linked.userId).toBe(owner.userId);
     expect(linked.botId).toBe(owner.botId);
     // The confirmation DM drains through the vendor to the new address.
@@ -514,7 +518,9 @@ describeMessaging("messaging surface journeys", () => {
       }),
     );
     expect(replay.status).toBe(200);
-    const replayIdentity = await waitForDatabase(() => findIdentity(replayAddress));
+    const replayIdentity = await waitForDatabase<{ userId: string; botId: string }>(() =>
+      findIdentity(replayAddress),
+    );
     expect(replayIdentity.userId).not.toBe(owner.userId);
     expect(replayIdentity.botId).not.toBe(owner.botId);
   });

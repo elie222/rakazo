@@ -8,7 +8,7 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes, attachmentSizeLabel } from "@rakazo/contracts";
+import { attachmentMaxBytes, attachmentMaxCount, attachmentSizeLabel } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import {
   attachmentsForThread,
@@ -92,6 +92,7 @@ export function useComposerActions({
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork(sending || pendingAttachments.length > 0);
     return () => setComposerUnsavedWork(false);
@@ -269,6 +270,7 @@ export function useComposerActions({
     (files: FileList | readonly File[] | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
       if (!threadKey || !files?.length) return false;
+      const ATTACHMENT_MAX_COUNT = attachmentMaxCount(bootstrapMe);
       const existing = attachmentsForThread(pendingAttachments, threadKey);
       const next: PendingAttachment[] = [];
       const skipped: string[] = [];
@@ -346,34 +348,30 @@ export function useComposerActions({
       setSending(true);
       setSendError(null);
       clearReadBoundary();
+      setSentCount((count) => count + 1);
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
           cancelFocusPrompt();
         }
       };
-      // Keep the draft cleared once any part of the submission is confirmed accepted.
+      // Keep the draft cleared once the submission is confirmed accepted.
       let accepted = false;
       try {
-        if (plan.shouldRunRoutines) {
-          // Settle every run first so one that was accepted is never repeated.
-          const runs = await Promise.allSettled(
-            plan.routineIds.map((routineId) =>
-              rpc.routines.testRun({
-                routineId,
-                clientNonce: `routine-mention:${clientNonce}:${routineId}`,
-              }),
-            ),
-          );
-          accepted = runs.some((run) => run.status === "fulfilled");
-          for (const run of runs) if (run.status === "rejected") throw run.reason;
-        }
         if (!plan.shouldSend) {
+          if (plan.shouldRunRoutines) {
+            await rpc.threads.sendWithRoutines({
+              ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+              clientNonce,
+              routineIds: plan.routineIds,
+            });
+            accepted = true;
+          }
           dropDelayedSetup();
           clearReply();
           revokePendingAttachmentPreviews(attachments);
           setPendingAttachments((current) =>
-            current.filter((attachment) => attachment.threadKey !== originThreadKey),
+            current.filter((attachment) => !attachments.includes(attachment)),
           );
           setAttachmentNotice(null);
           if (reroutedToGroup && groupTarget) {
@@ -411,50 +409,41 @@ export function useComposerActions({
           uploaded.set(pending.file, artifact.id);
           artifactIds.push(artifact.id);
         }
-        if (groupTarget) {
-          await rpc.threads.send({
-            groupId: groupTarget,
-            clientNonce,
-            imageHandling: imageHandling ?? "confirm",
-            text: trimmed || undefined,
-            mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
-            artifactIds: artifactIds.length ? artifactIds : undefined,
-            replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
-            replyQuote: reroutedToGroup ? undefined : (activeReplyQuote ?? undefined),
-          });
-          accepted = true;
-        } else if (botTarget) {
-          const sent = await rpc.threads.send({
-            botId: botTarget,
-            clientNonce,
-            imageHandling: imageHandling ?? "confirm",
-            text: trimmed || undefined,
-            mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
-            artifactIds: artifactIds.length ? artifactIds : undefined,
-            replyToMessageId: activeReplyTarget?.id,
-            replyQuote: activeReplyQuote ?? undefined,
-          });
-          accepted = true;
-          if (activeBotId.current === botTarget) {
-            updateSnapshot((current) =>
-              applyThreadSendReceipt(
-                current,
-                {
-                  botId: botTarget,
-                  runId: sent.runId,
-                  taskId: sent.taskId,
-                },
-                terminalRunReceipts.current,
-              ),
-            );
-          }
+        const payload = {
+          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+          clientNonce,
+          imageHandling: imageHandling ?? "confirm",
+          text: trimmed || undefined,
+          mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
+          artifactIds: artifactIds.length ? artifactIds : undefined,
+          replyToMessageId: reroutedToGroup ? undefined : activeReplyTarget?.id,
+          replyQuote: reroutedToGroup ? undefined : (activeReplyQuote ?? undefined),
+        } as const;
+        // The routines run in the same server operation as the message: both or neither.
+        const sent = plan.shouldRunRoutines
+          ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
+          : await rpc.threads.send(payload);
+        accepted = true;
+        if (sent && botTarget && activeBotId.current === botTarget) {
+          updateSnapshot((current) =>
+            applyThreadSendReceipt(
+              current,
+              {
+                botId: botTarget,
+                runId: sent.runId,
+                taskId: sent.taskId,
+              },
+              terminalRunReceipts.current,
+            ),
+          );
         }
         uploadedSendArtifacts.current.delete(clientNonce);
         dropDelayedSetup();
         clearReply();
         revokePendingAttachmentPreviews(attachments);
+        // Keep files picked while this send was in flight.
         setPendingAttachments((current) =>
-          current.filter((attachment) => attachment.threadKey !== originThreadKey),
+          current.filter((attachment) => !attachments.includes(attachment)),
         );
         // Refresh sidebar status even when a bot→group reroute navigates away below.
         void refreshBots().catch(() => undefined);
@@ -582,6 +571,7 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
+    sentCount,
     sendMessage,
     stopRun,
     answerMessage,
