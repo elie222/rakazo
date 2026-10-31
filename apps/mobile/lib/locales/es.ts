@@ -1061,6 +1061,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Always open {site}": "Abrir siempre {site}",
   "Trusted sites": "Sitios de confianza",
   "Run history": "Historial de ejecuciones",
+  "No reply": "Sin respuesta",
   "No runs yet": "Aún no hay ejecuciones",
   "Load older runs": "Cargar ejecuciones anteriores",
   "Could not load run history": "No se pudo cargar el historial de ejecuciones",

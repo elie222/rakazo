@@ -18,6 +18,11 @@ describe("messaging provider labels", () => {
     expect(messagingProviderLabel("telegram-work")).toBe("Telegram (work)");
   });
 
+  it("names extra Photon projects after their configured name", () => {
+    expect(messagingProviderName("photon-pm")).toBe("iMessage (pm)");
+    expect(messagingProviderLabel("photon-pm")).toBe("iMessage (pm)");
+  });
+
   it("narrows iMessage to its transport", () => {
     expect(messagingProviderLabel("sendblue", "SMS")).toBe("SMS");
     expect(messagingProviderLabel("sendblue", "fax")).toBe("iMessage");

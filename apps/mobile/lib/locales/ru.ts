@@ -1154,6 +1154,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Always open {site}": "Всегда открывать {site}",
   "Trusted sites": "Доверенные сайты",
   "Run history": "История запусков",
+  "No reply": "Без ответа",
   "No runs yet": "Запусков пока нет",
   "Load older runs": "Загрузить более ранние запуски",
   "Could not load run history": "Не удалось загрузить историю запусков",

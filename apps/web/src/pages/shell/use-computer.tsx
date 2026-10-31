@@ -602,7 +602,8 @@ export function useComputerControls({
   useEffect(() => {
     if (!computerOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setComputerOpen(false);
+      if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+        setComputerOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

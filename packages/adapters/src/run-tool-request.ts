@@ -49,8 +49,8 @@ export interface ToolRequest {
   approvedEffectKey: string | undefined;
   replayEffectToolName: string;
   fleetSummary: FleetCardSummary | undefined;
-  /** The owner must approve this call whatever the space's rules say. */
-  ownerApproval: boolean;
+  /** Gated like a consequential action, even when the tool alone is not. */
+  heldForApproval: boolean;
 }
 
 type ToolError = { error: string };
@@ -259,7 +259,7 @@ export async function resolveToolRequest(
     approvedEffectKey,
     replayEffectToolName,
     fleetSummary: undefined,
-    ownerApproval: false,
+    heldForApproval: false,
   };
 }
 
@@ -267,42 +267,6 @@ export async function resolveToolRequest(
  * Check bot-management and instruction-proposal preconditions, and canonicalize the
  * requests whose approval card shows resolved names. Updates the request in place.
  */
-// Runs whose prompt someone other than the owner wrote; their text stays in the chat's history.
-const OUTSIDE_RUN_TRIGGERS = [
-  "webhook",
-  "messaging",
-  "bot_message",
-  "spawn",
-  "cloud_agent",
-  "tickets",
-];
-
-/** Earlier outside text in the chat can steer this run even when the run itself took in none. */
-async function threadHasOutsideHistory(
-  prisma: RunContext["deps"]["prisma"],
-  threadId: string,
-  botId: string,
-): Promise<boolean> {
-  const [message, run] = await Promise.all([
-    prisma.message.findFirst({
-      where: {
-        threadId,
-        OR: [
-          { role: "bot", botId: { not: botId } },
-          { blocks: { array_contains: [{ kind: "channel_message" }] } },
-          { blocks: { array_contains: [{ kind: "bot_message_received" }] } },
-        ],
-      },
-      select: { id: true },
-    }),
-    prisma.run.findFirst({
-      where: { threadId, trigger: { in: OUTSIDE_RUN_TRIGGERS } },
-      select: { id: true },
-    }),
-  ]);
-  return Boolean(message || run);
-}
-
 export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
@@ -398,9 +362,8 @@ const OWN_FIELDS = new Set([
 ]);
 
 /**
- * `update_bot` on this bot itself. Instructions from the owner's own words, or any run under
- * Never ask, are written at once; another run the owner set up holds them for the owner's
- * approval, and outside runs cannot change them.
+ * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
+ * they go through approval like any other action, and outside runs cannot change them.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -410,7 +373,7 @@ async function prepareOwnBotUpdate(
   const { executionId, nextApprovedTool } = request;
   if (nextApprovedTool === "update_bot") {
     // The approved replay runs the stored request.
-    request.ownerApproval = typeof request.args.previousInstructions === "string";
+    request.heldForApproval = typeof request.args.previousInstructions === "string";
     return undefined;
   }
   const { previousInstructions: _previous, reason: _reason, ...args } = request.args;
@@ -441,15 +404,8 @@ async function prepareOwnBotUpdate(
   if (redactSecrets(instructions, ctx.secrets) !== instructions)
     return { error: "Instructions cannot contain credentials." };
   request.args = { ...args, instructions };
-  // Only the owner's own words may become instructions unseen: no outside message, and no
-  // outside tool result in this attempt's context, restored or new. The creation intro has
-  // no tools that read outside content, and answering its question clears the checkpoint.
-  const ownWords =
-    !(await ctx.trust.receivedOutsideMessage()) &&
-    (run.trigger === "created" || (ctx.source.ownerStartedRun && !ctx.state.tainted)) &&
-    !(await threadHasOutsideHistory(deps.prisma, run.threadId, bot.id));
-  if (ownWords || unguarded) return undefined;
-  if (run.trigger !== "routine" && !ctx.source.ownerStartedRun)
+  if (unguarded) return undefined;
+  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
     return { error: "Instruction changes are blocked for runs someone else started." };
   if (Object.keys(args).some((key) => key !== "instructions"))
     return { error: "Change your instructions in their own update_bot call." };
@@ -462,6 +418,6 @@ async function prepareOwnBotUpdate(
     reason: "Set in chat",
     previousInstructions: current.instructions,
   };
-  request.ownerApproval = true;
+  request.heldForApproval = true;
   return undefined;
 }

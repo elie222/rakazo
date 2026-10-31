@@ -1133,6 +1133,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Always open {site}": "始终打开 {site}",
   "Trusted sites": "受信任的网站",
   "Run history": "运行记录",
+  "No reply": "未回复",
   "No runs yet": "还没有运行记录",
   "Load older runs": "加载更早的运行记录",
   "Could not load run history": "无法加载运行历史记录",

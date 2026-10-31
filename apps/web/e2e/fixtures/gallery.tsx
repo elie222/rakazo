@@ -236,7 +236,6 @@ const approvals: Scenario = {
         detail: instructionUpdateDiff(
           "Reply in English.",
           "Reply in English. Keep summaries to one paragraph.",
-          "You asked for shorter summaries.",
         ),
         detailFormat: "code",
         actions: [

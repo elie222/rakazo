@@ -127,6 +127,18 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
   });
 
+  it("keeps a CSV a CSV when Windows reports it as an Excel file", () => {
+    expect(inferAttachmentMimeType("sales.csv", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("SALES.CSV", "application/vnd.ms-excel")).toBe("text/csv");
+    expect(inferAttachmentMimeType("sales.xls", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("statement", "application/vnd.ms-excel")).toBe(
+      "application/vnd.ms-excel",
+    );
+    expect(inferAttachmentMimeType("sales.csv", "application/pdf")).toBe("application/pdf");
+  });
+
   it.each([
     "",
     "application/zip",

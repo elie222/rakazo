@@ -13,6 +13,7 @@ import {
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
   parseWhatsAppStatuses,
+  photonProjectsFromEnv,
   splitOutboundBody,
   telegramBotsFromEnv,
 } from "./messaging-platforms.js";
@@ -203,6 +204,79 @@ describe("messagingPlatformsFromEnv", () => {
       ).toEqual(["telegram-work"]);
     },
   );
+
+  it("mounts each named Photon project as its own photon-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv(
+      {
+        photonProjectId: "photon-project",
+        photonProjectSecret: "photon-secret",
+        photonProjects: [
+          { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret" },
+          {
+            name: "am",
+            projectId: "photon-am",
+            projectSecret: "am-secret",
+            webhookSecret: "am-hook",
+          },
+        ],
+      },
+      { pollInboundMessages: true },
+    );
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["photon", "imessage"],
+      ["photon-pm", "imessage"],
+      ["photon-am", "imessage"],
+    ]);
+    const config = (index: number) =>
+      (platforms[index]!.adapter as unknown as { config: Record<string, unknown> }).config;
+    expect(config(1)).toMatchObject({ projectId: "photon-pm", pollInboundMessages: true });
+    expect(config(2)).toMatchObject({ projectId: "photon-am", webhookSecret: "am-hook" });
+  });
+
+  it("reads named Photon projects from PHOTON_PROJECT_ID_<NAME> pairs", () => {
+    expect(
+      photonProjectsFromEnv({
+        PHOTON_PROJECT_ID: "default",
+        PHOTON_PROJECT_SECRET: "default-secret",
+        PHOTON_PROJECT_ID_PM: " photon-pm ",
+        PHOTON_PROJECT_SECRET_PM: " pm-secret ",
+        PHOTON_PROJECT_ID_AM: "photon-am",
+        PHOTON_PROJECT_SECRET_AM: "am-secret",
+        PHOTON_WEBHOOK_SECRET_AM: " am-hook ",
+        PHOTON_PROJECT_ID_NOSECRET: "photon-nosecret",
+        PHOTON_PROJECT_ID_BAD_NAME: "photon-bad",
+        PHOTON_PROJECT_SECRET_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "am", projectId: "photon-am", projectSecret: "am-secret", webhookSecret: "am-hook" },
+      { name: "pm", projectId: "photon-pm", projectSecret: "pm-secret", webhookSecret: undefined },
+    ]);
+  });
+
+  it("skips a named Photon project that reuses another provider's project", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    try {
+      expect(
+        providers(
+          messagingEnvFromProcess({
+            PHOTON_PROJECT_ID: "photon-shared",
+            PHOTON_PROJECT_SECRET: "default-secret",
+            PHOTON_PROJECT_ID_COPY: " photon-shared ",
+            PHOTON_PROJECT_SECRET_COPY: "copy-secret",
+            PHOTON_PROJECT_ID_PM: "photon-pm",
+            PHOTON_PROJECT_SECRET_PM: "pm-secret",
+          }),
+        ),
+      ).toEqual(["photon", "photon-pm"]);
+      expect(warn).toHaveBeenCalledWith(
+        "skipping Photon project that reuses another provider's project",
+        { provider: "photon-copy" },
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("photon-shared");
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
   it("requires both Photon credentials and maps PHOTON_* process env", () => {
     expect(providers({ ...fullEnv, photonProjectSecret: undefined })).not.toContain("photon");

@@ -282,6 +282,16 @@
   animation: rakazo-organic-ring 1.35s ease-in-out infinite;
 }
 
+/* Offscreen or hidden avatars and the faded-out layer hold their pose instead of drawing frames. */
+.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-body,
+.rakazo-organic-avatar[data-paused="true"] .rakazo-organic-avatar-eyes,
+.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-body-working,
+.rakazo-organic-avatar[data-working="false"] .rakazo-organic-avatar-eyes-working,
+.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-body-idle,
+.rakazo-organic-avatar[data-working="true"] .rakazo-organic-avatar-eyes-idle {
+  animation-play-state: paused;
+}
+
 @keyframes rakazo-organic-float {
   0%,
   100% {

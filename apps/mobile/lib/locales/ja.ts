@@ -1146,6 +1146,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Always open {site}": "{site} を常に開く",
   "Trusted sites": "信頼済みサイト",
   "Run history": "実行履歴",
+  "No reply": "返信なし",
   "No runs yet": "実行はまだありません",
   "Load older runs": "過去の実行を読み込む",
   "Could not load run history": "実行履歴を読み込めませんでした",

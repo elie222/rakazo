@@ -86,7 +86,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
   );
   expect(block).toMatchObject({
     kind: "ask",
-    detail: "Learned preference\n\n- Draft only\n+ Draft only\n+ Ask before sending",
+    detail: "- Draft only\n+ Draft only\n+ Ask before sending",
     instructionUpdate: {
       botId: "bot-1",
       before: "Draft only",
@@ -218,4 +218,14 @@ describe("agent connection response cards", () => {
       detail: "Slack: [redacted]",
     });
   });
+});
+
+it("shows a bot's first instructions as plain text", () => {
+  const block = buildApprovalAskBlock(
+    "effect-1",
+    "update_bot",
+    { botId: "bot-1", previousInstructions: "", instructions: "Draft only", reason: "Set in chat" },
+    [],
+  );
+  expect(block).toMatchObject({ detail: "Draft only" });
 });
