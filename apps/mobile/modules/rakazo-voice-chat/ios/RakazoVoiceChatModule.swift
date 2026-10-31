@@ -17,6 +17,10 @@ public class RakazoVoiceChatModule: Module {
       ) { [weak self] _ in
         self?.sendEvent("onPendingVoiceChat", [:])
       }
+      // Covers a request posted while the observer was being set up.
+      if UserDefaults.standard.dictionary(forKey: Self.key) != nil {
+        self.sendEvent("onPendingVoiceChat", [:])
+      }
     }
 
     OnStopObserving {
