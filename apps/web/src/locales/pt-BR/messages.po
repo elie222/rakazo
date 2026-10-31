@@ -4305,10 +4305,6 @@ msgstr "Outro modelo..."
 msgid "Output"
 msgstr "Saída"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "Visão geral"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr ""
 msgid "Routine"
 msgstr "Rotina"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Rotinas"
 

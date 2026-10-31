@@ -4305,10 +4305,6 @@ msgstr "Другая модель…"
 msgid "Output"
 msgstr "Вывод"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "Обзор"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr "Сменить ключ"
 msgid "Routine"
 msgstr "Задача"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Задачи"
 

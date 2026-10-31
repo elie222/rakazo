@@ -4306,10 +4306,6 @@ msgstr "其他模型…"
 msgid "Output"
 msgstr "輸出"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "總覽"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4979,8 +4975,8 @@ msgstr "輪換金鑰"
 msgid "Routine"
 msgstr "例行任務"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "例行任務"
 

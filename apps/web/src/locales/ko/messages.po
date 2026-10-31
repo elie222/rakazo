@@ -4305,10 +4305,6 @@ msgstr "다른 모델 직접 입력…"
 msgid "Output"
 msgstr "출력"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "개요"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr "key 교체"
 msgid "Routine"
 msgstr "자동 실행"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "자동 실행"
 

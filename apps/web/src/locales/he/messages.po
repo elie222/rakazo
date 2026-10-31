@@ -4305,10 +4305,6 @@ msgstr "מודל אחר…"
 msgid "Output"
 msgstr "פלט"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "סקירה"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr "החלפת מפתח"
 msgid "Routine"
 msgstr "רוטינה"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "רוטינות"
 

@@ -4305,10 +4305,6 @@ msgstr "その他のモデル…"
 msgid "Output"
 msgstr "出力"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "概要"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr "キーをローテーション"
 msgid "Routine"
 msgstr "ルーティン"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "ルーティン"
 

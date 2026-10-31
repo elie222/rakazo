@@ -4305,10 +4305,6 @@ msgstr "Ander model…"
 msgid "Output"
 msgstr "Uitvoer"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Overview"
-msgstr "Overzicht"
-
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4978,8 +4974,8 @@ msgstr "Sleutel roteren"
 msgid "Routine"
 msgstr "Routine"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Routines"
 
