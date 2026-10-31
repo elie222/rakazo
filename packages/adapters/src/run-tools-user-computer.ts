@@ -94,18 +94,30 @@ export async function userComputerGate(
   }
   const app = userComputerAppName(args.app).toLowerCase();
   if (!app) return "ask";
-  const used = await deps.prisma.externalEffect.findMany({
-    where: { ...where, kind: { in: [...USER_COMPUTER_SCREEN_TOOLS] } },
-    select: { request: true },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
-  const allowed = used.some(
-    (effect) =>
-      userComputerAppName((effect.request as { app?: unknown } | null)?.app).toLowerCase() === app,
-  );
-  return allowed ? "allow" : "ask";
+  // Every screen action records an effect, so page through them rather than cap the search.
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await deps.prisma.externalEffect.findMany({
+      where: { ...where, kind: { in: [...USER_COMPUTER_SCREEN_TOOLS] } },
+      select: { id: true, request: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: SCREEN_APPROVAL_PAGE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    if (
+      page.some(
+        (effect) =>
+          userComputerAppName((effect.request as { app?: unknown } | null)?.app).toLowerCase() ===
+          app,
+      )
+    )
+      return "allow";
+    if (page.length < SCREEN_APPROVAL_PAGE) return "ask";
+    cursor = page.at(-1)!.id;
+  }
 }
+
+const SCREEN_APPROVAL_PAGE = 200;
 
 /** The working directory on the user's computer: their home or a folder inside it. */
 export function userComputerCwd(environment: HostComputerEnvironment, cwd: unknown): string {
