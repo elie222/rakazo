@@ -634,6 +634,68 @@ export function mcpRoutes(ctx: RouterContext) {
           if (!fresh) throw new IsolationError();
           return mcpServerDto(fresh, oauth);
         }),
+        agents: authed.mcp.servers.agents.handler(async ({ context, input }) => {
+          const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+          const { server, assignments, seqs } = await deps.prisma.$transaction(async (tx) => {
+            const existing = await tx.mcpServer.findFirst({
+              where: { id: input.id, ...availableInSpace(context.actor) },
+              select: { id: true },
+            });
+            if (!existing) throw new IsolationError();
+            const server = await tx.mcpServer.update({
+              where: { id: existing.id },
+              data: { allBots: input.allBots },
+              include: { availableIn: AVAILABILITY_SELECT },
+            });
+            let seqs: Array<{ threadId: string; seq: number }> = [];
+            // Under allBots the assignments stay as they were, so choosing agents again restores them.
+            if (!input.allBots) {
+              const botIds = [...new Set(input.botIds)];
+              const bots = await tx.bot.findMany({
+                where: { ...owner, id: { in: botIds } },
+                select: { id: true },
+              });
+              if (bots.length !== botIds.length) throw new IsolationError();
+              const previous = await tx.botMcpServer.findMany({
+                where: { ...owner, serverId: server.id },
+                select: { botId: true },
+              });
+              const removed = previous
+                .map((row) => row.botId)
+                .filter((botId) => !botIds.includes(botId));
+              await tx.botMcpServer.deleteMany({
+                where: { ...owner, serverId: server.id, botId: { in: removed } },
+              });
+              await tx.botMcpServer.createMany({
+                data: botIds.map((botId) => ({ ...owner, botId, serverId: server.id })),
+                skipDuplicates: true,
+              });
+              seqs = (
+                await Promise.all(
+                  removed.map((botId) =>
+                    revertConnectedMcpApprovals(
+                      onboardingDeps,
+                      context.actor,
+                      { botId, serverId: server.id, status: "pending" },
+                      tx,
+                    ),
+                  ),
+                )
+              ).flat();
+            }
+            const assignments = await tx.botMcpServer.findMany({
+              where: { ...owner, serverId: server.id },
+              orderBy: { createdAt: "asc" },
+            });
+            return { server, assignments, seqs };
+          });
+          for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
+          const oauth = await mcpOAuth.summaryFor(server, context.actor);
+          return {
+            server: mcpServerDto(server, oauth),
+            assignments: assignments.map(mcpAssignmentDto),
+          };
+        }),
         remove: authed.mcp.servers.remove.handler(async ({ context, input }) => {
           const server = await deps.prisma.mcpServer.findFirst({
             where: {

@@ -1050,6 +1050,8 @@ export const McpServerSchema = z.object({
   enabled: z.boolean(),
   revision: z.number().int().positive(),
   availability: SpaceAvailabilitySchema.optional(),
+  /** Every agent can use it; when false, only the agents assigned to it. */
+  allBots: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
