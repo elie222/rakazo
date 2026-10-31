@@ -102,10 +102,13 @@ export function CompatibleModelFields({
 >) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
+  const hasSearchQuery = query.trim().length > 0;
   const visibleRows = useMemo(
     () =>
-      query.trim() ? compatibleRows.filter((id) => matchesSearchQuery(query, id)) : compatibleRows,
-    [compatibleRows, query],
+      hasSearchQuery
+        ? compatibleRows.filter((id) => matchesSearchQuery(query, id))
+        : compatibleRows,
+    [compatibleRows, hasSearchQuery, query],
   );
   return (
     <div className="block text-[13.5px] text-muted-foreground">
@@ -188,9 +191,9 @@ export function CompatibleModelFields({
             className="mt-2 h-10 text-foreground"
           />
         )}
-        {compatibleRows.length ? (
+        {compatibleRows.length || hasSearchQuery ? (
           <div className="mt-3 grid gap-2" data-testid="compatible-model-rows">
-            {compatibleRows.length > MODEL_SEARCH_THRESHOLD ? (
+            {compatibleRows.length > MODEL_SEARCH_THRESHOLD || hasSearchQuery ? (
               <InputGroup className="h-10">
                 <InputGroupAddon>
                   <Search size={16} strokeWidth={1.8} aria-hidden="true" />

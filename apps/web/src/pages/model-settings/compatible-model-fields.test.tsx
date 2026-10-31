@@ -72,12 +72,15 @@ function props(compatibleRows: string[], enabledModelIds: string[]) {
   };
 }
 
-async function renderFields(compatibleRows: string[]) {
+async function renderFields(initialRows: string[]) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  let changeRows = (_rows: string[]) => {};
   function Fields() {
     const [enabled, setEnabled] = useState<string[]>([]);
+    const [compatibleRows, setCompatibleRows] = useState(initialRows);
+    changeRows = setCompatibleRows;
     return (
       <CompatibleModelFields
         {...props(compatibleRows, enabled)}
@@ -90,6 +93,9 @@ async function renderFields(compatibleRows: string[]) {
   await act(async () => root.render(<Fields />));
   return {
     container,
+    async setRows(rows: string[]) {
+      await act(async () => changeRows(rows));
+    },
     async unmount() {
       await act(async () => root.unmount());
       container.remove();
@@ -162,6 +168,30 @@ it("filters a long discovered list and keeps hidden ticks", async () => {
     await typeInto(input, "");
     expect(visibleRows(view.container)).toHaveLength(12);
     expect(rowCheckbox(view.container, "model-7")?.getAttribute("aria-checked")).toBe("true");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the search reachable when the list shrinks under a query", async () => {
+  const view = await renderFields(rows(12));
+  try {
+    const input = search();
+    if (!input) throw new Error("Missing model search");
+    await typeInto(input, "model-1");
+    expect(visibleRows(view.container)).toEqual(["model-1", "model-10", "model-11", "model-12"]);
+
+    await view.setRows(rows(3));
+    expect(search()).not.toBeNull();
+    expect(visibleRows(view.container)).toEqual(["model-1"]);
+
+    await view.setRows([]);
+    expect(search()).not.toBeNull();
+    expect(view.container.textContent).toContain("No matching models");
+
+    await typeInto(search() as HTMLInputElement, "");
+    expect(search()).toBeNull();
+    expect(visibleRows(view.container)).toEqual([]);
   } finally {
     await view.unmount();
   }
