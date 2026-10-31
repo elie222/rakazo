@@ -247,7 +247,7 @@ export const fleetTools: ToolHandlers = {
         await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
       );
     }
-    // A change held for the owner (see prepareOwnBotUpdate) runs only once they approve it.
+    // A held change (see prepareOwnBotUpdate) runs only once the owner or Auto Review approves it.
     if (typeof args.previousInstructions === "string") {
       if ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
         return call.finish({ error: "This instruction change needs the owner's approval." });
