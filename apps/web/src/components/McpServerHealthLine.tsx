@@ -3,7 +3,6 @@ import type { McpServerHealth } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { Disclosure } from "@rakazo/ui-web";
 import { CircleCheck, CircleDashed, LoaderCircle, TriangleAlert } from "lucide-react";
-import { formatRelativeTime } from "../lib/relative-time";
 
 /**
  * Primary status of a configured MCP server: whether the last launch/discovery worked.
@@ -19,12 +18,6 @@ export function McpServerHealthLine({
   checking?: boolean;
 }) {
   const toolCount = health.toolCount;
-  const checked = health.checkedAt ? formatRelativeTime(health.checkedAt) : "";
-  const checkedLabel = checked ? (
-    <span className="text-muted-foreground">
-      <Trans>Checked {checked}</Trans>
-    </span>
-  ) : null;
 
   if (checking && health.status !== "installing") {
     return (
@@ -76,7 +69,6 @@ export function McpServerHealthLine({
               <Plural value={toolCount} one="# tool" other="# tools" />
             </span>
           )}
-          {checkedLabel}
         </span>
       </p>
     );
@@ -93,7 +85,6 @@ export function McpServerHealthLine({
             ) : (
               <Trans>Not working</Trans>
             )}
-            {checkedLabel}
           </span>
         </p>
         {health.message ? (

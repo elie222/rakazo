@@ -409,7 +409,7 @@ export function McpServersOverlay({
         ]),
       ]);
     } catch (err) {
-      setError(errorText(err, t`Could not update agent access`));
+      setError(errorText(err, t`Could not update bot access`));
     }
   }
 

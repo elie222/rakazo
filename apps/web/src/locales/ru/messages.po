@@ -17,14 +17,14 @@ msgstr ""
 msgid " (unread)"
 msgstr " (непрочитано)"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# agent} other {# agents}}"
-msgstr ""
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr ""
+
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# bot} other {# bots}}"
 msgstr ""
 
 #. placeholder {0}: servers.length
@@ -641,10 +641,6 @@ msgstr "Расширенные"
 msgid "Advanced..."
 msgstr "Расширенные..."
 
-#: src/components/integrations/agent-access.tsx
-msgid "Agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -654,9 +650,6 @@ msgid "All {credit} goes to model usage."
 msgstr "Все {credit} идут на использование моделей."
 
 #: src/components/integrations/agent-access.tsx
-msgid "All agents"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -1277,10 +1270,6 @@ msgstr "Проверьте сами"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Проверьте свою электронную почту"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "Проверено {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -2236,12 +2225,12 @@ msgstr ""
 msgid "Could not update"
 msgstr "Не удалось обновить"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "Не удалось обновить доступ агента."
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
+msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
@@ -4004,10 +3993,6 @@ msgstr "Следующая страница"
 msgid "Next settings sections"
 msgstr ""
 
-#: src/components/integrations/agent-access.tsx
-msgid "No agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "Нет приложений, соответствующих вашему запросу."
@@ -4023,6 +4008,10 @@ msgstr "Нет авторизации"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "Нет аутентификации"
+
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx

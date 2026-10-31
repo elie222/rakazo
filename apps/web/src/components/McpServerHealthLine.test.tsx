@@ -30,11 +30,11 @@ const render = (health: Partial<McpServerHealth>) =>
   renderToStaticMarkup(<McpServerHealthLine health={{ ...base, ...health }} />);
 
 describe("McpServerHealthLine", () => {
-  it("shows the tool count and when it was checked when the server works", () => {
+  it("shows the tool count when the server works", () => {
     const html = render({ status: "ok", toolCount: 12, checkedAt: "2026-10-21T10:00:00.000Z" });
     expect(html).toContain('data-status="ok"');
     expect(visibleText(html)).toContain("Running 12 tools");
-    expect(html).toContain("5m ago");
+    expect(html).not.toContain("ago");
     expect(visibleText(render({ status: "ok", toolCount: 1 }))).toContain("Running 1 tool");
   });
 

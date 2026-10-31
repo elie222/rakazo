@@ -29,13 +29,13 @@ export function AgentAccessControl({
   const chosen = access.allBots ? bots.map((bot) => bot.id) : access.botIds;
   if (bots.length === 0 || (bots.length === 1 && chosen.length === 1)) return null;
   const summary = access.allBots ? (
-    <Trans>All agents</Trans>
+    <Trans>All bots</Trans>
   ) : chosen.length === 0 ? (
-    <Trans>No agents</Trans>
+    <Trans>No bots</Trans>
   ) : chosen.length === 1 ? (
     bots.find((bot) => bot.id === chosen[0])?.name
   ) : (
-    <Plural value={chosen.length} one="# agent" other="# agents" />
+    <Plural value={chosen.length} one="# bot" other="# bots" />
   );
   const toggle = (botId: string) =>
     onChange({
@@ -45,9 +45,6 @@ export function AgentAccessControl({
 
   return (
     <div data-testid="agent-access" className="flex flex-wrap items-center gap-1 text-xs">
-      <span className="text-muted-foreground">
-        <Trans>Agents</Trans>
-      </span>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -67,7 +64,7 @@ export function AgentAccessControl({
             checked={access.allBots}
             onCheckedChange={(allBots) => onChange({ ...access, allBots })}
           >
-            <Trans>All agents</Trans>
+            <Trans>All bots</Trans>
           </DropdownMenuCheckboxItem>
           <DropdownMenuSeparator />
           {bots.map((bot) => (

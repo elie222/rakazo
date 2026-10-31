@@ -17,14 +17,14 @@ msgstr ""
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# agent} other {# agents}}"
-msgstr ""
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr ""
+
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# bot} other {# bots}}"
 msgstr ""
 
 #. placeholder {0}: servers.length
@@ -641,10 +641,6 @@ msgstr "מתקדם"
 msgid "Advanced..."
 msgstr "מתקדם..."
 
-#: src/components/integrations/agent-access.tsx
-msgid "Agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -654,9 +650,6 @@ msgid "All {credit} goes to model usage."
 msgstr "כל {credit} הולכים לשימוש במודלים."
 
 #: src/components/integrations/agent-access.tsx
-msgid "All agents"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -1277,10 +1270,6 @@ msgstr "יש לבדוק בעצמך"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "יש לבדוק את תיבת האימייל"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "נבדק {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -2236,12 +2225,12 @@ msgstr ""
 msgid "Could not update"
 msgstr "לא ניתן לעדכן"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "לא ניתן לעדכן את הגישה של הסוכן"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
+msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
@@ -4004,10 +3993,6 @@ msgstr "העמוד הבא"
 msgid "Next settings sections"
 msgstr ""
 
-#: src/components/integrations/agent-access.tsx
-msgid "No agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "אין אפליקציות שתואמות לחיפוש."
@@ -4023,6 +4008,10 @@ msgstr "ללא אימות"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "ללא אימות"
+
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx

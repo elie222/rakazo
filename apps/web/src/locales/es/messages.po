@@ -17,15 +17,15 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# agent} other {# agents}}"
-msgstr ""
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {# bot tiene su propio modelo:} other {# bots tienen su propio modelo:}}"
+
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# bot} other {# bots}}"
+msgstr ""
 
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
@@ -641,10 +641,6 @@ msgstr "Avanzado"
 msgid "Advanced..."
 msgstr "Avanzado..."
 
-#: src/components/integrations/agent-access.tsx
-msgid "Agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "Todas"
@@ -654,9 +650,6 @@ msgid "All {credit} goes to model usage."
 msgstr "Los {credit} completos se destinan al uso de modelos."
 
 #: src/components/integrations/agent-access.tsx
-msgid "All agents"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -1277,10 +1270,6 @@ msgstr "Compruébalo tú"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Revisa tu correo"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "Comprobado {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -2236,13 +2225,13 @@ msgstr "No se pudo transcribir esa grabación."
 msgid "Could not update"
 msgstr "No se pudo actualizar"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "No se pudo actualizar el acceso del agente"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
 msgstr "No se pudo actualizar la facturación"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
@@ -4004,10 +3993,6 @@ msgstr "Página siguiente"
 msgid "Next settings sections"
 msgstr "Siguientes secciones de configuración"
 
-#: src/components/integrations/agent-access.tsx
-msgid "No agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "Ninguna app coincide con tu búsqueda."
@@ -4023,6 +4008,10 @@ msgstr "Sin autenticación"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "Sin autenticación"
+
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx

@@ -18,15 +18,15 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未讀）"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# agent} other {# agents}}"
-msgstr ""
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {# 個機器人使用自己的模型：} other {# 個機器人使用自己的模型：}}"
+
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# bot} other {# bots}}"
+msgstr ""
 
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
@@ -642,10 +642,6 @@ msgstr "進階"
 msgid "Advanced..."
 msgstr "進階..."
 
-#: src/components/integrations/agent-access.tsx
-msgid "Agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -655,9 +651,6 @@ msgid "All {credit} goes to model usage."
 msgstr "全部 {credit} 都用於模型用量。"
 
 #: src/components/integrations/agent-access.tsx
-msgid "All agents"
-msgstr ""
-
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -1278,10 +1271,6 @@ msgstr "請自行檢查"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "請檢視電子信箱"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "檢查於 {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -2237,13 +2226,13 @@ msgstr ""
 msgid "Could not update"
 msgstr "無法更新"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "無法更新代理程式的存取權限"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
 msgstr "無法更新帳務資訊"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
+msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
@@ -4005,10 +3994,6 @@ msgstr "下一頁"
 msgid "Next settings sections"
 msgstr "下一組設定區段"
 
-#: src/components/integrations/agent-access.tsx
-msgid "No agents"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "沒有符合搜尋條件的應用程式。"
@@ -4024,6 +4009,10 @@ msgstr "無驗證"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "無驗證"
+
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx

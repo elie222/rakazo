@@ -17,15 +17,15 @@ msgstr ""
 msgid " (unread)"
 msgstr " (unread)"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# agent} other {# agents}}"
-msgstr "{0, plural, one {# agent} other {# agents}}"
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# bot} other {# bots}}"
+msgstr "{0, plural, one {# bot} other {# bots}}"
 
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
@@ -641,10 +641,6 @@ msgstr "Advanced"
 msgid "Advanced..."
 msgstr "Advanced..."
 
-#: src/components/integrations/agent-access.tsx
-msgid "Agents"
-msgstr "Agents"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "All"
@@ -654,9 +650,6 @@ msgid "All {credit} goes to model usage."
 msgstr "All {credit} goes to model usage."
 
 #: src/components/integrations/agent-access.tsx
-msgid "All agents"
-msgstr "All agents"
-
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -1277,10 +1270,6 @@ msgstr "Check this yourself"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Check your email"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "Checked {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -2236,13 +2225,13 @@ msgstr "Could not transcribe that recording."
 msgid "Could not update"
 msgstr "Could not update"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "Could not update agent access"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
 msgstr "Could not update billing"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
+msgstr "Could not update bot access"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
@@ -4004,10 +3993,6 @@ msgstr "Next page"
 msgid "Next settings sections"
 msgstr "Next settings sections"
 
-#: src/components/integrations/agent-access.tsx
-msgid "No agents"
-msgstr "No agents"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "No apps match your search."
@@ -4023,6 +4008,10 @@ msgstr "No auth"
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
 msgstr "No authentication"
+
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr "No bots"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
