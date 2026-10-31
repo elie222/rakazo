@@ -167,6 +167,7 @@ describe("scoped mobile outbox", () => {
       request,
       scope: () => scope,
       serverReachable: () => reachable,
+      passwordChanging: () => false,
       disk,
       errorText: (error) => (error instanceof Error ? error.message : String(error)),
       notDelivered,
@@ -738,6 +739,91 @@ describe("scoped mobile outbox", () => {
     expect(request).toHaveBeenCalledOnce();
     expect(notDelivered).not.toHaveBeenCalled();
   });
+  describe("a send in flight while a password change replaces the session", () => {
+    let current: typeof scope | null;
+    let refuse: (() => void) | undefined;
+    let passwordChanging: boolean;
+    beforeEach(() => {
+      current = scope;
+      refuse = undefined;
+      passwordChanging = true;
+      configureUnsentSends({
+        request,
+        scope: () => current,
+        serverReachable: () => reachable,
+        passwordChanging: () => passwordChanging,
+        disk,
+        errorText: (error) => (error instanceof Error ? error.message : String(error)),
+        notDelivered,
+      });
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create"
+          ? { id: "artifact-a" }
+          : new Promise((_resolve, reject) => {
+              // The server already revoked the token the send used.
+              refuse = () => reject(Object.assign(new Error("Unauthorized"), { status: 401 }));
+            }),
+      );
+    });
+    async function settleAfter(change: () => void) {
+      const attempt = feedback.sendAttempt(payload());
+      let sending!: Promise<boolean>;
+      act(() => {
+        sending = feedback.send(attempt);
+      });
+      await vi.waitFor(() => expect(refuse).toBeTypeOf("function"));
+      change();
+      request.mockImplementation(async (proc) =>
+        proc === "artifacts/create" ? { id: "artifact-a" } : { seq: 42 },
+      );
+      const saves = disk.save.mock.calls.length;
+      await act(async () => {
+        refuse?.();
+        await sending;
+      });
+      return { attempt, saves };
+    }
+    it("returns it to the saved queue while the session is out of scope", async () => {
+      const { attempt, saves } = await settleAfter(() => {
+        current = null;
+      });
+      expect(attempt.state).toBe("queued");
+      expect(disk.save.mock.calls.length).toBeGreaterThan(saves);
+      expect(disk.save).toHaveBeenLastCalledWith([attempt]);
+      expect(notDelivered).not.toHaveBeenCalled();
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("keeps it queued when the server revokes the token before the new session arrives", async () => {
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("queued");
+      expect(notDelivered).not.toHaveBeenCalled();
+      // The drain stops instead of resending with the revoked token.
+      expect(request.mock.calls.filter(([proc]) => proc !== "artifacts/create")).toHaveLength(1);
+      current = { ...scope };
+      await act(async () => {
+        await sendWaitingMessages();
+      });
+      expect(attempt.acceptedSeq).toBe(42);
+    });
+    it("refuses it as before when no password change is in progress", async () => {
+      passwordChanging = false;
+      const { attempt } = await settleAfter(() => undefined);
+      expect(attempt.state).toBe("refused");
+      expect(notDelivered).toHaveBeenCalledWith(attempt);
+    });
+    it("retries it when the new session is ready before it settles", async () => {
+      const { attempt } = await settleAfter(() => {
+        current = { ...scope };
+      });
+      expect(attempt.state).not.toBe("refused");
+      expect(attempt.acceptedSeq).toBe(42);
+      expect(notDelivered).not.toHaveBeenCalled();
+    });
+  });
   it("retries after a reconnect that arrived during an in-flight send", async () => {
     let rejectUpload!: (error: unknown) => void;
     request.mockImplementationOnce(
@@ -913,6 +999,7 @@ describe("a send and its echo", () => {
       request,
       scope: () => scope,
       serverReachable: () => reachable,
+      passwordChanging: () => false,
       disk,
       errorText: String,
       notDelivered: () => undefined,

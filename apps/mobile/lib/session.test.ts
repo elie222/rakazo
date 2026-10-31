@@ -10,7 +10,10 @@ import {
   loadSessionToken,
   loadVerifiedIntegrationsScope,
   registerSessionDiskCache,
+  replaceSessionTokenIfCurrent,
   restoreSessionToken,
+  rotateSessionTokenIfCurrent,
+  saveRotatedSessionToken,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
@@ -187,6 +190,180 @@ describe("mobile session storage", () => {
     vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("device locked"));
 
     await expect(snapshotSessionToken()).resolves.toEqual({ ok: false });
+  });
+});
+
+describe("password change token rotation", () => {
+  const NAMESPACE_KEY = "rakazo.artifact-cache-session";
+  let disk: Map<string, string>;
+  let namespace: string;
+  beforeEach(async () => {
+    disk = new Map();
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => disk.get(key) ?? null);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      disk.delete(key);
+    });
+    await saveSessionToken("fake-old");
+    namespace = await artifactCacheSession("fake-old");
+    vi.mocked(clearFailedSends).mockClear();
+  });
+  const failNamespaceWrite = () =>
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async (key) => {
+      if (key === NAMESPACE_KEY) throw new Error("keychain unavailable");
+    });
+  const stored = () => JSON.parse(disk.get(NAMESPACE_KEY) ?? "null");
+
+  it("keeps unsent messages and their cache namespace for the same account", async () => {
+    await rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new");
+
+    expect(clearFailedSends).not.toHaveBeenCalled();
+    expect(await artifactCacheSession("fake-new")).toBe(namespace);
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(stored()).toEqual({ token: "fake-new", namespace, previous: "fake-old" });
+  });
+
+  it("still wipes unsent messages and the namespace for a sign-in, SSO or passkey session", async () => {
+    await replaceSessionTokenIfCurrent(currentSessionGeneration(), "fake-new");
+
+    expect(clearFailedSends).toHaveBeenCalledOnce();
+    expect(await artifactCacheSession("fake-new")).not.toBe(namespace);
+  });
+
+  it("saves the token only after its namespace, and reports a failed namespace save", async () => {
+    failNamespaceWrite();
+
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow("keychain unavailable");
+
+    // A restart still finds the previous token beside the namespace that names the queue.
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
+    expect(stored()).toEqual({ token: "fake-old", namespace });
+    await expect(loadSessionToken()).resolves.toBe("fake-new");
+    expect(clearFailedSends).not.toHaveBeenCalled();
+  });
+
+  it("saves a failed rotation's namespace only together with its token", async () => {
+    failNamespaceWrite();
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+
+    // A cache read in the meantime must not pair the new namespace with the revoked token.
+    expect(await artifactCacheSession("fake-new")).toBe(namespace);
+    expect(stored()).toEqual({ token: "fake-old", namespace });
+
+    await saveRotatedSessionToken();
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(stored()).toEqual({ token: "fake-new", namespace, previous: "fake-old" });
+  });
+
+  it("does not save a failed rotation after another session change", async () => {
+    failNamespaceWrite();
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+    await clearSessionToken();
+
+    await saveRotatedSessionToken();
+    expect(disk.has("rakazo.session_token")).toBe(false);
+    expect(disk.has(NAMESPACE_KEY)).toBe(false);
+  });
+
+  async function restart() {
+    vi.resetModules();
+    const session = await import("./session.js");
+    const artifacts = await import("./artifact-cache-session");
+    return { ...session, ...artifacts };
+  }
+
+  it("finishes after a restart a rotation that stopped between its two saves", async () => {
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      // The app stops after the namespace is saved, before the token is.
+      if (key === "rakazo.session_token") throw new Error("app stopped");
+      disk.set(key, value);
+    });
+    await expect(
+      rotateSessionTokenIfCurrent(currentSessionGeneration(), "fake-old", "fake-new"),
+    ).rejects.toThrow();
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
+    });
+
+    const next = await restart();
+    await expect(next.loadSessionToken()).resolves.toBe("fake-new");
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    expect(await next.artifactCacheSession("fake-new")).toBe(namespace);
+  });
+
+  it("retries an unfinished rotation after a failed read instead of using the revoked token", async () => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      async (key) => disk.get(key) ?? null,
+    );
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(async () => {
+      throw new Error("keychain unavailable");
+    });
+
+    const next = await restart();
+    await expect(next.snapshotSessionToken()).resolves.toEqual({ ok: false });
+    await expect(next.loadSessionToken()).resolves.toBe("fake-new");
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+  });
+
+  it.each([
+    ["sign-out", ""],
+    ["sign-in", "fake-other"],
+  ])("lets a %s during the recovery write win", async (change, expected) => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    let release: (() => void) | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (value === "fake-new") await new Promise<void>((resolve) => (release = resolve));
+      disk.set(key, value);
+    });
+
+    const next = await restart();
+    const recovering = next.loadSessionToken();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const changing =
+      change === "sign-out" ? next.clearSessionToken() : next.saveSessionToken(expected);
+    // The session change runs as far as it can before the delayed recovery write finishes.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release?.();
+    await Promise.all([recovering, changing]);
+
+    expect(disk.get("rakazo.session_token") ?? "").toBe(expected);
+    await expect(next.loadSessionToken()).resolves.toBe(expected);
+  });
+
+  it("finishes the recovery when a scope save makes the first token read", async () => {
+    disk.set(NAMESPACE_KEY, JSON.stringify({ token: "fake-new", namespace, previous: "fake-old" }));
+    const scope = {
+      apiBase: "https://api.example.test",
+      userId: "u",
+      spaceId: "s",
+      selectionId: null,
+    };
+
+    const next = await restart();
+    await next.saveVerifiedIntegrationsScope(0, scope);
+    expect(disk.get("rakazo.session_token")).toBe("fake-new");
+    await expect(next.loadVerifiedIntegrationsScope()).resolves.toEqual(scope);
+  });
+
+  it("does not adopt a rotation recorded for a different saved token", async () => {
+    disk.set(
+      NAMESPACE_KEY,
+      JSON.stringify({ token: "fake-new", namespace, previous: "fake-someone-else" }),
+    );
+
+    const next = await restart();
+    await expect(next.loadSessionToken()).resolves.toBe("fake-old");
+    expect(disk.get("rakazo.session_token")).toBe("fake-old");
   });
 });
 
