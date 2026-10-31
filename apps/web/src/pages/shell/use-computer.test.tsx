@@ -122,6 +122,25 @@ it("never caches a Wuying login code", async () => {
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
 });
 
+it("tracks whether the screen frame is scrolled into view", async () => {
+  let notify: (visible: boolean) => void = () => undefined;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+        notify = (visible) => callback([{ isIntersecting: visible }]);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  await read();
+  await act(async () => notify(true));
+  expect(state.screenFrameInView).toBe(true);
+  await act(async () => notify(false));
+  expect(state.screenFrameInView).toBe(false);
+});
+
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
   function Controls() {
     state = useComputerState({
