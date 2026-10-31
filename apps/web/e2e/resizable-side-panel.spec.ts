@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openBotPanelTab, signup } from "./helpers";
 
-test("bot panel resizes its contents and remembers width", async ({ page }, testInfo) => {
+test("computer rail resizes its preview and remembers width", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
   await signup(
     page,
@@ -10,7 +10,7 @@ test("bot panel resizes its contents and remembers width", async ({ page }, test
     "Computer Preferences",
   );
   await completeOnboarding(page);
-  await openBotPanelTab(page, "Overview");
+  await openBotPanelTab(page, "Computer");
   const panel = page.getByTestId("side-panel");
   const separator = page.getByRole("separator", { name: "Resize panel" });
   await expect(separator).toBeVisible();
@@ -28,7 +28,7 @@ test("bot panel resizes its contents and remembers width", async ({ page }, test
   await page.reload();
   await page.getByTestId("bot-settings-trigger").waitFor({ state: "visible" });
   if ((await page.getByTestId("side-panel").getAttribute("data-panel")) === "closed") {
-    await openBotPanelTab(page, "Overview");
+    await openBotPanelTab(page, "Computer");
   }
   await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(600);
   const preferredWidth = await page.evaluate(() =>

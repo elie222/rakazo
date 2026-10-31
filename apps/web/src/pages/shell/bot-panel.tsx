@@ -99,9 +99,9 @@ export function ComputerModePicker({
   );
 }
 
-export type BotPanelTab = "overview" | "settings";
+export type BotPanelTab = "computer" | "routines" | "settings";
 
-/** A bot's profile above its Overview and Advanced tabs. */
+/** A bot's profile above its Computer, Routines and Advanced tabs. */
 export function BotSettings({
   bot,
   tab = "settings",
@@ -541,21 +541,21 @@ export function BotSettings({
       </div>
       <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as BotPanelTab)}>
         <TabsList className="w-full">
-          <TabsTrigger value="overview">
-            <Trans>Overview</Trans>
+          <TabsTrigger value="computer">
+            <Trans>Computer</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="routines">
+            <Trans>Routines</Trans>
           </TabsTrigger>
           <TabsTrigger value="settings">
             <Trans>Advanced</Trans>
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="space-y-6 pt-4">
+        <TabsContent value="computer" className="pt-4">
+          {computer}
+        </TabsContent>
+        <TabsContent value="routines" className="pt-4">
           {routines}
-          <section>
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-              <Trans>Computer</Trans>
-            </h3>
-            {computer}
-          </section>
         </TabsContent>
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">

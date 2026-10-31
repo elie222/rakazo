@@ -269,7 +269,7 @@ export function useComputerState({
   }, [computerOpen]);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "overview" || computerOpen;
+  computerVisible.current = panel === "computer" || computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 
@@ -347,20 +347,6 @@ export function useComputerState({
     });
   }
 
-  // Overview also holds routines, so its preview may be scrolled out of view.
-  const [screenFrameInView, setScreenFrameInView] = useState(false);
-  useEffect(() => {
-    if (!screenFrame || typeof IntersectionObserver === "undefined") {
-      setScreenFrameInView(Boolean(screenFrame));
-      return;
-    }
-    const observer = new IntersectionObserver(([entry]) =>
-      setScreenFrameInView(entry?.isIntersecting ?? false),
-    );
-    observer.observe(screenFrame);
-    return () => observer.disconnect();
-  }, [screenFrame]);
-
   return {
     computer,
     computerRef,
@@ -388,7 +374,6 @@ export function useComputerState({
     computerErrorFromScreen,
     setComputerErrorFromScreen,
     setScreenFrame,
-    screenFrameInView,
     // A fresh Wuying code changes only the URL fragment, which would not reload the frame.
     screenFrameKey: screenUrl?.startsWith("wuying:")
       ? `${screenFrameKey}:${screenUrl}`
@@ -434,7 +419,6 @@ export function useComputerControls({
   const { t } = useLingui();
   const {
     computer,
-    screenFrameInView,
     commitComputer,
     computerCacheRef,
     cacheComputerFor,
@@ -478,7 +462,7 @@ export function useComputerControls({
     }, 4000);
   }, []);
   useEffect(() => {
-    if (panel !== "overview") releaseComputerRecovery();
+    if (panel !== "computer") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
   useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const computerBot =
@@ -553,7 +537,7 @@ export function useComputerControls({
   }
 
   useEffect(() => {
-    if (panel !== "overview") {
+    if (panel !== "computer") {
       autoBooted.current = null;
       return;
     }
@@ -627,8 +611,8 @@ export function useComputerControls({
 
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
-    const watching = computerOpen || (panel === "overview" && screenFrameInView);
-    if (!watching || !heartbeatBotId || computer?.state !== "running") return;
+    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
+      return;
     // A computer panel left open in a hidden window must not keep the computer awake.
     const ping = () => {
       if (document.visibilityState !== "visible") return;
@@ -639,7 +623,7 @@ export function useComputerControls({
     const timer = window.setInterval(ping, 60_000);
     ping();
     return () => window.clearInterval(timer);
-  }, [panel, screenFrameInView, computerOpen, computerBot?.id, active?.id, computer?.state]);
+  }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
 
   /** Open the computer view. Only an explicit Take control asks for the lease. */
   async function openComputer(botId?: string, takeControl = false) {

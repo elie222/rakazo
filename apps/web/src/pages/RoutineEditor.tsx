@@ -254,11 +254,8 @@ export function RoutineList({
 }) {
   const { t } = useLingui();
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          <Trans>Routines</Trans>
-        </h3>
+    <div>
+      <div className="mb-2 flex justify-end">
         <Button
           variant="secondary"
           size="icon-sm"
@@ -279,7 +276,7 @@ export function RoutineList({
           onStop={onStop}
         />
       ))}
-    </section>
+    </div>
   );
 }
 

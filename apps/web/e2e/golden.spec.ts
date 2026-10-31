@@ -75,8 +75,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await pill.click();
     await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await openBotPanelTab(page, "Overview");
-  await expect(sidePanel).toHaveAttribute("data-panel", "overview");
+  await openBotPanelTab(page, "Computer");
+  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([
     page.locator("main").boundingBox(),
@@ -102,7 +102,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
-  await openBotPanelTab(page, "Overview");
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page

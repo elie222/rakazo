@@ -57,6 +57,7 @@ import { desktopBridge } from "../lib/desktop";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
+import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
@@ -188,6 +189,9 @@ function SpaceShell() {
   );
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
+  const lastBotTab = useRef<Panel>("routines");
+  if (panel === "routines" || panel === "computer" || panel === "settings")
+    lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
@@ -258,7 +262,7 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
-    : panel === "overview" || panel === "settings" || panel === "routine";
+    : panel === "computer" || panel === "routines" || panel === "settings" || panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -949,7 +953,7 @@ function SpaceShell() {
               if (chatPanelOpen) setPanel(null);
               else if (inGroup) setPanel("group-settings");
               else if (active) {
-                setPanel("overview");
+                setPanel(lastBotTab.current);
                 // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
                 void refreshThread(active.id).catch(() => undefined);
               }

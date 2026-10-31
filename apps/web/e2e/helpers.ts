@@ -107,7 +107,7 @@ export async function openIntegrationsAdd(page: Page, item: string) {
 }
 
 /** Opens the bot panel from the header pill and shows one tab, leaving an open routine editor. */
-export async function openBotPanelTab(page: Page, name: "Overview" | "Advanced") {
+export async function openBotPanelTab(page: Page, name: "Computer" | "Routines" | "Advanced") {
   const pill = page.getByTestId("bot-settings-trigger");
   const tab = page.getByTestId("bot-settings").getByRole("tab", { name, exact: true });
   if (!(await tab.isVisible())) {
