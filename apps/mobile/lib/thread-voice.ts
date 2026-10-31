@@ -266,9 +266,9 @@ export function useThreadVoiceCall({
   }
 
   // The shortcut can arrive long after this chat opened, e.g. once an archived chat is restored.
-  const startVoiceCallRef = useRef(startVoiceCall);
+  const latest = useRef({ botId, startVoiceCall });
   useLayoutEffect(() => {
-    startVoiceCallRef.current = startVoiceCall;
+    latest.current = { botId, startVoiceCall };
   });
 
   useEffect(() => {
@@ -278,7 +278,10 @@ export function useThreadVoiceCall({
       void startVoiceCall(true, session);
     }
     return onShortcutVoiceChat(() => {
-      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current(true);
+      // A listener left over from the previous bot must not take its request for this one.
+      if (latest.current.botId === botId && takeShortcutVoiceChat(botId)) {
+        void latest.current.startVoiceCall(true);
+      }
     });
   }, [botId]);
 

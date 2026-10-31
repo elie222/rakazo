@@ -128,9 +128,19 @@ struct StartVoiceChatIntent: AppIntent {
 /// The chosen bot, or the one whose chat was opened last, with the Space it was opened in.
 private func target(_ bot: BotEntity?) -> (botId: String, spaceId: String?)? {
   if let bot { return (bot.botId, bot.spaceId) }
+  if let saved = secureStoreItem("rakazo.last_bot")?.data(using: .utf8),
+    let last = try? JSONDecoder().decode(LastBot.self, from: saved), !last.botId.isEmpty
+  {
+    return (last.botId, last.spaceId?.isEmpty == false ? last.spaceId : nil)
+  }
+  // Saved before the Space was kept with it.
   guard let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty else { return nil }
-  let space = secureStoreItem("rakazo.last_bot_space_id")
-  return (last, space?.isEmpty == false ? space : nil)
+  return (last, nil)
+}
+
+private struct LastBot: Decodable {
+  let botId: String
+  let spaceId: String?
 }
 
 @MainActor
@@ -181,13 +191,14 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
 /// The bot's text for the run, once it finishes or stops to wait for the user; nil if it is still
 /// working after about half a minute, which is as long as Siri waits comfortably.
 private func reply(to sent: Delivery) async throws -> String? {
-  for _ in 0..<14 {
+  let deadline = Date().addingTimeInterval(28)
+  while Date() < deadline {
     try await Task.sleep(nanoseconds: 2_000_000_000)
     // The message is already sent, so a dropped connection only means no reply yet.
     let thread: ThreadSnapshot
     do {
       thread = try await sent.session.rpc(
-        "threads/get", ["botId": sent.botId], spaceId: sent.spaceId)
+        "threads/get", ["botId": sent.botId], spaceId: sent.spaceId, timeout: 5)
     } catch is URLError {
       continue
     }
@@ -362,13 +373,13 @@ private struct RakazoSession {
   }
 
   /// Calls an oRPC procedure the way lib/api.ts does.
-  func rpc<Output: Decodable>(_ procedure: String, _ input: [String: Any], spaceId: String?)
-    async throws -> Output
-  {
+  func rpc<Output: Decodable>(
+    _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval = 60
+  ) async throws -> Output {
     guard let url = URL(string: "\(apiBase)/rpc/\(procedure)") else {
       throw MessageBotError.signedOut
     }
-    var request = URLRequest(url: url)
+    var request = URLRequest(url: url, timeoutInterval: timeout)
     request.httpMethod = "POST"
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     request.setValue("application/json", forHTTPHeaderField: "content-type")

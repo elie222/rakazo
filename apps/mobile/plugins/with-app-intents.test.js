@@ -15,7 +15,7 @@ describe("RakazoIntents", () => {
       ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
       ["lib/api.ts", "SPACE_KEY"],
       ["lib/last-bot.ts", "LAST_BOT_KEY"],
-      ["lib/last-bot.ts", "LAST_BOT_SPACE_KEY"],
+      ["lib/last-bot.ts", "LAST_BOT_TARGET_KEY"],
       ["lib/server-headers.ts", "SERVER_HEADERS_KEY"],
     ]) {
       const key = constant(file, name);
