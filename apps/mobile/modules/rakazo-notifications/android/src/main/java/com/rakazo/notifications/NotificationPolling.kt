@@ -1,5 +1,101 @@
 package com.rakazo.notifications
 
+internal data class RunRecord(
+  val runId: String,
+  val spaceId: String,
+  val botId: String,
+  val botName: String,
+  val groupId: String?,
+  val groupName: String?,
+  val threadId: String,
+  val status: String,
+  val prompt: String,
+  val trigger: String,
+  val notificationsEnabled: Boolean,
+)
+
+internal class PollCompletions(private val seen: MutableSet<String>) {
+  private data class Session(val endpoint: String, val spaceId: String, val token: String, val epoch: Long)
+  private var session: Session? = null
+  private val pending = linkedMapOf<String, RunRecord>()
+
+  fun muteBot(botId: String) {
+    val muted = pending.values.filter { it.botId == botId && it.groupId == null }
+    muted.forEach { run ->
+      pending.remove(run.runId)
+      seen.add(run.runId)
+    }
+  }
+
+  fun useSession(endpoint: String, spaceId: String, token: String, epoch: Long) {
+    val next = Session(endpoint, spaceId, token, epoch)
+    if (session != next) {
+      pending.clear()
+      session = next
+    }
+  }
+
+  fun prepare(
+    recent: List<RunRecord>,
+    seeded: Boolean,
+    settings: NotificationSettings,
+    isOpenThread: (RunRecord) -> Boolean,
+    attention: (RunRecord) -> Unit,
+  ): List<RunRecord> {
+    val candidates = LinkedHashMap(pending)
+    recent.asReversed().forEach { candidates[it.runId] = it }
+    pending.clear()
+    if (!seeded) {
+      seen += recent.map { it.runId }
+    } else {
+      candidates.values.forEach { run ->
+        handleUnseenCompletion(run.runId, seen) {
+          when {
+            !run.notificationsEnabled || isOpenThread(run) -> true
+            run.status == "failed" && settings.needsAttention -> {
+              attention(run)
+              true
+            }
+            run.status != "completed" -> true
+            run.trigger == "routine" && !settings.scheduledTasks -> true
+            run.trigger != "routine" && !settings.messages -> true
+            else -> {
+              pending[run.runId] = run
+              false
+            }
+          }
+        }
+      }
+    }
+    // Retain at most 100 reply records across generations, independently of the recent page.
+    while (pending.size > 100) {
+      val oldest = pending.keys.first()
+      pending.remove(oldest)
+      seen.add(oldest)
+    }
+    seen.retainAll(recent.map { it.runId }.toSet())
+    return pending.values.toList()
+  }
+
+  fun complete(run: RunRecord, alreadyPosted: () -> Boolean, post: () -> Unit) {
+    if (run.runId !in pending) return
+    handleUnseenCompletion(run.runId, seen) {
+      if (!alreadyPosted()) post()
+      true
+    }
+    pending.remove(run.runId)
+  }
+}
+
+internal fun handleUnseenCompletion(
+  runId: String,
+  seen: MutableSet<String>,
+  handle: () -> Boolean,
+) {
+  // Deferred reply lookups return false; only a posted or deliberately skipped run is seen.
+  if (runId !in seen && handle()) seen.add(runId)
+}
+
 internal class PollTokenCache {
   @Volatile private var token: String? = null
 
