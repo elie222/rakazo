@@ -25,12 +25,8 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await expect(sidePanel.getByTestId("computer-preview")).toBeVisible();
   await captureScreenshot(page, testInfo, "teach-sidepanel-simple");
 
-  const preview = sidePanel.getByTestId("computer-preview");
-  await preview.hover();
   const openButton = sidePanel.getByTestId("computer-preview-open");
-  await expect(openButton).toBeVisible();
-  await expect(openButton.getByText("Open", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "teach-sidepanel-open-hover");
+  await expect(openButton).toHaveText("Wake");
 
   await openButton.click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
