@@ -219,7 +219,7 @@ test("run history links runs that replied and marks silent ones", async ({ page 
   );
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.reload();
-  await openBotPanelTab(page, "Routines");
+  await openBotPanelTab(page, "Overview");
   await page.getByRole("button", { name: /Price watch/ }).click();
   const history = page.getByTestId("routine-run-history");
   await expect(history.getByRole("heading", { name: "Run history" })).toBeVisible();
