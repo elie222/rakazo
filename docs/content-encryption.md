@@ -229,7 +229,8 @@ it changes. A wrapped value only unwraps under its own variable name.
 
 `MASTER_KEY_PROVIDER` and the `AWS_KMS_*` settings cannot be wrapped, and
 neither can values Compose interpolates into other settings or other containers
-read, such as `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD`. A wrapped value
+read, such as `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD` and `SCREEN_PROXY_SECRET`
+(the web container reads it too). A wrapped value
 without a key manager stops startup with the variable's name.
 
 Other key managers implement the `KeyProvider` interface in
