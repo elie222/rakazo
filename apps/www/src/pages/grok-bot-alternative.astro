@@ -25,6 +25,11 @@ import { SITE_URL } from "../site";
 const starsLabel = await githubStarsLabel();
 const pageUrl = new URL(Astro.url.pathname, SITE_URL).toString();
 const structuredData = grokAlternativeStructuredData(pageUrl);
+
+function externalAttrs(href: string) {
+  if (!href.startsWith("http") || href.startsWith(SITE_URL)) return {};
+  return { target: "_blank", rel: "nofollow noopener noreferrer" };
+}
 ---
 
 <BaseLayout
@@ -52,9 +57,7 @@ const structuredData = grokAlternativeStructuredData(pageUrl);
               <a
                 class="other-card__link"
                 href={item.href}
-                {...(item.href.startsWith("http")
-                  ? { target: "_blank", rel: "noreferrer" }
-                  : {})}
+                {...externalAttrs(item.href)}
               >
                 <picture>
                   <source type="image/avif" srcset={item.image.avif} />
@@ -106,7 +109,7 @@ const structuredData = grokAlternativeStructuredData(pageUrl);
         {
           GROK_SOURCES.map((source) => (
             <li>
-              <a href={source.href} target="_blank" rel="noreferrer">
+              <a href={source.href} {...externalAttrs(source.href)}>
                 {source.label}
               </a>
             </li>

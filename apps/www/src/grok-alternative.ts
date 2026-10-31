@@ -7,7 +7,7 @@ export const GROK_ALTERNATIVE_TITLE =
   "Grok Bot alternatives (open source and hosted) – Rakazo";
 
 export const GROK_ALTERNATIVE_DESCRIPTION =
-  "Open source and hosted Grok Bot alternatives: Rakazo, OpenClaw, Hermes Agent, Meta Muse, OpenAI Dots, Instinct, Hark Pro, OpenMausBot, OpenMuse, and Claude Duet.";
+  "Open source and hosted Grok Bot alternatives: Rakazo, OpenClaw, Hermes Agent, Meta Muse, OpenAI Dots, Instinct, Hark Pro, and Claude Duet.";
 
 export const GROK_ALTERNATIVE_H1 = "Grok Bot alternatives (open source and hosted)";
 
@@ -18,7 +18,6 @@ export const GROK_INTRO = [
 
 export const GROK_HOWTO = [
   "Choose an agent you run yourself when the computer and the model key should stay with you. Rakazo is Apache-2.0: you host it, you bring the model key, and you manage the bot from chat. OpenClaw is an MIT-licensed agent you run yourself, and its docs add a Gateway and a config file. Hermes Agent is MIT-licensed, with a desktop app that can reach a first message without the command line, and a separate gateway for messaging apps.",
-  "OpenMausBot is an Apache-2.0 desktop app for macOS, Windows, and Ubuntu. Its docs say bots can run a signed-in agent CLI, or Mistral from an API key with no CLI, and that application data stays on your machine. OpenMuse is CopilotKit's MIT-licensed personal agent. The project site says a chat, a persistent browser, and an optional Linux terminal run in the alpha.",
   "Choose a hosted assistant when you do not want to install the service. Grok Bot comes with paid Cursor plans and SuperGrok. Meta Muse runs on a virtual machine Meta operates. OpenAI Dots sit on eligible ChatGPT plans. Instinct is the assistant you text or call. Claude Duet comes with Claude Pro and Max in the US, on a computer Anthropic operates. Hark Pro has a free tier. $20 a month is twice the usage, and $100 a month is ten times the usage.",
   "The [alternatives roundup](/alternatives/) lists license, price, and setup side by side. [OpenClaw vs Hermes Agent vs Rakazo](/blog/openclaw-vs-hermes-vs-rakazo/) compares the three you run yourself, and [best open source AI agents in 2026](/blog/best-open-source-ai-agents-2026/) includes libraries as well as apps.",
 ] as const;
@@ -29,12 +28,6 @@ export const GROK_SOURCES = [
   { label: "xAI pricing", href: "https://x.ai/pricing" },
   { label: "Grok Build source", href: "https://github.com/xai-org/grok-build" },
   { label: "Grok-1 weights", href: "https://github.com/xai-org/grok-1" },
-  { label: "OpenMausBot", href: "https://www.openmausbot.com/" },
-  { label: "OpenMausBot docs", href: "https://docs.openmausbot.com/docs" },
-  { label: "OpenMausBot providers", href: "https://docs.openmausbot.com/docs/providers" },
-  { label: "OpenMausBot source", href: "https://github.com/milind-soni/OpenMausBot" },
-  { label: "OpenMuse", href: "https://www.copilotkit.ai/openmuse" },
-  { label: "OpenMuse source", href: "https://github.com/CopilotKit/openmuse" },
 ] as const;
 
 export const GROK_UPDATED = "October 31, 2026";
@@ -163,7 +156,10 @@ export const GROK_ALTERNATIVES: readonly GrokListCard[] = [
     label: "OpenAI Dots",
     href: "/dots-alternative/",
     note: "Suits someone on an eligible ChatGPT plan who wants OpenAI's always-on agents. OpenAI announced them on September 29, 2026, and says each dot has its own cloud computer. [OpenAI Dots comparison](/dots-alternative/).",
-    image: altShot("dots", "OpenAI Dots"),
+    image: altShot(
+      "dots",
+      "OpenAI page titled Introducing dots, dated September 29, 2026, with a button to create a dot.",
+    ),
   },
   {
     label: "Instinct",
@@ -175,19 +171,10 @@ export const GROK_ALTERNATIVES: readonly GrokListCard[] = [
     label: "Hark Pro",
     href: "/hark-alternative/",
     note: "Suits someone who wants the hosted personal agent at hark.com, launched October 6, 2026, with a free tier. $20 a month is twice the usage, and $100 a month is ten times the usage. [Hark Pro comparison](/hark-alternative/).",
-    image: altShot("hark", "Hark Pro"),
-  },
-  {
-    label: "OpenMausBot",
-    href: "https://www.openmausbot.com/",
-    note: "Suits someone who wants an Apache-2.0 desktop app for macOS, Windows, and Ubuntu. Its [docs](https://docs.openmausbot.com/docs/providers) say bots can run a signed-in agent CLI, or Mistral from an API key with no CLI, and that application data stays on your machine.",
-    image: altShot("openmausbot", "OpenMausBot homepage"),
-  },
-  {
-    label: "OpenMuse",
-    href: "https://www.copilotkit.ai/openmuse",
-    note: "Suits someone who wants CopilotKit's MIT-licensed personal agent. The project site says a chat, a persistent browser, and an optional Linux terminal run in the alpha.",
-    image: altShot("openmuse", "OpenMuse homepage"),
+    image: altShot(
+      "hark",
+      "Hark preview image with the word hark in white on a blue and coral sky.",
+    ),
   },
   {
     label: "Claude Duet",
@@ -222,7 +209,7 @@ export const GROK_ALTERNATIVE_FAQ = [
   {
     question: "What are the other alternatives?",
     answer:
-      "Meta Muse, OpenAI Dots, Instinct, Claude Duet, and Hark Pro are hosted assistants. OpenClaw and Hermes Agent are open source agents you can run yourself, with a gateway and a config file in their docs. OpenMausBot is an Apache-2.0 desktop app; its docs say bots can run a signed-in agent CLI, or Mistral from an API key with no CLI, and that application data stays on your machine. OpenMuse is CopilotKit's MIT-licensed personal agent, with a chat, a persistent browser, and an optional Linux terminal, and those surfaces run in the alpha. The comparisons page lists licenses, prices, and setup side by side. None of them imports a Grok Bot account.",
+      "Meta Muse, OpenAI Dots, Instinct, Claude Duet, and Hark Pro are hosted assistants. OpenClaw and Hermes Agent are open source agents you can run yourself, with a gateway and a config file in their docs. The comparisons page lists licenses, prices, and setup side by side. None of them imports a Grok Bot account.",
   },
 ] as const;
 
