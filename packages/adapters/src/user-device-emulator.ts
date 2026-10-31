@@ -17,8 +17,8 @@ export class UserDeviceEmulator implements UserDeviceGateway {
     return { deviceId: "emulated-device", name: "Fixture Mac", platform: "darwin" };
   }
 
-  async hasDevice(_userId: string): Promise<boolean> {
-    return true;
+  async pairedSince(_userId: string): Promise<Date> {
+    return new Date(0);
   }
 
   async *request<T>(

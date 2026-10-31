@@ -699,6 +699,13 @@ function installApplicationMenu() {
         .catch(() => undefined);
     },
   };
+  // Cmd+, is the macOS Settings chord, and no page keydown can see it: the OS takes
+  // it first, so the menu item is the only place it can be registered.
+  const openSettings: Electron.MenuItemConstructorOptions = {
+    label: "Settings…",
+    accelerator: "CmdOrCtrl+,",
+    click: () => mainWindow?.webContents.send("desktop.settings.open"),
+  };
   const checkForUpdates: Electron.MenuItemConstructorOptions = {
     label: "Check for Updates…",
     visible: updaterSupport(updaterEnvironment).supported,
@@ -743,6 +750,7 @@ function installApplicationMenu() {
             label: app.name,
             submenu: [
               { role: "about" },
+              openSettings,
               checkForUpdates,
               { type: "separator" },
               computerAccess,
@@ -775,6 +783,7 @@ function installApplicationMenu() {
           {
             label: "File",
             submenu: [
+              openSettings,
               computerAccess,
               revokeComputerAccess,
               changeServer,

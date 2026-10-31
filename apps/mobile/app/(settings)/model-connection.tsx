@@ -828,7 +828,12 @@ export default function ModelConnection() {
               savedHeaderEndpointMatches && (credential?.headerNames?.includes(row.name) ?? false)
             }
           />
-          {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
+          {limitField(
+            t("Context limit"),
+            contextWindow,
+            setContextWindow,
+            String(MAX_MODEL_CONTEXT_WINDOW).length,
+          )}
           {limitField(
             t("Maximum output tokens"),
             maxTokens,
@@ -836,7 +841,7 @@ export default function ModelConnection() {
               setMaxTokens(value);
               clearFeedback();
             },
-            6,
+            String(MAX_MODEL_MAX_TOKENS).length,
           )}
           {supportsImages
             ? limitField(
@@ -926,7 +931,7 @@ export default function ModelConnection() {
                 setMaxTokens(value);
                 clearFeedback();
               },
-              6,
+              String(MAX_MODEL_MAX_TOKENS).length,
             )}
             {credential && limitsDirty ? (
               <NativeActionButton

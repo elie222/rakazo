@@ -1084,7 +1084,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             userComputerScreen = device.platform === "darwin";
           }
           // A chat that used the computer earlier may continue from another device after it closed.
-          else if (await deps.userDevices.hasDevice(userComputerOwnerId).catch(() => false))
+          else if (await deps.userDevices.pairedSince(userComputerOwnerId).catch(() => null))
             userComputer = "offline";
         }
         const builtins = [

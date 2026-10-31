@@ -217,6 +217,18 @@ export function jsonSchemaParameters(
       options,
     ) as unknown as ReturnType<typeof Type.Object>;
   }
+  // A property-less object (`{"type":"object"}`) describes a free-form object, and JSON Schema
+  // treats it identically to `{"type":"object","properties":{}}`. Grammar-constrained tool
+  // decoders do not: Fireworks reads the empty map as "no keys allowed" and emits `{}`, so a
+  // lazily loaded tool's `arguments` arrived empty. Emit the source schema unchanged (minus the
+  // map it never had) unless the object is explicitly closed.
+  if (
+    schema.properties == null &&
+    schema.additionalProperties == null &&
+    schema.patternProperties == null
+  ) {
+    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
+  }
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
   const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
@@ -226,12 +238,17 @@ export function jsonSchemaParameters(
       typeof Type.Optional
     >;
   }
+  // Nested fields can retain references to definitions on this object.
+  const objectOptions = {
+    ...(schema.$defs !== undefined ? { $defs: schema.$defs } : {}),
+    ...options,
+  };
   // Preserve closed objects (e.g. request_secret destination oneOf branches).
   // Type.Object defaults to open, which would let connectionId+replace match both
   // anyOf variants after conversion.
   return schema.additionalProperties === false
-    ? Type.Object(fields, { ...options, additionalProperties: false })
-    : Type.Object(fields, options);
+    ? Type.Object(fields, { ...objectOptions, additionalProperties: false })
+    : Type.Object(fields, objectOptions);
 }
 
 type FieldOptions = { description?: string };

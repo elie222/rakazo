@@ -18,6 +18,7 @@ import { QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
   recordComputerRunEnd,
@@ -424,6 +425,14 @@ export async function sleepComputerIfIdle(
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     await expireComputerControl(deps, computer.id, computer.controlLeaseId);
+    computer = await loadComputer(deps.prisma, computerId);
+    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
+  }
+  if (computer.executionRunId) {
+    // A legacy binding a pre-lease release left behind. Both suspension claims below
+    // require it null, and a stranded one names a run nothing will clean up, so the
+    // computer could never sleep. Runs that may still execute are left to their owner.
+    await clearEndedExecutionRunBinding(deps.prisma, computer.id);
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
@@ -944,6 +953,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseId: true,
       controlLeaseExpiresAt: true,
       controlBotId: true,
+      executionRunId: true,
       runningSince: true,
       homeRevisionAt: true,
       updatedAt: true,

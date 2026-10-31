@@ -1521,7 +1521,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "create_group",
     description:
-      "Create a group of 2 to 10 of this user's bots. Pass bot_ids or bot_names (exact). Needs the owner's approval.",
+      "Create a group of 2 to 10 of this user's bots. Pass bot_ids or bot_names (exact).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1536,7 +1536,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "update_group",
     description:
-      "Rename a group or add and remove its members. Works on any group of this user, not only ones you created. Identify it by group_id or group_name (exact). A group keeps 2 to 10 members. Needs the owner's approval.",
+      "Rename a group or add and remove its members. Works on any group of this user, not only ones you created. Identify it by group_id or group_name (exact). A group keeps 2 to 10 members.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1604,7 +1604,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "create_child_routine",
     description:
-      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. Needs the owner's approval.",
+      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.",
     inputSchema: createChildRoutineInputSchema,
   },
   {

@@ -307,6 +307,11 @@ export function pauseForSecret(ctx: RunContext) {
   return secretPausedToolResult();
 }
 
+/** The owner chose Never ask for this space. */
+export async function neverAsks(ctx: RunContext) {
+  return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
+}
+
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
   if (state.tainted) return true;

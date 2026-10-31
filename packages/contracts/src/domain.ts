@@ -1287,12 +1287,16 @@ export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
-export const MAX_MODEL_MAX_TOKENS = 131_072;
-
 /** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
+
+/**
+ * Output limits follow the model; the only fixed bound is the context ceiling, and a connection's
+ * limit must still leave room for input (`modelOutputLeavesInputRoom`).
+ */
+export const MAX_MODEL_MAX_TOKENS = MAX_MODEL_CONTEXT_WINDOW;
 export function parseModelMaxImagesPerPrompt(
   value: string,
   supportsImages = true,

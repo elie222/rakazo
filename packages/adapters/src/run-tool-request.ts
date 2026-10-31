@@ -22,7 +22,7 @@ import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted } from "./run-context.js";
+import { isRunTainted, neverAsks } from "./run-context.js";
 import {
   approvalReplayEffectToolName,
   CATALOG_APPROVAL_TOOL,
@@ -332,7 +332,7 @@ export async function prepareToolRequest(
     if (!live?.fleetManagement) return { error: "This tool is disabled for this bot." };
     if (!ctx.source.ownerStartedRun)
       return { error: "Bot management tools need a run you started." };
-    if (fleetWrite && (await ctx.trust.receivedOutsideMessage()))
+    if (fleetWrite && !(await neverAsks(ctx)) && (await ctx.trust.receivedOutsideMessage()))
       return {
         error:
           "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
@@ -398,9 +398,9 @@ const OWN_FIELDS = new Set([
 ]);
 
 /**
- * `update_bot` on this bot itself. Instructions from the owner's own words are written at once;
- * another run the owner set up holds them for the owner's approval, and outside runs cannot
- * change them.
+ * `update_bot` on this bot itself. Instructions from the owner's own words, or any run under
+ * Never ask, are written at once; another run the owner set up holds them for the owner's
+ * approval, and outside runs cannot change them.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -420,13 +420,14 @@ async function prepareOwnBotUpdate(
   );
   if (settingsOnly.length)
     return { error: `Only the owner can change ${settingsOnly.join(", ")}, in Settings.` };
+  const unguarded = await neverAsks(ctx);
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
-    if (!ctx.source.ownerStartedRun || isSubagentToolExecution(executionId))
+    if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
       return {
         error:
           "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
       };
-    if (await isRunTainted(ctx))
+    if (!unguarded && (await isRunTainted(ctx)))
       return {
         error:
           "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
@@ -447,7 +448,7 @@ async function prepareOwnBotUpdate(
     !(await ctx.trust.receivedOutsideMessage()) &&
     (run.trigger === "created" || (ctx.source.ownerStartedRun && !ctx.state.tainted)) &&
     !(await threadHasOutsideHistory(deps.prisma, run.threadId, bot.id));
-  if (ownWords) return undefined;
+  if (ownWords || unguarded) return undefined;
   if (run.trigger !== "routine" && !ctx.source.ownerStartedRun)
     return { error: "Instruction changes are blocked for runs someone else started." };
   if (Object.keys(args).some((key) => key !== "instructions"))

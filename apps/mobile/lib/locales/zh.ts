@@ -242,6 +242,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Agent messages": "智能体消息",
   "Allowed once": "已允许一次",
   "Allow once": "允许一次",
+  "Allow in this space": "在此空间允许",
+  "Allowed in this space": "已在此空间允许",
   "Already have an account?": "已有账户？",
   "Always allow": "始终允许",
   "Always allow this tool": "始终允许此工具",

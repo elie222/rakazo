@@ -1085,6 +1085,7 @@ model ExternalEffect {
 
   @@unique([idempotencyKey])
   @@index([runId, status])
+  @@index([spaceId, kind, status])
   @@map("external_effects")
 }
 

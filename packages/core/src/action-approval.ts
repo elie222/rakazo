@@ -44,15 +44,15 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "user_computer_shell",
   "user_computer_observe",
   "user_computer_act",
+  "create_group",
+  "update_group",
+  "create_child_routine",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   "respond_agent_connection",
   "create_space",
-  "create_group",
-  "update_group",
   "set_child_instructions",
   "set_child_bot_model",
-  "create_child_routine",
 ]);
 
 const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
@@ -553,17 +553,16 @@ export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
  * The gate after rule resolution. A block refuses in every mode. An approval a person must give
- * asks, except in Never ask, which never waits: there it runs when the owner started the run and no
- * outside content entered it, and is refused otherwise, since outside text could have asked for
- * it. Otherwise Never ask runs it, an ask rule asks, and anything that would ask goes to the approval
- * model in Auto, falling back to asking when no model is set up.
+ * asks, except in Never ask, which never waits: there it runs, unless `steerable` says outside
+ * text could have asked for it. Otherwise Never ask runs it, an ask rule asks, and anything that
+ * would ask goes to the approval model in Auto, falling back to asking when no model is set up.
  */
 export function planActionGate(input: {
   resolved: ActionApprovalResolved;
   mode: ApprovalMode;
   /** Needs a person whatever the rules say (see toolRequiresExplicitApproval). */
   mandatory?: boolean;
-  /** The owner did not start this run, or outside content entered it. */
+  /** Never ask refuses it: the owner did not start this run, or outside content entered it. */
   steerable?: boolean;
   consequential: boolean;
   /**
