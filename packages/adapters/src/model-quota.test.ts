@@ -46,6 +46,27 @@ describe("model quota observations", () => {
       parseClaudeQuota({ ...claude, limits: [{ kind: "unknown_scope", scope: null, percent: 0 }] }),
     ).toThrow();
   });
+  it("ignores a weekly limit scoped to one model when reading the shared allowance", () => {
+    const limits = [
+      { kind: "session", scope: null, percent: 0 },
+      { kind: "weekly_all", scope: null, percent: 91 },
+      {
+        kind: "weekly_scoped",
+        scope: { model: { id: null, display_name: "Model A" }, surface: null },
+        percent: 20,
+      },
+    ];
+    expect(parseClaudeQuota({ ...claude, limits })).toMatchObject([
+      { id: "five_hour", usedPercent: 0 },
+      { id: "seven_day", usedPercent: 91 },
+    ]);
+    expect(() =>
+      parseClaudeQuota({
+        ...claude,
+        limits: [...limits.slice(0, 2), { kind: "weekly_scoped", scope: null, percent: 20 }],
+      }),
+    ).toThrow();
+  });
   it("keeps known zero distinct from unknown and preserves provider resets", () => {
     expect(parseClaudeQuota(claude)).toMatchObject([{ usedPercent: 0 }, { usedPercent: 91 }]);
     expect(parseCodexQuota(codex)).toEqual([

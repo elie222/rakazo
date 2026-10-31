@@ -80,6 +80,12 @@ export function parseClaudeQuota(payload: unknown): ModelQuotaWindow[] {
     if (!Array.isArray(body.limits)) throw new Error("schema");
     for (const raw of body.limits) {
       const limit = object(raw);
+      // A weekly limit scoped to one model (reported by display name, not id)
+      // constrains only that model, so it must not gate the shared allowance.
+      if (limit.kind === "weekly_scoped") {
+        object(object(limit.scope).model);
+        continue;
+      }
       const id =
         limit.kind === "session" ? "five_hour" : limit.kind === "weekly_all" ? "seven_day" : null;
       if (
