@@ -7239,6 +7239,7 @@ describe("routines.update", () => {
       },
     );
     const enqueue = vi.fn(async () => undefined);
+    const cancel = vi.fn(async () => undefined);
     const prisma = {
       secret: { findFirst: vi.fn(async () => null) },
       userModelPreference: {
@@ -7272,7 +7273,7 @@ describe("routines.update", () => {
         prisma,
         env: { sandboxProvider: "fake" },
         events: { append: vi.fn(async () => undefined) },
-        jobs: { enqueue, cancel: vi.fn(async () => undefined) },
+        jobs: { enqueue, cancel },
       } as unknown as RouterDeps),
     );
     const call = (patch: Record<string, unknown> = {}) =>
@@ -7292,7 +7293,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, call, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -7309,7 +7310,7 @@ describe("routines.update", () => {
     expect(response.status).toBe(200);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "routine-1", bot: { archivedAt: null }, nextRunAt: null },
+        where: { id: "routine-1", bot: { archivedAt: null }, nextRunAt: null, active: false },
         data: expect.objectContaining({ active: true }),
       }),
     );
@@ -7428,6 +7429,53 @@ describe("routines.update", () => {
     expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
     expect(update.mock.calls[0]![0].where).not.toHaveProperty("nextRunAt");
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps a schedule that a concurrent enable armed while renaming", async () => {
+    const armedAt = new Date("2026-09-02T09:00:00.000Z");
+    const { call, update, enqueue, cancel } = fixture(false, false, {
+      crons: ["0 9 * * *"],
+    });
+    // The enable commits between the read and the write, so the row the
+    // update returns already carries the schedule it armed. The rename must
+    // keep that schedule instead of cancelling the armed wakeup.
+    update.mockImplementationOnce(
+      async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({
+        ...routine,
+        crons: ["0 9 * * *"],
+        active: true,
+        nextRunAt: armedAt,
+        ...Object.fromEntries(Object.entries(args.data).filter(([, value]) => value !== undefined)),
+      }),
+    );
+    const response = await call({ name: "Renamed", active: undefined, runAt: undefined });
+    expect(response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
+    expect(update.mock.calls[0]![0].where).not.toHaveProperty("nextRunAt");
+    expect(cancel).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "routine.wakeup",
+      payload: { routineId: "routine-1", scheduledFor: armedAt.toISOString() },
+      availableAt: armedAt,
+      replaceKey: "routine:routine-1",
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      json: { name: "Renamed", active: true, nextRunAt: armedAt.toISOString() },
+    });
+  });
+
+  it("rejects an explicit on/off when a disable landed after the read", async () => {
+    // The editor sends `active` with every save. A disable that commits between the read and
+    // the write must not be undone by a rename that still says "on".
+    const { call, update, enqueue, cancel } = fixture(false, false, recurring);
+    update.mockImplementationOnce(async (args) => {
+      expect(args.where).toMatchObject({ active: true });
+      throw Object.assign(new Error("not found"), { code: "P2025" });
+    });
+    expect((await call({ name: "Renamed", active: true, runAt: undefined })).status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("rejects a schedule change when the routine fired after the read", async () => {
