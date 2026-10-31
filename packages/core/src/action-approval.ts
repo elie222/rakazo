@@ -553,17 +553,16 @@ export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
  * The gate after rule resolution. A block refuses in every mode. An approval a person must give
- * asks, except in Never ask, which never waits: there it runs when the owner started the run and no
- * outside content entered it, and is refused otherwise, since outside text could have asked for
- * it. Otherwise Never ask runs it, an ask rule asks, and anything that would ask goes to the approval
- * model in Auto, falling back to asking when no model is set up.
+ * asks, except in Never ask, which never waits: there it runs, unless `steerable` says outside
+ * text could have asked for it. Otherwise Never ask runs it, an ask rule asks, and anything that
+ * would ask goes to the approval model in Auto, falling back to asking when no model is set up.
  */
 export function planActionGate(input: {
   resolved: ActionApprovalResolved;
   mode: ApprovalMode;
   /** Needs a person whatever the rules say (see toolRequiresExplicitApproval). */
   mandatory?: boolean;
-  /** The owner did not start this run, or outside content entered it. Never ask refuses only these. */
+  /** Never ask refuses it: the owner did not start this run, or outside content entered it. */
   steerable?: boolean;
   consequential: boolean;
   /**

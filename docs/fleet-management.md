@@ -44,10 +44,10 @@ message it answers came from you in the app.
 
 ## Approval
 
-`set_child_instructions` and `set_child_bot_model` always show an approval card. Auto-review and
-"Always allow" do not skip it, and the card offers allow or deny only. Never ask runs them only when
-you started the run and no outside content entered it. `create_group`, `update_group` and
-`create_child_routine` follow the space's approval mode like any other action. The card lists what
+In Ask and Auto, `set_child_instructions` and `set_child_bot_model` always show an approval card.
+Auto-review and "Always allow" do not skip it, and the card offers allow or deny only.
+`create_group`, `update_group` and `create_child_routine` follow the space's approval mode like any
+other action. Never ask runs all of them. The card lists what
 will actually run, resolved before the pause:
 
 - Create group: the name and every member.

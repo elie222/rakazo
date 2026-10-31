@@ -958,7 +958,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
-    it("refuses a webhook-triggered write in Never ask instead of asking", async () => {
+    it("runs a webhook-triggered write in Never ask", async () => {
       const f = fixture({
         catalog,
         name: "demo_send_message",
@@ -966,9 +966,8 @@ describe("connector read-only metadata and approval enforcement", () => {
         skipApprovals: true,
       });
       await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.execute).toHaveBeenCalledOnce();
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
-      expect(JSON.stringify(f.results[0])).toContain("never asks");
     });
 
     it("refuses a blocked tool in Never ask without asking or running it", async () => {
@@ -1309,6 +1308,16 @@ describe("create_space", () => {
     expect(skipped.pauseRunForInput).not.toHaveBeenCalled();
     expect(skipped.effects[0]?.status).not.toBe("intended");
   });
+
+  it("creates it in Never ask after outside content", async () => {
+    const f = fixture({ name: "create_space", builtin: true, skipApprovals: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { name: "Support" }, executionId: "call-1" }]);
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]?.status).not.toBe("intended");
+  });
 });
 
 describe("own instructions through update_bot", () => {
@@ -1432,15 +1441,17 @@ describe("own instructions through update_bot", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.instructionState.instructions).toBe(first);
   });
-  it("refuses a held change in Never ask once outside content entered the run", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
-    f.claimedOutsideSteering(true);
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).not.toHaveBeenCalled();
-    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("owner's approval") });
-    expect(f.instructionState.instructions).toBe("Draft only");
-  });
+  it.each(["user", "bot_message"])(
+    "applies a change in Never ask after outside content in a %s run",
+    async (trigger) => {
+      const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true, trigger });
+      f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.instructionState.instructions).toBe(first);
+    },
+  );
   it("completes a stale approved change with an error", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);

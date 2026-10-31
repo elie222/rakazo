@@ -81,7 +81,7 @@ Managed app connections stay with the space they were connected in for now, beca
 Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
 Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
 Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
-Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask and are refused in Never ask, which cannot wait for anyone.
+Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask. Never ask runs them, except that it refuses another owner's bot connecting when outside text could have asked for it.
 The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Scope
