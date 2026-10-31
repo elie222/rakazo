@@ -39,6 +39,7 @@ import type { ComputerStatus } from "../lib/computer";
 import {
   COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
+  capabilityRefused,
   computerLabel,
   controlLabel,
   embeddableScreenUrl,
@@ -46,12 +47,14 @@ import {
   isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
+  probeScreenPage,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_OPEN_ATTEMPTS,
   screenPageState,
   screenPageStatus,
   screenStreamKey,
+  screenUrlDropReason,
 } from "../lib/computer";
 import type { ComputerKeyboardCommand } from "../lib/computer-keyboard";
 import {
@@ -110,6 +113,19 @@ export default function Computer() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
   useEffect(() => setScreenError(null), [embeddedScreenUrl]);
+  // A running computer whose screen URL was dropped by embeddableScreenUrl (plain http to a
+  // public host, or an unusable scheme) must not sit silently as a preview that never opens:
+  // with no WebView there is no request and no error, which looks like a hung page. Show the
+  // screen error instead and log the host-level reason for field diagnosis.
+  useEffect(() => {
+    if (!screenUrl || embeddedScreenUrl || computer?.state !== "running" || screenError) return;
+    console.warn(
+      "[computer] screen URL not embeddable:",
+      screenUrlDropReason(screenUrl, currentApiBase()) ?? "unknown",
+    );
+    setScreenOriginError(true);
+    setScreenError(t("Could not load the desktop. This device cannot reach the screen URL."));
+  }, [screenUrl, embeddedScreenUrl, computer?.state, screenError, t]);
 
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
@@ -282,6 +298,49 @@ export default function Computer() {
     setScreenReload((count) => count + 1);
   }, [refresh]);
 
+  // A refused capability (the server restarted, the seal expired) is dropped and re-read
+  // right away. The guard is per capability: a fresh URL that is also refused earns its own
+  // renewal, while a re-read that cannot produce a new URL stops at the error the user
+  // sees, with Retry. A screen that connects earns its renewal back, and Retry does too.
+  const screenRenewal = useRef<{ key: string; attempted: boolean; inFlight: boolean }>({
+    key: "",
+    attempted: false,
+    inFlight: false,
+  });
+  const screenProbeEpoch = useRef(0);
+  const renewScreenCapability = useCallback(async () => {
+    const key = embeddedScreenUrl ?? "";
+    const renewal = screenRenewal.current;
+    // The probe and the WebView can both report the same refusal; one renewal serves both.
+    if (renewal.key === key && renewal.inFlight) return;
+    if (renewal.key === key && renewal.attempted) {
+      setScreenOriginError(true);
+      setScreenError(t("The screen link expired."));
+      return;
+    }
+    screenRenewal.current = { key, attempted: true, inFlight: true };
+    // Drop the refused capability before asking again, so a failed re-read can never
+    // reload the dead URL into the WebView (retripping the server's authority check).
+    setScreenUrl(null);
+    refreshController.invalidateScreen();
+    try {
+      await reloadScreen();
+    } finally {
+      screenRenewal.current = { key, attempted: true, inFlight: false };
+    }
+  }, [embeddedScreenUrl, refreshController, reloadScreen, t]);
+
+  const retryScreen = useCallback(() => {
+    screenRenewal.current = { ...screenRenewal.current, attempted: false };
+    return reloadScreen();
+  }, [reloadScreen]);
+
+  const handleScreenLoadError = useCallback(() => {
+    refreshController.invalidateScreen();
+    setScreenOriginError(true);
+    setScreenError(t("Could not load the desktop. This device cannot reach the screen URL."));
+  }, [refreshController, t]);
+
   // A screen that drops after connecting loads again by itself now and then; the load goes
   // through the screen's full authorization, so a revoked one stays closed.
   const screenReconnect = useRef(createScreenReconnect());
@@ -291,18 +350,43 @@ export default function Computer() {
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
+      const epoch = ++screenProbeEpoch.current;
+      if (state === "connected") {
+        const url = currentScreenUrl.current;
+        screenRenewal.current = {
+          key: url ?? "",
+          attempted: false,
+          inFlight: false,
+        };
+      }
       const next = screenReconnect.current.report(state);
       if (next !== "reconnect") {
-        // A drop that won't reconnect by itself shows why, with Retry.
-        const failed = next === "error";
-        setScreenOriginError(failed);
-        setScreenError(
-          !failed
-            ? null
-            : state === "failed"
+        if (next !== "error") {
+          setScreenOriginError(false);
+          setScreenError(null);
+          return;
+        }
+        // A drop that won't reconnect by itself shows why, with Retry. A page that was
+        // refused before it could say why (a stale capability loads as a black page)
+        // is asked about through the proxy first: an expired link renews once instead.
+        const showError = () => {
+          setScreenOriginError(true);
+          setScreenError(
+            state === "failed"
               ? t("Could not connect to the computer screen")
               : t("The screen connection closed."),
-        );
+          );
+        };
+        const url = currentScreenUrl.current;
+        if (url && isProxiedScreenPage(url)) {
+          void probeScreenPage(url).then((probe) => {
+            if (screenProbeEpoch.current !== epoch) return;
+            if (probe === "expired") void renewScreenCapability();
+            else showError();
+          });
+        } else {
+          showError();
+        }
         return;
       }
       clearTimeout(screenReconnectTimer.current);
@@ -323,7 +407,7 @@ export default function Computer() {
         });
       }, SCREEN_RECONNECT_DELAY_MS);
     },
-    [reloadScreen, t],
+    [reloadScreen, renewScreenCapability, t],
   );
   const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
   // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
@@ -336,6 +420,19 @@ export default function Computer() {
     // A renewed link for the same screen keeps the page and the pending reconnect.
     [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
   );
+
+  // A WebView cannot say why its page was refused, and a refused capability can sit
+  // there as a black page: when a screen becomes visible, ask the proxy about it (as
+  // the web client does) and renew a refused capability once.
+  useEffect(() => {
+    if (!screenVisible || !loadedScreenUrl || !isProxiedScreenPage(loadedScreenUrl)) return;
+    const controller = new AbortController();
+    void probeScreenPage(loadedScreenUrl, fetch, controller.signal).then((probe) => {
+      if (controller.signal.aborted) return;
+      if (probe === "expired") void renewScreenCapability();
+    });
+    return () => controller.abort();
+  }, [screenVisible, loadedScreenUrl, renewScreenCapability]);
 
   useEffect(() => {
     if (!computerOpen) return;
@@ -447,7 +544,7 @@ export default function Computer() {
       label={t("Retry screen")}
       prominence="primary"
       size="default"
-      onPress={() => void reloadScreen()}
+      onPress={() => void retryScreen()}
     />
   ) : null;
 
@@ -512,12 +609,10 @@ export default function Computer() {
             onScreenState={onScreenState}
             onLoadStart={onScreenLoadStart}
             onRendererLost={() => void reloadScreen()}
-            onError={() => {
-              refreshController.invalidateScreen();
-              setScreenOriginError(true);
-              setScreenError(
-                t("Could not load the desktop. This device cannot reach the screen URL."),
-              );
+            onError={handleScreenLoadError}
+            onHttpError={(statusCode) => {
+              if (capabilityRefused(statusCode)) void renewScreenCapability();
+              else handleScreenLoadError();
             }}
           />
         ) : (
@@ -683,7 +778,7 @@ export default function Computer() {
               </View>
             </SafeAreaView>
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
-              {foreground && loadedScreenUrl ? (
+              {foreground && loadedScreenUrl && !screenError ? (
                 <ScreenWebView
                   key={screenReload}
                   url={loadedScreenUrl}
@@ -699,12 +794,10 @@ export default function Computer() {
                   onScreenState={onScreenState}
                   onLoadStart={onScreenLoadStart}
                   onRendererLost={() => void reloadScreen()}
-                  onError={() => {
-                    refreshController.invalidateScreen();
-                    setScreenOriginError(true);
-                    setScreenError(
-                      t("Could not load the desktop. This device cannot reach the screen URL."),
-                    );
+                  onError={handleScreenLoadError}
+                  onHttpError={(statusCode) => {
+                    if (capabilityRefused(statusCode)) void renewScreenCapability();
+                    else handleScreenLoadError();
                   }}
                 />
               ) : (
@@ -780,6 +873,7 @@ function ScreenWebView({
   onLoadStart,
   onRendererLost,
   onError,
+  onHttpError,
 }: {
   url: string;
   interactive: boolean;
@@ -791,6 +885,9 @@ function ScreenWebView({
   onLoadStart?: () => void;
   onRendererLost?: () => void;
   onError: () => void;
+  /** The page's HTTP status when the server refused it, so a rejected capability (403)
+   * can be renewed instead of reported as an unreachable screen. */
+  onHttpError?: (statusCode: number) => void;
 }) {
   const tokens = useMobileTokens();
   const sourceUrl = useRef(url);
@@ -856,7 +953,10 @@ function ScreenWebView({
       scrollEnabled={false}
       overScrollMode="never"
       onError={onError}
-      onHttpError={onError}
+      onHttpError={(event) => {
+        if (onHttpError) onHttpError(event.nativeEvent.statusCode);
+        else onError();
+      }}
       onRenderProcessGone={onRendererLost}
       onContentProcessDidTerminate={onRendererLost}
     />
