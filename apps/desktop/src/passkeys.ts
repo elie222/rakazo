@@ -1,8 +1,14 @@
 import path from "node:path";
 import { RAKAZO_CLOUD_URL } from "./setup-config.js";
 
-/** The only relying party release builds are associated with (`webcredentials:` entitlement). */
-export const PASSKEY_RP_ID = new URL(RAKAZO_CLOUD_URL).hostname;
+/**
+ * The only relying party a build is associated with (`webcredentials:` entitlement): the hosted
+ * server's domain, or `RAKAZO_PASSKEY_RP_ID` when a self-hoster builds the app for their own
+ * domain. The bundler inlines the variable, so the app and its entitlements must be built with
+ * the same value.
+ */
+export const PASSKEY_RP_ID =
+  process.env.RAKAZO_PASSKEY_RP_ID?.trim().toLowerCase() || new URL(RAKAZO_CLOUD_URL).hostname;
 
 /**
  * Relying parties whose passkeys this build can use through the system passkey sheet. The
@@ -22,12 +28,24 @@ export function associatedPasskeyRpIds(input: {
 
 const TEAM_ID = /^[A-Z0-9]{10}$/;
 const BUNDLE_ID = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+const DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 
-/** Adds the passkey association to the app's base entitlements for a release signed by `teamId`. */
-export function passkeyEntitlements(base: string, teamId: string, bundleId: string): string {
+/**
+ * Adds the passkey association to the app's base entitlements for a build signed by `teamId`.
+ * `developerMode` is for a development-signed build whose domain Apple's CDN cannot reach (a
+ * server on a private network or VPN): macOS then fetches the association file itself, which
+ * it only does for an app carrying `get-task-allow` while associated-domains developer mode is on.
+ */
+export function passkeyEntitlements(
+  base: string,
+  teamId: string,
+  bundleId: string,
+  options: { developerMode?: boolean } = {},
+): string {
   if (!TEAM_ID.test(teamId))
     throw new Error("Apple Team ID must be 10 uppercase letters or digits");
   if (!BUNDLE_ID.test(bundleId)) throw new Error("Invalid bundle identifier");
+  if (!DOMAIN.test(PASSKEY_RP_ID)) throw new Error("RAKAZO_PASSKEY_RP_ID must be a domain name");
   const end = base.lastIndexOf("</dict>");
   if (end === -1 || base.includes("com.apple.developer.associated-domains")) {
     throw new Error("Unexpected base entitlements");
@@ -38,8 +56,11 @@ export function passkeyEntitlements(base: string, teamId: string, bundleId: stri
     `    <string>${teamId}.${bundleId}</string>`,
     "    <key>com.apple.developer.associated-domains</key>",
     "    <array>",
-    `      <string>webcredentials:${PASSKEY_RP_ID}</string>`,
+    `      <string>webcredentials:${PASSKEY_RP_ID}${options.developerMode ? "?mode=developer" : ""}</string>`,
     "    </array>",
   ];
+  if (options.developerMode) {
+    entries.push("    <key>com.apple.security.get-task-allow</key>", "    <true/>");
+  }
   return `${base.slice(0, end).trimEnd()}\n${entries.join("\n")}\n  ${base.slice(end)}`;
 }

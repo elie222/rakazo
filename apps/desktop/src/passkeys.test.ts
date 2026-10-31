@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { associatedPasskeyRpIds, PASSKEY_RP_ID, passkeyEntitlements } from "./passkeys.js";
 import { RAKAZO_CLOUD_URL } from "./setup-config.js";
 
@@ -52,6 +52,15 @@ describe("passkeyEntitlements", () => {
     );
   });
 
+  it("marks a development build that fetches the association itself in developer mode", () => {
+    const plist = passkeyEntitlements(base, "ABCDE12345", pkg.build.appId, { developerMode: true });
+    expect(plist).toContain(`<string>webcredentials:${PASSKEY_RP_ID}?mode=developer</string>`);
+    expect(plist).toContain("<key>com.apple.security.get-task-allow</key>\n    <true/>\n  </dict>");
+    expect(passkeyEntitlements(base, "ABCDE12345", pkg.build.appId)).not.toContain(
+      "get-task-allow",
+    );
+  });
+
   it("keeps helpers on the base entitlements", () => {
     expect(pkg.build.mac.entitlementsInherit).toBe(pkg.build.mac.entitlements);
     expect(base).not.toContain("associated-domains");
@@ -66,4 +75,35 @@ describe("passkeyEntitlements", () => {
     const derived = passkeyEntitlements(base, "ABCDE12345", pkg.build.appId);
     expect(() => passkeyEntitlements(derived, "ABCDE12345", pkg.build.appId)).toThrow();
   });
+});
+
+describe("self-hosted passkey domain", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function load(rpId: string) {
+    vi.stubEnv("RAKAZO_PASSKEY_RP_ID", rpId);
+    vi.resetModules();
+    return import("./passkeys.js");
+  }
+
+  it("associates the build with RAKAZO_PASSKEY_RP_ID", async () => {
+    const passkeys = await load(" Rakazo.Example.org ");
+    expect(passkeys.PASSKEY_RP_ID).toBe("rakazo.example.org");
+    expect(passkeys.passkeyEntitlements(base, "ABCDE12345", pkg.build.appId)).toContain(
+      "<string>webcredentials:rakazo.example.org</string>",
+    );
+  });
+
+  it.each(["https://rakazo.example.org", "localhost", "192.168.1.20", "rakazo.example.org:8443"])(
+    "refuses to sign entitlements for %s",
+    async (rpId) => {
+      const passkeys = await load(rpId);
+      expect(() => passkeys.passkeyEntitlements(base, "ABCDE12345", pkg.build.appId)).toThrow(
+        "RAKAZO_PASSKEY_RP_ID",
+      );
+    },
+  );
 });
