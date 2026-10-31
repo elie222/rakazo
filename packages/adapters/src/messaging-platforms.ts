@@ -52,6 +52,8 @@ export interface MessagingEnvironmentValues {
   photonProjectId?: string | undefined;
   photonProjectSecret?: string | undefined;
   photonWebhookSecret?: string | undefined;
+  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
+  photonProjects?: PhotonProjectCredentials[] | undefined;
 }
 
 export function messagingEnvFromProcess(
@@ -83,6 +85,7 @@ export function messagingEnvFromProcess(
     photonProjectId: clean(env.PHOTON_PROJECT_ID),
     photonProjectSecret: clean(env.PHOTON_PROJECT_SECRET),
     photonWebhookSecret: clean(env.PHOTON_WEBHOOK_SECRET),
+    photonProjects: photonProjectsFromEnv(env),
   };
 }
 
@@ -117,6 +120,41 @@ export function telegramBotsFromEnv(
   }
   bots.sort((a, b) => a.name.localeCompare(b.name));
   return bots;
+}
+
+/** One extra Photon project, mounted as provider `photon-<name>`. */
+export interface PhotonProjectCredentials {
+  name: string;
+  projectId: string;
+  projectSecret: string;
+  webhookSecret?: string | undefined;
+}
+
+const PHOTON_NAMED_PROJECT = /^PHOTON_PROJECT_ID_([A-Z0-9]+)$/;
+
+/**
+ * Extra Photon projects from PHOTON_PROJECT_ID_<NAME> plus
+ * PHOTON_PROJECT_SECRET_<NAME> (and optionally PHOTON_WEBHOOK_SECRET_<NAME>).
+ * Photon gives each person a different number in each project, so one person
+ * can link a different Rakazo bot to each, as with named Telegram bots.
+ * <NAME> is letters and digits only and becomes the provider id
+ * `photon-<name>` (lowercased), which also names its webhook route.
+ */
+export function photonProjectsFromEnv(
+  env: Record<string, string | undefined>,
+): PhotonProjectCredentials[] {
+  const projects: PhotonProjectCredentials[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    const suffix = PHOTON_NAMED_PROJECT.exec(key)?.[1];
+    if (!suffix) continue;
+    const projectId = value?.trim();
+    const projectSecret = env[`PHOTON_PROJECT_SECRET_${suffix}`]?.trim();
+    if (!projectId || !projectSecret) continue;
+    const webhookSecret = env[`PHOTON_WEBHOOK_SECRET_${suffix}`]?.trim() || undefined;
+    projects.push({ name: suffix.toLowerCase(), projectId, projectSecret, webhookSecret });
+  }
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+  return projects;
 }
 
 /**
@@ -307,15 +345,37 @@ export function messagingPlatformsFromEnv(
   // API process consumes Spectrum's outbound gRPC stream, so no public URL is
   // needed; other processes only send. With one, Spectrum posts signed
   // webhooks to /api/v1/messaging/webhook/photon and nothing streams.
+  const photonProjects: (PhotonProjectCredentials & { provider: string })[] = [];
   if (env.photonProjectId && env.photonProjectSecret) {
-    platforms.push({
+    photonProjects.push({
       provider: "photon",
+      name: "",
+      projectId: env.photonProjectId,
+      projectSecret: env.photonProjectSecret,
+      webhookSecret: env.photonWebhookSecret,
+    });
+  }
+  for (const project of env.photonProjects ?? []) {
+    photonProjects.push({ ...project, provider: `photon-${project.name}` });
+  }
+  // Two providers on one project would both consume its single stream.
+  const photonIds = new Set<string>();
+  for (const project of photonProjects) {
+    if (photonIds.has(project.projectId)) {
+      getLogger().warn("skipping Photon project that reuses another provider's project", {
+        provider: project.provider,
+      });
+      continue;
+    }
+    photonIds.add(project.projectId);
+    platforms.push({
+      provider: project.provider,
       adapterName: "imessage",
       capabilities: { direct: true, groups: false, receipt: "typing" },
       adapter: new LazyPhotonAdapter({
-        projectId: env.photonProjectId,
-        projectSecret: env.photonProjectSecret,
-        webhookSecret: env.photonWebhookSecret,
+        projectId: project.projectId,
+        projectSecret: project.projectSecret,
+        webhookSecret: project.webhookSecret,
         pollInboundMessages: options.pollInboundMessages ?? false,
       }),
     });
