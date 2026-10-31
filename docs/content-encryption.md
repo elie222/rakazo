@@ -236,5 +236,5 @@ without a key manager stops startup with the variable's name.
 Other key managers implement the `KeyProvider` interface in
 `@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`), pass the shared suite in
 `packages/adapters/src/key-provider-conformance.test.ts`, and are selected in
-`keyManagerFromEnv`. A provider only wraps 32-byte data keys, so it is
-called once per space key, not per value.
+`keyManagerFromEnv`. A provider only wraps 32-byte data keys: one per space
+key and one per wrapped setting, never per stored message or file.
