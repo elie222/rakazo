@@ -811,6 +811,11 @@ export function McpServersOverlay({
     const statusText = oauthStatusText(server);
     const oauth =
       (server.transport !== "stdio" || server.oauthClientId) && !needsOAuthClient(server);
+    // A working server does not need signing in up front, so the action waits in its menu.
+    const signInFirst =
+      oauth &&
+      (server.oauthStatus === "reconnect" ||
+        (server.oauthStatus === "none" && server.health.status !== "ok"));
     const pending = oauthPending === server.id;
     const testing = testingIds.has(server.id);
     return (
@@ -823,7 +828,7 @@ export function McpServersOverlay({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {oauth && server.oauthStatus !== "connected" ? (
+            {signInFirst ? (
               <Button
                 type="button"
                 size="sm"
@@ -855,7 +860,7 @@ export function McpServersOverlay({
                 >
                   <Trans>Test connection</Trans>
                 </DropdownMenuItem>
-                {oauth && server.oauthStatus === "connected" ? (
+                {oauth && !signInFirst ? (
                   <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
                     {oauthActionLabel(server, pending)}
                   </DropdownMenuItem>

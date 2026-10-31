@@ -76,13 +76,15 @@ test("a server the user adds reaches every agent until they pick some", async ({
   await page.getByLabel("Server URL").fill(server.endpoint!);
   await captureScreenshot(page, testInfo, "mcp-agents-add");
   await page.getByRole("button", { name: "Add server", exact: true }).click();
-  const access = page.getByTestId("agent-access");
+  const access = page.getByTestId("mcp-server").getByTestId("agent-access");
   await expect(access).toContainText("All agents");
   await captureScreenshot(page, testInfo, "mcp-agents");
 
   await access.getByRole("button").click();
+  const chief = page.getByRole("menuitemcheckbox", { name: "Chief", exact: true });
+  await expect(chief).toBeVisible();
   await captureScreenshot(page, testInfo, "mcp-agents-menu");
-  await page.getByRole("menuitemcheckbox", { name: "Chief", exact: true }).click();
+  await chief.click();
   await page.keyboard.press("Escape");
   await expect(access).toContainText("Writer");
   expect(requests).toEqual([{ id: server.id, allBots: false, botIds: [writer.id] }]);
