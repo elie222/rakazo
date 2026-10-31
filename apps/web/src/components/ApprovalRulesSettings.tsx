@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/contracts";
 import { humanizeToolName } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
-import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import { Button, Input, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSpaceQueries } from "../lib/query";
@@ -32,6 +32,8 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
+  const [adding, setAdding] = useState(false);
+  const [tool, setTool] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewRule, setPreviewRule] = useState<string | null>(null);
   const [actionError, setError] = useState<string | null>(null);
@@ -75,7 +77,10 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       t`Could not save Auto Review`,
     );
 
-  const setEffect = (rule: ActionApprovalRule, effect: "always_allow" | "deny") =>
+  const setEffect = (
+    rule: ActionApprovalRule,
+    effect: "always_allow" | "require_approval" | "deny",
+  ) =>
     save(async () => {
       if (rule.matchKind === "category") return;
       const saved = await rpc.approvalRules.set({
@@ -126,6 +131,54 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           ) : null}
         </SettingsRow>
       </SettingsGroup>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loading || Boolean(loadFailed) || saving}
+        onClick={() => setAdding(!adding)}
+        aria-expanded={adding}
+      >
+        <Trans>Add rule</Trans>
+      </Button>
+      {adding ? (
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!tool.trim()) return;
+            void save(async () => {
+              const saved = await rpc.approvalRules.set({
+                scope,
+                matchKind: "tool",
+                matchValue: tool.trim(),
+                effect: "require_approval",
+              });
+              await setRules((current) => [
+                ...current.filter(
+                  (rule) =>
+                    rule.matchKind !== saved.matchKind ||
+                    rule.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
+                ),
+                saved,
+              ]);
+              setTool("");
+              setAdding(false);
+            }, t`Could not save rule`);
+          }}
+        >
+          <Input
+            aria-label={t`Tool name`}
+            placeholder={t`Tool name`}
+            value={tool}
+            maxLength={200}
+            disabled={saving}
+            onChange={(event) => setTool(event.target.value)}
+          />
+          <Button type="submit" size="sm" disabled={saving || !tool.trim()}>
+            <Trans>Save</Trans>
+          </Button>
+        </form>
+      ) : null}
       {rules.length > 0 ? (
         <SettingsGroup data-testid="approval-rules">
           {rules.map((rule) => (
@@ -158,7 +211,11 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                         aria-label={ruleLabel(rule)}
                         value={[rule.effect]}
                         onValueChange={([next]) => {
-                          if (next === "always_allow" || next === "deny")
+                          if (
+                            next === "always_allow" ||
+                            next === "require_approval" ||
+                            next === "deny"
+                          )
                             void setEffect(rule, next);
                         }}
                         disabled={saving}
@@ -168,12 +225,9 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
                         <ToggleGroupItem value="always_allow" className={segment}>
                           <Trans>Allow</Trans>
                         </ToggleGroupItem>
-                        {/* An older ask rule keeps showing what it does until it is switched. */}
-                        {rule.effect === "require_approval" ? (
-                          <ToggleGroupItem value="require_approval" className={segment}>
-                            <Trans>Ask</Trans>
-                          </ToggleGroupItem>
-                        ) : null}
+                        <ToggleGroupItem value="require_approval" className={segment}>
+                          <Trans>Ask</Trans>
+                        </ToggleGroupItem>
                         <ToggleGroupItem value="deny" className={segment}>
                           <Trans>Block</Trans>
                         </ToggleGroupItem>

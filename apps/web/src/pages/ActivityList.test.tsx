@@ -20,6 +20,7 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    BotAvatar: () => <span data-testid="agent-avatar" />,
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
     Collapsible: Container,
     CollapsibleContent: Container,
@@ -81,6 +82,71 @@ it("reopens with cached runs and refreshes them in the background", async () => 
     await act(async () => second.unmount());
   } finally {
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("separates attention, working and unread and keeps the agent beside every run", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
+    runs:
+      filter === "active"
+        ? [
+            {
+              ...run,
+              runId: "ask",
+              botId: "marketing",
+              botName: "Marketing",
+              status: "waiting_input",
+            },
+            { ...run, runId: "work", botId: "research", botName: "Research", status: "running" },
+          ]
+        : [],
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const open = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList
+            bots={[
+              {
+                id: "writer",
+                name: "Writer",
+                status: "completed",
+                unread: true,
+                preview: "Draft ready",
+                color: "orange",
+              } as never,
+            ]}
+            onOpenBot={open}
+            onOpenRun={() => undefined}
+            filters={emptyActivityFilters()}
+            onFiltersChange={() => undefined}
+            filtersExpanded={false}
+            filtersId="filters"
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Marketing"));
+    expect(container.querySelector('section[aria-label="Needs attention"]')!.textContent).toContain(
+      "Marketing",
+    );
+    expect(container.querySelector('section[aria-label="Working"]')!.textContent).toContain(
+      "Research",
+    );
+    const unread = container.querySelector('section[aria-label="Unread"]')!;
+    expect(unread.textContent).toContain("Writer");
+    expect(container.querySelectorAll('[data-testid="agent-avatar"]')).toHaveLength(3);
+    await act(async () => unread.querySelector("button")!.click());
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: "writer" }));
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
     vi.unstubAllGlobals();
   }
 });

@@ -104,6 +104,7 @@ model Session {
 /// One current device registration per account, matching the notification API contract.
 /// No session FK: password changes delete a session before the replacement is created.
 model PushToken {
+  presentation String?
   userId String @id
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   ciphertext String

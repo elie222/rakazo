@@ -12,6 +12,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class RakazoNotificationsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("RakazoNotifications")
+    Constants("supportsSenderAvatars" to true)
 
     AsyncFunction("getSettings") {
       NotificationStorage(context()).settings.toMap()

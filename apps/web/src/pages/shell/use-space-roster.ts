@@ -412,7 +412,12 @@ export function useSpaceBootstrap({
       });
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
-      if (document.visibilityState !== "visible" && !callsEnabledRef.current) return;
+      if (
+        document.visibilityState !== "visible" &&
+        !callsEnabledRef.current &&
+        (typeof Notification === "undefined" || Notification.permission !== "granted")
+      )
+        return;
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(
         () =>

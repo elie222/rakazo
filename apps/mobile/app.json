@@ -80,7 +80,8 @@
       ],
       "./plugins/with-worklets-headers",
       "./plugins/with-scene-lifecycle",
-      "./plugins/with-lan-cleartext"
+      "./plugins/with-lan-cleartext",
+      "./plugins/with-agent-notifications"
     ],
     "ios": {
       "bundleIdentifier": "com.rakazo.app",

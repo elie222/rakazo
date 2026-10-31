@@ -22,7 +22,9 @@ export function ApprovalRulePreview({
   const [tool, setTool] = useState(
     rule.matchKind === "tool" ? rule.matchValue : rule.matchKind === "site" ? "web_fetch" : "",
   );
-  const [effect, setEffect] = useState<"always_allow" | "deny" | "remove">("remove");
+  const [effect, setEffect] = useState<"always_allow" | "require_approval" | "deny" | "remove">(
+    "remove",
+  );
   const [result, setResult] = useState<Preview | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +84,12 @@ export function ApprovalRulePreview({
         value={[effect]}
         disabled={pending}
         onValueChange={([next]) => {
-          if (next === "always_allow" || next === "deny" || next === "remove") {
+          if (
+            next === "always_allow" ||
+            next === "require_approval" ||
+            next === "deny" ||
+            next === "remove"
+          ) {
             setEffect(next);
             setResult(null);
           }
@@ -92,6 +99,9 @@ export function ApprovalRulePreview({
           <>
             <ToggleGroupItem value="always_allow">
               <Trans>Allow</Trans>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="require_approval">
+              <Trans>Ask</Trans>
             </ToggleGroupItem>
             <ToggleGroupItem value="deny">
               <Trans>Block</Trans>

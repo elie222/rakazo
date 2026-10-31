@@ -300,3 +300,24 @@ it("offers a retry when the first load fails, then shows the rules", async () =>
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });
+
+it("switches a tool rule back to Ask", async () => {
+  state.rules = [
+    {
+      id: "tool",
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "write_file",
+      createdAt: "2026-10-25T00:00:00.000Z",
+    },
+  ];
+  await render();
+  await act(async () => menuButton("Write file", "Ask")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "write_file",
+  });
+  expect(menuButton("Write file", "Ask")!.getAttribute("aria-pressed")).toBe("true");
+});

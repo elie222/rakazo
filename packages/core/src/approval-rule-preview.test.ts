@@ -12,7 +12,7 @@ const sample = { tools: [{ name: "gmail_send_email" }] };
 it("matches live resolution without changing the saved rules", () => {
   const rules = [allow];
   const before = structuredClone(rules);
-  for (const effect of ["always_allow", "deny", "remove"] as const) {
+  for (const effect of ["always_allow", "require_approval", "deny", "remove"] as const) {
     const expected = effect === "remove" ? [] : [{ ...allow, effect }];
     expect(previewActionApprovalRule(rules, allow, effect, sample)).toEqual({
       before: resolveActionApprovalForTools({ ...sample, rules }).source,

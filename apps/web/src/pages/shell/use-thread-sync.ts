@@ -453,6 +453,7 @@ export function useThreadSync({
           eventBot?.name ?? activeGroup.name,
           true,
           true,
+          activeGroup.id,
         );
         if (event.type === "thread.message.created" && event.payload.role === "bot") {
           markGroupReadOnReply(groupId);

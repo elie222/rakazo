@@ -22,7 +22,9 @@ export function ApprovalRulePreviewForm({
   const [tool, setTool] = useState(
     rule.matchKind === "tool" ? rule.matchValue : rule.matchKind === "site" ? "web_fetch" : "",
   );
-  const [effect, setEffect] = useState<"always_allow" | "deny" | "remove">("remove");
+  const [effect, setEffect] = useState<"always_allow" | "require_approval" | "deny" | "remove">(
+    "remove",
+  );
   const [result, setResult] = useState<ApprovalRulePreview | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export function ApprovalRulePreviewForm({
           ...(rule.matchKind !== "category"
             ? [
                 { value: "always_allow" as const, label: t("Allow") },
+                { value: "require_approval" as const, label: t("Ask") },
                 { value: "deny" as const, label: t("Block") },
               ]
             : []),

@@ -307,8 +307,12 @@ function SpaceShell() {
     navigate,
     redirectKeepingOverlay,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications } =
-    useBrowserNotifications(botsRef);
+  const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
+    botsRef,
+    bots,
+    inGroup ? undefined : active?.id,
+    shellSpaceId ?? undefined,
+  );
   const { speakingMessageId, speakMessage } = useReadAloud({
     active,
     snapshot,
@@ -810,6 +814,7 @@ function SpaceShell() {
         setCreateMenuOpen={setCreateMenuOpen}
         search={search}
         bots={bots}
+        groups={groups}
         setPanel={setPanel}
         navigate={navigate}
         setNewSpaceOpen={dialogs.setNewSpaceOpen}

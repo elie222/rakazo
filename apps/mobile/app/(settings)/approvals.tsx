@@ -3,10 +3,11 @@ import type { ActionApprovalRule } from "@rakazo/contracts";
 import { humanizeToolName } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApprovalRulePreviewForm } from "../../components/approval-rule-preview";
 import { LoadFailure } from "../../components/load-failure";
+import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
@@ -15,11 +16,11 @@ import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
-type RuleAction = "always_allow" | "deny" | "remove";
+type RuleAction = "always_allow" | "require_approval" | "deny" | "remove";
 
 /**
- * The tools and sites always allowed or blocked. Rules come from approval cards, so this screen
- * only switches or removes them; the approval mode itself is a row in settings. Opened with a
+ * The tools and sites allowed, blocked or requiring approval. This screen
+ * can add tool rules and switch or remove saved rules. The approval mode is in settings. With a
  * Space, it edits that Space's override instead of the account's.
  */
 export default function ApprovalRules() {
@@ -33,6 +34,8 @@ export default function ApprovalRules() {
   const styles = useThemedStyles(createStyles);
   // Null until the first load lands.
   const [rules, setRules] = useState<ActionApprovalRule[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [tool, setTool] = useState("");
   const [pending, setPending] = useState(false);
   const [previewRule, setPreviewRule] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +130,52 @@ export default function ApprovalRules() {
             {shownError}
           </Text>
         ) : null}
+        {rules ? (
+          <NativeActionButton
+            label={t("Add rule")}
+            disabled={pending}
+            onPress={() => setAdding(!adding)}
+          />
+        ) : null}
+        {adding ? (
+          <View style={{ gap: 12 }}>
+            <TextInput
+              accessibilityLabel={t("Tool name")}
+              placeholder={t("Tool name")}
+              value={tool}
+              onChangeText={setTool}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={200}
+              editable={!pending}
+              style={{ color: mobileTokens().foreground, padding: 12 }}
+            />
+            <NativeActionButton
+              label={t("Save")}
+              disabled={pending || !tool.trim()}
+              onPress={() =>
+                void save(async () => {
+                  const saved = await rpc("approvalRules/set", {
+                    scope,
+                    matchKind: "tool",
+                    matchValue: tool.trim(),
+                    effect: "require_approval",
+                  });
+                  setRules((current) => [
+                    ...(current ?? []).filter(
+                      (rule) =>
+                        rule.matchKind !== saved.matchKind ||
+                        rule.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
+                    ),
+                    saved,
+                  ]);
+                  setTool("");
+                  setAdding(false);
+                })
+              }
+            />
+          </View>
+        ) : null}
         <SettingsGroup>
           {rules?.map((rule) => {
             const title =
@@ -138,7 +187,7 @@ export default function ApprovalRules() {
                   actions={[
                     { id: "preview", title: t("Preview") },
                     ...(switchable
-                      ? (["always_allow", "deny"] as const).map((effect) => ({
+                      ? (["always_allow", "require_approval", "deny"] as const).map((effect) => ({
                           id: effect,
                           title: effectLabel(effect),
                           state: rule.effect === effect ? ("on" as const) : ("off" as const),
@@ -181,7 +230,12 @@ export default function ApprovalRules() {
 }
 
 function isRuleAction(action: string): action is RuleAction {
-  return action === "always_allow" || action === "deny" || action === "remove";
+  return (
+    action === "always_allow" ||
+    action === "require_approval" ||
+    action === "deny" ||
+    action === "remove"
+  );
 }
 
 function createStyles() {

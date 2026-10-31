@@ -265,6 +265,14 @@ export const AUTO_REVIEW_PASS =
 export const AUTO_REVIEW_ASK =
   "It clearly goes beyond that and would be hard to undo: messaging people the owner did not mention, spending money, deleting, or publishing, when nobody asked for it";
 
+/** Truncated instructions can omit the limits on an otherwise valid action. */
+export function incompleteAutoReviewContext(input: AutoReviewRequest): boolean {
+  return (
+    input.userTask.trim().length > (input.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS) ||
+    input.botDescription.trim().length > MAX_BOT_CHARS
+  );
+}
+
 export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
   const argsJson = JSON.stringify(input.args);
   const rules =
@@ -444,6 +452,13 @@ export class LlmAutoReviewProvider implements AutoReviewProvider {
         decision: "ask",
         model: `${this.options.checker.provider}/${this.options.checker.model}`,
         reason: TOO_LONG_TO_REVIEW,
+      };
+    }
+    if (incompleteAutoReviewContext(request)) {
+      return {
+        decision: "ask",
+        model: `${this.options.checker.provider}/${this.options.checker.model}`,
+        reason: "The full action context needs your review.",
       };
     }
     return runAutoReviewJudge({

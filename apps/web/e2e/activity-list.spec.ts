@@ -17,7 +17,7 @@ async function captureActivitySidebar(
   const aside = page.locator("aside").first();
   const toggle = page.getByRole("button", { name: "Activity", exact: true });
   await toggle.scrollIntoViewIfNeeded();
-  // Keep the header (bell + Create) in frame with the Now/Recent list.
+  // Keep the header (bell + Create) in frame with the Working/Recent list.
   const box = await aside.boundingBox();
   if (box) {
     const screenshotPath = testInfo.outputPath(`${name}.png`);
@@ -38,7 +38,7 @@ async function captureActivitySidebar(
   await captureScreenshot(page, testInfo, name);
 }
 
-test("sidebar Now and Recent surface active and terminal runs", async ({ page }, testInfo) => {
+test("sidebar Working and Recent surface active and terminal runs", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `activity-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
@@ -47,7 +47,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
   await expect(activityToggle).toHaveAttribute("aria-pressed", "false");
   await expect(activityToggle).toHaveAttribute("data-activity-mode", "off");
-  await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Working", { exact: true })).toHaveCount(0);
   await expect(aside.getByText("Recent", { exact: true })).toHaveCount(0);
   await expect(aside.getByRole("status", { name: "Loading activity…" })).toHaveCount(0);
   await expect(aside.locator("[data-sidebar-group]").getByText("Chief").first()).toBeVisible();
@@ -74,7 +74,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
     timeout: 20_000,
   });
-  await expect(aside.getByText("Now", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(aside.getByText("Working", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/keep working|Running|Queued|Starting/i);
   await page.emulateMedia({ colorScheme: "light" });
@@ -141,7 +141,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await expect(aside.getByText("Recent", { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(activityRow(page, "Chief")).toBeVisible();
   await expect(activityRow(page, "Chief")).toContainText(/Cancelled|keep working/i);
-  await expect(aside.getByText("Now", { exact: true })).toHaveCount(0);
+  await expect(aside.getByText("Working", { exact: true })).toHaveCount(0);
   await captureActivitySidebar(page, testInfo, "59-activity-recent");
 
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });

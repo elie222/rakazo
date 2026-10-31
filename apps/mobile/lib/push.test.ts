@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("./live-notifications.js", () => ({
+  supportsSenderNotifications: vi.fn(() => false),
   resumeLiveNotifications: vi.fn(async () => undefined),
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
@@ -45,6 +46,7 @@ vi.mock("expo-notifications", () => ({
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { rpc, selectInitialSpace } from "./api";
+import { supportsSenderNotifications } from "./live-notifications";
 import { registerPushToken } from "./push";
 import { restoreSessionToken } from "./session";
 
@@ -72,6 +74,7 @@ let permission: ReturnType<typeof deferred<{ granted: boolean }>>;
 
 beforeEach(async () => {
   native.reset();
+  vi.mocked(supportsSenderNotifications).mockReturnValue(false);
   vi.stubGlobal("fetch", fetch);
   fetch.mockClear();
   vi.mocked(Notifications.requestPermissionsAsync).mockClear();
@@ -138,4 +141,14 @@ describe("push registration on Android", () => {
       expect.anything(),
     );
   });
+});
+
+it("registers native sender delivery only when the installed Android module supports it", async () => {
+  Platform.OS = "android";
+  vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as never);
+  vi.mocked(supportsSenderNotifications).mockReturnValue(true);
+  await registerPushToken();
+  const call = fetch.mock.calls.find(([url]) => url.endsWith("/rpc/notifications/registerPush"));
+  const options = (call as unknown as [string, RequestInit])[1];
+  expect(JSON.parse(String(options.body)).json).toMatchObject({ presentation: "android_sender" });
 });

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, NavLink } from "@rakazo/contracts";
+import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
   Button,
@@ -41,6 +41,7 @@ export function ShellSidebar({
   setCreateMenuOpen,
   search,
   bots,
+  groups,
   setPanel,
   navigate,
   setNewSpaceOpen,
@@ -66,6 +67,7 @@ export function ShellSidebar({
   setCreateMenuOpen: (open: boolean) => void;
   search: SidebarSearch;
   bots: Bot[];
+  groups: Group[];
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
@@ -230,6 +232,16 @@ export function ShellSidebar({
             <>
               {activityMode && !mini ? (
                 <ActivityList
+                  bots={bots}
+                  groups={groups}
+                  onOpenGroup={(group) => {
+                    setMobileOpen(false);
+                    navigate(`/app/g/${group.id}`);
+                  }}
+                  onOpenBot={(bot) => {
+                    setMobileOpen(false);
+                    navigate(`/app/${bot.id}`);
+                  }}
                   filters={activityFilters}
                   onFiltersChange={setActivityFilters}
                   filtersExpanded={activityFiltersExpanded}

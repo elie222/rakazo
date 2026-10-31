@@ -14,6 +14,10 @@ android {
 }
 
 dependencies {
+  def notifications = new groovy.json.JsonSlurper().parse(file('../../../node_modules/expo-notifications/expo-module.config.json')).android.publication
+  implementation(findProject(':expo-notifications') ?: "${notifications.groupId}:${notifications.artifactId}:${notifications.version}")
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+
   testImplementation 'junit:junit:4.13.2'
   // The real parser: Android's own org.json is a stub in local unit tests.
   testImplementation 'org.json:json:20240303'

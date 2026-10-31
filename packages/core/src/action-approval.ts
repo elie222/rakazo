@@ -499,7 +499,7 @@ export function resolveActionApprovalForTools(input: {
 export function previewActionApprovalRule(
   rules: ActionApprovalRule[],
   rule: ActionApprovalRule,
-  effect: "always_allow" | "deny" | "remove",
+  effect: "always_allow" | "require_approval" | "deny" | "remove",
   sample: Omit<Parameters<typeof resolveActionApprovalForTools>[0], "rules">,
 ) {
   const connectorKinds = rules
