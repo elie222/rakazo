@@ -78,6 +78,7 @@ struct RunRoutineIntent: AppIntent {
 
   func perform() async throws -> some IntentResult & ProvidesDialog {
     let session = try RakazoSession.load()
+    try await session.requireConsent(["routineId": routine.routineId], spaceId: routine.spaceId)
     let _: Started = try await session.rpc(
       "routines/testRun", ["routineId": routine.routineId, "clientNonce": UUID().uuidString],
       spaceId: routine.spaceId)
@@ -154,13 +155,7 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
   let botId = target.botId
   let session = try RakazoSession.load()
   let spaceId = target.spaceId ?? session.selectedSpaceId
-  // The app asks before a bot first sees the user's data; a send from here cannot ask.
-  let uses = ["model", "memory"]
-  let consent: ConsentStatus = try await session.rpc(
-    "aiConsent/status", ["uses": uses, "botId": botId], spaceId: spaceId)
-  guard consent.recipients.allSatisfy({ $0.allowed || !uses.contains($0.use) }) else {
-    throw MessageBotError.consentRequired
-  }
+  try await session.requireConsent(["botId": botId], spaceId: spaceId)
   var input: [String: Any] = [
     "botId": botId,
     "text": message.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -349,6 +344,17 @@ private struct RakazoSession {
       saved.apiBase == apiBase
     else { return [:] }
     return saved.headers
+  }
+
+  /// The app asks before AI first sees the user's data; an action from here cannot ask.
+  func requireConsent(_ target: [String: String], spaceId: String?) async throws {
+    let uses = ["model", "memory"]
+    var input: [String: Any] = target
+    input["uses"] = uses
+    let consent: ConsentStatus = try await rpc("aiConsent/status", input, spaceId: spaceId)
+    guard consent.recipients.allSatisfy({ $0.allowed || !uses.contains($0.use) }) else {
+      throw MessageBotError.consentRequired
+    }
   }
 
   /// Calls an oRPC procedure the way lib/api.ts does.
