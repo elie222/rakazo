@@ -356,6 +356,12 @@ export function userTurnInstructions(parts: {
     fleetClause(parts.offeredFleetTools),
     parts.pluginLine,
     parts.agentSkillsLine,
+    parts.agentSkillsLine &&
+      offeredBuiltinClause(
+        parts.disabledBuiltinTools,
+        "skill_read",
+        "When asked how Rakazo or you work, or how to set something up (apps, the user's own computer, billing), read the Rakazo skill before answering or acting.",
+      ),
     parts.taughtSkillsLine,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

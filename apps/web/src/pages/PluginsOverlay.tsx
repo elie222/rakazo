@@ -815,6 +815,10 @@ export function PluginsOverlay({
                 }
                 onBlur={() => void renameAccount(row)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    if (event.key === "Escape") event.stopPropagation();
+                    return;
+                  }
                   if (event.key === "Enter") {
                     event.currentTarget.blur();
                   }

@@ -680,7 +680,8 @@ export async function runTrial(
       toolNames: [...seenTools.values()].map((event) => event.name),
       toolCalls: (handles.toolCallObservations ?? []).flatMap((call) => {
         const step = runSteps.get(call.runId);
-        return step === undefined ? [] : [{ step, name: call.name, args: call.args }];
+        const { runId: _runId, ...observed } = call;
+        return step === undefined ? [] : [{ step, ...observed }];
       }),
       finalStep,
       settings: await settingsSnapshot(),

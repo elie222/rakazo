@@ -263,6 +263,22 @@ const approvals: Scenario = {
     bot([
       {
         kind: "ask",
+        text: "Settings updated",
+        status: "answered",
+        settingsUpdate: {
+          botId: BOT.botId,
+          before: { modelProvider: "anthropic", modelId: "claude-haiku-5.5", thinkingLevel: "low" },
+          after: {
+            modelProvider: "anthropic",
+            modelId: "claude-sonnet-5.5",
+            thinkingLevel: "high",
+          },
+        },
+      },
+    ]),
+    bot([
+      {
+        kind: "ask",
         approvalEffectId: "effect-4",
         text: "Delete 12 archived files?",
         status: "answered",

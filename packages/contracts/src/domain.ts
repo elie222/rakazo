@@ -9,8 +9,8 @@ import {
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
-import { ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
+import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
+import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -54,17 +54,6 @@ export const TimeZoneSchema = z
   .max(64)
   .refine(isValidTimeZone, { message: "Unknown timezone" });
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
-
-export const ThinkingLevelSchema = z.enum([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
-export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
 export { AGENT_SECRET_NAME_PATTERN };
 
@@ -418,6 +407,8 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
+    /** Write only while these settings still hold, as an undo does. */
+    expectedSettings: BotSettingsValuesSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const providerProvided = value.modelProvider !== undefined;

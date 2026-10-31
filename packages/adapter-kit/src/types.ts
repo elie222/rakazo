@@ -650,7 +650,14 @@ export type AgentRuntimeEvent =
       /** Provider-generated tool status rather than assistant-authored narration. */
       activity?: true;
     }
-  | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      executionId: string;
+      /** The model reached this deferred built-in through use_tool. */
+      viaUseTool?: boolean;
+    }
   | {
       type: "ask";
       executionId?: string;

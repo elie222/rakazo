@@ -897,11 +897,15 @@ describe("Pi connector tool dispatch", () => {
     const spawnBotTool = builtinAgentTools.find((tool) => tool.name === "spawn_bot");
     if (!spawnBotTool) throw new Error("missing spawn_bot");
     fakeAgentState.invoke = {
-      name: "spawn_bot",
+      name: "use_tool",
       args: {
-        name: "Scout",
-        description: "Finds venues.",
-        instructions: "Ask before booking anything.",
+        name: "spawn_bot",
+        arguments: {
+          name: "Scout",
+          description: "Finds venues.",
+          instructions: "Ask before booking anything.",
+          computer_mode: "team",
+        },
       },
     };
     const executeTool = vi.fn(async () => ({ ok: true }));
@@ -983,7 +987,8 @@ describe("Pi connector tool dispatch", () => {
     // the row, so the bot reports "no schedules" for a reminder it just made.
     expect(modes.get("schedule_create")).toBe("sequential");
     expect(modes.get("schedule_list")).toBe("sequential");
-    expect(modes.get("schedule_cancel")).toBe("sequential");
+    // schedule_cancel is deferred, so the use_tool that runs it is sequential.
+    expect(modes.get("use_tool")).toBe("sequential");
     expect(modes.get("remember")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
@@ -2314,7 +2319,10 @@ describe("Pi connector tool dispatch", () => {
       sections: [],
       truncated: false,
     };
-    fakeAgentState.invoke = { name: "list_fleet", args: { bot_id: "child" } };
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "list_fleet", arguments: { bot_id: "child" } },
+    };
     const runtime = new PiAgentRuntime();
 
     for await (const _event of runtime.run(

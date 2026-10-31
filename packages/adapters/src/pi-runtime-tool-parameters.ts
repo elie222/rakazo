@@ -113,6 +113,7 @@ function builtinParameters(tool: ConnectorTool) {
       model: Type.Optional(Type.String()),
       thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
       readAloud: Type.Optional(Type.Boolean()),
+      voice: Type.Optional(Type.String()),
       bot_id: Type.Optional(Type.String()),
     });
   }
@@ -310,6 +311,7 @@ const FLEET_STRING_ARGS = [
   "model",
   "thinking_level",
   "thinkingLevel",
+  "voice",
   "section",
   "instructions",
   "expected_version",

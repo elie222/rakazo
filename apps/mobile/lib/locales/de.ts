@@ -918,12 +918,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Instruction history": "Anweisungsverlauf",
   Instructions: "Anweisungen",
   "Instructions updated": "Anweisungen aktualisiert",
+  "Settings updated": "Einstellungen aktualisiert",
   "Let this bot update its own instructions":
     "Dieser Bot darf seine eigenen Anweisungen aktualisieren",
   Restored: "Wiederhergestellt",
   Undo: "Rückgängig",
   "Update instructions?": "Anweisungen aktualisieren?",
-  "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
   "Hide chats": "Chats ausblenden",
   "Show chats": "Chats einblenden",
   "Remove photo": "Foto entfernen",

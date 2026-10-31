@@ -206,11 +206,34 @@ export function AskCard({
     }
   }
 
-  if (block.instructionUpdate?.undoVersionId)
+  const { instructionUpdate, settingsUpdate } = block;
+  const undo = instructionUpdate?.undoVersionId
+    ? {
+        label: t`Instructions updated`,
+        run: () =>
+          rpc.bots.restoreInstructions({
+            botId: instructionUpdate.botId,
+            versionId: instructionUpdate.undoVersionId!,
+            expectedInstructions: instructionUpdate.after,
+            undo: true,
+          }),
+      }
+    : settingsUpdate
+      ? {
+          label: t`Settings updated`,
+          run: () =>
+            rpc.bots.update({
+              botId: settingsUpdate.botId,
+              ...settingsUpdate.before,
+              expectedSettings: settingsUpdate.after,
+            }),
+        }
+      : undefined;
+  if (undo)
     return (
       <BuiCard className="px-5 py-4">
         <div className="flex items-center gap-2 text-sm">
-          <Trans>Instructions updated</Trans>
+          {undo.label}
           <Button
             variant="link"
             disabled={undone || submitting}
@@ -218,12 +241,7 @@ export function AskCard({
               setPendingAction("undo");
               setError(null);
               try {
-                await rpc.bots.restoreInstructions({
-                  botId: block.instructionUpdate!.botId,
-                  versionId: block.instructionUpdate!.undoVersionId!,
-                  expectedInstructions: block.instructionUpdate!.after,
-                  undo: true,
-                });
+                await undo.run();
                 setUndone(true);
               } catch (err) {
                 setError(errorText(err));

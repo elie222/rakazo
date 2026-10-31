@@ -1,9 +1,14 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import type * as ModelSelection from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
-import { prepareOwnBotSettings, readOwnBotSettings } from "./own-bot-settings.js";
+import {
+  prepareOwnBotSettings,
+  readOwnBotSettings,
+  resolveVoiceChoice,
+} from "./own-bot-settings.js";
 
 vi.mock("./model-selection.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelSelection>()),
@@ -46,6 +51,7 @@ const bot = {
   modelId: null,
   thinkingLevel: null,
   autoSpeak: false,
+  voiceId: null,
 };
 
 beforeEach(() => {
@@ -69,6 +75,7 @@ describe("readOwnBotSettings", () => {
       model: "Google: Gemini 3.8 Flash (default)",
       thinkingLevel: "default",
       readAloud: false,
+      voice: "default",
       thinkingLevels: ["low", "medium", "high"],
     });
     expect(settings.models).toEqual([
@@ -149,5 +156,76 @@ describe("prepareOwnBotSettings", () => {
       error: expect.stringContaining("Anthropic"),
     });
     expect(validate).not.toHaveBeenCalled();
+  });
+});
+
+const voices = [
+  { id: "voice-rachel", label: "Rachel" },
+  { id: "voice-adam", label: "Adam - Deep Narrator" },
+  { id: "voice-adam-2", label: "Adam - Calm" },
+  { id: "voice-sumire", label: "菫 清楚" },
+];
+
+describe("resolveVoiceChoice", () => {
+  it.each([
+    ["rachel", "voice-rachel"],
+    ["voice-rachel", "voice-rachel"],
+    ["Deep narrator", "voice-adam"],
+    ["菫", "voice-sumire"],
+    ["default", null],
+  ])("resolves %s", (query, voiceId) => {
+    expect(resolveVoiceChoice(voices, query)).toEqual({ ok: true, voiceId });
+  });
+
+  it("asks which one when several match, and lists voices when none do", () => {
+    expect(resolveVoiceChoice(voices, "Adam")).toEqual({
+      ok: false,
+      error: expect.stringContaining("Adam - Deep Narrator, Adam - Calm"),
+    });
+    expect(resolveVoiceChoice(voices, "Bella")).toEqual({
+      ok: false,
+      error:
+        'No voice matches "Bella". Voices: Rachel, Adam - Deep Narrator, Adam - Calm, 菫 清楚.',
+    });
+  });
+});
+
+describe("prepareOwnBotSettings voice", () => {
+  it("returns an error the bot can act on when listing voices fails", async () => {
+    const failing = async () => {
+      throw new Error("provider timeout");
+    };
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, failing)).toEqual({
+      error: "Could not list voices right now; try again.",
+    });
+    const refused = async () => {
+      throw new VoiceAccountError(undefined, "The voice provider rejected the API key.");
+    };
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, refused)).toEqual({
+      error: "The voice provider rejected the API key.",
+    });
+  });
+
+  it("resets to the default voice without a voice provider", async () => {
+    expect(
+      await prepareOwnBotSettings(deps(), scope, bot, { voice: "default" }, async () => null),
+    ).toEqual({ data: { voiceId: null } });
+  });
+
+  it("lists voices only when a voice is asked for and stores the match", async () => {
+    const list = vi.fn(async () => voices);
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { readAloud: true }, list)).toEqual({
+      data: { autoSpeak: true },
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, list)).toEqual({
+      data: { voiceId: "voice-rachel" },
+    });
+  });
+
+  it("asks for a voice connection when there is none", async () => {
+    expect(
+      await prepareOwnBotSettings(deps(), scope, bot, { voice: "Rachel" }, async () => null),
+    ).toEqual({ error: "Connect a voice provider first." });
   });
 });

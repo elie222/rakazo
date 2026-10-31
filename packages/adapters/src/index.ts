@@ -28,6 +28,7 @@ export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
 export * from "./builtin-skills.js";
+export * from "./builtin-tool-bridge.js";
 export * from "./builtin-tools.js";
 export { settleCallRequest } from "./call-request.js";
 export * from "./cartesia-voice.js";

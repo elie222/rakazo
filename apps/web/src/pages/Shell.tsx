@@ -12,6 +12,7 @@ import {
   chatUserBubbleColors,
   dismissableAskMessageIds,
   foldPeerReplies,
+  groupBotsForSidebar,
   isActive,
   isRunWorking,
   memberName,
@@ -236,7 +237,6 @@ function SpaceShell() {
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
-  const dialogs = useShellDialogs();
   const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
@@ -260,6 +260,13 @@ function SpaceShell() {
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ?? bots[0]);
+  const selectBot = useCallback(
+    (id: string) => {
+      setMobileSidebarOpen(false);
+      navigate(`/app/${id}`);
+    },
+    [navigate, setMobileSidebarOpen],
+  );
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
     [active?.color, active?.id],
@@ -271,6 +278,16 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const cycleBots = useMemo(
+    () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
+    [bots, botSections],
+  );
+  const dialogs = useShellDialogs({
+    bots: cycleBots,
+    activeId: active?.id,
+    onSelectBot: selectBot,
+    computerOpen,
+  });
   useSpaceBootstrap({
     rpc,
     roster,

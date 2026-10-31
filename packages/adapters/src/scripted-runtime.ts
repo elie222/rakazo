@@ -165,7 +165,10 @@ export function inferScript(
   prompt: string,
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
-  const lower = prompt.toLowerCase();
+  // A bot-message wake embeds the sender's name and id around the peer's words, and a
+  // generated id can contain a journey keyword by chance ("crm" inside a cuid), so the
+  // recipient's branches key on the words alone — as hangDuration already does.
+  const lower = (peerMessage(prompt)?.text ?? prompt).toLowerCase();
   if (lower.includes("can you check my gmail inbox?")) {
     return [
       {

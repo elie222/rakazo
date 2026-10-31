@@ -24,7 +24,6 @@ import {
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
-import { observeToolCalls } from "../evals/tool-calls.js";
 import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
@@ -493,6 +492,7 @@ async function main() {
     const { runTrial } = await import("../evals/runner.js");
     const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");
+    const { observeToolCalls } = await import("../evals/tool-calls.js");
     for (let i = 0; i < trials.length; i++) {
       if (stopRequested) {
         for (const remaining of trials.slice(i))

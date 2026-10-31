@@ -79,12 +79,13 @@ export function SpaceSettingsPanel({
                 }}
                 onBlur={() => void save()}
                 onKeyDown={(event) => {
-                  // Enter that confirms an IME composition is not a commit.
-                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  if (event.key === "Escape") event.stopPropagation();
+                  // Enter or Escape that ends an IME composition is not a commit or cancel.
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (event.key === "Enter") {
                     event.currentTarget.blur();
                   }
                   if (event.key === "Escape") {
-                    event.stopPropagation();
                     setDraft(space.name);
                     setError(null);
                   }

@@ -557,6 +557,77 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     prompt: "In JavaScript, what's the difference between == and ===?",
     expect: { notCalls: ["*"] },
   },
+  // Deferred built-ins: rare tools are found before use; common work never searches.
+  {
+    id: "lazy-plot",
+    area: "lazy-tools",
+    kind: "guard",
+    purpose: "Find the plot tool, then run it.",
+    prompt: "Draw a bar chart of these sales: Mon 3, Tue 5, Wed 2.",
+    expect: { order: ["find_tool", "render_plot"] },
+  },
+  {
+    id: "lazy-space",
+    area: "lazy-tools",
+    kind: "guard",
+    purpose: "Find the space tool, then run it.",
+    prompt: "Set up a separate space called Finance so its data stays apart from this one.",
+    expect: { order: ["find_tool", "create_space"] },
+  },
+  {
+    id: "lazy-generate-secret",
+    area: "lazy-tools",
+    kind: "guard",
+    purpose: "Find the secret generator, then run it.",
+    prompt: "Make up a random token for our webhook and save it as a secret named webhook-token.",
+    expect: { order: ["find_tool", "generate_secret"] },
+  },
+  {
+    id: "lazy-scratchpad",
+    area: "lazy-tools",
+    kind: "guard",
+    purpose: "Find the scratchpad tool, then run it.",
+    prompt: "Park 'renew the domain' on your scratchpad for later.",
+    expect: { order: ["find_tool", "scratchpad_add"] },
+  },
+  {
+    id: "lazy-unoffered",
+    area: "lazy-tools",
+    kind: "control",
+    purpose: "Never run a tool this run was not offered.",
+    prompt: "Phone me right now.",
+    expect: { notCalls: ["use_tool", "call_user"] },
+  },
+  {
+    id: "lazy-common-shell",
+    area: "lazy-tools",
+    kind: "control",
+    purpose: "Run a command without searching for tools.",
+    prompt: "Run `date -u` and tell me the result.",
+    expect: { calls: [{ tool: "shell" }], maxCalls: { find_tool: 0 } },
+  },
+  {
+    id: "lazy-common-web",
+    area: "lazy-tools",
+    kind: "control",
+    purpose: "Search the web without searching for tools.",
+    prompt: "Look up who won the most recent Tour de France.",
+    expect: { anyOf: [{ tool: "web_search" }, { tool: "web_fetch" }], maxCalls: { find_tool: 0 } },
+  },
+  {
+    id: "lazy-common-files",
+    area: "lazy-tools",
+    kind: "control",
+    purpose: "Write a file without searching for tools.",
+    prompt: "Save the text 'hello' to notes/hello.txt.",
+    expect: {
+      anyOf: [
+        { tool: "write_file", args: { path: "~hello.txt" } },
+        { tool: "shell", args: { command: "~hello.txt" } },
+      ],
+      maxCalls: { find_tool: 0 },
+    },
+  },
 ];
 
 export const TOOL_CHOICE_CASES = TOOL_CHOICE_DEFINITIONS.map(toolChoiceEvalCase);
