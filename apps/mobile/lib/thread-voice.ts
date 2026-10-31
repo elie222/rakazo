@@ -265,6 +265,12 @@ export function useThreadVoiceCall({
     router.replace({ pathname: "/thread", params: { botId: target.id, name: target.name } });
   }
 
+  // The shortcut can arrive long after this chat opened, e.g. once an archived chat is restored.
+  const startVoiceCallRef = useRef(startVoiceCall);
+  useLayoutEffect(() => {
+    startVoiceCallRef.current = startVoiceCall;
+  });
+
   useEffect(() => {
     if (!botId) return;
     const session = currentSessionGeneration();
@@ -272,7 +278,7 @@ export function useThreadVoiceCall({
       void startVoiceCall(true, session);
     }
     return onShortcutVoiceChat(() => {
-      if (takeShortcutVoiceChat(botId)) void startVoiceCall(true);
+      if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current(true);
     });
   }, [botId]);
 
