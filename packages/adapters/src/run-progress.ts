@@ -6,6 +6,7 @@ import {
   endsSentence,
   isBackgroundRunTrigger,
   noteLastToolStep,
+  redactSecrets,
   redactSecretsAfter,
 } from "@rakazo/core";
 import type { Run } from "@rakazo/db";
@@ -210,7 +211,11 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
   const extracted = extractNarrationText(reply.messageSegments, reply.currentTextSegment);
   const pending = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
   reply.narrationSoFar += extracted.text;
-  const text = [...reply.workingNotes, pending].filter(Boolean).join("\n\n");
+  // Held notes were redacted against the secrets known when they were held; check them again.
+  const text = redactSecrets(
+    [...reply.workingNotes, pending].filter(Boolean).join("\n\n"),
+    ctx.secrets,
+  );
   if (!text) return;
   reply.messageSegments = extracted.remaining;
   reply.currentTextSegment = "";

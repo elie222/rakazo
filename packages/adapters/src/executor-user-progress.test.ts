@@ -778,6 +778,15 @@ describe("text written before a question", () => {
     expect(pauseRunForInput).toHaveBeenCalledOnce();
   });
 
+  it("posts the text on runs that may finish silently", async () => {
+    const { messages, pauseRunForInput } = await runTurn("", false, undefined, [], "fyi", {
+      trigger: "reaction",
+      runtimeEvents: ask("Three pyramids are left."),
+    });
+    expect(sentTexts(messages)).toEqual(["Three pyramids are left."]);
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
   it("keeps the text out of chat on runs that hold narration back", async () => {
     const { messages, pauseRunForInput } = await runTurn("", true, undefined, [], "fyi", {
       runtimeEvents: ask("Three pyramids are left."),
