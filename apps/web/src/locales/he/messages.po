@@ -53,6 +53,11 @@ msgstr ""
 msgid "{0, plural, one {# space} other {# spaces}}"
 msgstr ""
 
+#. placeholder {0}: server.health.toolCount
+#: src/pages/McpServersOverlay.tsx
+msgid "{0, plural, one {# tool} other {# tools}}"
+msgstr ""
+
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -400,7 +405,6 @@ msgstr "{title}, {label}"
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}, יישמר בשם {savedAs}"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
@@ -466,6 +470,7 @@ msgstr "תפריט החשבון של {name}"
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "פעולות עבור {0}"
@@ -636,11 +641,7 @@ msgstr "מתקדם..."
 
 #: src/components/AccountDataSettings.tsx
 msgid "Agent from another app"
-msgstr "סוכן מאפליקציה אחרת"
-
-#: src/pages/McpServersOverlay.tsx
-msgid "Agents:"
-msgstr "סוכנים:"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
@@ -650,6 +651,7 @@ msgstr ""
 msgid "All {credit} goes to model usage."
 msgstr "כל {credit} הולכים לשימוש במודלים."
 
+#: src/components/integrations/agent-access.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
@@ -967,6 +969,7 @@ msgstr "Avatar Studio"
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1204,7 +1207,7 @@ msgstr "לא ניתן להציג את התרשים: {error}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Chat"
-msgstr "צ׳אט"
+msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1259,10 +1262,6 @@ msgstr "יש לבדוק בעצמך"
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "יש לבדוק את תיבת האימייל"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Checked {checked}"
-msgstr "נבדק {checked}"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
@@ -1529,12 +1528,7 @@ msgstr "המחשבים כבויים. יש להגדיר SANDBOX_PROVIDER=docker �
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "כדי לחבר אפליקציות, יש להגדיר קטלוג תוספים בשרת."
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Configured servers"
-msgstr "שרתים מוגדרים"
-
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "אישור מחיקה"
 
@@ -2219,12 +2213,12 @@ msgstr ""
 msgid "Could not update"
 msgstr "לא ניתן לעדכן"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Could not update agent access"
-msgstr "לא ניתן לעדכן את הגישה של הסוכן"
-
 #: src/components/ModelCredits.tsx
 msgid "Could not update billing"
+msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not update bot access"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
@@ -2319,7 +2313,6 @@ msgstr "יוצר…"
 msgid "Credential"
 msgstr "פרטי גישה"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "פרטי הגישה נשמרו"
@@ -2452,7 +2445,9 @@ msgid "Delete {0}"
 msgstr "מחיקת {0}"
 
 #. placeholder {0}: bot.name
+#. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "למחוק את {0}?"
@@ -2767,10 +2762,6 @@ msgstr "משתני סביבה: {names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "שגיאה"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "פרטי השגיאה"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -3199,7 +3190,7 @@ msgstr "אזור העלאת תמונה"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Import"
-msgstr "ייבוא"
+msgstr ""
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4004,6 +3995,10 @@ msgstr "ללא אימות"
 msgid "No authentication"
 msgstr "ללא אימות"
 
+#: src/components/integrations/agent-access.tsx
+msgid "No bots"
+msgstr ""
+
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
@@ -4027,10 +4022,6 @@ msgstr "אין תוצרים תואמים בדף הזה."
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
 msgstr "אין מודלים תואמים"
-
-#: src/pages/McpServersOverlay.tsx
-msgid "No MCP servers yet."
-msgstr "עדיין אין שרתי MCP."
 
 #: src/pages/GroupPanel.tsx
 msgid "No members yet"
@@ -4165,7 +4156,6 @@ msgstr "מזהה לקוח OAuth (אופציונלי)"
 msgid "OAuth client secret (optional)"
 msgstr "סוד לקוח OAuth (אופציונלי)"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth מחובר"
@@ -4174,7 +4164,6 @@ msgstr "OAuth מחובר"
 msgid "OAuth connection failed"
 msgstr "חיבור OAuth נכשל"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "תוקף OAuth פג"
@@ -5004,7 +4993,7 @@ msgstr "שורה"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Rules"
-msgstr "כללים"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5022,7 +5011,6 @@ msgstr "זמן ההרצה חייב להיות בעתיד."
 msgid "running"
 msgstr "פועל"
 
-#: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 #: src/pages/RoutineEditor.tsx
@@ -5546,7 +5534,7 @@ msgstr "מודל דיבור"
 
 #: src/components/AccountAccess.tsx
 msgid "SSO"
-msgstr "SSO"
+msgstr ""
 
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
@@ -5736,7 +5724,6 @@ msgid "Testing"
 msgstr ""
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "בודק…"
 
@@ -6497,7 +6484,7 @@ msgstr "Anthropic"
 
 #: src/components/AccountDataSettings.tsx
 msgid "Your data"
-msgstr "הנתונים שלך"
+msgstr ""
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

@@ -1596,6 +1596,8 @@ model McpServer {
   /// Available in every space of its owner, including later ones; otherwise in spaceId and availableIn.
   allSpaces     Boolean           @default(false)
   availableIn   McpServerSpace[]
+  /// Every agent of its owner can use it; otherwise only agents with an assignment.
+  allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])

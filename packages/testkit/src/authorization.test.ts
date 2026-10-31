@@ -470,6 +470,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/update"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],
+      ["mcp/servers/agents"],
       ["mcp/assignments/list"],
       ["mcp/assignments/all"],
       ["mcp/assignments/approve"],

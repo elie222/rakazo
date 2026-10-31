@@ -14,6 +14,9 @@ import { PipedreamConnector } from "./pipedream-connector.js";
 import * as remoteMcp from "./remote-mcp.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
+// No server is shared with every agent, so only assignments reach a bot.
+const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };
+
 /**
  * Bot secrets and connector OAuth material must never appear in model-visible tool args/results
  * (or review/approval payloads that feed the model). Email OTP / magic-link redaction is not covered.
@@ -399,6 +402,7 @@ describe("secrets model-visibility conformance", () => {
       );
 
       const prisma = {
+        mcpServer: NO_SHARED_SERVERS,
         botMcpServer: {
           findMany: vi.fn().mockResolvedValue([assignment]),
           findFirst: vi.fn().mockResolvedValue(assignment),
