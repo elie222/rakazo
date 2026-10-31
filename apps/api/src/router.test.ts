@@ -34,7 +34,11 @@ import {
 } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
-import { AnswerTooLongError, runProviderTransaction } from "@rakazo/db";
+import {
+  AnswerTooLongError,
+  configureProviderTransactionPool,
+  runProviderTransaction,
+} from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
@@ -46,6 +50,7 @@ import {
   HEARTBEAT_MS,
   SESSION_RECHECK_MS,
 } from "./router.js";
+import { providerScopeKey } from "./routes/connections.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);
@@ -1389,7 +1394,11 @@ describe("MCP prepared credential updates", () => {
 });
 
 describe("MCP pre-registered OAuth client", () => {
-  function harness(isDeploymentOwner = true, storedMaterial?: Record<string, unknown>) {
+  function harness(
+    isDeploymentOwner = true,
+    storedMaterial?: Record<string, unknown>,
+    allowedCommands: readonly string[] = ["npx"],
+  ) {
     const values = new Map<string, string>();
     const secretRows = new Map<string, { id: string; ciphertext: string }>();
     let server: Record<string, unknown> | undefined;
@@ -1476,7 +1485,7 @@ describe("MCP pre-registered OAuth client", () => {
         sandboxProvider: "fake",
         mcpAllowPrivateEndpoint: isDeploymentOwner,
         mcpStdioEnabled: true,
-        mcpStdioAllowedCommands: ["npx"],
+        mcpStdioAllowedCommands: allowedCommands,
         adminEmails: ["owner@rakazo.test"],
       },
       dataDir: "/tmp/rakazo-router-test",
@@ -1909,6 +1918,43 @@ describe("MCP pre-registered OAuth client", () => {
           scope: "drive",
           authorization_server: "https://accounts.example.test/",
         });
+      });
+
+      it("clears the stored credential when the command changes and none is sent", async () => {
+        const { client, server, secrets, prisma } = harness(
+          true,
+          { args: [...stdio.args, "--token", "stored-token"] },
+          ["npx", "node"],
+        );
+
+        const updated = await client.mcp.servers.update({
+          ...update,
+          config: { ...stdio, command: "node", args: [], env: {}, enabled: true, description: "" },
+        });
+
+        expect(updated.hasSecret).toBe(false);
+        expect(updated.hasArgs).toBe(false);
+        expect(server()?.secretId).toBeNull();
+        expect(secrets.put).not.toHaveBeenCalled();
+        expect(prisma.secret.deleteMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: "secret-0" }) }),
+        );
+      });
+
+      it("deletes a stored credential that holds only an empty env record", async () => {
+        const { client, server, secrets, prisma } = harness(true, { env: {} });
+
+        const updated = await client.mcp.servers.update({
+          ...update,
+          config: { ...stdio, args: [], env: {}, enabled: true, description: "" },
+        });
+
+        expect(updated.hasSecret).toBe(false);
+        expect(server()?.secretId).toBeNull();
+        expect(secrets.put).not.toHaveBeenCalled();
+        expect(prisma.secret.deleteMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: "secret-0" }) }),
+        );
       });
     });
 
@@ -2785,8 +2831,9 @@ describe("connections.begin", () => {
     let releaseSlot = () => {};
     let holder: Promise<void> = Promise.resolve();
     const begin = vi.fn(async () => {
-      // Another provider call takes the slot while this one talks to the provider.
+      // Another provider call takes this scope's slot while this one talks to the provider.
       holder = runProviderTransaction(
+        providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
         () =>
           new Promise<void>((resolve) => {
             releaseSlot = resolve;
@@ -3191,6 +3238,7 @@ describe("connections.complete", () => {
       const holder =
         held === "slot"
           ? runProviderTransaction(
+              providerScopeKey({ spaceId: "workspace-1", userId: "user-1" }, "composio", "gmail"),
               () =>
                 new Promise<void>((resolve) => {
                   releaseSlot = resolve;
@@ -3232,6 +3280,123 @@ describe("connections.complete", () => {
       }
     },
   );
+
+  it("completes another space's integration while a slow provider call holds its own scope", async () => {
+    vi.useFakeTimers();
+    // The API sizes the gate from its pool when it builds the app; the default pool is 4.
+    configureProviderTransactionPool(4);
+    const slowRow = {
+      id: "conn-slow",
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "composio",
+      provider: "gmail",
+      displayName: "Gmail",
+      providerRef: "gmail-state",
+      status: "pending",
+      createdAt: new Date("2026-08-26T00:00:00.000Z"),
+    };
+    const otherRow = {
+      id: "conn-other",
+      spaceId: "space-2",
+      userId: "user-2",
+      connectorId: "pipedream",
+      provider: "slack",
+      displayName: "Slack",
+      providerRef: "slack-account",
+      status: "pending",
+      createdAt: new Date("2026-08-26T00:00:00.000Z"),
+    };
+    let releaseSlowProvider = () => {};
+    const slowProvider = new Promise<boolean>((resolve) => {
+      releaseSlowProvider = () => resolve(true);
+    });
+    const otherReady = vi.fn().mockResolvedValue(true);
+    const connectors = {
+      managed: vi.fn((id: string) =>
+        id === "composio"
+          ? { connectionReady: () => slowProvider }
+          : { connectionReady: otherReady },
+      ),
+    };
+    // Each transaction reads its row, probes whether the providerRef is taken, then
+    // re-reads after the update; dispatch on the probe's providerRef and per-space reads.
+    const readsBySpace = new Map<string, number>();
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: true }]),
+      connection: {
+        findFirst: vi.fn(
+          async ({ where }: { where: { spaceId?: string; providerRef?: string } }) => {
+            if (where.providerRef) return null;
+            const reads = (readsBySpace.get(where.spaceId ?? "") ?? 0) + 1;
+            readsBySpace.set(where.spaceId ?? "", reads);
+            const row = where.spaceId === "space-1" ? slowRow : otherRow;
+            return reads === 1 ? { ...row } : { ...row, status: "connected" };
+          },
+        ),
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      connection: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+          where.id === slowRow.id ? { ...slowRow } : { ...otherRow },
+        ),
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaClient;
+    const handler = new RPCHandler(
+      createRouter({
+        prisma,
+        connectors,
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+        dataDir: "/tmp/rakazo-router-test",
+      } as unknown as RouterDeps),
+    );
+    const completeRequest = (connectionId: string, spaceId: string, userId: string) =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/connections/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { connectionId } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: { spaceId, userId, email: `${userId}@rakazo.test`, isDeploymentOwner: true },
+          },
+        },
+      );
+    try {
+      // A hanging provider call inside space-1's gated transaction pins its scope.
+      const slowHandled = completeRequest(slowRow.id, "space-1", "user-1");
+      await vi.advanceTimersByTimeAsync(0);
+      const otherHandled = completeRequest(otherRow.id, "space-2", "user-2");
+      await vi.advanceTimersByTimeAsync(2_000);
+      const response = await otherHandled;
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        json: { id: "conn-other", status: "connected" },
+      });
+      expect(otherReady).toHaveBeenCalledWith(expect.anything(), "slack");
+
+      releaseSlowProvider();
+      const slowResponse = await slowHandled;
+      expect(slowResponse.status).toBe(200);
+    } finally {
+      releaseSlowProvider();
+      vi.useRealTimers();
+    }
+  });
 
   afterEach(() => {
     installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));

@@ -109,6 +109,19 @@ describe("inferScript bot-message wakes", () => {
     expect(reply).toContain("done. i handled: peer-alpha");
     expect(reply).not.toContain(BOT_WAKE_TEXT);
   });
+
+  it("keys a peer request on the message, not the sender's id", () => {
+    // A generated id can contain a journey keyword by chance: both flaky web E2E runs
+    // sent Chief's id with "crm" in it, and the recipient claimed the connector branch.
+    const prompt = buildBotMessageWakePrompt({
+      from: { id: "cmvvkx7j64oicrm19aigl6zfz", name: "Chief" },
+      text: "peer-exchange-alpha",
+      intent: "request",
+    });
+    const script = inferScript(prompt);
+    expect(script[0]?.toolCalls).toBeUndefined();
+    expect(script[0]?.assistant).toContain("done. i handled: peer-exchange-alpha");
+  });
 });
 
 const BOT_WAKE_TEXT = "A message just arrived";
