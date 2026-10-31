@@ -11,6 +11,16 @@ export function isCommandCodeBaseUrl(baseUrl: string | undefined): boolean {
   return baseUrl === COMMANDCODE_BASE_URL || baseUrl === `${COMMANDCODE_BASE_URL}/`;
 }
 
+/** Synthetic serves inference under more than one path on this host. */
+export function isSyntheticBaseUrl(baseUrl: string | undefined): boolean {
+  try {
+    const url = new URL(baseUrl ?? "");
+    return url.protocol === "https:" && url.hostname === "api.synthetic.new";
+  } catch {
+    return false;
+  }
+}
+
 export function compatibleApiKeyRequired(baseUrl: string | undefined): boolean {
   return (
     isOllamaCloudBaseUrl(baseUrl) || isCommandCodeBaseUrl(baseUrl) || isOpenCodeGoBaseUrl(baseUrl)

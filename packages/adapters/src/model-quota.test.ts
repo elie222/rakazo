@@ -5,6 +5,7 @@ import {
   parseCodexQuota,
   parseCommandCodeQuota,
   parseGoQuota,
+  parseSyntheticQuota,
 } from "./model-quota.js";
 
 const codex = {
@@ -360,4 +361,57 @@ it("recognizes a manually saved OpenCode Go compatible URL and reads its native 
     status: "fresh",
     windows: [{ id: "five_hour" }, { id: "seven_day" }, { id: "monthly" }],
   });
+});
+
+const synthetic = {
+  subscription: { limit: 500, requests: 125, renewsAt: "2030-03-17T17:00:00Z" },
+  search: { hourly: { limit: 250, requests: 250, renewsAt: "2030-03-17T13:00:00Z" } },
+  planWeeklyLimit: {
+    nextRegenAt: "2030-03-17T12:30:00Z",
+    percentRemaining: 55.5,
+    nextRegenPercent: 2,
+  },
+};
+it("reads Synthetic's request and weekly windows with the exact compatible key", async () => {
+  const fetcher = vi.fn(async () => response(synthetic));
+  const result = await new ModelQuotaReader(fetcher).read({
+    ...connection,
+    provider: "openai-compatible",
+    baseUrl: "https://api.synthetic.new/v1",
+  });
+  expect(fetcher).toHaveBeenCalledWith(
+    "https://api.synthetic.new/v2/quotas",
+    expect.objectContaining({
+      headers: { authorization: "Bearer test-access-token", accept: "application/json" },
+      redirect: "error",
+    }),
+  );
+  expect(result.view).toMatchObject({
+    status: "fresh",
+    windows: [
+      { id: "five_hour", usedPercent: 25, resetsAt: "2030-03-17T17:00:00.000Z" },
+      { id: "seven_day", usedPercent: 44.5, resetsAt: null },
+    ],
+  });
+  expect(JSON.stringify(result)).not.toContain("test-access-token");
+});
+it("does not send a compatible key to a Synthetic look-alike host", async () => {
+  const fetcher = vi.fn(async () => response(synthetic));
+  const result = await new ModelQuotaReader(fetcher).read({
+    ...connection,
+    provider: "openai-compatible",
+    baseUrl: "https://api.synthetic.new.example.com/v1",
+  });
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(result.view.status).toBe("unsupported");
+});
+it("rejects a Synthetic response without a usable request allowance", () => {
+  expect(parseSyntheticQuota({ subscription: synthetic.subscription })).toHaveLength(1);
+  expect(() => parseSyntheticQuota({ ...synthetic, subscription: null })).toThrow();
+  expect(() =>
+    parseSyntheticQuota({ ...synthetic, subscription: { ...synthetic.subscription, limit: 0 } }),
+  ).toThrow();
+  expect(() =>
+    parseSyntheticQuota({ ...synthetic, planWeeklyLimit: { percentRemaining: 140 } }),
+  ).toThrow();
 });

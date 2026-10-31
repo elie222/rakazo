@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ModelQuota, ModelQuotaWindow } from "@rakazo/contracts";
-import { isCommandCodeBaseUrl, isOpenCodeGoBaseUrl } from "@rakazo/contracts";
+import { isCommandCodeBaseUrl, isOpenCodeGoBaseUrl, isSyntheticBaseUrl } from "@rakazo/contracts";
 
 const MAX_BYTES = 64 * 1024;
 const MAX_AGE_MS = 60_000;
@@ -111,6 +111,45 @@ export function parseGoQuota(payload: unknown): ModelQuotaWindow[] {
     if (!resetsAt) throw new Error("schema");
     return { id, usedPercent: percent(window.percent), resetsAt, modelIds: null };
   });
+}
+
+/**
+ * Synthetic's request allowance and weekly credit limit both gate every model.
+ * The hourly search allowance gates only its search tool, so it is not read.
+ */
+export function parseSyntheticQuota(payload: unknown): ModelQuotaWindow[] {
+  const body = object(payload);
+  const subscription = object(body.subscription);
+  const { limit, requests } = subscription;
+  if (
+    typeof limit !== "number" ||
+    !Number.isFinite(limit) ||
+    limit <= 0 ||
+    typeof requests !== "number" ||
+    !Number.isFinite(requests) ||
+    requests < 0
+  )
+    throw new Error("schema");
+  const windows: ModelQuotaWindow[] = [
+    {
+      id: "five_hour",
+      usedPercent: Math.min(100, (requests / limit) * 100),
+      resetsAt: reset(subscription.renewsAt),
+      modelIds: null,
+    },
+  ];
+  if (body.planWeeklyLimit !== undefined && body.planWeeklyLimit !== null) {
+    const weekly = object(body.planWeeklyLimit);
+    // The weekly limit regenerates in small steps; nextRegenAt is the next
+    // step, not a full reset, so it is not reported as one.
+    windows.push({
+      id: "seven_day",
+      usedPercent: 100 - percent(weekly.percentRemaining),
+      resetsAt: null,
+      modelIds: null,
+    });
+  }
+  return windows;
 }
 
 /** GOAT includes 70 monthly plan credits; purchased credits do not expand that pool. */
@@ -236,6 +275,7 @@ export class ModelQuotaReader {
     const supported =
       commandCode ||
       (connection.provider === "openai-compatible" && isOpenCodeGoBaseUrl(connection.baseUrl)) ||
+      (connection.provider === "openai-compatible" && isSyntheticBaseUrl(connection.baseUrl)) ||
       ["openai-codex", "anthropic", "opencode-go"].includes(connection.provider);
     const empty: QuotaRead = {
       view: {
@@ -282,13 +322,15 @@ export class ModelQuotaReader {
         (connection.provider === "openai-compatible" && isOpenCodeGoBaseUrl(connection.baseUrl));
       const commandCode =
         connection.provider === "openai-compatible" && isCommandCodeBaseUrl(connection.baseUrl);
+      const synthetic =
+        connection.provider === "openai-compatible" && isSyntheticBaseUrl(connection.baseUrl);
       if (codex && !connection.accountId) throw new Error("identity");
       const headers: Record<string, string> = {
         authorization: `Bearer ${connection.accessToken}`,
         accept: "application/json",
       };
       if (codex) headers["chatgpt-account-id"] = connection.accountId!;
-      else if (!go && !commandCode) headers["anthropic-beta"] = "oauth-2025-04-20";
+      else if (!go && !commandCode && !synthetic) headers["anthropic-beta"] = "oauth-2025-04-20";
       const get = async (url: string) =>
         jsonResponse(
           await this.fetchImpl(url, {
@@ -316,7 +358,9 @@ export class ModelQuotaReader {
               ? "https://chatgpt.com/backend-api/wham/usage"
               : go
                 ? "https://opencode.ai/zen/go/v1/usage"
-                : "https://api.anthropic.com/api/oauth/usage",
+                : synthetic
+                  ? "https://api.synthetic.new/v2/quotas"
+                  : "https://api.anthropic.com/api/oauth/usage",
           );
       read = {
         view: {
@@ -329,7 +373,9 @@ export class ModelQuotaReader {
               ? parseCodexQuota(payload)
               : go
                 ? parseGoQuota(payload)
-                : parseClaudeQuota(payload)),
+                : synthetic
+                  ? parseSyntheticQuota(payload)
+                  : parseClaudeQuota(payload)),
         },
       };
     } catch {
