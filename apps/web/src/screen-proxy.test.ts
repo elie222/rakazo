@@ -520,10 +520,12 @@ describe("the status-only probe", () => {
   it("tells whether the computer's screen takes connections, without sending it anything", async () => {
     let received = 0;
     let ownData: ReturnType<typeof trackDataTo> | undefined;
+    const sockets = new Set<Socket>();
     const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
       socket.on("data", () => {
-        // A local tool can probe any listening loopback port; only data this process
-        // sends counts, and the probe's connection is dropped so it cannot stall the close.
+        // A local tool can probe any listening loopback port; only data this process sends counts.
         if (ownData?.fromOwnClient(socket)) received += 1;
         else socket.destroy();
       });
@@ -534,6 +536,8 @@ describe("the status-only probe", () => {
     ownData = trackDataTo(port);
     try {
       expect(await screenUpstreamReachable(at(port))).toBe(true);
+      // A probe that connects and stays silent would otherwise hold the close open.
+      for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       expect(await screenUpstreamReachable(at(port))).toBe(false);
       expect(received).toBe(0);
