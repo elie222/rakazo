@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { ModelQuota } from "@rakazo/contracts";
 import {
   compatibleConnectionName,
   connectionUsageGroups,
@@ -7,26 +8,38 @@ import {
 import type { ModelUsageSort, ModelUsageSortInverted } from "@rakazo/core";
 import { modelUsageRoleRank, sortModelUsageEntries } from "@rakazo/core";
 import {
+  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Switch,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
 import {
+  getModelUsageHideUnreported,
   getModelUsageSort,
   getModelUsageSortInverted,
+  setModelUsageHideUnreported,
   setModelUsageSort,
   setModelUsageSortInverted,
   subscribeModelUsageSort,
 } from "../../lib/model-usage-sort-preference";
 import { useSpaceQueries } from "../../lib/query";
 import { ConnectionQuota } from "./connection-quota";
+
+/** A connection with no reader, or a reading with nothing to show. */
+function reportsNoUsage(quota: ModelQuota | undefined): boolean {
+  return (
+    quota?.status === "unsupported" ||
+    (quota?.status === "fresh" && !quota.windows.length && !quota.balance)
+  );
+}
 
 export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
   const { t } = useLingui();
@@ -58,6 +71,12 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
     subscribeModelUsageSort,
     getModelUsageSortInverted,
     () => false as ModelUsageSortInverted,
+  );
+  const hideUnreportedId = useId();
+  const hideUnreported = useSyncExternalStore(
+    subscribeModelUsageSort,
+    getModelUsageHideUnreported,
+    () => false,
   );
   const entries = groups.map(({ credential }, index) => {
     const providerName =
@@ -95,7 +114,7 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
     inverted,
   ).flatMap(({ id }) => {
     const entry = entriesById.get(id);
-    return entry ? [entry] : [];
+    return entry && !(hideUnreported && reportsNoUsage(entry.quota)) ? [entry] : [];
   });
   const regularOrderLabel =
     order === "quota" ? t`Most remaining` : order === "alphabetical" ? t`A–Z` : t`Primary first`;
@@ -188,6 +207,17 @@ export function ProviderQuotaStack({ compact = false }: { compact?: boolean }) {
               {invertedOrderLabel}
             </ToggleGroupItem>
           </ToggleGroup>
+          <div className="col-span-2 flex items-center gap-2">
+            <Switch
+              id={hideUnreportedId}
+              data-testid="usage-hide-unreported"
+              checked={hideUnreported}
+              onCheckedChange={setModelUsageHideUnreported}
+            />
+            <Label htmlFor={hideUnreportedId} className="font-normal text-muted-foreground">
+              <Trans>Hide connections without usage</Trans>
+            </Label>
+          </div>
         </div>
       ) : null}
       {sortedEntries.map(({ credential, label, accountLabel }) => {

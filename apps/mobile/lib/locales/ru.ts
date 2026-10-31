@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Key limit": "Лимит ключа",
+  Budget: "Бюджет",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",

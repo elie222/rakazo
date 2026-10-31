@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Key limit": "Sleutellimiet",
+  Budget: "Budget",
   "How other bots see it": "Hoe andere bots deze zien",
   "Share to": "Delen met",
   "{count} files": "{count} bestanden",

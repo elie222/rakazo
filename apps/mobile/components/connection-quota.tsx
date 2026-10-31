@@ -82,7 +82,13 @@ export function ConnectionQuota({
                   ? t("Monthly")
                   : window.id === "primary_window" || window.id === "secondary_window"
                     ? t("Allowance")
-                    : window.id
+                    : window.id === "key_limit"
+                      ? t("Key limit")
+                      : window.id.startsWith("budget_")
+                        ? t("Budget")
+                        : window.modelIds && window.label
+                          ? `${t("Weekly")} · ${window.label}`
+                          : (window.label ?? window.id)
           }
           value={t("{remaining}% remaining", {
             remaining: Math.round((100 - window.usedPercent) * 10) / 10,

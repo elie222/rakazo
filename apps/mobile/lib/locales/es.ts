@@ -1,4 +1,6 @@
 export const ES_MESSAGES: Record<string, string> = {
+  "Key limit": "Límite de la clave",
+  Budget: "Presupuesto",
   Allowance: "Asignación",
   Alphabetical: "Alfabético",
   "A–Z": "A–Z",

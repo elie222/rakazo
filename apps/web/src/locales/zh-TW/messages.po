@@ -1003,6 +1003,10 @@ msgstr "返回登入"
 msgid "Backups first"
 msgstr "備用模型優先"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "基底網址"
@@ -1114,6 +1118,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "瀏覽 MCP 伺服器"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3151,6 +3159,10 @@ msgstr "隱藏"
 msgid "Hide"
 msgstr "隱藏"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "隱藏密碼"
@@ -3398,6 +3410,10 @@ msgstr "保留記憶"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "金鑰"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
+msgstr ""
 
 #: src/components/LoginFields.tsx
 msgid "Label"
@@ -4156,6 +4172,10 @@ msgstr "尚無工作項目"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "無觸發器"
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
+msgstr ""
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -6278,6 +6298,10 @@ msgstr "緊急"
 msgid "Usage"
 msgstr "用量"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
+
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
 #: src/pages/AccountSettingsOverlay.tsx
@@ -6465,6 +6489,11 @@ msgstr "週末"
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
 msgstr "每週"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

@@ -1002,6 +1002,10 @@ msgstr "Oturum açmaya geri dön"
 msgid "Backups first"
 msgstr "Önce yedekler"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Temel URL"
@@ -1112,6 +1116,10 @@ msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -3150,6 +3158,10 @@ msgstr "Gizli"
 msgid "Hide"
 msgstr "Gizle"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr ""
@@ -3396,6 +3408,10 @@ msgstr "Hafızayı koru"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
 msgstr ""
 
 #: src/components/LoginFields.tsx
@@ -4154,6 +4170,10 @@ msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
 msgstr ""
 
 #: src/lib/ticket-priority.ts
@@ -6277,6 +6297,10 @@ msgstr ""
 msgid "Usage"
 msgstr "Kullanım"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
+
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
 #: src/pages/AccountSettingsOverlay.tsx
@@ -6464,6 +6488,11 @@ msgstr "Hafta sonları"
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
 msgstr "Haftalık"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

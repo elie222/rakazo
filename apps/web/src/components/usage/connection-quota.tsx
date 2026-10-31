@@ -73,11 +73,19 @@ export function ConnectionQuota({
           <Trans>Loading</Trans>
         </p>
       ) : null}
-      {quota.isError ||
-      observation?.status === "unavailable" ||
-      observation?.status === "unsupported" ? (
+      {quota.isError || observation?.status === "unavailable" ? (
         <p className="text-sm text-muted-foreground" role="status">
           <Trans>Quota unavailable</Trans>
+        </p>
+      ) : null}
+      {observation?.status === "unsupported" ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          <Trans>Usage not reported by this provider</Trans>
+        </p>
+      ) : null}
+      {observation?.status === "fresh" && !observation.windows.length && !observation.balance ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          <Trans>No usage limit</Trans>
         </p>
       ) : null}
       {observation?.status === "stale" ? (
@@ -88,6 +96,21 @@ export function ConnectionQuota({
       {observation?.windows.map((window) => (
         <QuotaWindow key={window.id} window={window} compact={compact} />
       ))}
+      {observation?.balance ? (
+        <div className={`flex justify-between gap-3 ${compact ? "text-xs" : "text-sm"}`}>
+          <span>
+            <Trans>Balance</Trans>
+          </span>
+          <span
+            className={observation.balance.remaining === 0 ? "text-destructive" : "text-foreground"}
+          >
+            {new Intl.NumberFormat(undefined, {
+              style: "currency",
+              currency: observation.balance.currency,
+            }).format(observation.balance.remaining)}
+          </span>
+        </div>
+      ) : null}
       {!compact && observation?.observedAt ? (
         <p className="text-xs text-muted-foreground">
           <Trans>Updated</Trans>{" "}
@@ -112,7 +135,13 @@ function QuotaWindow({ window, compact }: { window: ModelQuotaWindow; compact: b
           ? t`Monthly`
           : window.id === "primary_window" || window.id === "secondary_window"
             ? t`Allowance`
-            : window.id;
+            : window.id === "key_limit"
+              ? t`Key limit`
+              : window.id.startsWith("budget_")
+                ? t`Budget`
+                : window.modelIds && window.label
+                  ? t`Weekly · ${window.label}`
+                  : (window.label ?? window.id);
   return (
     <div className="space-y-1">
       <div className={`flex justify-between gap-3 ${compact ? "text-xs" : "text-sm"}`}>

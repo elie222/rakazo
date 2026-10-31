@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Key limit": "Schlüssellimit",
+  Budget: "Budget",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

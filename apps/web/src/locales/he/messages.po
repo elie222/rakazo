@@ -1002,6 +1002,10 @@ msgstr "חזרה להתחברות"
 msgid "Backups first"
 msgstr "גיבויים תחילה"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1113,6 +1117,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "עיון בשרתי MCP"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3150,6 +3158,10 @@ msgstr "מוסתר"
 msgid "Hide"
 msgstr "הסתרה"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "הסתרת הסיסמה"
@@ -3397,6 +3409,10 @@ msgstr "שמירת הזיכרונות"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "מפתח"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
+msgstr ""
 
 #: src/components/LoginFields.tsx
 msgid "Label"
@@ -4155,6 +4171,10 @@ msgstr "עדיין אין כרטיסים"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "ללא טריגר"
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
+msgstr ""
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -6277,6 +6297,10 @@ msgstr "דחוף"
 msgid "Usage"
 msgstr "שימוש"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
+
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
 #: src/pages/AccountSettingsOverlay.tsx
@@ -6464,6 +6488,11 @@ msgstr "סופי שבוע"
 #: src/components/usage/connection-quota.tsx
 msgid "Weekly"
 msgstr "שבועי"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
