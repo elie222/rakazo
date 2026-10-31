@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerStatus } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { BotAvatar, Button } from "@rakazo/ui-web";
 import { Maximize2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
@@ -46,7 +46,7 @@ export function ComputerPanel({
   onOpenComputerSettings,
   onOpen,
 }: ComputerPanelProps) {
-  // A preview box invites a click that boots a paid computer, so an idle one is a single row.
+  // A clickable preview invites a boot that costs money, so an idle computer only wakes from its button.
   const idle =
     !computerOpen &&
     !booting &&
@@ -60,8 +60,23 @@ export function ComputerPanel({
       <div
         data-testid="computer-preview"
         data-state="idle"
-        className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 py-2.5 ps-4 pe-2.5"
+        className="flex flex-col items-center gap-3 rounded-[14px] bg-muted/50 px-6 py-7"
       >
+        <div className="relative">
+          <BotAvatar
+            avatarSet={bot.avatarSet}
+            color={bot.color}
+            identity={bot.id}
+            size={44}
+            className="opacity-50 grayscale"
+          />
+          <span
+            aria-hidden
+            className="absolute -end-3 -top-2 text-[11px] font-medium leading-none text-muted-foreground/70"
+          >
+            z<sup>z</sup>
+          </span>
+        </div>
         <span className="text-sm text-muted-foreground">
           <Trans>Asleep</Trans>
         </span>

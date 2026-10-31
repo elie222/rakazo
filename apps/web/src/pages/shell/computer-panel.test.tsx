@@ -12,6 +12,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
+  BotAvatar: () => null,
   Button: ({
     variant: _variant,
     size: _size,
@@ -89,7 +90,7 @@ afterEach(async () => {
 });
 
 it.each([null, computer("stopped"), computer("suspended")])(
-  "shows an idle computer as a row that wakes it on request",
+  "shows an idle computer asleep until its Wake button is pressed",
   async (status) => {
     const onOpen = await render(status);
     expect(container.querySelector("iframe")).toBeNull();
