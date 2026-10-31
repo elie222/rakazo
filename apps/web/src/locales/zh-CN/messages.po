@@ -639,6 +639,7 @@ msgstr "高级..."
 msgid "Agents:"
 msgstr "Agent："
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "全部"
