@@ -16,11 +16,13 @@ Native apps need a setting on the server before they can use its [passkeys](./se
 In the Compose stack's `.env`, set `RAKAZO_WEB_BIND=0.0.0.0` (or the host's LAN IP),
 and set `WEB_ORIGIN`, `BETTER_AUTH_URL` and `API_URL` to `http://<LAN-IP>:5173`.
 Replace `<LAN-IP>` with the server's LAN IP. This publishes only the web port; the API
-and other ports stay on loopback.
+and other ports stay on loopback. For published images, if you changed `RAKAZO_WEB_PORT`,
+use that port instead of `5173` in the origins, firewall rule and app address below.
+The source-build stack uses port `5173`.
 
 Recreate the services with `docker compose up -d`, using the same Compose file and env-file
-options as your install. Allow TCP port 5173 in the host firewall, then enter
-`http://<LAN-IP>:5173` in the app's **Use a custom server** field.
+options as your install. Allow TCP port 5173 only from your LAN subnet in the host firewall,
+then enter `http://<LAN-IP>:5173` in the app's **Use a custom server** field.
 
 This exposes plain-HTTP sign-in to everyone on the local network. Tailscale or an HTTPS
 reverse proxy is the safer option.
