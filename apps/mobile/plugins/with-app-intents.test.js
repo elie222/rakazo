@@ -15,6 +15,7 @@ describe("RakazoIntents", () => {
       ["lib/server-config.ts", "API_BASE_STORAGE_KEY"],
       ["lib/api.ts", "SPACE_KEY"],
       ["lib/last-bot.ts", "LAST_BOT_KEY"],
+      ["lib/last-bot.ts", "LAST_BOT_SPACE_KEY"],
     ]) {
       const key = constant(file, name);
       expect(key, `${name} in ${file}`).toBeTruthy();

@@ -113,16 +113,23 @@ struct StartVoiceChatIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult {
-    guard let botId = bot?.botId ?? secureStoreItem("rakazo.last_bot_id"), !botId.isEmpty else {
-      throw MessageBotError.noBot
-    }
+    guard let target = target(bot) else { throw MessageBotError.noBot }
+    let botId = target.botId
     UserDefaults.standard.set(
       ["botId": botId, "at": String(Date().timeIntervalSince1970)],
       forKey: "rakazo.pending_voice_chat")
     NotificationCenter.default.post(name: Notification.Name("RakazoPendingVoiceChat"), object: nil)
-    await openChat(botId: botId, spaceId: bot?.spaceId)
+    await openChat(botId: botId, spaceId: target.spaceId)
     return .result()
   }
+}
+
+/// The chosen bot, or the one whose chat was opened last, with the Space it was opened in.
+private func target(_ bot: BotEntity?) -> (botId: String, spaceId: String?)? {
+  if let bot { return (bot.botId, bot.spaceId) }
+  guard let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty else { return nil }
+  let space = secureStoreItem("rakazo.last_bot_space_id")
+  return (last, space?.isEmpty == false ? space : nil)
 }
 
 @MainActor
@@ -143,16 +150,10 @@ private struct Delivery {
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
 private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
-  let botId: String
-  if let bot {
-    botId = bot.botId
-  } else if let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty {
-    botId = last
-  } else {
-    throw MessageBotError.noBot
-  }
+  guard let target = target(bot) else { throw MessageBotError.noBot }
+  let botId = target.botId
   let session = try RakazoSession.load()
-  let spaceId = bot?.spaceId ?? session.selectedSpaceId
+  let spaceId = target.spaceId ?? session.selectedSpaceId
   // The app asks before a bot first sees the user's data; a send from here cannot ask.
   let uses = ["model", "memory"]
   let consent: ConsentStatus = try await session.rpc(
@@ -187,8 +188,11 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
 private func reply(to sent: Delivery) async throws -> String? {
   for _ in 0..<14 {
     try await Task.sleep(nanoseconds: 2_000_000_000)
-    let thread: ThreadSnapshot = try await sent.session.rpc(
-      "threads/get", ["botId": sent.botId], spaceId: sent.spaceId)
+    // The message is already sent, so a failed check only means no reply yet.
+    guard
+      let thread: ThreadSnapshot = try? await sent.session.rpc(
+        "threads/get", ["botId": sent.botId], spaceId: sent.spaceId)
+    else { continue }
     let active = thread.activeRuns?.first { $0.id == sent.runId }
     if let active, !active.status.hasPrefix("waiting") { continue }
     if active == nil, thread.run?.id == sent.runId, thread.run?.status == "failed" {
