@@ -52,6 +52,8 @@ vi.mock("./api", () => ({
         defaultProvider: "openai-compatible",
         defaultModel: "model-fixture",
       };
+    if (procedure === "models/probeOpenAiCompatible")
+      return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return { primary: null, backups: [] };
     if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
@@ -108,7 +110,26 @@ vi.mock("./i18n", () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
-vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    accessibilityLabel,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    accessibilityLabel: string;
+    value: boolean;
+    disabled: boolean;
+    onValueChange: (value: boolean) => void;
+  }) =>
+    createElement("input", {
+      type: "checkbox",
+      "aria-label": accessibilityLabel,
+      checked: value,
+      disabled,
+      onChange: () => onValueChange(!value),
+    }),
+}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null, Checkmark: () => null }));
 vi.mock("../components/native-action-button", () => ({
@@ -465,4 +486,27 @@ it("offers a retry when the first load fails, then shows the model lists", async
   } finally {
     saved.failMe = false;
   }
+});
+
+it("searches discovered models without losing the selected default", async () => {
+  expect(field("Search")).toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Find models")!
+      .click(),
+  );
+  expect(field("Search")).not.toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "found-0")!
+      .click(),
+  );
+  await act(async () => field("found-1")!.click());
+  await change("Search", "found-10");
+  expect(container.textContent).not.toContain("found-0");
+  expect(container.textContent).toContain("found-10");
+  await change("Search", "");
+  expect(container.textContent).toContain("found-0");
+  expect(field("found-0")?.checked).toBe(true);
+  expect(field("found-1")?.checked).toBe(true);
 });

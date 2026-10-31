@@ -1,24 +1,21 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
-import { MODEL_SEARCH_THRESHOLD, matchesSearchQuery, toggleEnabledModelId } from "@rakazo/core";
+import { toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
   Disclosure,
   Input,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
   Label,
+  ListSearchInput,
   ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
-import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -101,25 +98,18 @@ export function CompatibleModelFields({
   | "updateBaseUrl"
 >) {
   const { t } = useLingui();
-  const [query, setQuery] = useState("");
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: visibleRows,
+    hiddenSelectedCount,
+  } = useListSearch(compatibleRows, {
+    text: (id) => id,
+    id: (id) => id,
+    selectedIds: [modelId, ...enabledModelIds],
+  });
   const hasSearchQuery = query.trim().length > 0;
-  const visibleRows = useMemo(
-    () =>
-      hasSearchQuery
-        ? compatibleRows.filter((id) => matchesSearchQuery(query, id))
-        : compatibleRows,
-    [compatibleRows, hasSearchQuery, query],
-  );
-  const hiddenSelectedCount = useMemo(
-    () =>
-      hasSearchQuery
-        ? compatibleRows.filter(
-            (id) =>
-              (id === modelId || enabledModelIds.includes(id)) && !matchesSearchQuery(query, id),
-          ).length
-        : 0,
-    [compatibleRows, enabledModelIds, hasSearchQuery, modelId, query],
-  );
   return (
     <div className="block text-[13.5px] text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
@@ -203,19 +193,13 @@ export function CompatibleModelFields({
         )}
         {compatibleRows.length || hasSearchQuery ? (
           <div className="mt-3 grid gap-2" data-testid="compatible-model-rows">
-            {compatibleRows.length > MODEL_SEARCH_THRESHOLD || hasSearchQuery ? (
-              <InputGroup className="h-10">
-                <InputGroupAddon>
-                  <Search size={16} strokeWidth={1.8} aria-hidden="true" />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  aria-label={t`Search models`}
-                  placeholder={t`Search`}
-                  autoComplete="off"
-                />
-              </InputGroup>
+            {showSearch ? (
+              <ListSearchInput
+                query={query}
+                setQuery={setQuery}
+                label={t`Search models`}
+                placeholder={t`Search`}
+              />
             ) : null}
             {hiddenSelectedCount > 0 ? (
               <p className="text-[13px] leading-[1.5] text-muted-foreground">

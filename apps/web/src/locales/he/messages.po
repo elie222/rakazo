@@ -1120,7 +1120,6 @@ msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
@@ -2967,7 +2966,6 @@ msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -3747,7 +3745,6 @@ msgstr "מצב"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3768,7 +3765,7 @@ msgstr "חיבורים למודלים"
 msgid "Model id"
 msgstr "מזהה מודל"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
@@ -3783,8 +3780,8 @@ msgstr "מודלים"
 msgid "Models at provider cost"
 msgstr ""
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "מודלים מהשרת"
 
@@ -4013,7 +4010,6 @@ msgid "No matching artifacts on this page."
 msgstr "אין תוצרים תואמים בדף הזה."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4292,8 +4288,8 @@ msgstr ""
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "מודל אחר…"
 
@@ -5118,8 +5114,8 @@ msgstr "היקפים (אופציונלי)"
 msgid "Screen not connected"
 msgstr "המסך אינו מחובר"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5152,8 +5148,8 @@ msgstr "חיפוש לפי דומיין"
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"

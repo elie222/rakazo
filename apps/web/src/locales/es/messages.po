@@ -1120,7 +1120,6 @@ msgid "Can't reach the server."
 msgstr "No se puede alcanzar el servidor."
 
 #: src/components/TextOnlyMark.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "No puede leer imágenes"
@@ -2967,7 +2966,6 @@ msgid "Forgot password?"
 msgstr "¿Olvidaste la contraseña?"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Gratis"
 
@@ -3747,7 +3745,6 @@ msgstr "Modo"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3768,7 +3765,7 @@ msgstr "Conexiones de modelos"
 msgid "Model id"
 msgstr "ID del modelo"
 
-#: src/pages/model-settings/model-picker.tsx
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Opciones del modelo"
@@ -3783,8 +3780,8 @@ msgstr "Modelos"
 msgid "Models at provider cost"
 msgstr "Modelos a precio del proveedor"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "Modelos del servidor"
 
@@ -4013,7 +4010,6 @@ msgid "No matching artifacts on this page."
 msgstr "No hay artefactos que coincidan en esta página."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
@@ -4292,8 +4288,8 @@ msgstr "Original"
 msgid "Original message unavailable"
 msgstr "Mensaje original no disponible"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Otro modelo…"
 
@@ -5118,8 +5114,8 @@ msgstr "Ámbitos (opcional)"
 msgid "Screen not connected"
 msgstr "Pantalla no conectada"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5152,8 +5148,8 @@ msgstr "Buscar por dominio"
 msgid "Search integrations.sh"
 msgstr "Buscar en integrations.sh"
 
+#: src/components/FoundModelPicker.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
-#: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"

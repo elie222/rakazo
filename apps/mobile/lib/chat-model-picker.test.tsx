@@ -1075,8 +1075,14 @@ describe("model role lists", () => {
     act(() => rowButton("Main model", "Add fallback").click());
     expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add fallback" });
     expect(pickerRows()).toHaveLength(10);
-    searchModels("vendor/model-4");
-    await act(async () => pickerRows()[0]!.click());
+    expect(mocks.setOptions.mock.calls.some(([options]) => options.headerSearchBarOptions)).toBe(
+      false,
+    );
+    await act(async () =>
+      pickerRows()
+        .find((row) => row.textContent?.includes("Model 4"))!
+        .click(),
+    );
     expect(rowTitles()).toEqual(["Model 1", "Model 4"]);
     // Keeping the first row leaves the main model and its effort alone.
     expect(roleSaves()).toEqual([{ backups: [pinned(4)] }]);
@@ -1513,7 +1519,13 @@ describe("shared model picker presentation", () => {
     await act(async () =>
       root.render(
         <ModelPickerList
-          choices={choices}
+          choices={[
+            ...choices,
+            ...Array.from({ length: 7 }, (_, index) => ({
+              key: `extra-${index}`,
+              label: `Extra ${index}`,
+            })),
+          ]}
           selectedKey="sonnet"
           providerLabel="OpenRouter"
           onSelect={() => undefined}
@@ -1525,12 +1537,13 @@ describe("shared model picker presentation", () => {
       "Google",
     ]);
     expect(pickerRows().map((row) => row.textContent)).toEqual([
+      ...Array.from({ length: 7 }, (_, index) => `Extra ${index}`),
       "Claude Sonnet 4.5",
       "Claude Haiku",
       "Gemini",
       "Plain model",
     ]);
-    expect(pickerRows()[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(pickerRows()[7]?.getAttribute("aria-selected")).toBe("true");
     searchModels("Anthropic");
     expect(pickerRows().map((row) => row.textContent)).toEqual([
       "Claude Sonnet 4.5",
@@ -1587,7 +1600,17 @@ describe("shared model picker presentation", () => {
     mocks.platform = "android";
     await act(async () =>
       root.render(
-        <ModelPickerList choices={choices} selectedKey="sonnet" onSelect={() => undefined} />,
+        <ModelPickerList
+          choices={[
+            ...choices,
+            ...Array.from({ length: 7 }, (_, index) => ({
+              key: `extra-${index}`,
+              label: `Extra ${index}`,
+            })),
+          ]}
+          selectedKey="sonnet"
+          onSelect={() => undefined}
+        />,
       ),
     );
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Search"]')!;
