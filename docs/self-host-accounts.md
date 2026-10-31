@@ -210,8 +210,17 @@ desktop app uses the system passkey sheet, which only serves the domain the rele
 associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
-built for that domain (the app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
-time). To let a build use this server's passkeys, set:
+built for that domain. The iOS app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
+time. A macOS desktop build takes it from `RAKAZO_PASSKEY_RP_ID` (default `app.rakazo.com`): set
+it to the same domain for `pnpm build` and for `scripts/passkey-entitlements.ts`, then package with
+electron-builder's `-c.mac.entitlements` set to that script's output and `-c.mac.provisioningProfile`
+set to a profile for your App ID with the Associated Domains capability, as the release workflow
+does. Without both, macOS ignores the association and the app hides passkeys. When Apple's CDN
+cannot reach the server (a private network or a VPN such as Tailscale), also set
+`RAKAZO_PASSKEY_DEVELOPER_MODE=1` for either build: a development-signed app then fetches the
+association file itself, once associated-domains developer mode is on (Settings > Developer on
+iOS, `sudo swcutil developer-mode -e true` on macOS, where the app must also live in
+`/Applications`). To let a build use this server's passkeys, set:
 
 ```bash
 # iOS and the macOS desktop app (dev.rakazo.desktop): <Apple Team ID>.<bundle id>, comma-separated.

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { startUserDeviceClient } from "@rakazo/adapters/user-device-client";
 import type { DesktopReachability, DesktopSetup, RakazoDesktopDevice } from "@rakazo/contracts";
 import { parseServerHeaders } from "@rakazo/contracts";
@@ -10,14 +11,17 @@ import type { Session } from "electron";
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   dialog,
   ipcMain,
   Menu,
   net,
+  powerMonitor,
   safeStorage,
   screen,
   session,
   shell,
+  systemPreferences,
 } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
@@ -28,6 +32,7 @@ import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
+import { createDesktopHostScreen, screenDriverInstaller } from "./host-screen.js";
 import { saveLocalComputerHost } from "./local-settings.js";
 import {
   LocalStackController,
@@ -144,6 +149,7 @@ let localStack: LocalStackController;
 let hostComputer: Awaited<ReturnType<typeof prepareHostComputer>> | undefined;
 let requestingComputerAccess = false;
 let userDevices: UserDeviceAccess | undefined;
+let hostScreen: HostScreen | undefined;
 
 markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
@@ -693,6 +699,13 @@ function installApplicationMenu() {
         .catch(() => undefined);
     },
   };
+  // Cmd+, is the macOS Settings chord, and no page keydown can see it: the OS takes
+  // it first, so the menu item is the only place it can be registered.
+  const openSettings: Electron.MenuItemConstructorOptions = {
+    label: "Settings…",
+    accelerator: "CmdOrCtrl+,",
+    click: () => mainWindow?.webContents.send("desktop.settings.open"),
+  };
   const checkForUpdates: Electron.MenuItemConstructorOptions = {
     label: "Check for Updates…",
     visible: updaterSupport(updaterEnvironment).supported,
@@ -737,6 +750,7 @@ function installApplicationMenu() {
             label: app.name,
             submenu: [
               { role: "about" },
+              openSettings,
               checkForUpdates,
               { type: "separator" },
               computerAccess,
@@ -769,6 +783,7 @@ function installApplicationMenu() {
           {
             label: "File",
             submenu: [
+              openSettings,
               computerAccess,
               revokeComputerAccess,
               changeServer,
@@ -1168,6 +1183,22 @@ app.whenReady().then(async () => {
   } catch {
     /* Local access fails closed; Docker remains available. */
   }
+  hostScreen = createDesktopHostScreen({
+    platform: process.platform,
+    driver: screenDriverInstaller({
+      dir: path.join(userDataDir, "screen-driver", "bin"),
+      fetch: (url) => net.fetch(url),
+    }),
+    home: path.join(userDataDir, "screen-driver", "home"),
+    permissions: {
+      isTrustedAccessibilityClient: (prompt) =>
+        systemPreferences.isTrustedAccessibilityClient(prompt),
+      getMediaAccessStatus: (type) => systemPreferences.getMediaAccessStatus(type),
+      requestScreenCapture: () =>
+        desktopCapturer.getSources({ types: ["window"], thumbnailSize: { width: 0, height: 0 } }),
+    },
+    locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+  });
   userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -1188,6 +1219,7 @@ app.whenReady().then(async () => {
         serverUrl: origin,
         token,
         root: path.join(userDataDir, "computers"),
+        screen: hostScreen,
         ...events,
       }),
   });
@@ -1625,5 +1657,6 @@ app.on("before-quit", () => {
   hostComputer?.activate(false);
   void hostComputer?.close();
   userDevices?.close();
+  void hostScreen?.close();
   localStack?.abort();
 });

@@ -23,6 +23,9 @@ import {
   SILENCE_JUDGE_CALIBRATION,
   SILENCE_JUDGE_VERSION,
 } from "../evals/silence.js";
+import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
+import { loadToolChoiceCases, TOOL_CHOICE_FIXTURE_VERSION } from "../evals/tool-choice.js";
+import { TOOL_CHOICE_CASES } from "../evals/tool-choice-cases.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
 import { runApprovalSuite } from "./approval-eval.js";
@@ -52,11 +55,14 @@ async function main() {
       "max-output-tokens": { type: "string" },
       trials: { type: "string", default: "3" },
       case: { type: "string", multiple: true },
+      "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
       "max-tool-calls": { type: "string", default: "30" },
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
+  if (values["cases-file"] && values.suite !== "tool-choice")
+    throw new Error("--cases-file adds tool-choice cases; use --suite tool-choice");
   if (values.suite === "approval")
     return runApprovalSuite(values, {
       codeRevision: codeRevision(),
@@ -67,10 +73,18 @@ async function main() {
     product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
     history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
     silence: { cases: SILENCE_EVAL_CASES, fixtureVersion: SILENCE_FIXTURE_VERSION },
+    "tool-choice": { cases: TOOL_CHOICE_CASES, fixtureVersion: TOOL_CHOICE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
-    throw new Error("Unknown suite; use product, history, silence, or approval");
-  const { cases, fixtureVersion } = suites[values.suite as keyof typeof suites];
+    throw new Error("Unknown suite; use product, history, silence, tool-choice, or approval");
+  const suite = suites[values.suite as keyof typeof suites];
+  const extraCases = values["cases-file"] ? loadToolChoiceCases(values["cases-file"]) : [];
+  const cases = [...suite.cases, ...extraCases];
+  const fixtureVersion = extraCases.length
+    ? `${suite.fixtureVersion}+${extraCases.length}-local`
+    : suite.fixtureVersion;
+  if (new Set(cases.map((c) => c.id)).size !== cases.length)
+    throw new Error("Case ids must be unique across the suite and --cases-file");
   if (values["wire-diagnostics"] && values.suite !== "history")
     throw new Error("Synthetic wire diagnostics require the history suite");
   const strategies = [...new Set(values.strategy?.length ? values.strategy : ["current"])];
@@ -160,7 +174,7 @@ async function main() {
       "Silence cases observe routine chat, transient progress, and provider notification requests; native push delivery and UI pixels are outside the fixture.",
       "Silence reply meaning uses a calibrated LLM judge; other suites retain their existing task-specific graders.",
       "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
-      "Tool trace contains names and statuses only; raw requests and responses are omitted.",
+      "Tool trace contains names and statuses only; raw requests and responses are omitted. The tool-calls artifact keeps model-supplied arguments, with only configured secrets redacted.",
     ],
     trials,
     summary: summarize(trials),
@@ -460,6 +474,10 @@ async function main() {
       CURSOR_API_KEY: "",
       CLOUD_AGENT_PROVIDER: "",
       MODEL_API_KEY: "",
+      // A developer .env with Stripe keys would put the disposable app behind billing.
+      STRIPE_SECRET_KEY: "",
+      STRIPE_WEBHOOK_SECRET: "",
+      STRIPE_PRICE_ID: "",
     });
     execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {
       stdio: "pipe",
@@ -474,6 +492,7 @@ async function main() {
     const { runTrial } = await import("../evals/runner.js");
     const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");
+    const { observeToolCalls } = await import("../evals/tool-calls.js");
     for (let i = 0; i < trials.length; i++) {
       if (stopRequested) {
         for (const remaining of trials.slice(i))
@@ -546,8 +565,10 @@ async function main() {
               [connection.apiKey ?? "", connection.baseUrl ?? ""],
               toolLoopDiagnostics,
             );
+            const toolCallObservations: ObservedToolCall[] = [];
+            const toolLists: ObservedToolList[] = [];
             const handles = await createApp({
-              runtime: observedRuntime,
+              runtime: observeToolCalls(observedRuntime, toolCallObservations, toolLists),
               contextStrategy: planned.strategy as
                 | "current"
                 | "retrieval"
@@ -597,6 +618,8 @@ async function main() {
               cacheDecisions,
               historyDiagnostics,
               toolLoopDiagnostics,
+              toolCallObservations,
+              toolLists,
               finalizeBackground: async () => {
                 acceptingCalls = false;
                 await handles.jobs.close();

@@ -246,6 +246,12 @@ describe("Pi OpenTelemetry", () => {
   it.each(["provider", "missing final answer"])("marks caught %s run failures", async (failure) => {
     const { output, provider } = setup();
     const server = createServer(async (request, response) => {
+      // A local tool can probe any listening loopback port; only model calls are counted.
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       for await (const _chunk of request) {
         /* Drain request body. */
       }
@@ -336,6 +342,12 @@ describe("Pi OpenTelemetry", () => {
     vi.stubEnv("OTEL_CAPTURE_CONTENT", String(capture));
     let calls = 0;
     const server = createServer(async (request, response) => {
+      // A local tool can probe any listening loopback port; only model calls are counted.
+      if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
       for await (const _chunk of request) {
         /* Drain request body. */
       }

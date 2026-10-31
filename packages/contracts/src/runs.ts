@@ -4,6 +4,9 @@ import { Id, IsoDate, RunStatus } from "./ids.js";
 /** The computer provider refused a request at its own rate limit; the run tells the user to wait. */
 export const COMPUTER_RATE_LIMIT_ERROR = "Too many computer requests. Try again later.";
 
+/** The organization spent this month's computer allowance; computers start again next month. */
+export const COMPUTER_ALLOWANCE_USED_ERROR = "This month's computer allowance is used up.";
+
 export const RUN_TRIGGERS = [
   "user",
   "routine",

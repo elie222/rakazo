@@ -35,23 +35,25 @@ describe("web provider factory", () => {
 });
 
 describe("keyless HTTP web provider", () => {
-  it("preserves literal text/plain content through the fetch tool", async () => {
-    const body = "Use <project-root>/src &amp; keep  spacing\n  indented\n";
-    const provider = new KeylessHttpWebProvider({
-      fetch: async () =>
-        new Response(body, { headers: { "content-type": "Text/Plain; charset=utf-8" } }),
-      resolveHostname: publicResolver,
-    });
+  it.each(["Text/Plain; charset=utf-8", "text/markdown"])(
+    "preserves literal %s content through the fetch tool",
+    async (contentType) => {
+      const body = "Use <project-root>/src &amp; keep  spacing\n  indented\n";
+      const provider = new KeylessHttpWebProvider({
+        fetch: async () => new Response(body, { headers: { "content-type": contentType } }),
+        resolveHostname: publicResolver,
+      });
 
-    await expect(
-      webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
-    ).resolves.toEqual({
-      url: "https://example.test/doc",
-      title: "Untitled",
-      text: body,
-      truncated: false,
-    });
-  });
+      await expect(
+        webFetchFromTool(provider, ctx, { url: "https://example.test/doc" }),
+      ).resolves.toEqual({
+        url: "https://example.test/doc",
+        title: "Untitled",
+        text: body,
+        truncated: false,
+      });
+    },
+  );
 
   it("uses the final response's MIME type after a redirect", async () => {
     const provider = new KeylessHttpWebProvider({

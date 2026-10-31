@@ -96,7 +96,7 @@ import type {
 
 export interface SandboxProvider {
   /** True when every running minute is billed, so the active-lifetime cap applies. */
-  billsWhileRunning?(computer: ComputerRef): boolean;
+  billsWhileRunning?(computer: Pick<ComputerRef, "kind">): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Workspace directory operations for hosts without the standard Unix command tools. */
   workspaceDirectories?(

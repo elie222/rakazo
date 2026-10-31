@@ -20,7 +20,7 @@ export const CATALOG_SEARCH = "__catalog_search";
 export const CATALOG_LOAD = "__catalog_load";
 export const CATALOG_EXECUTE = "__catalog_execute";
 
-type CatalogEntry = { id: string; tool: ConnectorTool; group: string };
+export type CatalogEntry = { id: string; tool: ConnectorTool; group: string };
 
 export type CatalogSearchHit = {
   id: string;
@@ -206,9 +206,30 @@ export function searchCatalog(
   const limit = Number.isFinite(requested)
     ? Math.max(1, Math.min(TOOL_SEARCH_LIMIT, Math.trunc(requested)))
     : TOOL_SEARCH_LIMIT;
+  const ranked = rankCatalogEntries(scoped, query, limit);
+  const hits = ranked.hits.map((entry) => ({
+    id: entry.id,
+    name: entry.tool.name,
+    description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
+    readOnly: entry.tool.readOnly === true,
+  }));
+  if (hits.length > 0 && ranked.complete) return { tools: hits };
+  return {
+    tools: hits,
+    groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
+    hint: "No tool matches every word. Try other words or pass group. Built-in tools are not in this catalog.",
+  };
+}
+
+/** The best `limit` entries for a query; `complete` when they match every query word. */
+export function rankCatalogEntries(
+  entries: CatalogEntry[],
+  query: string,
+  limit: number,
+): { hits: CatalogEntry[]; complete: boolean } {
   const words = searchWords(query);
   const score = (inside: boolean) =>
-    scoped.map((entry) => ({ entry, ...catalogScore(entry, query, words, inside) }));
+    entries.map((entry) => ({ entry, ...catalogScore(entry, query, words, inside) }));
   let scored = score(false);
   // Rank on the words that matched before the cap, so a tool that matches every word is
   // not pushed out by tools that match one word and sort earlier by name.
@@ -228,18 +249,8 @@ export function searchCatalog(
         left.entry.id.localeCompare(right.entry.id),
     )
     .slice(0, limit)
-    .map(({ entry }) => ({
-      id: entry.id,
-      name: entry.tool.name,
-      description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
-      readOnly: entry.tool.readOnly === true,
-    }));
-  if (hits.length > 0 && bestMatched === words.length) return { tools: hits };
-  return {
-    tools: hits,
-    groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
-    hint: "No tool matches every word. Try other words or pass group. Built-in tools are called directly, not found here.",
-  };
+    .map(({ entry }) => entry);
+  return { hits, complete: bestMatched === words.length };
 }
 
 /** Exact label first; a model often capitalizes a source name ("Linear" for "linear"). */
@@ -433,7 +444,7 @@ function catalogShortName(entry: CatalogEntry): string {
   return entry.tool.name;
 }
 
-function groupedNames(entries: CatalogEntry[]): Array<{ group: string; names: string[] }> {
+export function groupedNames(entries: CatalogEntry[]): Array<{ group: string; names: string[] }> {
   const byGroup = new Map<string, string[]>();
   for (const entry of entries) {
     const names = byGroup.get(entry.group) ?? [];

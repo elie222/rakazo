@@ -1,5 +1,9 @@
 import type { RunErrorKind } from "@rakazo/contracts";
-import { COMPUTER_RATE_LIMIT_ERROR, providerQuotaResetAt } from "@rakazo/contracts";
+import {
+  COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+  providerQuotaResetAt,
+} from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
 export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
@@ -106,6 +110,7 @@ const APP_RUN_ERRORS = new Set([
   ...MODEL_CONNECTION_RUN_ERRORS,
   MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_ALLOWANCE_USED_ERROR,
   ...stuckWorkStatusMessages(),
 ]);
 

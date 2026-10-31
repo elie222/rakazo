@@ -1,4 +1,5 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxKind } from "@rakazo/contracts";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
@@ -71,9 +72,16 @@ export async function createSandboxProvider(
   kind: string,
   opts: SandboxProviderOptions,
 ): Promise<SandboxProvider> {
-  switch (kind) {
+  if (kind === "") return new NoneSandboxProvider();
+  const parsed = SandboxKind.safeParse(kind);
+  if (!parsed.success) {
+    throw new Error(
+      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.`,
+    );
+  }
+  const sandboxKind = parsed.data;
+  switch (sandboxKind) {
     case "none":
-    case "":
       return new NoneSandboxProvider();
     case "e2b":
       if (!opts.e2bApiKey?.trim()) return missingRemoteKey("e2b", "E2B_API_KEY");
@@ -165,9 +173,11 @@ export async function createSandboxProvider(
       });
     case "fake":
       return new FakeSandboxProvider();
-    default:
+    default: {
+      const _exhaustive: never = sandboxKind;
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.`,
       );
+    }
   }
 }

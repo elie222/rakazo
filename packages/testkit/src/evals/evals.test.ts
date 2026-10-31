@@ -1,7 +1,7 @@
 import type { AdapterContext, ConnectorCall } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "./cases.js";
-import { EVAL_CASES, HISTORY_EVAL_CASES } from "./cases.js";
+import { EMPTY_SETTINGS, EVAL_CASES, HISTORY_EVAL_CASES } from "./cases.js";
 import { emptyTrial, redact, summarize, validateControls } from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
@@ -36,6 +36,10 @@ function evidence(): Evidence {
     pendingApproval: null,
     priorMemory: "",
     toolNames: [],
+    toolCalls: [],
+    finalStep: 1,
+    settings: EMPTY_SETTINGS,
+    settingsBefore: EMPTY_SETTINGS,
     messaging: { originThreadId: null, outbound: [] },
   };
 }

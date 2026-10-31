@@ -33,6 +33,10 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  SectionHeading: ({
+    variant: _variant,
+    ...props
+  }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
   Button: ({
     variant: _variant,
     size: _size,
@@ -656,6 +660,41 @@ it("saves inline name edits on blur and on Enter", async () => {
     expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", value);
   }
 });
+
+it.each([{ isComposing: true }, { keyCode: 229 }])(
+  "keeps an inline name edit open on IME Enter and Escape (%o)",
+  async (composition) => {
+    await render();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click(),
+    );
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Name"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Atlas",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const windowKeys: string[] = [];
+    const onWindowKey = (event: KeyboardEvent) => windowKeys.push(event.key);
+    window.addEventListener("keydown", onWindowKey);
+    for (const key of ["Enter", "Escape"]) {
+      await act(async () =>
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...composition })),
+      );
+    }
+    window.removeEventListener("keydown", onWindowKey);
+    expect(container.querySelector('[aria-label="Name"]')).toBe(input);
+    // A composing Escape must not reach page-level Escape listeners such as the reply chip.
+    expect(windowKeys).not.toContain("Escape");
+    expect(onSave).not.toHaveBeenCalled();
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", "Atlas");
+  },
+);
 
 it.each(["color", "notifyOnFinish"])(
   "restores the last accepted %s after an automatic save fails",

@@ -13,25 +13,31 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
+import { QUEUE_HOLDING_RUN_STATUSES, withAbort } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  clearEndedExecutionRunBinding,
   createGroupRepos,
   createThreadMessageInTransaction,
   recordComputerRunEnd,
+  recordComputerRunSeen,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { activeCodingAgent } from "./coding-agent-activity.js";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { HomeSaveConflictError } from "./home-object-store.js";
+import { sandboxAllowanceUsedUp } from "./sandbox-allowance.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
  * Default uptime cap for providers that bill while running. Background work and viewers
- * do not extend it; executing runs and active user control leases defer suspension.
+ * do not extend it; executing runs, active user control leases, and a working coding agent
+ * defer suspension.
  * COMPUTER_MAX_ACTIVE_MS configures the limit; 0 disables it.
  */
 export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
@@ -48,6 +54,7 @@ export const TAKEOVER_IDLE_GRACE_MS = 30 * 60 * 1000;
  */
 export const ABANDONED_SUSPEND_CLAIM_MS = 60 * 60 * 1000;
 const IDLE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const STATUS_CHECK_TIMEOUT_MS = 15_000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -421,6 +428,14 @@ export async function sleepComputerIfIdle(
     computer = await loadComputer(deps.prisma, computerId);
     if (!computer?.providerRef || !mayNeedSleep(computer)) return;
   }
+  if (computer.executionRunId) {
+    // A legacy binding a pre-lease release left behind. Both suspension claims below
+    // require it null, and a stranded one names a run nothing will clean up, so the
+    // computer could never sleep. Runs that may still execute are left to their owner.
+    await clearEndedExecutionRunBinding(deps.prisma, computer.id);
+    computer = await loadComputer(deps.prisma, computerId);
+    if (!computer?.providerRef || !mayNeedSleep(computer)) return;
+  }
 
   const ref = toComputerRef(computer);
   const ctx: AdapterContext = {
@@ -431,25 +446,39 @@ export async function sleepComputerIfIdle(
     botId: computer.controlBotId ?? undefined,
     signal: new AbortController().signal,
   };
-  // Past the lifetime limit only a run executing right now holds the computer up; waiting
-  // runs and background work start it again when they next need it. A user in control is
-  // left alone: control leases expire on their own, and that release resumes the waiting run.
+  // A status read that never answers counts as not seen rather than holding up the check.
+  const statusSignal = AbortSignal.timeout(STATUS_CHECK_TIMEOUT_MS);
+  const status = deps.sandbox.isRunning?.(ref, { ...ctx, signal: statusSignal });
+  if (status && (await withAbort(status, statusSignal).catch(() => false))) {
+    await recordComputerRunSeen(deps.prisma, computer);
+  }
+  // Past the lifetime limit only a run executing right now, or a coding agent CLI still writing
+  // its session, holds the computer up. Waiting runs and other background work start it again
+  // when they next need it. A user in control is left alone: control leases expire on their
+  // own, and that release resumes the waiting run.
   // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
+  // Once its organization has spent the month's allowance, nothing but a user still in control,
+  // not even a working coding agent, holds the computer up.
   const activeControl = hasActiveComputerControl(computer);
+  const allowanceUsed = !activeControl && (await sandboxAllowanceUsedUp(deps, computer));
   const limitReached =
-    activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl;
+    allowanceUsed ||
+    (activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl);
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl
       ? [...QUEUE_HOLDING_RUN_STATUSES]
       : QUEUE_HOLDING_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
-  const runHolds = () => findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
-  const backgroundHolds = () =>
-    limitReached
-      ? Promise.resolve(false)
-      : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
+  const runHolds = () =>
+    allowanceUsed
+      ? Promise.resolve(null)
+      : findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);
+  const backgroundHolds = async () =>
+    !allowanceUsed &&
+    ((!limitReached && (await hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId))) ||
+      (await activeCodingAgent(deps.sandbox, ref, ctx, sandboxIdleMs())) !== undefined);
   const graceEndsAt = () =>
-    activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
+    allowanceUsed || activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
       ? Promise.resolve(null)
       : takeoverGraceEndsAt(deps.prisma, computerId);
   const runHeld = Boolean(await runHolds());
@@ -643,14 +672,22 @@ export async function sleepComputerIfIdle(
     getLogger().warn("computer.suspend_superseded", { "computer.id": computerId });
     return;
   }
-  await recordComputerRunEnd(deps.prisma, computer, limitReached ? "active_limit" : "idle");
+  const reason = allowanceUsed ? "allowance" : limitReached ? "active_limit" : "idle";
+  await recordComputerRunEnd(deps.prisma, computer, reason);
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,
-    reason: limitReached ? "active_limit" : "idle",
+    reason,
     activeMs: computer.runningSince ? Date.now() - computer.runningSince.getTime() : undefined,
   });
   await announceSuspended(deps, computer);
+  if (allowanceUsed)
+    await postComputerNote(
+      deps,
+      computer,
+      `computer-allowance:${computer.id}:${computer.runningSince?.toISOString() ?? ""}`,
+      `${COMPUTER_ALLOWANCE_USED_ERROR} The computer was saved and stopped.`,
+    );
 }
 
 /**
@@ -761,13 +798,22 @@ async function announceUnsavedHome(
 ): Promise<void> {
   // A successful save or a new runtime starts a new episode. The unique message nonce also
   // deduplicates retries across workers; the message and its event commit together.
-  const clientNonce = `computer-unsaved:${computer.id}:${computer.runningSince?.toISOString() ?? ""}:${computer.homeRevisionAt?.toISOString() ?? ""}:${error.limit}`;
-  const blocks = [
-    {
-      kind: "meta" as const,
-      text: `${error.message}. It will keep running unsaved. Remove large files or files you no longer need so it can be saved.`,
-    },
-  ];
+  await postComputerNote(
+    deps,
+    computer,
+    `computer-unsaved:${computer.id}:${computer.runningSince?.toISOString() ?? ""}:${computer.homeRevisionAt?.toISOString() ?? ""}:${error.limit}`,
+    `${error.message}. It will keep running unsaved. Remove large files or files you no longer need so it can be saved.`,
+  );
+}
+
+/** Posts a system note once per `clientNonce` to the thread of every bot on the computer. */
+async function postComputerNote(
+  deps: { prisma: PrismaClient; events: ThreadEvents },
+  computer: { id: string; spaceId: string },
+  clientNonce: string,
+  text: string,
+): Promise<void> {
+  const blocks = [{ kind: "meta" as const, text }];
   const bots = await deps.prisma.bot.findMany({
     where: { computerId: computer.id },
     select: { id: true, thread: { select: { id: true } } },
@@ -802,7 +848,7 @@ async function announceUnsavedHome(
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
       if (!(cause && typeof cause === "object" && "code" in cause && cause.code === "P2002")) {
-        getLogger().error("computer.unsaved_notice_failed", cause);
+        getLogger().error("computer.notice_failed", cause);
       }
     }
   }
@@ -907,6 +953,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlLeaseId: true,
       controlLeaseExpiresAt: true,
       controlBotId: true,
+      executionRunId: true,
       runningSince: true,
       homeRevisionAt: true,
       updatedAt: true,

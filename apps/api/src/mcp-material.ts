@@ -115,19 +115,33 @@ export function buildMcpUpdateMaterial(
       hasFiles,
   );
   if (!existingHasMaterial && !suppliesMaterial) {
+    // A stored blob of only empty containers is not a credential, but its row still
+    // reports one and nothing in this update can clear it. Clear it here so the caller
+    // deletes the row. A material without container keys belongs to a row without a
+    // stored secret, so keep stays keep and the caller writes nothing.
+    if ("env" in existing || "headers" in existing || "files" in existing) {
+      return { action: "store", material: {} };
+    }
     return clearedOAuth ? { action: "store", material } : { action: "keep" };
   }
-  return {
-    action: "store",
-    material: {
-      ...rest,
-      ...withArgs,
-      ...(secret ? { secret } : {}),
-      ...(env !== undefined ? { env } : {}),
-      ...(headers !== undefined ? { headers } : {}),
-      ...(hasFiles ? { files } : {}),
-    },
+  const stored: McpSecretMaterial = {
+    ...rest,
+    ...withArgs,
+    ...(secret ? { secret } : {}),
+    ...(env !== undefined ? { env } : {}),
+    ...(headers !== undefined ? { headers } : {}),
+    ...(hasFiles ? { files } : {}),
   };
+  // env and headers are full-replace and the contract defaults them to {}, so an update
+  // without credentials replaces the stored names with nothing. An empty record is not a
+  // credential: dropping it lets an emptied material reach {} so the caller deletes the
+  // secret row instead of storing `{"env":{}}` or `{"headers":{}}` and reporting a saved
+  // credential.
+  if (stored.env !== undefined && Object.keys(stored.env).length === 0) delete stored.env;
+  if (stored.headers !== undefined && Object.keys(stored.headers).length === 0) {
+    delete stored.headers;
+  }
+  return { action: "store", material: stored };
 }
 
 /** Resolve the client an update asks for. A resent client ID without a secret

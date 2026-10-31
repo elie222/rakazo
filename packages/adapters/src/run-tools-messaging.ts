@@ -12,6 +12,7 @@ import {
   canPublishDurableProgress,
   flushProgress,
   nextProgressNonce,
+  progressSinceBudgetStart,
   publishMidTurnNarration,
   showNarrationStatus,
 } from "./run-progress.js";
@@ -19,7 +20,9 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 import {
   clampUserProgressMessage,
   isProgressMessageTruncated,
+  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
   messageUserMaxLength,
+  midTurnProgressBudgetUsed,
 } from "./user-progress.js";
 
 /** Messages to the user, other bots and connected agents, and calls. */
@@ -87,7 +90,9 @@ export const messagingTools: ToolHandlers = {
     if (!canPublishDurableProgress(reply)) {
       return call.finish({
         ok: true,
-        note: "This update was not posted. The turn is still fresh, or the chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
+        note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))
+          ? "This update was not posted. The chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply."
+          : `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
       });
     }
     await publishMessage(deps, run, "bot", [{ kind: "text", text }], true, nextProgressNonce(ctx));

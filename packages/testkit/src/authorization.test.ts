@@ -406,13 +406,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/rename"],
       ["connections/tools"],
       ["approvalRules/list"],
-      [
-        "approvalRules/preview",
-        { id: "missing-rule", effect: "remove", sample: { tools: [{ name: "send_email" }] } },
-      ],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
-      ["approvalRules/preview"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["artifacts/listSpace"],
       ["artifacts/listVersions"],
@@ -452,6 +447,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["preferences/adoptTimezone"],
       ["bootstrap"],
       ["security/events"],
+      ["audit/events"],
       ["boards/list"],
       ["boards/get"],
       ["boards/rename"],
@@ -474,6 +470,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/update"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],
+      ["mcp/servers/agents"],
       ["mcp/assignments/list"],
       ["mcp/assignments/all"],
       ["mcp/assignments/approve"],
@@ -1125,22 +1122,6 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<Array<{ id: string }>>(app, member, "approvalRules/list")).toEqual([
       expect.objectContaining({ id: memberRule.id }),
     ]);
-
-    const candidate = {
-      scope: "account",
-      id: ownerRule.id,
-      effect: "deny",
-      sample: { tools: [{ name: "destination.write" }] },
-    };
-    expect(await rpc(app, owner, "approvalRules/preview", candidate)).toEqual({
-      before: "always_allow",
-      after: "deny",
-    });
-    const foreignPreview = await raw(app, member, "approvalRules/preview", candidate);
-    expect(foreignPreview.status).toBe(404);
-    expect(
-      await rpc<Array<{ id: string; effect: string }>>(app, owner, "approvalRules/list"),
-    ).toEqual([expect.objectContaining({ id: ownerRule.id, effect: "always_allow" })]);
 
     await rpc(app, member, "approvalRules/remove", { id: ownerRule.id });
     expect(
@@ -2320,6 +2301,32 @@ describeWithDatabase("API authorization and resource isolation", () => {
     });
     expect(deleted.status).toBe(400);
     expect(await handles.prisma.user.findUnique({ where: { email } })).not.toBeNull();
+  });
+
+  it("shows an organization's audit log only to its owners and admins, past deleted spaces", async () => {
+    const owner = await signup(app, `audit-owner-${stamp}@rakazo.test`, "Audit Owner");
+    const outsider = await signup(app, `audit-outsider-${stamp}@rakazo.test`, "Audit Outsider");
+    const account = await rpc<Actor>(app, owner, "me");
+    const space = await rpc<Space>(app, owner, "spaces/create", { name: "Client A" });
+    await rpc(app, owner, "spaces/remove", { spaceId: space.id });
+
+    type Page = { events: Array<{ action: string; spaceName: string | null }> };
+    const actions = (page: Page) => page.events.map((event) => event.action);
+    const ownLog = await rpc<Page>(app, owner, "audit/events", { spaceId: space.id });
+    expect(actions(ownLog)).toEqual(["space.deleted", "space.created"]);
+    expect(ownLog.events[0]?.spaceName).toBe("Client A");
+    expect(actions(await rpc<Page>(app, outsider, "audit/events", { spaceId: space.id }))).toEqual(
+      [],
+    );
+    const exported = await app.request("/api/audit-events/export", { headers: { cookie: owner } });
+    expect(exported.status).toBe(200);
+    expect(await exported.text()).toContain('"action":"space.created"');
+
+    await db.member.updateMany({ where: { userId: account.userId }, data: { role: "member" } });
+    await expectForbidden(app, owner, "audit/events", {});
+    expect(
+      (await app.request("/api/audit-events/export", { headers: { cookie: owner } })).status,
+    ).toBe(403);
   });
 
   it("denies server administration to every app account, including a stored former owner", async () => {
