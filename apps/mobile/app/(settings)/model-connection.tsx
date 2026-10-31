@@ -47,6 +47,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderRowsEditor } from "../../components/header-rows-editor";
+import { ListSearchInput } from "../../components/list-search-input";
 import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
@@ -64,6 +65,7 @@ import { modelConnectionRequest } from "../../lib/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
 import { thinkingLevelLabel } from "../../lib/thinking-level";
+import { useListSearch } from "../../lib/use-list-search";
 import { errorText } from "../../lib/user-error";
 
 type ModelSelection = {
@@ -263,6 +265,16 @@ export default function ModelConnection() {
     enabledModelIds,
     probeModels,
   );
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: visibleModels,
+  } = useListSearch(compatibleRows, {
+    text: (id) => id,
+    id: (id) => id,
+    selectedIds: [modelId, ...enabledModelIds],
+  });
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default");
@@ -633,9 +645,10 @@ export default function ModelConnection() {
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
       {/* The switches stay visible while the default is "Other model…" or a typed id. */}
+      {showSearch ? <ListSearchInput query={query} setQuery={setQuery} /> : null}
       {compatibleRows.length ? (
         <View style={styles.card}>
-          {compatibleRows.map((entry) => (
+          {visibleModels.map((entry) => (
             // The switch sits beside the radio, not inside it: an accessible
             // Pressable would merge it into the row and hide it from VoiceOver.
             <View key={entry} style={styles.modelRow}>

@@ -1,4 +1,3 @@
-import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   canUseCompatibleModelAsDefault,
@@ -8,26 +7,14 @@ import {
   connectedModelChoices,
   connectionMaxTokensField,
   credentialForModel,
-  filterModelCatalog,
   filterModelChoices,
   groupModelChoices,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
   savedCompatibleModelIds,
-  selectedProviderOutsideSearchResults,
   toggleEnabledModelId,
 } from "./model-providers.js";
-
-function provider(provider: string): ModelCatalogEntry {
-  return {
-    provider,
-    providerName: provider,
-    id: `${provider}-model`,
-    label: `${provider} model`,
-    billing: "",
-  };
-}
 
 describe("popularModelProvidersFirst", () => {
   it("lists subscriptions and the common API providers first", () => {
@@ -97,24 +84,6 @@ describe("pickCatalogModelId", () => {
 
   it("returns an empty string for an unknown provider", () => {
     expect(pickCatalogModelId(catalog, "nope", "openai/gpt-6-luna")).toBe("");
-  });
-});
-
-describe("selectedProviderOutsideSearchResults", () => {
-  it("returns the active provider separately from unrelated search results", () => {
-    const providers = [provider("openrouter"), provider("anthropic"), provider("bedrock")];
-
-    expect(
-      selectedProviderOutsideSearchResults(providers.slice(1), providers, "openrouter"),
-    ).toMatchObject({ provider: "openrouter" });
-  });
-
-  it("returns nothing when the active provider matches the search", () => {
-    const providers = [provider("openrouter"), provider("anthropic")];
-
-    expect(
-      selectedProviderOutsideSearchResults(providers, providers, "openrouter"),
-    ).toBeUndefined();
   });
 });
 
@@ -354,45 +323,6 @@ describe("connected model choices", () => {
       "deepseek-v4-pro",
     );
     expect(resolveSelectableModelId(deepseek, "deepseek", "my-finetune")).toBe("my-finetune");
-  });
-});
-
-describe("filterModelCatalog", () => {
-  const models: ModelCatalogEntry[] = [
-    {
-      provider: "openrouter",
-      providerName: "OpenRouter",
-      id: "anthropic/claude-sonnet",
-      label: "Claude Sonnet",
-      billing: "",
-    },
-    { provider: "openrouter", id: "openai/gpt-mini", label: "GPT Mini", billing: "" },
-  ];
-
-  it("keeps every model for a blank query", () => {
-    expect(filterModelCatalog(models, "")).toBe(models);
-    expect(filterModelCatalog(models, "   ")).toBe(models);
-  });
-
-  it("matches the label, id, or provider name, ignoring case and surrounding space", () => {
-    expect(filterModelCatalog(models, " sonnet ").map((entry) => entry.id)).toEqual([
-      "anthropic/claude-sonnet",
-    ]);
-    expect(filterModelCatalog(models, "OPENAI/").map((entry) => entry.id)).toEqual([
-      "openai/gpt-mini",
-    ]);
-    expect(filterModelCatalog(models, "OpenRouter").map((entry) => entry.id)).toEqual([
-      "anthropic/claude-sonnet",
-      "openai/gpt-mini",
-    ]);
-  });
-
-  it("falls back to the provider id when there is no provider name", () => {
-    expect(filterModelCatalog([models[1]!], "router")).toHaveLength(1);
-  });
-
-  it("returns nothing when no model matches", () => {
-    expect(filterModelCatalog(models, "gemini")).toEqual([]);
   });
 });
 
