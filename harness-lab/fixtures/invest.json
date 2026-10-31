@@ -1,0 +1,49 @@
+{
+  "site": "Tavor Investment House (fictional)",
+  "otp": {
+    "digits": 6,
+    "ttlMinutes": 5,
+    "channels": ["sms", "email"]
+  },
+  "sessionInactivityMinutes": 10,
+  "users": [
+    {
+      "id": "ronen",
+      "name": "Ronen Katz",
+      "username": "ronen.k",
+      "password": "Lab-Pass-2025!",
+      "phone": "0555000201",
+      "email": "ronen.katz@example.test",
+      "quarterlyReturnsPct": {
+        "2025-Q1": 2.31,
+        "2025-Q2": -1.42,
+        "2025-Q3": 4.87
+      },
+      "quarterEndValue": {
+        "2025-Q1": 402118.5,
+        "2025-Q2": 398910.2,
+        "2025-Q3": 424702.9
+      },
+      "statementMonths": ["2025-07", "2025-08", "2025-09"]
+    },
+    {
+      "id": "tamar",
+      "name": "Tamar Levi",
+      "username": "tamar.l",
+      "password": "Lab-Pass-2025!",
+      "phone": "0555000202",
+      "email": "tamar.levi@example.test",
+      "quarterlyReturnsPct": {
+        "2025-Q1": 1.95,
+        "2025-Q2": -0.8,
+        "2025-Q3": 3.6
+      },
+      "quarterEndValue": {
+        "2025-Q1": 118400,
+        "2025-Q2": 119730,
+        "2025-Q3": 126040
+      },
+      "statementMonths": ["2025-07", "2025-08", "2025-09"]
+    }
+  ]
+}

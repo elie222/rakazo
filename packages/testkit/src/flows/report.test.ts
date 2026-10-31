@@ -6,6 +6,9 @@ const result: FlowResult = {
   flow: "weekly-shopping",
   status: "failed",
   endedBy: "user-done",
+  startedAt: "2026-10-25T10:00:00.000Z",
+  endedAt: "2026-10-25T10:10:00.000Z",
+  metrics: {},
   criteria: [{ id: "first-week-cart", pass: false, detail: "oat-milk 0/2" }],
   judgment: { pass: true, reason: "Consistent" },
   transcript: [

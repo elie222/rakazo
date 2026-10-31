@@ -44,6 +44,7 @@ export default defineConfig({
       "packages/*/src/**/*.test.{ts,tsx}",
       "infra/sandboxes/supervisor/src/**/*.test.ts",
       "infra/updater/src/**/*.test.ts",
+      "harness-lab/src/**/*.test.ts",
       "apps/desktop/src/**/*.test.ts",
       "apps/web/src/**/*.test.{ts,tsx}",
       "apps/mobile/lib/**/*.test.{ts,tsx}",

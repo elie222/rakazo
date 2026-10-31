@@ -16,6 +16,8 @@ export type PendingAsk = {
   input?: "text" | "secret";
   /** For secret cards: "login" asks for a username and a password. */
   purpose?: string;
+  /** A login card that asks for named fields (e.g. "ID number", "Mobile phone"), in order. */
+  loginFields?: string[];
 };
 
 /** What the person is looking at when they move. */
@@ -28,7 +30,12 @@ export type Situation =
 export type UserMove =
   | { kind: "say"; text: string }
   | { kind: "choose"; actionId: string }
-  | { kind: "secret"; value: string; username?: string }
+  | {
+      kind: "secret";
+      value: string;
+      username?: string;
+      fields?: Array<{ label: string; value: string }>;
+    }
   | { kind: "done"; reason: string }
   | { kind: "click"; x: number; y: number }
   | { kind: "type"; text: string }
@@ -47,6 +54,7 @@ const CHAT_MOVES = `Moves:
 {"kind":"say","text":"..."}                       a chat message, or a typed answer to a pending question card
 {"kind":"choose","actionId":"..."}                 press one of the pending card's buttons, by its id
 {"kind":"secret","value":"...","username":"..."}   fill a pending secret card (username only for login cards)
+{"kind":"secret","fields":[{"label":"...","value":"..."}]}   fill a login card that lists loginFields: one entry per listed label, same order and spelling
 {"kind":"done","reason":"..."}                     you have nothing more to ask right now, or you give up
 On an approval card, approve when what it shows is what you asked for; deny only something you did not want or that looks wrong.
 Choose "done" when the assistant has finished what you asked and nothing needs your input, or when it is clearly stuck after you have tried to help once.`;
@@ -180,7 +188,27 @@ export function parseMove(text: string, situation: Situation): UserMove {
       situation.ask.actions?.some((action) => action.id === value.actionId)
     )
       return { kind: "choose", actionId: value.actionId };
-    if (
+    if (value.kind === "secret" && situation.kind === "card" && situation.ask.loginFields) {
+      const labels = situation.ask.loginFields;
+      const fields = Array.isArray(value.fields)
+        ? (value.fields as Array<Partial<Record<string, unknown>>>)
+        : [];
+      if (
+        fields.length === labels.length &&
+        fields.every(
+          (field, index) =>
+            field.label === labels[index] && typeof field.value === "string" && field.value,
+        )
+      )
+        return {
+          kind: "secret",
+          value: "",
+          fields: fields.map((field) => ({
+            label: String(field.label),
+            value: String(field.value),
+          })),
+        };
+    } else if (
       value.kind === "secret" &&
       situation.kind === "card" &&
       typeof value.value === "string" &&

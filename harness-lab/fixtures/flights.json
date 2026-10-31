@@ -1,0 +1,23 @@
+{
+  "site": "Skybird Flights (fictional)",
+  "url": "http://127.0.0.1:7003/",
+  "note": "Prices are deterministic per route and date; no login.",
+  "cheapestOneWay": {
+    "offerId": "AZ856-1-2026-12-14",
+    "airline": "Azure Wings",
+    "flightNo": "AZ856",
+    "dep": "05:35",
+    "stops": 1,
+    "pricePerPax": 113,
+    "total": 113
+  },
+  "cheapestOneWayDirect": {
+    "offerId": "OL984-11-2026-12-14",
+    "airline": "Olive Jet",
+    "flightNo": "OL984",
+    "dep": "05:50",
+    "stops": 0,
+    "pricePerPax": 157,
+    "total": 157
+  }
+}

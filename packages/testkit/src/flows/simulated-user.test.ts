@@ -102,3 +102,40 @@ describe("simulated user moves", () => {
     expect(next.steps).toEqual([]);
   });
 });
+
+describe("login cards with named fields", () => {
+  const situation = {
+    kind: "card",
+    ask: {
+      text: "Sign in",
+      input: "secret",
+      purpose: "login",
+      loginFields: ["ID number", "Mobile phone"],
+    },
+  } satisfies Situation;
+
+  it("accepts one value per listed label, in order", () => {
+    const move = parseMove(
+      '{"kind":"secret","fields":[{"label":"ID number","value":"000000018"},{"label":"Mobile phone","value":"0555000101"}]}',
+      situation,
+    );
+    expect(move).toEqual({
+      kind: "secret",
+      value: "",
+      fields: [
+        { label: "ID number", value: "000000018" },
+        { label: "Mobile phone", value: "0555000101" },
+      ],
+    });
+  });
+
+  it("rejects a reply that leaves a field out or renames one", () => {
+    expect(() => parseMove('{"kind":"secret","value":"x","username":"y"}', situation)).toThrow();
+    expect(() =>
+      parseMove(
+        '{"kind":"secret","fields":[{"label":"ID","value":"1"},{"label":"Mobile phone","value":"2"}]}',
+        situation,
+      ),
+    ).toThrow();
+  });
+});

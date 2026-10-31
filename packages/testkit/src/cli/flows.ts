@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,15 +25,28 @@ const { values } = parseArgs({
     list: { type: "boolean", default: false },
     flow: { type: "string", default: "weekly-shopping" },
     sandbox: { type: "string", default: "boat" },
-    model: { type: "string", default: "openai/gpt-6-luna" },
+    // The bot's model; defaults to a good OpenRouter model. Required with --bot-provider local.
+    model: { type: "string" },
+    // Where the bot's own model runs. The simulated person and the judge always use OpenRouter.
+    "bot-provider": { type: "string", default: "openrouter" },
     "user-model": { type: "string", default: "anthropic/claude-haiku-5.5" },
     "judge-model": { type: "string", default: "anthropic/claude-haiku-5.5" },
     "deadline-min": { type: "string", default: "45" },
     "max-turns": { type: "string", default: "20" },
     "spend-cap-usd": { type: "string", default: "10" },
     output: { type: "string", default: "test-report/flows" },
+    // Harness-lab flows: where the lab's control API is, and the host the bot's computer uses.
+    "lab-url": { type: "string" },
+    "lab-host": { type: "string" },
   },
 });
+
+const botProvider = values["bot-provider"];
+if (botProvider !== "openrouter" && botProvider !== "local")
+  throw new Error(`--bot-provider must be openrouter or local, got ${botProvider}`);
+const requestedModel = values.model ?? (botProvider === "local" ? undefined : "openai/gpt-6-luna");
+if (!requestedModel) throw new Error("--model is required with --bot-provider local");
+const botModel: string = requestedModel;
 
 async function main() {
   if (values.list) {
@@ -40,6 +61,12 @@ async function main() {
       ? ({ provider: "docker", apiKeyEnv: undefined } as const)
       : computerTestSandbox(values.sandbox);
   loadRootEnv();
+  if (botProvider === "local" && !process.env.RAKAZO_LOCAL_MODELS_URL)
+    throw new Error(
+      "RAKAZO_LOCAL_MODELS_URL (and RAKAZO_LOCAL_MODELS) are required with --bot-provider local; see docs/self-host-models.md",
+    );
+  if (values["lab-url"]) process.env.HARNESS_LAB_URL = values["lab-url"];
+  if (values["lab-host"]) process.env.HARNESS_LAB_BOT_HOST = values["lab-host"];
   for (const key of [sandbox.apiKeyEnv, "OPENROUTER_API_KEY"].filter(Boolean) as string[]) {
     if (!process.env[key]) throw new Error(`${key} is required for pnpm test:flows`);
   }
@@ -58,6 +85,8 @@ async function main() {
 
   // This CLI owns a disposable database; it never touches an inherited one.
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-flows-"));
+  // A docker computer runs as a different user and writes its home under this directory.
+  if (values.sandbox === "docker") chmodSync(dataDir, 0o777);
   const database = await startPostgres();
   let stop: (() => Promise<void>) | undefined;
   let closeSupervisor: (() => Promise<void>) | undefined;
@@ -75,8 +104,8 @@ async function main() {
           }
         : {}),
       AGENT_RUNTIME: "pi",
-      PI_DEFAULT_PROVIDER: "openrouter",
-      PI_DEFAULT_MODEL: values.model,
+      PI_DEFAULT_PROVIDER: botProvider,
+      PI_DEFAULT_MODEL: botModel,
       BETTER_AUTH_SECRET: "synthetic-flow-auth-secret-at-least-32-characters",
       ENCRYPTION_KEY: "synthetic-flow-encryption-key-at-least-32-characters",
       SANDBOX_SUPERVISOR_TOKEN: "synthetic-flow-supervisor-token-at-least-32-chars",
@@ -147,7 +176,7 @@ async function main() {
     stop = handles.stop;
     await handles.prisma.deploymentSettings.update({
       where: { id: "default" },
-      data: { defaultModelProvider: "openrouter", defaultModelId: values.model },
+      data: { defaultModelProvider: botProvider, defaultModelId: botModel },
     });
     const harnessModel = (id: string) => ({
       provider: "openrouter",
@@ -156,12 +185,22 @@ async function main() {
       maxTokens: 8192,
     });
     log(
-      `flow ${flow.id} on ${sandbox.provider}, bot ${values.model}, user ${values["user-model"]}`,
+      `flow ${flow.id} on ${sandbox.provider}, bot ${botProvider}/${botModel}, user ${values["user-model"]}`,
     );
     const result = await runFlow(handles, flow, {
       sandboxKind: sandbox.provider,
       userModel: harnessModel(values["user-model"]!),
       judgeModel: harnessModel(values["judge-model"]!),
+      // The local server is the person's own connection; OpenRouter is the deployment default.
+      ...(botProvider === "local"
+        ? {
+            botConnection: {
+              provider: "local",
+              apiKey: process.env.RAKAZO_LOCAL_API_KEY ?? "unused",
+              modelId: botModel,
+            },
+          }
+        : {}),
       deadlineMs: Number(values["deadline-min"]) * 60_000,
       maxUserTurns: Number(values["max-turns"]),
       spendCapUsd: Number(values["spend-cap-usd"]),
@@ -169,9 +208,8 @@ async function main() {
       framesDir: path.join(outputDir, "frames"),
     });
     const report = {
-      startedAt: startedAt.toISOString(),
       sandbox: sandbox.provider,
-      botModel: values.model,
+      botModel: botProvider === "local" ? `local/${botModel}` : botModel,
       userModel: values["user-model"],
       judgeModel: values["judge-model"],
       ...result,
@@ -226,10 +264,14 @@ function markdownReport(report: FlowResult & { sandbox: string; botModel?: strin
   const lines = [
     `# ${report.flow}: ${report.status}`,
     "",
+    `Started ${report.startedAt}, ended ${report.endedAt}.`,
     `Sandbox ${report.sandbox}, bot model ${report.botModel}. Ended by ${report.endedBy} after ${Math.round(report.durationMs / 1000)}s.`,
     `Bot cost $${report.botCostUsd.toFixed(3)}, harness ${report.harnessCostUsd === null ? `${report.harnessTokens.input} input and ${report.harnessTokens.output} output tokens (price not reported)` : `cost $${report.harnessCostUsd.toFixed(3)}`}, ${report.toolCalls} tool calls.`,
     ...(report.error ? ["", `Error: ${report.error}`] : []),
     "",
+    ...(Object.keys(report.metrics).length
+      ? ["## Metrics", "```json", JSON.stringify(report.metrics, null, 2), "```", ""]
+      : []),
     "## Checks",
     ...report.criteria.map(
       (criterion) =>

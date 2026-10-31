@@ -1,0 +1,222 @@
+{
+  "site": "Kedem Pensions (fictional)",
+  "otp": {
+    "digits": 6,
+    "ttlMinutes": 5,
+    "resendCooldownSeconds": 30,
+    "maxWrongTries": 3,
+    "lockoutMinutes": 15
+  },
+  "sessionInactivityMinutes": 10,
+  "users": [
+    {
+      "id": "dana",
+      "name": "Dana Alon",
+      "idNumber": "000000018",
+      "phone": "0555000101",
+      "email": "dana.alon@example.test",
+      "funds": [
+        {
+          "fundId": "dana-pension",
+          "kind": "pension",
+          "name": "Kedem Comprehensive Pension - General",
+          "balanceOnScreen": 771253,
+          "returnsPct": {
+            "2023": 11.84,
+            "2024": 13.21,
+            "2025": 8.47
+          },
+          "feeFromDepositsPct": {
+            "2023": 4,
+            "2024": 4,
+            "2025": 4
+          },
+          "feeFromBalancePct": {
+            "2023": 0.21,
+            "2024": 0.21,
+            "2025": 0.21
+          },
+          "closingBalance": {
+            "2023": 516742,
+            "2024": 640854,
+            "2025": 752853
+          }
+        },
+        {
+          "fundId": "dana-hishtalmut",
+          "kind": "hishtalmut",
+          "name": "Kedem Study Fund - Equities",
+          "balanceOnScreen": 217129,
+          "returnsPct": {
+            "2023": 14.62,
+            "2024": 17.03,
+            "2025": 9.88
+          },
+          "feeFromDepositsPct": {
+            "2023": 0,
+            "2024": 0,
+            "2025": 0
+          },
+          "feeFromBalancePct": {
+            "2023": 0.65,
+            "2024": 0.65,
+            "2025": 0.65
+          },
+          "closingBalance": {
+            "2023": 127341,
+            "2024": 165832,
+            "2025": 198729
+          }
+        },
+        {
+          "fundId": "dana-gemel",
+          "kind": "gemel",
+          "name": "Kedem Investment Gemel - US Large-Cap Index",
+          "balanceOnScreen": 107164,
+          "returnsPct": {
+            "2023": 24.1,
+            "2024": 23.7,
+            "2025": 12.35
+          },
+          "feeFromDepositsPct": {
+            "2023": 0,
+            "2024": 0,
+            "2025": 0
+          },
+          "feeFromBalancePct": {
+            "2023": 0.4,
+            "2024": 0.4,
+            "2025": 0.4
+          },
+          "closingBalance": {
+            "2023": 53913,
+            "2024": 73351,
+            "2025": 88764
+          }
+        }
+      ]
+    },
+    {
+      "id": "yossi",
+      "name": "Yossi Dror",
+      "idNumber": "000000026",
+      "phone": "0555000102",
+      "email": "yossi.dror@example.test",
+      "funds": [
+        {
+          "fundId": "yossi-pension",
+          "kind": "pension",
+          "name": "Kedem Comprehensive Pension - Age 50 and under",
+          "balanceOnScreen": 1144441,
+          "returnsPct": {
+            "2023": 10.95,
+            "2024": 12.4,
+            "2025": 7.62
+          },
+          "feeFromDepositsPct": {
+            "2023": 3.5,
+            "2024": 3.5,
+            "2025": 3.5
+          },
+          "feeFromBalancePct": {
+            "2023": 0.19,
+            "2024": 0.19,
+            "2025": 0.19
+          },
+          "closingBalance": {
+            "2023": 801861,
+            "2024": 977732,
+            "2025": 1126041
+          }
+        },
+        {
+          "fundId": "yossi-hishtalmut",
+          "kind": "hishtalmut",
+          "name": "Kedem Study Fund - General",
+          "balanceOnScreen": 266863,
+          "returnsPct": {
+            "2023": 9.7,
+            "2024": 11.15,
+            "2025": 6.9
+          },
+          "feeFromDepositsPct": {
+            "2023": 0,
+            "2024": 0,
+            "2025": 0
+          },
+          "feeFromBalancePct": {
+            "2023": 0.55,
+            "2024": 0.55,
+            "2025": 0.55
+          },
+          "closingBalance": {
+            "2023": 176077,
+            "2024": 214567,
+            "2025": 248463
+          }
+        }
+      ]
+    },
+    {
+      "id": "maya",
+      "name": "Maya Barak",
+      "idNumber": "000000034",
+      "phone": "0555000103",
+      "email": "maya.barak@example.test",
+      "funds": [
+        {
+          "fundId": "maya-pension",
+          "kind": "pension",
+          "name": "Kedem Comprehensive Pension - General",
+          "balanceOnScreen": 474877,
+          "returnsPct": {
+            "2023": 12.3,
+            "2024": 14.05,
+            "2025": 9.11
+          },
+          "feeFromDepositsPct": {
+            "2023": 4,
+            "2024": 4,
+            "2025": 4
+          },
+          "feeFromBalancePct": {
+            "2023": 0.22,
+            "2024": 0.22,
+            "2025": 0.22
+          },
+          "closingBalance": {
+            "2023": 297576,
+            "2024": 380777,
+            "2025": 456477
+          }
+        },
+        {
+          "fundId": "maya-gemel",
+          "kind": "gemel",
+          "name": "Kedem Gemel - Bonds",
+          "balanceOnScreen": 58422,
+          "returnsPct": {
+            "2023": 6.1,
+            "2024": 5.4,
+            "2025": 4.05
+          },
+          "feeFromDepositsPct": {
+            "2023": 0,
+            "2024": 0,
+            "2025": 0
+          },
+          "feeFromBalancePct": {
+            "2023": 0.35,
+            "2024": 0.35,
+            "2025": 0.35
+          },
+          "closingBalance": {
+            "2023": 27328,
+            "2024": 33801,
+            "2025": 40022
+          }
+        }
+      ]
+    }
+  ]
+}

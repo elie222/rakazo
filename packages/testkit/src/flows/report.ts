@@ -93,6 +93,7 @@ figure{margin:10px 0}figure img{width:480px;border:1px solid #ddd;border-radius:
 <h1>${html(report.flow)}: ${report.status}</h1>
 <div class="meta">${html(report.sandbox)} · bot ${html(report.botModel ?? "")} · person ${html(report.userModel ?? "")} · ended by ${report.endedBy} after ${Math.round(report.durationMs / 1000)}s · ${report.toolCalls} tool calls · bot cost $${report.botCostUsd.toFixed(3)}${report.error ? ` · error: ${html(report.error)}` : ""}</div>
 <ul>${checks}</ul>
+${Object.keys(report.metrics ?? {}).length ? `<h2>Metrics</h2><pre>${html(JSON.stringify(report.metrics, null, 2))}</pre>` : ""}
 ${video ? `<video controls src="${video}"></video>` : ""}
 <h2>Timeline</h2>
 ${timeline}

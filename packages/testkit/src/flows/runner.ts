@@ -12,6 +12,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { loginCardFields } from "@rakazo/contracts";
 import { WORKING_RUN_STATUSES } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import type { EvalJudge, JudgeInput, Judgment } from "../evals/judge.js";
@@ -39,6 +40,11 @@ export type FlowOptions = {
   maxUserTurns: number;
   spendCapUsd: number;
   log: (line: string) => void;
+  /**
+   * Connect the bot's model as the person's own, the way Settings does. Needed for providers such
+   * as "local" that have no deployment-wide key, so the deployment default alone is not runnable.
+   */
+  botConnection?: { provider: string; apiKey: string; modelId: string };
   /** Where screen frames are written; the report links them from the timeline. */
   framesDir: string;
 };
@@ -65,7 +71,12 @@ export type FlowResult = {
   frames: Array<{ at: string; file: string }>;
   toolCalls: number;
   toolCounts: Record<string, number>;
+  /** Wall-clock start and end of the run, ISO. */
+  startedAt: string;
+  endedAt: string;
   durationMs: number;
+  /** Whatever the flow's `metrics` reported, such as timestamps of key site events. */
+  metrics: Record<string, unknown>;
   botCostUsd: number;
   /** Null when the provider reported no price for some simulated-user or judge call. */
   harnessCostUsd: number | null;
@@ -128,7 +139,10 @@ export async function runFlow<World>(
     routines: [],
     toolCalls: 0,
     toolCounts: {},
+    startedAt: new Date(started).toISOString(),
+    endedAt: "",
     durationMs: 0,
+    metrics: {},
     botCostUsd: 0,
     harnessCostUsd: 0,
     harnessTokens,
@@ -142,7 +156,9 @@ export async function runFlow<World>(
     });
     const parsed = (await response.json()) as { json?: T; error?: { message?: string } };
     if (!response.ok || parsed.error)
-      throw new Error(`${procedure} ${response.status}: ${parsed.error?.message ?? "failed"}`);
+      throw new Error(
+        `${procedure} ${response.status}: ${parsed.error?.message ?? (parsed as { message?: string }).message ?? "failed"}`,
+      );
     return parsed.json as T;
   };
 
@@ -252,6 +268,12 @@ export async function runFlow<World>(
     if (!signup.ok) throw new Error(`Signup failed (${signup.status})`);
     cookie = sessionCookieHeader(signup);
     await rpc("preferences/adoptTimezone", { timezone: flow.timezone });
+    if (options.botConnection)
+      await rpc("models/connect", {
+        ...options.botConnection,
+        credentialId: null,
+        makeDefault: true,
+      });
     // A fresh bot exactly as a new user would create it: no test instructions.
     const bot = await rpc<{ id: string }>("bots/create", { name: "Errands" });
     botId = bot.id;
@@ -398,6 +420,14 @@ export async function runFlow<World>(
                     ? move.value
                     : "",
             ...(move.kind === "secret" && move.username ? { username: move.username } : {}),
+            // A login card the bot gave its own field labels is answered field by field.
+            ...(move.kind === "secret" && move.fields
+              ? {
+                  fields: loginCardFields(move.fields.map((field) => field.label)).map(
+                    (field, index) => ({ ...field, value: move.fields![index]!.value }),
+                  ),
+                }
+              : {}),
           });
         } else if (state.kind === "mcp" && move.kind === "choose") {
           const request = mcpCardRequest(state, move.actionId, botId);
@@ -535,6 +565,7 @@ export async function runFlow<World>(
         failedRuns.map((run) => run.error ?? run.trigger).join("; "),
       ),
     ];
+    result.metrics = flow.metrics?.(evidence) ?? {};
     const deterministicPass = result.criteria.every((criterion) => criterion.pass);
     if (flow.judge) {
       const judge = createEvalJudge(handles.runtime, options.judgeModel, onUsage);
@@ -556,6 +587,7 @@ export async function runFlow<World>(
     abort.abort();
     result.endedBy = endedBy;
     result.durationMs = Date.now() - started;
+    result.endedAt = new Date().toISOString();
     result.botCostUsd = botId ? await botCost().catch(() => 0) : 0;
     result.harnessCostUsd = harnessCostKnown ? harnessCostUsd : null;
     if (computer)
@@ -634,6 +666,7 @@ export function askPendingCard(
         : {}),
       ...(block.input ? { input: block.input } : {}),
       ...(block.purpose ? { purpose: String(block.purpose) } : {}),
+      ...(block.loginFields?.length ? { loginFields: [...block.loginFields] } : {}),
     } satisfies PendingAsk,
   };
 }

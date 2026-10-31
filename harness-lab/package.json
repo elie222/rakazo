@@ -1,0 +1,33 @@
+{
+  "name": "@rakazo/harness-lab",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "fixtures": "tsx src/cli/write-fixtures.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root .. harness-lab/src",
+    "smoke": "tsx src/cli/browser-smoke.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "hono": "4.13.14",
+    "pdfkit": "0.20.2",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/pdfkit": "0.17.6",
+    "typescript": "7.0.2",
+    "vitest": "4.1.12"
+  },
+  "exports": {
+    "./fixtures": "./src/fixtures.ts",
+    "./client": "./src/client.ts",
+    "./server": "./src/main.ts"
+  }
+}

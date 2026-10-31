@@ -3,3 +3,4 @@ packages:
   - "packages/*"
   - "infra/sandboxes/supervisor"
   - "infra/updater"
+  - "harness-lab"

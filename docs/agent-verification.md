@@ -184,6 +184,17 @@ wake lands in the same week and must not order twice. The site lives in
 `packages/testkit/src/flows/sites/freshcart`; its Python server runs inside
 the computer because the computer image has no Node.
 
+The harness-lab flows (`pension-returns` and its `:inline`, `:no-otp` and `:html`
+variants, `invest-quarterly`, `book-cheapest-flight`) use mock Israeli pension,
+investment and flight sites from `harness-lab/`. Those sites need Node, so they
+run in their own container instead of inside the computer, and the bot reaches
+them by `--lab-host` (a docker network alias or `host.docker.internal`; emulated
+browsers block loopback). The flow reads codes and an event log from the lab's
+control API, answers the one-time code through the simulated person's chat, and
+records wall-clock timings and whether the code came through chat or a screen
+takeover. Each variant removes one obstacle (iframe login, SMS code, PDF-only
+answer) to locate where a bot fails. See `harness-lab/README.md`.
+
 `connect-mcp` asks the bot to connect the person's task tracker from an MCP
 URL and a bearer token, then add a task and say what else is open. The tracker
 is a small streamable HTTP MCP server the flow starts in its own process,

@@ -1,0 +1,5 @@
+lab-ca/
+*.key
+*.pem
+secrets/
+.certs/

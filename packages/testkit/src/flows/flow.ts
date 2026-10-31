@@ -63,6 +63,8 @@ export type Flow<World = unknown> = {
   /** Called after the conversation and after each wake; returns state to keep as evidence. */
   observe(computer: FlowComputer, world: World): Promise<unknown>;
   grade(evidence: FlowEvidence<World>): Criterion[];
+  /** Numbers to compare across runs and variants, such as where the time went; reported, not graded. */
+  metrics?(evidence: FlowEvidence<World>): Record<string, unknown>;
   judge?(evidence: FlowEvidence<World>): JudgeInput;
   /** Reviewed judge inputs with the expected verdict; the judge must agree before it grades. */
   judgeCalibration?: Array<{ input: JudgeInput; pass: boolean }>;
