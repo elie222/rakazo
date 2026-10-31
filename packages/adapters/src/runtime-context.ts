@@ -13,7 +13,11 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
-import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
+import {
+  effectiveOutputReserve,
+  operatorMaxTokens,
+  resolveCompletionMaxTokens,
+} from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
@@ -161,6 +165,8 @@ export function createRuntimeContextPolicy(
       request.model.maxTokens,
       undefined,
       model.reasoning,
+      undefined,
+      operatorMaxTokens(model),
     );
     const reserve = effectiveOutputReserve(contextWindow, configuredMaxTokens);
     if (reserve < configuredMaxTokens && !warnedOutputClamp) {

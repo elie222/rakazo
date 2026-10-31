@@ -6,11 +6,7 @@ import {
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
-import {
-  approvalModeFromPreference,
-  approvalPreferenceFromMode,
-  previewActionApprovalRule,
-} from "@rakazo/core";
+import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
   auditLogOrganization,
@@ -171,19 +167,6 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
-      preview: authed.approvalRules.preview.handler(async ({ context, input }) => {
-        const rules = (await listApprovalRules(deps.prisma, context.actor, input.scope)).map(
-          approvalRuleDto,
-        );
-        const rule = rules.find((entry) => entry.id === input.id);
-        if (!rule) throw new ORPCError("NOT_FOUND");
-        if (rule.matchKind === "category" && input.effect !== "remove")
-          throw new ORPCError("BAD_REQUEST");
-        return previewActionApprovalRule(rules, rule, input.effect, {
-          ...input.sample,
-          site: input.sample.site?.toLowerCase(),
-        });
-      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);

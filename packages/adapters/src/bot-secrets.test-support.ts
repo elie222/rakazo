@@ -19,6 +19,10 @@ function matches(row: Row, where: Where) {
   return Object.entries(where).every(([key, value]) => {
     const field = row[key as keyof Row];
     if (value && typeof value === "object" && "not" in value) return field !== value.not;
+    if (value && typeof value === "object" && "path" in value) {
+      const filter = value as { path: string[]; equals: unknown };
+      return (field as Record<string, unknown> | null)?.[filter.path[0]!] === filter.equals;
+    }
     return field === value;
   });
 }

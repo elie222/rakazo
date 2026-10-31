@@ -620,7 +620,6 @@ msgstr "追加済み"
 msgid "Adding…"
 msgstr "追加中…"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -634,6 +633,10 @@ msgstr "詳細設定"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "詳細設定..."
+
+#: src/components/AccountDataSettings.tsx
+msgid "Agent from another app"
+msgstr "他のアプリのエージェント"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -664,7 +667,6 @@ msgstr "すべてのステータス"
 msgid "All time"
 msgstr "全期間"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "許可"
@@ -684,10 +686,6 @@ msgstr "今回のみ許可"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Allow rule"
-msgstr "許可ルール"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -877,10 +875,6 @@ msgstr "成果物"
 msgid "Ask"
 msgstr "確認"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Ask rule"
-msgstr "確認ルール"
-
 #: src/pages/shell/computer-panel.tsx
 msgid "Asleep"
 msgstr "スリープ中"
@@ -1007,14 +1001,9 @@ msgstr "Bearerトークン"
 msgid "Billing"
 msgstr "請求"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "ブロック"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Block rule"
-msgstr "ブロックルール"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1185,10 +1174,6 @@ msgstr "キャンセル済み"
 msgid "Cancelled"
 msgstr "キャンセル済み"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Candidate rule"
-msgstr "変更案"
-
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr "カード表示"
@@ -1216,6 +1201,10 @@ msgstr "変更中…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "チャートを表示できませんでした: {error}"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat"
+msgstr "チャット"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -2041,10 +2030,6 @@ msgstr "テスト音声を再生できませんでした"
 msgid "Could not preview plugin"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Could not preview rule"
-msgstr "ルールをプレビューできませんでした"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "モデルサーバーに接続できませんでした。"
@@ -2359,10 +2344,6 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron式"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Current"
-msgstr "現在"
-
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2393,6 +2374,7 @@ msgstr "ボットのアバターをカスタマイズ"
 msgid "Dark"
 msgstr "ダーク"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2441,6 +2423,7 @@ msgstr "OpenClawの初期設定"
 msgid "Default scope"
 msgstr "デフォルトの範囲"
 
+#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2869,6 +2852,7 @@ msgstr "テーブルを拡大"
 msgid "expired"
 msgstr "期限切れ"
 
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "エクスポート"
@@ -3212,6 +3196,10 @@ msgstr "このモデルでは画像入力が設定されていません。"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "画像アップロードエリア"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import"
+msgstr "インポート"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4040,10 +4028,6 @@ msgstr "このページに一致するアーティファクトはありません
 msgid "No matching models"
 msgstr "一致するモデルはありません"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "No matching rule"
-msgstr "一致するルールなし"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "MCPサーバーはまだありません。"
@@ -4508,8 +4492,6 @@ msgstr "POST先"
 msgid "Preferences"
 msgstr "環境設定"
 
-#: src/components/ApprovalRulePreview.tsx
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4753,7 +4735,6 @@ msgstr "操作を戻す"
 msgid "Reload"
 msgstr "再読み込み"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5020,6 +5001,10 @@ msgstr "不在中に実行されるルーティン"
 #: src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "行"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Rules"
+msgstr "ルール"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5559,6 +5544,10 @@ msgstr "話しています"
 msgid "Speech model"
 msgstr "音声モデル"
 
+#: src/components/AccountAccess.tsx
+msgid "SSO"
+msgstr "SSO"
+
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSOは一時的に利用できません。もう一度お試しください。"
@@ -5737,10 +5726,6 @@ msgstr "APIキーをテスト"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "接続をテスト"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Test rule"
-msgstr "ルールを試す"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
@@ -6019,7 +6004,6 @@ msgstr "ツールの引数はJSONオブジェクトである必要がありま�
 msgid "Tool arguments must be JSON"
 msgstr "ツールの引数はJSONである必要があります"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "ツール名"
@@ -6510,6 +6494,10 @@ msgstr "あなたが操作中"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "お使いのAnthropic"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Your data"
+msgstr "あなたのデータ"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

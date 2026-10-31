@@ -762,12 +762,6 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
-export const ApprovalRulePreviewSchema = z.object({
-  before: z.enum(["always_allow", "require_approval", "deny", "default"]),
-  after: z.enum(["always_allow", "require_approval", "deny", "default"]),
-});
-export type ApprovalRulePreview = z.infer<typeof ApprovalRulePreviewSchema>;
-
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
