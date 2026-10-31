@@ -37,6 +37,11 @@ msgstr "{0, plural, one {# file} other {# files}}"
 msgid "{0, plural, one {# free month earned} other {# free months earned}}"
 msgstr "{0, plural, one {# free month earned} other {# free months earned}}"
 
+#. placeholder {0}: item.freeMonths
+#: src/pages/AdminAccessPage.tsx
+msgid "{0, plural, one {# free month} other {# free months}}"
+msgstr "{0, plural, one {# free month} other {# free months}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -966,6 +971,7 @@ msgstr "Avatar Studio"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
@@ -1923,6 +1929,10 @@ msgstr "Could not download {name}. Try again."
 msgid "Could not enable tools"
 msgstr "Could not enable tools"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not grant access"
+msgstr "Could not grant access"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Could not install connector"
@@ -2098,6 +2108,10 @@ msgstr "Could not reset password"
 msgid "Could not revoke connection"
 msgstr "Could not revoke connection"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not revoke grant"
+msgstr "Could not revoke grant"
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
 msgstr "Could not run routine"
@@ -2241,6 +2255,10 @@ msgstr "Could not update the default memory scope"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Couldn't load grants"
+msgstr "Couldn't load grants"
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "Couldn't load messaging settings"
@@ -2328,6 +2346,10 @@ msgstr "Credentials: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr "Credit amount"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Credits ($)"
+msgstr "Credits ($)"
 
 #: src/lib/cron.ts
 msgid "Cron"
@@ -2694,6 +2716,7 @@ msgstr "Edit name"
 msgid "Edit Profile"
 msgstr "Edit Profile"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "Email"
@@ -2975,6 +2998,14 @@ msgstr "Forgot password?"
 msgid "Free"
 msgstr "Free"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Free access"
+msgstr "Free access"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Free months"
+msgstr "Free months"
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Free plan ends {day}"
 msgstr "Free plan ends {day}"
@@ -3030,6 +3061,14 @@ msgstr "Git event"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "Go home"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Grant"
+msgstr "Grant"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Granting…"
+msgstr "Granting…"
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
@@ -3471,6 +3510,7 @@ msgstr "Loading voice providers…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -4390,6 +4430,7 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
@@ -4586,6 +4627,10 @@ msgstr "Recall and write"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "Recall only"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Received"
+msgstr "Received"
 
 #: src/pages/ActivityList.tsx
 msgid "Recent"
@@ -4924,6 +4969,7 @@ msgstr "Restoring your workspace"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4955,9 +5001,14 @@ msgstr "Return to Rakazo"
 msgid "Review provider settings and test again."
 msgstr "Review provider settings and test again."
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "Revoke"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Revoked"
+msgstr "Revoked"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"

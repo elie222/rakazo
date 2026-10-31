@@ -38,6 +38,11 @@ msgstr ""
 msgid "{0, plural, one {# free month earned} other {# free months earned}}"
 msgstr "{0, plural, one {已獲得 # 個月免費} other {已獲得 # 個月免費}}"
 
+#. placeholder {0}: item.freeMonths
+#: src/pages/AdminAccessPage.tsx
+msgid "{0, plural, one {# free month} other {# free months}}"
+msgstr ""
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -967,6 +972,7 @@ msgstr "頭像工作室"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
@@ -1924,6 +1930,10 @@ msgstr "無法下載 {name}。請重試。"
 msgid "Could not enable tools"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not grant access"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "無法安裝連接器"
@@ -2099,6 +2109,10 @@ msgstr "無法重設密碼"
 msgid "Could not revoke connection"
 msgstr "無法撤銷連線授權"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not revoke grant"
+msgstr ""
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
 msgstr "無法執行例行任務"
@@ -2242,6 +2256,10 @@ msgstr "無法更新預設記憶範圍"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "無法驗證電腦設定（{failureMessage}）。請修復連線後再次檢查。"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Couldn't load grants"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "無法載入訊息設定"
@@ -2329,6 +2347,10 @@ msgstr "憑證：{names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr "額度金額"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Credits ($)"
+msgstr ""
 
 #: src/lib/cron.ts
 msgid "Cron"
@@ -2695,6 +2717,7 @@ msgstr "編輯名稱"
 msgid "Edit Profile"
 msgstr "編輯資料"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "電子信箱"
@@ -2976,6 +2999,14 @@ msgstr "忘記密碼？"
 msgid "Free"
 msgstr "免費"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Free access"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Free months"
+msgstr ""
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Free plan ends {day}"
 msgstr "免費方案將於 {day} 結束"
@@ -3031,6 +3062,14 @@ msgstr "Git 事件"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "返回首頁"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Grant"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Granting…"
+msgstr ""
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
@@ -3472,6 +3511,7 @@ msgstr "正在載入語音供應商…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -4391,6 +4431,7 @@ msgstr "請貼上你的 API 金鑰，然後重新測試。"
 msgid "Paused"
 msgstr "已暫停"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
@@ -4587,6 +4628,10 @@ msgstr "回想與寫入"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "僅回想"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Received"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "Recent"
@@ -4925,6 +4970,7 @@ msgstr "正在還原工作空間"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4956,9 +5002,14 @@ msgstr "返回 Rakazo"
 msgid "Review provider settings and test again."
 msgstr "請檢查供應商設定並重新測試。"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "撤銷授權"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Revoked"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"

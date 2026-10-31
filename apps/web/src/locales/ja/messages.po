@@ -37,6 +37,11 @@ msgstr ""
 msgid "{0, plural, one {# free month earned} other {# free months earned}}"
 msgstr "{0, plural, one {#か月分の無料期間を獲得} other {#か月分の無料期間を獲得}}"
 
+#. placeholder {0}: item.freeMonths
+#: src/pages/AdminAccessPage.tsx
+msgid "{0, plural, one {# free month} other {# free months}}"
+msgstr ""
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -966,6 +971,7 @@ msgstr "Avatar Studio"
 
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
@@ -1923,6 +1929,10 @@ msgstr "{name}をダウンロードできませんでした。もう一度お試
 msgid "Could not enable tools"
 msgstr ""
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not grant access"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "コネクタをインストールできませんでした"
@@ -2098,6 +2108,10 @@ msgstr "パスワードをリセットできませんでした"
 msgid "Could not revoke connection"
 msgstr "接続を取り消せませんでした"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Could not revoke grant"
+msgstr ""
+
 #: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
 msgstr "ルーティンを実行できませんでした"
@@ -2241,6 +2255,10 @@ msgstr "デフォルトのメモリ範囲を更新できませんでした"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "コンピューターのセットアップを確認できませんでした（{failureMessage}）。接続を修正してから、もう一度確認してください。"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Couldn't load grants"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "メッセージ設定を読み込めませんでした"
@@ -2328,6 +2346,10 @@ msgstr "認証情報: {names}"
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr "クレジット額"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Credits ($)"
+msgstr ""
 
 #: src/lib/cron.ts
 msgid "Cron"
@@ -2694,6 +2716,7 @@ msgstr "名前を編集"
 msgid "Edit Profile"
 msgstr "プロフィールを編集"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "メールアドレス"
@@ -2975,6 +2998,14 @@ msgstr "パスワードをお忘れですか？"
 msgid "Free"
 msgstr "無料"
 
+#: src/pages/AdminAccessPage.tsx
+msgid "Free access"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Free months"
+msgstr ""
+
 #: src/pages/shell/shell-sidebar.tsx
 msgid "Free plan ends {day}"
 msgstr "無料プランは{day}に終了します"
@@ -3030,6 +3061,14 @@ msgstr "Gitイベント"
 #: src/pages/NotFound.tsx
 msgid "Go home"
 msgstr "ホームへ"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Grant"
+msgstr ""
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Granting…"
+msgstr ""
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
@@ -3471,6 +3510,7 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PageLoading.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -4390,6 +4430,7 @@ msgstr "APIキーを貼り付けてから、もう一度テストしてくださ
 msgid "Paused"
 msgstr "一時停止中"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 msgid "Pending"
@@ -4586,6 +4627,10 @@ msgstr "参照と書き込み"
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Recall only"
 msgstr "参照のみ"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Received"
+msgstr ""
 
 #: src/pages/ActivityList.tsx
 msgid "Recent"
@@ -4924,6 +4969,7 @@ msgstr "ワークスペースを復元中"
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4955,9 +5001,14 @@ msgstr "Rakazoに戻る"
 msgid "Review provider settings and test again."
 msgstr "プロバイダー設定を確認して、もう一度テストしてください。"
 
+#: src/pages/AdminAccessPage.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "取り消す"
+
+#: src/pages/AdminAccessPage.tsx
+msgid "Revoked"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
