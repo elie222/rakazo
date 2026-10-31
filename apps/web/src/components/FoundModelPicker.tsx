@@ -34,7 +34,13 @@ export function FoundModelPicker({
     setQuery("");
   };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
       <PopoverTrigger
         render={<Button variant="outline" className="mt-2 w-full justify-start" />}
         aria-label={t`Models from server`}
