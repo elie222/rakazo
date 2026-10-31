@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (non lu)"
 
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# agent} other {# agents}}"
+msgstr ""
+
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
@@ -466,6 +471,7 @@ msgstr "Menu du compte de {name}"
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "Actions pour {0}"
@@ -620,6 +626,7 @@ msgstr "Ajouté"
 msgid "Adding…"
 msgstr "Ajout en cours…"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -634,15 +641,10 @@ msgstr "Avancé"
 msgid "Advanced..."
 msgstr "Avancé..."
 
-#: src/components/AccountDataSettings.tsx
-msgid "Agent from another app"
-msgstr "Agent d’une autre app"
+#: src/components/integrations/agent-access.tsx
+msgid "Agents"
+msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Agents:"
-msgstr "Agents :"
-
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -650,6 +652,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "All {credit} goes to model usage."
 msgstr "La totalité des {credit} sert à l’utilisation des modèles."
+
+#: src/components/integrations/agent-access.tsx
+msgid "All agents"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -668,6 +674,7 @@ msgstr ""
 msgid "All time"
 msgstr "Toute la période"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "Autoriser"
@@ -687,6 +694,10 @@ msgstr "Autoriser une fois"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "Règle d’autorisation"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -876,6 +887,10 @@ msgstr "Artefacts"
 msgid "Ask"
 msgstr "Demander"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "Règle de confirmation"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -964,6 +979,7 @@ msgstr "Studio d'avatars"
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -998,9 +1014,14 @@ msgstr "Jeton porteur"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Bloquer"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "Règle de blocage"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1171,6 +1192,10 @@ msgstr "annulé"
 msgid "Cancelled"
 msgstr "Annulé"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "Règle proposée"
+
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr "Vue en cartes"
@@ -1198,10 +1223,6 @@ msgstr "Modification en cours…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "Le graphique n'a pas pu s'afficher : {error}"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat"
-msgstr "Discussion"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1526,12 +1547,7 @@ msgstr "Les ordinateurs sont désactivés. Définissez SANDBOX_PROVIDER=docker a
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Configured servers"
-msgstr "Serveurs configurés"
-
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "Confirmer la suppression"
 
@@ -2027,6 +2043,10 @@ msgstr "Impossible de lire un extrait de test"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "Impossible de prévisualiser la règle"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Impossible de joindre le serveur du modèle."
@@ -2341,6 +2361,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Expression Cron"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "Actuel"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2371,7 +2395,6 @@ msgstr "Personnaliser l'avatar du bot"
 msgid "Dark"
 msgstr "Sombre"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2420,7 +2443,6 @@ msgstr "Par défaut d’OpenClaw"
 msgid "Default scope"
 msgstr "Portée par défaut"
 
-#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2449,7 +2471,9 @@ msgid "Delete {0}"
 msgstr "Supprimer {0}"
 
 #. placeholder {0}: bot.name
+#. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "Supprimer {0} ?"
@@ -2849,7 +2873,6 @@ msgstr "Agrandir le tableau"
 msgid "expired"
 msgstr "expiré"
 
-#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Exporter"
@@ -3193,10 +3216,6 @@ msgstr "La saisie d’images n’est pas configurée pour ce modèle."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Zone de téléchargement d'image"
-
-#: src/components/AccountDataSettings.tsx
-msgid "Import"
-msgstr "Importer"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3985,6 +4004,10 @@ msgstr "Page suivante"
 msgid "Next settings sections"
 msgstr ""
 
+#: src/components/integrations/agent-access.tsx
+msgid "No agents"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "Aucune application ne correspond à votre recherche."
@@ -4025,9 +4048,9 @@ msgstr "Aucun artefact correspondant sur cette page."
 msgid "No matching models"
 msgstr "Aucun modèle correspondant"
 
-#: src/pages/McpServersOverlay.tsx
-msgid "No MCP servers yet."
-msgstr "Aucun serveur MCP pour le moment."
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "Aucune règle correspondante"
 
 #: src/pages/GroupPanel.tsx
 msgid "No members yet"
@@ -4485,6 +4508,8 @@ msgstr "POST vers"
 msgid "Preferences"
 msgstr "Préférences"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4728,6 +4753,7 @@ msgstr "Rendre le contrôle"
 msgid "Reload"
 msgstr "Recharger"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -4994,10 +5020,6 @@ msgstr ""
 #: src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "Ligne"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr "Règles"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5537,10 +5559,6 @@ msgstr "Parle"
 msgid "Speech model"
 msgstr "Modèle de parole"
 
-#: src/components/AccountAccess.tsx
-msgid "SSO"
-msgstr "SSO"
-
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO est temporairement indisponible. Réessayez."
@@ -5720,6 +5738,10 @@ msgstr "Tester la clé API"
 msgid "Test connection"
 msgstr "Tester la connexion"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "Tester la règle"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "Exécution de test"
@@ -5729,7 +5751,6 @@ msgid "Testing"
 msgstr ""
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Test en cours…"
 
@@ -5997,6 +6018,7 @@ msgstr "Les arguments doivent être un objet JSON"
 msgid "Tool arguments must be JSON"
 msgstr "Les arguments doivent être au format JSON"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Nom de l’outil"
@@ -6483,10 +6505,6 @@ msgstr "Vous avez le contrôle"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Votre Anthropic"
-
-#: src/components/AccountDataSettings.tsx
-msgid "Your data"
-msgstr "Vos données"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

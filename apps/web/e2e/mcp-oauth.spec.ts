@@ -91,12 +91,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await openIntegrationsAdd(page, "Manage MCP servers");
   await expect(page.getByText("Linear MCP", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Access token (optional)")).toBeHidden();
   await captureScreenshot(page, testInfo, "mcp-oauth-ready");
-
-  await page.getByText("Advanced", { exact: true }).click();
-  await expect(page.getByLabel("Access token (optional)")).toBeVisible();
-  await page.getByText("Advanced", { exact: true }).click();
 
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Connect OAuth", exact: true }).click();
@@ -107,10 +102,13 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
 
   releaseCompletion();
   await expect(page.getByText("OAuth connected", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reconnect OAuth", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeHidden();
   await expect.poll(() => popup.isClosed()).toBe(true);
   await captureScreenshot(page, testInfo, "mcp-oauth-connected");
+  await page.getByRole("button", { name: "Actions for Linear MCP", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Reconnect OAuth", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Disconnect", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   oauthStatus = "reconnect";
   hasSecret = true;
@@ -193,6 +191,8 @@ test("adds an MCP server with a pre-registered OAuth client", async ({ page }, t
   await page.getByRole("button", { name: "Add server", exact: true }).click();
   await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add server", exact: true }).click();
+  await page.getByText("Advanced", { exact: true }).click();
   await expect(page.getByLabel("OAuth client ID (optional)")).toHaveValue("");
   await expect(page.getByLabel("OAuth client secret (optional)")).toHaveValue("");
 });
@@ -262,7 +262,8 @@ test("asks for a client ID when the MCP server cannot register one", async ({ pa
 
   await expect(page.getByRole("dialog").getByRole("alert")).toHaveText("Needs an OAuth client ID");
   await expect(page.getByLabel("OAuth client ID (optional)")).toBeFocused();
+  await captureScreenshot(page, testInfo, "mcp-oauth-client-required");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByTestId("mcp-health")).toContainText("Needs an OAuth client ID");
   await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeHidden();
-  await captureScreenshot(page, testInfo, "mcp-oauth-client-required");
 });

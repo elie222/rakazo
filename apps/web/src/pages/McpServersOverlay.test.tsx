@@ -2,7 +2,7 @@
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -48,20 +48,25 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 vi.mock("@rakazo/ui-web", async () => {
-  const { createElement } = await import("react");
+  const { cloneElement, createElement } = await import("react");
   const container = ({ children }: { children: ReactNode }) => createElement("div", null, children);
   return Object.fromEntries([
     ...[
-      "Badge",
-      "Card",
-      "CardContent",
-      "CardHeader",
-      "CardTitle",
+      "AlertDialog",
+      "AlertDialogContent",
+      "AlertDialogDescription",
+      "AlertDialogFooter",
+      "AlertDialogHeader",
+      "AlertDialogTitle",
+      "AlertDialogCancel",
       "Dialog",
       "DialogClose",
       "DialogContent",
       "DialogHeader",
       "DialogTitle",
+      "DropdownMenu",
+      "DropdownMenuContent",
+      "DropdownMenuSeparator",
       "Field",
       "FieldError",
       "FieldGroup",
@@ -79,11 +84,47 @@ vi.mock("@rakazo/ui-web", async () => {
         children,
         onClick,
         disabled,
+        "aria-label": label,
       }: {
         children: ReactNode;
         onClick: () => void;
         disabled: boolean;
+        "aria-label"?: string;
+      }) => createElement("button", { onClick, disabled, "aria-label": label }, children),
+    ],
+    [
+      "DropdownMenuTrigger",
+      ({ children, render }: { children: ReactNode; render: ReactElement }) =>
+        cloneElement(render, {}, children),
+    ],
+    ...["AlertDialogAction", "DropdownMenuItem"].map((name) => [
+      name,
+      ({
+        children,
+        onClick,
+        disabled,
+      }: {
+        children: ReactNode;
+        onClick: () => void;
+        disabled?: boolean;
       }) => createElement("button", { onClick, disabled }, children),
+    ]),
+    [
+      "DropdownMenuCheckboxItem",
+      ({
+        children,
+        checked,
+        onCheckedChange,
+      }: {
+        children: ReactNode;
+        checked: boolean;
+        onCheckedChange: (checked: boolean) => void;
+      }) =>
+        createElement(
+          "button",
+          { "aria-checked": checked, onClick: () => onCheckedChange(!checked) },
+          children,
+        ),
     ],
     [
       "Input",
@@ -142,13 +183,14 @@ it("offers stdio only where the deployment runs it, and still shows existing std
     // Editing an existing stdio server keeps its tab until the edit ends.
     await act(async () => root.render(overlay("files", false)));
     await vi.waitFor(() => expect(host.textContent).toContain("STDIO"));
-    const cancel = Array.from(host.querySelectorAll("button")).find(
-      (item) => item.textContent === "Cancel",
-    );
-    await act(async () => cancel?.click());
+    const button = (label: string) =>
+      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === label);
+    const back = () => host.querySelector<HTMLButtonElement>('button[aria-label="Back"]');
+    await act(async () => back()?.click());
     expect(host.textContent).not.toContain("STDIO");
 
     await act(async () => root.render(overlay()));
+    await act(async () => button("Add server")?.click());
     expect(host.textContent).toContain("STDIO");
   } finally {
     await act(async () => root.unmount());
@@ -317,6 +359,9 @@ it("points a server that cannot register a client at the client ID fields", asyn
     expect(button("Save")).toBeDefined();
     expect(advancedOpen()).toBe(true);
 
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Back"]')?.click(),
+    );
     // The server now says why, and a sign-in that cannot work is no longer offered.
     await vi.waitFor(() =>
       expect(host.querySelector('[data-testid="mcp-health"]')?.textContent).toContain(
@@ -324,8 +369,6 @@ it("points a server that cannot register a client at the client ID fields", asyn
       ),
     );
     expect(button("Connect OAuth")).toBeUndefined();
-    await act(async () => button("Cancel")?.click());
-    expect(advancedOpen()).toBe(false);
     await act(async () => button("Edit")?.click());
     expect(advancedOpen()).toBe(true);
   } finally {
@@ -444,15 +487,11 @@ it.each([
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    const agentButtons = () =>
-      Array.from(host.querySelectorAll("button")).filter((button) =>
-        ["All", "Ada"].includes(button.textContent ?? ""),
-      );
-    await vi.waitFor(() => expect(agentButtons()).toHaveLength(2));
-    for (const button of agentButtons()) {
-      expect(button.disabled).toBe(true);
-      await act(async () => button.click());
-    }
+    const trigger = () =>
+      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === "No agents");
+    await vi.waitFor(() => expect(trigger()?.disabled).toBe(true));
+    for (const item of host.querySelectorAll("button[aria-checked]"))
+      await act(async () => (item as HTMLButtonElement).click());
     expect(mocks.agents).not.toHaveBeenCalled();
     if (state === "failed") {
       await vi.waitFor(() => expect(host.textContent).toContain("Could not load MCP servers"));
@@ -477,15 +516,23 @@ it("narrows a server shared with every agent to the ones left selected", async (
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    const button = (name: string) =>
-      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === name);
-    await vi.waitFor(() => expect(button("Ada")?.disabled).toBe(false));
-    expect(button("All")?.querySelector("svg")).not.toBeNull();
+    const option = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>("button[aria-checked]")).find(
+        (item) => item.textContent === name,
+      );
+    const trigger = () =>
+      Array.from(host.querySelectorAll("button")).find(
+        (item) => !item.hasAttribute("aria-checked") && item.textContent === "All agents",
+      );
+    await vi.waitFor(() => expect(trigger()?.disabled).toBe(false));
+    expect(option("Grace")?.getAttribute("aria-checked")).toBe("true");
     mocks.list.mockResolvedValue([{ ...shared, allBots: false }]);
-    await act(async () => button("Ada")!.click());
+    await act(async () => option("Ada")!.click());
     expect(mocks.agents).toHaveBeenCalledWith({ id: "docs", allBots: false, botIds: ["bot_2"] });
-    await vi.waitFor(() => expect(button("All")?.querySelector("svg")).toBeNull());
-    await act(async () => button("All")!.click());
+    await vi.waitFor(() =>
+      expect(option("All agents")?.getAttribute("aria-checked")).toBe("false"),
+    );
+    await act(async () => option("All agents")!.click());
     expect(mocks.agents).toHaveBeenLastCalledWith({ id: "docs", allBots: true, botIds: [] });
   } finally {
     await act(async () => root.unmount());

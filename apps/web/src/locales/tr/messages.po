@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (okunmadı)"
 
+#. placeholder {0}: chosen.length
+#: src/components/integrations/agent-access.tsx
+msgid "{0, plural, one {# agent} other {# agents}}"
+msgstr ""
+
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
@@ -466,6 +471,7 @@ msgstr "{name} için hesap menüsü"
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0} için işlemler"
@@ -620,6 +626,7 @@ msgstr ""
 msgid "Adding…"
 msgstr "Ekleniyor…"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -634,15 +641,10 @@ msgstr "Gelişmiş"
 msgid "Advanced..."
 msgstr ""
 
-#: src/components/AccountDataSettings.tsx
-msgid "Agent from another app"
-msgstr "Başka bir uygulamadan ajan"
+#: src/components/integrations/agent-access.tsx
+msgid "Agents"
+msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Agents:"
-msgstr "Agent'lar:"
-
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
@@ -650,6 +652,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 msgid "All {credit} goes to model usage."
 msgstr "{credit} tutarın tamamı model kullanımına gider."
+
+#: src/components/integrations/agent-access.tsx
+msgid "All agents"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -668,6 +674,7 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "İzin ver"
@@ -687,6 +694,10 @@ msgstr "Bir kez izin ver"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Allow rule"
+msgstr "İzin kuralı"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -876,6 +887,10 @@ msgstr ""
 msgid "Ask"
 msgstr "Sor"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Ask rule"
+msgstr "Onay kuralı"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -964,6 +979,7 @@ msgstr "Avatar Stüdyosu"
 #: src/pages/AdminPluginsPage.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -998,9 +1014,14 @@ msgstr "Bearer token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "Engelle"
+
+#: src/components/ApprovalRulePreview.tsx
+msgid "Block rule"
+msgstr "Engelleme kuralı"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1171,6 +1192,10 @@ msgstr "iptal edildi"
 msgid "Cancelled"
 msgstr "İptal edildi"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Candidate rule"
+msgstr "Önerilen kural"
+
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr ""
@@ -1198,10 +1223,6 @@ msgstr "Değiştiriliyor…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "Grafik çizilemedi: {error}"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat"
-msgstr "Sohbet"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1526,12 +1547,7 @@ msgstr "Bilgisayarlar kapalı. SANDBOX_PROVIDER=docker ve SANDBOX_SUPERVISOR_TOK
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "Configured servers"
-msgstr "Yapılandırılmış sunucular"
-
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Confirm delete"
 msgstr "Silmeyi onayla"
 
@@ -2027,6 +2043,10 @@ msgstr "Deneme sesi çalınamadı"
 msgid "Could not preview plugin"
 msgstr ""
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Could not preview rule"
+msgstr "Kural önizlenemedi"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Model sunucusuna ulaşılamadı."
@@ -2341,6 +2361,10 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron ifadesi"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Current"
+msgstr "Mevcut"
+
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2371,7 +2395,6 @@ msgstr "Bot avatarını özelleştir"
 msgid "Dark"
 msgstr "Koyu"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2420,7 +2443,6 @@ msgstr "OpenClaw varsayılanı"
 msgid "Default scope"
 msgstr "Varsayılan kapsam"
 
-#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2449,7 +2471,9 @@ msgid "Delete {0}"
 msgstr "{0} sil"
 
 #. placeholder {0}: bot.name
+#. placeholder {0}: deleting.name
 #. placeholder {0}: item.name
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
@@ -2849,7 +2873,6 @@ msgstr "Tabloyu genişlet"
 msgid "expired"
 msgstr "süresi doldu"
 
-#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Dışa aktar"
@@ -3193,10 +3216,6 @@ msgstr "Bu model için görüntü girişi yapılandırılmamış."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Görüntü yükleme alanı"
-
-#: src/components/AccountDataSettings.tsx
-msgid "Import"
-msgstr "İçe aktar"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -3985,6 +4004,10 @@ msgstr "Sonraki sayfa"
 msgid "Next settings sections"
 msgstr ""
 
+#: src/components/integrations/agent-access.tsx
+msgid "No agents"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "Aramanla eşleşen uygulama yok."
@@ -4025,9 +4048,9 @@ msgstr ""
 msgid "No matching models"
 msgstr ""
 
-#: src/pages/McpServersOverlay.tsx
-msgid "No MCP servers yet."
-msgstr "Henüz MCP sunucusu yok."
+#: src/components/ApprovalRulePreview.tsx
+msgid "No matching rule"
+msgstr "Eşleşen kural yok"
 
 #: src/pages/GroupPanel.tsx
 msgid "No members yet"
@@ -4485,6 +4508,8 @@ msgstr ""
 msgid "Preferences"
 msgstr "Tercihler"
 
+#: src/components/ApprovalRulePreview.tsx
+#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4728,6 +4753,7 @@ msgstr "Kontrolü bırak"
 msgid "Reload"
 msgstr "Yeniden yükle"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -4994,10 +5020,6 @@ msgstr ""
 #: src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "Satır"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Rules"
-msgstr "Kurallar"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5537,10 +5559,6 @@ msgstr ""
 msgid "Speech model"
 msgstr "Konuşma modeli"
 
-#: src/components/AccountAccess.tsx
-msgid "SSO"
-msgstr "SSO"
-
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO geçici olarak kullanılamıyor. Yeniden deneyin."
@@ -5720,6 +5738,10 @@ msgstr "API anahtarını test et"
 msgid "Test connection"
 msgstr "Bağlantıyı test et"
 
+#: src/components/ApprovalRulePreview.tsx
+msgid "Test rule"
+msgstr "Kuralı dene"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr ""
@@ -5729,7 +5751,6 @@ msgid "Testing"
 msgstr ""
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
@@ -5997,6 +6018,7 @@ msgstr "Araç bağımsız değişkenleri bir JSON nesnesi olmalıdır"
 msgid "Tool arguments must be JSON"
 msgstr "Araç bağımsız değişkenleri JSON olmalıdır"
 
+#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "Araç adı"
@@ -6483,10 +6505,6 @@ msgstr "Kontrol sende"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Anthropic sağlayıcınız"
-
-#: src/components/AccountDataSettings.tsx
-msgid "Your data"
-msgstr "Verileriniz"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

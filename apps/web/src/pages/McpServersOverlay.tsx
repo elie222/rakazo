@@ -5,24 +5,30 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
-  Badge,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
   FieldTitle,
   Input,
-  SectionHeading,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -32,8 +38,10 @@ import {
 } from "@rakazo/ui-web";
 import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, LoaderCircle, X } from "lucide-react";
+import { ChevronLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AgentAccess } from "../components/integrations/agent-access";
+import { AgentAccessControl } from "../components/integrations/agent-access";
 import {
   AvailabilityControl,
   reachesOtherSpaces,
@@ -80,6 +88,10 @@ function needsOAuthClient(server: McpServer): boolean {
   return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
 }
 
+function sameAccess(a: AgentAccess, b: AgentAccess): boolean {
+  return a.allBots === b.allBots && [...a.botIds].sort().join() === [...b.botIds].sort().join();
+}
+
 function oauthActionLabel(server: McpServer, pending: boolean): string {
   if (pending) return t`Connecting…`;
   return server.oauthStatus === "none" ? t`Connect OAuth` : t`Reconnect OAuth`;
@@ -98,7 +110,9 @@ export function McpServersOverlay({
 }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState<McpServer | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<McpServer | null>(null);
+  const [formAccess, setFormAccess] = useState<AgentAccess>({ allBots: true, botIds: [] });
   const [transport, setTransport] = useState<McpTransport>("streamable_http");
   const [name, setName] = useState("");
   const [endpoint, setEndpoint] = useState("");
@@ -203,6 +217,8 @@ export function McpServersOverlay({
 
   function resetForm() {
     setEditing(null);
+    setAdding(false);
+    setFormAccess({ allBots: true, botIds: [] });
     if (!stdioEnabled) setTransport("streamable_http");
     setName("");
     setEndpoint("");
@@ -225,6 +241,7 @@ export function McpServersOverlay({
     resetForm();
     setError(null);
     setEditing(server);
+    setFormAccess(accessOf(server));
     setName(server.name);
     setTransport(server.transport);
     setEndpoint(server.endpoint ?? "");
@@ -324,11 +341,14 @@ export function McpServersOverlay({
             enabled: editing.enabled,
           },
         });
+        if (!sameAccess(formAccess, accessOf(editing)))
+          await rpc.mcp.servers.agents({ id: editing.id, ...formAccess });
         await refresh();
         resetForm();
         return;
       }
       const created = await rpc.mcp.servers.create(config);
+      if (!formAccess.allBots) await rpc.mcp.servers.agents({ id: created.id, ...formAccess });
       await refresh();
       resetForm();
       // A remote server is checked in the background; wait for that check so a server
@@ -374,16 +394,11 @@ export function McpServersOverlay({
     }
   }
 
-  /** `botIds` limits the server to those agents; none shares it with every agent. */
-  async function setServerAgents(server: McpServer, botIds?: string[]) {
+  async function setServerAgents(server: McpServer, access: AgentAccess) {
     if (!assignmentsReady) return;
     setError(null);
     try {
-      const updated = await rpc.mcp.servers.agents({
-        id: server.id,
-        allBots: !botIds,
-        botIds: botIds ?? [],
-      });
+      const updated = await rpc.mcp.servers.agents({ id: server.id, ...access });
       await Promise.all([
         writeSaved(queryClient, serversOptions.queryKey, (current) =>
           (current ?? []).map((item) => (item.id === server.id ? updated.server : item)),
@@ -398,26 +413,19 @@ export function McpServersOverlay({
     }
   }
 
-  function assignedBotIds(server: McpServer) {
-    return bots
-      .filter((bot) => (botAssignments[bot.id] ?? []).some((entry) => entry.serverId === server.id))
-      .map((bot) => bot.id);
-  }
-
-  function toggleAgent(server: McpServer, botId: string) {
-    const current = server.allBots ? bots.map((bot) => bot.id) : assignedBotIds(server);
-    void setServerAgents(
-      server,
-      current.includes(botId) ? current.filter((id) => id !== botId) : [...current, botId],
-    );
+  function accessOf(server: McpServer): AgentAccess {
+    return {
+      allBots: server.allBots ?? false,
+      botIds: bots
+        .filter((bot) =>
+          (botAssignments[bot.id] ?? []).some((entry) => entry.serverId === server.id),
+        )
+        .map((bot) => bot.id),
+    };
   }
 
   async function deleteServer(server: McpServer) {
-    if (confirmingDelete !== server.id) {
-      setConfirmingDelete(server.id);
-      return;
-    }
-    setConfirmingDelete(null);
+    setDeleting(null);
     setError(null);
     try {
       await rpc.mcp.servers.remove({ id: server.id });
@@ -466,6 +474,433 @@ export function McpServersOverlay({
     }
   }
 
+  const formOpen = adding || editing !== null || (serversQuery.isSuccess && servers.length === 0);
+
+  function renderForm() {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center gap-2">
+          {servers.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="-ms-2 text-muted-foreground"
+              aria-label={t`Back`}
+              disabled={saving}
+              onClick={resetForm}
+            >
+              <ChevronLeft />
+            </Button>
+          ) : null}
+          <h3 className="text-[17px] font-medium text-foreground">
+            {editing ? editing.name : <Trans>Add server</Trans>}
+          </h3>
+        </div>
+        <FieldGroup className="gap-4">
+          <Field>
+            <FieldLabel htmlFor="mcp-name">
+              <Trans>Server name</Trans>
+            </FieldLabel>
+            <Input
+              id="mcp-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Mobbin"
+            />
+          </Field>
+          <Tabs value={transport} onValueChange={(value) => setTransport(value as McpTransport)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="streamable_http">HTTP</TabsTrigger>
+              <TabsTrigger value="sse">SSE</TabsTrigger>
+              {stdioEnabled || editing?.transport === "stdio" ? (
+                <TabsTrigger value="stdio">STDIO</TabsTrigger>
+              ) : null}
+            </TabsList>
+          </Tabs>
+          {transport === "stdio" ? (
+            <>
+              <Field>
+                <FieldLabel htmlFor="mcp-command">
+                  <Trans>Command</Trans>
+                </FieldLabel>
+                <Input
+                  id="mcp-command"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="/opt/mcp-server"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="mcp-args">
+                  <Trans>Arguments</Trans>
+                </FieldLabel>
+                <Input
+                  id="mcp-args"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder={editing?.hasArgs ? t`Stored encrypted` : "--stdio"}
+                />
+              </Field>
+            </>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="mcp-endpoint">
+                <Trans>Server URL</Trans>
+              </FieldLabel>
+              <Input
+                id="mcp-endpoint"
+                type="url"
+                autoComplete="off"
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                placeholder="https://api.mobbin.com/mcp"
+              />
+            </Field>
+          )}
+          <Disclosure
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            className="group rounded-xl border border-border"
+            summary={<Trans>Advanced</Trans>}
+            summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
+          >
+            <div className="space-y-4 border-t border-border p-3">
+              <Field>
+                <FieldLabel htmlFor="mcp-secret">
+                  <Trans>Access token (optional)</Trans>
+                </FieldLabel>
+                <Input
+                  id="mcp-secret"
+                  type="password"
+                  autoComplete="new-password"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder={t`Stored encrypted`}
+                />
+              </Field>
+              {transport === "stdio" ? (
+                <Field>
+                  <FieldTitle>
+                    <Trans>Environment variables</Trans>
+                  </FieldTitle>
+                  {envRows.map((row) => (
+                    <Field
+                      key={row.id}
+                      orientation="horizontal"
+                      data-invalid={duplicateNames.has(row.name) || undefined}
+                      className="grid grid-cols-[.7fr_1fr_auto_auto] items-start gap-2"
+                    >
+                      <Input
+                        aria-label={t`Name`}
+                        aria-invalid={duplicateNames.has(row.name) || undefined}
+                        aria-describedby={
+                          duplicateNames.has(row.name) ? `mcp-env-error-${row.id}` : undefined
+                        }
+                        autoComplete="off"
+                        className={row.file ? "col-span-2" : undefined}
+                        value={row.name}
+                        onChange={(e) =>
+                          updateEnvRow(row.id, {
+                            name: envName(e.target.value),
+                          })
+                        }
+                        placeholder="API_KEY"
+                      />
+                      {row.file ? null : (
+                        <Input
+                          aria-label={t`Value`}
+                          type={row.value.includes("{{oauth.") ? "text" : "password"}
+                          autoComplete={row.value.includes("{{oauth.") ? "off" : "new-password"}
+                          value={row.value}
+                          onChange={(e) =>
+                            updateEnvRow(row.id, {
+                              value: e.target.value,
+                            })
+                          }
+                          placeholder={t`Stored encrypted`}
+                        />
+                      )}
+                      <Toggle
+                        variant="outline"
+                        size="sm"
+                        pressed={row.file}
+                        onPressedChange={(file) => updateEnvRow(row.id, { file })}
+                      >
+                        <Trans>File</Trans>
+                      </Toggle>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t`Remove`}
+                        onClick={() =>
+                          setEnvRows((rows) =>
+                            rows.length > 1
+                              ? rows.filter((item) => item.id !== row.id)
+                              : [emptyEnvRow()],
+                          )
+                        }
+                      >
+                        <X />
+                      </Button>
+                      {row.file ? (
+                        <Textarea
+                          aria-label={t`Value`}
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="col-span-full min-h-24 font-mono text-xs"
+                          value={row.value}
+                          onChange={(e) =>
+                            updateEnvRow(row.id, {
+                              value: e.target.value,
+                            })
+                          }
+                        />
+                      ) : null}
+                      {duplicateNames.has(row.name) ? (
+                        <FieldError id={`mcp-env-error-${row.id}`} className="col-span-full">
+                          <Trans>Each name can be used once.</Trans>
+                        </FieldError>
+                      ) : null}
+                    </Field>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className="self-start"
+                    onClick={() => setEnvRows((rows) => [...rows, emptyEnvRow()])}
+                  >
+                    <Trans>Add</Trans>
+                  </Button>
+                  {oauthClientId.trim() ? (
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>Use {oauthEnvReference} for the access token.</Trans>
+                    </p>
+                  ) : null}
+                </Field>
+              ) : (
+                <div className="grid grid-cols-[.7fr_1fr] gap-2">
+                  <Input
+                    aria-label={t`Header name`}
+                    value={headerName}
+                    onChange={(e) => setHeaderName(e.target.value)}
+                  />
+                  <Input
+                    aria-label={t`Header value`}
+                    type="password"
+                    autoComplete="new-password"
+                    value={headerValue}
+                    onChange={(e) => setHeaderValue(e.target.value)}
+                    placeholder={t`Optional header value`}
+                  />
+                </div>
+              )}
+              <Field>
+                <FieldLabel htmlFor="mcp-oauth-client-id">
+                  <Trans>OAuth client ID (optional)</Trans>
+                </FieldLabel>
+                <Input
+                  ref={oauthClientIdInput}
+                  id="mcp-oauth-client-id"
+                  autoComplete="off"
+                  value={oauthClientId}
+                  onChange={(e) => setOauthClientId(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="mcp-oauth-client-secret">
+                  <Trans>OAuth client secret (optional)</Trans>
+                </FieldLabel>
+                <Input
+                  id="mcp-oauth-client-secret"
+                  type="password"
+                  autoComplete="new-password"
+                  value={oauthClientSecret}
+                  onChange={(e) => setOauthClientSecret(e.target.value)}
+                  placeholder={t`Stored encrypted`}
+                />
+              </Field>
+              {oauthClientId.trim() ? (
+                <>
+                  {transport === "stdio" ? (
+                    <Field>
+                      <FieldLabel htmlFor="mcp-oauth-authorization-server">
+                        <Trans>Authorization server</Trans>
+                      </FieldLabel>
+                      <Input
+                        id="mcp-oauth-authorization-server"
+                        type="url"
+                        autoComplete="off"
+                        value={oauthAuthorizationServer}
+                        onChange={(e) => setOauthAuthorizationServer(e.target.value)}
+                        placeholder="https://accounts.google.com"
+                      />
+                    </Field>
+                  ) : null}
+                  <Field>
+                    <FieldLabel htmlFor="mcp-oauth-scope">
+                      <Trans>Scopes (optional)</Trans>
+                    </FieldLabel>
+                    <Input
+                      id="mcp-oauth-scope"
+                      autoComplete="off"
+                      value={oauthScope}
+                      onChange={(e) => setOauthScope(e.target.value)}
+                      placeholder="openid email"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="mcp-oauth-params">
+                      <Trans>Authorization parameters (optional)</Trans>
+                    </FieldLabel>
+                    <Input
+                      id="mcp-oauth-params"
+                      autoComplete="off"
+                      value={oauthParams}
+                      onChange={(e) => setOauthParams(e.target.value)}
+                      placeholder="access_type=offline&prompt=consent"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="mcp-oauth-redirect-uri">
+                      <Trans>Redirect URI</Trans>
+                    </FieldLabel>
+                    <Input
+                      id="mcp-oauth-redirect-uri"
+                      readOnly
+                      value={mcpOAuthRedirectUri()}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </Field>
+                </>
+              ) : null}
+            </div>
+          </Disclosure>
+        </FieldGroup>
+        <AgentAccessControl
+          bots={bots}
+          access={formAccess}
+          disabled={!assignmentsReady}
+          onChange={setFormAccess}
+        />
+        <Button
+          type="button"
+          className="w-full"
+          disabled={saving || (transport === "stdio" && duplicateNames.size > 0)}
+          onClick={() => void saveServer()}
+        >
+          {editing ? (
+            saving ? (
+              <Trans>Saving…</Trans>
+            ) : (
+              <Trans>Save</Trans>
+            )
+          ) : saving ? (
+            <Trans>Adding…</Trans>
+          ) : (
+            <Trans>Add server</Trans>
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  function renderServer(server: McpServer) {
+    const statusText = oauthStatusText(server);
+    const oauth =
+      (server.transport !== "stdio" || server.oauthClientId) && !needsOAuthClient(server);
+    const pending = oauthPending === server.id;
+    const testing = testingIds.has(server.id);
+    return (
+      <li key={server.id} data-testid="mcp-server" className="space-y-1.5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">{server.name}</div>
+            <p className="truncate text-xs text-muted-foreground">
+              {server.endpoint ?? server.command ?? server.slug}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {oauth && server.oauthStatus !== "connected" ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending}
+                onClick={() => void connectOAuth(server)}
+              >
+                {oauthActionLabel(server, pending)}
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t`Actions for ${server.name}`}
+                  />
+                }
+              >
+                <Ellipsis />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => startEditing(server)}>
+                  <Trans>Edit</Trans>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={testing || server.health.status === "installing"}
+                  onClick={() => void testServer(server)}
+                >
+                  <Trans>Test connection</Trans>
+                </DropdownMenuItem>
+                {oauth && server.oauthStatus === "connected" ? (
+                  <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
+                    {oauthActionLabel(server, pending)}
+                  </DropdownMenuItem>
+                ) : null}
+                {oauth && server.oauthStatus !== "none" ? (
+                  <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
+                    <Trans>Disconnect</Trans>
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(server)}>
+                  <Trans>Delete</Trans>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <McpServerHealthLine health={server.health} checking={testing} />
+        {statusText ? (
+          <p
+            className={`text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
+          >
+            {statusText}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-x-4">
+          <AgentAccessControl
+            bots={bots}
+            access={accessOf(server)}
+            disabled={!assignmentsReady}
+            onChange={(access) => void setServerAgents(server, access)}
+          />
+          {server.installId ? null : (
+            <AvailabilityControl
+              kind="mcpServer"
+              id={server.id}
+              availability={server.availability}
+              onChanged={() => serversQuery.refetch()}
+            />
+          )}
+        </div>
+      </li>
+    );
+  }
+
   return (
     <Dialog
       open
@@ -475,17 +910,25 @@ export function McpServersOverlay({
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100%-2rem)] w-[960px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[960px]"
+        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[600px]"
       >
-        <DialogHeader className="flex-row items-center justify-between border-b border-border px-6 py-5">
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border px-6 py-5">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>MCP servers</Trans>
           </DialogTitle>
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close MCP servers`} />}
-          >
-            <X />
-          </DialogClose>
+          <div className="flex items-center gap-1">
+            {formOpen ? null : (
+              <Button type="button" size="sm" onClick={() => setAdding(true)}>
+                <Plus />
+                <Trans>Add server</Trans>
+              </Button>
+            )}
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" aria-label={t`Close MCP servers`} />}
+            >
+              <X />
+            </DialogClose>
+          </div>
         </DialogHeader>
         {shownError ? (
           <p
@@ -495,491 +938,44 @@ export function McpServersOverlay({
             {shownError}
           </p>
         ) : null}
-        <div className="rk-scroll grid min-h-0 grid-cols-1 gap-5 overflow-y-auto p-6 lg:grid-cols-2">
-          <Card className="self-start">
-            <CardHeader>
-              <CardTitle>{editing ? editing.name : <Trans>Add server</Trans>}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel htmlFor="mcp-name">
-                    <Trans>Server name</Trans>
-                  </FieldLabel>
-                  <Input
-                    id="mcp-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Mobbin"
-                  />
-                </Field>
-                <Tabs
-                  value={transport}
-                  onValueChange={(value) => setTransport(value as McpTransport)}
-                >
-                  <TabsList className="w-full">
-                    <TabsTrigger value="streamable_http">HTTP</TabsTrigger>
-                    <TabsTrigger value="sse">SSE</TabsTrigger>
-                    {stdioEnabled || editing?.transport === "stdio" ? (
-                      <TabsTrigger value="stdio">STDIO</TabsTrigger>
-                    ) : null}
-                  </TabsList>
-                </Tabs>
-                {transport === "stdio" ? (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor="mcp-command">
-                        <Trans>Command</Trans>
-                      </FieldLabel>
-                      <Input
-                        id="mcp-command"
-                        value={command}
-                        onChange={(e) => setCommand(e.target.value)}
-                        placeholder="/opt/mcp-server"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="mcp-args">
-                        <Trans>Arguments</Trans>
-                      </FieldLabel>
-                      <Input
-                        id="mcp-args"
-                        value={args}
-                        onChange={(e) => setArgs(e.target.value)}
-                        placeholder={editing?.hasArgs ? t`Stored encrypted` : "--stdio"}
-                      />
-                    </Field>
-                  </>
-                ) : (
-                  <Field>
-                    <FieldLabel htmlFor="mcp-endpoint">
-                      <Trans>Server URL</Trans>
-                    </FieldLabel>
-                    <Input
-                      id="mcp-endpoint"
-                      type="url"
-                      autoComplete="off"
-                      value={endpoint}
-                      onChange={(e) => setEndpoint(e.target.value)}
-                      placeholder="https://api.mobbin.com/mcp"
-                    />
-                  </Field>
-                )}
-                <Disclosure
-                  open={advancedOpen}
-                  onOpenChange={setAdvancedOpen}
-                  className="group rounded-xl border border-border"
-                  summary={<Trans>Advanced</Trans>}
-                  summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
-                >
-                  <div className="space-y-4 border-t border-border p-3">
-                    <Field>
-                      <FieldLabel htmlFor="mcp-secret">
-                        <Trans>Access token (optional)</Trans>
-                      </FieldLabel>
-                      <Input
-                        id="mcp-secret"
-                        type="password"
-                        autoComplete="new-password"
-                        value={secret}
-                        onChange={(e) => setSecret(e.target.value)}
-                        placeholder={t`Stored encrypted`}
-                      />
-                    </Field>
-                    {transport === "stdio" ? (
-                      <Field>
-                        <FieldTitle>
-                          <Trans>Environment variables</Trans>
-                        </FieldTitle>
-                        {envRows.map((row) => (
-                          <Field
-                            key={row.id}
-                            orientation="horizontal"
-                            data-invalid={duplicateNames.has(row.name) || undefined}
-                            className="grid grid-cols-[.7fr_1fr_auto_auto] items-start gap-2"
-                          >
-                            <Input
-                              aria-label={t`Name`}
-                              aria-invalid={duplicateNames.has(row.name) || undefined}
-                              aria-describedby={
-                                duplicateNames.has(row.name) ? `mcp-env-error-${row.id}` : undefined
-                              }
-                              autoComplete="off"
-                              className={row.file ? "col-span-2" : undefined}
-                              value={row.name}
-                              onChange={(e) =>
-                                updateEnvRow(row.id, {
-                                  name: envName(e.target.value),
-                                })
-                              }
-                              placeholder="API_KEY"
-                            />
-                            {row.file ? null : (
-                              <Input
-                                aria-label={t`Value`}
-                                type={row.value.includes("{{oauth.") ? "text" : "password"}
-                                autoComplete={
-                                  row.value.includes("{{oauth.") ? "off" : "new-password"
-                                }
-                                value={row.value}
-                                onChange={(e) =>
-                                  updateEnvRow(row.id, {
-                                    value: e.target.value,
-                                  })
-                                }
-                                placeholder={t`Stored encrypted`}
-                              />
-                            )}
-                            <Toggle
-                              variant="outline"
-                              size="sm"
-                              pressed={row.file}
-                              onPressedChange={(file) => updateEnvRow(row.id, { file })}
-                            >
-                              <Trans>File</Trans>
-                            </Toggle>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={t`Remove`}
-                              onClick={() =>
-                                setEnvRows((rows) =>
-                                  rows.length > 1
-                                    ? rows.filter((item) => item.id !== row.id)
-                                    : [emptyEnvRow()],
-                                )
-                              }
-                            >
-                              <X />
-                            </Button>
-                            {row.file ? (
-                              <Textarea
-                                aria-label={t`Value`}
-                                autoComplete="off"
-                                spellCheck={false}
-                                className="col-span-full min-h-24 font-mono text-xs"
-                                value={row.value}
-                                onChange={(e) =>
-                                  updateEnvRow(row.id, {
-                                    value: e.target.value,
-                                  })
-                                }
-                              />
-                            ) : null}
-                            {duplicateNames.has(row.name) ? (
-                              <FieldError id={`mcp-env-error-${row.id}`} className="col-span-full">
-                                <Trans>Each name can be used once.</Trans>
-                              </FieldError>
-                            ) : null}
-                          </Field>
-                        ))}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          className="self-start"
-                          onClick={() => setEnvRows((rows) => [...rows, emptyEnvRow()])}
-                        >
-                          <Trans>Add</Trans>
-                        </Button>
-                        {oauthClientId.trim() ? (
-                          <p className="text-xs text-muted-foreground">
-                            <Trans>Use {oauthEnvReference} for the access token.</Trans>
-                          </p>
-                        ) : null}
-                      </Field>
-                    ) : (
-                      <div className="grid grid-cols-[.7fr_1fr] gap-2">
-                        <Input
-                          aria-label={t`Header name`}
-                          value={headerName}
-                          onChange={(e) => setHeaderName(e.target.value)}
-                        />
-                        <Input
-                          aria-label={t`Header value`}
-                          type="password"
-                          autoComplete="new-password"
-                          value={headerValue}
-                          onChange={(e) => setHeaderValue(e.target.value)}
-                          placeholder={t`Optional header value`}
-                        />
-                      </div>
-                    )}
-                    <Field>
-                      <FieldLabel htmlFor="mcp-oauth-client-id">
-                        <Trans>OAuth client ID (optional)</Trans>
-                      </FieldLabel>
-                      <Input
-                        ref={oauthClientIdInput}
-                        id="mcp-oauth-client-id"
-                        autoComplete="off"
-                        value={oauthClientId}
-                        onChange={(e) => setOauthClientId(e.target.value)}
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="mcp-oauth-client-secret">
-                        <Trans>OAuth client secret (optional)</Trans>
-                      </FieldLabel>
-                      <Input
-                        id="mcp-oauth-client-secret"
-                        type="password"
-                        autoComplete="new-password"
-                        value={oauthClientSecret}
-                        onChange={(e) => setOauthClientSecret(e.target.value)}
-                        placeholder={t`Stored encrypted`}
-                      />
-                    </Field>
-                    {oauthClientId.trim() ? (
-                      <>
-                        {transport === "stdio" ? (
-                          <Field>
-                            <FieldLabel htmlFor="mcp-oauth-authorization-server">
-                              <Trans>Authorization server</Trans>
-                            </FieldLabel>
-                            <Input
-                              id="mcp-oauth-authorization-server"
-                              type="url"
-                              autoComplete="off"
-                              value={oauthAuthorizationServer}
-                              onChange={(e) => setOauthAuthorizationServer(e.target.value)}
-                              placeholder="https://accounts.google.com"
-                            />
-                          </Field>
-                        ) : null}
-                        <Field>
-                          <FieldLabel htmlFor="mcp-oauth-scope">
-                            <Trans>Scopes (optional)</Trans>
-                          </FieldLabel>
-                          <Input
-                            id="mcp-oauth-scope"
-                            autoComplete="off"
-                            value={oauthScope}
-                            onChange={(e) => setOauthScope(e.target.value)}
-                            placeholder="openid email"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="mcp-oauth-params">
-                            <Trans>Authorization parameters (optional)</Trans>
-                          </FieldLabel>
-                          <Input
-                            id="mcp-oauth-params"
-                            autoComplete="off"
-                            value={oauthParams}
-                            onChange={(e) => setOauthParams(e.target.value)}
-                            placeholder="access_type=offline&prompt=consent"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="mcp-oauth-redirect-uri">
-                            <Trans>Redirect URI</Trans>
-                          </FieldLabel>
-                          <Input
-                            id="mcp-oauth-redirect-uri"
-                            readOnly
-                            value={mcpOAuthRedirectUri()}
-                            onFocus={(e) => e.target.select()}
-                          />
-                        </Field>
-                      </>
-                    ) : null}
-                  </div>
-                </Disclosure>
-              </FieldGroup>
-              <Button
-                type="button"
-                className="mt-5 w-full"
-                disabled={saving || (transport === "stdio" && duplicateNames.size > 0)}
-                onClick={() => void saveServer()}
-              >
-                {editing ? (
-                  saving ? (
-                    <Trans>Saving…</Trans>
-                  ) : (
-                    <Trans>Save</Trans>
-                  )
-                ) : saving ? (
-                  <Trans>Adding…</Trans>
-                ) : (
-                  <Trans>Add server</Trans>
-                )}
-              </Button>
-              {editing ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-2 w-full"
-                  disabled={saving}
-                  onClick={resetForm}
-                >
-                  <Trans>Cancel</Trans>
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-          <div>
-            <SectionHeading as="h2">
-              <Trans>Configured servers</Trans>
-            </SectionHeading>
-            <div className="mt-3 space-y-2">
-              {servers.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                  <Trans>No MCP servers yet.</Trans>
-                </p>
-              ) : (
-                servers.map((server) => {
-                  const statusText = oauthStatusText(server);
-                  return (
-                    <Card key={server.id} size="sm">
-                      <CardContent>
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-foreground">{server.name}</span>
-                          <Badge variant="secondary" className="uppercase">
-                            {server.transport.replace("_", " ")}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {server.endpoint ?? server.command ?? server.slug}
-                        </p>
-                        <McpServerHealthLine
-                          health={server.health}
-                          checking={testingIds.has(server.id)}
-                        />
-                        {statusText ? (
-                          <p
-                            className={`mt-1.5 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
-                          >
-                            {statusText}
-                          </p>
-                        ) : null}
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-muted-foreground">
-                            <Trans>Agents:</Trans>
-                          </span>
-                          <Button
-                            type="button"
-                            variant={server.allBots ? "default" : "outline"}
-                            size="xs"
-                            aria-pressed={server.allBots ?? false}
-                            disabled={!assignmentsReady}
-                            onClick={() =>
-                              void setServerAgents(
-                                server,
-                                server.allBots ? assignedBotIds(server) : undefined,
-                              )
-                            }
-                          >
-                            {server.allBots ? <Check aria-hidden="true" /> : null}
-                            <Trans>All</Trans>
-                          </Button>
-                          {bots.map((bot) => {
-                            const assigned =
-                              server.allBots || assignedBotIds(server).includes(bot.id);
-                            return (
-                              <Button
-                                key={bot.id}
-                                type="button"
-                                variant={assigned ? "default" : "outline"}
-                                size="xs"
-                                aria-pressed={assigned}
-                                disabled={!assignmentsReady}
-                                onClick={() => toggleAgent(server, bot.id)}
-                              >
-                                {assigned ? <Check aria-hidden="true" /> : null}
-                                {bot.name}
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        {server.installId ? null : (
-                          <div className="mt-3">
-                            <AvailabilityControl
-                              kind="mcpServer"
-                              id={server.id}
-                              availability={server.availability}
-                              onChanged={() => serversQuery.refetch()}
-                            />
-                          </div>
-                        )}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {(server.transport !== "stdio" || server.oauthClientId) &&
-                          !needsOAuthClient(server) ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={oauthPending === server.id}
-                                onClick={() => void connectOAuth(server)}
-                              >
-                                {oauthActionLabel(server, oauthPending === server.id)}
-                              </Button>
-                              {server.oauthStatus !== "none" ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={oauthPending === server.id}
-                                  onClick={() => void disconnectOAuth(server)}
-                                >
-                                  <Trans>Disconnect</Trans>
-                                </Button>
-                              ) : null}
-                            </>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => startEditing(server)}
-                          >
-                            <Trans>Edit</Trans>
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              testingIds.has(server.id) || server.health.status === "installing"
-                            }
-                            onClick={() => void testServer(server)}
-                          >
-                            {testingIds.has(server.id) ? (
-                              <>
-                                <LoaderCircle aria-hidden="true" className="animate-spin" />
-                                <Trans>Testing…</Trans>
-                              </>
-                            ) : (
-                              <Trans>Test connection</Trans>
-                            )}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={confirmingDelete === server.id ? "destructive" : "outline"}
-                            size="sm"
-                            className="ms-auto"
-                            onClick={() => void deleteServer(server)}
-                          >
-                            {confirmingDelete === server.id ? (
-                              reachesOtherSpaces(server.availability, spaceCount) ? (
-                                <Trans>Remove from every space?</Trans>
-                              ) : (
-                                <Trans>Confirm delete</Trans>
-                              )
-                            ) : (
-                              <Trans>Delete</Trans>
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-          </div>
+        <div className="rk-scroll min-h-0 overflow-y-auto px-6 py-5">
+          {formOpen ? (
+            renderForm()
+          ) : (
+            <ul className="-my-4 divide-y divide-border">{servers.map(renderServer)}</ul>
+          )}
         </div>
+        {deleting ? (
+          <AlertDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {reachesOtherSpaces(deleting.availability, spaceCount) ? (
+                    <Trans>Remove from every space?</Trans>
+                  ) : (
+                    t`Delete ${deleting.name}?`
+                  )}
+                </AlertDialogTitle>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>
+                  <Trans>Cancel</Trans>
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => void deleteServer(deleting)}
+                >
+                  <Trans>Delete</Trans>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

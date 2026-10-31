@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, openIntegrationsAdd, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, openIntegrationsAdd, rpc, signup } from "./helpers";
 
 const server: McpServer = {
   id: "mcp-agents-server",
@@ -31,6 +31,10 @@ test("a server the user adds reaches every agent until they pick some", async ({
 }, testInfo) => {
   await signup(page, `mcp-agents-${Date.now()}@rakazo.test`, "password12", "MCP agents");
   await completeOnboarding(page);
+  const writer = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Writer",
+    computerMode: "team",
+  });
   const servers: McpServer[] = [];
   await page
     .context()
@@ -46,12 +50,23 @@ test("a server the user adds reaches every agent until they pick some", async ({
   });
   const requests: unknown[] = [];
   await page.context().route("**/rpc/mcp/servers/agents", async (route) => {
-    const { json } = route.request().postDataJSON() as { json: { allBots: boolean } };
+    const { json } = route.request().postDataJSON() as {
+      json: { allBots: boolean; botIds: string[] };
+    };
     requests.push(json);
     servers[0] = { ...server, allBots: json.allBots };
+    const assignments = json.botIds.map((botId) => ({
+      id: `assignment-${botId}`,
+      botId,
+      serverId: server.id,
+      allowAllTools: true,
+      allowedTools: [],
+      createdAt: server.createdAt,
+      updatedAt: server.createdAt,
+    }));
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ json: { server: servers[0], assignments: [] } }),
+      body: JSON.stringify({ json: { server: servers[0], assignments } }),
     });
   });
 
@@ -59,20 +74,16 @@ test("a server the user adds reaches every agent until they pick some", async ({
   await openIntegrationsAdd(page, "Manage MCP servers");
   await page.getByLabel("Server name").fill("Search Console");
   await page.getByLabel("Server URL").fill(server.endpoint!);
+  await captureScreenshot(page, testInfo, "mcp-agents-add");
   await page.getByRole("button", { name: "Add server", exact: true }).click();
-  const all = page.getByRole("button", { name: "All", exact: true });
-  const chief = page.getByRole("button", { name: "Chief", exact: true });
-  await expect(all).toHaveAttribute("aria-pressed", "true");
-  await expect(chief).toHaveAttribute("aria-pressed", "true");
+  const access = page.getByTestId("agent-access");
+  await expect(access).toContainText("All agents");
   await captureScreenshot(page, testInfo, "mcp-agents");
 
-  await chief.click();
-  await expect(all).toHaveAttribute("aria-pressed", "false");
-  await expect(chief).toHaveAttribute("aria-pressed", "false");
-  await all.click();
-  await expect(all).toHaveAttribute("aria-pressed", "true");
-  expect(requests).toEqual([
-    { id: server.id, allBots: false, botIds: [] },
-    { id: server.id, allBots: true, botIds: [] },
-  ]);
+  await access.getByRole("button").click();
+  await captureScreenshot(page, testInfo, "mcp-agents-menu");
+  await page.getByRole("menuitemcheckbox", { name: "Chief", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(access).toContainText("Writer");
+  expect(requests).toEqual([{ id: server.id, allBots: false, botIds: [writer.id] }]);
 });
