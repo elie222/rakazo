@@ -1,4 +1,4 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { MODEL_SEARCH_THRESHOLD, matchesSearchQuery, toggleEnabledModelId } from "@rakazo/core";
@@ -110,6 +110,16 @@ export function CompatibleModelFields({
         : compatibleRows,
     [compatibleRows, hasSearchQuery, query],
   );
+  const hiddenSelectedCount = useMemo(
+    () =>
+      hasSearchQuery
+        ? compatibleRows.filter(
+            (id) =>
+              (id === modelId || enabledModelIds.includes(id)) && !matchesSearchQuery(query, id),
+          ).length
+        : 0,
+    [compatibleRows, enabledModelIds, hasSearchQuery, modelId, query],
+  );
   return (
     <div className="block text-[13.5px] text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
@@ -206,6 +216,15 @@ export function CompatibleModelFields({
                   autoComplete="off"
                 />
               </InputGroup>
+            ) : null}
+            {hiddenSelectedCount > 0 ? (
+              <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                <Plural
+                  value={hiddenSelectedCount}
+                  one="# selected model is hidden by your search."
+                  other="# selected models are hidden by your search."
+                />
+              </p>
             ) : null}
             {visibleRows.map((id) => (
               <Label key={id} className="font-normal text-foreground">

@@ -9,7 +9,12 @@ import { CompatibleModelFields } from "./compatible-model-fields";
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  return {
+    useLingui: () => ({ t }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+    Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+      (value === 1 ? one : other).replace("#", String(value)),
+  };
 });
 
 const rows = (count: number) => Array.from({ length: count }, (_, index) => `model-${index + 1}`);
@@ -30,7 +35,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function props(compatibleRows: string[], enabledModelIds: string[]) {
+function props(compatibleRows: string[], enabledModelIds: string[], modelId = "") {
   return {
     resetOpenAiCompatibleProbe: () => {},
     headerRows: null,
@@ -48,7 +53,7 @@ function props(compatibleRows: string[], enabledModelIds: string[]) {
     invalidatePreflight: () => {},
     maxImagesPerPrompt: "",
     maxTokens: "4096",
-    modelId: "",
+    modelId,
     preflightFailure: null,
     preflightTarget: null,
     probeModels: [],
@@ -72,7 +77,7 @@ function props(compatibleRows: string[], enabledModelIds: string[]) {
   };
 }
 
-async function renderFields(initialRows: string[]) {
+async function renderFields(initialRows: string[], modelId = "") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -83,7 +88,7 @@ async function renderFields(initialRows: string[]) {
     changeRows = setCompatibleRows;
     return (
       <CompatibleModelFields
-        {...props(compatibleRows, enabled)}
+        {...props(compatibleRows, enabled, modelId)}
         setEnabledModelIds={(update) =>
           setEnabled((current) => (typeof update === "function" ? update(current) : update))
         }
@@ -192,6 +197,44 @@ it("keeps the search reachable when the list shrinks under a query", async () =>
     await typeInto(search() as HTMLInputElement, "");
     expect(search()).toBeNull();
     expect(visibleRows(view.container)).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("says how many selected models the search hides", async () => {
+  const view = await renderFields(rows(12));
+  try {
+    const input = search();
+    if (!input) throw new Error("Missing model search");
+    const ticked = rowCheckbox(view.container, "model-7");
+    if (!ticked) throw new Error("Missing model-7 row");
+    await act(async () => ticked.click());
+
+    await typeInto(input, "model-1");
+    expect(view.container.textContent).toContain("1 selected model is hidden by your search");
+
+    await typeInto(input, "model-7");
+    expect(view.container.textContent).not.toContain("hidden by your search");
+
+    await typeInto(input, "");
+    expect(view.container.textContent).not.toContain("hidden by your search");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("counts the main model when the search hides it", async () => {
+  const view = await renderFields(rows(12), "model-2");
+  try {
+    const input = search();
+    if (!input) throw new Error("Missing model search");
+
+    await typeInto(input, "model-1");
+    expect(view.container.textContent).toContain("1 selected model is hidden by your search");
+
+    await typeInto(input, "model-2");
+    expect(view.container.textContent).not.toContain("hidden by your search");
   } finally {
     await view.unmount();
   }
