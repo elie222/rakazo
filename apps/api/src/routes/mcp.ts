@@ -461,6 +461,7 @@ export function mcpRoutes(ctx: RouterContext) {
                     name: existing.name,
                     description: existing.description,
                     enabled: existing.enabled,
+                    verbatimResults: existing.verbatimResults,
                     transport: existing.transport as "streamable_http" | "sse",
                     endpoint: existing.endpoint!,
                     headers: (existingMaterial.headers ?? {}) as Record<string, string>,
@@ -586,6 +587,7 @@ export function mcpRoutes(ctx: RouterContext) {
                         ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,
                       enabled: config.enabled,
+                      verbatimResults: config.verbatimResults,
                       revision: { increment: 1 },
                       // The old verdict is about the old config.
                       healthStatus: "unknown",

@@ -15,6 +15,7 @@ import {
 } from "./context-selection.js";
 import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
+import { isVerbatimMcpResult, toolCallIdentity } from "./verbatim-mcp-result.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -34,6 +35,18 @@ const UNSHORTENED_TOOL_RESULTS = new Set([
   "search_history",
   ...VERBATIM_TOOL_RESULTS,
 ]);
+function toolResultCall(messages: readonly Message[], message: Message) {
+  if (message.role !== "toolResult") return { name: undefined, arguments: undefined };
+  for (const candidate of messages) {
+    if (candidate.role !== "assistant") continue;
+    for (const part of candidate.content) {
+      if (part.type === "toolCall" && part.id === message.toolCallId)
+        return toolCallIdentity(part, message.toolName);
+    }
+  }
+  return { name: message.toolName, arguments: undefined };
+}
+
 const messageHash = (message: Message) =>
   createHash("sha256")
     .update(JSON.stringify(providerContextPrefix("", [], [message])))
@@ -483,11 +496,13 @@ export function createRuntimeContextPolicy(
     }
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
+        const call = toolResultCall(messages, message);
         if (
           message.role !== "toolResult" ||
           index >= latestToolCall ||
           (keepRecent && recentToolResults.has(index)) ||
-          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
+          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName)) ||
+          isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers)
         )
           return message;
         const source = text(message);
@@ -524,6 +539,7 @@ export function createRuntimeContextPolicy(
       budget,
       strategy,
       protectedIndexes,
+      verbatimMcpServers: request.verbatimMcpServers,
       cacheWarmth: predictedCache,
       recentExchanges:
         retainShortHistory || standaloneHistoryFallback ? messages.length : 8 + laterUserMessages,

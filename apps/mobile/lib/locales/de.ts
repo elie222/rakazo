@@ -127,6 +127,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut.",
   "This connection's request limit is too small. Choose another model.":
     "Das Anfragelimit dieser Verbindung ist zu niedrig. Wähle ein anderes Modell.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Das Werkzeugergebnis dieses Servers passt nicht ins Modell. Schalte „Werkzeugergebnisse vollständig behalten“ für diesen Server aus, oder wähle ein anderes Modell.",
   "This model's context window is too small. Choose another model.":
     "Das Kontextfenster dieses Modells ist zu klein. Wähle ein anderes Modell.",
   "{provider} took too long to respond. Try again.":

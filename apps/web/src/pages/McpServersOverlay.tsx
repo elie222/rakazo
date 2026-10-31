@@ -11,6 +11,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Checkbox,
   Dialog,
   DialogClose,
   DialogContent,
@@ -116,6 +117,7 @@ export function McpServersOverlay({
   const oauthClientIdInput = useRef<HTMLInputElement>(null);
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
+  const [verbatimResults, setVerbatimResults] = useState(false);
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -224,6 +226,7 @@ export function McpServersOverlay({
     setAdvancedOpen(false);
     setCommand("");
     setArgs("");
+    setVerbatimResults(false);
     setEnvRows([emptyEnvRow()]);
     setSelectedBotIds([]);
   }
@@ -237,6 +240,7 @@ export function McpServersOverlay({
     setTransport(server.transport);
     setEndpoint(server.endpoint ?? "");
     setCommand(server.command ?? "");
+    setVerbatimResults(server.verbatimResults ?? false);
     setHeaderName(server.headerKeys[0] ?? "Authorization");
     const rows = [
       ...server.envKeys.map((name) => ({ ...emptyEnvRow(), name })),
@@ -312,6 +316,7 @@ export function McpServersOverlay({
                   }
                 : undefined,
               enabled: true,
+              verbatimResults,
             }
           : {
               slug,
@@ -322,6 +327,7 @@ export function McpServersOverlay({
               secret: secret || undefined,
               oauthClient: oauthBase,
               enabled: true,
+              verbatimResults,
             };
       if (editing) {
         await rpc.mcp.servers.update({
@@ -573,6 +579,16 @@ export function McpServersOverlay({
                     />
                   </Field>
                 )}
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id="mcp-verbatim-results"
+                    checked={verbatimResults}
+                    onCheckedChange={(checked) => setVerbatimResults(checked === true)}
+                  />
+                  <FieldLabel htmlFor="mcp-verbatim-results">
+                    <Trans>Keep tool results whole</Trans>
+                  </FieldLabel>
+                </Field>
                 <Disclosure
                   open={advancedOpen}
                   onOpenChange={setAdvancedOpen}

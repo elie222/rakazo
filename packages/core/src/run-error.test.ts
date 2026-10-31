@@ -16,6 +16,7 @@ import {
   modelFallbackFailure,
   normalizeRunError,
   userRunError,
+  VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
 } from "./run-error.js";
 
 describe("normalizeRunError", () => {
@@ -345,17 +346,18 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toMatchObject({ kind: "model", recovery: "model" });
     });
 
-    it.each([MODEL_CONTEXT_TOO_SMALL_ERROR, MODEL_REQUEST_LIMIT_ERROR])(
-      "offers another model for an unusable request budget: %s",
-      (details) => {
-        expect(normalizeRunError(details)).toEqual({
-          summary: details,
-          details,
-          kind: "context",
-          recovery: "model",
-        });
-      },
-    );
+    it.each([
+      MODEL_CONTEXT_TOO_SMALL_ERROR,
+      MODEL_REQUEST_LIMIT_ERROR,
+      VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
+    ])("offers another model for an unusable request budget: %s", (details) => {
+      expect(normalizeRunError(details)).toEqual({
+        summary: details,
+        details,
+        kind: "context",
+        recovery: "model",
+      });
+    });
 
     it("says a reply was cut off at the output limit, with the model's fix", () => {
       expect(normalizeRunError(MODEL_OUTPUT_CUT_ERROR)).toEqual({

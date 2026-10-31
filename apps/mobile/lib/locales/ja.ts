@@ -34,6 +34,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "この接続のリクエスト上限が小さすぎます。別のモデルを選択してください。",
   "This model's context window is too small. Choose another model.":
     "このモデルのコンテキストウィンドウは小さすぎます。別のモデルを選択してください。",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "このサーバーのツール結果はモデルに収まりません。そのサーバーの「ツール結果を省略しない」をオフにするか、別のモデルを選んでください。",
   "{provider} denied access to this model.": "{provider}がこのモデルへのアクセスを拒否しました。",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} 予備のモデルでエラーが発生したか、このリクエストでは利用できませんでした。",

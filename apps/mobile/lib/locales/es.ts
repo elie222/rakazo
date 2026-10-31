@@ -35,6 +35,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "El límite de solicitud de esta conexión es demasiado bajo. Elige otro modelo.",
   "This model's context window is too small. Choose another model.":
     "La ventana de contexto de este modelo es demasiado pequeña. Elige otro modelo.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "El resultado de la herramienta de este servidor no cabe en el modelo. Desactiva Conservar los resultados de las herramientas completos para ese servidor, o elige otro modelo.",
   "{provider} denied access to this model.": "{provider} denegó el acceso a este modelo.",
   "{summary} Backup models failed or were unavailable for this request.":
     "{summary} Los modelos de respaldo fallaron o no estaban disponibles para esta solicitud.",

@@ -121,6 +121,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Лимит запроса этого подключения слишком мал. Выберите другую модель.",
   "This model's context window is too small. Choose another model.":
     "Контекстное окно этой модели слишком мало. Выберите другую модель.",
+  "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+    "Результат инструмента этого сервера не помещается в модель. Выключите «Сохранять результаты инструментов целиком» для этого сервера или выберите другую модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
   "{provider} is overloaded right now. Try again in a moment.":

@@ -96,6 +96,13 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "This model's context window is too small. Choose another model.",
         values,
       });
+    case "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.":
+      return i18n._({
+        id: "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.",
+        message:
+          "This server's tool result does not fit the model. Turn off Keep tool results whole for that server, or choose another model.",
+        values,
+      });
     case "{provider} took too long to respond. Try again.":
       return i18n._({
         id: "{provider} took too long to respond. Try again.",

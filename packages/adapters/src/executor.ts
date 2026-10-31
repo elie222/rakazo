@@ -205,7 +205,25 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { verbatimMcpServerSet } from "./verbatim-mcp-result.js";
 import { createWebProvider } from "./web-provider-factory.js";
+
+async function verbatimMcpServersForRun(prisma: ExecutorDeps["prisma"], botId: string) {
+  const assignments = prisma.botMcpServer;
+  if (!assignments?.findMany) return undefined;
+  const rows = await assignments.findMany({
+    where: { botId, server: { verbatimResults: true } },
+    select: { server: { select: { id: true, slug: true, verbatimResults: true } } },
+  });
+  if (!Array.isArray(rows)) return undefined;
+  return verbatimMcpServerSet(
+    rows.flatMap((row) => {
+      const server = row.server;
+      if (!server) return [];
+      return [{ id: server.id, slug: server.slug, verbatimResults: server.verbatimResults }];
+    }),
+  );
+}
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
   const contextStrategy = executorDeps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
@@ -1512,9 +1530,11 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
+          const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, bot.id);
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
+              verbatimMcpServers,
               threadId: thread.id,
               runId,
               routineId: run.routineId,
