@@ -22,11 +22,6 @@ msgstr " (ongelezen)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# bot} other {# bots}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -2310,7 +2305,6 @@ msgstr "Bezig met aanmaken…"
 msgid "Credential"
 msgstr "Gegeven"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "Gegeven opgeslagen"
@@ -2760,10 +2754,6 @@ msgstr "Omgevingsvariabelen: {names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "Fout"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "Foutdetails"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -4158,7 +4148,6 @@ msgstr "OAuth-client-ID (optioneel)"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth-clientgeheim (optioneel)"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth gekoppeld"

@@ -101,7 +101,6 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   await captureScreenshot(popup, testInfo, "mcp-oauth-callback");
 
   releaseCompletion();
-  await expect(page.getByText("OAuth connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeHidden();
   await expect.poll(() => popup.isClosed()).toBe(true);
   await captureScreenshot(page, testInfo, "mcp-oauth-connected");

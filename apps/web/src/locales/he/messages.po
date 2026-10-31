@@ -22,11 +22,6 @@ msgstr " (לא נקראה)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# bot} other {# bots}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -2310,7 +2305,6 @@ msgstr "יוצר…"
 msgid "Credential"
 msgstr "פרטי גישה"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "פרטי הגישה נשמרו"
@@ -2760,10 +2754,6 @@ msgstr "משתני סביבה: {names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "שגיאה"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "פרטי השגיאה"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -4158,7 +4148,6 @@ msgstr "מזהה לקוח OAuth (אופציונלי)"
 msgid "OAuth client secret (optional)"
 msgstr "סוד לקוח OAuth (אופציונלי)"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth מחובר"

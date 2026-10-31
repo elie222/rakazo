@@ -22,11 +22,6 @@ msgstr "（未读）"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {# 个 Bot 使用自己的模型：} other {# 个 Bot 使用自己的模型：}}"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# bot} other {# bots}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -2310,7 +2305,6 @@ msgstr "正在创建…"
 msgid "Credential"
 msgstr "凭据"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "凭据已保存"
@@ -2760,10 +2754,6 @@ msgstr "环境变量：{names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "出错"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "错误详情"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -4158,7 +4148,6 @@ msgstr "OAuth 客户端 ID（可选）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客户端密钥（可选）"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth 已连接"

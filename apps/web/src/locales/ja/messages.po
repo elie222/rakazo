@@ -22,11 +22,6 @@ msgstr "（未読）"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr "{0, plural, one {#個のボットが独自のモデルを使用しています:} other {#個のボットが独自のモデルを使用しています:}}"
 
-#. placeholder {0}: chosen.length
-#: src/components/integrations/agent-access.tsx
-msgid "{0, plural, one {# bot} other {# bots}}"
-msgstr ""
-
 #. placeholder {0}: servers.length
 #: src/pages/PluginsOverlay.tsx
 msgid "{0, plural, one {# connector} other {# connectors}}"
@@ -2310,7 +2305,6 @@ msgstr "作成中…"
 msgid "Credential"
 msgstr "認証情報"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Credential saved"
 msgstr "認証情報を保存しました"
@@ -2760,10 +2754,6 @@ msgstr "環境変数: {names}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "エラー"
-
-#: src/components/McpServerHealthLine.tsx
-msgid "Error details"
-msgstr "エラーの詳細"
 
 #: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
@@ -4158,7 +4148,6 @@ msgstr "OAuthクライアントID（任意）"
 msgid "OAuth client secret (optional)"
 msgstr "OAuthクライアントシークレット（任意）"
 
-#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth接続済み"

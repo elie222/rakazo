@@ -1,5 +1,7 @@
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
+import type { BotAvatarSet } from "@rakazo/contracts";
 import {
+  BotAvatar,
   Button,
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -11,9 +13,13 @@ import { ChevronDown } from "lucide-react";
 
 export type AgentAccess = { allBots: boolean; botIds: string[] };
 
+type AccessBot = { id: string; name: string; color: string; avatarSet?: BotAvatarSet };
+
+const SHOWN_AVATARS = 4;
+
 /**
- * Which agents can use something: all of them, or the ones picked. With one agent it only
- * shows when that agent is left out, since "all" already covers it.
+ * Which bots can use something: all of them, or the ones picked, shown by their avatars. With
+ * one bot it only shows when that bot is left out, since "all" already covers it.
  */
 export function AgentAccessControl({
   bots,
@@ -21,21 +27,32 @@ export function AgentAccessControl({
   disabled,
   onChange,
 }: {
-  bots: Array<{ id: string; name: string }>;
+  bots: AccessBot[];
   access: AgentAccess;
   disabled?: boolean;
   onChange: (next: AgentAccess) => void;
 }) {
   const chosen = access.allBots ? bots.map((bot) => bot.id) : access.botIds;
   if (bots.length === 0 || (bots.length === 1 && chosen.length === 1)) return null;
+  const picked = bots.filter((bot) => chosen.includes(bot.id));
   const summary = access.allBots ? (
     <Trans>All bots</Trans>
-  ) : chosen.length === 0 ? (
+  ) : picked.length === 0 ? (
     <Trans>No bots</Trans>
-  ) : chosen.length === 1 ? (
-    bots.find((bot) => bot.id === chosen[0])?.name
   ) : (
-    <Plural value={chosen.length} one="# bot" other="# bots" />
+    <>
+      <span className="flex">
+        {picked.slice(0, SHOWN_AVATARS).map((bot) => (
+          <span key={bot.id} className="-ms-1 rounded-full ring-2 ring-dialog first:ms-0">
+            <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={18} />
+          </span>
+        ))}
+      </span>
+      {picked.length > SHOWN_AVATARS ? (
+        <span className="text-muted-foreground">+{picked.length - SHOWN_AVATARS}</span>
+      ) : null}
+      <span className="sr-only">{picked.map((bot) => bot.name).join(", ")}</span>
+    </>
   );
   const toggle = (botId: string) =>
     onChange({
@@ -52,7 +69,7 @@ export function AgentAccessControl({
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="h-6 gap-1 px-1.5 text-xs font-normal text-foreground"
+              className="-ms-1.5 h-7 gap-1 px-1.5 text-xs font-normal text-foreground"
             />
           }
         >
@@ -73,6 +90,7 @@ export function AgentAccessControl({
               checked={chosen.includes(bot.id)}
               onCheckedChange={() => toggle(bot.id)}
             >
+              <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={18} />
               {bot.name}
             </DropdownMenuCheckboxItem>
           ))}

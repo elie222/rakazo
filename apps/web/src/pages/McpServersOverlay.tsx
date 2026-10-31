@@ -77,12 +77,6 @@ function envName(value: string): string {
     .replace(/^(?=[0-9])/, "_");
 }
 
-function oauthStatusText(server: McpServer): string | null {
-  if (server.oauthStatus === "connected") return t`OAuth connected`;
-  if (server.oauthStatus === "reconnect") return t`OAuth expired`;
-  return server.hasSecret ? t`Credential saved` : null;
-}
-
 /** A server whose authorization server cannot register a client until the user enters one. */
 function needsOAuthClient(server: McpServer): boolean {
   return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
@@ -808,7 +802,6 @@ export function McpServersOverlay({
   }
 
   function renderServer(server: McpServer) {
-    const statusText = oauthStatusText(server);
     const oauth =
       (server.transport !== "stdio" || server.oauthClientId) && !needsOAuthClient(server);
     // A working server does not need signing in up front, so the action waits in its menu.
@@ -831,6 +824,7 @@ export function McpServersOverlay({
             {signInFirst ? (
               <Button
                 type="button"
+                variant="outline"
                 size="sm"
                 disabled={pending}
                 onClick={() => void connectOAuth(server)}
@@ -879,11 +873,9 @@ export function McpServersOverlay({
           </div>
         </div>
         <McpServerHealthLine health={server.health} checking={testing} />
-        {statusText ? (
-          <p
-            className={`text-xs ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
-          >
-            {statusText}
+        {server.oauthStatus === "reconnect" ? (
+          <p className="text-xs text-warning">
+            <Trans>OAuth expired</Trans>
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-4">

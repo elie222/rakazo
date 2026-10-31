@@ -51,6 +51,7 @@ vi.mock("@rakazo/ui-web", async () => {
   const { cloneElement, createElement } = await import("react");
   const container = ({ children }: { children: ReactNode }) => createElement("div", null, children);
   return Object.fromEntries([
+    ["BotAvatar", () => null],
     ...[
       "AlertDialog",
       "AlertDialogContent",
@@ -506,8 +507,8 @@ it("narrows a server shared with every agent to the ones left selected", async (
   mocks.list.mockReset().mockResolvedValue([shared]);
   mocks.agents.mockResolvedValue({ server: { ...shared, allBots: false }, assignments: [] });
   access.bots.mockResolvedValue([
-    { id: "bot_1", name: "Ada" },
-    { id: "bot_2", name: "Grace" },
+    { id: "bot_1", name: "Ada", color: "#F97316" },
+    { id: "bot_2", name: "Grace", color: "#6366F1" },
   ]);
   access.all.mockResolvedValue([
     { botId: "bot_1", serverId: "other", allowAllTools: true, allowedTools: [] },

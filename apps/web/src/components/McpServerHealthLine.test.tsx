@@ -62,7 +62,6 @@ describe("McpServerHealthLine", () => {
     expect(html).toContain("Not working");
     expect(html).toContain('data-testid="mcp-health-details"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("Error details");
     expect(html).toMatch(/<pre dir="ltr"[^>]*max-h-40[^>]*overflow-auto/);
     // Raw log text is escaped, never interpreted as markup.
     expect(html).toContain("&lt;script&gt;");

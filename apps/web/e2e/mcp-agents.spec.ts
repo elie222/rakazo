@@ -95,7 +95,7 @@ test("shows each server's bots and state with several bots", async ({ page }, te
   await signup(page, `mcp-states-${Date.now()}@rakazo.test`, "password12", "MCP states");
   await completeOnboarding(page);
   const bots: Record<string, string> = {};
-  for (const name of ["Writer", "Researcher", "Support", "Ops"]) {
+  for (const name of ["Writer", "Researcher", "Support", "Ops", "Designer", "Sales"]) {
     bots[name] = (
       await rpc<{ id: string }>(page, "bots/create", { name, computerMode: "team" })
     ).id;
@@ -159,7 +159,9 @@ test("shows each server's bots and state with several bots", async ({ page }, te
     assignment("mcp-states-linear", bots.Researcher!),
     assignment("mcp-states-linear", bots.Ops!),
     assignment("mcp-states-github", bots.Support!),
-    assignment("mcp-states-files", bots.Ops!),
+    ...["Writer", "Researcher", "Support", "Ops", "Designer"].map((name) =>
+      assignment("mcp-states-files", bots[name]!),
+    ),
   ];
   await page
     .context()
@@ -177,8 +179,9 @@ test("shows each server's bots and state with several bots", async ({ page }, te
   await openIntegrationsAdd(page, "Manage MCP servers");
   const rows = page.getByTestId("mcp-server");
   await expect(rows).toHaveCount(servers.length);
-  await expect(rows.nth(1).getByTestId("agent-access")).toContainText("3 bots");
+  await expect(rows.nth(1).getByTestId("agent-access")).toContainText("Researcher");
   await expect(rows.nth(3).getByTestId("agent-access")).toContainText("No bots");
+  await expect(rows.nth(4).getByTestId("agent-access")).toContainText("+1");
   await captureScreenshot(page, testInfo, "mcp-states");
 
   await rows.nth(1).getByTestId("agent-access").getByRole("button").click();
