@@ -14,20 +14,20 @@ export function isCreateMenuHotkey(event: KeyboardEvent) {
 }
 
 /**
- * Ctrl-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowRight in a browser, which owns Ctrl-Tab.
+ * Ctrl-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowDown in a browser, which owns Ctrl-Tab.
  * Arrow keys rather than brackets: Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs.
  */
 export function isSwitchBotHotkey(event: KeyboardEvent) {
   if (event.repeat || event.altKey) return false;
   if (!event.metaKey && event.ctrlKey && !event.shiftKey && event.key === "Tab") return true;
-  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowRight";
+  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowDown";
 }
 
-/** Ctrl-Shift-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowLeft in a browser. */
+/** Ctrl-Shift-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowUp in a browser. */
 export function isSwitchBotBackHotkey(event: KeyboardEvent) {
   if (event.repeat || event.altKey) return false;
   if (!event.metaKey && event.ctrlKey && event.shiftKey && event.key === "Tab") return true;
-  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowLeft";
+  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowUp";
 }
 
 /** The next id in roster order, wrapping at both ends. */

@@ -266,12 +266,6 @@ function SpaceShell() {
     },
     [navigate, setMobileSidebarOpen],
   );
-  const dialogs = useShellDialogs({
-    bots,
-    activeId: active?.id,
-    onSelectBot: selectBot,
-    overlayOpen: overlay !== null,
-  });
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
     [active?.color, active?.id],
@@ -283,6 +277,12 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const dialogs = useShellDialogs({
+    bots,
+    activeId: active?.id,
+    onSelectBot: selectBot,
+    computerOpen,
+  });
   useSpaceBootstrap({
     rpc,
     roster,

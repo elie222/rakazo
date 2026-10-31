@@ -51,19 +51,36 @@ describe("isSwitchBotHotkey", () => {
     expect(isSwitchBotHotkey(keyEvent({ key: "Tab", ctrlKey: true, shiftKey: true }))).toBe(false);
     expect(isSwitchBotHotkey(keyEvent({ key: "Tab", ctrlKey: true, repeat: true }))).toBe(false);
   });
+});
 
-  it("matches Cmd/Ctrl-Shift-ArrowRight in the browser", () => {
-    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", metaKey: true, shiftKey: true }))).toBe(
-      true,
-    );
-    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", ctrlKey: true, shiftKey: true }))).toBe(
-      true,
-    );
-    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", metaKey: true }))).toBe(false);
-    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowLeft", metaKey: true, shiftKey: true }))).toBe(
-      false,
-    );
-    expect(isSwitchBotHotkey(keyEvent({ key: "]", metaKey: true, shiftKey: true }))).toBe(false);
+describe.each([
+  ["next", isSwitchBotHotkey, "ArrowDown"],
+  ["previous", isSwitchBotBackHotkey, "ArrowUp"],
+] as const)("%s bot browser shortcut", (_direction, matches, key) => {
+  it.each(["metaKey", "ctrlKey"] as const)("requires %s and Shift", (modifier) => {
+    const chord = { key, [modifier]: true, shiftKey: true };
+    expect(matches(keyEvent(chord))).toBe(true);
+    expect(matches(keyEvent({ ...chord, shiftKey: false }))).toBe(false);
+    expect(matches(keyEvent({ ...chord, altKey: true }))).toBe(false);
+    expect(matches(keyEvent({ ...chord, repeat: true }))).toBe(false);
+    for (const other of ["ArrowLeft", "ArrowRight", "[", "]"]) {
+      expect(matches(keyEvent({ ...chord, key: other }))).toBe(false);
+    }
+  });
+
+  it("rejects unmodified arrows and Alt reorder chords", () => {
+    expect(matches(keyEvent({ key }))).toBe(false);
+    expect(matches(keyEvent({ key, shiftKey: true }))).toBe(false);
+    expect(matches(keyEvent({ key, altKey: true }))).toBe(false);
+    expect(
+      matches(
+        keyEvent({
+          key: key === "ArrowDown" ? "ArrowUp" : "ArrowDown",
+          metaKey: true,
+          shiftKey: true,
+        }),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -76,22 +93,9 @@ describe("isSwitchBotBackHotkey", () => {
     expect(isSwitchBotBackHotkey(keyEvent({ key: "Tab", metaKey: true, shiftKey: true }))).toBe(
       false,
     );
-  });
-
-  it("matches Cmd/Ctrl-Shift-ArrowLeft in the browser", () => {
     expect(
-      isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", metaKey: true, shiftKey: true })),
-    ).toBe(true);
-    expect(
-      isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", ctrlKey: true, shiftKey: true })),
-    ).toBe(true);
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", metaKey: true }))).toBe(false);
-    expect(
-      isSwitchBotBackHotkey(keyEvent({ key: "ArrowRight", metaKey: true, shiftKey: true })),
+      isSwitchBotBackHotkey(keyEvent({ key: "Tab", ctrlKey: true, shiftKey: true, repeat: true })),
     ).toBe(false);
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "[", metaKey: true, shiftKey: true }))).toBe(
-      false,
-    );
   });
 });
 
