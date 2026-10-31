@@ -42,6 +42,7 @@ import {
   updateModelRole,
   writeModelRole,
 } from "@rakazo/db";
+import { computerModelSettings } from "../computer-model-settings.js";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
@@ -66,8 +67,19 @@ export function modelsRoutes(ctx: RouterContext) {
     validateRoleChoices,
     authed,
   } = ctx;
+  const computer = computerModelSettings(deps, (actor) => modelRoleCatalog(actor, "main"));
   return {
     models: {
+      computer: authed.models.computer.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        return computer.load(context.actor, input.target);
+      }),
+      setComputer: authed.models.setComputer.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        return computer.save(context.actor, input.target, input.selection);
+      }),
       list: authed.models.list.handler(async ({ context }) => chatCatalog(context.actor)),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([

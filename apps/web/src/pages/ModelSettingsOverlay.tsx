@@ -32,6 +32,7 @@ import type { ModelCredential } from "../lib/model-auth";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
+import { ComputerModelSettings } from "./model-settings/computer-model-settings";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
 import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
@@ -329,6 +330,22 @@ export function ModelSettingsOverlay({
             }
             panel={connectionAt === "approval" ? panelFor(true) : null}
           />
+          {credentials.length ? (
+            <details className="rounded-xl bg-muted/50 p-4 space-y-4">
+              <summary className="cursor-pointer text-sm font-medium">
+                <Trans>Computer-use model</Trans>
+              </summary>
+              {credentials.map((credential) => (
+                <ComputerModelSettings
+                  key={credential.id}
+                  userId={me!.userId}
+                  spaceId={me!.spaceId}
+                  target={{ kind: "connection", credentialId: credential.id, scope }}
+                  label={credential.label || credential.provider}
+                />
+              ))}
+            </details>
+          ) : null}
           {scope === "space" ? null : (
             <ProvidersSection
               credentials={credentials}

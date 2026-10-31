@@ -12,6 +12,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ComputerModelSettings } from "../../components/computer-model-settings";
 import { LoadFailure } from "../../components/load-failure";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
@@ -278,6 +279,15 @@ export default function Models() {
               title={t("Approval model")}
               defaultLabel={t("Choose a model")}
             />
+            {credentials.map((credential) => (
+              <ComputerModelSettings
+                key={credential.id}
+                target={{ kind: "connection", credentialId: credential.id, scope: target.scope }}
+                userId={shared.userId}
+                spaceId={shared.spaceId}
+                label={`${t("Computer-use model")} · ${credential.label || credential.provider}`}
+              />
+            ))}
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" ? (
               <ModelProviders

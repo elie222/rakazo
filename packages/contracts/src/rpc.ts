@@ -44,6 +44,11 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  ComputerModelSelectionSchema,
+  ComputerModelTargetSchema,
+  ComputerModelViewSchema,
+} from "./computer-model.js";
+import {
   AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
@@ -346,6 +351,18 @@ export const appContract = {
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
   models: {
+    computer: oc
+      .input(z.object({ target: ComputerModelTargetSchema, expectedUserId: Id.optional() }))
+      .output(ComputerModelViewSchema),
+    setComputer: oc
+      .input(
+        z.object({
+          target: ComputerModelTargetSchema,
+          selection: ComputerModelSelectionSchema,
+          expectedUserId: Id.optional(),
+        }),
+      )
+      .output(ComputerModelViewSchema),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

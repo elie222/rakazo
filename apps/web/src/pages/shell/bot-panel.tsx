@@ -47,6 +47,7 @@ import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { lazyComponent } from "../../lib/preload-recovery";
 import { useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
+import { ComputerModelSettings } from "../model-settings/computer-model-settings";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { ChatModelPicker } from "./chat-model-picker";
 
@@ -650,6 +651,14 @@ export function BotSettings({
                 ) : null}
               </div>
             </div>
+            {me ? (
+              <ComputerModelSettings
+                key={`${bot.id}:${bot.modelProvider}:${bot.modelId}`}
+                target={{ kind: "bot", botId: bot.id }}
+                userId={me.userId}
+                spaceId={me.spaceId}
+              />
+            ) : null}
             <SettingsGroup label={t`Computer`} plain>
               <ComputerModePicker value={computerMode} onChange={setComputerMode} />
               {memoryProviderConfigured ? (

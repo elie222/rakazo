@@ -2,9 +2,26 @@ import type { Message, ToolCall } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
+export interface ComputerModeSelection {
+  provider: string;
+  id: string;
+  connectionId?: string;
+  auth: "oauth" | "api-key";
+  thinkingLevel?: AgentRunModel["thinkingLevel"];
+}
+
+export interface ComputerModeCheckpoint {
+  version: 1;
+  mode: "main" | "computer";
+  main: ComputerModeSelection;
+  computer: ComputerModeSelection;
+}
+
 /** Internal, versioned transcript; never a client event payload. */
 export interface TurnCheckpoint {
   version: 1;
+  /** Credential-free role state; absent on legacy checkpoints. */
+  computerMode?: ComputerModeCheckpoint;
   provider: string;
   model: string;
   systemPrompt: string;

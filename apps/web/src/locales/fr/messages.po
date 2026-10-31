@@ -1515,6 +1515,15 @@ msgstr "L'ordinateur est en veille. Ouvrez-le pour le réveiller."
 msgid "Computer is stopped"
 msgstr "L'ordinateur est arrêté"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "Raisonnement pour utiliser l’ordinateur"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Modèle pour utiliser l’ordinateur"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -2420,6 +2429,10 @@ msgstr "Par défaut"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Par défaut ({0})"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Default (Medium)"
+msgstr "Par défaut (Moyen)"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
@@ -3486,6 +3499,7 @@ msgstr "Chargement des fournisseurs vocaux…"
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4942,6 +4956,7 @@ msgstr "Restauration de votre espace de travail"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5042,6 +5057,10 @@ msgstr "S'exécute lorsque ce bot reçoit un message vérifié de ce fournisseur
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Identique au modèle principal"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5800,6 +5819,7 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6080,6 +6100,10 @@ msgstr "Saisissez votre réponse"
 msgid "Unassigned"
 msgstr "Non assigné"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Annuler"
@@ -6225,6 +6249,10 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "Utiliser le modèle par défaut du fournisseur"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"

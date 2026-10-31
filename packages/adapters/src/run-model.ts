@@ -412,7 +412,7 @@ export async function resolveConnectedModelKey(
     scope,
     provider,
     modelId,
-    { hostedProvider, credentialId },
+    { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
   );
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(

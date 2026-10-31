@@ -1515,6 +1515,15 @@ msgstr "המחשב במצב שינה. יש לפתוח אותו כדי להעיר
 msgid "Computer is stopped"
 msgstr "המחשב כבוי"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "חשיבה בשימוש במחשב"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "מודל לשימוש במחשב"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -2420,6 +2429,10 @@ msgstr "ברירת מחדל"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Default (Medium)"
+msgstr "ברירת מחדל (בינונית)"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
@@ -3486,6 +3499,7 @@ msgstr "טוען ספקי קול…"
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4942,6 +4956,7 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5042,6 +5057,10 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "כמו המודל הראשי"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5800,6 +5819,7 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
 
 #: src/components/call/CallCard.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6080,6 +6100,10 @@ msgstr "יש להקליד תשובה"
 msgid "Unassigned"
 msgstr "ללא שיוך"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "ביטול"
@@ -6225,6 +6249,10 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr "לסיסמאות יש להשתמש בקלט מוגן."
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "שימוש בברירת המחדל של הספק"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"

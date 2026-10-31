@@ -1515,6 +1515,15 @@ msgstr ""
 msgid "Computer is stopped"
 msgstr "O computador está parado"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "Raciocínio para uso do computador"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Modelo para uso do computador"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -2420,6 +2429,10 @@ msgstr "Padrão"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Padrão ({0})"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Default (Medium)"
+msgstr "Padrão (Médio)"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
@@ -3486,6 +3499,7 @@ msgstr "Carregando provedores de voz..."
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4942,6 +4956,7 @@ msgstr ""
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5042,6 +5057,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Igual ao modelo principal"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5800,6 +5819,7 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6080,6 +6100,10 @@ msgstr "Digite sua resposta"
 msgid "Unassigned"
 msgstr "Não atribuído"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Desfazer"
@@ -6225,6 +6249,10 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "Usar padrão do provedor"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"

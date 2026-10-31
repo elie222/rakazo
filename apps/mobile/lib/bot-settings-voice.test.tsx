@@ -62,7 +62,10 @@ vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("./api", () => ({
+  currentApiBase: () => "https://app.example.test",
+  captureApiRequestContext: async () => ({ headers: {} }),
   rpc: async (procedure: string, input?: unknown) => {
+    if (procedure === "models/computer") return { selection: null, options: [] };
     if (
       [
         "bots/update",

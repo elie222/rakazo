@@ -52,6 +52,7 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
       };
     if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "models/computer") return { selection: null, options: [] };
     if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")

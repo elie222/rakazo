@@ -12,6 +12,35 @@ SandboxProvider workspace <-> AgentHomeStore <-> Rakazo-owned DATA_DIR
 
 Pi runs in the Rakazo API/worker process. It is not installed in, or executed by, E2B. The built-in tools are ordinary Pi tools, not Claude- or MCP-specific tools, so any model exposed through Pi can call them. Screen operation still requires a model that can accept image tool results and reason about screenshots.
 
+## Computer-use model
+
+Web, Electron and mobile can select a separate **Computer-use model** from any of the
+member's connected, enabled vision models. The selected connection may use a different
+provider or authentication type from the main model, including an explicitly chosen
+subscription/OAuth connection or paid API key. Choices identify the connection and auth
+type; selecting one does not change the main model, its effort, or backup order.
+
+Connection defaults are stored on the **source** (main) connection, with the target's
+provider, credential ID, model and optional thinking level. A Space may override these
+defaults. Bot **Use provider default** inherits the active main connection's default;
+bot **Same as main model** explicitly suppresses it. Clearing a connection default means
+same-main. Legacy defaults without target identity pins still refer to their original
+source connection. The additive migration does not reorder main preferences.
+
+With a separate target, `enter_computer_mode` switches the same run to that target and
+unlocks graphical tools; `leave_computer_mode` returns to the main model (including its
+active fallback) and effort. Each role uses its own endpoint, credentials, context limits
+and billing observer. The computer role never borrows main credentials or main backups;
+an unavailable saved target fails closed. A different-provider main fallback does not
+prevent entering the configured computer target.
+
+Approval and takeover checkpoints pin **both** role identities and their authentication
+types. Resume resolves those exact accounts before inference, even if current settings
+changed. Provider-tagged history stays intact in checkpoints; Pi's provider serializers
+translate foreign reasoning and tool/result IDs rather than forwarding incompatible
+Claude signatures or OpenAI encrypted reasoning. Offline role-switch and wire-format
+regressions cover Claude/Codex in both directions without contacting providers.
+
 ## Computer contract
 
 Each workspace gets one Team Computer by default. Bots share its files and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home.

@@ -33,6 +33,7 @@ import {
 import { BotAvatar } from "../components/bot-avatar";
 import { BotContextCards } from "../components/bot-context-cards";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { ComputerModelSettings } from "../components/computer-model-settings";
 import { glassHeaderOptions } from "../components/glass-title";
 import type { MenuPickerChoice } from "../components/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
@@ -613,6 +614,14 @@ export default function BotSettingsScreen() {
               </Text>
             ) : null}
 
+            {me && bot ? (
+              <ComputerModelSettings
+                key={`${bot.id}:${bot.modelProvider}:${bot.modelId}`}
+                target={{ kind: "bot", botId: bot.id }}
+                userId={me.userId}
+                spaceId={me.spaceId}
+              />
+            ) : null}
             <SettingsGroup label={t("Computer")}>
               <ComputerModePicker plain value={computerMode} onChange={setComputerMode} />
             </SettingsGroup>

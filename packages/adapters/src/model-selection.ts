@@ -157,6 +157,7 @@ export async function modelCredentialAuthKindsForSpace(
     prisma.userModelPreference.findMany({
       where: { userId: scope.userId },
       select: {
+        hasMainPreference: true,
         modelId: true,
         thinkingLevel: true,
         updatedAt: true,
