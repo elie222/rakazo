@@ -188,11 +188,14 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
 private func reply(to sent: Delivery) async throws -> String? {
   for _ in 0..<14 {
     try await Task.sleep(nanoseconds: 2_000_000_000)
-    // The message is already sent, so a failed check only means no reply yet.
-    guard
-      let thread: ThreadSnapshot = try? await sent.session.rpc(
+    // The message is already sent, so a dropped connection only means no reply yet.
+    let thread: ThreadSnapshot
+    do {
+      thread = try await sent.session.rpc(
         "threads/get", ["botId": sent.botId], spaceId: sent.spaceId)
-    else { continue }
+    } catch is URLError {
+      continue
+    }
     let active = thread.activeRuns?.first { $0.id == sent.runId }
     if let active, !active.status.hasPrefix("waiting") { continue }
     if active == nil, thread.run?.id == sent.runId, thread.run?.status == "failed" {
