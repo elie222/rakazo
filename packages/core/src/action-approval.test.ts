@@ -63,16 +63,17 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before bot management writes that touch several bots, cost money or rewrite a bot", () => {
-    for (const name of [
-      "create_group",
-      "update_group",
-      "set_child_instructions",
-      "set_child_bot_model",
-      "create_child_routine",
-    ]) {
+  it("always asks before bot management writes that cost money or rewrite a bot", () => {
+    for (const name of ["set_child_instructions", "set_child_bot_model"]) {
       expect(toolRequiresApproval(name, false)).toBe(true);
       expect(toolRequiresExplicitApproval(name)).toBe(true);
+    }
+  });
+
+  it("treats grouping and scheduling other bots as ordinary approvals that Never ask skips", () => {
+    for (const name of ["create_group", "update_group", "create_child_routine"]) {
+      expect(toolRequiresApproval(name, false)).toBe(true);
+      expect(toolRequiresExplicitApproval(name)).toBe(false);
     }
   });
 

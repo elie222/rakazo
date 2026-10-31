@@ -3316,7 +3316,7 @@ describeJourneys("required product journeys", () => {
       const card = JSON.stringify(pending.waiting.messages);
       expect(card).toContain("Create group “Crew”?");
       expect(card).toContain("Members: Alpha, Beta");
-      expect(card).not.toContain("Always allow this tool");
+      expect(card).toContain("Always allow this tool");
       expect(await activeGroups(me.userId, "Crew")).toEqual([]);
 
       await answerAndSettle(cookie, chief.id, pending, "allow");

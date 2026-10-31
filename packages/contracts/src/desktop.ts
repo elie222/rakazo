@@ -81,6 +81,11 @@ export interface RakazoDesktop {
     /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
     rpIds: () => Promise<string[]>;
   };
+  /** Absent on older desktop releases, which have no Settings… menu item. */
+  settings?: {
+    /** The app menu's Settings… item; the OS claims Cmd+, before any page keydown can. */
+    onOpen: (listener: () => void) => () => void;
+  };
   /**
    * The operating system's own speech recognition, so dictation needs no provider key.
    * Absent on platforms without one and on older desktop releases.

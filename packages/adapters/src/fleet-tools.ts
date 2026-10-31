@@ -14,12 +14,7 @@ import {
   TimeZoneSchema,
   UpdateGroupInput,
 } from "@rakazo/contracts";
-import {
-  CARD_TITLE_ESCAPED_CHARACTERS,
-  ONCE_ROUTINE_CRON,
-  redactSecrets,
-  toolRequiresExplicitApproval,
-} from "@rakazo/core";
+import { CARD_TITLE_ESCAPED_CHARACTERS, ONCE_ROUTINE_CRON, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   commitBotUpdate,
@@ -51,17 +46,14 @@ import {
 import type { UpdateBotPatch } from "./update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "./update-bot-patch.js";
 
-/** The fleet writes that pause for the owner's card. */
+/** The fleet writes resolved up front so an approval card can show what will run. */
 export type FleetApprovalToolName = Exclude<
   (typeof FLEET_WRITE_TOOL_NAMES)[number],
   "organize_bot"
 >;
 
 export function isFleetApprovalTool(name: string): name is FleetApprovalToolName {
-  return (
-    (FLEET_WRITE_TOOL_NAMES as readonly string[]).includes(name) &&
-    toolRequiresExplicitApproval(name)
-  );
+  return name !== "organize_bot" && (FLEET_WRITE_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 /** All scope comes from the run; no tool argument may name a space or user. */

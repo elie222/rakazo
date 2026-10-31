@@ -9,12 +9,18 @@ import {
 import { Settings, Trash2 } from "lucide-react";
 import type { ComponentProps, RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hasOpenDialog } from "../../lib/has-open-dialog";
 import type { Panel } from "../../lib/right-panel-state";
 import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
-import { isCommandPaletteHotkey } from "./command-palette-hotkey";
+import {
+  cycleBotId,
+  isCommandPaletteHotkey,
+  isSwitchBotBackHotkey,
+  isSwitchBotHotkey,
+} from "./command-palette-hotkey";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
 import { CreateBotDialog } from "./create-bot-dialog";
 import {
@@ -30,8 +36,28 @@ import {
 type ChatTarget = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 type SectionTarget = { section: BotSection; spaceId: string };
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
 /** Which of the shell's dialogs and menus are open, and on what. */
-export function useShellDialogs() {
+export function useShellDialogs({
+  bots,
+  activeId,
+  onSelectBot,
+  computerOpen,
+}: {
+  bots: Bot[];
+  activeId: string | undefined;
+  onSelectBot: (botId: string) => void;
+  computerOpen: boolean;
+}) {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
@@ -62,6 +88,24 @@ export function useShellDialogs() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const step = isSwitchBotHotkey(event) ? 1 : isSwitchBotBackHotkey(event) ? -1 : null;
+      if (
+        step === null ||
+        computerOpen ||
+        hasOpenDialog(document, true) ||
+        isEditableTarget(event.target)
+      )
+        return;
+      const botId = cycleBotId(bots, activeId, step);
+      if (!botId) return;
+      event.preventDefault();
+      onSelectBot(botId);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, bots, onSelectBot, computerOpen]);
   return {
     deleteTarget,
     setDeleteTarget,

@@ -7,6 +7,7 @@ vi.mock("expo-notifications", () => ({
   dismissNotificationAsync: vi.fn(async () => undefined),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("expo-secure-store", () => ({}));
 
 import * as Notifications from "expo-notifications";
 import {

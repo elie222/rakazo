@@ -1,9 +1,11 @@
 import {
   deploymentModelRole,
+  findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
+  selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
@@ -115,6 +117,30 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
     hasDeployment,
     needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
   };
+}
+
+/** Whether every bot runs its own model on one of the member's connections, as a run selects it. */
+export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
+  const bots = await deps.prisma.bot.findMany({
+    where: { id: { in: botIds }, userId: actor.userId, spaceId: actor.spaceId },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+  });
+  const credentials = await Promise.all(
+    bots.map(async (bot) => {
+      const overrideCredential = bot.modelProvider
+        ? await findConnectedModelCredential(
+            deps.prisma,
+            deps.secrets,
+            actor,
+            bot.modelProvider,
+            bot.modelId,
+          )
+        : null;
+      return selectConfiguredModel({ override: bot, overrideCredential, main: null, defaults: {} })
+        .credential;
+    }),
+  );
+  return credentials.every(Boolean);
 }
 
 export const THREAD_MESSAGE_PAGE_SIZE = 100;

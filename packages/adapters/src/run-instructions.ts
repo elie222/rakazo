@@ -239,7 +239,7 @@ function fleetClause(offered: readonly string[] | undefined): string | undefined
   return [
     "Bot management tools: call list_fleet before changing anything, and again before retrying after an uncertain result.",
     approval.length
-      ? `${listWords(approval)} need the owner's approval; the card shows what will run.`
+      ? `${listWords(approval)} ${approval.length > 1 ? "need" : "needs"} the owner's approval; the card shows what will run.`
       : undefined,
     "You can edit, re-model or schedule any bot in your current space.",
     names.has("set_child_instructions")

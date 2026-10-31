@@ -229,6 +229,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Agent messages": "代理程式訊息",
   "Allowed once": "已允許一次",
   "Allow once": "允許一次",
+  "Allow in this space": "在此空間允許",
+  "Allowed in this space": "已在此空間允許",
   "Already have an account?": "已有帳號？",
   "Always allow": "一律允許",
   "Always allowed": "已一律允許",

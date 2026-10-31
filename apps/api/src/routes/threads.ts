@@ -21,6 +21,7 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { withSerializableRetry } from "../serializable-retry.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -31,11 +32,13 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../thread-message-pages.js";
+import type { ThreadTarget } from "../thread-target.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
   reactToThreadMessage,
   resolveThreadTarget,
+  sendTargetBotIds,
   sendThreadMessage,
   setThreadUnreadState,
   stopThreadRuns,
@@ -46,6 +49,7 @@ import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
+  botsRunOwnModels,
   computerContext,
   HEARTBEAT_MS,
   isUniqueViolation,
@@ -68,18 +72,48 @@ const HANG_UP_PROMPT =
 /** A send with routines that already has runs saved under its nonce. */
 class SavedSubmission extends Error {}
 
+/** A chat reply hands the screen back to the bot whose run it steers, in a group as in a DM. */
+export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadTarget) {
+  return async (runId: string) => {
+    const botId =
+      target.kind === "bot"
+        ? target.botId
+        : (
+            await deps.prisma.run.findUnique({
+              where: { id: runId, spaceId: actor.spaceId },
+              select: { botId: true },
+            })
+          )?.botId;
+    if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
+  };
+}
+
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
+  /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
+  const reactedBotId = async (target: ThreadTarget, messageId: string) =>
+    target.kind === "bot"
+      ? target.botId
+      : ((
+          await deps.prisma.message.findFirst({
+            where: { id: messageId, threadId: target.threadId },
+            select: { botId: true },
+          })
+        )?.botId ?? target.memberBotIds[0]!);
   const send = async (
     actor: Actor,
     input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
   ) => {
     const setup = await modelSetup(deps, actor);
-    if (setup.needsModel) {
+    const target = await resolveThreadTarget(deps.prisma, actor, input);
+    // A bot with its own runnable model needs no main model.
+    if (
+      setup.needsModel &&
+      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)))
+    ) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
-    const target = await resolveThreadTarget(deps.prisma, actor, input);
     if (target.kind === "bot") {
       await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
     }
@@ -106,9 +140,7 @@ export function threadsRoutes(ctx: RouterContext) {
       actor,
       target,
       input,
-      target.kind === "bot"
-        ? (runId) => releaseComputerControl(deps, actor, target.botId, "done", runId)
-        : undefined,
+      takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
@@ -271,7 +303,10 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         // Without a model or while teaching, the reaction is still saved; it just starts no turn.
         const mayStartTurn =
-          !(await modelSetup(deps, context.actor)).needsModel &&
+          (!(await modelSetup(deps, context.actor)).needsModel ||
+            (await botsRunOwnModels(deps, context.actor, [
+              await reactedBotId(target, input.messageId),
+            ]))) &&
           (target.kind !== "bot" ||
             (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
               () => true,
@@ -282,9 +317,7 @@ export function threadsRoutes(ctx: RouterContext) {
           context.actor,
           target,
           { ...input, mayStartTurn },
-          target.kind === "bot"
-            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
-            : undefined,
+          takeoverReleaser(deps, context.actor, target),
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {

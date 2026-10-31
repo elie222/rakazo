@@ -264,6 +264,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Agent messages": "Сообщения агента",
   "Allowed once": "Разрешено один раз",
   "Allow once": "Разрешить один раз",
+  "Allow in this space": "Разрешить в этом пространстве",
+  "Allowed in this space": "Разрешено в этом пространстве",
   "Already have an account?": "У вас уже есть аккаунт?",
   "Always allow": "Всегда разрешать",
   "Always allow this tool": "Всегда разрешать этот инструмент",

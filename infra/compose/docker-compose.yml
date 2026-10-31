@@ -477,7 +477,7 @@ services:
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
       CRISP_WEBSITE_ID:
     ports:
-      - "127.0.0.1:5173:5173"
+      - "${RAKAZO_WEB_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - api
 

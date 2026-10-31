@@ -53,6 +53,7 @@ describe("desktop preload bridge", () => {
       "oauth",
       "passkeys",
       "platform",
+      "settings",
       "update",
       "window",
     ]);
@@ -120,6 +121,26 @@ describe("desktop preload bridge", () => {
 
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.oauth.callback", expect.any(Function));
+  });
+
+  it("opens settings from the menu signal without leaking the IPC event", () => {
+    const listeners: Array<() => void> = [];
+    const on = vi.fn((_channel: string, handler: () => void) => {
+      listeners.push(handler);
+    });
+    const off = vi.fn();
+    const { exposeInMainWorld } = runPreload("preload.cjs", { on, off });
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+
+    const opened: string[] = [];
+    const unsubscribe = bridge.settings!.onOpen(() => opened.push("settings"));
+
+    expect(on).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
+    listeners[0]?.();
+    expect(opened).toEqual(["settings"]);
+
+    unsubscribe();
+    expect(off).toHaveBeenCalledWith("desktop.settings.open", expect.any(Function));
   });
 
   it.each(["win32", "linux"])("offers system speech only on macOS (%s)", (platform) => {

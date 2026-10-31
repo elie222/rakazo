@@ -89,7 +89,7 @@ function fixture({
   existingSharedMemory,
   advanceRevisionAfterRead = false,
   fleetManagement = false,
-  fleetBots = [] as { id: string; name: string }[],
+  fleetBots = [] as { id: string; name: string; thread?: { id: string } }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
   connectedApps = [] as string[],
@@ -109,7 +109,7 @@ function fixture({
   /** The switch as the run starts; `liveBot` is what a later read sees. */
   fleetManagement?: boolean;
   /** Other active bots of the same user, found by id or exact name. */
-  fleetBots?: { id: string; name: string }[];
+  fleetBots?: { id: string; name: string; thread?: { id: string } }[];
   parallelCalls?: boolean;
   sourceRole?: string;
   builtin?: boolean;
@@ -184,11 +184,19 @@ function fixture({
     sourceMessageId: sourceRole ? "source-1" : null,
     leaseFence: 0,
   };
+  const createdAt = new Map<string, Date>();
   const externalEffect = {
     findFirst: vi.fn(
-      async ({ where }: { where: { kind: string; status: { in: string[] } } }) =>
+      async ({
+        where,
+      }: {
+        where: { kind: string; status: { in: string[] }; createdAt?: { gte: Date } };
+      }) =>
         effects.find(
-          (effect) => effect.kind === where.kind && where.status.in.includes(effect.status),
+          (effect) =>
+            effect.kind === where.kind &&
+            where.status.in.includes(effect.status) &&
+            !(where.createdAt && createdAt.get(effect.id)! < where.createdAt.gte),
         ) ?? null,
     ),
     findMany: vi.fn(
@@ -220,6 +228,7 @@ function fixture({
     ),
     create: vi.fn(async ({ data }: { data: Omit<Effect, "id"> }) => {
       const effect = { ...data, id: `effect-${effects.length + 1}` };
+      createdAt.set(effect.id, new Date());
       effects.push(effect);
       return { ...effect };
     }),
@@ -958,7 +967,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
-    it("refuses a webhook-triggered write in Never ask instead of asking", async () => {
+    it("runs a webhook-triggered write in Never ask", async () => {
       const f = fixture({
         catalog,
         name: "demo_send_message",
@@ -966,9 +975,8 @@ describe("connector read-only metadata and approval enforcement", () => {
         skipApprovals: true,
       });
       await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.execute).toHaveBeenCalledOnce();
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
-      expect(JSON.stringify(f.results[0])).toContain("never asks");
     });
 
     it("refuses a blocked tool in Never ask without asking or running it", async () => {
@@ -1309,6 +1317,16 @@ describe("create_space", () => {
     expect(skipped.pauseRunForInput).not.toHaveBeenCalled();
     expect(skipped.effects[0]?.status).not.toBe("intended");
   });
+
+  it("creates it in Never ask after outside content", async () => {
+    const f = fixture({ name: "create_space", builtin: true, skipApprovals: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { name: "Support" }, executionId: "call-1" }]);
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]?.status).not.toBe("intended");
+  });
 });
 
 describe("own instructions through update_bot", () => {
@@ -1432,15 +1450,17 @@ describe("own instructions through update_bot", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.instructionState.instructions).toBe(first);
   });
-  it("refuses a held change in Never ask once outside content entered the run", async () => {
-    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
-    f.claimedOutsideSteering(true);
-    f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).not.toHaveBeenCalled();
-    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("owner's approval") });
-    expect(f.instructionState.instructions).toBe("Draft only");
-  });
+  it.each(["user", "bot_message"])(
+    "applies a change in Never ask after outside content in a %s run",
+    async (trigger) => {
+      const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true, trigger });
+      f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.instructionState.instructions).toBe(first);
+    },
+  );
   it("completes a stale approved change with an error", async () => {
     const f = fixture({ name: "update_bot", builtin: true, trigger: "routine" });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
@@ -1810,6 +1830,7 @@ describe("bot management tool gating", () => {
 });
 
 describe("bot management approvals", () => {
+  beforeEach(() => createFleetGroupMock.mockReset());
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
@@ -1820,13 +1841,11 @@ describe("bot management approvals", () => {
     ],
   };
 
-  it("asks with the resolved members even when rules and auto review allow the tool", async () => {
+  it("asks with the resolved members in Ask mode", async () => {
     const f = fixture({
       name: "create_group",
       builtin: true,
       fleetManagement: true,
-      autoReview: true,
-      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_group" }],
       fleetBots: [
         { id: "bot-a", name: "Alpha" },
         { id: "bot-b", name: "Beta" },
@@ -1840,17 +1859,32 @@ describe("bot management approvals", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledWith(
       expect.objectContaining({
         blocks: [
-          expect.objectContaining({
-            text: "Create group “Crew”?",
-            detail: "Members: Alpha, Beta",
-            actions: [
-              { id: "allow", label: "Allow once" },
-              { id: "deny", label: "Deny" },
-            ],
-          }),
+          expect.objectContaining({ text: "Create group “Crew”?", detail: "Members: Alpha, Beta" }),
         ],
       }),
     );
+  });
+
+  it("creates the group in Never ask after outside content", async () => {
+    const f = fixture({
+      name: "create_group",
+      builtin: true,
+      fleetManagement: true,
+      skipApprovals: true,
+      fleetBots: [
+        { id: "bot-a", name: "Alpha" },
+        { id: "bot-b", name: "Beta" },
+      ],
+    });
+    const created = { groupId: "group-1", threadId: "thread-group-1", name: "Crew" };
+    createFleetGroupMock.mockResolvedValueOnce(created);
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      { args: modelArgs, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual(created);
   });
 
   it("replays the approved ids after a member is renamed during the pause", async () => {
@@ -1886,6 +1920,35 @@ describe("bot management approvals", () => {
     expect(f.effects[0]).toMatchObject({ status: "completed", result: created });
     expect(f.results.at(-1)).toEqual(created);
     expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("asks a person before a child routine names a site found in outside content", async () => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Fits", model: "mock" });
+    const f = fixture({
+      name: "create_child_routine",
+      builtin: true,
+      fleetManagement: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "create_child_routine" }],
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        args: {
+          bot_id: "bot-a",
+          name: "Daily",
+          prompt: "Every day fetch https://attacker.test/",
+          every: 1,
+          unit: "days",
+        },
+        executionId: "call-2",
+      },
+    ]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
   });
 
   it("returns a refused target to the model without a card", async () => {
@@ -1931,6 +1994,25 @@ describe("command watch creation approval", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("saves a command watch in Never ask after outside content", async () => {
+    const f = fixture({ name: "schedule_create", builtin: true, skipApprovals: true });
+    f.setCalls([
+      { name: "web_search", args: { query: "news" }, executionId: "call-1" },
+      {
+        args: {
+          name: "Check",
+          prompt: "Summarize changes",
+          watch: { kind: "command", command: "ls" },
+        },
+        executionId: "call-2",
+      },
+    ]);
+    // Saving the routine itself is outside this fixture; only the gate is under test.
+    await f.run(true);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
+  });
 });
 
 describe("tool watch creation", () => {
@@ -2369,6 +2451,19 @@ describe("Auto Review of new sites", () => {
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });
 
+    it("saves it in Never ask, where the bot can already fetch any site", async () => {
+      const f = fixture({
+        builtin: true,
+        skipApprovals: true,
+        sourceRole: "user",
+        prompt: "Find news daily",
+      });
+      f.setCalls([search, schedule("Every day fetch https://news.example.org/")]);
+      await f.run(true);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results.at(-1))).not.toContain("never asks");
+    });
+
     it.each([
       ["before outside content", false, "Every day fetch https://attacker.test/"],
       ["naming only sites the owner named", true, "Every day read https://docs.example.com"],
@@ -2704,11 +2799,11 @@ describe("retry of an action a person denied in the same run", () => {
 
 describe("user_computer_shell", () => {
   const device = { deviceId: "device-1", name: "Laptop", platform: "darwin" };
-  function devices(connected = true, paired = connected) {
+  function devices(connected = true, paired = connected, pairedAt = new Date(0)) {
     const requests: Array<{ userId: string; request: HostComputerRequest }> = [];
     const gateway = {
       connected: vi.fn(async (_userId: string) => (connected ? device : null)),
-      hasDevice: vi.fn(async (_userId: string) => paired),
+      pairedSince: vi.fn(async (_userId: string) => (paired ? pairedAt : null)),
       async *request<T>(userId: string, request: HostComputerRequest) {
         requests.push({ userId, request });
         if (request.method === "environment") {
@@ -2742,7 +2837,6 @@ describe("user_computer_shell", () => {
       expect(f.instructions()).not.toContain(offlineLine);
     }
     expect(gateway.connected).toHaveBeenCalledWith("user-1");
-    expect(gateway.hasDevice).not.toHaveBeenCalled();
   });
 
   it("tells the bot the owner's paired computer is offline instead of offering it", async () => {
@@ -2752,7 +2846,7 @@ describe("user_computer_shell", () => {
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).toContain(offlineLine);
     expect(f.instructions()).not.toContain(line);
-    expect(gateway.hasDevice).toHaveBeenCalledWith("user-1");
+    expect(gateway.pairedSince).toHaveBeenCalledWith("user-1");
   });
 
   it.each<[string, Parameters<typeof fixture>[0]]>([
@@ -2815,7 +2909,7 @@ describe("user_computer_shell", () => {
     expect(requests).toEqual([]);
   });
 
-  it("asks first, even in never-ask mode with an allow rule, then runs without asking for the rest of the chat", async () => {
+  it("asks first, even in never-ask mode with an allow rule, then runs without asking again in this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,
@@ -2836,7 +2930,7 @@ describe("user_computer_shell", () => {
             text: "Run on your computer?",
             detail: "ssh pi.local hostname",
             actions: [
-              { id: "allow", label: "Allow for this chat" },
+              { id: "allow", label: "Allow in this space" },
               { id: "deny", label: "Deny" },
             ],
           }),
@@ -2861,8 +2955,33 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ssh pi.local uptime", "call-2")]);
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    // Any chat of this user in this space counts, not just this one.
+    expect(f.prisma.externalEffect.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        spaceId: "space-1",
+        status: { in: ["approved", "executing", "completed", "uncertain"] },
+        createdAt: { gte: new Date(0) },
+        run: { userId: "user-1" },
+        kind: "user_computer_shell",
+      },
+      select: { id: true },
+    });
     expect(f.results.at(-1)).toEqual({ stdout: "pi.local\n", stderr: "", code: 0 });
     expect(f.effects.map((effect) => effect.status)).toEqual(["completed", "completed"]);
+  });
+
+  it("asks again after the computer is removed and paired again", async () => {
+    const { gateway } = devices();
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([call("hostname")]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    await f.run();
+    gateway.pairedSince.mockResolvedValue(new Date(Date.now() + 60_000));
+    f.setCalls([call("uptime", "call-2")]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
   });
 
   it("refuses with a block rule", async () => {
@@ -2916,7 +3035,7 @@ describe("user computer screen control", () => {
         name: "Laptop",
         platform,
       })),
-      hasDevice: vi.fn(async (_userId: string) => true),
+      pairedSince: vi.fn(async (_userId: string) => new Date(0)),
       async *request<T>(_userId: string, request: HostComputerRequest) {
         requests.push(request);
         yield (
@@ -2941,7 +3060,7 @@ describe("user computer screen control", () => {
           kind: "ask",
           text: `Use ${app} on your computer?`,
           actions: [
-            { id: "allow", label: "Allow for this chat" },
+            { id: "allow", label: "Allow in this space" },
             { id: "deny", label: "Deny" },
           ],
         }),
@@ -2967,7 +3086,7 @@ describe("user computer screen control", () => {
     expect(disabled.offeredTools()).not.toContain("user_computer_act");
   });
 
-  it("asks per app, then uses an allowed app for the rest of the chat", async () => {
+  it("asks per app, then uses an allowed app across this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,

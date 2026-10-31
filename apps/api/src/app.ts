@@ -109,6 +109,7 @@ import {
 import { encryptionKeyWarning, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
+  configureProviderTransactionPool,
   createBoardEvents,
   createDb,
   createPool,
@@ -280,10 +281,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const env = { ...loadEnv(process.env), ...envOverrides };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
+  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 4);
+  configureProviderTransactionPool(poolMax);
   const created = prismaOverride
     ? { prisma: prismaOverride, pool: undefined }
     : createDb(env.databaseUrl, {
-        poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
+        poolMax,
         applicationName: "rakazo-api",
         keyProvider: contentKeyProviderFromEnv(),
         encryptContent: env.contentEncryption,
