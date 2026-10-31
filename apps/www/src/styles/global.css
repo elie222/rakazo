@@ -3396,7 +3396,7 @@ button.product-demo__dock-icon {
 
 .other-card p.other-card__caption {
   margin: 8px 16px 0;
-  color: var(--muted);
+  color: var(--muted-2);
   font-size: 14px;
   line-height: 1.5;
 }

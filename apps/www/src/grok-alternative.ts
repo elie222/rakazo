@@ -37,7 +37,7 @@ export const GROK_SOURCES = [
   { label: "OpenMuse source", href: "https://github.com/CopilotKit/openmuse" },
 ] as const;
 
-export const GROK_UPDATED = "October 12, 2026";
+export const GROK_UPDATED = "October 31, 2026";
 
 export type RichPart =
   | { kind: "text"; value: string }
