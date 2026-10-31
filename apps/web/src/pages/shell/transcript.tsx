@@ -6,7 +6,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { FoldedTranscript } from "@rakazo/core";
+import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
   expandPeerReplies,
   groupVoiceChats,
@@ -163,11 +163,27 @@ export const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
-  const mentionView = useMemo(() => projectBotMentions(messages), [messages]);
+  const committedMentions = useRef(new Map<string, ChildBotBlock[]>());
+  const mentionView = useMemo(() => {
+    const view = projectBotMentions(messages);
+    for (const [id, mentions] of view.mentions) {
+      const previous = committedMentions.current.get(id);
+      if (
+        previous?.length === mentions.length &&
+        mentions.every((block, index) => block === previous[index])
+      ) {
+        view.mentions.set(id, previous);
+      }
+    }
+    return view;
+  }, [messages]);
   // A progress tick rebuilds this view. The jump still reads the latest fold, without a new
   // callback that would rerender every memoized message.
   const mentionViewRef = useRef(mentionView);
-  mentionViewRef.current = mentionView;
+  useLayoutEffect(() => {
+    mentionViewRef.current = mentionView;
+    committedMentions.current = mentionView.mentions;
+  }, [mentionView]);
   const jumpToMessage = useCallback(
     (messageId: string) =>
       onJumpToMessage(mentionViewRef.current.foldedInto.get(messageId) ?? messageId),

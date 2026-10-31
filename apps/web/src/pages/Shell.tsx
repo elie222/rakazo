@@ -589,7 +589,9 @@ function SpaceShell() {
     void refreshActiveThread();
   }, [overlay, searchParams, refreshActiveThread]);
   const setOverlayRef = useRef(setOverlay);
-  setOverlayRef.current = setOverlay;
+  useLayoutEffect(() => {
+    setOverlayRef.current = setOverlay;
+  }, [setOverlay]);
   const replyToMessage = useCallback(
     (message: ThreadMessage) => {
       composer.setReplyTarget(message);

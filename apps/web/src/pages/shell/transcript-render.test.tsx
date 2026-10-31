@@ -110,14 +110,33 @@ function Host({ messages }: { messages: ThreadMessage[] }) {
   );
 }
 
-it("leaves an unchanged message unrendered when a later one updates", () => {
-  const kept = message("kept", "Earlier");
-  const live = message("progress:run", "Draft");
-  act(() => root.render(<Host messages={[kept, live]} />));
-  expect(messageRenders.get("kept")).toBe(1);
-  expect(messageRenders.get("progress:run")).toBe(1);
+it.each([false, true])(
+  "leaves an unchanged message unrendered when a later one updates (mentions: %s)",
+  (withMentions) => {
+    const kept = message("kept", "Earlier");
+    const announcement: ThreadMessage = {
+      ...message("announcement", ""),
+      blocks: [{ kind: "child_bot", botId: "child", name: "Planner", status: "created" }],
+    };
+    const earlier = withMentions ? [announcement, kept] : [kept];
+    const live = message("progress:run", "Draft");
+    act(() => root.render(<Host messages={[...earlier, live]} />));
+    expect(messageRenders.get("kept")).toBe(1);
+    expect(messageRenders.get("progress:run")).toBe(1);
 
-  act(() => root.render(<Host messages={[kept, message("progress:run", "Draft continues")]} />));
-  expect(messageRenders.get("kept")).toBe(1);
-  expect(messageRenders.get("progress:run")).toBe(2);
-});
+    act(() =>
+      root.render(<Host messages={[...earlier, message("progress:run", "Draft continues")]} />),
+    );
+    expect(messageRenders.get("kept")).toBe(1);
+    expect(messageRenders.get("progress:run")).toBe(2);
+    if (withMentions) {
+      expect(messageRenders.has("announcement")).toBe(false);
+      const renamed: ThreadMessage = {
+        ...announcement,
+        blocks: [{ kind: "child_bot", botId: "child", name: "Writer", status: "created" }],
+      };
+      act(() => root.render(<Host messages={[renamed, kept, live]} />));
+      expect(messageRenders.get("kept")).toBe(2);
+    }
+  },
+);
