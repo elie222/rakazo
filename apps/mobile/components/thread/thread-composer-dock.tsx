@@ -22,6 +22,7 @@ import { ReplyDismissButton } from "../reply-dismiss-button";
  */
 export function ThreadComposerDock({
   hidden,
+  columnPadding,
   fadeStyle,
   replyTarget,
   replyAuthor,
@@ -34,6 +35,8 @@ export function ThreadComposerDock({
   children,
 }: {
   hidden: boolean;
+  /** Insets the composer into the chat column without narrowing the fade above it. */
+  columnPadding: { paddingLeft: number; paddingRight: number };
   fadeStyle: StyleProp<ViewStyle>;
   replyTarget: MobileMessage | null;
   replyAuthor: string;
@@ -77,7 +80,11 @@ export function ThreadComposerDock({
 
   return (
     <Animated.View
-      style={[{ display: hidden ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+      style={[
+        { display: hidden ? "none" : "flex", flexShrink: 1 },
+        columnPadding,
+        composerKeyboardPadding,
+      ]}
     >
       {/* Fades messages out immediately above the composer. */}
       <View pointerEvents="none" style={fadeStyle} />

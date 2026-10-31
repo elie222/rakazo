@@ -31,7 +31,11 @@ import { useInboxBot } from "../../lib/search-inbox";
 import { useSplitView } from "../../lib/split-view";
 import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
 import { useThreadBots } from "../../lib/thread-bots";
-import { threadHeaderClearance, threadHeaderFloats } from "../../lib/thread-edges";
+import {
+  threadColumnPadding,
+  threadHeaderClearance,
+  threadHeaderFloats,
+} from "../../lib/thread-edges";
 import { useThreadFeedback } from "../../lib/thread-feedback";
 import { useThreadFocus } from "../../lib/thread-focus";
 import { useThreadSnapshot } from "../../lib/thread-history";
@@ -94,6 +98,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
+  // Pad the column, not the scroll view, so the indicator stays on the screen edge.
+  const columnPadding = useMemo(
+    () => threadColumnPadding(columnInsets),
+    [columnInsets.left, columnInsets.right],
+  );
   const {
     botId,
     groupId,
@@ -548,8 +557,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          paddingLeft: 20 + columnInsets.left,
-          paddingRight: 20 + columnInsets.right,
         }}
       >
         <ThreadMessageList
@@ -558,6 +565,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           threadKey={threadKey}
           headerClearance={headerClearance}
           bottomInset={bottomInset}
+          columnPadding={columnPadding}
           visibleMessages={visibleMessages}
           liveItems={liveItems}
           renderItem={renderItem}
@@ -569,10 +577,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           loadingNewer={paging.loadingNewer}
           showLatest={showLatest}
         />
-        <ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />
+        <ThreadFetchErrorNotice error={error} showingSaved={showingSaved} style={columnPadding} />
         {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
         <ThreadComposerDock
           hidden={readOnly}
+          columnPadding={columnPadding}
           fadeStyle={styles.composerFade}
           replyTarget={replyTarget}
           replyAuthor={
