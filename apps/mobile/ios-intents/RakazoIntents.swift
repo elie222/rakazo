@@ -113,9 +113,7 @@ struct StartVoiceChatIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult {
-    guard let botId = bot?.botId ?? secureStoreItem("rakazo.last_bot_id"), !botId.isEmpty else {
-      throw MessageBotError.noBot
-    }
+    let botId = try bot?.botId ?? lastBotId()
     UserDefaults.standard.set(
       ["botId": botId, "at": String(Date().timeIntervalSince1970)],
       forKey: "rakazo.pending_voice_chat")
@@ -133,6 +131,13 @@ private func openChat(botId: String, spaceId: String?) async {
   if let url = link?.url { await UIApplication.shared.open(url) }
 }
 
+private func lastBotId() throws -> String {
+  guard let botId = secureStoreItem("rakazo.last_bot_id"), !botId.isEmpty else {
+    throw MessageBotError.noBot
+  }
+  return botId
+}
+
 private struct Delivery {
   let session: RakazoSession
   let botId: String
@@ -143,14 +148,7 @@ private struct Delivery {
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
 private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
-  let botId: String
-  if let bot {
-    botId = bot.botId
-  } else if let last = secureStoreItem("rakazo.last_bot_id"), !last.isEmpty {
-    botId = last
-  } else {
-    throw MessageBotError.noBot
-  }
+  let botId = try bot?.botId ?? lastBotId()
   let session = try RakazoSession.load()
   let spaceId = bot?.spaceId ?? session.selectedSpaceId
   // The app asks before a bot first sees the user's data; a send from here cannot ask.
@@ -247,14 +245,22 @@ struct BotEntity: AppEntity {
   var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
 }
 
+/// Looks entities up Space by Space, since each id starts with its Space.
+private func findEntities<Entity: AppEntity>(
+  _ identifiers: [String],
+  in list: (String, RakazoSession) async throws -> [Entity]
+) async throws -> [Entity] where Entity.ID == String {
+  let session = try RakazoSession.load()
+  var found: [Entity] = []
+  for spaceId in Set(identifiers.compactMap { $0.split(separator: "/").first.map(String.init) }) {
+    found += try await list(spaceId, session).filter { identifiers.contains($0.id) }
+  }
+  return found
+}
+
 struct BotQuery: EntityQuery {
   func entities(for identifiers: [String]) async throws -> [BotEntity] {
-    let session = try RakazoSession.load()
-    var found: [BotEntity] = []
-    for spaceId in Set(identifiers.compactMap { $0.split(separator: "/").first.map(String.init) }) {
-      found += try await bots(in: spaceId, session: session).filter { identifiers.contains($0.id) }
-    }
-    return found
+    try await findEntities(identifiers) { try await bots(in: $0, session: $1) }
   }
 
   func suggestedEntities() async throws -> [BotEntity] {
@@ -284,12 +290,7 @@ struct RoutineEntity: AppEntity {
 
 struct RoutineQuery: EntityQuery {
   func entities(for identifiers: [String]) async throws -> [RoutineEntity] {
-    let session = try RakazoSession.load()
-    var found: [RoutineEntity] = []
-    for spaceId in Set(identifiers.compactMap { $0.split(separator: "/").first.map(String.init) }) {
-      found += try await routines(in: spaceId, session: session).filter { identifiers.contains($0.id) }
-    }
-    return found
+    try await findEntities(identifiers) { try await routines(in: $0, session: $1) }
   }
 
   func suggestedEntities() async throws -> [RoutineEntity] {
@@ -313,6 +314,7 @@ private struct RakazoSession {
   let apiBase: String
   let token: String
   let selectedSpaceId: String?
+  let headers: [String: String]
 
   // The keys lib/session.ts, lib/server-config.ts and lib/api.ts keep in expo-secure-store.
   static func load() throws -> RakazoSession {
@@ -327,7 +329,17 @@ private struct RakazoSession {
     return RakazoSession(
       apiBase: apiBase.hasSuffix("/") ? String(apiBase.dropLast()) : apiBase,
       token: token,
-      selectedSpaceId: space?.isEmpty == false ? space : nil)
+      selectedSpaceId: space?.isEmpty == false ? space : nil,
+      headers: serverHeaders(for: apiBase))
+  }
+
+  /// The headers lib/server-headers.ts saved for this server, such as an access proxy's.
+  private static func serverHeaders(for apiBase: String) -> [String: String] {
+    guard let stored = secureStoreItem("rakazo.server_headers")?.data(using: .utf8),
+      let saved = try? JSONDecoder().decode(SavedHeaders.self, from: stored),
+      saved.apiBase == apiBase
+    else { return [:] }
+    return saved.headers
   }
 
   /// Calls an oRPC procedure the way lib/api.ts does.
@@ -339,6 +351,7 @@ private struct RakazoSession {
     }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     request.setValue("application/json", forHTTPHeaderField: "content-type")
     request.setValue("rakazo://", forHTTPHeaderField: "origin")
     request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
@@ -395,6 +408,10 @@ private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
   }
 }
 
+private struct SavedHeaders: Decodable {
+  let apiBase: String
+  let headers: [String: String]
+}
 private struct Envelope<Value: Decodable>: Decodable { let json: Value }
 private struct ServerError: Decodable { let message: String? }
 private struct Sent: Decodable { let runId: String }
