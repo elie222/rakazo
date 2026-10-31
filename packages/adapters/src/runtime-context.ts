@@ -488,17 +488,16 @@ export function createRuntimeContextPolicy(
       recentToolResults.add(index);
       wholeResultTokens += tokens;
     }
-    const toolCalls = new Map(
-      messages.flatMap((message) =>
-        message.role === "assistant"
-          ? message.content.flatMap((part) => (part.type === "toolCall" ? [[part.id, part]] : []))
-          : [],
-      ),
-    );
-    const keptWhole = (message: Extract<Message, { role: "toolResult" }>) => {
-      const call = toolCallIdentity(toolCalls.get(message.toolCallId), message.toolName);
+    // Forward pass so a reused tool-call id resolves to the call just before its result.
+    const latestCalls = new Map<string, unknown>();
+    const keptWhole = messages.map((message) => {
+      if (message.role === "assistant")
+        for (const part of message.content)
+          if (part.type === "toolCall") latestCalls.set(part.id, part);
+      if (message.role !== "toolResult") return false;
+      const call = toolCallIdentity(latestCalls.get(message.toolCallId), message.toolName);
       return isVerbatimMcpResult(call.name, call.arguments, request.verbatimMcpServers);
-    };
+    });
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
         if (
@@ -506,7 +505,7 @@ export function createRuntimeContextPolicy(
           index >= latestToolCall ||
           (keepRecent && recentToolResults.has(index)) ||
           (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName)) ||
-          keptWhole(message)
+          keptWhole[index]
         )
           return message;
         const source = text(message);
