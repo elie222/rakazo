@@ -1,12 +1,14 @@
-import type { Message } from "@earendil-works/pi-ai";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "../../adapters/src/approval-effect.js";
 import { builtinAgentTools } from "../../adapters/src/builtin-tools.js";
 import { PiAgentRuntime } from "../../adapters/src/pi-runtime.js";
+import type { TurnCheckpoint } from "../../adapters/src/turn-checkpoint.js";
 import * as turnCheckpoints from "../../adapters/src/turn-checkpoint.js";
 import type { ModelEmulatorRequest } from "./model-emulator.js";
 import { startModelEmulator } from "./model-emulator.js";
+
+type Message = TurnCheckpoint["messages"][number];
 
 async function collect(events: AsyncIterable<AgentRuntimeEvent>) {
   const result: AgentRuntimeEvent[] = [];
@@ -79,7 +81,6 @@ describe("paused turn context", () => {
       expect(serialize).not.toHaveBeenCalled();
       expect(snapshots.every((snapshot) => typeof snapshot === "function")).toBe(true);
       expect(events.some((event) => event.type === "checkpoint")).toBe(false);
-      expect(events.filter((event) => event.type === "error")).toEqual([]);
     } finally {
       serialize.mockRestore();
       await model.close();

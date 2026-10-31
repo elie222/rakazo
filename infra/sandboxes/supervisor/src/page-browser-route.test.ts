@@ -314,6 +314,49 @@ it.each([
   expect(result.uncertain).toBe(body.command === "act");
 });
 
+it("passes a settled step error through with the page, without a desktop fallback", async () => {
+  const settled = {
+    ok: false,
+    completed: 0,
+    uncertain: false,
+    url: "https://portal.example.test/",
+    title: "Portal",
+    tree: '- combobox "Year" [e5] options: "2023", "2024"',
+    elements: [
+      { ref: "e5", role: "combobox", name: "Year", options: [{ label: "2024", value: "2024" }] },
+    ],
+    error: 'This dropdown has no option "2019". Its options: "2023", "2024".',
+  };
+  const defaultExec = mock.exec.getMockImplementation()!;
+  mock.exec.mockImplementation(async (options: { Cmd: string[] }) =>
+    options.Cmd.includes("/usr/local/bin/rakazo-page-browser")
+      ? {
+          start: async () =>
+            Duplex.from({
+              readable: Readable.from([Buffer.from(JSON.stringify(settled))]),
+              writable: new PassThrough(),
+            }),
+          inspect: async () => ({ ExitCode: 0 }),
+        }
+      : defaultExec(options),
+  );
+  const response = await supervisorApp.request("/computers/computer-settled/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "first",
+      "x-rakazo-screen-lease-id": "run:1",
+    },
+    body: JSON.stringify({ command: "act", actions: [{ kind: "fill", ref: "e5", text: "2019" }] }),
+  });
+  const result = await response.json();
+  expect(result).toEqual(settled);
+  expect(result).not.toHaveProperty("fallback");
+});
+
 async function uploadRequest(roots?: unknown) {
   return supervisorApp.request("/computers/computer-upload/browser", {
     method: "POST",

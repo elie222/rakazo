@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOT_SECRET_ORIGIN_MISSING_MESSAGE,
   BotSecretDestination,
   BotSecretDestinationInput,
   botSecretDestinationSchema,
@@ -29,6 +30,41 @@ describe("credential contracts", () => {
     "https://api.example.test#fragment",
   ])("rejects non-origin destination %s", (origin) => {
     expect(BotSecretDestination.safeParse({ ...destination, origin }).success).toBe(false);
+  });
+  it.each([undefined, ""])(
+    "reports a missing origin (%j) as missing, for a login too",
+    (origin) => {
+      for (const auth of [{ type: "login" }, { type: "bearer" }]) {
+        const result = BotSecretDestination.safeParse({ name: "example_login", origin, auth });
+        expect(result.success).toBe(false);
+        expect(
+          result.error?.issues.map((issue) => ({ path: issue.path, message: issue.message })),
+        ).toEqual([{ path: ["origin"], message: BOT_SECRET_ORIGIN_MISSING_MESSAGE }]);
+      }
+    },
+  );
+  it("keeps the origin rule message for an origin that is present but invalid", () => {
+    const result = BotSecretDestination.safeParse({
+      name: "example_login",
+      origin: "www.example.com",
+      auth: { type: "login" },
+    });
+    const messages = result.error?.issues.map((issue) => issue.message) ?? [];
+    expect(messages).toEqual([
+      "Expected an HTTPS origin without a path, credentials, query, or fragment",
+    ]);
+  });
+  it("accepts a valid login origin, and a command variable without one", () => {
+    expect(
+      BotSecretDestination.safeParse({
+        name: "example_login",
+        origin: "https://www.example.com",
+        auth: { type: "login" },
+      }).success,
+    ).toBe(true);
+    expect(
+      BotSecretDestination.safeParse({ name: "example_cmd", auth: { type: "command" } }).success,
+    ).toBe(true);
   });
   it.each(["feishu-app-credentials", "my-creds-2", "team_a-bot"])(
     "accepts hyphenated credential names like %s",
@@ -243,17 +279,112 @@ describe("login credentials", () => {
     expect(() => decodeLoginSecret(JSON.stringify(value))).toThrow();
   });
 
-  it("starts the default card as logins always have and every named field hidden", () => {
+  it("starts the default card as logins always have", () => {
     expect(loginCardFields(undefined)).toEqual([
       { label: "Username", value: "", hidden: false },
       { label: "Password", value: "", hidden: true },
     ]);
-    // The bot can't make a field visible, not even by naming the default labels.
-    expect(loginCardFields(["Username", "Password"]).map((field) => field.hidden)).toEqual([
-      true,
-      true,
+    // Naming the default labels gives the same card, so the bot gains nothing by it.
+    expect(loginCardFields(["Username", "Password"])).toEqual(loginCardFields(undefined));
+  });
+
+  it("starts an ID and a phone visible for a sign-in with no password field", () => {
+    expect(loginCardFields(["ID number", "Phone number", "SMS code"])).toEqual([
+      { label: "ID number", value: "", hidden: false },
+      { label: "Phone number", value: "", hidden: false },
+      { label: "SMS code", value: "", hidden: true },
     ]);
-    expect(loginCardFields(["ID", "Phone"]).map((field) => field.hidden)).toEqual([true, true]);
+  });
+
+  it.each([
+    "ID",
+    "ID number",
+    "  id-number ",
+    "Email",
+    "E-mail address",
+    "e/mail",
+    "Email or phone",
+    "Mobile phone",
+    "Account number",
+    "Customer ID",
+    "National ID",
+    "Tax ID",
+    "Employee ID",
+    "Login name",
+    "Last 4 digits of ID",
+    "Account #",
+    "ID \u2116",
+    "Account \u2116",
+    "Acc\u200Bount",
+    "PHONE",
+    "Télephone",
+    "ＩＤ ｎｕｍｂｅｒ",
+    "תעודת זהות",
+    "ת.ז.",
+    "הטלפון הנייד",
+    "מספר טלפון",
+    "מספר חשבון",
+    "\u200Fמייל\u200F",
+    "שם משתמש",
+  ])("starts %j visible", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(false);
+  });
+
+  it.each([
+    "Password",
+    "PIN",
+    "Account PIN",
+    "Phone password",
+    "Email code",
+    "Verification code",
+    "One-time code (OTP)",
+    "ID answer",
+    "API key",
+    "Token",
+    "CVV",
+    // Plurals, abbreviations and other spellings of a secret.
+    "Account passwords",
+    "Account PINs",
+    "Account codes",
+    "Account pwd",
+    "Account passwd",
+    "Account pw",
+    "Account pincode",
+    "Account credentials",
+    "Account 2FA",
+    "Account TOTP",
+    "Account CVV2",
+    // Look-alike and invisible letters.
+    "Account P\u0430ssword",
+    "Account \uFF30\uFF29\uFF2E",
+    "Account PIN\u3164",
+    "Account\u3164",
+    "Account\u{1F511}",
+    "Account \u{1F512}",
+    "Phone \u2731\u2731\u2731",
+    "ID \u{1F511} number",
+    "Account +",
+    // Labels we don't recognise stay hidden.
+    "Memorable word",
+    "Mother's maiden name",
+    "Card number",
+    "Date of birth",
+    "Name",
+    "Number",
+    "Hid",
+    "Provider",
+    "סיסמה",
+    "קוד SMS",
+    "הקוד",
+    "טלפון סודי",
+    "קוד אימות",
+    "סיסמת חשבון",
+    "ססמת חשבון",
+    "חשבון פין",
+    "טלפון וסיסמה",
+    "חשבון וקוד",
+  ])("starts %j hidden", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(true);
   });
 
   it.each([[["Username", "Password"]], [["ID", "Phone", "Code"]]])(
@@ -408,7 +539,7 @@ describe("command variables", () => {
       ).toBe(true);
     }
     const missing = BotSecretDestination.safeParse({ name: "api", auth });
-    expect(missing.error?.issues[0]?.message).toMatch(/Expected an HTTPS origin/);
+    expect(missing.error?.issues[0]?.message).toBe(BOT_SECRET_ORIGIN_MISSING_MESSAGE);
   });
 
   it("lets the owner input omit the origin only for a command variable", () => {

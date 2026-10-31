@@ -4,9 +4,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import type { runAsSystem as RunAsSystem } from "@rakazo/db";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
+import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -21,14 +22,14 @@ const runtimeArg = process.argv.find((arg) => arg.startsWith("--runtime="));
 const sandboxProvider = sandboxArg?.slice("--sandbox=".length) ?? "fake";
 const e2eSpec = specArg?.slice("--spec=".length);
 const e2eGrep = grepArg?.slice("--grep=".length);
-const e2eShard = shardArg?.slice("--shard=".length);
+const shard = shardArg?.slice("--shard=".length);
 const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "novita", "daytona", "boat"].includes(sandboxProvider)) {
-  throw new Error('Sandbox must be "fake", "e2b", "novita", "daytona", or "boat"');
+if (!["fake", "e2b", "novita", "daytona", "boat", "boxd"].includes(sandboxProvider)) {
+  throw new Error('Sandbox must be "fake", "e2b", "novita", "daytona", "boat", or "boxd"');
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
@@ -48,12 +49,15 @@ if (sandboxProvider === "daytona" && !process.env.DAYTONA_API_KEY) {
 if (sandboxProvider === "boat" && !process.env.BOAT_API_KEY) {
   throw new Error("BOAT_API_KEY is required when --sandbox=boat");
 }
+if (sandboxProvider === "boxd" && !process.env.BOXD_API_KEY) {
+  throw new Error("BOXD_API_KEY is required when --sandbox=boxd");
+}
 
 async function main() {
   const mode = integration ? "integration" : "e2e";
   const reportDir = path.resolve("test-report", mode);
   await mkdir(reportDir, { recursive: true });
-  const container = await new PostgreSqlContainer("postgres:18-alpine").start();
+  const container = await startPostgres();
   try {
     // Migrations run as the container superuser and the e2e API connects as the
     // runtime login, so row-level security is enforced as in a deployment.
@@ -128,55 +132,22 @@ async function main() {
         "packages/testkit/src/connections.test.ts",
         "packages/testkit/src/bot-secrets.test.ts",
       ];
-      // Each app reconciles all durable work in its database, including intentionally
-      // unfinished fixture runs. Clone the pristine migrated schema so one suite
-      // cannot execute another suite's backlog or wait for it during shutdown.
-      const template = container.getDatabase().replaceAll('"', '""');
-      const databaseCommand = async (statement: string) => {
-        const result = await container.exec([
-          "psql",
-          "-U",
-          container.getUsername(),
-          "-d",
-          "postgres",
-          "-v",
-          "ON_ERROR_STOP=1",
-          "-c",
-          statement,
-        ]);
-        if (result.exitCode !== 0)
-          throw new Error("Isolated integration database operation failed");
-      };
-      // Run every suite, then fail with the full list, so one run shows every break.
-      const failed: string[] = [];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;
       if (!selected.length) throw new Error(`No integration suite matches ${e2eSpec}`);
-      for (const [index, suite] of selected.entries()) {
-        const database = `integration_${index}`;
-        await databaseCommand(`CREATE DATABASE "${database}" TEMPLATE "${template}"`);
-        const suiteMigrationUrl = new URL(migrationUrl);
-        suiteMigrationUrl.pathname = `/${database}`;
-        const suiteUrl = new URL(databaseUrl);
-        suiteUrl.pathname = `/${database}`;
-        try {
-          await runProcess("pnpm", ["exec", "vitest", "run", suite], {
-            ...process.env,
-            DATABASE_URL: suiteUrl.toString(),
-            DATABASE_MIGRATION_URL: suiteMigrationUrl.toString(),
-            REALTIME_DATABASE_URL: suiteUrl.toString(),
-            OPENROUTER_API_KEY: "",
-            MODEL_API_KEY: "",
-            // A developer .env may say development, which changes defaults such as encryption.
-            NODE_ENV: "test",
-          });
-        } catch {
-          failed.push(suite);
-        } finally {
-          await databaseCommand(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
-        }
-      }
-      if (failed.length) throw new Error(`Integration suites failed:\n${failed.join("\n")}`);
+      // Files run in parallel, each on its own copy of the migrated database (pin-test-env.ts).
+      await runProcess(
+        "pnpm",
+        ["exec", "vitest", "run", ...(shard ? ["--shard", shard] : []), ...selected],
+        {
+          ...process.env,
+          COPY_TEST_DATABASE: "1",
+          OPENROUTER_API_KEY: "",
+          MODEL_API_KEY: "",
+          // A developer .env may say development, which changes defaults such as encryption.
+          NODE_ENV: "test",
+        },
+      );
       await writeSummary(reportDir, {
         ok: true,
         mode,
@@ -198,7 +169,7 @@ async function main() {
         UserDeviceEmulator,
       },
       { createApp },
-      { drainUnscopedDatabaseAccess },
+      { drainUnscopedDatabaseAccess, runAsSystem },
     ] = await Promise.all([
       import("@rakazo/adapters"),
       import("@rakazo/api/app"),
@@ -277,7 +248,7 @@ async function main() {
             "test",
             ...(e2eSpec ? [e2eSpec] : []),
             ...(e2eGrep ? ["--grep", e2eGrep] : []),
-            ...(e2eShard ? ["--shard", e2eShard] : []),
+            ...(shard ? ["--shard", shard] : []),
           ],
           {
             ...process.env,
@@ -312,7 +283,7 @@ async function main() {
       });
     } finally {
       const cleanupErrors: unknown[] = [];
-      const computers = await managedComputers(handles).catch((error) => {
+      const computers = await managedComputers(handles, runAsSystem).catch((error) => {
         cleanupErrors.push(error);
         return [];
       });
@@ -328,7 +299,7 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat",
+                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat" | "boxd",
                 providerRef: computer.providerRef!,
               },
               {
@@ -359,12 +330,15 @@ async function main() {
 
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
-async function managedComputers(handles: AppHandles) {
-  if (!["e2b", "novita", "daytona", "boat"].includes(sandboxProvider)) return [];
-  return handles.prisma.computer.findMany({
-    where: { providerRef: { not: null } },
-    select: { homeKey: true, kind: true, providerRef: true, userId: true, spaceId: true },
-  });
+async function managedComputers(handles: AppHandles, runAsSystem: typeof RunAsSystem) {
+  if (!["e2b", "novita", "daytona", "boat", "boxd"].includes(sandboxProvider)) return [];
+  // Outside a tenant or system context the runtime login reads no rows, and nothing is destroyed.
+  return runAsSystem("e2e cleanup of real test sandboxes", () =>
+    handles.prisma.computer.findMany({
+      where: { providerRef: { not: null } },
+      select: { homeKey: true, kind: true, providerRef: true, userId: true, spaceId: true },
+    }),
+  );
 }
 
 async function writeSummary(reportDir: string, summary: Record<string, unknown>) {

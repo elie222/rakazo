@@ -32,13 +32,18 @@ test("a new space chooses what it can use, and a skill can be limited to some sp
   await chooser.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(chooser).toHaveCount(0);
 
-  // Personal's Chief comes first in the sidebar; its Skills shows where the skill now lives.
-  await page
+  // Continue switches to the new space and opens its own Chief in the background. Let that land
+  // before leaving it, or its late remount overrides the click below or closes the Skills dialog.
+  const chiefs = page
     .locator("aside")
     .first()
-    .getByRole("button", { name: /^Chief/ })
-    .first()
-    .click();
+    .getByRole("button", { name: /^Chief/ });
+  await expect(chiefs.nth(1)).toHaveAttribute("aria-current", "page");
+  const personalChief = chiefs.first();
+  await personalChief.click();
+  await expect(personalChief).toHaveAttribute("aria-current", "page");
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+  await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Skills", exact: true }).click();
   const skills = page.getByRole("dialog", { name: "Skills", exact: true });
   const yours = skills.getByTestId("your-skills");

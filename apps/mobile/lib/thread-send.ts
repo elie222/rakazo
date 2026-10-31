@@ -260,6 +260,7 @@ export function useThreadSend({
       answer: string,
       fields?: readonly LoginFieldInput[],
       dismiss?: boolean,
+      remember?: false,
     ) =>
       answerThreadMessage(
         { botId, groupId, readOnly, rpc, isCurrentTarget, refresh, markRead: markCaughtUp },
@@ -267,6 +268,7 @@ export function useThreadSend({
         answer,
         fields,
         dismiss,
+        remember,
       ),
     [botId, groupId, readOnly],
   );

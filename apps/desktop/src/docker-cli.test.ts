@@ -154,12 +154,18 @@ describe("dockerSpawnEnv", () => {
   it("keeps the Windows system variables docker.exe depends on", () => {
     const env = dockerSpawnEnv(
       "win32",
-      { SystemRoot: "C:\\Windows", APPDATA: "C:\\Users\\me\\AppData\\Roaming", PATH: "" },
+      {
+        SystemRoot: "C:\\Windows",
+        APPDATA: "C:\\Users\\me\\AppData\\Roaming",
+        ProgramFiles: "D:\\Program Files",
+        PATH: "",
+      },
       "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
     );
     expect(env).toEqual({
       SystemRoot: "C:\\Windows",
       APPDATA: "C:\\Users\\me\\AppData\\Roaming",
+      ProgramFiles: "D:\\Program Files",
       PATH: "C:\\Program Files\\Docker\\Docker\\resources\\bin",
     });
   });
@@ -195,6 +201,26 @@ describe("classifyDockerFailure", () => {
     ["net/http: TLS handshake timeout", "network"],
     ["Bind for 127.0.0.1:5173 failed: port is already allocated", "port-in-use"],
     ["listen tcp 127.0.0.1:3100: bind: address already in use", "port-in-use"],
+    [
+      "listen tcp 0.0.0.0:3100: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
+      "port-in-use",
+    ],
+    [
+      "listen tcp 0.0.0.0:3100: bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
+      "port-in-use",
+    ],
+    [
+      "Ports are not available: exposing port TCP 0.0.0.0:3100 -> 127.0.0.1:0: listen tcp 0.0.0.0:3100: bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
+      "port-in-use",
+    ],
+    [
+      "failed to resolve reference: dial tcp 192.0.2.1:443: connectex: An attempt was made to access a socket in a way forbidden by its access permissions.",
+      "other",
+    ],
+    [
+      "dial tcp 192.0.2.1:443: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
+      "other",
+    ],
     [
       "Error response from daemon: all predefined address pools have been fully subnetted",
       "address-pool-exhausted",

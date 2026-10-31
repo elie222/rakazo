@@ -101,14 +101,13 @@ describe("artifact preview caches", () => {
       "artifacts/get",
       { ...target, artifactId: "art-1" },
       {
-        timeoutMs: api.ARTIFACT_DOWNLOAD_TIMEOUT_MS,
+        timeoutMs: 120_000,
         requestContext: {
           apiBase: state.apiBase,
           headers: { authorization: "Bearer fake-token-a" },
         },
       },
     );
-    expect(api.ARTIFACT_DOWNLOAD_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
   });
 
   it("shares concurrent dimensions and downloads and reuses disk after restart", async () => {

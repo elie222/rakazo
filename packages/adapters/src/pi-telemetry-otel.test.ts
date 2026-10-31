@@ -9,6 +9,12 @@ afterEach(() => vi.unstubAllEnvs());
 it("exports OTLP/HTTP with standard endpoint, headers and service name on shutdown", async () => {
   const received: Array<{ url?: string; authorization?: string; body: string }> = [];
   const server = createServer(async (request, response) => {
+    // A local tool can probe any listening loopback port; only OTLP exports are recorded.
+    if (request.method !== "POST" || request.url !== "/v1/traces") {
+      request.resume();
+      response.writeHead(404).end();
+      return;
+    }
     let body = "";
     for await (const chunk of request) body += chunk;
     received.push({ url: request.url, authorization: request.headers.authorization, body });

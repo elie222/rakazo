@@ -1,7 +1,9 @@
 import type {
   ApiResponse,
   ArtifactRequest,
+  AttachCommandRequest,
   Command200Response,
+  CommandAttachFrame,
   CommandOperationRequest,
   CommandResponse,
   CommandStatusRequest,
@@ -113,11 +115,20 @@ const SETTLES_TO: Partial<Record<SandboxStateEnum, SandboxStateEnum>> = {
 export class FakeBoatApi implements BoatSandboxSdk {
   private readonly sandboxes = new Map<string, FakeSandbox>();
   private readonly desktop = desktopCommandResponder();
-  private readonly detached = new Map<number, CommandResponse>();
+  private readonly detached = new Map<number, { result: CommandResponse; endsAt: number }>();
+  /** How long a detached command runs before it exits. */
+  detachedRunMs = 0;
+  /** Connections to a detached command's output that end in `reconnect` before one sees it exit. */
+  attachReconnects = 0;
+  /** Answer attaches as a sandbox agent too old to stream output does. */
+  attachOutdated = false;
   private created = 0;
   private readonly uploads = new Map<string, { sandboxId: string; path: string }>();
   private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
   private startsExhausted = false;
+  private requestLimitSeconds?: number;
+  /** When each request that reached a sandbox or the account arrived. */
+  readonly requestTimes: number[] = [];
   private rejectAll?: { status: number; code: string; message: string };
   readonly creates: CreateSandboxRequest[] = [];
   /** Saved snapshots; the current computer snapshot is ready unless a test removes it. */
@@ -171,6 +182,11 @@ export class FakeBoatApi implements BoatSandboxSdk {
 
   delete(id: string): void {
     this.sandboxes.delete(id);
+  }
+
+  /** Refuses the next request as over Boat's per-IP request limit, asking for a wait. */
+  limitRequests(retryAfterSeconds: number): void {
+    this.requestLimitSeconds = retryAfterSeconds;
   }
 
   /** Refuses every later create and resume as over the account's machine-start limit. */
@@ -454,7 +470,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
       : this.shell(box, commandRequest.command);
     if (!commandRequest.detached) return result;
     const processId = this.detached.size + 1;
-    this.detached.set(processId, result);
+    this.detached.set(processId, { result, endsAt: Date.now() + this.detachedRunMs });
     return {
       ok: true,
       type: "command.started",
@@ -471,18 +487,73 @@ export class FakeBoatApi implements BoatSandboxSdk {
     processId,
   }: CommandStatusRequest): Promise<CommandStatusResponse> {
     this.require(sandboxId);
-    const result = this.detached.get(processId);
-    if (!result) throw boatError(404, "not_found", "Process not found");
+    const detached = this.detached.get(processId);
+    if (!detached) throw boatError(404, "not_found", "Process not found");
+    const { result, endsAt } = detached;
+    const running = Date.now() < endsAt;
     return {
       ok: true,
       type: "command.status",
       success: true,
       processId,
-      status: "exited",
-      running: false,
-      exitCode: result.exitCode,
+      status: running ? "running" : "exited",
+      running,
+      exitCode: running ? null : result.exitCode,
       stdout: result.stdout,
       stderr: result.stderr,
+    };
+  }
+
+  /**
+   * A detached command's output as NDJSON from the given offsets, ending with its exit. While
+   * `attachReconnects` lasts, a connection carries half the remaining stdout and ends in
+   * `reconnect`, as Boat ends every connection after ten minutes.
+   */
+  async attachCommandRaw({
+    sandboxId,
+    processId,
+    stdoutOffset = 0,
+    stderrOffset = 0,
+  }: AttachCommandRequest): Promise<ApiResponse<CommandAttachFrame>> {
+    this.require(sandboxId);
+    if (this.attachOutdated) {
+      throw boatError(409, "agent_outdated", "Sandbox agent does not support offsets");
+    }
+    const detached = this.detached.get(processId);
+    if (!detached) throw boatError(404, "not_found", "Process not found");
+    const { stdout, stderr, exitCode } = detached.result;
+    const frames: CommandAttachFrame[] = [
+      { type: "attached", processId, stdoutOffset, stderrOffset },
+    ];
+    if (this.attachReconnects > 0) {
+      this.attachReconnects -= 1;
+      const half = stdoutOffset + Math.ceil((stdout.length - stdoutOffset) / 2);
+      frames.push(
+        { type: "stdout", data: stdout.slice(stdoutOffset, half), nextOffset: half },
+        { type: "reconnect", stdoutOffset: half, stderrOffset },
+      );
+    } else {
+      if (stdout.length > stdoutOffset) {
+        frames.push({
+          type: "stdout",
+          data: stdout.slice(stdoutOffset),
+          nextOffset: stdout.length,
+        });
+      }
+      if (stderr.length > stderrOffset) {
+        frames.push({
+          type: "stderr",
+          data: stderr.slice(stderrOffset),
+          nextOffset: stderr.length,
+        });
+      }
+      frames.push({ type: "exit", status: "exited", exitCode: exitCode ?? 1 });
+    }
+    return {
+      raw: new Response(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""), {
+        headers: { "content-type": "application/x-ndjson" },
+      }),
+      value: async () => frames[0] as CommandAttachFrame,
     };
   }
 
@@ -492,6 +563,18 @@ export class FakeBoatApi implements BoatSandboxSdk {
   }
 
   private check(): void {
+    this.requestTimes.push(Date.now());
+    if (this.requestLimitSeconds !== undefined) {
+      const retryAfter = this.requestLimitSeconds;
+      this.requestLimitSeconds = undefined;
+      throw new ResponseError(
+        Response.json(
+          { code: "IP_RATE_LIMIT_EXCEEDED", message: "Too many requests", retryAfter },
+          { status: 429, headers: { "Retry-After": String(retryAfter) } },
+        ),
+        "Response returned an error code",
+      );
+    }
     if (this.rejectAll) {
       const { status, code, message } = this.rejectAll;
       throw boatError(status, code, message);

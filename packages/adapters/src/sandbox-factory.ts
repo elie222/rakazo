@@ -1,5 +1,7 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxKind } from "@rakazo/contracts";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
+import { BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
 import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
@@ -34,6 +36,8 @@ export interface SandboxProviderOptions {
   railwaySandboxRegion?: string;
   boatApiKey?: string;
   boatApiUrl?: string;
+  boxdApiKey?: string;
+  boxdOrg?: string;
   kubernetesNamespace?: string;
   kubernetesRuntimeClassName?: string;
   kubernetesComputerImage?: string;
@@ -45,11 +49,18 @@ export interface SandboxProviderOptions {
   kubernetesHomeClaim?: string;
   kubernetesHomeColocateNamespace?: string;
   kubernetesHomeColocateLabels?: KubernetesSandboxOptions["homeColocateLabels"];
+  wuyingAccessKeyId?: string;
+  wuyingAccessKeySecret?: string;
+  wuyingRegionId?: string;
+  wuyingDesktopId?: string;
+  wuyingEndUserId?: string;
+  wuyingMcpUrl?: string;
+  wuyingMcpToken?: string;
   dataDir?: string;
 }
 
 function missingRemoteKey(
-  provider: "novita" | "e2b" | "daytona" | "createos" | "boat" | "railway",
+  provider: "novita" | "e2b" | "daytona" | "createos" | "boat" | "boxd" | "railway" | "wuying",
   envName: string,
 ): SandboxProvider {
   return new NoneSandboxProvider(
@@ -57,10 +68,20 @@ function missingRemoteKey(
   );
 }
 
-export function createSandboxProvider(kind: string, opts: SandboxProviderOptions): SandboxProvider {
-  switch (kind) {
+export async function createSandboxProvider(
+  kind: string,
+  opts: SandboxProviderOptions,
+): Promise<SandboxProvider> {
+  if (kind === "") return new NoneSandboxProvider();
+  const parsed = SandboxKind.safeParse(kind);
+  if (!parsed.success) {
+    throw new Error(
+      `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.`,
+    );
+  }
+  const sandboxKind = parsed.data;
+  switch (sandboxKind) {
     case "none":
-    case "":
       return new NoneSandboxProvider();
     case "e2b":
       if (!opts.e2bApiKey?.trim()) return missingRemoteKey("e2b", "E2B_API_KEY");
@@ -91,6 +112,9 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
     case "boat":
       if (!opts.boatApiKey?.trim()) return missingRemoteKey("boat", "BOAT_API_KEY");
       return new BoatSandboxProvider({ apiKey: opts.boatApiKey, apiUrl: opts.boatApiUrl });
+    case "boxd":
+      if (!opts.boxdApiKey?.trim()) return missingRemoteKey("boxd", "BOXD_API_KEY");
+      return new BoxdSandboxProvider({ apiKey: opts.boxdApiKey, org: opts.boxdOrg });
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
       if (!opts.railwayEnvironmentId?.trim())
@@ -115,6 +139,28 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         homeColocateNamespace: opts.kubernetesHomeColocateNamespace,
         homeColocateLabels: opts.kubernetesHomeColocateLabels,
       });
+    case "wuying": {
+      const required = {
+        WUYING_ACCESS_KEY_ID: opts.wuyingAccessKeyId,
+        WUYING_ACCESS_KEY_SECRET: opts.wuyingAccessKeySecret,
+        WUYING_DESKTOP_ID: opts.wuyingDesktopId,
+        WUYING_END_USER_ID: opts.wuyingEndUserId,
+        WUYING_MCP_URL: opts.wuyingMcpUrl,
+        WUYING_MCP_TOKEN: opts.wuyingMcpToken,
+      };
+      const missing = Object.entries(required).find(([, value]) => !value?.trim());
+      if (missing) return missingRemoteKey("wuying", missing[0]);
+      const { WuyingSandboxProvider } = await import("./wuying-sandbox.js");
+      return WuyingSandboxProvider.fromOptions({
+        accessKeyId: opts.wuyingAccessKeyId ?? "",
+        accessKeySecret: opts.wuyingAccessKeySecret ?? "",
+        regionId: opts.wuyingRegionId,
+        desktopId: opts.wuyingDesktopId ?? "",
+        endUserId: opts.wuyingEndUserId ?? "",
+        mcpUrl: opts.wuyingMcpUrl ?? "",
+        mcpToken: opts.wuyingMcpToken ?? "",
+      });
+    }
     case "docker":
       return new DockerSandboxProvider(
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
@@ -127,9 +173,11 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       });
     case "fake":
       return new FakeSandboxProvider();
-    default:
+    default: {
+      const _exhaustive: never = sandboxKind;
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | railway | kubernetes | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${_exhaustive}". Use none | docker | e2b | novita | daytona | createos | boat | boxd | railway | kubernetes | wuying | desktop | fake.`,
       );
+    }
   }
 }

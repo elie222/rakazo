@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "./client.js";
@@ -107,6 +108,38 @@ export async function replaceBillingCustomer(
   });
   return prisma.billingAccount.findUniqueOrThrow({
     where: { organizationId: input.organizationId },
+  });
+}
+
+/**
+ * Claims the organization's checkout lease, coordinating API instances without holding a
+ * connection over provider calls. Returns the lease id, or null while another request holds it.
+ */
+export async function claimCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  ttlMs: number,
+): Promise<string | null> {
+  const leaseId = randomUUID();
+  const now = new Date();
+  const { count } = await prisma.billingAccount.updateMany({
+    where: {
+      organizationId,
+      OR: [{ checkoutLeaseExpiresAt: null }, { checkoutLeaseExpiresAt: { lte: now } }],
+    },
+    data: { checkoutLeaseId: leaseId, checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
+  });
+  return count > 0 ? leaseId : null;
+}
+
+export async function releaseCheckoutLease(
+  prisma: PrismaClient,
+  organizationId: string,
+  leaseId: string,
+): Promise<void> {
+  await prisma.billingAccount.updateMany({
+    where: { organizationId, checkoutLeaseId: leaseId },
+    data: { checkoutLeaseId: null, checkoutLeaseExpiresAt: null },
   });
 }
 

@@ -4,8 +4,7 @@ import {
   applyJudgeDecision,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
-  COMPOSIO_MULTI_EXECUTE_TOOL,
-  composioBatchActions,
+  batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -16,6 +15,7 @@ import {
   newSiteOutcome,
   outboundSiteGate,
   planActionGate,
+  repeatsDeniedAction,
   resolveActionApproval,
   resolveActionApprovalDetail,
   resolveActionApprovalForTools,
@@ -63,16 +63,17 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before bot management writes that touch several bots, cost money or rewrite a bot", () => {
-    for (const name of [
-      "create_group",
-      "update_group",
-      "set_child_instructions",
-      "set_child_bot_model",
-      "create_child_routine",
-    ]) {
+  it("always asks before bot management writes that cost money or rewrite a bot", () => {
+    for (const name of ["set_child_instructions", "set_child_bot_model"]) {
       expect(toolRequiresApproval(name, false)).toBe(true);
       expect(toolRequiresExplicitApproval(name)).toBe(true);
+    }
+  });
+
+  it("treats grouping and scheduling other bots as ordinary approvals that Never ask skips", () => {
+    for (const name of ["create_group", "update_group", "create_child_routine"]) {
+      expect(toolRequiresApproval(name, false)).toBe(true);
+      expect(toolRequiresExplicitApproval(name)).toBe(false);
     }
   });
 
@@ -558,23 +559,32 @@ describe("decisiveActionApprovalRules", () => {
   });
 });
 
-describe("Composio batches", () => {
+const BATCH_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
+
+describe("batches", () => {
+  const shape = { items: "tools", action: "tool_slug" };
+
   it("lists each action a batch runs, and flags an entry that names none", () => {
     expect(
-      composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, {
+      batchActions(shape, {
         tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }, { tool_slug: "GMAIL_SEND_EMAIL" }],
       }),
-    ).toEqual({ slugs: ["GMAIL_SEND_EMAIL"], complete: true });
+    ).toEqual({ actions: ["GMAIL_SEND_EMAIL"], complete: true });
     expect(
-      composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, {
+      batchActions(shape, {
         tools: [{ tool_slug: "SLACK_SEND_MESSAGE" }, { arguments: {} }],
       }),
-    ).toEqual({ slugs: ["SLACK_SEND_MESSAGE"], complete: false });
-    expect(composioBatchActions(COMPOSIO_MULTI_EXECUTE_TOOL, { tools: [] })).toEqual({
-      slugs: [],
+    ).toEqual({ actions: ["SLACK_SEND_MESSAGE"], complete: false });
+    expect(batchActions(shape, { tools: [{ tool_slug: "  " }] })).toEqual({
+      actions: [],
       complete: false,
     });
-    expect(composioBatchActions("GMAIL_SEND_EMAIL", { tools: [] })).toBeUndefined();
+  });
+
+  it("treats a batch that lists no actions as unreadable", () => {
+    for (const args of [{ tools: [] }, {}, { tools: "GMAIL_SEND_EMAIL" }, null]) {
+      expect(batchActions(shape, args)).toEqual({ actions: [], complete: false });
+    }
   });
 
   const rules: ActionApprovalRule[] = [
@@ -604,20 +614,79 @@ describe("Composio batches", () => {
     expect(
       resolveActionApprovalForTools({
         tools: [{ name: "GMAIL_SEND_EMAIL" }],
-        wrapper: { name: COMPOSIO_MULTI_EXECUTE_TOOL, connectorKind: "composio" },
+        wrapper: { name: BATCH_TOOL, connectorKind: "composio" },
         rules: [...rules, { effect: "deny", matchKind: "connector", matchValue: "composio" }],
       }).decision,
     ).toBe("deny");
+  });
+
+  it("does not carry an always-allowed archive over to a send in the same batch tool", () => {
+    const archived: ActionApprovalRule[] = [
+      { effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" },
+    ];
+    expect(
+      resolveActionApprovalForTools({ tools: [{ name: "GMAIL_ARCHIVE_THREAD" }], rules: archived }),
+    ).toMatchObject({ decision: "allow", source: "always_allow" });
+    expect(
+      resolveActionApprovalForTools({ tools: [{ name: "GMAIL_SEND_EMAIL" }], rules: archived }),
+    ).toMatchObject({ decision: "allow", source: "default" });
+  });
+
+  it("lets the strictest action decide a mixed batch", () => {
+    const mixed: ActionApprovalRule[] = [
+      { effect: "always_allow", matchKind: "tool", matchValue: "GMAIL_ARCHIVE_THREAD" },
+      { effect: "require_approval", matchKind: "tool", matchValue: "GMAIL_SEND_EMAIL" },
+      { effect: "deny", matchKind: "tool", matchValue: "GMAIL_DELETE_MESSAGE" },
+    ];
+    const resolve = (...names: string[]) =>
+      resolveActionApprovalForTools({ tools: names.map((name) => ({ name })), rules: mixed });
+    expect(resolve("GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL")).toMatchObject({
+      decision: "ask",
+      source: "require_approval",
+    });
+    expect(
+      resolve("GMAIL_SEND_EMAIL", "GMAIL_ARCHIVE_THREAD", "GMAIL_DELETE_MESSAGE").decision,
+    ).toBe("deny");
+    expect(resolve("GMAIL_ARCHIVE_THREAD", "GMAIL_LIST_THREADS")).toMatchObject({
+      decision: "allow",
+      source: "default",
+    });
+  });
+
+  it("matches a tool or category rule on the action inside the batch", () => {
+    const tool = (name: string) => ({ name, connectorKind: connectorKindFromToolName(name) });
+    expect(
+      resolveActionApprovalForTools({
+        tools: [tool("GMAIL_SEND_EMAIL")],
+        wrapper: { name: BATCH_TOOL, connectorKind: "composio" },
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "GMAIL_SEND_EMAIL" }],
+      }).decision,
+    ).toBe("ask");
+    const email: ActionApprovalRule[] = [
+      { effect: "require_approval", matchKind: "category", matchValue: "email" },
+    ];
+    expect(
+      resolveActionApprovalForTools({
+        tools: [tool("GMAIL_SEND_EMAIL")],
+        wrapper: { name: BATCH_TOOL, connectorKind: "composio" },
+        rules: email,
+      }).decision,
+    ).toBe("ask");
+    expect(
+      resolveActionApprovalForTools({
+        tools: [tool("GMAIL_LIST_THREADS")],
+        wrapper: { name: BATCH_TOOL, connectorKind: "composio" },
+        rules: email,
+      }).decision,
+    ).toBe("allow");
   });
 
   it("never lets an allow rule on the batch tool allow its actions", () => {
     expect(
       resolveActionApprovalForTools({
         tools: [{ name: "SLACK_SEND_MESSAGE" }],
-        wrapper: { name: COMPOSIO_MULTI_EXECUTE_TOOL },
-        rules: [
-          { effect: "always_allow", matchKind: "tool", matchValue: COMPOSIO_MULTI_EXECUTE_TOOL },
-        ],
+        wrapper: { name: BATCH_TOOL },
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: BATCH_TOOL }],
       }),
     ).toMatchObject({ decision: "allow", source: "default" });
   });
@@ -814,4 +883,35 @@ it("classifies schedule_update like schedule_create", () => {
 it("requires human confirmation to approve an agent connection", () => {
   expect(toolRequiresExplicitApproval("respond_agent_connection")).toBe(true);
   expect(toolRequiresApproval("respond_agent_connection", false)).toBe(true);
+});
+
+describe("repeatsDeniedAction", () => {
+  const WRAPPER = "COMPOSIO_MULTI_EXECUTE_TOOL";
+  const sent = { tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }] };
+
+  it("matches a plain tool whatever its arguments", () => {
+    expect(
+      repeatsDeniedAction({
+        toolName: "shell",
+        args: { command: "pwd" },
+        denied: [{ command: "ls" }],
+      }),
+    ).toBe(true);
+    expect(repeatsDeniedAction({ toolName: "shell", args: {}, denied: [] })).toBe(false);
+  });
+
+  it("matches a multi-execute on any shared slug, ignoring case", () => {
+    const args = (...slugs: string[]) => ({ tools: slugs.map((tool_slug) => ({ tool_slug })) });
+    expect(
+      repeatsDeniedAction({
+        toolName: WRAPPER,
+        args: args("GMAIL_LIST", "gmail_send_email"),
+        denied: [sent],
+      }),
+    ).toBe(true);
+    expect(
+      repeatsDeniedAction({ toolName: WRAPPER, args: args("GMAIL_SEND_DRAFT"), denied: [sent] }),
+    ).toBe(false);
+    expect(repeatsDeniedAction({ toolName: WRAPPER, args: {}, denied: [sent] })).toBe(false);
+  });
 });

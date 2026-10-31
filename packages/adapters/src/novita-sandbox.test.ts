@@ -191,6 +191,16 @@ describe("Novita computer backend", () => {
     expect(desktop.files.read).not.toHaveBeenCalled();
   });
 
+  it("rejects a file that grew past maxBytes after the size check", async () => {
+    const { provider, computer, desktop } = await started();
+    await provider.writeFile(computer, { path: "growing", content: new Uint8Array(4) }, ctx);
+    vi.mocked(desktop.files.read).mockResolvedValueOnce(new Uint8Array(5));
+    await expect(provider.readFile(computer, "growing", ctx, { maxBytes: 4 })).rejects.toThrow(
+      "exceeds 4 bytes",
+    );
+    expect(await provider.readFile(computer, "growing", ctx, { maxBytes: 4 })).toHaveLength(4);
+  });
+
   it("uses token-protected view and control sessions for multiple bot screens", async () => {
     const { provider, computer } = await started();
     const first = await provider.connectScreen(computer, { view: "stream" }, ctx);
@@ -327,6 +337,23 @@ describe("Novita adapter over the SDK emulator", () => {
     });
     expect(fenced).toEqual([computer.providerRef]);
     expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+  });
+
+  it("reports a computer running only while it runs, without resuming it", async () => {
+    const { emulator, provider, computer } = await emulated();
+    expect(await provider.isRunning(computer, ctx)).toBe(true);
+    expect(await provider.isRunning({ ...computer, kind: "e2b" }, ctx)).toBe(false);
+    const outage = new Error("502: bad gateway");
+    vi.spyOn(emulator.sandbox, "getInfo").mockRejectedValueOnce(outage);
+    await expect(provider.isRunning(computer, ctx)).rejects.toBe(outage);
+    await provider.stop(computer, ctx);
+
+    const restarted = emulatedNovita(emulator).provider();
+    expect(await restarted.isRunning(computer, ctx)).toBe(false);
+    expect(emulator.computers.get(computer.id)!.state).toBe("paused");
+    emulator.computers.delete(computer.id);
+    expect(await restarted.isRunning(computer, ctx)).toBe(false);
+    expect(emulator.requests.filter((entry) => entry.startsWith("connect"))).toEqual([]);
   });
 
   it("deletes a paused computer without resuming it", async () => {

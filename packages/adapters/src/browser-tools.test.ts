@@ -6,7 +6,10 @@ import {
   browserNavigateFromTool,
   browserSnapshotFromTool,
   parseBrowserActions,
+  redactBrowserResult,
 } from "./browser-tools.js";
+import { ComputerBrowserProvider } from "./computer-browser.js";
+import { redactConnectorPayload } from "./connector-safety.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
 import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 
@@ -885,5 +888,173 @@ describe("browser tools", () => {
     expect(filterPageBrowserTools([{ name: "computer_act" }, ...tools], false)).toEqual([
       { name: "computer_act" },
     ]);
+  });
+});
+
+describe("browser tools on dropdowns and stale refs", () => {
+  const html = `<!doctype html><html><head><title>Returns</title></head><body>
+    <select aria-label="Year"><option value="">Choose</option>
+      <option value="p23">שנת 2023</option><option value="p24" selected>שנת 2024</option></select>
+  </body></html>`;
+  const fake = async () => {
+    const browser = new FakeBrowserProvider({
+      pages: { "https://example.test/r": { title: "Returns", html } },
+    });
+    await browserNavigateFromTool(browser, computer, context, { url: "https://example.test/r" });
+    type Snap = { tree: string; elements: Array<{ ref: string; name: string; value?: string }> };
+    const snap = (await browserSnapshotFromTool(browser, computer, context, {})) as Snap;
+    return { browser, snap, year: snap.elements.find((el) => el.name === "Year")! };
+  };
+
+  it("lists a dropdown's options in the snapshot", async () => {
+    const { snap, year } = await fake();
+    expect(snap.tree).toContain(
+      'options: "Choose"="", "שנת 2023"="p23", "שנת 2024"="p24" (selected)',
+    );
+    expect(year).toMatchObject({
+      options: [
+        { label: "Choose", value: "" },
+        { label: "שנת 2023", value: "p23" },
+        { label: "שנת 2024", value: "p24", selected: true },
+      ],
+    });
+  });
+
+  it("fills a dropdown by an option's visible label", async () => {
+    const { browser, year } = await fake();
+    const acted = (await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "fill", ref: year.ref, text: "שנת 2023" }],
+    })) as { ok: boolean; elements: Array<{ name: string; value?: string }> };
+    expect(acted.ok).toBe(true);
+    expect(acted.elements.find((el) => el.name === "Year")?.value).toBe("p23");
+  });
+
+  it("settles an option the dropdown does not have, with its options and the page", async () => {
+    const { browser, year } = await fake();
+    const acted = await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "fill", ref: year.ref, text: "2019" }],
+    });
+    expect(acted).toMatchObject({
+      ok: false,
+      uncertain: false,
+      error: expect.stringContaining(
+        'no option "2019". Its options: "Choose"="", "שנת 2023"="p23"',
+      ),
+      tree: expect.stringContaining("Year"),
+    });
+    expect(acted).not.toHaveProperty("fallback");
+    expect(acted).not.toHaveProperty("note");
+  });
+
+  it("replaces the old choice of a multiple select, and refuses an option in a disabled group", async () => {
+    const page = `<!doctype html><html><head><title>Tags</title></head><body>
+      <select aria-label="Tags" multiple><option selected>A</option><option selected>B</option><option>C</option>
+        <optgroup label="Soon" disabled><option>D</option></optgroup></select></body></html>`;
+    const browser = new FakeBrowserProvider({
+      pages: { "https://example.test/t": { title: "Tags", html: page } },
+    });
+    await browserNavigateFromTool(browser, computer, context, { url: "https://example.test/t" });
+    type Snap = {
+      elements: Array<{
+        ref: string;
+        name: string;
+        value?: string;
+        options?: Array<{ label: string; selected?: boolean; disabled?: boolean }>;
+      }>;
+    };
+    const tags = ((await browserSnapshotFromTool(browser, computer, context, {})) as Snap)
+      .elements[0]!;
+    expect(tags.options?.at(-1)).toMatchObject({ label: "D", disabled: true });
+    const acted = (await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "fill", ref: tags.ref, text: "C" }],
+    })) as Snap & { ok: boolean };
+    expect(acted.ok).toBe(true);
+    expect(acted.elements[0]!.options?.filter((o) => o.selected).map((o) => o.label)).toEqual([
+      "C",
+    ]);
+    const refused = await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "fill", ref: acted.elements[0]!.ref, text: "D" }],
+    });
+    expect(refused).toMatchObject({
+      ok: false,
+      uncertain: false,
+      error: expect.stringContaining('The option "D" is disabled'),
+    });
+    expect(refused).not.toHaveProperty("fallback");
+  });
+
+  it("hides a secret with a quote and a backslash where a snapshot quotes it, in a name and in a value", async () => {
+    const secret = 'zq"xv\\mk';
+    const html = `<!doctype html><html><head><title>Echo</title></head><body>
+      <button aria-label='${secret}'>Echo</button><input aria-label="Field" /></body></html>`;
+    const browser = new FakeBrowserProvider({
+      pages: { "https://example.test/e": { title: "Echo", html } },
+    });
+    await browserNavigateFromTool(browser, computer, context, { url: "https://example.test/e" });
+    type Snap = { elements: Array<{ ref: string; name: string }> };
+    const field = (
+      (await browserSnapshotFromTool(browser, computer, context, {})) as Snap
+    ).elements.find((el) => el.name === "Field")!;
+    const fill = { actions: [{ kind: "fill", ref: field.ref, text: secret }] };
+    const acted = await browserActFromTool(browser, computer, context, fill, {
+      redactions: () => [secret],
+    });
+    // The tree quotes names and values, so the secret reads differently there.
+    const quoted = JSON.stringify(secret).slice(1, -1);
+    const tree = String((acted as { tree: string }).tree);
+    expect(tree).toContain("[redacted]");
+    expect(tree).not.toContain(quoted);
+    expect(tree).not.toContain("xv");
+    expect(JSON.stringify(acted)).not.toContain("xv");
+    // With the plain secret alone, the quoted form would have been left in the tree.
+    const snapshot = (await browserSnapshotFromTool(browser, computer, context, {})) as {
+      tree: string;
+    };
+    expect((redactConnectorPayload(snapshot, [secret]) as typeof snapshot).tree).toBe(
+      snapshot.tree,
+    );
+    expect(snapshot.tree).toContain(quoted);
+    expect((redactBrowserResult(snapshot, [secret]) as typeof snapshot).tree).not.toContain("xv");
+  });
+
+  it("settles a stale ref with a fresh page instead of sending the bot to the desktop", async () => {
+    const { browser } = await fake();
+    const acted = await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "click", ref: "e999" }],
+    });
+    expect(acted).toMatchObject({
+      ok: false,
+      uncertain: false,
+      error: expect.stringContaining("Stale element ref"),
+    });
+    expect(acted).not.toHaveProperty("fallback");
+    expect(acted).not.toHaveProperty("note");
+    expect(acted).toHaveProperty("tree", expect.stringContaining("Year"));
+  });
+
+  it("passes a settled step error from the live helper on without the desktop note", async () => {
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        url: "https://example.test/r",
+        title: "Returns",
+        tree: '- combobox "Year" [e5] options: "2023", "2024"',
+        elements: [{ ref: "e5", role: "combobox", name: "Year" }],
+        error: 'This dropdown has no option "2019". Its options: "2023", "2024".',
+      }),
+    });
+    const live: ComputerRef = { id: "c", botId: "b", kind: "docker", providerRef: "c" };
+    const acted = await browserActFromTool(provider, live, context, {
+      actions: [{ kind: "fill", ref: "e5", text: "2019" }],
+    });
+    expect(acted).toMatchObject({
+      ok: false,
+      uncertain: false,
+      tree: expect.stringContaining("e5"),
+    });
+    expect(acted).not.toHaveProperty("fallback");
+    expect(acted).not.toHaveProperty("note");
   });
 });

@@ -3,6 +3,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   readFile,
   rm,
@@ -12,8 +13,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkHomeArchive, HomeArchiveError, packHome, unpackHome } from "./home-archive.js";
+import { checkHomeArchive, packHome, unpackHome } from "./home-archive.js";
 
 const dirs: string[] = [];
 
@@ -84,6 +86,64 @@ describe("home archive", () => {
     expect((await stat(path.join(dest, "run.sh"))).mode & 0o777).toBe(0o755);
   });
 
+  it("packs only durable files and leaves excluded files on the live home", async () => {
+    const source = await tempDir();
+    const dest = await tempDir();
+    for (const name of [
+      "node_modules/lib/index.js",
+      ".cache/uv/data",
+      ".yarn/cache/archive",
+      "packages/core/notes.txt",
+      ".browser-profiles/chromium/Cache/data",
+      ".browser-profiles/chromium/Default/Cookies",
+      "run.log",
+      "core.123",
+    ]) {
+      await mkdir(path.dirname(path.join(source, name)), { recursive: true });
+      await writeFile(path.join(source, name), "ok");
+    }
+    const before = await tree(source);
+    await unpackHome(packHome(source, { maxBytes: 4, maxEntries: 10 }), dest);
+    expect(await tree(dest)).toEqual({
+      "packages/": "",
+      "packages/core/": "",
+      "packages/core/notes.txt": "ok",
+      ".browser-profiles/": "",
+      ".browser-profiles/chromium/": "",
+      ".browser-profiles/chromium/Default/": "",
+      ".browser-profiles/chromium/Default/Cookies": "ok",
+      ".yarn/": "",
+    });
+    expect(await tree(source)).toEqual(before);
+  });
+
+  it("uses the shared 5 GiB save limit even with larger archive read bounds", async () => {
+    const source = await tempDir();
+    const handle = await open(path.join(source, "large.bin"), "w");
+    try {
+      await handle.truncate(5 * 1024 ** 3 + 1);
+    } finally {
+      await handle.close();
+    }
+    await expect(collect(packHome(source))).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
+  });
+
+  it("ignores excluded entries in older archives when restoring", async () => {
+    const dest = await tempDir();
+    await unpackHome(
+      once(
+        archive(
+          entry(1, "node_modules"),
+          entry(2, "node_modules/lib.js", "cache"),
+          entry(2, "core.123", "dump"),
+          entry(2, "keep", "ok"),
+        ),
+      ),
+      dest,
+    );
+    expect(await tree(dest)).toEqual({ keep: "ok" });
+  });
+
   it("copies links that stay in the home and leaves out the rest", async () => {
     const outside = await tempDir();
     await writeFile(path.join(outside, "secret.txt"), "host secret");
@@ -119,10 +179,10 @@ describe("home archive", () => {
     await writeFile(path.join(source, "a"), "12345");
     await writeFile(path.join(source, "b"), "1");
     await expect(collect(packHome(source, { maxBytes: 5, maxEntries: 10 }))).rejects.toThrow(
-      HomeArchiveError,
+      WorkspaceTooLargeError,
     );
     await expect(collect(packHome(source, { maxBytes: 100, maxEntries: 1 }))).rejects.toThrow(
-      HomeArchiveError,
+      WorkspaceTooLargeError,
     );
   });
 
@@ -153,13 +213,13 @@ describe("home archive", () => {
     await mkdir(dest);
     await expect(
       unpackHome(once(archive(entry(2, "big", "123456"))), dest, { maxBytes: 5, maxEntries: 10 }),
-    ).rejects.toThrow(/larger than 5 bytes/);
+    ).rejects.toThrow(/too large to save/);
     await expect(
       checkHomeArchive(once(archive(entry(1, "a"), entry(1, "b"))), {
         maxBytes: 10,
         maxEntries: 1,
       }),
-    ).rejects.toThrow(/more than 1 entries/);
+    ).rejects.toThrow(/too many files/);
   });
 
   it("restores permission bits only, keeping files readable by their owner", async () => {

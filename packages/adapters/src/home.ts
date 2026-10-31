@@ -21,6 +21,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
+import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
 
 const STAGING_PREFIX = "rakazo-workspace-";
 /** Staging directories in use are touched this often, so other processes can tell them apart. */
@@ -70,6 +71,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return this.withBotWrite(botId, async () => {
       await this.replaceHome(botId, async (staging) => {
         if (!staged) return copyDir(src, staging);
+        await removeExcludedStagedEntries(src);
         await rm(staging, { recursive: true, force: true });
         await rename(src, staging);
       });
@@ -92,7 +94,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const stopHeartbeat = keepFresh(staging);
     try {
       await fill(staging);
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
       if (await pathExists(dest)) await rename(dest, previous);
       try {
         await rename(staging, dest);
@@ -102,7 +104,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
         }
         throw error;
       }
-      await rm(previous, { recursive: true, force: true });
+      await removeTree(previous);
     } finally {
       stopHeartbeat();
       await rm(staging, { recursive: true, force: true });
@@ -262,8 +264,8 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async removeCopy(botId: string) {
     const dir = this.botDir(botId);
     // The previous copy first, or a read in between would restore it as the home.
-    await rm(`${dir}.previous`, { recursive: true, force: true });
-    await rm(dir, { recursive: true, force: true });
+    await removeTree(`${dir}.previous`);
+    await removeTree(dir);
     await rm(this.revisionFile(botId), { force: true });
   }
 
@@ -283,7 +285,14 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   protected async writeRevision(botId: string, revision = newRevision()) {
     const directory = path.join(this.root, "home-revisions");
     await mkdir(directory, { recursive: true });
-    await writeFile(this.revisionFile(botId), revision, "utf8");
+    const file = this.revisionFile(botId);
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, revision, "utf8");
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true });
+    }
     return revision;
   }
 
@@ -336,7 +345,7 @@ export function resolveAgentHomePath(home: AgentHomeStore, homeKey: string, data
 /** Deletes the home of a deleted computer from this host. */
 export async function removeAgentHome(home: AgentHomeStore, homeKey: string, dataDir = "./data") {
   if (home instanceof LocalAgentHomeStore) return home.remove(homeKey);
-  await rm(resolveAgentHomePath(home, homeKey, dataDir), { recursive: true, force: true });
+  await removeTree(resolveAgentHomePath(home, homeKey, dataDir));
 }
 
 /**
@@ -463,8 +472,43 @@ async function removeContainedDirectory(root: string, parent: string, name: stri
   ) {
     throw new Error("folder escapes the team home");
   }
-  await rm(resolvedTarget, { recursive: true, force: true });
+  await removeTree(resolvedTarget);
   return true;
+}
+
+/**
+ * Deletes a directory tree, including read-only directories its owner can change, such as Go's
+ * module cache: those without owner write get full owner access. Only directories whose opened
+ * handle is still inside the tree are changed; a parent swapped for a link during the walk stops it.
+ */
+async function removeTree(target: string) {
+  try {
+    await rm(target, { recursive: true, force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+    await makeWritable(target);
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function makeWritable(directory: string, root?: string) {
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  let tree = root;
+  try {
+    const opened = await fileHandlePath(handle.fd);
+    tree ??= opened;
+    assertContained(tree, opened);
+    const { mode } = await handle.stat();
+    if (!(mode & 0o200)) await handle.chmod((mode & 0o7777) | 0o700);
+  } finally {
+    await handle.close();
+  }
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeWritable(path.join(directory, entry.name), tree);
+  }
 }
 
 function isMissing(error: unknown): error is NodeJS.ErrnoException {
@@ -600,6 +644,13 @@ async function copyDir(
     if (!from) continue;
     const to = path.join(dest, entry.name);
     const info = await stat(from);
+    if (
+      shouldSkipPortableWorkspaceFile(
+        path.relative(root, path.join(current, entry.name)).split(path.sep).join("/"),
+        info.isDirectory(),
+      )
+    )
+      continue;
     if (info.isDirectory()) await copyDir(from, to, root, visited);
     else if (info.isFile()) await copyTraversalFile(root, from, to);
   }
@@ -622,11 +673,25 @@ async function* walkFiles(
     const full = await exportTarget(root, path.join(resolvedCurrent, entry.name), skipHidden);
     if (!full) continue;
     const info = await stat(full);
+    if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
       yield* walkFiles(root, full, skipHidden, portablePath, visited);
     } else if (info.isFile()) {
       const { content, mode } = await readTraversalFile(root, full, skipHidden);
       yield { path: portablePath, content, executable: Boolean(mode & 0o100) };
+    }
+  }
+}
+
+/** Only private save staging is pruned; mounted homes are never cleaned by a save. */
+async function removeExcludedStagedEntries(root: string, directory = root) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    const relative = path.relative(root, full).split(path.sep).join("/");
+    if (shouldSkipPortableWorkspaceFile(relative, entry.isDirectory())) {
+      await rm(full, { recursive: true, force: true });
+    } else if (entry.isDirectory()) {
+      await removeExcludedStagedEntries(root, full);
     }
   }
 }

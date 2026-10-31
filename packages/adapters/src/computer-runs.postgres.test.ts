@@ -96,12 +96,15 @@ describePostgres("computer runs (PostgreSQL)", () => {
     const o = await owner();
 
     await o.start();
-    const { runningSince, providerRef } = await system.computer.findUniqueOrThrow({
-      where: { id: o.id },
-    });
+    const { runningSince, providerRef, screenGeneration } = await system.computer.findUniqueOrThrow(
+      { where: { id: o.id } },
+    );
     expect(providerRef).toBeTruthy();
-    // A reconnect within the same stretch is the same run.
+    // A reconnect within the same stretch is the same run, and keeps open screens.
     await o.start();
+    expect(
+      (await system.computer.findUniqueOrThrow({ where: { id: o.id } })).screenGeneration,
+    ).toBe(screenGeneration);
     const open = await runAsTenant(o.tenant, () =>
       db.prisma.computerRun.findMany({ where: { computerId: o.id } }),
     );
@@ -131,6 +134,64 @@ describePostgres("computer runs (PostgreSQL)", () => {
     expect((await o.runs()).map((run) => run.endReason)).toEqual(["idle", null]);
   });
 
+  it("sleeps past a run waiting for takeover, but not past a run using the computer", async () => {
+    const o = await owner();
+    await o.start();
+    const bot = await system.bot.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        name: "Waiting",
+        color: "ink",
+        computerId: o.id,
+        thread: { create: { spaceId: o.id, userId: o.id } },
+      },
+      include: { thread: true },
+    });
+    const threadId = bot.thread!.id;
+    const task = await system.task.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId,
+        prompt: "Log in",
+        status: "running",
+      },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId: o.id,
+        userId: o.id,
+        botId: bot.id,
+        threadId,
+        taskId: task.id,
+        status: "running",
+        trigger: "user_message",
+      },
+    });
+    await system.computerExecutionLease.create({
+      data: {
+        computerId: o.id,
+        botId: bot.id,
+        runId: run.id,
+        fence: 1,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+      },
+    });
+
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "running",
+    );
+
+    await system.run.update({ where: { id: run.id }, data: { status: "waiting_takeover" } });
+    await o.sleep();
+    expect((await system.computer.findUniqueOrThrow({ where: { id: o.id } })).state).toBe(
+      "suspended",
+    );
+  });
+
   it("ends the run when the provider has already lost the sandbox", async () => {
     const o = await owner();
     await o.start();
@@ -148,6 +209,53 @@ describePostgres("computer runs (PostgreSQL)", () => {
     expect(await o.runs()).toEqual([
       expect.objectContaining({ endedAt: expect.any(Date), endReason: "gone" }),
     ]);
+  });
+
+  it("ends a run lost at the provider when it was last seen running, not when that was noticed", async () => {
+    const lostAtStart = await owner();
+    const lostBySleep = await owner();
+    const lostUnseen = await owner();
+    await Promise.all([lostAtStart.start(), lostBySleep.start(), lostUnseen.start()]);
+    const lastSeenAt = new Date(Date.now() - 3 * 60 * 60_000);
+    const startedAt = new Date(lastSeenAt.getTime() - 60 * 60_000);
+    for (const o of [lostAtStart, lostBySleep]) {
+      await system.computer.update({ where: { id: o.id }, data: { runningSince: startedAt } });
+      await system.computerRun.updateMany({
+        where: { computerId: o.id },
+        data: { startedAt, lastSeenAt },
+      });
+    }
+    await system.computer.update({
+      where: { id: lostUnseen.id },
+      data: { runningSince: startedAt },
+    });
+    await system.computerRun.updateMany({
+      where: { computerId: lostUnseen.id },
+      data: { startedAt, lastSeenAt: null },
+    });
+
+    // The next start has to bring the computer back, and the idle check finds it gone.
+    await runAsTenant(lostAtStart.tenant, () =>
+      recordComputerRunStart(db.prisma, lostAtStart.computer, new Date(), "gone"),
+    );
+    for (const o of [lostBySleep, lostUnseen]) {
+      o.sandbox.isRunning = async () => false;
+      o.sandbox.exportWorkspace = async function* () {
+        yield* [];
+        throw Object.assign(new Error("sandbox removed"), { name: "SandboxNotFoundError" });
+      };
+      await o.sleep();
+    }
+
+    const [lostAtStartRun] = await lostAtStart.runs();
+    expect(lostAtStartRun).toMatchObject({ endReason: "gone", endedAt: lastSeenAt });
+    expect(await lostBySleep.runs()).toEqual([
+      expect.objectContaining({ endReason: "gone", endedAt: lastSeenAt }),
+    ]);
+    // Never seen running: the end stays when it was noticed.
+    const [unseen] = await lostUnseen.runs();
+    expect(unseen!.endReason).toBe("gone");
+    expect(unseen!.endedAt!.getTime()).toBeGreaterThan(Date.now() - 60_000);
   });
 
   it("closes the open runs of deleted and stopped computers, and leaves running ones open", async () => {
@@ -207,6 +315,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
         providerRef,
         startedAt: runningSince,
         endedAt: null,
+        lastSeenAt: runningSince,
       }),
     ]);
   });

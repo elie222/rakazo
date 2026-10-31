@@ -7,9 +7,9 @@ import {
   ORGANIC_AVATAR_LOOKS,
   organicAvatarFamily,
   organicAvatarSampleIdentity,
-  seededLogoAvatarColor,
 } from "@rakazo/core";
 import {
+  BOT_AVATAR_COLORS,
   BotAvatar,
   Button,
   Dialog,
@@ -45,11 +45,9 @@ export interface CreateBotDialogInput {
 export function CreateBotDialog({
   onCancel,
   onCreate,
-  onImport,
 }: {
   onCancel: () => void;
   onCreate: (input: CreateBotDialogInput) => Promise<void>;
-  onImport?: () => void;
 }) {
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -62,7 +60,7 @@ export function CreateBotDialog({
     return id;
   });
   const [look, setLook] = useState(() => ({
-    value: seededLogoAvatarColor(previewId),
+    value: pick(BOT_AVATAR_COLORS),
     identity: pick(ORGANIC_IDENTITIES),
   }));
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>(DEFAULT_NEW_BOT_AVATAR_SET);
@@ -151,18 +149,6 @@ export function CreateBotDialog({
             }}
           />
           <DialogFooter>
-            {onImport ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="sm:me-auto"
-                disabled={submitting}
-                data-testid="create-bot-import"
-                onClick={onImport}
-              >
-                <Trans>Import</Trans>
-              </Button>
-            ) : null}
             <Button type="button" variant="outline" disabled={submitting} onClick={onCancel}>
               <Trans>Cancel</Trans>
             </Button>

@@ -1,12 +1,15 @@
 import {
   deploymentModelRole,
+  findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
+  selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
-import { attachmentMaxBytes, canonicalPiProviderId } from "@rakazo/contracts";
+import { attachmentMaxBytes, attachmentMaxCount, canonicalPiProviderId } from "@rakazo/contracts";
+import { isAdmin } from "../admins.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -18,7 +21,7 @@ function hostCredentials(active: boolean, provider: string) {
 }
 
 export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, setup] = await Promise.all([
+  const [user, setup, admin] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
       where: { id: actor.userId },
       select: {
@@ -29,17 +32,20 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       },
     }),
     modelSetup(deps, actor),
+    isAdmin(deps, actor.userId),
   ]);
   return {
     ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
+    maxAttachmentsPerMessage: attachmentMaxCount(deps.env),
     userId: actor.userId,
     email: user.email,
     name: user.name,
     spaceId: actor.spaceId,
     isDeploymentOwner: false,
+    isAdmin: admin,
     needsModel: setup.needsModel,
     defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
     defaultModel: setup.model?.modelId ?? deps.env.defaultModel,
@@ -54,10 +60,12 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer:
       Boolean(deps.env.desktopHostChoiceEnabled) && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
-    mcpStdioEnabled: mcpStdioAvailable({
-      stdioEnabled: deps.env.mcpStdioEnabled,
-      allowedCommands: deps.env.mcpStdioAllowedCommands,
-    }),
+    mcpStdioEnabled:
+      admin &&
+      mcpStdioAvailable({
+        stdioEnabled: deps.env.mcpStdioEnabled,
+        allowedCommands: deps.env.mcpStdioAllowedCommands,
+      }),
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
@@ -109,6 +117,30 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
     hasDeployment,
     needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
   };
+}
+
+/** Whether every bot runs its own model on one of the member's connections, as a run selects it. */
+export async function botsRunOwnModels(deps: RouterDeps, actor: Actor, botIds: string[]) {
+  const bots = await deps.prisma.bot.findMany({
+    where: { id: { in: botIds }, userId: actor.userId, spaceId: actor.spaceId },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+  });
+  const credentials = await Promise.all(
+    bots.map(async (bot) => {
+      const overrideCredential = bot.modelProvider
+        ? await findConnectedModelCredential(
+            deps.prisma,
+            deps.secrets,
+            actor,
+            bot.modelProvider,
+            bot.modelId,
+          )
+        : null;
+      return selectConfiguredModel({ override: bot, overrideCredential, main: null, defaults: {} })
+        .credential;
+    }),
+  );
+  return credentials.every(Boolean);
 }
 
 export const THREAD_MESSAGE_PAGE_SIZE = 100;

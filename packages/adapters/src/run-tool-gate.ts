@@ -3,12 +3,13 @@ import type {
   AgentToolExecutionObserver,
   AutoReviewRequest,
   ConnectorCall,
+  ToolBatch,
 } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import {
   applyJudgeDecision,
   approvalModeFromPreference,
-  composioBatchActions,
+  batchActions,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -19,6 +20,7 @@ import {
   outboundSiteGate,
   planActionGate,
   redactSecrets,
+  repeatsDeniedAction,
   resolveActionApprovalForTools,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
@@ -26,13 +28,14 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import type { AuditEventInput } from "@rakazo/db";
+import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH, SITE_SENDING_TOOLS } from "./approval-ask.js";
 import {
-  claimApprovedEffect,
-  claimIntendedEffect,
+  boundDirectApprovalDetails,
+  DENIED_ACTION_ERROR,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
   uncertainEffectResult,
@@ -44,6 +47,7 @@ import {
   resolveAutoReviewChecker,
 } from "./auto-review.js";
 import { reviewWithBackups } from "./auto-review-backups.js";
+import { RAKAZO_DOCS_URLS } from "./builtin-skills.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 import { paidRequestEffect } from "./paid-request.js";
@@ -56,18 +60,30 @@ import {
   pauseForSecret,
   persistTurnCheckpoint,
 } from "./run-context.js";
-import { completeEffect, recordEffect, uncertainEffectError } from "./run-effects.js";
+import {
+  CATALOG_APPROVAL_TOOL,
+  claimEffect,
+  completeEffect,
+  recordEffect,
+  uncertainEffectError,
+} from "./run-effects.js";
 import { renewRunLease } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
 import { resolveCompletedSecretLeftover } from "./run-secret.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerGate } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
 import { connectorTrustKeys } from "./run-trust.js";
-import { commandWatchFromTool } from "./schedule-tools.js";
+import { watchFromTool } from "./schedule-tools.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
+
+type ApprovalCard = {
+  reviewReason: string | undefined;
+  summary: FleetCardSummary | undefined;
+  batch: ToolBatch | undefined;
+};
 
 /** A tool call that passed its approval gate, as tool handlers receive it. */
 export interface ToolCall {
@@ -131,16 +147,18 @@ export async function gateToolCall(
   // Declared effect of the operation this call dispatches (installed API method and
   // flag). Install config is immutable per route resource, so it cannot drift before
   // execute; a catalog call uses the tool it was just resolved to.
-  const declaredReadOnly = viaConnector
-    ? (resolvedTool ?? ctx.tools.connector.get(name))?.readOnly
-    : undefined;
-  // A Composio batch names its actions in tools[].tool_slug, so rules and the read/write
+  const connectorTool = viaConnector ? (resolvedTool ?? ctx.tools.connector.get(name)) : undefined;
+  const declaredReadOnly = connectorTool?.readOnly;
+  // A batch tool names the actions it runs in its arguments, so rules and the read/write
   // check look at each action, never the batch tool. An entry naming no action asks.
-  const composioBatch = composioBatchActions(name, args);
-  const unidentifiedAction = Boolean(composioBatch && !composioBatch.complete);
-  const approvalToolNames = composioBatch?.slugs.length ? composioBatch.slugs : [name];
+  const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
+  const unidentifiedAction = Boolean(batch && !batch.complete);
+  const approvalToolNames = batch?.actions.length ? batch.actions : [name];
+  // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
-    toolName === name ? declaredReadOnly : ctx.tools.connector.get(toolName)?.readOnly;
+    toolName === name || declaredReadOnly === false
+      ? declaredReadOnly
+      : ctx.tools.connector.get(toolName)?.readOnly;
   const requiresUnattendedApproval =
     (unidentifiedAction && run.trigger === "webhook") ||
     approvalToolNames.some((toolName) =>
@@ -167,8 +185,7 @@ export async function gateToolCall(
     effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
   }
   const connectorTrusts = connectorTrustKeys(
-    name,
-    args,
+    batch?.actions,
     connectorCall.route,
     connectorKind,
     connectorProviders,
@@ -179,34 +196,51 @@ export async function gateToolCall(
           site: fetchSite,
           trusted:
             ctx.trust.searchResultUrls.has(fetchUrl) ||
+            (name === "web_fetch" && RAKAZO_DOCS_URLS.includes(fetchUrl)) ||
             (await ctx.trust.loadTrustedSites()).has(fetchSite),
           rules: await ctx.trust.loadApprovalRules(),
         })
       : "allow";
+  const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
+  // A tool watch repeats its read unattended, so it passes the read check that call would now.
+  const watchedTool = watch?.kind === "tool" ? watch.tool : undefined;
+  const readTrusts = watchedTool
+    ? connectorTrustKeys(
+        undefined,
+        ctx.tools.connector.get(watchedTool)?.route,
+        connectorKindFromToolName(watchedTool, connectorProviders),
+        connectorProviders,
+      )
+    : viaConnector &&
+        !unidentifiedAction &&
+        approvalToolNames.every(
+          (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+        )
+      ? connectorTrusts
+      : undefined;
   const connectorReadGated =
-    viaConnector &&
-    !unidentifiedAction &&
-    approvalToolNames.every(
-      (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
-    ) &&
+    readTrusts !== undefined &&
     connectorReadRequiresApproval({
       tainted: await isRunTainted(ctx),
       connectorTrusted: await ctx.trust
         .loadTrustedConnectors()
-        .then((trusted) => connectorTrusts.every((trust) => trusted.has(trust))),
+        .then((trusted) => readTrusts.every((trust) => trusted.has(trust))),
     });
   // This schedules unattended shell execution; require a person to approve
   // the command once, rather than letting an allow rule or reviewer schedule it.
-  const commandWatch = name === "schedule_create" && commandWatchFromTool(args.watch) !== undefined;
+  const commandWatch = watch?.kind === "command";
   // A routine's prompt counts as the owner's words when it runs, so the sites it names are
   // ones its runs may fetch. Once outside content entered this run, a routine naming a
   // site this run was not given needs a person: a reviewer would judge it on this run's
   // context, and passing it would trust the site for every later run.
   const scheduleNamesNewSite =
-    (name === "schedule_create" || (name === "schedule_update" && Boolean(args.prompt))) &&
+    (name === "schedule_create" ||
+      name === "create_child_routine" ||
+      (name === "schedule_update" && Boolean(args.prompt))) &&
     (await isRunTainted(ctx)) &&
     (await ctx.trust.routineNamesNewSite(String(args.prompt ?? "")));
   const requiresApprovalByDefault =
+    request.ownerApproval ||
     commandWatch ||
     requiresUnattendedApproval ||
     siteGate === "new" ||
@@ -217,10 +251,13 @@ export async function gateToolCall(
   // A gated read still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || connectorReadGated;
   const requiresMandatoryApproval =
+    request.ownerApproval ||
     commandWatch ||
     scheduleNamesNewSite ||
     requiresUnattendedApproval ||
     toolRequiresExplicitApproval(name);
+  // Never ask runs everything else: only another owner's connection could have been steered into it.
+  const guardedInNeverAsk = name === "respond_agent_connection";
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -228,7 +265,7 @@ export async function gateToolCall(
         toolName === name ? connectorKind : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
     })),
-    wrapper: composioBatch ? { name, connectorKind } : undefined,
+    wrapper: batch ? { name, connectorKind } : undefined,
     site: fetchSite,
     rules: await ctx.trust.loadApprovalRules(),
   });
@@ -269,23 +306,25 @@ export async function gateToolCall(
             ),
           )
         : false));
-  const plan =
-    name === USER_COMPUTER_SHELL_TOOL
-      ? await userComputerGate(ctx, approvalResolved.decision === "deny")
-      : planActionGate({
-          resolved: approvalResolved,
-          mode,
-          mandatory: requiresMandatoryApproval,
-          steerable:
-            requiresMandatoryApproval && mode === "never"
-              ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
-              : undefined,
-          consequential: requiresApprovalByDefault,
-          reviewOnly: connectorReadGated,
-          checkerConfigured,
-          newDestination: siteGate === "new",
-        });
+  const plan = USER_COMPUTER_TOOLS.has(name)
+    ? await userComputerGate(ctx, approvalResolved.decision === "deny", name, args)
+    : planActionGate({
+        resolved: approvalResolved,
+        mode,
+        mandatory: requiresMandatoryApproval,
+        steerable:
+          guardedInNeverAsk && mode === "never"
+            ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
+            : undefined,
+        consequential: requiresApprovalByDefault,
+        reviewOnly: connectorReadGated,
+        checkerConfigured,
+        newDestination: siteGate === "new",
+      });
   if (plan === "deny") {
+    await auditToolCall(ctx, name, "denied", {
+      reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
+    });
     return {
       result: {
         error:
@@ -337,7 +376,42 @@ export async function gateToolCall(
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
+          batch && (batch.complete ? batch.actions : []),
         );
+
+  // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
+  // so only real denies match. A stored row is checked only while it still waits for an
+  // answer. web_fetch and secret_request target one site per call; request_secret and
+  // connect_app name their own target.
+  const repeatChecked =
+    applied &&
+    (!applied.duplicate || applied.effect.status === "intended") &&
+    !["web_fetch", "secret_request", "request_secret", "connect_app"].includes(name);
+  const deniedEarlier = repeatChecked
+    ? (
+        await deps.prisma.externalEffect.findMany({
+          where: { runId, status: "denied", kind: replayEffectToolName },
+          select: { request: true, result: true },
+        })
+      ).flatMap((effect) =>
+        effect.result == null
+          ? [
+              boundDirectApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL)?.args ??
+                effect.request,
+            ]
+          : [],
+      )
+    : [];
+  if (
+    applied &&
+    repeatsDeniedAction({ toolName: replayEffectToolName, args, denied: deniedEarlier })
+  ) {
+    await deps.prisma.externalEffect.updateMany({
+      where: { id: applied.effect.id, status: "intended" },
+      data: { status: "denied", result: { refused: "repeat" } },
+    });
+    return { result: { error: DENIED_ACTION_ERROR } };
+  }
 
   const runAutoReview = async () => {
     const judged = await reviewToolCall(ctx, {
@@ -407,7 +481,7 @@ export async function gateToolCall(
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
   });
-  const card = { reviewReason, summary: request.fleetSummary };
+  const card = { reviewReason, summary: request.fleetSummary, batch: connectorTool?.batch };
 
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
@@ -487,6 +561,28 @@ export async function gateToolCall(
   return { call };
 }
 
+/** A bot's consequential tool call, recorded in its organization's audit log. */
+export async function auditToolCall(
+  ctx: RunContext,
+  tool: string,
+  outcome: "success" | "failure" | "denied",
+  metadata: AuditEventInput["metadata"],
+  recorded: Pick<AuditEventInput, "action" | "actor"> = {
+    action: "tool.call",
+    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
+  },
+): Promise<void> {
+  await recordAuditEvent({
+    ...recorded,
+    spaceId: ctx.run.spaceId,
+    target: { type: "tool", id: tool, label: humanizeToolName(tool) },
+    outcome,
+    runId: ctx.runId,
+    threadId: ctx.thread.id,
+    metadata,
+  });
+}
+
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
@@ -517,8 +613,7 @@ function createToolCall(
     finish: async (result) =>
       (await call.persistEffectResult(result)) ? result : uncertainEffectResult(name, args),
     claimOrReturn: async (from) => {
-      const claim = from === "approved" ? claimApprovedEffect : claimIntendedEffect;
-      if (await claim(deps.prisma, applied!.effect.id)) {
+      if (await claimEffect(deps, ctx.runId, applied!.effect.id, from)) {
         call.claimedEffect = true;
         return undefined;
       }
@@ -556,11 +651,7 @@ async function settleToolUncertainty(
 }
 
 /** Ask the owner through an approval card. Parallel calls share the first call's pause. */
-function requestApproval(
-  ctx: RunContext,
-  call: ToolCall,
-  card: { reviewReason: string | undefined; summary: FleetCardSummary | undefined },
-) {
+function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
   const { approval } = ctx.state;
   // Parallel calls can need approval at once. Only the first saves the turn and shows
   // its card; the others wait for that pause. Otherwise a later call's save could make
@@ -570,11 +661,7 @@ function requestApproval(
   return approval.request;
 }
 
-async function showApprovalCard(
-  ctx: RunContext,
-  call: ToolCall,
-  card: { reviewReason: string | undefined; summary: FleetCardSummary | undefined },
-) {
+async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalCard) {
   const { deps, run, runId, bot, thread } = ctx;
   const { name, args, executionId, applied } = call;
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
@@ -596,7 +683,7 @@ async function showApprovalCard(
       buildApprovalAskBlock(
         applied!.effect.id,
         name,
-        name === "propose_instructions_update" ? { ...args, botId: bot.id } : args,
+        name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
         ctx.secrets,
         card,
       ),
@@ -636,10 +723,7 @@ async function reviewToolCall(
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
-    const botDescription = redactSecrets(
-      `${bot.name}: ${bot.title}\n${bot.description}`,
-      ctx.secrets,
-    );
+    const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
     // A new site is judged on the full URL and the owner's own words only: the task
     // prompt of a webhook or bot-started run carries text someone else wrote.
     const reviewRequest: AutoReviewRequest =
@@ -723,6 +807,7 @@ async function reviewToolCall(
         },
       });
     }
+    await auditAutoReview(ctx, name, applied, judge.decision, judge.model);
     return verdict;
   } catch {
     // Cancellation must not write a review the next attempt would reuse.
@@ -733,18 +818,32 @@ async function reviewToolCall(
       reason: reviewReason,
       decision: applyJudgeDecision({ decision: "error", consequential: gated }),
     };
+    const reviewModel = checker
+      ? `${checker.provider}/${checker.model}`
+      : (injectedReview?.describe().id ?? "auto-review");
     if (applied) {
       await deps.prisma.externalEffect.update({
         where: { id: applied.effect.id },
-        data: {
-          reviewDecision: "error",
-          reviewReason,
-          reviewModel: checker
-            ? `${checker.provider}/${checker.model}`
-            : (injectedReview?.describe().id ?? "auto-review"),
-        },
+        data: { reviewDecision: "error", reviewReason, reviewModel },
       });
     }
+    await auditAutoReview(ctx, name, applied, "error", reviewModel);
     return verdict;
   }
+}
+
+function auditAutoReview(
+  ctx: RunContext,
+  tool: string,
+  applied: AppliedEffect | undefined,
+  decision: string,
+  model: string | undefined,
+): Promise<void> {
+  return auditToolCall(
+    ctx,
+    tool,
+    decision === "error" ? "failure" : "success",
+    { effectId: applied?.effect.id, decision },
+    { action: "approval.auto_reviewed", actor: { type: "system", label: model } },
+  );
 }

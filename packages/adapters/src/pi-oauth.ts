@@ -12,6 +12,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type {
+  ModelApiProtocol,
   ModelContextLimits,
   ModelOAuthBegin,
   ModelOAuthSignInMode,
@@ -22,12 +23,13 @@ import {
   canonicalPiProviderId,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelApiProtocolSchema,
   ModelContextLimitsSchema,
   parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem, runAsTenant } from "@rakazo/db";
+import { retireModelCredential, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
@@ -195,6 +197,10 @@ function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
 export const OAUTH_ACCOUNT_CHANGED_ERROR =
   "The ChatGPT account changed during sign-in refresh. Connect the provider again.";
 
+/** Worded so `isModelCredentialRejected` moves a run to its backup model. */
+export const OAUTH_RECONNECT_REQUIRED_ERROR =
+  "The sign-in token expired or was revoked. Connect that model provider again.";
+
 function nonBlankString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
@@ -278,10 +284,12 @@ export type StoredModelSecret =
       accountId?: string;
       gatewayId?: string;
     } & StoredModelLimits)
-  | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
+  | { kind: "oauth"; reconnectRequired: true; maxTokens?: number }
+  | { kind: "oauth"; reconnectRequired?: false; credential: OAuthCredential; maxTokens?: number }
   | ({
       kind: "openai_compatible";
       baseUrl: string;
+      apiProtocol?: ModelApiProtocol;
       headers?: Record<string, string>;
       apiKey?: string;
       reasoning?: boolean;
@@ -448,6 +456,10 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     if (typeof parsed.baseUrl !== "string" || !parsed.baseUrl.trim()) {
       throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
     }
+    const apiProtocol =
+      parsed.apiProtocol === undefined
+        ? undefined
+        : ModelApiProtocolSchema.parse(parsed.apiProtocol);
     const headers = parsed.headers === undefined ? undefined : parseModelHeaders(parsed.headers);
     const apiKey = typeof parsed.apiKey === "string" ? parsed.apiKey : undefined;
     const parsedThinkingLevel = ThinkingLevelSchema.nullable().safeParse(parsed.thinkingLevel);
@@ -472,6 +484,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     return {
       kind: "openai_compatible",
       baseUrl: parsed.baseUrl.trim(),
+      ...(apiProtocol !== undefined ? { apiProtocol } : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(typeof parsed.reasoning === "boolean" ? { reasoning: parsed.reasoning } : {}),
@@ -501,9 +514,16 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     };
   }
   if (parsed.kind === "oauth") {
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    if (parsed.reconnectRequired === true) {
+      return {
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      };
+    }
     const credential = readOAuthCredential(parsed.credential);
     if (!credential) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
-    const maxTokens = parsedMaxTokens(parsed.maxTokens);
     return {
       kind: "oauth",
       credential,
@@ -521,6 +541,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "oauth") {
+    if (secret.reconnectRequired) return JSON.stringify(secret);
     if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
     return JSON.stringify({
       kind: "oauth",
@@ -533,6 +554,9 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       kind: "openai_compatible",
       ...modelLimits(secret as unknown as Record<string, unknown>),
       baseUrl: secret.baseUrl,
+      ...(secret.apiProtocol !== undefined
+        ? { apiProtocol: ModelApiProtocolSchema.parse(secret.apiProtocol) }
+        : {}),
       ...(secret.headers !== undefined ? { headers: parseModelHeaders(secret.headers) } : {}),
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
       ...(secret.reasoning !== undefined ? { reasoning: secret.reasoning } : {}),
@@ -576,6 +600,7 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
         (value) => value.length >= MIN_REDACTED_HEADER_VALUE_LENGTH,
       ),
     ].filter((value): value is string => Boolean(value));
+  if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
 }
 
@@ -594,6 +619,7 @@ export function matchesFailedOAuthSecret(
       const stored = parseModelSecret(await load(secret.ciphertext, secret.id));
       return (
         stored.kind === "oauth" &&
+        !stored.reconnectRequired &&
         stored.credential.access === failed.access &&
         stored.credential.refresh === failed.refresh &&
         stored.credential.expires === failed.expires
@@ -651,11 +677,14 @@ export async function resolveModelAuth(
   plaintext: string,
   provider: string,
   opts?: ResolveModelOpts,
-): Promise<{ secret: StoredModelSecret; apiKey: string }> {
+): Promise<{ secret: Exclude<StoredModelSecret, { reconnectRequired: true }>; apiKey: string }> {
   const parsed = parseModelSecret(plaintext);
   if (parsed.kind === "api_key") return { secret: parsed, apiKey: parsed.key };
   if (parsed.kind === "openai_compatible") {
     return { secret: parsed, apiKey: parsed.apiKey ?? "" };
+  }
+  if (parsed.reconnectRequired) {
+    throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
   }
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
@@ -680,8 +709,10 @@ export async function resolveModelAuth(
           getLogger().error("model credential retirement failed", retireError);
           throw error;
         }
-        // A skipped delete means a newer credential won the race and a retry may succeed.
-        if (deleted) markRetiredModelCredentialError(error);
+        // A skipped replacement means a newer credential won the race and a retry may succeed.
+        // The provider error can quote response text, so a confirmed failure is reported
+        // with a fixed message that contains no token material.
+        if (deleted) throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
       }
       throw error;
     }
@@ -763,6 +794,68 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
   }
 }
 
+/**
+ * Retire callback for `resolveModelAuth`. `retireModelCredential` fences against
+ * newer material; a confirmed failure swaps the rejected tokens for a reconnect
+ * marker that keeps the connection's settings. Whichever stored copy ends up
+ * unreferenced is deleted.
+ */
+export function retireToReconnectMarker(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "put" | "load" | "delete">,
+  scope: { userId: string; spaceId: string },
+  credential: { id: string; secretId: string },
+  maxTokens: number | undefined,
+) {
+  return async (
+    _reason: ModelCredentialRetireReason,
+    _detail: string | undefined,
+    failed?: ModelCredentialFailedState,
+  ): Promise<boolean> => {
+    const previous = (
+      await prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+        select: { ciphertext: true },
+      })
+    )?.ciphertext;
+    const replacement = await secretStore.put(
+      serializeModelSecret({
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      }),
+      {
+        operationId: "cred",
+        traceId: "cred-reconnect",
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        signal: new AbortController().signal,
+      },
+      { recordId: credential.secretId },
+    );
+    let replaced = false;
+    try {
+      const retired = await retireModelCredential(prisma, {
+        userId: scope.userId,
+        credentialId: credential.id,
+        secretId: credential.secretId,
+        replacementCiphertext: replacement.ciphertext,
+        matchesFailedSecret: failed
+          ? matchesFailedOAuthSecret(
+              (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
+              failed,
+            )
+          : undefined,
+      });
+      replaced = retired && previous !== undefined;
+      return retired;
+    } finally {
+      const unused = replaced ? previous : replacement.ciphertext;
+      if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+    }
+  };
+}
+
 /** The only token writer, shared by the run path and the detached refresh kick. */
 export function persistStoredModelSecret(
   prisma: Pick<PrismaClient, "secret">,
@@ -810,7 +903,8 @@ export async function refreshExpiredModelCredential(
     let plaintext: string;
     try {
       plaintext = await secretStore.load(row.ciphertext, row.id);
-      if (parseModelSecret(plaintext).kind !== "oauth") return;
+      const parsed = parseModelSecret(plaintext);
+      if (parsed.kind !== "oauth" || parsed.reconnectRequired) return;
     } catch {
       return;
     }

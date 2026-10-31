@@ -138,6 +138,7 @@ export function novitaSdk(
     connect: async (id, options) => wrap(await (await api()).desktop.connect(id, options)),
     connectRunning: async (id) => wrap(await runningNovitaDesktop(await api(), id)),
     keepAlive: async (id, options) => (await api()).sandbox.setTimeout(id, options.timeoutMs),
+    isRunning: async (id) => (await (await api()).sandbox.getInfo(id)).state === "running",
     pause: async (id) => pauseNovitaComputer(await api(), id),
     kill: async (id) => destroyNovitaComputer(await api(), id, safetyPause),
   };

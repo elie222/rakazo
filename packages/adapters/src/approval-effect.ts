@@ -357,6 +357,9 @@ export function isApprovalPausedResult(result: unknown): result is ApprovalPause
   return isToolPauseResult(result);
 }
 
+export const DENIED_ACTION_ERROR =
+  "The user denied this action. Do not retry or rephrase it; tell the user and ask what they want instead.";
+
 export type DuplicateEffectGate =
   | { action: "execute" }
   | { action: "return"; result: unknown }
@@ -382,10 +385,7 @@ export function resolveDuplicateEffectGate(
   if (effect.status === "denied") {
     return {
       action: "return",
-      result: {
-        error:
-          "The user denied this action. Do not retry or rephrase it; tell the user and ask what they want instead.",
-      },
+      result: { error: DENIED_ACTION_ERROR },
     };
   }
   if (effect.status === "executing") {

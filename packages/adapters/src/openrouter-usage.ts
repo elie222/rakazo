@@ -32,6 +32,8 @@ const generationSchema = z.object({
   data: z.object({
     id: z.string(),
     total_cost: z.number().finite().nonnegative().nullable(),
+    is_byok: z.boolean().nullable().optional(),
+    upstream_inference_cost: z.number().finite().nonnegative().nullable().optional(),
     native_tokens_prompt: tokens,
     native_tokens_completion: tokens,
     native_tokens_cached: tokens,
@@ -58,7 +60,9 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
     if (!response.ok) throw new Error(`OpenRouter usage lookup failed (${response.status})`);
     const { data } = generationSchema.parse(await response.json());
     if (data.id !== providerRequestId) throw new Error("Provider returned a different generation");
-    if (data.total_cost === null) return null;
+    // A bring-your-own-key generation's total is only OpenRouter's fee.
+    const upstreamCost = data.is_byok ? data.upstream_inference_cost : 0;
+    if (data.total_cost === null || upstreamCost == null) return null;
     return {
       providerRequestId: data.id,
       inputTokens:
@@ -72,7 +76,7 @@ export class OpenRouterUsageLookup implements ModelUsageLookup {
       outputTokens: data.native_tokens_completion ?? null,
       cacheReadTokens: data.native_tokens_cached ?? null,
       reasoningTokens: data.native_tokens_reasoning ?? null,
-      costUsd: data.total_cost,
+      costUsd: data.total_cost + upstreamCost,
       costSource: "provider-reported",
       usageSource: "provider-reconciled",
     };

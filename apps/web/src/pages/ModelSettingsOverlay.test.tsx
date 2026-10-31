@@ -184,6 +184,7 @@ function account(provider: string, modelId: string) {
     name: "Ada",
     spaceId: "space-1",
     isDeploymentOwner: false,
+    isAdmin: false,
     needsModel: false,
     defaultProvider: provider,
     defaultModel: modelId,
@@ -818,6 +819,31 @@ it("keeps the default model checked and disabled", async () => {
     });
     expect(modelCheckbox(view.container, "model-a").checked).toBe(true);
     expect(modelCheckbox(view.container, "model-b").disabled).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("filters the models a probe found and keeps a hidden tick", async () => {
+  const probed = Array.from({ length: 12 }, (_, index) => `model-${index + 1}`);
+  const view = await renderCompatibleWithProbe(probed);
+  try {
+    const rowNames = () =>
+      [
+        ...(view.container
+          .querySelector('[data-testid="compatible-model-rows"]')
+          ?.querySelectorAll("[role='checkbox']") ?? []),
+      ].map(accessibleName);
+    const search = view.container.querySelector("input[aria-label='Search models']");
+    if (!(search instanceof HTMLInputElement)) throw new Error("Missing model search");
+    expect(rowNames()).toHaveLength(13);
+    await act(async () => {
+      modelCheckbox(view.container, "model-7").click();
+    });
+    await typeInto(search, "model-1");
+    expect(rowNames()).toEqual(["model-1", "model-10", "model-11", "model-12"]);
+    await typeInto(search, "");
+    expect(modelCheckbox(view.container, "model-7").checked).toBe(true);
   } finally {
     await view.unmount();
   }

@@ -77,6 +77,21 @@ describe("sentry sink", () => {
     expect(JSON.stringify(events[0]?.exception)).not.toContain("ada@example.com");
   });
 
+  it("redacts user profile paths from reported errors", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-api",
+      sinks: [createSentrySink("rakazo-api", { dsn: DSN }, transport)],
+    });
+    const error = new Error("cannot read /home/example-user/state.json");
+    error.stack =
+      "Error: cannot read /home/example-user/state.json\n    at run (/Users/example-user/app/index.js:1:1)";
+    logger.error("restore failed", error);
+    await logger.flush();
+
+    expect(JSON.stringify(events)).not.toContain("example-user");
+  });
+
   it("reports error logs with the exception chain, tags, and no log context", async () => {
     const { events, transport } = recordingTransport();
     const sink = createSentrySink(

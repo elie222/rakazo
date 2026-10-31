@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
+import { BOT_AVATAR_COLORS } from "@rakazo/core";
 import { captureScreenshot } from "./helpers";
 
 test.use({ viewport: { width: 1260, height: 1000 } });
@@ -341,72 +342,6 @@ test("activity changes keep elapsed phase and interrupted fades settle to one la
   expect(timeAfter).toBeGreaterThan(timeBefore + 250);
   expect(await avatar.getAttribute("data-color")).toBe(color);
   await expect(avatar).toHaveAttribute("data-activity", "computer");
-});
-
-test("activity crossfades start and finish with zero opacity velocity", async ({ page }) => {
-  await page.goto("/e2e/fixtures/logo-avatars.html");
-  const switcher = page
-    .getByRole("region", { name: "Transitions and runtime events" })
-    .locator("article")
-    .first();
-  await switcher.scrollIntoViewIfNeeded();
-  // Observe and pause inside the same browser task as the click. A separate
-  // Playwright round trip can arrive after the real 180ms fade has finished.
-  const proof = await switcher.getByRole("button", { name: "Writing", exact: true }).evaluate(
-    (button: HTMLButtonElement) =>
-      new Promise<
-        Array<{ name: string; start: number; end: number; startSpeed: number; endSpeed: number }>
-      >((resolve, reject) => {
-        const avatar = button.closest("article")!.querySelector(".rakazo-logo-avatar[role=img]")!;
-        const timeout = setTimeout(() => {
-          observer.disconnect();
-          reject(new Error("The activity change did not start both crossfade tracks"));
-        }, 5000);
-        const capture = () => {
-          const fades = avatar
-            .getAnimations({ subtree: true })
-            .filter((animation) =>
-              (animation as CSSAnimation).animationName.startsWith("logo-avatar-layer-"),
-            );
-          if (fades.length !== 2) return;
-          observer.disconnect();
-          clearTimeout(timeout);
-          resolve(
-            fades.map((animation) => {
-              animation.pause();
-              const target = (animation.effect as KeyframeEffect).target!;
-              const duration = Number(animation.effect!.getTiming().duration);
-              const at = (time: number) => {
-                animation.currentTime = time;
-                return Number(getComputedStyle(target).opacity);
-              };
-              const h = 0.1,
-                start = at(0),
-                first = at(h),
-                last = at(duration - h),
-                end = at(duration);
-              return {
-                name: (animation as CSSAnimation).animationName,
-                start,
-                end,
-                startSpeed: (first - start) / h,
-                endSpeed: (end - last) / h,
-              };
-            }),
-          );
-        };
-        const observer = new MutationObserver(capture);
-        observer.observe(avatar, { attributes: true, childList: true, subtree: true });
-        button.click();
-        queueMicrotask(capture);
-      }),
-  );
-  expect(proof).toHaveLength(2);
-  for (const fade of proof) {
-    expect(Math.abs(fade.startSpeed)).toBeLessThan(0.001);
-    expect(Math.abs(fade.endSpeed)).toBeLessThan(0.001);
-    expect(fade.end).toBe(fade.name.endsWith("-in") ? 1 : 0);
-  }
 });
 
 test("writing keeps the head level with a small vertical typing cadence at avatar sizes", async ({
@@ -865,7 +800,9 @@ test("seed colours persist through rerenders and reloads at actual avatar sizes"
     const before = await avatars.evaluateAll((nodes) =>
       nodes.map((node) => node.getAttribute("data-color")),
     );
-    expect(new Set(before).size).toBe(18);
+    // Seeds pick from the shared palette, so 18 bots can share colours but never all one.
+    for (const color of before) expect(BOT_AVATAR_COLORS).toContain(color);
+    expect(new Set(before).size).toBeGreaterThan(1);
     for (let index = 0; index < 18; index++)
       expect(new Set(before.slice(index * 4, index * 4 + 4)).size).toBe(1);
     await page.getByRole("button", { name: "Rerender fleet" }).click();

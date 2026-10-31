@@ -4,6 +4,9 @@ import { Id, IsoDate, RunStatus } from "./ids.js";
 /** The computer provider refused a request at its own rate limit; the run tells the user to wait. */
 export const COMPUTER_RATE_LIMIT_ERROR = "Too many computer requests. Try again later.";
 
+/** The organization spent this month's computer allowance; computers start again next month. */
+export const COMPUTER_ALLOWANCE_USED_ERROR = "This month's computer allowance is used up.";
+
 export const RUN_TRIGGERS = [
   "user",
   "routine",
@@ -40,6 +43,25 @@ export const RUN_ERROR_KINDS = [
   "output",
 ] as const;
 export type RunErrorKind = (typeof RUN_ERROR_KINDS)[number];
+
+/** A limit that resets later than this is a quota to wait out, not a rate limit to retry. */
+const PROVIDER_QUOTA_MIN_RESET_MS = 60 * 60_000;
+
+/**
+ * When a provider error says its exhausted limit resets, if that is over an hour away. Gateways
+ * copy the response's `X-RateLimit-Reset` (an epoch in seconds or milliseconds) or `Retry-After`
+ * (seconds) headers into the error body, which is all a model runtime passes on.
+ */
+export function providerQuotaResetAt(text: string, now = Date.now()): number | undefined {
+  const epoch = text.match(/\bx-ratelimit-reset\\?"?\s*[:=]\s*\\?"?(\d{10,13})(?!\d)/i)?.[1];
+  const delay = text.match(/\bretry-after\\?"?\s*[:=]\s*\\?"?(\d+)(?![\d.])/i)?.[1];
+  const resetAt = epoch
+    ? Number(epoch) * (epoch.length > 10 ? 1 : 1000)
+    : delay
+      ? now + Number(delay) * 1000
+      : undefined;
+  return resetAt !== undefined && resetAt - now > PROVIDER_QUOTA_MIN_RESET_MS ? resetAt : undefined;
+}
 
 export const RoutineRunSchema = z.object({
   id: Id,

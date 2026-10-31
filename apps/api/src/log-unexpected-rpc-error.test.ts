@@ -4,6 +4,7 @@ import {
   SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
+  SandboxUnresponsiveError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
@@ -134,6 +135,32 @@ describe("logUnexpectedRpcError", () => {
         level: "warn",
         message: "rpc computer/boot computer unavailable",
         reason: "sandbox did not become ready",
+      }),
+    ]);
+  });
+
+  it("returns an unreachable computer provider as a retryable 503 without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxUnresponsiveError("Boat API request failed (HTTP 502)");
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "screenUrl"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      message: new SandboxUnavailableError().message,
+    });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/screenUrl computer unavailable",
+        reason: "Boat API request failed (HTTP 502)",
       }),
     ]);
   });

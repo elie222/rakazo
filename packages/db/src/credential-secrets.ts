@@ -35,16 +35,20 @@ export async function deleteUnreferencedCredentialSecret(
 }
 
 /**
- * Drop a model credential whose stored OAuth material is dead, along with the
- * secret row nothing else references.
+ * Confirm that a model credential's stored OAuth material is the material that
+ * just failed a terminal refresh. The credential row and every Space's model
+ * choice are kept so signing in again renews this connection. The rejected
+ * access and refresh tokens are not: when `replacementCiphertext` is set, the
+ * secret row is overwritten with that ciphertext (a marker that contains no
+ * tokens). Returns true when the failure is confirmed (the run fails without
+ * retrying), false when newer material won a race.
  *
- * Two guards keep a stale failure from deleting newer material:
+ * Two guards keep a stale failure from replacing newer material:
  * - `secretId`: a reconnect swaps the credential to a fresh secret row, so a
  *   mismatch means the retired material is already gone.
  * - `matchesFailedSecret`: a concurrent successful refresh rewrites the same
- *   secret row in place. The serializable delete rechecks its pointer and
- *   ciphertext and skips on mismatch; a secret row that is already gone has
- *   nothing newer to protect, so the credential is still deleted.
+ *   secret row in place. The serializable check rereads its pointer and
+ *   ciphertext and reports false on mismatch.
  */
 export async function retireModelCredential(
   prisma: Pick<PrismaClient, "$transaction">,
@@ -52,6 +56,8 @@ export async function retireModelCredential(
     userId: string;
     credentialId: string;
     secretId?: string;
+    /** Ciphertext that replaces the rejected tokens. It must not contain them. */
+    replacementCiphertext?: string;
     matchesFailedSecret?: (secret: {
       id: string;
       ciphertext: string;
@@ -87,24 +93,29 @@ export async function retireModelCredential(
           where: { id: input.credentialId, userId: input.userId },
         });
         if (!credential || (input.secretId && credential.secretId !== input.secretId)) return false;
-        if (input.matchesFailedSecret) {
-          const secret = await tx.secret.findFirst({
-            where: { id: credential.secretId },
-            select: { id: true, ciphertext: true },
-          });
-          if (
-            credential.secretId !== checked?.credential.secretId ||
-            secret?.ciphertext !== checked?.secret?.ciphertext
-          )
-            return false;
-        }
-        // Its own model and the role rows pinned to it go with it.
-        await tx.userModelCredential.delete({ where: { id: credential.id } });
-        await deleteUnreferencedCredentialSecret(tx, {
-          credentialKind: "model",
-          credentialId: credential.id,
-          secretId: credential.secretId,
+        const secret = await tx.secret.findFirst({
+          where: { id: credential.secretId },
+          select: { id: true, ciphertext: true },
         });
+        if (
+          input.matchesFailedSecret &&
+          (credential.secretId !== checked?.credential.secretId ||
+            secret?.ciphertext !== checked?.secret?.ciphertext)
+        )
+          return false;
+        // The connection and its model choices stay. The rejected tokens do not:
+        // a marker ciphertext replaces them so a later run cannot present them
+        // to the provider or the model. Signing in again renews this same row.
+        if (
+          secret &&
+          input.replacementCiphertext &&
+          secret.ciphertext !== input.replacementCiphertext
+        ) {
+          await tx.secret.update({
+            where: { id: secret.id },
+            data: { ciphertext: input.replacementCiphertext },
+          });
+        }
         return true;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },

@@ -14,10 +14,12 @@ import {
   avatarSchedulePose,
   avatarThinkingDot,
   avatarWorkingDot,
+  botAvatarActivity,
   isRunWorking,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_CENTER,
   SHIPPED_BOT_AVATAR_VIEWBOX,
+  usesLogoAvatar,
 } from "@rakazo/core";
 import { botEyeColor } from "@rakazo/ui-tokens";
 import { memo, useSyncExternalStore } from "react";
@@ -123,8 +125,7 @@ export interface BotAvatarProps {
 
 /** Missing set metadata deliberately preserves every existing avatar. */
 export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
-  const parsed = mobileBotAvatarPresentation(props.color);
-  if (props.avatarSet === "rakazo" && parsed.kind !== "image" && parsed.kind !== "shape") {
+  if (usesLogoAvatar(props)) {
     return <RakazoBotAvatar {...props} />;
   }
   return <LegacyBotAvatar {...props} />;
@@ -146,11 +147,13 @@ function RakazoBotAvatar({
     () => mobileLogoAvatarActivity.getActivity(identity ?? "", status),
     (): LogoAvatarActivity => "idle",
   );
-  const resolved =
+  const resolved = botAvatarActivity(
+    { color, avatarSet: "rakazo" },
     activity ??
-    (composing && (liveActivity === "working" || liveActivity === "idle")
-      ? "writing"
-      : liveActivity);
+      (composing && (liveActivity === "working" || liveActivity === "idle")
+        ? "writing"
+        : liveActivity),
+  );
   const working = isRunWorking(status) && resolved !== "writing" && motion !== "running";
   return (
     <View style={{ width: size, height: size }}>
@@ -207,11 +210,23 @@ function MutedBadge({ size }: { size: number }) {
         borderRadius: size,
         borderWidth: 2,
         borderColor: tokens.background,
-        backgroundColor: tokens.secondary,
+        // Opaque under the translucent fill, so the avatar does not show through the bell.
+        backgroundColor: tokens.background,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          borderRadius: size,
+          backgroundColor: tokens.secondary,
+        }}
+      />
       <NativeSymbol
         ios="bell.slash.fill"
         android="notifications-off"
@@ -251,7 +266,6 @@ function LegacyBotAvatar({
   /** A tap plays a little reaction (the activity mark). */
   pokeable?: boolean;
 }) {
-  const { t } = useI18n();
   const tokens = useMobileTokens();
   const state = avatarLifeState(status, composing);
   // The working dot marks a bot at work, not one writing its reply; a running avatar is
@@ -313,32 +327,7 @@ function LegacyBotAvatar({
         <ThinkingDots color={fillColor} size={size} life={life} />
       ) : null}
       {isWorking ? <WorkingDot size={size} muted={muted} /> : null}
-      {muted ? (
-        <View
-          accessible
-          accessibilityLabel={t("Notifications silenced")}
-          style={{
-            position: "absolute",
-            right: -2,
-            bottom: -2,
-            width: Math.max(14, Math.round(size * 0.34)),
-            height: Math.max(14, Math.round(size * 0.34)),
-            borderRadius: size,
-            borderWidth: 2,
-            borderColor: "#000",
-            backgroundColor: "#242428",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <NativeSymbol
-            ios="bell.slash.fill"
-            android="notifications-off"
-            size={Math.max(8, Math.round(size * 0.17))}
-            color="#ECECEE"
-          />
-        </View>
-      ) : null}
+      {muted ? <MutedBadge size={size} /> : null}
     </View>
   );
   // A tap is a little toy, not an action, so it stays out of the accessibility tree.

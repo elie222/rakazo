@@ -47,12 +47,78 @@ describe("artifactShareFileName", () => {
     expect(artifactShareFileName("क्\u200dष.pdf", "application/pdf")).toBe("क्\u200dष.pdf");
   });
 
-  it("does not retain isolated joiners, emoji, or other controls", () => {
-    expect(artifactShareFileName("👩\u200d💻.pdf", "application/pdf")).toBe("attachment.pdf");
-    expect(artifactShareFileName("a👩\u200d💻b.pdf", "application/pdf")).toBe("a_b.pdf");
+  it("does not retain isolated joiners or other controls", () => {
+    expect(artifactShareFileName("👩\u200d💻.pdf", "application/pdf")).toBe("👩\u200d💻.pdf");
+    expect(artifactShareFileName("a👩\u200d💻b.pdf", "application/pdf")).toBe("a👩\u200d💻b.pdf");
     expect(artifactShareFileName("a\u200db\u202ec.pdf", "application/pdf")).toBe("a\u200db_c.pdf");
     expect(artifactShareFileName("\u0301\u200d\u0301.pdf", "application/pdf")).toBe(
       "attachment.pdf",
+    );
+  });
+
+  it.each([
+    "👩‍💻",
+    "👍🏽",
+    "🇮🇷",
+    "1️⃣",
+    "#️⃣",
+    "1⃣",
+    "©️",
+    "❤️",
+    "😀️",
+    "🏳️‍🌈",
+    "❤️‍🔥",
+    "👨‍👩‍👧‍👦",
+    "🏴‍☠️",
+    "👩‍🐱",
+  ])("keeps a complete emoji sequence in %s.pdf", (emoji) =>
+    expect(artifactShareFileName(`${emoji}.pdf`, "application/pdf")).toBe(`${emoji}.pdf`),
+  );
+
+  it("retains only complete emoji sequences and cleans paths and controls", () => {
+    const flag = "🏴\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}";
+    const scotland = "🏴\u{e0067}\u{e0062}\u{e0073}\u{e0063}\u{e0074}\u{e007f}";
+    const wales = "🏴\u{e0067}\u{e0062}\u{e0077}\u{e006c}\u{e0073}\u{e007f}";
+    expect(artifactShareFileName(`${flag}.pdf`, "application/pdf")).toBe(`${flag}.pdf`);
+    expect(artifactShareFileName(`${scotland}.pdf`, "application/pdf")).toBe(`${scotland}.pdf`);
+    expect(artifactShareFileName(`${wales}.pdf`, "application/pdf")).toBe(`${wales}.pdf`);
+    expect(artifactShareFileName("🇮.pdf", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName("../a/👩‍💻\u202e👍🏽.pdf", "application/pdf")).toBe(
+      "a_👩‍💻_👍🏽.pdf",
+    );
+    expect(artifactShareFileName("🏽.pdf", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName("©.pdf", "application/pdf")).toBe("attachment.pdf");
+    expect(artifactShareFileName("\ufe0fa.pdf", "application/pdf")).toBe("a.pdf");
+    expect(artifactShareFileName("7\ufe0e.pdf", "application/pdf")).toBe("7\ufe0e.pdf");
+    expect(artifactShareFileName("7\ufe0f.pdf", "application/pdf")).toBe("7\ufe0f.pdf");
+    expect(artifactShareFileName("a\ufe0f\u200d\ufe0fb.pdf", "application/pdf")).toBe("a_b.pdf");
+    expect(artifactShareFileName("a\u{e0100}\u200d\u{e0100}b.pdf", "application/pdf")).toBe(
+      "a\u{e0100}_b.pdf",
+    );
+    expect(artifactShareFileName("字\u{e0100}.pdf", "application/pdf")).toBe("字\u{e0100}.pdf");
+    expect(artifactShareFileName("ക്\u200cഷ.pdf", "application/pdf")).toBe("ക്\u200cഷ.pdf");
+    expect(artifactShareFileName("\u0301\u200d\u0301.pdf", "application/pdf")).toBe(
+      "attachment.pdf",
+    );
+    for (const name of [
+      "👩\u200dA",
+      "👩\u200d\u200d💻",
+      "🏴\u{e0067}",
+      "😀🏽",
+      "🏴\u{e0067}\u{e0061}\u{e0061}\u{e0061}\u{e0061}\u{e007f}",
+    ]) {
+      expect(artifactShareFileName(`${name}.pdf`, "application/pdf")).not.toMatch(
+        /[\u200d\u{e0067}]/u,
+      );
+    }
+  });
+
+  it("truncates complete emoji within the UTF-16 stem budget", () => {
+    expect(artifactShareFileName(`${"a".repeat(75)}👩‍💻x.pdf`, "application/pdf")).toBe(
+      `${"a".repeat(75)}👩‍💻.pdf`,
+    );
+    expect(artifactShareFileName(`${"a".repeat(76)}👩‍💻.pdf`, "application/pdf")).toBe(
+      `${"a".repeat(76)}.pdf`,
     );
   });
 
@@ -74,22 +140,32 @@ describe("artifactShareFileName", () => {
     );
   });
 
-  it("truncates by code point when grapheme segmentation is unavailable", () => {
+  it("falls back for long stems when grapheme segmentation is unavailable", () => {
     const segmenter = Intl.Segmenter;
     try {
       Object.defineProperty(Intl, "Segmenter", { configurable: true, value: undefined });
+      expect(artifactShareFileName(`${"a".repeat(79)}हि.pdf`, "application/pdf")).toBe(
+        "attachment.pdf",
+      );
+      expect(artifactShareFileName("short.pdf", "application/pdf")).toBe("short.pdf");
       expect(artifactShareFileName(`${"a".repeat(90)}.pdf`, "application/pdf")).toBe(
         `${"a".repeat(80)}.pdf`,
       );
       expect(artifactShareFileName(`${"a".repeat(79)}\u{1D165}b.pdf`, "application/pdf")).toBe(
-        `${"a".repeat(79)}.pdf`,
+        "attachment.pdf",
       );
-      expect(artifactShareFileName(`${"a".repeat(79)}\u200db.pdf`, "application/pdf")).toBe(
-        `${"a".repeat(79)}.pdf`,
+      expect(artifactShareFileName(`${"中".repeat(81)}.pdf`, "application/pdf")).toBe(
+        "attachment.pdf",
       );
-      expect(artifactShareFileName("short.pdf", "application/pdf")).toBe("short.pdf");
+      expect(artifactShareFileName("a👩‍💻b.pdf", "application/pdf")).toBe("a_b.pdf");
     } finally {
       Object.defineProperty(Intl, "Segmenter", { configurable: true, value: segmenter });
+    }
+  });
+
+  it("keeps repeated emoji in one filename", () => {
+    for (let i = 0; i < 2; i++) {
+      expect(artifactShareFileName("😀😀a😀️😀.pdf", "application/pdf")).toBe("😀😀a😀️😀.pdf");
     }
   });
 

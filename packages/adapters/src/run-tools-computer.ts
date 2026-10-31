@@ -10,7 +10,9 @@ import { resolveLoginFill, shellCommandEnvironment } from "./bot-secrets.js";
 import {
   browserActFromTool,
   browserNavigateFromTool,
+  browserResultForModel,
   browserSnapshotFromTool,
+  redactBrowserResult,
 } from "./browser-tools.js";
 import { BACKGROUND_WORK_LAUNCH } from "./computer-idle.js";
 import {
@@ -28,12 +30,11 @@ import {
   unchangedVisualLoopToolResult,
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
-import { redactConnectorPayload } from "./connector-safety.js";
 import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -123,17 +124,19 @@ function formatObservation(
   return result;
 }
 
+async function screenBlocked(ctx: RunContext): Promise<string | undefined> {
+  if (ctx.computer.heldForTakeover) return DESKTOP_HELD_FOR_TAKEOVER_MESSAGE;
+  if (await getActiveTeachingSession(ctx.deps.prisma, ctx.run.spaceId, ctx.run.botId)) {
+    return "Teaching is in progress. Stop teaching before using the computer.";
+  }
+  return undefined;
+}
+
 export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, context } = ctx;
   const { name, args } = call;
-  if (ctx.computer.heldForTakeover) {
-    return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-  }
-  if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-    return call.finish({
-      error: "Teaching is in progress. Stop teaching before using the computer.",
-    });
-  }
+  const blocked = await screenBlocked(ctx);
+  if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
   const redactions = () => [...ctx.secrets];
@@ -147,7 +150,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
         : null;
   return computerScreenToolResult(async () => {
     const result = tool
-      ? redactConnectorPayload(
+      ? redactBrowserResult(
           await tool(ctx.providers.browser, await ctx.computer.get("tool", name), context, args, {
             desktopTools,
           }),
@@ -176,6 +179,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
                 prisma: deps.prisma,
                 secretStore: deps.secretStore,
                 scope: run,
+                runId: run.id,
                 name: step.secret,
                 field: step.field,
               });
@@ -216,23 +220,17 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
       name,
       result,
     );
-    return result;
+    return browserResultForModel(result);
   }, call.finish);
 }
 
 /** Tools that drive the bot's computer: screen, page browser and shell. */
 export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
-    const { deps, run, context } = ctx;
+    const { deps, context } = ctx;
     const { name } = call;
-    if (ctx.computer.heldForTakeover) {
-      return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
-    }
-    if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-      return {
-        error: "Teaching is in progress. Stop teaching before using the computer.",
-      };
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return { error: blocked };
     return computerScreenToolResult(async () =>
       formatObservation(
         ctx,
@@ -241,16 +239,10 @@ export const computerTools: ToolHandlers = {
     );
   },
   async computer_act(ctx, call) {
-    const { deps, run, context } = ctx;
+    const { deps, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return { error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE };
-    }
-    if (await getActiveTeachingSession(deps.prisma, run.spaceId, run.botId)) {
-      return {
-        error: "Teaching is in progress. Stop teaching before using the computer.",
-      };
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return { error: blocked };
     const actions = parseComputerActions(args.actions);
     const visualActionKey = computerVisualActionKey(actions);
     if (unchangedVisualActionBlocked(ctx.state.screen.unchangedVisualStreak, actions)) {
@@ -347,7 +339,7 @@ export const computerTools: ToolHandlers = {
       const computer = await ctx.computer.get("tool", name);
       const shellEnvironment =
         ctx.computer.hostEnvironment ??
-        (computer.kind === "desktop"
+        (usesNativeShell(computer.kind)
           ? await deps.sandbox.environment?.(computer, context)
           : undefined);
       const observed = await observeShellCommand(
@@ -432,9 +424,8 @@ export const computerTools: ToolHandlers = {
   async open_path(ctx, call) {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return call.finish({ error: blocked });
     const requestedPath = String(args.path ?? "");
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {
@@ -470,9 +461,8 @@ export const computerTools: ToolHandlers = {
   async launch_app(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
-    if (ctx.computer.heldForTakeover) {
-      return call.finish({ error: DESKTOP_HELD_FOR_TAKEOVER_MESSAGE });
-    }
+    const blocked = await screenBlocked(ctx);
+    if (blocked) return call.finish({ error: blocked });
     const application = String(args.application ?? "");
     ctx.computer.checkpoint.markDirty();
     return computerScreenToolResult(async () => {

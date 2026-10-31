@@ -34,6 +34,15 @@ export const DEFAULT_DESKTOP_ENV: DesktopEnvironment = {
   bindHost: "127.0.0.1",
   preservePrimaryDisplay: true,
 };
+/** Rebuildable tool caches live outside the saved home. Tools create these under /tmp. */
+export const COMPUTER_CACHE_ENV = {
+  XDG_CACHE_HOME: "/tmp/rakazo-cache/xdg",
+  npm_config_cache: "/tmp/rakazo-cache/npm",
+  PIP_CACHE_DIR: "/tmp/rakazo-cache/pip",
+  PLAYWRIGHT_BROWSERS_PATH: "/tmp/rakazo-cache/ms-playwright",
+  UV_CACHE_DIR: "/tmp/rakazo-cache/uv",
+};
+
 function gatewayHost(host = "127.0.0.1") {
   if (host !== "localhost" && host !== "::" && !isIPv4(host))
     throw new Error("invalid screen gateway bind host");
@@ -780,6 +789,20 @@ print(index)
     `bash -eu -c ${shellQuote(renderEnsureScreenCommand(undefined, screenId, TOKEN_PLACEHOLDER, env).replace(shellQuote(TOKEN_PLACEHOLDER), '"$2"'))} desktop "$index" "$view_token"`,
     'printf "RAKAZO_DESKTOP=%s:%s\\n" "$index" "$view_token"',
   ].join("\n");
+}
+
+/**
+ * Run `argv` with DISPLAY on the screen assigned to `screenId`, so screen tools in a bot's
+ * shell see its own desktop. Without an assignment the inherited DISPLAY stays.
+ */
+export function screenDisplayArgv(argv: readonly string[], screenId: string, displayStart: number) {
+  const slot = `${REGISTRY}/${browserKeyForScreen(screenId)}.slot`;
+  const program = [
+    `index=$(sed -n 1p ${shellQuote(slot)} 2>/dev/null)`,
+    `case "$index" in ''|*[!0-9]*) ;; *) DISPLAY=:$((index + ${displayStart})); export DISPLAY ;; esac`,
+    'exec "$@"',
+  ].join("\n");
+  return ["sh", "-c", program, "sh", ...argv];
 }
 
 /** Tear down before freeing a slot; failed teardown leaves it reserved for retry. */

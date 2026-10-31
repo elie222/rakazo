@@ -311,8 +311,14 @@ export function PluginDetail({
     }
   }
 
-  // An ignored manifest field loses nothing, so it isn't reported.
-  const notAdded = (detail?.skipped ?? []).filter((entry) => entry.kind !== "unsupported_field");
+  // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
+  // a built-in one says why, since the user still has that skill.
+  const notAdded = [
+    ...(detail?.skipped ?? [])
+      .filter((entry) => entry.kind !== "unsupported_field")
+      .map((entry) => entry.name),
+    ...(detail?.builtinNames ?? []).map((name) => t`${name} (same name as a built-in skill)`),
+  ];
   const prefix = `${detail?.name ?? ""}: `;
   const skills = detail?.skills ?? [];
   const shownSkills = allSkills ? skills : skills.slice(0, SKILLS_SHOWN);
@@ -648,7 +654,7 @@ export function PluginDetail({
 
       {notAdded.length ? (
         <p className="px-1 text-[13px] text-muted-foreground">
-          <Trans>Not added: {notAdded.map((entry) => entry.name).join(", ")}</Trans>
+          <Trans>Not added: {notAdded.join(", ")}</Trans>
         </p>
       ) : null}
     </div>

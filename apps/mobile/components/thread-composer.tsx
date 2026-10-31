@@ -12,25 +12,43 @@ import type {
 import {
   bindComposerMention,
   composerMentionQuery,
+  composerMentionSegments,
   composerMentionsForPrompt,
   composerSelectedMentions,
   mentionChipKey,
-  removeBoundComposerMention,
+  resolveComposerMentionEdit,
+  resolvePersonaColorDef,
   SLASH_ACTIONS,
   serializeComposerPrompt,
   truncateSlashDescription,
-  updateComposerMentionBindings,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
-import { useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import {
+  AppState,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import type { ComposerDraftScope } from "../lib/composer-draft";
+import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
 import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
+
+type NativeEdit = {
+  beforeText: string;
+  afterText: string;
+  bindings: ComposerMentionBinding[];
+  beforeSelections: ComposerMentionRange[];
+};
 
 export type ThreadComposerHandle = {
   snapshot: () => ComposerSnapshot;
@@ -38,9 +56,12 @@ export type ThreadComposerHandle = {
   insert: (text: string) => void;
 };
 
+const DRAFT_SAVE_DELAY_MS = 500;
+
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
-  onFocus?: () => void;
+  /** Where the unsent text is kept; without it the draft lives only while mounted. */
+  draftScope?: ComposerDraftScope;
   onMentionRequested?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
@@ -63,7 +84,7 @@ type ThreadComposerProps = {
 
 export function ThreadComposer({
   ref,
-  onFocus,
+  draftScope,
   onMentionRequested,
   agentSkills,
   composerMentionTargets,
@@ -84,37 +105,62 @@ export function ThreadComposer({
   onSlashAction,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
+  const mentionStyle = (mention: ComposerMention) => ({
+    backgroundColor: tokens.muted,
+    color:
+      mention.kind === "bot" && mention.color
+        ? resolvePersonaColorDef(mention.id, mention.color).light
+        : undefined,
+  });
   const { fontScale } = useWindowDimensions();
   // The input text stops growing at MAX_FONT_SCALE, so its height limits stop there too.
   const textScale = Math.min(fontScale, MAX_FONT_SCALE);
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const inputRef = useRef<TextInput>(null);
-  const [draft, setDraft] = useState("");
-  const draftRef = useRef("");
-  const nativeSelection = useRef({ start: 0, end: 0 });
+  const [saved] = useState(() => readComposerDraft(draftScope));
+  const [draft, setDraft] = useState(saved.text);
+  const draftRef = useRef(saved.text);
+  const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
   const [selection, setSelection] = useState<{ start: number; end: number }>();
   const [mentionQuery, setMentionQuery] = useState<ComposerMentionQuery | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
-  const [mentionBindings, setMentionBindings] = useState<ComposerMentionBinding[]>([]);
-  const bindingsRef = useRef<ComposerMentionBinding[]>([]);
+  const [mentionBindings, setMentionBindings] = useState(saved.bindings);
+  const bindingsRef = useRef(saved.bindings);
   const selectionHistory = useRef<ComposerMentionRange[]>([]);
-  const pendingNativeEdit = useRef<{
-    beforeText: string;
-    afterText: string;
-    bindings: ComposerMentionBinding[];
-    beforeSelections: ComposerMentionRange[];
-  } | null>(null);
-  const selectedMentions = useMemo(
-    () => composerSelectedMentions(mentionBindings),
-    [mentionBindings],
-  );
+  const pendingNativeEdit = useRef<NativeEdit | null>(null);
   function updateBindings(next: ComposerMentionBinding[]) {
     bindingsRef.current = next;
     setMentionBindings(next);
   }
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
+  // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
+  // Set while the composer holds text that storage does not have yet.
+  const pendingSave = useRef<(() => boolean) | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function flushDraftSave() {
+    clearTimeout(saveTimer.current);
+    // A failed save stays pending, so the next flush retries it.
+    if (pendingSave.current?.()) pendingSave.current = null;
+  }
+  useEffect(() => {
+    if (!draftScope) return;
+    pendingSave.current = () => writeComposerDraft(draftScope, draft, mentionBindings);
+    clearTimeout(saveTimer.current);
+    // An emptied composer, such as after a send, forgets the draft right away.
+    if (!draft) flushDraftSave();
+    else saveTimer.current = setTimeout(flushDraftSave, DRAFT_SAVE_DELAY_MS);
+  }, [draftScope, draft, mentionBindings]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") flushDraftSave();
+    });
+    return () => {
+      subscription.remove();
+      flushDraftSave();
+    };
+  }, []);
   useImperativeHandle(ref, () => ({
     snapshot: () => ({
       promptText: serializeComposerPrompt(draft, selectedSkill),
@@ -186,49 +232,53 @@ export function ThreadComposer({
     setMentionQuery(query);
   }
 
-  function updateDraft(value: string) {
+  function updateDraft(nativeValue: string) {
     // Native text changes can arrive before their selection event. Infer the end
     // of the changed span so the picker never reads the previous caret position.
     const previous = draftRef.current;
     let prefix = 0;
     while (
       prefix < previous.length &&
-      prefix < value.length &&
-      previous[prefix] === value[prefix]
+      prefix < nativeValue.length &&
+      previous[prefix] === nativeValue[prefix]
     ) {
       prefix += 1;
     }
     let suffix = 0;
     while (
       suffix < previous.length - prefix &&
-      suffix < value.length - prefix &&
-      previous[previous.length - suffix - 1] === value[value.length - suffix - 1]
+      suffix < nativeValue.length - prefix &&
+      previous[previous.length - suffix - 1] === nativeValue[nativeValue.length - suffix - 1]
     ) {
       suffix += 1;
     }
-    const caret = value.length - suffix;
-    const beforeSelections = [nativeSelection.current, ...selectionHistory.current.toReversed()];
-    const bindings = bindingsRef.current;
-    pendingNativeEdit.current = {
+    const edit = {
       beforeText: previous,
-      afterText: value,
-      bindings,
-      beforeSelections,
+      afterText: nativeValue,
+      bindings: bindingsRef.current,
+      beforeSelections: [nativeSelection.current, ...selectionHistory.current.toReversed()],
     };
-    updateBindings(
-      updateComposerMentionBindings(previous, value, bindings, {
-        before: beforeSelections,
-        after: nativeSelection.current,
-      }),
-    );
+    pendingNativeEdit.current = edit;
     selectionHistory.current = [];
-    draftRef.current = value;
-    setDraft(value);
-    completedSelection.current = null;
-    setSelection(undefined);
+    const { text: value, caret: widenedCaret } = applyNativeEdit(edit, nativeSelection.current);
+    const caret = widenedCaret ?? nativeValue.length - suffix;
+    if (widenedCaret !== null) nativeSelection.current = { start: caret, end: caret };
+    setSelection(widenedCaret === null ? undefined : nativeSelection.current);
     updateMentionQuery(value, caret);
     const slashMatch = selectedSkill === null ? /^\/([^\n]*)$/.exec(value) : null;
     setSlashQuery(slashMatch ? (slashMatch[1] ?? "") : null);
+  }
+
+  function applyNativeEdit(edit: NativeEdit, after: ComposerMentionRange) {
+    const resolved = resolveComposerMentionEdit(edit.beforeText, edit.afterText, edit.bindings, {
+      before: edit.beforeSelections,
+      after,
+    });
+    updateBindings(resolved.bindings);
+    draftRef.current = resolved.text;
+    setDraft(resolved.text);
+    completedSelection.current = null;
+    return resolved;
   }
 
   function insertMention(mention: ComposerMention) {
@@ -246,24 +296,6 @@ export function ThreadComposer({
     inputRef.current?.focus();
   }
 
-  function removeMention(mention: ComposerMention) {
-    const next = removeBoundComposerMention(
-      draftRef.current,
-      bindingsRef.current,
-      mention,
-      nativeSelection.current,
-    );
-    pendingNativeEdit.current = null;
-    updateBindings(next.bindings);
-    draftRef.current = next.text;
-    setDraft(next.text);
-    nativeSelection.current = next.selection;
-    selectionHistory.current = [next.selection];
-    completedSelection.current = null;
-    setSelection(next.selection);
-    setMentionQuery(null);
-  }
-
   function insertSkill(skill: AgentSkillCatalogEntry) {
     setSelectedSkill(skill);
     draftRef.current = "";
@@ -275,14 +307,6 @@ export function ThreadComposer({
     selectionHistory.current = [];
     pendingNativeEdit.current = null;
     setSlashQuery(null);
-  }
-
-  function removeLastChip() {
-    if (selectedMentions.length > 0) {
-      removeMention(selectedMentions[selectedMentions.length - 1]!);
-      return;
-    }
-    if (selectedSkill) setSelectedSkill(null);
   }
 
   function runSlashAction(action: SlashActionId) {
@@ -306,11 +330,7 @@ export function ThreadComposer({
     justifyContent: "center",
   } as const;
 
-  const canSend =
-    Boolean(draft.trim()) ||
-    selectedSkill !== null ||
-    selectedMentions.length > 0 ||
-    attachmentIds.length > 0;
+  const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
 
   return (
     <>
@@ -516,42 +536,6 @@ export function ThreadComposer({
                 </Pressable>
               </View>
             ) : null}
-            {selectedMentions.map((mention) => (
-              <View
-                key={mentionChipKey(mention)}
-                testID="mention-chip"
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  backgroundColor: tokens.muted,
-                  borderRadius: 999,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  maxWidth: "100%",
-                }}
-              >
-                <MentionChipIcon mention={mention} />
-                <Text
-                  numberOfLines={1}
-                  style={{ color: tokens.foreground, fontSize: 13, flexShrink: 1 }}
-                >
-                  {mention.name}
-                </Text>
-                <Pressable
-                  accessibilityLabel={t("Remove mention {name}", { name: mention.name })}
-                  hitSlop={8}
-                  onPress={() => removeMention(mention)}
-                >
-                  <NativeSymbol
-                    ios="xmark"
-                    android="close"
-                    size={12}
-                    color={tokens.mutedForeground}
-                  />
-                </Pressable>
-              </View>
-            ))}
             <Pressable
               accessible={false}
               onPress={() => inputRef.current?.focus()}
@@ -564,7 +548,7 @@ export function ThreadComposer({
                 paddingVertical: 11,
               }}
             >
-              {!draft && !selectedSkill && !selectedMentions.length ? (
+              {!draft && !selectedSkill ? (
                 <Text
                   numberOfLines={1}
                   importantForAccessibility="no"
@@ -586,23 +570,29 @@ export function ThreadComposer({
               ) : null}
               <TextInput
                 ref={inputRef}
-                onFocus={onFocus}
-                value={draft}
                 onChangeText={updateDraft}
                 selection={selection}
                 onSelectionChange={(event) => {
                   const next = event.nativeEvent.selection;
                   const pending = pendingNativeEdit.current;
                   if (pending) {
-                    updateBindings(
-                      updateComposerMentionBindings(
-                        pending.beforeText,
-                        pending.afterText,
-                        pending.bindings,
-                        { before: pending.beforeSelections, after: next },
-                      ),
-                    );
                     pendingNativeEdit.current = null;
+                    const shown = draftRef.current;
+                    const resolved = applyNativeEdit(pending, next);
+                    if (resolved.caret !== null || resolved.text !== shown) {
+                      nativeSelection.current =
+                        resolved.caret === null
+                          ? next
+                          : { start: resolved.caret, end: resolved.caret };
+                      selectionHistory.current = [nativeSelection.current];
+                      setSelection(nativeSelection.current);
+                      updateMentionQuery(
+                        resolved.text,
+                        nativeSelection.current.start,
+                        nativeSelection.current.end,
+                      );
+                      return;
+                    }
                   }
                   selectionHistory.current = [...selectionHistory.current.slice(-3), next];
                   nativeSelection.current = next;
@@ -621,9 +611,9 @@ export function ThreadComposer({
                   if (
                     event.nativeEvent.key === "Backspace" &&
                     draft.length === 0 &&
-                    (selectedSkill !== null || selectedMentions.length > 0)
+                    selectedSkill !== null
                   ) {
-                    removeLastChip();
+                    setSelectedSkill(null);
                   }
                 }}
                 keyboardAppearance={colorScheme}
@@ -641,7 +631,16 @@ export function ThreadComposer({
                   maxHeight: 110 * textScale,
                   writingDirection: "auto",
                 }}
-              />
+              >
+                {composerMentionSegments(draft, mentionBindings).map((segment, index) => (
+                  <Text
+                    key={index}
+                    style={segment.binding ? mentionStyle(segment.binding.mention) : undefined}
+                  >
+                    {segment.text}
+                  </Text>
+                ))}
+              </TextInput>
             </Pressable>
           </View>
           {!canSend && botId && !onCall ? (
@@ -764,53 +763,6 @@ function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
       style={{
         width: 16,
         height: 16,
-        borderRadius: 4,
-        backgroundColor: mention.color ?? tokens.mutedForeground,
-      }}
-    />
-  );
-}
-
-function MentionChipIcon({ mention }: { mention: ComposerMention }) {
-  const tokens = useMobileTokens();
-  if (mention.kind === "routine") {
-    return (
-      <NativeSymbol ios="clock" android="time-outline" size={13} color={tokens.mutedForeground} />
-    );
-  }
-  if (mention.kind === "connector") {
-    return (
-      <NativeSymbol
-        ios="puzzlepiece.extension"
-        android="extension-puzzle-outline"
-        size={13}
-        color={tokens.mutedForeground}
-      />
-    );
-  }
-  if (mention.kind === "group" || mention.kind === "everyone") {
-    return (
-      <View
-        style={{
-          width: 14,
-          height: 14,
-          borderRadius: 7,
-          backgroundColor: tokens.muted,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={{ color: tokens.foreground, fontSize: 9 }}>
-          {mention.kind === "group" ? "G" : "@"}
-        </Text>
-      </View>
-    );
-  }
-  return (
-    <View
-      style={{
-        width: 14,
-        height: 14,
         borderRadius: 4,
         backgroundColor: mention.color ?? tokens.mutedForeground,
       }}

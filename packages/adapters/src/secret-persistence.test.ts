@@ -1,9 +1,10 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { BOT_SECRET_VALUE_MAX_LENGTH } from "@rakazo/contracts";
+import { BOT_SECRET_VALUE_MAX_LENGTH, encodeLoginSecret } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { withTransactionRetry } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { findRunLogin } from "./bot-secrets.js";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { McpConnector } from "./mcp-connector.js";
 import { McpOAuthBroker } from "./mcp-oauth.js";
@@ -23,6 +24,7 @@ const context: AdapterContext = {
 };
 type Row = {
   id: string;
+  kind?: string;
   ciphertext?: string;
   userId?: string;
   spaceId?: string;
@@ -601,6 +603,7 @@ describe("prepared run-secret writes", () => {
                 spaceId: "space",
                 plaintext: input.answer,
                 credential,
+                remember: true,
                 tx,
               });
               if (clock - start > 5000) throw new Error("Transaction expired");
@@ -619,6 +622,88 @@ describe("prepared run-secret writes", () => {
       }
     },
   );
+
+  it("keeps a login sent with Save to Vault off for this run only, encrypted locally", async () => {
+    const fake = infisicalFake();
+    const store = new ComposedSecretStore(
+      new EncryptedSecretStore("fake-key"),
+      new InfisicalSecretStore(fake.options),
+    );
+    const db = database();
+    const prisma = withSecretPersistence(db.prisma, store);
+    const credential = {
+      name: "example_login",
+      origin: "https://login.example.test",
+      auth: { type: "login" as const },
+    };
+    Object.assign(prisma, {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      spaceSettingOverride: { findUnique: async () => null },
+      message: {
+        findFirst: async () => ({
+          blocks: [
+            { kind: "ask", text: "Sign in", input: "secret", status: "pending", credential },
+          ],
+        }),
+      },
+    });
+    const fields = [
+      { label: "Username", value: "ada@example.test", hidden: false },
+      { label: "Password", value: "fake-password-1", hidden: true },
+    ];
+    const writer = createRunSecretWriter(store);
+    const answer = (remember?: false) =>
+      writer.withPrepared!(
+        prisma,
+        {
+          spaceId: "space",
+          runId: "run",
+          threadId: "thread",
+          messageId: "message",
+          answeredByUserId: "user",
+          answer: "",
+          fields,
+          ...(remember === false ? { remember } : {}),
+        },
+        (prepared) =>
+          prisma.$transaction((tx) =>
+            prepared.store({
+              botId: "bot",
+              runId: "run",
+              userId: "user",
+              spaceId: "space",
+              plaintext: encodeLoginSecret({ fields }),
+              credential,
+              remember: remember !== false,
+              tx,
+            }),
+          ),
+      );
+    const runLogins = () =>
+      db.tables.get("secret")!.filter((row) => row.kind?.startsWith("run-login:"));
+    try {
+      // Answering again replaces the earlier answer.
+      await answer(false);
+      await answer(false);
+      expect(fake.values.size).toBe(0);
+      expect(db.tables.get("vaultCredential")).toEqual([]);
+      expect(runLogins().map((row) => row.kind)).toEqual(["run-login:run:example_login"]);
+      const scope = { userId: "user", spaceId: "space" };
+      expect(await findRunLogin(prisma, store, scope, "run", "example_login")).toEqual({
+        origin: credential.origin,
+        fields,
+      });
+      expect(await findRunLogin(prisma, store, scope, "other-run", "example_login")).toBe(
+        undefined,
+      );
+      // Saving it afterwards ends the run's copy.
+      await answer();
+      expect(runLogins()).toEqual([]);
+      expect(db.tables.get("vaultCredential")).toHaveLength(1);
+    } finally {
+      await store.close();
+    }
+  });
 
   it("does not encrypt a secret answer over the value limit", async () => {
     const store = new EncryptedSecretStore("fake-key");

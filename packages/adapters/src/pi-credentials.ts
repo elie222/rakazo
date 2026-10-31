@@ -14,6 +14,7 @@ import { canonicalPiProviderId } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import {
   OAUTH_ACCOUNT_CHANGED_ERROR,
+  OAUTH_RECONNECT_REQUIRED_ERROR,
   oauthCredentialAccountId,
   RetiredModelCredentialError,
   terminalOAuthRefreshErrorMarker,
@@ -81,15 +82,21 @@ export class PiRuntimeCredentialStore implements CredentialStore {
       } catch (error) {
         const marker = terminalOAuthRefreshErrorMarker(error);
         if (marker && this.retireOAuth) {
-          // Await the retirement so the delete commits before this error surfaces: a
-          // detached delete could race a catalog read or be dropped by worker shutdown.
+          // Await the retirement so the marker commits before this error surfaces: a
+          // detached write could race a catalog read or be dropped by worker shutdown.
           try {
-            await this.retireOAuth(
+            const retired = await this.retireOAuth(
               "terminal-refresh-failure",
               marker,
               current?.type === "oauth" ? current : undefined,
             );
+            if (retired) {
+              // The rejected access token must not stay available to a later read.
+              this.credential = undefined;
+              throw new RetiredModelCredentialError(OAUTH_RECONNECT_REQUIRED_ERROR);
+            }
           } catch (retireError) {
+            if (retireError instanceof RetiredModelCredentialError) throw retireError;
             getLogger().error("model credential retirement failed", retireError);
           }
         }
@@ -121,7 +128,10 @@ export class PiRuntimeCredentialStore implements CredentialStore {
             }
             // Fail the run permanently only when this call deleted the stored
             // credential. A skipped delete means a newer credential survived.
-            if (deleted) throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
+            if (deleted) {
+              this.credential = undefined;
+              throw new RetiredModelCredentialError(OAUTH_ACCOUNT_CHANGED_ERROR);
+            }
             throw new Error(OAUTH_ACCOUNT_CHANGED_ERROR);
           }
           await this.persistOAuth?.(next);

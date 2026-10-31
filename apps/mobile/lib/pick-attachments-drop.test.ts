@@ -140,3 +140,12 @@ describe("dropped file attachments", () => {
     expect(state.base64).not.toHaveBeenCalled();
   });
 });
+
+it("uses the configured drop count and releases excess cached files", async () => {
+  const files = Array.from({ length: 9 }, (_, i) => dropped(`${i}.png`, 1024));
+  const result = await readDroppedFiles(files, 0, 10 * 1024 * 1024, [], 8);
+  expect(result.attachments).toHaveLength(8);
+  expect(result.skipped).toEqual([{ name: "8.png", reason: "max 8 attachments" }]);
+  expect(state.base64).toHaveBeenCalledTimes(8);
+  expect(state.deleted).toHaveLength(9);
+});

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Linking } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Integrations from "../app/(settings)/integrations";
 import { ConnectorIcon } from "../components/connector-icon";
@@ -17,6 +19,7 @@ const state = vi.hoisted(() => ({
   scope: vi.fn(),
   persisted: vi.fn(),
   focused: true,
+  appStateChange: null as null | ((state: string) => void),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
@@ -37,7 +40,6 @@ vi.mock("./api", () => ({
 vi.mock("../components/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
 }));
-vi.mock("../components/menu-picker", () => ({ MenuPicker: () => null }));
 vi.mock("./integrations-cache", () => ({
   integrationsCacheScope: state.scope,
   persistedIntegrationsCacheScope: state.persisted,
@@ -54,7 +56,28 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  MenuView: ({
+    children,
+    actions,
+    onPressAction,
+  }: {
+    children: ReactNode;
+    actions?: { id: string; title: string }[];
+    onPressAction?: (event: { nativeEvent: { event: string } }) => void;
+  }) => (
+    <div>
+      {children}
+      {actions?.map(({ id, title }) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onPressAction?.({ nativeEvent: { event: id } })}
+        >
+          {title}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({
@@ -64,6 +87,23 @@ vi.mock("./i18n", () => ({
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    onChange,
+  }: {
+    choices: { key: string; label: string }[];
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map(({ key, label }) => (
+        <button key={key} type="button" onClick={() => onChange(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
@@ -127,6 +167,12 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ width: 390 }),
     Alert: { alert: vi.fn() },
     Linking: { openURL: vi.fn() },
+    AppState: {
+      addEventListener: vi.fn((_event: string, callback: (value: string) => void) => {
+        state.appStateChange = callback;
+        return { remove: vi.fn() };
+      }),
+    },
   };
 });
 
@@ -155,6 +201,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.current = true;
   state.focused = true;
+  state.appStateChange = null;
   state.scope.mockReset().mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
   state.persisted.mockReset().mockResolvedValue(null);
   state.read.mockReset().mockReturnValue(null);
@@ -583,16 +630,25 @@ it("shows registered MCP servers with connector initials and sentence case statu
   state.rpc.mockImplementation((proc: string) =>
     proc === "mcp/servers/list"
       ? Promise.resolve([
-          { id: "saved", name: "Saved server", enabled: true, hasSecret: true },
-          { id: "open", name: "Open server", enabled: true, hasSecret: false },
+          { id: "saved", name: "Saved server", enabled: true, hasSecret: true, health: {} },
+          { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
+          {
+            id: "client",
+            name: "Client server",
+            enabled: true,
+            hasSecret: false,
+            oauthClientId: null,
+            health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+          },
         ])
       : fallback?.(proc),
   );
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(3);
   expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
   expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
+  expect(rows[2]?.textContent).toBe("CClient serverNeeds an OAuth client ID");
   for (const row of rows) expect(row.querySelector("button")).toBeNull();
 
   const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
@@ -743,4 +799,93 @@ it("lists a plugin connector under Apps, with its servers kept under the plugin"
   );
   expect(container.querySelector('[data-testid="connected-skills"]')).toBeNull();
   expect(container.querySelectorAll('[data-testid="registered-mcp-server"]')).toHaveLength(0);
+});
+
+async function openMcpSource() {
+  await render();
+  await act(async () => resolveCatalog([]));
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "MCP server")
+      ?.click();
+  });
+  expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).not.toBeNull();
+}
+
+it("saves native MCP API key auth as a named encrypted header", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "capabilities/install"
+      ? Promise.resolve({ id: "source-key", kind: "mcp", name: "Custom connector" })
+      : fallback?.(proc, args),
+  );
+  await openMcpSource();
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "API key")
+      ?.click();
+  });
+  const credential = container.querySelector('input[placeholder="API key"]');
+  expect(credential).not.toBeNull();
+  await act(async () => {
+    if (!(credential instanceof HTMLInputElement)) return;
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    nativeSetter?.call(credential, "demo-secret-not-real");
+    credential.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Verify and add")
+      ?.click();
+  });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "capabilities/install",
+    expect.objectContaining({
+      kind: "mcp",
+      credential: "demo-secret-not-real",
+      config: { preset: "custom", auth: { type: "header", name: "x-api-key" } },
+    }),
+  );
+});
+
+it("registers an OAuth MCP server and starts the existing browser callback flow", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) => {
+    if (proc === "mcp/servers/create")
+      return Promise.resolve({ id: "oauth-server", name: "Test", enabled: true });
+    if (proc === "mcp/oauth/begin")
+      return Promise.resolve({
+        status: "authorization_required",
+        sessionId: "test-session",
+        authorizationUrl: "https://identity.example.test/authorize",
+      });
+    return fallback?.(proc, args);
+  });
+  await openMcpSource();
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "OAuth")
+      ?.click();
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Verify and add")
+      ?.click();
+  });
+  expect(state.rpc).toHaveBeenCalledWith(
+    "mcp/servers/create",
+    expect.objectContaining({
+      transport: "streamable_http",
+    }),
+  );
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
+  expect(Linking.openURL).toHaveBeenCalledWith("https://identity.example.test/authorize");
+
+  const initialReads = state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length;
+  await act(async () => {
+    state.appStateChange?.("active");
+  });
+  expect(
+    state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
+  ).toBeGreaterThan(initialReads);
 });

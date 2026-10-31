@@ -329,7 +329,7 @@ warn_unpassed_settings() {
   done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
   [[ -n "$unpassed" ]] || return 0
   echo "Warning: no container receives these .env settings:${unpassed}." >&2
-  echo "List them in an override file; see Settings with names you choose in docs/self-host.md." >&2
+  echo "List them in an override file; see Settings with names you choose in docs/self-host-configuration.md." >&2
 }
 
 # Why this host cannot take the restricted-egress firewall rules; empty when it can.
@@ -367,7 +367,7 @@ configure_computer_egress() {
   fi
   printf '\nSANDBOX_COMPUTER_EGRESS=open\n' >>"$ENV_FILE"
   echo "Warning: bot computers can reach this host, its LAN and cloud metadata ($reason)." >&2
-  echo "See Restricted computer egress in docs/self-host.md." >&2
+  echo "See Restricted computer egress in docs/self-host-docker-computers.md." >&2
 }
 
 for filename in "${required_files[@]}"; do

@@ -4,6 +4,7 @@ import { ENDPOINT_SILENCE_MS, listen, setSpeechRecognizer, stop } from "./dictat
 import { reportMobileError } from "./monitoring";
 
 vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 type Listener = (payload: never) => void;
 
@@ -20,6 +21,7 @@ function fakeRecognizer() {
     abort,
     isRecognitionAvailable: () => true,
     requestPermissionsAsync: async () => ({ granted: true }),
+    getSupportedLocales: async () => ({ locales: [] }),
     addListener: (event, listener) => {
       const set = listeners.get(event) ?? new Set();
       set.add(listener as Listener);
@@ -62,6 +64,22 @@ afterEach(() => {
 });
 
 describe("mobile dictation", () => {
+  it("uses the supported iOS regional fallback", async () => {
+    const locales = vi.fn(async () => ({ locales: ["es-ES", "es-MX"] }));
+    fake.recognizer.getSupportedLocales = locales;
+    await listen({ lang: "es-AR", onFinal: vi.fn() });
+    expect(locales).toHaveBeenCalledWith({});
+    expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-MX" }));
+  });
+
+  it("keeps the requested locale when the supported list fails", async () => {
+    fake.recognizer.getSupportedLocales = async () => {
+      throw new Error("Unavailable");
+    };
+    await listen({ lang: "es-CL", onFinal: vi.fn() });
+    expect(fake.start).toHaveBeenCalledWith(expect.objectContaining({ lang: "es-CL" }));
+  });
+
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {
     const onFinal = vi.fn();
     const interims: string[] = [];
@@ -263,6 +281,21 @@ describe("mobile dictation", () => {
     vi.advanceTimersByTime(10_000);
 
     expect(onFinal).not.toHaveBeenCalled();
+  });
+
+  it("leaves a newer session running when a cancelled request arrives late", async () => {
+    const onFinal = vi.fn();
+    await listen({ onFinal, signal: new AbortController().signal });
+    const cancelled = new AbortController();
+    cancelled.abort();
+
+    await listen({ onFinal: vi.fn(), signal: cancelled.signal });
+    expect(fake.abort).not.toHaveBeenCalled();
+    fake.hear("still here");
+    vi.advanceTimersByTime(ENDPOINT_SILENCE_MS);
+
+    expect(fake.start).toHaveBeenCalledOnce();
+    expect(onFinal).toHaveBeenCalledWith("still here");
   });
 
   it("ends the turn on a permission error instead of hanging on the mic", async () => {

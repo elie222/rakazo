@@ -33,9 +33,15 @@ export function configureNativeCrashReporting(base: string, next: Capture): void
     });
     app.on("child-process-gone", (_event, details) => {
       if (unexpected.has(details.reason))
-        capture?.(new Error(`Child process stopped (${details.reason})`), "desktop.child", {
-          "native.crash": "true",
-        });
+        capture?.(
+          new Error(`Child process stopped (${details.type}, ${details.reason})`),
+          "desktop.child",
+          {
+            "native.crash": "true",
+            "process.name": details.name ?? details.serviceName ?? details.type,
+            "process.exit_code": String(details.exitCode),
+          },
+        );
     });
   }
   // A cached main-process dump belongs only to the connection active when it was created.

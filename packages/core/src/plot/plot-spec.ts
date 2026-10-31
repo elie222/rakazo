@@ -43,7 +43,6 @@ export type PlotSpec = {
   symbol?: Record<string, unknown>;
   length?: Record<string, unknown>;
   projection?: unknown;
-  style?: Record<string, unknown>;
   marks: PlotMarkSpec[];
 };
 
@@ -231,7 +230,8 @@ function buildMark(
   sharedData: unknown[] | undefined,
   normalizeData: (rows: unknown[]) => unknown[],
 ): Plot.Markish {
-  const options = { ...(mark.options ?? {}) };
+  // A class name could match the app's own styles once the chart is in its page.
+  const { className: _className, ...options } = mark.options ?? {};
   const dataless = DATALESS_MARKS[mark.type];
   if (dataless) return dataless(options);
   const factory = DATA_MARKS[mark.type];
@@ -295,14 +295,22 @@ function isSafePlotLink(href: string): boolean {
   }
 }
 
-function sanitizePlotLinks(plotted: Element): void {
+// A backslash could spell url() as a CSS escape.
+const REMOTE_CSS_URL = /\\|url\(\s*(?!['"]?#)/i;
+
+function sanitizePlot(plotted: Element): void {
   // Inspect the resolved output: href can come from columns, per-mark arrays,
   // channel objects, scales, or transforms. Check both href and xlink:href
-  // before either mounting the live plot or serializing it for export.
-  for (const anchor of Array.from(plotted.querySelectorAll("a"))) {
-    for (const attribute of Array.from(anchor.attributes)) {
-      if (attribute.localName === "href" && !isSafePlotLink(attribute.value)) {
-        anchor.removeAttributeNode(attribute);
+  // before either mounting the live plot or serializing it for export. Colors
+  // and filters may be url() references; only the chart's own #ids may load.
+  for (const element of [plotted, ...Array.from(plotted.querySelectorAll("*"))]) {
+    for (const attribute of Array.from(element.attributes)) {
+      const unsafeLink =
+        element.localName === "a" &&
+        (attribute.localName === "target" ||
+          (attribute.localName === "href" && !isSafePlotLink(attribute.value)));
+      if (unsafeLink || REMOTE_CSS_URL.test(attribute.value)) {
+        element.removeAttributeNode(attribute);
       }
     }
   }
@@ -335,7 +343,15 @@ export function buildPlotParts(
   }
   assertPlotDataWithinLimits(spec, data);
   assertPlotTickLimits(spec);
-  const { title, marks, data: nestedData, ...plotOptions } = spec;
+  // Plot applies style and className to the live page, outside the chart.
+  const {
+    title,
+    marks,
+    data: nestedData,
+    style: _style,
+    className: _className,
+    ...plotOptions
+  } = spec as PlotSpec & { style?: unknown; className?: unknown };
   const sharedData = data ?? (Array.isArray(nestedData) ? nestedData : undefined);
   const normalizedData = new WeakMap<unknown[], unknown[]>();
   const normalizeData = (rows: unknown[]) => {
@@ -358,13 +374,13 @@ export function buildPlotParts(
     }
   }
   const plotted = Plot.plot({
-    document,
     ...(sanitizedPlotOptions as Plot.PlotOptions),
+    document,
     ...(overrides.width ? { width: overrides.width } : {}),
     ...(overrides.height ? { height: overrides.height } : {}),
     marks: marks.map((mark) => buildMark(mark, sharedData, normalizeData)),
   });
-  sanitizePlotLinks(plotted);
+  sanitizePlot(plotted);
   const svg = plotted.tagName === "svg" ? plotted : plotted.querySelector("svg");
   if (!svg) throw new Error("Plot did not produce an SVG element");
   const width = Number(svg.getAttribute("width") ?? overrides.width ?? spec.width ?? 640);
@@ -465,10 +481,9 @@ function categoricalSwatches(scale: Plot.Scale | undefined): { label: string; co
   const domain = Array.isArray(scale.domain) ? scale.domain : [];
   if (domain.length === 0 || domain.length > 12) return [];
   if (scale.type && scale.type !== "ordinal" && scale.type !== "categorical") return [];
-  return domain.map((value) => ({
-    label: String(value),
-    color: String(scale.apply(value)),
-  }));
+  return domain
+    .map((value) => ({ label: String(value), color: String(scale.apply(value)) }))
+    .filter(({ color }) => !REMOTE_CSS_URL.test(color));
 }
 
 function escapeXml(value: string): string {

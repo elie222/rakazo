@@ -31,6 +31,7 @@ import {
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { AccountAccess } from "../components/AccountAccess";
+import { AccountDataSettings } from "../components/AccountDataSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputerDeviceSettings } from "../components/ComputerDeviceSettings";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
@@ -79,6 +80,8 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
+  onAccountImported?: () => Promise<void>;
+  onImportAgent?: () => void;
 };
 
 export function GeneralSettingsPanels({
@@ -87,6 +90,8 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
+  onAccountImported,
+  onImportAgent,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
   const account = accountDisplay({ name, email }, t`You`);
@@ -203,6 +208,7 @@ export function GeneralSettingsPanels({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (!namePending) setEditingName(false);
               }
             }}
@@ -466,6 +472,8 @@ export function GeneralSettingsPanels({
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
+
+      <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>

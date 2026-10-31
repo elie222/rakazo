@@ -34,7 +34,7 @@ message it answers came from you in the app.
 - `update_group`: renames a group or adds and removes members.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
   or a group.
-- `update_bot` with `bot_id`: edits a child bot's name, title, description, color and
+- `update_bot` with `bot_id`: edits a child bot's name, description, color and
   notifications. It never changes instructions. Without `bot_id` it acts on the calling bot as
   before.
 - `set_child_instructions`: replaces a child bot's instructions. The bot passes the version it read
@@ -44,10 +44,11 @@ message it answers came from you in the app.
 
 ## Approval
 
-`create_group`, `update_group`, `set_child_instructions`, `set_child_bot_model` and
-`create_child_routine` always show an approval card. Auto-review and "Always allow" do not skip it,
-and the card offers allow or deny only. The card lists what will actually run, resolved before the
-pause:
+In Ask and Auto, `set_child_instructions` and `set_child_bot_model` always show an approval card.
+Auto-review and "Always allow" do not skip it, and the card offers allow or deny only.
+`create_group`, `update_group` and `create_child_routine` follow the space's approval mode like any
+other action. Never ask runs all of them. The card lists what
+will actually run, resolved before the pause:
 
 - Create group: the name and every member.
 - Update group: the members added and removed, and the new name.

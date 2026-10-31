@@ -158,6 +158,7 @@ export function modelsForRequest(
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,
+      apiProtocol: request.model.apiProtocol,
       headers: request.model.headers,
       allowPrivate: request.model.allowPrivateEndpoint,
       reasoning: request.model.reasoning,

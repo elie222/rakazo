@@ -21,7 +21,8 @@ function setup(refresh: () => Promise<void>, overrides: Partial<ThreadAnswerCont
       answer: string,
       fields?: readonly LoginFieldInput[],
       dismiss?: boolean,
-    ) => answerThreadMessage(context, message, answer, fields, dismiss),
+      remember?: false,
+    ) => answerThreadMessage(context, message, answer, fields, dismiss, remember),
   };
 }
 
@@ -44,7 +45,23 @@ describe("mobile ask answers", () => {
       fields,
     });
     expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("username");
+    // Saved to the Vault unless the person turned that off.
+    expect(h.rpc.mock.lastCall![1]).not.toHaveProperty("remember");
     expect(h.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends remember false for a login used for this run only", async () => {
+    const h = setup(async () => undefined);
+    const fields = [{ label: "Password", value: "example-password", hidden: true }];
+    await h.answerMessage(message, "", fields, undefined, false);
+    expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
+      botId: "bot-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answer: "",
+      fields,
+      remember: false,
+    });
   });
 
   it("targets the group in a group thread", async () => {

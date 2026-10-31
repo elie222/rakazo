@@ -58,6 +58,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: false,
+      reconnectRequired: false,
     });
     await expect(
       loadStoredModelAuth("anthropic", async () => {
@@ -67,6 +68,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: true,
       credentialUnreadable: false,
+      reconnectRequired: false,
     });
   });
 
@@ -123,6 +125,7 @@ describe("loadStoredModelAuth", () => {
         storedAuthKind: null,
         credentialLookupFailed: false,
         credentialUnreadable: false,
+        reconnectRequired: false,
       });
     }
     await expect(
@@ -131,6 +134,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: true,
+      reconnectRequired: false,
     });
   });
 
@@ -188,6 +192,7 @@ describe("loadStoredModelAuth", () => {
       storedAuthKind: null,
       credentialLookupFailed: false,
       credentialUnreadable: true,
+      reconnectRequired: false,
     });
   });
 });
@@ -258,6 +263,21 @@ describe("runModelConnectionPreflight", () => {
     if (!result.ok) {
       expect(result.failure.outcome).toBe("needs_sign_in");
       expect(result.failure.message).toMatch(/API key is stored/);
+    }
+  });
+
+  it("does not treat a rejected subscription sign-in as stored and usable", async () => {
+    const result = await runModelConnectionPreflight({
+      authKind: "oauth",
+      provider: "openai-codex",
+      storedAuthKind: "oauth",
+      reconnectRequired: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.outcome).toBe("needs_sign_in");
+      expect(result.failure.message).toBe("This provider is not connected yet.");
+      expect(result.failure.nextAction).toBe("Finish subscription sign-in, then test again.");
     }
   });
 

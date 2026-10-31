@@ -8,7 +8,8 @@ import type { createDb } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
-import type { EvalCase, Evidence } from "./cases.js";
+import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
+import { EMPTY_SETTINGS } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -22,6 +23,7 @@ import type { RoutineEvidence } from "./silence.js";
 import { SilenceObserver } from "./silence-observer.js";
 import type { LedgerCall } from "./step-accounting.js";
 import { measureWorkflowSteps } from "./step-accounting.js";
+import type { ObservedToolCall, ObservedToolList } from "./tool-calls.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> | Response };
 export type EvalApp = {
@@ -36,6 +38,8 @@ export type EvalApp = {
   cacheDecisions?: readonly CacheDecisionMeasurement[];
   historyDiagnostics?: readonly HistoryDiagnostic[];
   toolLoopDiagnostics?: readonly DiagnosticToolObservation[];
+  toolCallObservations?: readonly ObservedToolCall[];
+  toolLists?: readonly ObservedToolList[];
   backgroundFailures?: () => Array<{ name: string; count: number }>;
   stop: () => Promise<void>;
 };
@@ -57,6 +61,8 @@ export type TrialOptions = {
     witnesses: { notifications: CapturingNotificationProvider; realtime: SilenceObserver },
   ) => Promise<EvalApp>;
 };
+const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
+
 class EvalFailure extends Error {
   constructor(
     readonly category: FailureCategory,
@@ -190,6 +196,9 @@ export async function runTrial(
         modelProvider: options.connection.provider,
         modelId: options.connection.modelId,
       });
+      // Direct synthetic fixture state, so setup never depends on the behavior under test.
+      if (scenario.botSetup)
+        await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
       messaging.resetWitnesses();
@@ -336,8 +345,39 @@ export async function runTrial(
     phase = "product";
     let lastText = "";
     const replies: string[] = [];
+    const settingsSnapshot = async (): Promise<SettingsSnapshot> => {
+      const bot = await prisma.bot.findUniqueOrThrow({
+        where: { id: botId },
+        select: {
+          userId: true,
+          name: true,
+          description: true,
+          instructions: true,
+          color: true,
+          notifyOnFinish: true,
+          autoSpeak: true,
+          voiceId: true,
+          modelProvider: true,
+          modelId: true,
+          thinkingLevel: true,
+          memoryScope: true,
+        },
+      });
+      const { userId, ...botSettings } = bot;
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { email: true, name: true, timezone: true, marketingEmailOptOutAt: true },
+      });
+      const { marketingEmailOptOutAt, ...userSettings } = user;
+      return {
+        bot: botSettings,
+        user: { ...userSettings, marketingEmailOptOut: marketingEmailOptOutAt !== null },
+      };
+    };
+    let settingsBefore = EMPTY_SETTINGS;
     for (const [stepIndex, step] of scenario.steps.entries()) {
       if (Date.now() >= deadline) throw new EvalFailure("incomplete", "Trial time budget exceeded");
+      if (stepIndex === scenario.steps.length - 1) settingsBefore = await settingsSnapshot();
       if ("newWorkspace" in step) {
         priorMemory = (await rpc<Array<{ content: string }>>(app, cookie, "memory/list", { botId }))
           .map((m) => m.content)
@@ -477,7 +517,9 @@ export async function runTrial(
           (scenario.approvalTool || scenario.expectedClarification)
         )
           return run;
-        if (run && ["waiting_input", "waiting_approval", "paused"].includes(run.status))
+        const waiting = run && WAITING_STATUSES.includes(run.status);
+        if (waiting && scenario.pauseEndsTurn) return run;
+        if (waiting)
           throw new EvalFailure("agent", "Agent requested assistance; no coaching supplied");
         return run && isTerminal(run.status as RunStatus) ? run : undefined;
       }, deadline);
@@ -504,6 +546,7 @@ export async function runTrial(
       });
       if (
         terminal.status !== "completed" &&
+        !(scenario.pauseEndsTurn && WAITING_STATUSES.includes(terminal.status)) &&
         !(
           (scenario.approvalTool || scenario.expectedClarification) &&
           terminal.status === "waiting_input"
@@ -596,11 +639,9 @@ export async function runTrial(
       }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
         throw new EvalFailure("incomplete", lastText);
-      if (
-        /unknown model|invalid api.?key|authentication.*(?:failed|error)|\b(?:401|402|403|429)\b/i.test(
-          lastText,
-        )
-      )
+      // Provider failures end the run as failed (classified above); a reply can only carry
+      // the product's own fixed notices, never a bare status code from an explanation.
+      if (/unknown model|invalid api.?key|authentication.*(?:failed|error)/i.test(lastText))
         throw new EvalFailure("provider", lastText);
     }
     const files: Evidence["files"] = {};
@@ -621,6 +662,7 @@ export async function runTrial(
       select: { name: true, prompt: true, crons: true, active: true },
     });
     await captureTools();
+    const finalStep = scenario.steps.length;
     const evidence: Evidence = {
       text: lastText,
       replies,
@@ -636,6 +678,14 @@ export async function runTrial(
       pendingApproval,
       priorMemory,
       toolNames: [...seenTools.values()].map((event) => event.name),
+      toolCalls: (handles.toolCallObservations ?? []).flatMap((call) => {
+        const step = runSteps.get(call.runId);
+        const { runId: _runId, ...observed } = call;
+        return step === undefined ? [] : [{ step, ...observed }];
+      }),
+      finalStep,
+      settings: await settingsSnapshot(),
+      settingsBefore,
       messaging: {
         originThreadId: messagingOriginThreadId,
         outbound: structuredClone(messaging.sent),
@@ -651,6 +701,7 @@ export async function runTrial(
           ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
           : {}),
         ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        ...(evidence.toolCalls.length ? { "tool-calls": JSON.stringify(evidence.toolCalls) } : {}),
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
@@ -759,6 +810,13 @@ export async function runTrial(
       result.toolLoopDiagnostics = handles.toolLoopDiagnostics
         ? [...handles.toolLoopDiagnostics]
         : [];
+      const lists = handles.toolLists ?? [];
+      if (lists.length) {
+        const { count, bytes } = lists.reduce((largest, list) =>
+          list.bytes > largest.bytes ? list : largest,
+        );
+        result.offeredTools = { count, bytes };
+      }
       // Include interrupted and cleared-run calls without retaining raw arguments or ids in reports.
       await captureTools().catch(() => undefined);
       const events = [...seenTools.values()];

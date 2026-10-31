@@ -112,7 +112,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
       </details>
     </nav>
     <span class="site-footer__legal">
-      <span>© 2026 <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a></span>
+      <span>© 2026 <a href={INBOX_ZERO_URL} target="_blank" rel="noopener">Inbox Zero Inc.</a></span>
       <span>Apache-2.0</span>
     </span>
   </div>
@@ -127,7 +127,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
                 <a
                   href={link.href}
                   aria-current={!link.external && isCurrentPage(link.href) ? "page" : undefined}
-                  {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                  {...(link.external ? { target: "_blank", rel: "noopener" } : {})}
                 >
                   {link.label}
                 </a>

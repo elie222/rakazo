@@ -1,13 +1,16 @@
 import { ORPCError } from "@orpc/server";
 import { runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { settleCallRequest } from "@rakazo/adapters";
-import type { ProductEvent } from "@rakazo/contracts";
+import type { Actor, ProductEvent } from "@rakazo/contracts";
 import {
+  AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
   callClientNonce,
+  expandSkillReferencesInPrompt,
   MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   AnswerTooLongError,
   appendEventInTransaction,
@@ -18,6 +21,9 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { RouterDeps } from "../router.js";
+import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
+import { withSerializableRetry } from "../serializable-retry.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
 import {
   isBackgroundRun,
@@ -26,11 +32,13 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../thread-message-pages.js";
+import type { ThreadTarget } from "../thread-target.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
   reactToThreadMessage,
   resolveThreadTarget,
+  sendTargetBotIds,
   sendThreadMessage,
   setThreadUnreadState,
   stopThreadRuns,
@@ -41,6 +49,7 @@ import { mapBotSecretInputError } from "./bots.js";
 import { releaseComputerControl } from "./computer.js";
 import type { RouterContext } from "./context.js";
 import {
+  botsRunOwnModels,
   computerContext,
   HEARTBEAT_MS,
   isUniqueViolation,
@@ -60,8 +69,86 @@ export function callMarkerClientNonce(callId: string): string {
 const HANG_UP_PROMPT =
   "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
+/** A send with routines that already has runs saved under its nonce. */
+class SavedSubmission extends Error {}
+
+/** A chat reply hands the screen back to the bot whose run it steers, in a group as in a DM. */
+export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadTarget) {
+  return async (runId: string) => {
+    const botId =
+      target.kind === "bot"
+        ? target.botId
+        : (
+            await deps.prisma.run.findUnique({
+              where: { id: runId, spaceId: actor.spaceId },
+              select: { botId: true },
+            })
+          )?.botId;
+    if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
+  };
+}
+
 export function threadsRoutes(ctx: RouterContext) {
-  const { deps, authed, callsEnabled, codexCatalog } = ctx;
+  const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
+  /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
+  const reactedBotId = async (target: ThreadTarget, messageId: string) =>
+    target.kind === "bot"
+      ? target.botId
+      : ((
+          await deps.prisma.message.findFirst({
+            where: { id: messageId, threadId: target.threadId },
+            select: { botId: true },
+          })
+        )?.botId ?? target.memberBotIds[0]!);
+  const send = async (
+    actor: Actor,
+    input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
+    startRoutines?: Parameters<typeof sendThreadMessage>[5],
+  ) => {
+    const setup = await modelSetup(deps, actor);
+    const target = await resolveThreadTarget(deps.prisma, actor, input);
+    // A bot with its own runnable model needs no main model.
+    if (
+      setup.needsModel &&
+      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)))
+    ) {
+      throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+    }
+    if (target.kind === "bot") {
+      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
+    }
+    const confirmingImages =
+      input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);
+    // Reuse the funding modelSetup resolved; a send never asks billing twice.
+    const { funding } = setup;
+    const deployment = setup.hasDeployment
+      ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
+      : null;
+    return sendThreadMessage(
+      {
+        ...deps,
+        maxAttachmentsPerMessage: deps.env.maxAttachmentsPerMessage,
+        imageAdmission: confirmingImages
+          ? {
+              secrets: deps.secrets,
+              deployment,
+              hostedProvider: funding?.funding === "credits" ? deployment?.provider : undefined,
+              codexCatalog,
+            }
+          : undefined,
+      },
+      actor,
+      target,
+      input,
+      takeoverReleaser(deps, actor, target),
+      startRoutines,
+    ).catch((error: unknown) => {
+      if (error instanceof AttachmentValidationError) {
+        throw new ORPCError("BAD_REQUEST", { message: error.message });
+      }
+      throw error;
+    });
+  };
   return {
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {
@@ -147,47 +234,79 @@ export function threadsRoutes(ctx: RouterContext) {
           void follow.return(undefined).catch(() => {});
         }
       }),
-      send: authed.threads.send.handler(async ({ context, input }) => {
-        const setup = await modelSetup(deps, context.actor);
-        if (setup.needsModel) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
-        }
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        if (target.kind === "bot") {
-          await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
-        }
-        const confirmingImages =
-          input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);
-        // Reuse the funding modelSetup resolved; a send never asks billing twice.
-        const { funding } = setup;
-        const deployment = setup.hasDeployment
-          ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-          : null;
-        return sendThreadMessage(
-          {
-            ...deps,
-            imageAdmission: confirmingImages
-              ? {
-                  secrets: deps.secrets,
-                  deployment,
-                  hostedProvider: funding?.funding === "credits" ? deployment?.provider : undefined,
-                  codexCatalog,
-                }
-              : undefined,
-          },
-          context.actor,
-          target,
-          input,
-          target.kind === "bot"
-            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
-            : undefined,
+      send: authed.threads.send.handler(({ context, input }) => send(context.actor, input)),
+      sendWithRoutines: authed.threads.sendWithRoutines.handler(async ({ context, input }) => {
+        const { actor } = context;
+        // The same checks as routines/testRun, all before anything is written.
+        const targets = await Promise.all(
+          [...new Set(input.routineIds)].map((routineId) =>
+            routineTestTarget(deps.prisma, repos, actor, routineId),
+          ),
         );
+        const skillRecords = await agentSkills.listWithContent(actor);
+        const routines = targets.map((target) => ({
+          target,
+          prompt: expandSkillReferencesInPrompt(target.routine.prompt, skillRecords),
+          nonce: routineTestRunNonce(
+            actor,
+            `routine-mention:${input.clientNonce}:${target.routine.id}`,
+          ),
+        }));
+        const nonces = routines.map((routine) => routine.nonce);
+        const savedRuns = (db: Pick<Prisma.TransactionClient, "run">) =>
+          db.run.findMany({
+            where: { spaceId: actor.spaceId, userId: actor.userId, clientNonce: { in: nonces } },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            select: { id: true },
+          });
+        const startRoutines = async (tx: Prisma.TransactionClient) => {
+          // Any saved run means this submission was accepted; it is replayed, never extended. A
+          // run another request commits after this lookup fails the insert below the same way.
+          if ((await savedRuns(tx)).length) throw new SavedSubmission();
+          const runs = [];
+          for (const routine of routines) {
+            runs.push(
+              await createRoutineTestRun(tx, actor, routine.target, routine.prompt, routine.nonce),
+            );
+          }
+          return runs;
+        };
+        let sent: Awaited<ReturnType<typeof send>> | undefined;
+        try {
+          if (input.text?.trim() || input.artifactIds?.length) {
+            // A saved message for this nonce is replayed before any of this runs.
+            sent = await send(actor, input, startRoutines);
+          } else {
+            // Only the routines: they all commit or none does.
+            const started = await withSerializableRetry(() =>
+              deps.prisma.$transaction(startRoutines),
+            );
+            for (const run of started) {
+              await deps.jobs.enqueue(runContinueJob(run.id)).catch((error) => {
+                getLogger().error("routine mention enqueue", error);
+              });
+            }
+          }
+        } catch (error) {
+          // A concurrent retry that saved the same runs first wins on the unique key.
+          const replay =
+            error instanceof SavedSubmission ||
+            (isUniqueViolation(error) && (await savedRuns(deps.prisma)).length > 0);
+          if (!replay) throw error;
+        }
+        return {
+          routineRunIds: (await savedRuns(deps.prisma)).map((run) => run.id),
+          send: sent,
+        };
       }),
       react: authed.threads.react.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         // Without a model or while teaching, the reaction is still saved; it just starts no turn.
         const mayStartTurn =
-          !(await modelSetup(deps, context.actor)).needsModel &&
+          (!(await modelSetup(deps, context.actor)).needsModel ||
+            (await botsRunOwnModels(deps, context.actor, [
+              await reactedBotId(target, input.messageId),
+            ]))) &&
           (target.kind !== "bot" ||
             (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
               () => true,
@@ -198,9 +317,7 @@ export function threadsRoutes(ctx: RouterContext) {
           context.actor,
           target,
           { ...input, mayStartTurn },
-          target.kind === "bot"
-            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
-            : undefined,
+          takeoverReleaser(deps, context.actor, target),
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
@@ -529,6 +646,7 @@ export function threadsRoutes(ctx: RouterContext) {
             clientNonce: input.clientNonce,
             fields: input.fields,
             username: input.username,
+            remember: input.remember,
             dismiss: input.dismiss,
           })
           .catch((error: unknown) => {

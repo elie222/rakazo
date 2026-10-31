@@ -101,6 +101,7 @@ describe("team chat bridge", () => {
         kind: "mention",
         conversationKey: "channel:C-1:100.1",
         conversationId: "C-1",
+        replyThreadId: null,
         senderId: "U-1",
         senderName: "Ada",
         content: "Run the release routine",
@@ -257,6 +258,7 @@ describe("team chat bridge", () => {
         kind,
         conversationKey: "C1",
         conversationId: "slack:C1:",
+        replyThreadId: null,
         senderId: "U1",
         senderName: "Ada",
         content: "Review this",
@@ -347,6 +349,7 @@ describe("team chat bridge", () => {
         kind: "ambient",
         conversationKey: "C-1",
         conversationId: "slack:C-1:",
+        replyThreadId: null,
         senderId: "U-1",
         senderName: "Ada",
         content: "",
@@ -429,7 +432,7 @@ describe("team chat bridge", () => {
           updateMany: vi.fn(async () => ({ count: 1 })),
         },
       } as unknown as PrismaClient;
-      const sendUserMessage = vi.fn(async () => ({
+      const sendUserMessage = vi.fn(async (_input: unknown) => ({
         messageId: "transcript",
         runId: null,
         seq: 1,
@@ -1127,7 +1130,7 @@ describe("team chat bridge", () => {
   });
 
   it("extends deferred routing leases for thirty minutes", async () => {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const updateMany = vi.fn(async (_input: { data: { nextAttemptAt: Date } }) => ({ count: 1 }));
     const bridge = new TeamChatBridge({
       prisma: { externalMessage: { updateMany } } as unknown as PrismaClient,
       events: { sendUserMessage: vi.fn() },
@@ -1160,8 +1163,7 @@ describe("team chat bridge", () => {
         engagementReason: "message_routine_routing",
       },
     });
-    const nextAttemptAt = (updateMany.mock.calls[0]![0] as { data: { nextAttemptAt: Date } }).data
-      .nextAttemptAt;
+    const nextAttemptAt = updateMany.mock.calls[0]![0].data.nextAttemptAt;
     expect(nextAttemptAt.getTime()).toBeGreaterThanOrEqual(before + 25 * 60_000);
     expect(nextAttemptAt.getTime()).toBeLessThanOrEqual(after + 30 * 60_000);
   });
@@ -2140,7 +2142,12 @@ describe("team chat bridge", () => {
       data: { status: "cancelled" },
     });
     expect(secretDeleteMany).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" },
+          { userId: "owner-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-atomic", status: "queueing", runId: null },
@@ -2517,7 +2524,12 @@ describe("team chat bridge", () => {
           botId: "bot-1",
           signal: new AbortController().signal,
         },
-        computer: async () => ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }),
+        computer: async () => ({
+          id: "computer-1",
+          botId: "bot-1",
+          kind: "fake",
+          providerRef: "fake-1",
+        }),
         computerMode: "team",
       },
     );
@@ -2875,6 +2887,7 @@ describe("team chat bridge receipt", () => {
       kind,
       conversationKey: `channel:${conversationId}`,
       conversationId,
+      replyThreadId: null,
       senderId: "U-1",
       senderName: "Ada",
       content: "Can you look at this?",

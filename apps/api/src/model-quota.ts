@@ -29,7 +29,8 @@ export async function readConnectionQuota(
       } else if (row.provider === "openai-compatible" && stored.kind === "openai_compatible") {
         baseUrl = stored.baseUrl;
         accessToken = stored.apiKey ?? null;
-      } else if (stored.kind === "oauth") {
+      } else if (stored.kind === "oauth" && !stored.reconnectRequired) {
+        // A connection that must be reconnected holds no credential to read quota with.
         if (stored.credential.expires > Date.now() + 30_000) {
           accessToken = stored.credential.access;
           accountId = oauthCredentialAccountId(stored.credential);

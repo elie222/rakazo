@@ -91,7 +91,7 @@ const published = (color: string): ChatTitle => ({
   status: undefined,
   composing: false,
   name: "Helper",
-  settings: { pathname: "/bot-settings", params: { botId: "bot-1" } },
+  opens: { pathname: "/bot-profile", params: { botId: "bot-1", name: "Helper" } },
 });
 const avatar = () => container.querySelector("i");
 const name = () => container.querySelector("b");
@@ -105,7 +105,7 @@ it("draws the inbox's bot from the route alone, before the chat publishes anythi
   expect(avatar()?.getAttribute("data-status")).toBe("running");
   expect(name()?.textContent).toBe("Helper");
   expect(name()?.getAttribute("data-placeholder")).toBe("false");
-  expect(button().getAttribute("aria-label")).toBe("Chat settings");
+  expect(button().getAttribute("aria-label")).toBe("Profile");
 });
 
 it("reserves the avatar for an unknown bot and marks a missing name as a placeholder", () => {
@@ -123,9 +123,21 @@ it("shows what the open chat publishes, in the same title", () => {
   });
   expect(avatar()?.getAttribute("data-color")).toBe("#FF781C");
   act(() => button().click());
-  expect(push).toHaveBeenCalledWith({ pathname: "/bot-settings", params: { botId: "bot-1" } });
+  expect(push).toHaveBeenCalledWith({
+    pathname: "/bot-profile",
+    params: { botId: "bot-1", name: "Helper" },
+  });
   act(() => clear());
   expect(avatar()?.getAttribute("data-color")).toBe("slot");
+});
+
+it("opens a one-to-one chat's bot profile from its title, not the chat's settings", () => {
+  render({ botId: "bot-1", name: "Helper" });
+  act(() => button().click());
+  expect(push).toHaveBeenCalledWith({
+    pathname: "/bot-profile",
+    params: { botId: "bot-1", name: "Helper" },
+  });
 });
 
 it("opens group settings with a visible group mark before members load, and keeps a read-only chat inert", () => {
@@ -190,7 +202,7 @@ it("seats a group's members from the inbox on the first frame, then from the ope
       composing: false,
       name: "Team",
       members: [member("b3"), member("b2"), member("b1")],
-      settings: { pathname: "/group-settings", params: { groupId: "group-1" } },
+      opens: { pathname: "/group-settings", params: { groupId: "group-1" } },
     });
   });
   expect(seats()?.getAttribute("data-members")).toBe("b3,b2,b1");
@@ -206,7 +218,7 @@ it("keeps the inbox's seats while the open chat hasn't loaded its members", () =
       status: undefined,
       composing: false,
       name: "Team",
-      settings: null,
+      opens: null,
     });
   });
   expect(seats()?.getAttribute("data-members")).toBe("b1");

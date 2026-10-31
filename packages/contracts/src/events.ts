@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema, LoginFieldLabels } from "./bot-secrets.js";
-import { Id } from "./ids.js";
+import { Id, ThinkingLevelSchema } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
 
 export const ProductEventType = z.enum([
@@ -94,6 +94,16 @@ const ChartBlock = z
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
+/** The settings a bot can change on itself from chat. */
+export const BotSettingsValuesSchema = z.object({
+  modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
+  modelId: z.string().trim().min(1).max(200).nullable().optional(),
+  thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+  autoSpeak: z.boolean().optional(),
+  voiceId: z.string().max(120).nullable().optional(),
+});
+export type BotSettingsValues = z.infer<typeof BotSettingsValuesSchema>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -113,6 +123,10 @@ export const MessageBlock = z.discriminatedUnion("kind", [
         undoVersionId: Id.optional(),
       })
       .optional(),
+    /** A settings change made from chat; undo writes `before` back while `after` still holds. */
+    settingsUpdate: z
+      .object({ botId: Id, before: BotSettingsValuesSchema, after: BotSettingsValuesSchema })
+      .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
@@ -130,6 +144,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answer: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** A login the user used for this run only instead of saving it. */
+    remembered: z.literal(false).optional(),
     actions: z
       .array(
         z.object({
@@ -227,7 +243,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("child_bot"),
     botId: z.string(),
     name: z.string(),
-    title: z.string().optional(),
     status: z.enum(["created", "archived", "deleted"]),
   }),
   z.object({
@@ -273,7 +288,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("import_setup"),
     items: z.array(AgentImportSetupItemSchema),
-    /** Set by Undo, which also empties `items`; the checklist is then hidden. */
+    /** Set on checklists an earlier Undo retired, with `items` emptied; it is then hidden. */
     undone: z.boolean().optional(),
   }),
   z.object({

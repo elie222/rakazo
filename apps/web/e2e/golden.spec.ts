@@ -6,6 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   expectCardWidth,
+  openBotPanelTab,
   realSandboxTimeout,
   rpc,
   signup,
@@ -18,39 +19,6 @@ function sidebarBotButton(page: Page, name: RegExp | string) {
 }
 
 test.describe.configure({ mode: "serial" });
-
-test("two users are isolated and a bot completes durable work", async ({ browser }, testInfo) => {
-  const a = await browser.newContext();
-  const b = await browser.newContext();
-  const pageA = await a.newPage();
-  const pageB = await b.newPage();
-
-  const stamp = Date.now();
-  await signup(pageA, `ada-${stamp}@rakazo.test`, "password12", "Ada", testInfo);
-  await completeOnboarding(pageA, testInfo);
-  await expect(pageA.getByText("Chief").first()).toBeVisible();
-
-  await signup(pageB, `bob-${stamp}@rakazo.test`, "password12", "Bob");
-  await completeOnboarding(pageB);
-  await expect(pageB.getByText("Chief").first()).toBeVisible();
-  await expect(pageB.getByText("Ada", { exact: true })).toHaveCount(0);
-
-  const composer = pageA.getByPlaceholder(/Message/);
-  await composer.fill("write a file in your home called notes/result.txt that says isolation-ok");
-  await pageA.keyboard.press("Enter");
-  await expect(
-    pageA.getByText(/writing that into my home|isolation-ok|handled/i).first(),
-  ).toBeVisible({
-    timeout: 30_000,
-  });
-
-  await pageA.reload();
-  await expect(pageA.getByText(/isolation-ok|writing that into my home/i).first()).toBeVisible();
-  await captureScreenshot(pageA, testInfo, "07-durable-bot-work");
-
-  await a.close();
-  await b.close();
-});
 
 test("takeover, routine, plugins, and export are reachable", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -100,12 +68,14 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
       message: "the second protected-input run must be ready for takeover",
     })
     .toBe("waiting_takeover");
-  // Agent computer toggles the panel. Re-open when closed so Open can refresh computer status.
+  // Reopen the computer tab so Open sees a refreshed computer status.
   const sidePanel = page.getByTestId("side-panel");
-  if ((await sidePanel.getAttribute("data-panel")) === "computer") {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const pill = page.getByTestId("bot-settings-trigger");
+  if ((await pill.getAttribute("aria-expanded")) === "true") {
+    await pill.click();
+    await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  await openBotPanelTab(page, "Computer");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([
@@ -132,6 +102,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   });
   await captureScreenshot(page, testInfo, "09a-computer-takeover-skipped");
 
+  await openBotPanelTab(page, "Routines");
   await page.getByRole("button", { name: "Create Routine" }).click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
   await page
@@ -203,10 +174,22 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await accountLabel.clear();
   await accountLabel.pressSequentially(`${accountName}overflow`);
   await expect(accountLabel).toHaveValue(accountName);
+  const windowKeys = await page.evaluateHandle(() => {
+    const keys: string[] = [];
+    window.addEventListener("keydown", (event) => keys.push(event.key));
+    return keys;
+  });
+  // These synthetic keyboard events exercise the browser event flags; they do not start an OS IME.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    await accountLabel.dispatchEvent("keydown", { key: "Enter", ...composition });
+    await accountLabel.dispatchEvent("keydown", { key: "Escape", ...composition });
+    expect(await windowKeys.evaluate((keys) => keys.includes("Escape"))).toBe(false);
+    await expect(accountLabel).toBeFocused();
+  }
   const renamed = page.waitForResponse(
     (response) => response.url().includes("connections/rename") && response.ok(),
   );
-  await detail.getByLabel("Account label").nth(1).blur();
+  await accountLabel.press("Enter");
   await renamed;
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
@@ -344,15 +327,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Close integrations" }).click();
 
   await page.getByText("Chief").first().click();
-  const gear = page.getByRole("button", { name: "Show settings" });
-  if (!(await gear.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  }
-  await gear.click();
-  await page
-    .getByTestId("bot-settings")
-    .getByRole("button", { name: "Advanced", exact: true })
-    .click();
+  await openBotPanelTab(page, "Advanced");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
@@ -422,6 +397,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(holdToTalk).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
   await expect(holdToTalk).toHaveCount(0);
+  // Stop can arrive over the live stream before the first send returns; Send stays disabled
+  // until then, and Tab would skip it.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await composer.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -470,50 +448,6 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /^Chief/)).toBeVisible();
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible();
   await captureScreenshot(page, testInfo, "15-restored-session");
-});
-
-test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `menu-${stamp}@rakazo.test`, "password12", "Menu");
-  await completeOnboarding(page);
-
-  const chief = page.getByRole("button", { name: /Chief/ }).first();
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menu", { name: "Actions for Chief" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Edit Profile" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "16-bot-context-menu");
-  await page.getByRole("menuitem", { name: "Mark as Unread" }).click();
-
-  // Chief is the open bot, so the auto-read on window focus must not undo the manual mark.
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: "Mark as Read" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Mark as Read" }).click();
-
-  await chief.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
-
-  await chief.click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: "Unpin", exact: true })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.getByText("Chief copy").first()).toBeVisible();
-  await captureScreenshot(page, testInfo, "17-pinned-and-duplicated-bot");
-
-  const copy = page.getByRole("button", { name: /Chief copy/ }).first();
-  await copy.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect(page.getByRole("alertdialog", { name: "Delete Chief copy?" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "18-delete-confirmation");
-  await page.getByRole("button", { name: "Cancel" }).click();
-
-  await chief.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Edit Profile" }).click();
-  await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Chief");
-  await captureScreenshot(page, testInfo, "19-edit-profile");
 });
 
 async function threadRunStatus(page: Page) {

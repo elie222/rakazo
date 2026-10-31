@@ -79,7 +79,6 @@ describe("spawned bot creation", () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       thread: { id: "thread-1" },
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -109,7 +108,7 @@ describe("spawned bot creation", () => {
         runId: "run-retry",
         spawnKey: "tool-call-1",
         name: " Scout ",
-        title: "Ignored on a retry",
+        description: "Ignored on a retry",
         prompt: "Do not enqueue this twice",
       },
     );
@@ -128,7 +127,6 @@ describe("spawned bot creation", () => {
       duplicate: true,
       botId: "child-1",
       name: "Scout",
-      title: "Venue researcher",
       threadId: "thread-1",
     });
     expect(enqueue).toHaveBeenCalledOnce();
@@ -138,7 +136,6 @@ describe("spawned bot creation", () => {
     const createBot = vi.fn().mockResolvedValue({
       id: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
@@ -180,7 +177,6 @@ describe("spawned bot creation", () => {
       ok: true,
       botId: "child-2",
       name: "Painter",
-      title: "",
       threadId: "thread-2",
     });
     createReposSpy.mockRestore();
@@ -385,7 +381,6 @@ describe("destroyBot", () => {
     const createDeletion = vi.fn();
     const deleteBot = vi.fn();
     const removeArtifact = vi.fn();
-    const within = vi.fn();
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
         $queryRaw: vi.fn().mockResolvedValue([]),
@@ -420,11 +415,10 @@ describe("destroyBot", () => {
         archivedAt: null,
       },
       context,
-      { deleteMemories: false, within },
+      { deleteMemories: false },
     );
 
     expect(transaction).toHaveBeenCalledOnce();
-    expect(within).not.toHaveBeenCalled();
     expect(createDeletion).not.toHaveBeenCalled();
     expect(deleteBot).not.toHaveBeenCalled();
     expect(removeArtifact).not.toHaveBeenCalled();
@@ -486,7 +480,12 @@ describe("destroyBot", () => {
     );
 
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
   });
 
@@ -495,7 +494,8 @@ describe("destroyBot", () => {
     const deleteMemberships = vi.fn().mockResolvedValue({ count: 1 });
     const cancel = vi.fn().mockResolvedValue(undefined);
     const releaseScreen = vi.fn().mockResolvedValue(undefined);
-    const cancelRuns = vi.fn().mockResolvedValue({ count: 1 });
+    // finished-run ended after the read, so the conditional cancel leaves it out.
+    const cancelRuns = vi.fn().mockResolvedValue([{ id: "group-run" }]);
     const cancelAttempts = vi.fn().mockResolvedValue({ count: 1 });
     const cancelTasks = vi.fn().mockResolvedValue({ count: 1 });
     const deleteExecutionLeases = vi.fn().mockResolvedValue({ count: 1 });
@@ -509,6 +509,14 @@ describe("destroyBot", () => {
         botId: "bot-2",
         bot: {
           computer: { homeKey: "team-home", kind: "fake", providerRef: "screen-1" },
+        },
+      },
+      {
+        id: "finished-run",
+        taskId: "finished-task",
+        botId: "bot-3",
+        bot: {
+          computer: { homeKey: "other-home", kind: "fake", providerRef: "screen-3" },
         },
       },
     ]);
@@ -550,7 +558,7 @@ describe("destroyBot", () => {
         },
         run: {
           findMany: findRuns,
-          updateMany: cancelRuns,
+          updateManyAndReturn: cancelRuns,
         },
         attempt: { updateMany: cancelAttempts },
         task: { updateMany: cancelTasks },
@@ -615,13 +623,17 @@ describe("destroyBot", () => {
       }),
     );
     expect(cancelRuns).toHaveBeenCalledWith({
-      where: { id: { in: ["group-run"] } },
+      where: {
+        id: { in: ["group-run", "finished-run"] },
+        status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+      },
       data: {
         status: "cancelled",
         completedAt: expect.any(Date),
         leaseOwner: null,
         leaseExpiresAt: null,
       },
+      select: { id: true },
     });
     expect(cancelAttempts).toHaveBeenCalledWith({
       where: { runId: { in: ["group-run"] }, status: "running" },
@@ -644,7 +656,8 @@ describe("destroyBot", () => {
         executionLeaseExpiresAt: null,
       },
     });
-    expect(cancel).toHaveBeenCalledWith("run:group-run");
+    expect(cancel.mock.calls).toEqual([["run:group-run"]]);
+    expect(releaseScreen).toHaveBeenCalledTimes(1);
     expect(releaseScreen).toHaveBeenCalledWith(
       { id: "screen-1", botId: "team-home", kind: "fake", providerRef: "screen-1" },
       expect.objectContaining({
@@ -2045,7 +2058,12 @@ describe("archiveBot", () => {
     expect(groupCleanup.chatGroupMember.deleteMany).not.toHaveBeenCalled();
     // The archived bot's cancelled run never reads a waiting one-time answer.
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: { OR: [{ userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" }] },
+      where: {
+        OR: [
+          { userId: "user-1", spaceId: "workspace-1", kind: "run-secret:run-1" },
+          { userId: "user-1", spaceId: "workspace-1", kind: { startsWith: "run-login:run-1:" } },
+        ],
+      },
     });
     expect(cancel).toHaveBeenCalledWith("run:run-1");
   });
@@ -2075,6 +2093,9 @@ describe("archiveBot", () => {
     const prisma = {
       computer: {
         findUnique: vi.fn().mockResolvedValue(dedicated),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         update: updateComputer,
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -2132,6 +2153,9 @@ describe("archiveBot", () => {
     const prisma = {
       computer: {
         findUnique: vi.fn().mockResolvedValueOnce(booting).mockResolvedValueOnce(running),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         updateMany,
       },
       run: { findMany: vi.fn().mockResolvedValue([]) },
@@ -2179,7 +2203,13 @@ describe("archiveBot", () => {
       const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
       Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
       const prisma = {
-        computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
+        computer: {
+          findUnique: vi.fn().mockResolvedValue(computer),
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
+          ...updates,
+        },
         run: { findMany: vi.fn().mockResolvedValue([]) },
         routine: { findMany: vi.fn().mockResolvedValue([]) },
         $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),

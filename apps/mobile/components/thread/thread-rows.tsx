@@ -43,15 +43,14 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
-      answer: (message, answer, fields, dismiss) =>
-        rowActionsRef.current.answer(message, answer, fields, dismiss),
+      answer: (message, answer, fields, dismiss, remember) =>
+        rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
-      togglePeerReplies: (id) => rowActionsRef.current.togglePeerReplies(id),
       openPeerChat: (peer) => rowActionsRef.current.openPeerChat(peer),
       layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
@@ -101,8 +100,7 @@ export function useThreadRows({
   highlightedMessageId: string | null;
 }) {
   const { t, locale } = useI18n();
-  const { showBotSenderName, peerTranscript, reactionView, expandedPeerMarkers } = transcript;
-  const visibleMessages = reactionView.visibleMessages;
+  const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
@@ -173,13 +171,7 @@ export function useThreadRows({
           )}
           messageReactions={messageReactions}
           mentions={reactionView.mentions.get(message.id)}
-          peerReplies={
-            peerTranscript.folded.has(message.id)
-              ? expandedPeerMarkers.has(message.id)
-                ? "expanded"
-                : "collapsed"
-              : undefined
-          }
+          peerExchange={exchanges.lines.get(message.id)}
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityAvatarSet={activityBot?.avatarSet}
@@ -201,8 +193,7 @@ export function useThreadRows({
       mentionBots,
       displayName,
       reactionView,
-      peerTranscript,
-      expandedPeerMarkers,
+      exchanges,
       inGroup,
       botId,
       groupId,

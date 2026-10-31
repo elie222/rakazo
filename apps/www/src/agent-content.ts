@@ -8,7 +8,7 @@ import {
   getHomeCopy,
 } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
-import { APP_URL } from "./site";
+import { APP_URL, GITHUB_URL, PLUGIN_SUBMISSIONS_URL } from "./site";
 
 export const AGENT_DISCOVERY_LINKS =
   '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
@@ -94,7 +94,7 @@ Rakazo is an open source Grok Bot alternative for persistent AI teammates: bots 
 
 The project started from a simple premise: useful agents should be understandable and controllable by the people who run them. Rakazo keeps routines in readable Markdown, supports multiple model providers, records actions in an audit log, and lets operators keep model keys, browser sessions, and deployment infrastructure under their own control.
 
-Rakazo targets the web, macOS, Linux, iOS, and Android. The source is available under the Apache-2.0 license and accepts public issues and contributions on GitHub. Inbox Zero Inc. maintains the project and offers support at hello@rakazo.com.
+Rakazo targets the web, macOS, Windows, Linux, iOS, and Android. The source is available under the Apache-2.0 license and accepts public issues and contributions on GitHub. Inbox Zero Inc. maintains the project and offers support at hello@rakazo.com.
 
 - [Source code](https://github.com/elie222/rakazo)
 - [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
@@ -179,12 +179,45 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Docs](https://rakazo.com/docs/): getting started, using Rakazo, and self-hosting. Each page has a Markdown version.
 - [Integrations](https://rakazo.com/integrations/): every app a bot can connect to. [Markdown list](https://rakazo.com/integrations.md); each app page has a Markdown version with its actions.
+- [Submit a plugin](https://rakazo.com/plugins/submit/): list a plugin in the Rakazo marketplace. [Markdown with the API](https://rakazo.com/plugins/submit.md).
 - [Blog](https://rakazo.com/blog/)
 - [Releases](https://github.com/elie222/rakazo/releases)
 - [Support](https://rakazo.com/support/)
 - [Privacy](https://rakazo.com/privacy/)
 - [Terms](https://rakazo.com/terms/)
 - [Sitemap](https://rakazo.com/sitemap-index.xml)
+`;
+
+export const PLUGIN_SUBMIT_MARKDOWN = `# Submit a plugin to Rakazo
+
+List a plugin in the Rakazo marketplace. We review every submission and email the result.
+
+The plugin must be a public GitHub repository with a plugin manifest (\`plugin.json\` following [Agent Plugins](https://agent-plugins.org), \`.cursor-plugin/plugin.json\`, or \`.grok-plugin/plugin.json\`) and skills, a hosted MCP server, or both.
+
+[Build a plugin](https://rakazo.com/docs/build-a-plugin/) starts with a hosted MCP server and covers configuration, testing, and marketplace submission. Copy the [MCP server example](${GITHUB_URL}/tree/main/examples/plugins/mcp-server) for hosted tools, or the [hello world example](${GITHUB_URL}/tree/main/examples/plugins/hello-world) for skills only.
+
+## Submit with the API
+
+\`POST ${PLUGIN_SUBMISSIONS_URL}\` with a JSON body. No account or key is needed.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| \`email\` | Yes | Where we send the review result |
+| \`name\` | Yes | Plugin name, up to 80 characters |
+| \`website\` | No | https URL |
+| \`logo\` | Yes | https URL of a square SVG or PNG |
+| \`source\` | Yes | Public GitHub repository URL; add \`/tree/main/<folder>\` for a plugin in a folder |
+| \`description\` | Yes | What the plugin does, up to 2000 characters |
+| \`testing\` | Yes | How to try it in Rakazo, up to 4000 characters. Never include real credentials |
+| \`tested\` | Yes | \`true\`: you tested the plugin in Rakazo |
+
+\`\`\`sh
+curl -X POST ${PLUGIN_SUBMISSIONS_URL} \\
+  -H 'content-type: application/json' \\
+  -d '{"email":"you@example.com","name":"Acme","logo":"https://example.com/logo.svg","source":"https://github.com/acme/rakazo-plugin","description":"Search Acme tickets.","testing":"Install it and ask a bot to find ticket 42.","tested":true}'
+\`\`\`
+
+A new submission returns \`201\` with \`{"id","status":"pending"}\`. Resubmitting the same source URL with the same email while it waits updates it and returns \`200\`. Invalid input returns \`400\` with an \`issues\` list naming each field.
 `;
 
 export const NOT_FOUND_MARKDOWN = `# Page not found
@@ -205,6 +238,7 @@ const MARKDOWN_DOCUMENTS = new Map<string, string>([
   ["/privacy", PRIVACY_MARKDOWN],
   ["/self-hosted-ai-agent", SELF_HOST_MARKDOWN],
   ["/support", SUPPORT_MARKDOWN],
+  ["/plugins/submit", PLUGIN_SUBMIT_MARKDOWN],
   ["/alternatives", roundupMarkdown()],
   ...ALTERNATIVES.map((page) => [`/${page.slug}`, alternativeMarkdown(page)] as const),
   ["/terms", TERMS_MARKDOWN],

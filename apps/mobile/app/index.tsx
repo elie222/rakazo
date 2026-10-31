@@ -54,6 +54,7 @@ import {
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { isPaywallShown } from "../lib/billing";
+import type { CreateAction } from "../lib/create-chooser";
 import { createInboxBot } from "../lib/create-inbox-bot";
 import { useHeaderHeightIfAny } from "../lib/floating-header";
 import { useForegroundPoll } from "../lib/foreground-poll";
@@ -73,6 +74,7 @@ import {
   spaceInboxItems,
 } from "../lib/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox-swipe";
+import { mobileLogoAvatarActivity } from "../lib/logo-avatar-activity";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import type { OrganizeTarget } from "../lib/organize-target";
@@ -98,8 +100,8 @@ import { errorText, loadFailureKind } from "../lib/user-error";
 
 /** A row counts as on screen as soon as any of it shows. */
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
-// A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
-const TAGLESS_LIST_WIDTH = 360;
+// A list narrower than this, beside an open chat, uses tighter rows.
+const COMPACT_LIST_WIDTH = 360;
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -484,7 +486,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // An unfolded or tablet window keeps the inbox in a centred column.
   const windowWidth = useWindowDimensions().width;
   const { inboxWidth } = useSplitView();
-  const compactRows = embedded && inboxWidth < TAGLESS_LIST_WIDTH;
+  const compactRows = embedded && inboxWidth < COMPACT_LIST_WIDTH;
   const columnInsets = readableGutters(embedded ? inboxWidth : windowWidth, {
     left: insets.left,
     right: embedded ? 0 : insets.right,
@@ -494,7 +496,25 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const nativeHeader = iosAtLeast(26) && !embedded;
   const headerHeight = useHeaderHeightIfAny();
   const listRef = useRef<FlatList<InboxItem>>(null);
-  const jumpSignals = useMemo(() => listData.map(inboxSignal), [listData]);
+  const jumpSignals = useSyncExternalStore(
+    mobileLogoAvatarActivity.subscribe,
+    useMemo(() => {
+      let previous: ReturnType<typeof inboxSignal>[] = [];
+      return () => {
+        const next = listData.map(inboxSignal);
+        if (
+          next.length !== previous.length ||
+          next.some(
+            (signal, index) =>
+              signal.unread !== previous[index]?.unread ||
+              signal.attention !== previous[index]?.attention,
+          )
+        )
+          previous = next;
+        return previous;
+      };
+    }, [listData]),
+  );
   const jumpKeys = useMemo(() => listData.map(inboxItemKey), [listData]);
   const unreadJump = useUnreadJumpPills({
     signals: jumpSignals,
@@ -642,7 +662,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, [openChat, refreshBots, t]);
 
   const runCreateAction = useCallback(
-    (action: "bot" | "group" | "space") => {
+    (action: CreateAction) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       if (action === "bot") void createQuickBot();
       else if (action === "group") router.push("/new-group");

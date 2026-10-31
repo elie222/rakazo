@@ -11,6 +11,7 @@ import { setCallProviderTranscribe, startCall } from "./call-session";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { available as dictationAvailable } from "./dictation";
 import { useI18n } from "./i18n";
+import { currentSessionGeneration } from "./session";
 import { speakerColorFor } from "./thread-message-text";
 import { errorText } from "./user-error";
 import { speakQueue, speakText } from "./voice";
@@ -191,8 +192,12 @@ export function useThreadVoiceCall({
       : t("Hello, {bot} here.", { bot: botName });
   }
 
-  /** `switchedHere`: the caller asked another bot to put them through, so this bot answers. */
-  async function startVoiceCall(switchedHere = false) {
+  /**
+   * `switchedHere`: the caller asked another bot to put them through, so this bot answers.
+   * `setupSession`: the session the call belongs to. The checks below wait on the server; a
+   * sign-in to another account meanwhile must not start this account's call with the new session.
+   */
+  async function startVoiceCall(switchedHere = false, setupSession = currentSessionGeneration()) {
     if (readOnly) return;
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
@@ -231,12 +236,14 @@ export function useThreadVoiceCall({
         botAvatarSet: mentionBots.find((bot) => bot.id === targetBotId)?.avatarSet,
         transcribe: plan.transcribe,
         greeting: callGreeting(botName, callerName, switchedHere),
+        session: setupSession,
         switchBot: (text) => {
           const target = findSwitchTarget(text, mentionBotsRef.current);
           if (!target || target.id === targetBotId) return undefined;
           return { name: target.name, ring: () => openBotChat(target, true) };
         },
       });
+      if (!startedCallId) return;
       if (plan.kind === "device") {
         void probeProviderTranscribe(loadVoiceStatus)
           .then((enabled) => {
@@ -253,12 +260,13 @@ export function useThreadVoiceCall({
 
   /** Opens another bot's chat in place of this one, ringing it when the switch came from a call. */
   function openBotChat(target: MobileBot, ring: boolean): void {
-    if (ring) ringOnArrival(target.id);
+    if (ring) ringOnArrival(target.id, currentSessionGeneration());
     router.replace({ pathname: "/thread", params: { botId: target.id, name: target.name } });
   }
 
   useEffect(() => {
-    if (botId && takeRingOnArrival(botId)) void startVoiceCall(true);
+    const session = currentSessionGeneration();
+    if (botId && takeRingOnArrival(botId, session)) void startVoiceCall(true, session);
   }, [botId]);
 
   return { startVoiceCall, openBotChat };

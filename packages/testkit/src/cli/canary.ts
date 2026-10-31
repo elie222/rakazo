@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 
 async function main() {
   loadRootEnv();
@@ -12,22 +12,22 @@ async function main() {
   if (
     !process.env.E2B_API_KEY &&
     !process.env.BOAT_API_KEY &&
+    !process.env.BOXD_API_KEY &&
     !process.env.NOVITA_API_KEY &&
     !runOpenRouter
   ) {
     throw new Error(
-      "E2B_API_KEY, BOAT_API_KEY, NOVITA_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
+      "E2B_API_KEY, BOAT_API_KEY, BOXD_API_KEY, NOVITA_API_KEY, or OPENROUTER_API_KEY is required for live provider canaries",
     );
   }
 
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
   let postgres: StartedPostgreSqlContainer | undefined;
   try {
-    if (runOpenRouter) postgres = await new PostgreSqlContainer("postgres:18-alpine").start();
+    if (runOpenRouter) postgres = await startPostgres();
     const env = {
       ...process.env,
-      DATABASE_URL: postgres?.getConnectionUri() ?? "",
-      REALTIME_DATABASE_URL: postgres?.getConnectionUri() ?? "",
+      ...disposableDatabaseEnv(postgres?.getConnectionUri() ?? ""),
       VERIFY_PROVIDERS: "1",
       WAKEUP_DRIVER: "memory",
       AGENT_RUNTIME: "pi",

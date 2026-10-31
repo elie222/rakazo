@@ -45,14 +45,49 @@ MAX_BACKOFF = 300
 DEFAULT_HEARTBEAT_SECONDS = 3 * 60 * 60
 
 # RFC3339 (rsyslog's high-precision default) or the traditional "Oct 22 22:43:54" format.
-SYSLOG = re.compile(r"^(\S+T\S+|[A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d) (\S+) ([^\s\[:]+)(?:\[\d+\])?: (.*)$")
+SYSLOG = re.compile(r"^(\S+T\S+|[A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d) (\S+) ([^\s\[:]+)(?:\[\d+\])?: (.*)$", re.S)
 ACCEPTED = re.compile(r"^Accepted (\S+) for (\S+) from (\S+) port \d+(?: [^\s:]+)?(?:: (\S+) (\S+))?")
 FAILED = re.compile(r"^Failed \S+ for (?:invalid user )?(\S*) from (\S+) port")
 INVALID = re.compile(r"^Invalid user (\S*) from (\S+)")
-SUDO = re.compile(r"^\s*(\S+) : .*?USER=(\S+) ; COMMAND=(.*)$")
+SUDO = re.compile(r"^\s*(\S+) : .*?USER=(\S+) ; COMMAND=(.*)$", re.S)
 AUDIT_HEADER = re.compile(r"\bmsg=audit\((\d+(?:\.\d+)?):(\d+)\)")
 AUDIT_SERIAL = re.compile(rb"\bmsg=audit\([\d.]+:(\d+)\)")
 AUDIT_FIELD = re.compile(r'\b(type|key|exe|comm|auid|uid|name|nametype)=("[^"]*"|\S+)')
+
+
+REDACTED = "[Redacted]"
+EMAIL_CANDIDATE = re.compile(r"\b[A-Z0-9._%+-]+(?:@[A-Z0-9.-]+\.[A-Z]{2,}\b)?", re.I)
+PEM_PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)")
+URL_USERINFO = re.compile(r"([a-z][a-z0-9+.-]*://)[^\s/\"'<>@]+@", re.I)
+QUERY_SECRET = re.compile(r"([?&](?:token|access_token|refresh_token|id_token|code|key|api_key|apikey|secret|password|sig|signature|X-Amz-Signature|auth)=)[^\s&#\"'<>]*", re.I)
+BEARER = re.compile(r"\bBearer\s+[^\s\"',;&]+", re.I)
+SECRET_NAME = r"[A-Za-z0-9_]*(?:password|passwd|secret|token|key|credential|authorization)[A-Za-z0-9_]*"
+SECRET_VALUE = r"""(?:"(?:\\.|[^"\\])*(?:"|$)|'[^']*(?:'|$)|[^\s;"'&]+)"""
+SECRET_ASSIGNMENT = re.compile(r"\b(" + SECRET_NAME + r"\s*[:=]\s*)" + SECRET_VALUE, re.I)
+SECRET_FLAG = re.compile(
+    r"(--[a-z0-9_-]*(?:password|passwd|secret|token|key|credential)[a-z0-9_-]*(?:=|\s+))"
+    + SECRET_VALUE, re.I
+)
+JSON_SECRET_FIELD = re.compile(
+    r'("' + SECRET_NAME + r'"\s*:\s*)"(?:\\.|[^"\\])*(?:"|$)', re.I
+)
+BARE_SECRET = re.compile(
+    r"\b(?:sk-(?:or-v1-)?[A-Za-z0-9_-]{8,}|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+|"
+    r"xox[abprs]-[A-Za-z0-9-]+|AKIA[A-Z0-9]{16}|"
+    r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b"
+)
+
+
+def redact_sensitive_text(text):
+    text = PEM_PRIVATE_KEY.sub(REDACTED, text)
+    text = URL_USERINFO.sub(lambda m: m[1] + REDACTED + "@", text)
+    text = QUERY_SECRET.sub(lambda m: m[1] + REDACTED, text)
+    text = JSON_SECRET_FIELD.sub(lambda m: m[1] + '"' + REDACTED + '"', text)
+    text = BEARER.sub("Bearer " + REDACTED, text)
+    text = SECRET_ASSIGNMENT.sub(lambda m: m[1] + REDACTED, text)
+    text = SECRET_FLAG.sub(lambda m: m[1] + REDACTED, text)
+    text = BARE_SECRET.sub(REDACTED, text)
+    return EMAIL_CANDIDATE.sub(lambda m: REDACTED if "@" in m[0] else m[0], text)
 
 
 def parse_known_keys(text):
@@ -66,7 +101,7 @@ def parse_known_keys(text):
 
 
 def _event(kind, source, host, message, **fields):
-    return {"event": kind, "source": source, "host": host, "message": message[:1000], **fields}
+    return {"event": kind, "source": source, "host": host, "message": redact_sensitive_text(message)[:1000], **fields}
 
 
 def syslog_time(timestamp, now=None):
@@ -110,7 +145,7 @@ def parse_auth_line(line, host, known_keys):
         if sudo := SUDO.match(message):
             user, as_user, command = sudo.groups()
             return _event(
-                "sudo.command", "auth.log", host, message, user=user, as_user=as_user, command=command[:500], **fields
+                "sudo.command", "auth.log", host, message, user=user, as_user=as_user, command=redact_sensitive_text(command)[:500], **fields
             )
         return None
     if program in IDENTITY_PROGRAMS:

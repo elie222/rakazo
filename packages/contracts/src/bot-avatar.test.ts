@@ -62,7 +62,7 @@ describe("per-bot avatar sets", () => {
     expect(resolveBotAvatarSet("future-set")).toBe("organic");
     expect(resolveBotAvatarSet("organic")).toBe("organic");
     expect(resolveBotAvatarSet("rakazo")).toBe("rakazo");
-    expect(DEFAULT_NEW_BOT_AVATAR_SET).toBe("rakazo");
+    expect(DEFAULT_NEW_BOT_AVATAR_SET).toBe("organic");
   });
 
   it("accepts an explicit set on create/update and rejects unrecognised writes", () => {

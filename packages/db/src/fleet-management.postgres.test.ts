@@ -102,7 +102,7 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
             spaceId: owner.spaceId,
             threadId: thread.id,
             botId: bot.id,
-            expectedModel: baseline,
+            expectedSettings: baseline,
             data: { modelProvider: "scripted", modelId: "scripted", thinkingLevel: null },
             emitBotUpdated: true,
           }),

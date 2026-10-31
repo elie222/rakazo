@@ -77,6 +77,7 @@ describe("generateSecretValue", () => {
 describe("generate_secret", () => {
   const savedPassword = async (db: ReturnType<typeof fakeDatabase>) => {
     const fill = await resolveLoginFill({
+      runId: "run-1",
       prisma: db.prisma,
       secretStore,
       scope,
@@ -106,6 +107,7 @@ describe("generate_secret", () => {
     expect(db.rows()[0]!.ciphertext).not.toContain(password);
     expect(
       await resolveLoginFill({
+        runId: "run-1",
         prisma: db.prisma,
         secretStore,
         scope,

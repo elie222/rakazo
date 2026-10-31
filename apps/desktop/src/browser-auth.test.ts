@@ -84,7 +84,10 @@ describe("system browser authentication", () => {
       const localCallback = callback.replace("127.0.0.1", "localhost");
       authorization.searchParams.set("redirect_uri", localCallback);
       const listen = Server.prototype.listen;
-      vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
+      vi.spyOn(Server.prototype, "listen").mockImplementation(function (
+        this: Server,
+        ...args: unknown[]
+      ) {
         if (args[1] === unavailable) {
           queueMicrotask(() =>
             this.emit("error", Object.assign(new Error("Unavailable"), { code: "EADDRNOTAVAIL" })),
@@ -131,7 +134,10 @@ describe("system browser authentication", () => {
     const { authorization, callback, options } = await setup();
     authorization.searchParams.set("redirect_uri", callback.replace("127.0.0.1", "localhost"));
     const listen = Server.prototype.listen;
-    vi.spyOn(Server.prototype, "listen").mockImplementation(function (this: Server, ...args) {
+    vi.spyOn(Server.prototype, "listen").mockImplementation(function (
+      this: Server,
+      ...args: unknown[]
+    ) {
       if (args[1] === "127.0.0.1") {
         queueMicrotask(() =>
           this.emit("error", Object.assign(new Error("In use"), { code: "EADDRINUSE" })),

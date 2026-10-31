@@ -4,6 +4,7 @@ export * from "./agent-import-settings.js";
 export * from "./ai-consent.js";
 export * from "./artifact-store-factory.js";
 export * from "./artifacts.js";
+export * from "./audit-forwarding.js";
 export * from "./auto-review.js";
 export * from "./auto-review-factory.js";
 export * from "./aws-kms-key-provider.js";
@@ -22,10 +23,12 @@ export {
   SPACE_VAULT_NOT_IN_USE,
   storeBotSecret,
 } from "./bot-secrets.js";
+export * from "./boxd-sandbox.js";
 export * from "./browser-emulator.js";
 export * from "./browser-provider-factory.js";
 export * from "./browser-tools.js";
 export * from "./builtin-skills.js";
+export * from "./builtin-tool-bridge.js";
 export * from "./builtin-tools.js";
 export { settleCallRequest } from "./call-request.js";
 export * from "./cartesia-voice.js";
@@ -88,6 +91,7 @@ export * from "./keenable-web.js";
 export * from "./key-provider-factory.js";
 export * from "./keyless-http-web.js";
 export * from "./kubernetes-sandbox.js";
+export * from "./macos-voice.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
 export * from "./mcp-oauth.js";
@@ -148,6 +152,7 @@ export * from "./resend-email.js";
 export * from "./routine-watch.js";
 export * from "./run-secret.js";
 export * from "./run-wakeup.js";
+export * from "./sandbox-allowance.js";
 export * from "./sandbox-errors.js";
 export * from "./sandbox-factory.js";
 export * from "./sandbox-provider-env.js";

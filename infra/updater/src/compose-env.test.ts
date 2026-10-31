@@ -84,8 +84,7 @@ const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
-    // adapters/auto-review.ts and pi-local-provider.ts read these through small helpers.
-    "RAKAZO_AUTO_REVIEW",
+    // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",
     // The OTLP exporter reads its standard settings itself.

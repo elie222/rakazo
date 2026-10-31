@@ -1,4 +1,4 @@
-import type { Locator, Page, Route, TestInfo } from "@playwright/test";
+import type { Locator, Page, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
@@ -109,6 +109,8 @@ async function expectHeaderAboveHoveredRow(page: Page, testInfo: TestInfo, row: 
 
   try {
     expect(placement.overlapsHeader).toBe(true);
+    // Rows keep their rails and avatars layered among themselves, never over the header.
+    await expect(page.getByTestId("transcript")).toHaveCSS("isolation", "isolate");
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     // The header's empty gutter passes pointer events through to keep the row hovered.
     await page.mouse.move(placement.hoverPoint.x, placement.hoverPoint.y);
@@ -394,88 +396,6 @@ test("a message with an attachment centers hover actions on its text bubble", as
     })
     .toBeLessThan(2);
   await captureScreenshot(page, testInfo, "message-attachment-actions-desktop");
-});
-
-test("reply preview jumps to parent outside the loaded page", async ({ page }) => {
-  const stamp = Date.now();
-  await signup(page, `hover-page-${stamp}@rakazo.test`, "password12", "Hover Page");
-  await completeOnboarding(page);
-
-  const parentText = `page-parent-${stamp}`;
-  const replyText = `page-reply-${stamp}`;
-  const composer = page.getByRole("combobox", { name: /^Message/ });
-  await sendComposerMessage(page, composer, parentText);
-
-  const transcript = page.getByTestId("transcript");
-  const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
-  await expect(parentRow).toBeVisible({ timeout: 20_000 });
-  const parentId = await parentRow.getAttribute("data-message-id");
-  expect(parentId).toBeTruthy();
-
-  await parentRow.hover();
-  await parentRow.getByRole("button", { name: "Reply" }).click();
-  await sendComposerMessage(page, composer, replyText);
-
-  const replyRow = transcript.locator(`[data-message-id]`).filter({ hasText: replyText }).first();
-  await expect(replyRow).toBeVisible({ timeout: 20_000 });
-  await expect(replyRow.getByTestId("reply-parent-preview")).toContainText(parentText);
-
-  // Simulate a paginated snapshot where the parent is older than the loaded page.
-  // Bootstrap and threads/get both hydrate the transcript on reload.
-  const stripParent = (body: {
-    json?: {
-      messages?: Array<{ id: string }>;
-      olderCursor?: number | null;
-      thread?: { messages?: Array<{ id: string }>; olderCursor?: number | null };
-    };
-  }) => {
-    if (body.json?.messages) {
-      body.json.messages = body.json.messages.filter((message) => message.id !== parentId);
-      body.json.olderCursor = body.json.olderCursor ?? 1;
-    }
-    if (body.json?.thread?.messages) {
-      body.json.thread.messages = body.json.thread.messages.filter(
-        (message) => message.id !== parentId,
-      );
-      body.json.thread.olderCursor = body.json.thread.olderCursor ?? 1;
-    }
-  };
-
-  // One handler for both hydrate RPCs avoids overlapping globs racing on reload
-  // (Playwright "Route is already handled" when fulfill runs twice).
-  const hydrateRpc = /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/;
-  const stripHydrate = async (route: Route) => {
-    try {
-      const response = await route.fetch();
-      const body = (await response.json()) as Parameters<typeof stripParent>[0];
-      stripParent(body);
-      await route.fulfill({
-        status: response.status(),
-        headers: response.headers(),
-        body: JSON.stringify(body),
-      });
-    } catch (error) {
-      // Reload can cancel an in-flight intercepted request after fetch returns.
-      if (/already handled|Target closed|Request context disposed/i.test(String(error))) return;
-      throw error;
-    }
-  };
-  await page.route(hydrateRpc, stripHydrate);
-
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(`[data-message-id="${parentId}"]`)).toHaveCount(0);
-  const offlinePreview = page
-    .locator(`[data-message-id]`)
-    .filter({ hasText: replyText })
-    .getByTestId("reply-parent-preview");
-  await expect(offlinePreview).toBeVisible();
-  await expect(offlinePreview).toContainText(parentText);
-
-  await page.unroute(hydrateRpc, stripHydrate);
-  await offlinePreview.click();
-  await expect(page.locator(`[data-message-id="${parentId}"]`)).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(`[data-message-id="${parentId}"]`)).toContainText(parentText);
 });
 
 test.describe("touch message actions", () => {

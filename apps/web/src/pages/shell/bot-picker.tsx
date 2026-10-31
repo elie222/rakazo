@@ -31,9 +31,7 @@ export function BotCreatePicker({
   const needle = query.trim().toLowerCase();
   const matched = useMemo(() => {
     if (!needle) return bots;
-    return bots.filter(
-      (bot) => bot.name.toLowerCase().includes(needle) || bot.title.toLowerCase().includes(needle),
-    );
+    return bots.filter((bot) => bot.name.toLowerCase().includes(needle));
   }, [bots, needle]);
   const showCreate =
     !needle ||

@@ -80,8 +80,8 @@ export function isRunWaitingOnUser(status: string | null | undefined): boolean {
   return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
 }
 
-export function isTerminal(status: RunStatus): boolean {
-  return TERMINAL.includes(status);
+export function isTerminal(status: string): boolean {
+  return TERMINAL.includes(status as RunStatus);
 }
 
 /** Prompt of a run created to answer messages that waited behind another turn. */
@@ -95,6 +95,19 @@ export function runReadsThreadHistory(trigger: string | null | undefined): boole
 /** Whether a run's turn is part of the thread's conversation and may take user steering. */
 export function isConversationalRun(trigger: string | null | undefined): boolean {
   return !NON_CONVERSATIONAL_RUN_TRIGGERS.has(trigger ?? "");
+}
+
+/**
+ * A takeover wait holds only a conversational message it can take as steering. Any other
+ * message passes it and gets its own run; the dispatcher then ends a wait the user has not
+ * acted on so that run can start. `steerable` is false for messages that never steer a run,
+ * such as webhook deliveries.
+ */
+export function messageBypassesTakeoverWait(
+  run: { status?: string; trigger?: string | null },
+  steerable = true,
+): boolean {
+  return run.status === "waiting_takeover" && !(steerable && isConversationalRun(run.trigger));
 }
 
 export function nextFence(current: number): number {

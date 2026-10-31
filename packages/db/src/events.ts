@@ -19,11 +19,11 @@ import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
-  composioBatchActions,
   instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  messageBypassesTakeoverWait,
   messageReaction,
   messagingChannelId,
   normalizeRunError,
@@ -36,7 +36,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
-import { saveApprovalRule } from "./approval-settings.js";
+import { saveApprovalRule, storedBatchActions } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -44,6 +44,7 @@ import {
   CrossSpaceCommunicationBlockedError,
   crossSpaceCommunicationAllowed,
 } from "./cross-space-communication.js";
+import type { RunLease } from "./messages.js";
 import {
   assertRunCanWriteHistory,
   assertRunIsCancelled,
@@ -78,8 +79,8 @@ export interface AppendEventInput {
   runId?: string;
   /** Terminal echo after the run is already cancelled. Every other event stays rejected. */
   allowCancelledRun?: boolean;
-  /** Internal attempt fence for transient activity; never serialized to clients. */
-  activityLease?: { owner: string; fence: number };
+  /** The executing attempt's lease; a superseded attempt cannot write. Never serialized. */
+  lease?: RunLease;
 }
 
 /** Exact transient lifecycle payloads only: unrelated thread metadata must survive. */
@@ -104,7 +105,7 @@ export interface ThreadEvents {
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
-  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
+  pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
@@ -274,6 +275,8 @@ export interface AnswerRunInput {
   fields?: LoginFieldInput[];
   /** A login card's answer from apps that predate `fields`; `answer` carries its password. */
   username?: string;
+  /** Only for a login card: false uses the login for this run only instead of saving it. */
+  remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
 }
@@ -322,6 +325,8 @@ export interface RunSecretWriter {
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
+    /** False for a login card answered with "Save to Vault" off. */
+    remember: boolean;
     runId: string;
     userId: string;
     spaceId: string;
@@ -382,18 +387,9 @@ export async function clearThread(
       select: { id: true, taskId: true, userId: true, spaceId: true },
     });
     const now = new Date();
-    const runIds = activeRuns.map((run) => run.id);
-    await cancelRunsInTransaction(tx, activeRuns, now);
+    const runIds = (await cancelRunsInTransaction(tx, activeRuns, now)).map((run) => run.id);
     // Expire as tombstones so a still-open provider screen claim cannot reset fencing to 1.
     await expireComputerExecutionLeases(tx, { runId: { in: runIds } });
-    await tx.computer.updateMany({
-      where: { executionRunId: { in: runIds } },
-      data: {
-        executionRunId: null,
-        executionBotId: null,
-        executionLeaseExpiresAt: null,
-      },
-    });
     await tx.message.deleteMany({ where: { threadId: input.threadId } });
     await tx.event.deleteMany({ where: { threadId: input.threadId } });
     if (thread.nextMessageSeq > 0) {
@@ -437,6 +433,27 @@ export async function clearThread(
     };
   });
   await notifyRealtime(realtime, committed.event.threadId, committed.event.seq);
+  // Legacy execution bindings point at runs of pre-lease releases, which kept writing
+  // Computer.executionRunId. Clearing them inside the transaction reaches for the
+  // computer row while holding the thread row — the inverted half of a cycle with a
+  // concurrent finalizeComputerControlRelease, which locks the computer first and the
+  // thread second. This statement holds no other row, so it can wait out any holder.
+  // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
+  // to clear, and must not report the clear itself as failed.
+  if (committed.cancelledRunIds.length > 0) {
+    await withTransactionRetry(() =>
+      prisma.computer.updateMany({
+        where: { executionRunId: { in: committed.cancelledRunIds } },
+        data: {
+          executionRunId: null,
+          executionBotId: null,
+          executionLeaseExpiresAt: null,
+        },
+      }),
+    ).catch((error: unknown) => {
+      getLogger().error("legacy computer binding sweep after thread clear", error);
+    });
+  }
   return {
     event: mapProductEvent(committed.event),
     cancelledRunIds: committed.cancelledRunIds,
@@ -511,12 +528,15 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true },
+              select: { id: true, taskId: true, trigger: true, status: true },
             })
           : [];
+      const holdingRuns = activeRuns.filter(
+        (run) => !messageBypassesTakeoverWait(run, input.trigger !== "webhook"),
+      );
       // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
-        activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
+        holdingRuns.find((run) => isConversationalRun(run.trigger)) ?? holdingRuns[0] ?? null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -618,6 +638,14 @@ export async function sendUserMessage(
 }
 
 export async function claimSteering(
+  prisma: PrismaClient,
+  input: ClaimSteeringInput,
+): Promise<ClaimedSteeringMessage[]> {
+  // Runs claim before every model turn, so a briefly saturated pool must not fail the run.
+  return withTransactionRetry(() => claimSteeringOnce(prisma, input));
+}
+
+async function claimSteeringOnce(
   prisma: PrismaClient,
   input: ClaimSteeringInput,
 ): Promise<ClaimedSteeringMessage[]> {
@@ -831,9 +859,15 @@ async function commitAnswerRunInput(
   const login = loginAsk ? loginAnswerValue(pendingAsk.loginFields, input) : undefined;
   // Login fields belong only to a login card, which cannot be saved without them.
   if (loginAsk ? !login : input.username !== undefined || input.fields !== undefined) return null;
+  if (input.remember !== undefined && !loginAsk) return null;
   if (secretAsk && input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH)
     throw new AnswerTooLongError();
-  let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
+  let approvalEffect: {
+    id: string;
+    kind: string;
+    request: Prisma.JsonValue;
+    batchActions: Prisma.JsonValue;
+  } | null = null;
   let editedInstructions: string | undefined;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
@@ -866,7 +900,7 @@ async function commitAnswerRunInput(
     if (!approvalEffect) return null;
     if (pendingAsk.instructionUpdate) {
       if (
-        approvalEffect.kind !== "propose_instructions_update" ||
+        approvalEffect.kind !== "update_bot" ||
         pendingAsk.instructionUpdate.botId !== run.botId ||
         (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
         run.userId !== input.answeredByUserId
@@ -942,11 +976,6 @@ async function commitAnswerRunInput(
           },
         });
       }
-      if (approvalAnswer === "deny")
-        await tx.bot.updateMany({
-          where: { id: run.botId, pendingInstructionsRunId: input.runId },
-          data: { pendingInstructionsRunId: null },
-        });
     }
     const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
@@ -954,10 +983,9 @@ async function commitAnswerRunInput(
       data: { status: allowed ? "approved" : "denied" },
     });
     // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
-    // Composio batch allows each action in it, never every action the batch tool can run.
+    // batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
-    const batch = composioBatchActions(approvalEffect!.kind, approvalEffect!.request);
-    const tools = batch ? (batch.complete ? batch.slugs : []) : [approvalEffect!.kind];
+    const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
       // Saved where the member's confirmations apply in this Space: the account or its override.
       for (const tool of site ? [site] : tools) {
@@ -984,6 +1012,7 @@ async function commitAnswerRunInput(
     await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
+      remember: input.remember !== false,
       runId: input.runId,
       userId: run.userId,
       spaceId: input.spaceId,
@@ -1026,6 +1055,7 @@ async function commitAnswerRunInput(
           status: "answered" as const,
           answer: recordedAnswer,
           ...(dismissed ? { dismissed: true as const } : {}),
+          ...(input.remember === false ? { remembered: false as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
@@ -1324,9 +1354,17 @@ export async function pauseRunForTakeover(
   prisma: PrismaClient,
   input: PauseRunForTakeover,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<boolean | { continuationRunId: string }> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Release and pause both lock computer, then thread, then run.
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { checkpoint: true },
+    });
+    const released = run?.checkpoint === "takeover" || run?.checkpoint === "takeover-skipped";
     const paused = await tx.run.updateMany({
       where: {
         id: input.runId,
@@ -1338,10 +1376,10 @@ export async function pauseRunForTakeover(
         leaseFence: input.leaseFence,
       },
       data: {
-        status: "waiting_takeover",
+        status: released ? "queued" : "waiting_takeover",
         leaseOwner: null,
         leaseExpiresAt: null,
-        checkpoint: null,
+        checkpoint: released ? run.checkpoint : null,
       },
     });
     if (paused.count !== 1) return null;
@@ -1353,14 +1391,21 @@ export async function pauseRunForTakeover(
         fence: input.leaseFence,
         status: "running",
       },
-      data: { status: "waiting_takeover", finishedAt: new Date() },
+      data: { status: released ? "interrupted" : "waiting_takeover", finishedAt: new Date() },
     });
     if (attempt.count !== 1) throw new Error("Active run attempt was not available to pause");
 
+    // A release can finish while the runtime is still preparing its pause. Keep its
+    // checkpoint and continue instead of recreating a wait with no control lease.
+    if (released) {
+      const seq = await settleReleasedTakeoverCardsInTransaction(tx, {
+        ...input,
+        reason: run.checkpoint === "takeover-skipped" ? "skipped" : "done",
+      });
+      return { threadId: input.threadId, seq, continuationRunId: input.runId };
+    }
+
     const now = new Date();
-    // Serialize with concurrent computer/takeover grants that mutate the same row.
-    await tx.$queryRaw`
-      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
     const computer = await tx.computer.findFirst({
       where: { id: input.computerId, spaceId: input.spaceId },
       select: {
@@ -1417,12 +1462,14 @@ export async function pauseRunForTakeover(
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },
     });
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId: null };
   });
 
   if (!committed) return false;
-  await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return true;
+  if (committed.seq !== null) {
+    await notifyRealtime(realtime, committed.threadId, committed.seq);
+  }
+  return committed.continuationRunId ? { continuationRunId: committed.continuationRunId } : true;
 }
 
 export async function finalizeComputerControlRelease(
@@ -1432,6 +1479,29 @@ export async function finalizeComputerControlRelease(
 ): Promise<FinalizeComputerControlReleaseResult | false> {
   if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`
+      SELECT id FROM computers WHERE id = ${input.computerId} AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+    // The same lease can acquire a run binding while provider revocation is in flight.
+    // Fence by lease identity, then finalize the current binding under the row lock.
+    const computer = await tx.computer.findFirst({
+      where: { id: input.computerId, spaceId: input.spaceId },
+      select: { controlRunId: true },
+    });
+    const controlRunId = input.leaseId ? (computer?.controlRunId ?? null) : input.runId;
+    let waiting = controlRunId
+      ? await tx.run.findUnique({
+          where: { id: controlRunId },
+          select: { threadId: true, status: true },
+        })
+      : null;
+    const runThreadId = waiting?.threadId ?? null;
+    if (runThreadId) {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
+      waiting = await tx.run.findUnique({
+        where: { id: controlRunId! },
+        select: { threadId: true, status: true },
+      });
+    }
     const cleared = await tx.computer.updateMany({
       where: input.leaseId
         ? {
@@ -1439,7 +1509,7 @@ export async function finalizeComputerControlRelease(
             spaceId: input.spaceId,
             controlBotId: input.botId,
             controlLeaseId: input.leaseId,
-            controlRunId: input.runId,
+            controlRunId,
           }
         : {
             id: input.computerId,
@@ -1447,7 +1517,7 @@ export async function finalizeComputerControlRelease(
             controlHolder: "none",
             controlBotId: null,
             controlLeaseId: null,
-            controlRunId: input.runId,
+            controlRunId,
           },
       data: {
         controlHolder: input.holder,
@@ -1461,10 +1531,10 @@ export async function finalizeComputerControlRelease(
 
     const checkpoint =
       input.reason === "skipped" || input.reason === "expired" ? "takeover-skipped" : "takeover";
-    const resumed = input.runId
+    const resumed = controlRunId
       ? await tx.run.updateMany({
           where: {
-            id: input.runId,
+            id: controlRunId,
             spaceId: input.spaceId,
             botId: input.botId,
             status: "waiting_takeover",
@@ -1478,10 +1548,10 @@ export async function finalizeComputerControlRelease(
     // A steered continue may already hold the run as leased/running. Stamp the
     // checkpoint without stealing the lease so the worker can restore tools.
     const stamped =
-      input.runId && resumed.count !== 1
+      controlRunId && resumed.count !== 1
         ? await tx.run.updateMany({
             where: {
-              id: input.runId,
+              id: controlRunId,
               spaceId: input.spaceId,
               botId: input.botId,
               status: { in: ["leased", "running"] },
@@ -1489,7 +1559,7 @@ export async function finalizeComputerControlRelease(
             data: { checkpoint },
           })
         : { count: 0 };
-    const runId = resumed.count === 1 || stamped.count === 1 ? input.runId : null;
+    const runId = resumed.count === 1 || stamped.count === 1 ? controlRunId : null;
 
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId },
@@ -1497,29 +1567,15 @@ export async function finalizeComputerControlRelease(
     });
     if (!bot?.thread) return { threadId: null, seq: null, runId };
 
-    // The card lives on the run thread, which for a group run is not the bot's own thread.
-    // Lock it after the computer row: chat send releases its thread lock before it calls
-    // release, so computer-then-thread cannot deadlock against it.
-    let runThreadId: string | null = null;
-    if (input.runId) {
-      const waiting = await tx.run.findUnique({
-        where: { id: input.runId },
-        select: { threadId: true, status: true },
+    // Group cards live on the run's thread. Stopped runs cannot write history.
+    if (controlRunId && runThreadId && waiting?.status !== "cancelled") {
+      await settleReleasedTakeoverCardsInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: runThreadId,
+        botId: input.botId,
+        runId: controlRunId,
+        reason: input.reason,
       });
-      runThreadId = waiting?.threadId ?? null;
-      if (runThreadId) {
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
-      }
-      // A stopped run cannot write history, and the release must still clear the lease.
-      if (runThreadId && waiting?.status !== "cancelled") {
-        await settleReleasedTakeoverCardsInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: runThreadId,
-          botId: input.botId,
-          runId: input.runId,
-          reason: input.reason,
-        });
-      }
     }
 
     const event = await appendEventInTransaction(tx, {
@@ -1551,7 +1607,14 @@ export async function finalizeComputerControlRelease(
  */
 export async function settleReleasedTakeoverCards(
   prisma: PrismaClient,
-  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+  input: {
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    reason: unknown;
+    lease?: RunLease;
+  },
   notify?: (threadId: string, seq: number) => Promise<void>,
 ): Promise<void> {
   const seq = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -1563,7 +1626,14 @@ export async function settleReleasedTakeoverCards(
 
 async function settleReleasedTakeoverCardsInTransaction(
   tx: Prisma.TransactionClient,
-  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+  input: {
+    spaceId: string;
+    threadId: string;
+    botId: string;
+    runId: string;
+    reason: unknown;
+    lease?: RunLease;
+  },
 ): Promise<number | null> {
   const messages = await tx.message.findMany({
     where: { threadId: input.threadId, runId: input.runId, role: "bot" },
@@ -1585,6 +1655,7 @@ async function settleReleasedTakeoverCardsInTransaction(
       botId: input.botId,
       type: "thread.message.updated",
       runId: input.runId,
+      lease: input.lease,
       payload: { messageId: message.id, role: "bot", blocks },
     });
     lastSeq = updated.seq;
@@ -1973,7 +2044,7 @@ export async function appendEventInTransaction(
   const activity = input.type === "thread.meta" && hasThinkingActivityMarker(input.payload);
   if (activity) {
     ThreadActivityPayloadSchema.parse(input.payload);
-    if (!input.runId || !input.activityLease) throw new RunHistoryWriteError();
+    if (!input.runId || !input.lease) throw new RunHistoryWriteError();
   }
   const thread = await tx.thread
     .update({
@@ -1987,27 +2058,20 @@ export async function appendEventInTransaction(
       if (input.runId && isRecordNotFound(error)) throw new RunHistoryWriteError();
       throw error;
     });
-  if (activity) {
-    const active = await tx.run.findUnique({
-      where: { id: input.runId },
-      select: { status: true, leaseOwner: true, leaseFence: true },
-    });
-    if (
-      active?.status !== "running" ||
-      active.leaseOwner !== input.activityLease?.owner ||
-      active.leaseFence !== input.activityLease?.fence
-    )
-      throw new RunHistoryWriteError();
-  }
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
   let firstResponseAt: Date | null | undefined;
   if (input.type === "run.cancelled") {
     await assertRunIsCancelled(tx, input.runId);
   } else {
-    firstResponseAt = (
-      await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun })
-    )?.firstResponseAt;
+    const run = await assertRunCanWriteHistory(tx, input.runId, {
+      allowCancelled: input.allowCancelledRun,
+      lease: input.lease,
+    });
+    if (activity && (run?.status !== "running" || run.leaseOwner !== input.lease?.owner)) {
+      throw new RunHistoryWriteError();
+    }
+    firstResponseAt = run?.firstResponseAt;
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
   const payload = sanitizeJsonValue(input.payload);
@@ -2056,7 +2120,7 @@ async function notifyCommittedEvent(
   });
 }
 
-async function notifyRealtime(
+export async function notifyRealtime(
   realtime: RealtimeFanout | undefined,
   threadId: string,
   cursor: number,

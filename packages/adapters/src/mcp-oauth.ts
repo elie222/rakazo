@@ -22,6 +22,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   isLocalhostOrLoopbackIp,
+  MCP_OAUTH_CLIENT_REQUIRED,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -30,6 +31,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
+import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
@@ -46,6 +48,8 @@ type OAuthState = {
 
 export type OAuthMaterial = {
   secret?: string;
+  /** Stdio launch arguments. */
+  args?: string[];
   env?: Record<string, string>;
   /** Credential files for a stdio server: the env variable that receives the file's
    * path, and the content template, which may use `{{oauth.*}}` references. */
@@ -76,30 +80,11 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
     add(client.client_secret);
   }
   for (const [key, value] of Object.entries(material.headers ?? {})) {
-    if (isAuthHeaderKey(key)) {
-      // Cookie / X-Session / Authorization always carry auth material, including short values.
-      add(value);
-    } else if (
-      isExplicitCredentialKey(key) &&
-      looksLikeSecretValue(value, { allowNumeric: true })
-    ) {
-      add(value);
-    } else if (
-      isAmbiguousCredentialKey(key) &&
-      looksLikeSecretValue(value, { allowNumeric: false })
-    ) {
-      add(value);
-    }
+    // Cookie / X-Session / Authorization always carry auth material, including short values.
+    if (isAuthHeaderKey(key) || isConfiguredSecret(key, value)) add(value);
   }
   for (const [key, value] of Object.entries(material.env ?? {})) {
-    if (isExplicitCredentialKey(key) && looksLikeSecretValue(value, { allowNumeric: true })) {
-      add(value);
-    } else if (
-      isAmbiguousCredentialKey(key) &&
-      looksLikeSecretValue(value, { allowNumeric: false })
-    ) {
-      add(value);
-    }
+    if (isConfiguredSecret(key, value)) add(value);
   }
   // A file without references is a literal credential (for example a service-account key).
   // One that uses references is covered by the grant values it embeds.
@@ -111,6 +96,17 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
       add(content);
   }
   return [...new Set(values)];
+}
+
+/** Redaction replaces substrings, so a short value under a neutral name would mangle output. */
+const MIN_NEUTRAL_SECRET_LENGTH = 8;
+
+/** A user can put a credential under any env or header name, so only short or ordinary
+ * config values under names that do not say credential stay visible. */
+function isConfiguredSecret(key: string, value: string): boolean {
+  if (isExplicitCredentialKey(key)) return looksLikeSecretValue(value, { allowNumeric: true });
+  if (!looksLikeSecretValue(value, { allowNumeric: false })) return false;
+  return isAmbiguousCredentialKey(key) || value.trim().length >= MIN_NEUTRAL_SECRET_LENGTH;
 }
 
 /** Headers whose values are credentials even when short (e.g. Cookie, X-Session). */
@@ -244,6 +240,16 @@ export class McpOAuthServerMismatchError extends Error {
       "MCP OAuth authorization server differs from the one this client was first used with; reconfigure the server's OAuth client",
     );
     this.name = "McpOAuthServerMismatchError";
+  }
+}
+
+/** The authorization server cannot register a client, so the user must enter one. */
+export class McpOAuthClientRequiredError extends Error {
+  readonly code = MCP_OAUTH_CLIENT_REQUIRED;
+  /** @param revision The server revision the attempt used. */
+  constructor(readonly revision: number) {
+    super(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED);
+    this.name = "McpOAuthClientRequiredError";
   }
 }
 
@@ -1018,6 +1024,7 @@ export class McpOAuthBroker {
       }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
+      if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await networkFetch.close().catch(() => undefined);
@@ -1422,6 +1429,7 @@ export class McpOAuthBroker {
       } else delete nextMaterial.oauth;
       const hasMaterial = Boolean(
         nextMaterial.secret ||
+          nextMaterial.args?.length ||
           Object.keys(nextMaterial.env ?? {}).length ||
           Object.keys(nextMaterial.files ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||

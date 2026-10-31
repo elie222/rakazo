@@ -659,6 +659,7 @@ describe("synthesizeVoice", () => {
   it.each([
     ["VOICE_OUT_OF_CREDIT", 402],
     ["VOICE_KEY_REJECTED", 403],
+    [undefined, 403],
   ] as const)("answers %s from the provider with HTTP %i and a warning", async (code, status) => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
@@ -720,6 +721,11 @@ describe("voiceCredentialPlaintext", () => {
     expect(() => voiceCredentialPlaintext({ provider: "openai", plaintext: "  " })).toThrow(
       "Enter an API key.",
     );
+  });
+
+  it("ignores any pasted key for a keyless provider", () => {
+    expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "" })).toBe("macos");
+    expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "sk-test-key" })).toBe("macos");
   });
 
   it("stores a self-hosted server's address and models without a key", () => {

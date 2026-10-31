@@ -73,12 +73,12 @@ const group: Group = {
 let container: HTMLDivElement;
 let root: Root;
 
-function fakeBot(id: string, name: string, title: string): Bot {
+function fakeBot(id: string, name: string): Bot {
   return {
     id,
     spaceId: "space-1",
     name,
-    title,
+    title: "",
     description: "",
     instructions: "",
     color: "blue",
@@ -111,9 +111,9 @@ function fakeBot(id: string, name: string, title: string): Bot {
 }
 
 const bots = [
-  fakeBot("bot-1", "Researcher", "Reads papers"),
-  fakeBot("bot-2", "Writer", "Drafts prose"),
-  fakeBot("bot-3", "Runner", "Runs tasks"),
+  fakeBot("bot-1", "Researcher"),
+  fakeBot("bot-2", "Writer"),
+  fakeBot("bot-3", "Runner"),
 ];
 
 async function render(
@@ -304,14 +304,14 @@ describe("GroupSettings", () => {
     expect(rowNames()).toEqual(["Researcher", "Writer"]);
   });
 
-  it("filters the expanded roster by name or title", async () => {
+  it("filters the expanded roster by name", async () => {
     await render();
     await click("Show all");
     const filter = container.querySelector('input[aria-label="Filter bots"]');
     expect(filter).not.toBeNull();
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(filter, "  PROSE ");
+      setter.call(filter, "  WRIT ");
       filter!.dispatchEvent(new Event("input", { bubbles: true }));
       await Promise.resolve();
     });

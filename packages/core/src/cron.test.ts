@@ -10,6 +10,7 @@ import {
   formatCron,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  localizedClock,
   nextCronDate,
   nextCronDateAcross,
   nextCronDateAcrossStrict,
@@ -54,6 +55,8 @@ describe("zonedDateTime", () => {
     ["2030-03-01T00:30:15.125+05:30", "2030-02-28T19:00:15.125Z"],
     ["2030-02-28T23:30-04:00", "2030-03-01T03:30:00.000Z"],
     ["2030-03-01T00:30+0530", "2030-02-28T19:00:00.000Z"],
+    ["2030-03-01T00:30+05", "2030-02-28T19:30:00.000Z"],
+    ["2030-02-28T23:30:15-04", "2030-03-01T03:30:15.000Z"],
   ])("preserves the valid offset datetime %s", (value, expected) => {
     expect(zonedDateTime(value, "America/New_York")?.toISOString()).toBe(expected);
   });
@@ -69,6 +72,7 @@ describe("zonedDateTime", () => {
     "2030-01-01T24:00Z",
     "2030-01-01T24:00+05:30",
     "2030-01-01T10:00+24:00",
+    "2030-01-01T10:00+24",
     "2030-01-01T10:00+05:60",
   ])("rejects the impossible offset datetime %s", (value) => {
     expect(zonedDateTime(value, "UTC")).toBeNull();
@@ -190,6 +194,24 @@ describe("resolveRoutineNextRunAt", () => {
   it("computes cron schedules for repeating routines", () => {
     const next = resolveRoutineNextRunAt("*/1 * * * *", new Date(), "UTC", null);
     expect(next?.getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("localizedClock", () => {
+  it.each(["invalid", "25:00", "9:60 PM", "0:30 AM", "13:00 PM", ""])(
+    "preserves invalid input %j",
+    (time) => {
+      expect(localizedClock(time, "es")).toBe(time);
+    },
+  );
+  it("preserves the clock for an invalid locale", () => {
+    expect(localizedClock("9:00 PM", "_")).toBe("9:00 PM");
+  });
+  it("writes a schedule time the way the language does", () => {
+    expect(localizedClock("9:00 PM", "es")).toBe("21:00");
+    expect(localizedClock("12:00 AM", "es")).toBe("0:00");
+    expect(localizedClock("6:30 AM", "de")).toBe("6:30");
+    expect(localizedClock("9:00 PM", "en")).toMatch(/^9:00\sPM$/);
   });
 });
 

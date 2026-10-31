@@ -55,6 +55,7 @@ import {
   configureForegroundNotifications,
   resumeLiveNotifications,
 } from "../lib/live-notifications";
+import { setMobileMonitoringScreen } from "../lib/monitoring";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
 import { clearQueries } from "../lib/query";
@@ -264,6 +265,7 @@ function LayoutContent() {
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
   const screen = analyticsScreen(usePathname());
+  useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
     const surface = Platform.OS;
     if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;
@@ -475,7 +477,8 @@ function LayoutContent() {
                       name="image"
                       options={{
                         headerShown: false,
-                        presentation: "fullScreenModal",
+                        presentation: "transparentModal",
+                        contentStyle: { backgroundColor: "transparent" },
                         animation: "fade",
                       }}
                     />

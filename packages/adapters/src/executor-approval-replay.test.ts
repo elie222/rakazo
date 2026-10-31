@@ -125,6 +125,17 @@ describe("executor approval replay", () => {
     );
   });
 
+  it("replays an approved deferred built-in through use_tool", () => {
+    const continuation = buildApprovalContinuation(
+      [{ kind: "create_space", request: { name: "Finance" } }],
+      JSON.stringify,
+      { exposedToolNames: new Set(["shell", "find_tool", "use_tool"]) },
+    );
+    expect(continuation).toContain(
+      'use_tool: {"name":"create_space","arguments":{"name":"Finance"}}',
+    );
+  });
+
   it("keeps a direct-tool argument named like the catalog marker in continuation JSON", () => {
     const continuation = buildApprovalContinuation(
       [

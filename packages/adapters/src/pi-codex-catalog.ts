@@ -318,7 +318,7 @@ export async function codexLiveModel(
   modelId: string,
   opts?: CodexLiveReadOptions,
 ): Promise<CodexCatalogModel | undefined> {
-  if (!catalog || secret.kind !== "oauth") return undefined;
+  if (!catalog || secret.kind !== "oauth" || secret.reconnectRequired) return undefined;
   const account = codexAccountHandle(secret.credential, opts?.onExpiredToken);
   if (!account) return undefined;
   const models = await catalog.read(userId, account, opts).catch(() => undefined);
@@ -361,7 +361,8 @@ export async function codexLiveCatalogsForSpace(
     let credential: OAuthCredential | undefined;
     try {
       const parsed = parseModelSecret(await secretStore.load(secret.ciphertext, secret.id));
-      credential = parsed.kind === "oauth" ? parsed.credential : undefined;
+      credential =
+        parsed.kind === "oauth" && !parsed.reconnectRequired ? parsed.credential : undefined;
     } catch {
       // Unreadable secrets keep static behavior.
     }

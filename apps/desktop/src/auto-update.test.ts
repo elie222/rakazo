@@ -80,7 +80,11 @@ describe("classifyUpdaterFailure", () => {
   });
 
   it("stays silent when the machine is simply offline", () => {
-    for (const message of ["getaddrinfo ENOTFOUND github.com", "net::ERR_INTERNET_DISCONNECTED"]) {
+    for (const message of [
+      "getaddrinfo ENOTFOUND github.com",
+      "net::ERR_INTERNET_DISCONNECTED",
+      "HttpError: 618 \nData:\n<title>618 jwt:expired</title>",
+    ]) {
       expect(classifyUpdaterFailure(new Error(message))).toEqual({
         kind: "offline",
         message: null,
@@ -95,6 +99,23 @@ describe("classifyUpdaterFailure", () => {
     expect(failure.kind).toBe("signature");
     expect(failure.message).toContain("could not be verified");
     expect(failure.message).not.toContain("private.invalid");
+  });
+
+  it("tells the user how to fix a read-only install or a full disk", () => {
+    expect(
+      classifyUpdaterFailure(
+        new Error("Cannot update while running on a read-only volume. The application is on a…"),
+      ),
+    ).toEqual({ kind: "read-only", message: "Move Rakazo to Applications to install updates." });
+    for (const message of [
+      "ditto: /private/update/Rakazo.app/x.js.map: No space left on device\nditto: Couldn't read pkzip signature.",
+      "未能完成该操作。设备上无剩余空间: 设备上无剩余空间",
+    ]) {
+      expect(classifyUpdaterFailure(new Error(message)), message).toEqual({
+        kind: "disk-full",
+        message: "Free up disk space to install updates.",
+      });
+    }
   });
 
   it("keeps unclassified updater detail out of the renderer bridge", () => {
@@ -213,6 +234,16 @@ describe("reduceUpdateState", () => {
     expect(apply([{ type: "failed", error: offline, userInitiated: true }]).message).toContain(
       "Could not reach",
     );
+  });
+
+  it("stops checking from a read-only volume until the app is moved", () => {
+    const readOnly = new Error("Cannot update while running on a read-only volume.");
+    expect(
+      apply([{ type: "check-start" }, { type: "failed", error: readOnly, userInitiated: false }]),
+    ).toMatchObject({
+      phase: "unsupported",
+      message: "Move Rakazo to Applications to install updates.",
+    });
   });
 
   it("reports other failures with a safe generic message", () => {

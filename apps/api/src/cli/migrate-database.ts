@@ -6,6 +6,7 @@ import { migrateJobQueue } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import {
   databaseUrls,
+  deployMigrations,
   provisionRuntimeRole,
   RUNTIME_ROLE,
   SINGLE_DATABASE_URL_WARNING,
@@ -13,9 +14,11 @@ import {
 
 loadRootEnv();
 const urls = databaseUrls(process.env);
-execFileSync("pnpm", ["--filter", "@rakazo/db", "exec", "prisma", "migrate", "deploy"], {
-  stdio: "inherit",
-  env: { ...process.env, DATABASE_MIGRATION_URL: urls.migrationUrl },
+await deployMigrations({
+  migrationUrl: urls.migrationUrl,
+  dbPackageDir: execFileSync("pnpm", ["--filter", "@rakazo/db", "exec", "pwd"], {
+    encoding: "utf8",
+  }).trim(),
 });
 await migrateJobQueue(urls.migrationUrl);
 

@@ -206,35 +206,58 @@ export function composerMentionsForPrompt(
   });
 }
 
-/** Remove one target's occurrences and transform both selection endpoints. */
-export function removeBoundComposerMention(
+export type ComposerMentionSegment = { text: string; binding?: ComposerMentionBinding };
+
+export function composerMentionSegments(
   text: string,
   bindings: readonly ComposerMentionBinding[],
-  target: Pick<ComposerMention, "kind" | "id">,
-  selection: ComposerMentionRange,
-) {
-  const removed = bindings
-    .filter((binding) => mentionChipKey(binding.mention) === mentionChipKey(target))
-    .sort((a, b) => a.start - b.start);
-  let next = text;
-  for (const range of [...removed].reverse())
-    next = next.slice(0, range.start) + next.slice(range.end);
-  const position = (value: number) => {
-    let result = value;
-    for (const range of removed) {
-      if (value <= range.start) break;
-      result -= Math.min(value, range.end) - range.start;
-      if (value < range.end) break;
-    }
-    return Math.max(0, Math.min(next.length, result));
-  };
-  const retained = bindings
-    .filter((binding) => mentionChipKey(binding.mention) !== mentionChipKey(target))
-    .map((binding) => ({ ...binding, start: position(binding.start), end: position(binding.end) }))
-    .filter((binding) => validBinding(next, binding));
+): ComposerMentionSegment[] {
+  const segments: ComposerMentionSegment[] = [];
+  let index = 0;
+  for (const binding of bindings) {
+    if (binding.start < index) continue;
+    if (binding.start > index) segments.push({ text: text.slice(index, binding.start) });
+    segments.push({ text: text.slice(binding.start, binding.end), binding });
+    index = binding.end;
+  }
+  if (index < text.length) segments.push({ text: text.slice(index) });
+  return segments;
+}
+
+export function composerMentionDeletionRange(
+  bindings: readonly ComposerMentionBinding[],
+  range: ComposerMentionRange,
+): ComposerMentionRange | null {
+  let { start, end } = range;
+  for (const binding of bindings) {
+    if (binding.start >= range.end || binding.end <= range.start) continue;
+    start = Math.min(start, binding.start);
+    end = Math.max(end, binding.end);
+  }
+  return start === range.start && end === range.end ? null : { start, end };
+}
+
+export function resolveComposerMentionEdit(
+  previous: string,
+  next: string,
+  bindings: readonly ComposerMentionBinding[],
+  hints: ComposerMentionEditHints = {},
+): { text: string; bindings: ComposerMentionBinding[]; caret: number | null } {
+  const edit = next.length < previous.length ? editBetween(previous, next, hints) : null;
+  const mention =
+    edit?.length === 0
+      ? composerMentionDeletionRange(bindings, { start: edit.start, end: edit.end })
+      : null;
+  if (!mention)
+    return {
+      text: next,
+      bindings: updateComposerMentionBindings(previous, next, bindings, hints),
+      caret: null,
+    };
+  const text = previous.slice(0, mention.start) + previous.slice(mention.end);
   return {
-    text: next,
-    bindings: retained,
-    selection: { start: position(selection.start), end: position(selection.end) },
+    text,
+    bindings: mapEdit(bindings, mention.start, mention.end, 0, text),
+    caret: mention.start,
   };
 }

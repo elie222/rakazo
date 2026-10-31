@@ -19,6 +19,17 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "daytona" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "createos" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boat" })).toBe("none");
+    const wuying = {
+      SANDBOX_PROVIDER: "wuying",
+      WUYING_ACCESS_KEY_ID: "test-id",
+      WUYING_ACCESS_KEY_SECRET: "test-secret",
+      WUYING_DESKTOP_ID: "ecd-test",
+      WUYING_END_USER_ID: "test-user",
+      WUYING_MCP_URL: "https://gateway.example.com/mcp",
+      WUYING_MCP_TOKEN: "test-token",
+    };
+    expect(resolveSandboxProvider(wuying)).toBe("wuying");
+    expect(resolveSandboxProvider({ ...wuying, WUYING_MCP_TOKEN: " " })).toBe("none");
   });
 
   it("loads Novita credentials and the shared template setting", () => {
@@ -50,6 +61,16 @@ describe("resolveSandboxProvider", () => {
       railwayApiToken: "test",
       railwayEnvironmentId: "environment",
       railwayMaxWorkspaceFileBytes: "1024",
+    });
+  });
+
+  it("keeps boxd when its API key is set, with an optional organization", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boxd" })).toBe("none");
+    const env = { SANDBOX_PROVIDER: "boxd", BOXD_API_KEY: "test-boxd-key", BOXD_ORG: "team" };
+    expect(resolveSandboxProvider(env)).toBe("boxd");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      boxdApiKey: "test-boxd-key",
+      boxdOrg: "team",
     });
   });
 

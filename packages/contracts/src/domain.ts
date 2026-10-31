@@ -8,8 +8,9 @@ import {
   isCloudflareAiGatewayProvider,
   isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
-import { ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "./connector-errors.js";
+import { BotSettingsValuesSchema, ThreadMessageSchema } from "./events.js";
+import { Id, MemoryScope, RunStatus, SandboxKind, ThinkingLevelSchema } from "./ids.js";
 import {
   McpHeadersSchema,
   McpRemoteEndpointSchema,
@@ -54,17 +55,6 @@ export const TimeZoneSchema = z
   .refine(isValidTimeZone, { message: "Unknown timezone" });
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
-export const ThinkingLevelSchema = z.enum([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
-export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
-
 export { AGENT_SECRET_NAME_PATTERN };
 
 export const AgentSecretSchema = z.object({
@@ -92,10 +82,10 @@ export const BotSchema = z.object({
   id: Id,
   spaceId: Id,
   name: z.string(),
+  /** Always empty; installed mobile apps still read it. */
   title: z.string(),
   description: z.string(),
   instructions: z.string(),
-  selfUpdateInstructions: z.boolean().optional(),
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
   avatarSet: BotAvatarSetSchema.optional(),
@@ -368,7 +358,6 @@ export const SpaceNavigationSchema = z.object({
 export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
 export const BOT_NAME_MAX_LENGTH = 80;
-export const BOT_TITLE_MAX_LENGTH = 500;
 export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
@@ -379,7 +368,6 @@ export const CreateBotInput = z.object({
     .regex(/^c[a-z0-9]{24}$/)
     .optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
-  title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
@@ -394,26 +382,14 @@ export const CreateBotInput = z.object({
 });
 export type CreateBotInput = z.infer<typeof CreateBotInput>;
 
-export function normalizeCreateBotProfile(
-  input: Pick<CreateBotInput, "name" | "title" | "description">,
-) {
-  const description = input.description.trim();
-  return {
-    name: input.name.trim().slice(0, BOT_NAME_MAX_LENGTH),
-    title: input.title.trim().slice(0, BOT_TITLE_MAX_LENGTH),
-    description: description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-    instructions: description.slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
-  };
-}
-
 export const UpdateBotInput = z
   .object({
     botId: Id,
     name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
-    title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
     description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
     instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    /** Ignored; installed mobile apps may still send it. */
     selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
@@ -431,6 +407,8 @@ export const UpdateBotInput = z
     crossSpaceCommunication: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
+    /** Write only while these settings still hold, as an undo does. */
+    expectedSettings: BotSettingsValuesSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const providerProvided = value.modelProvider !== undefined;
@@ -456,6 +434,7 @@ export const UpdateBotInput = z
       });
     }
   });
+export type UpdateBotInput = z.infer<typeof UpdateBotInput>;
 
 /**
  * A routine's model is optional, but provider and id only mean something together,
@@ -859,6 +838,8 @@ export const PluginPreviewSchema = z.object({
   skills: z.array(PluginPreviewSkillSchema),
   mcpServers: z.array(PluginPreviewMcpServerSchema),
   skipped: z.array(PluginPreviewSkippedSchema),
+  /** Skills left out because a built-in skill has the same name; clients released before it ignore it. */
+  builtinNames: z.array(z.string()).optional(),
 });
 export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
 
@@ -891,6 +872,47 @@ export const PluginMarketplaceCatalogSchema = z.object({
   skippedEntries: z.number().int().nonnegative(),
 });
 export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
+
+export const PLUGIN_SUBMISSIONS_PATH = "/api/v1/plugin-submissions";
+export const SUBMIT_PLUGIN_URL = "https://rakazo.com/plugins/submit/";
+
+const HttpsUrlSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .url()
+  .refine((value) => value.startsWith("https://"), "Use an https:// URL");
+
+export const PluginSubmissionInputSchema = z.object({
+  email: z.string().trim().max(254).email(),
+  name: z.string().trim().min(1).max(80),
+  website: HttpsUrlSchema.optional(),
+  logo: HttpsUrlSchema,
+  source: HttpsUrlSchema,
+  description: z.string().trim().min(1).max(2000),
+  testing: z.string().trim().min(1).max(4000),
+  tested: z.literal(true),
+});
+export type PluginSubmissionInput = z.infer<typeof PluginSubmissionInputSchema>;
+
+export const PluginSubmissionStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export type PluginSubmissionStatus = z.infer<typeof PluginSubmissionStatusSchema>;
+
+export const PluginSubmissionSchema = PluginSubmissionInputSchema.omit({ tested: true }).extend({
+  id: z.string(),
+  website: z.string().nullable(),
+  status: PluginSubmissionStatusSchema,
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+  reviewedAt: z.string().nullable(),
+});
+export type PluginSubmission = z.infer<typeof PluginSubmissionSchema>;
+
+export const PluginSubmissionReviewSchema = z.discriminatedUnion("decision", [
+  z.object({ id: Id, decision: z.literal("approve") }),
+  z.object({ id: Id, decision: z.literal("reject"), reason: z.string().trim().min(1).max(1000) }),
+]);
+export type PluginSubmissionReview = z.infer<typeof PluginSubmissionReviewSchema>;
 
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
@@ -977,6 +999,7 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("stdio"),
     command: z.string().min(1).max(512),
+    /** Update: send none to keep the stored arguments while the command is unchanged. */
     args: z.array(z.string().max(2048)).max(64).default([]),
     env: z
       .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string().max(4096))
@@ -1002,6 +1025,8 @@ export const McpServerHealthSchema = z.object({
   status: z.enum(["unknown", "installing", "ok", "error"]),
   /** Redacted, human-readable failure reason (stderr tail included for stdio). */
   message: z.string().nullable(),
+  /** A failure the user fixes in the server's settings, so clients can say how. */
+  code: z.enum([MCP_OAUTH_CLIENT_REQUIRED]).nullable().optional(),
   toolCount: z.number().int().nonnegative().nullable(),
   checkedAt: z.string().nullable(),
 });
@@ -1017,7 +1042,8 @@ export const McpServerSchema = z.object({
   transport: McpTransportSchema,
   endpoint: z.string().url().nullable(),
   command: z.string().nullable(),
-  args: z.array(z.string()),
+  /** Arguments are stored encrypted and never returned. */
+  hasArgs: z.boolean(),
   envKeys: z.array(z.string()),
   /** Env variables that receive a credential file's path instead of a value. */
   fileKeys: z.array(z.string()),
@@ -1261,12 +1287,16 @@ export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
-export const MAX_MODEL_MAX_TOKENS = 131_072;
-
 /** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
+
+/**
+ * Output limits follow the model; the only fixed bound is the context ceiling, and a connection's
+ * limit must still leave room for input (`modelOutputLeavesInputRoom`).
+ */
+export const MAX_MODEL_MAX_TOKENS = MAX_MODEL_CONTEXT_WINDOW;
 export function parseModelMaxImagesPerPrompt(
   value: string,
   supportsImages = true,
@@ -1327,6 +1357,10 @@ export function modelOutputLeavesInputRoom(
   return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
 }
 
+/** Wire protocol selected for one OpenAI-compatible connection. */
+export const ModelApiProtocolSchema = z.enum(["chat-completions", "responses"]);
+export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
+
 export const ModelCredentialSchema = z.object({
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
@@ -1338,6 +1372,7 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
+  apiProtocol: ModelApiProtocolSchema.optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
   modelId: z.string().optional(),
@@ -1351,6 +1386,11 @@ export const ModelCredentialSchema = z.object({
   enabledModelIds: z.array(z.string()).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
+  /**
+   * The subscription sign-in was rejected. The stored tokens are gone and the
+   * owner has to sign in again. Model choices on this connection are kept.
+   */
+  reconnectRequired: z.boolean().optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -1405,6 +1445,7 @@ export const ModelConnectInputSchema = z
     gatewayId: z.string().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
+    apiProtocol: ModelApiProtocolSchema.optional(),
     label: z.string().optional(),
     /**
      * The connection this save updates; null adds another connection for the provider.
@@ -1557,6 +1598,7 @@ export const VoiceCatalogEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  keyless: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -1706,6 +1748,7 @@ export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
   maxUploadSizeBytes: z.number().int().positive().optional(),
+  maxAttachmentsPerMessage: z.number().int().positive().optional(),
   ticketBoardEnabled: z.boolean(),
   phoneCallsEnabled: z.boolean().default(false),
   /** Operator-configured menu links. Absent from older servers. */
@@ -1716,6 +1759,8 @@ export const MeSchema = z.object({
   spaceId: Id,
   /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
+  /** Listed in RAKAZO_ADMIN_EMAILS with a verified email: reviews plugin submissions, adds stdio MCP servers. */
+  isAdmin: z.boolean().default(false),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
@@ -1726,7 +1771,7 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
-  /** Whether this deployment runs stdio MCP servers. Absent from older servers. */
+  /** Whether this account can add stdio MCP servers here. Absent from older servers. */
   mcpStdioEnabled: z.boolean().default(false),
   avatarStyle: AvatarStyleSchema,
   /**
@@ -1814,6 +1859,13 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
+  /** Computer hours left this calendar month; absent when computers have no limit. */
+  computerHoursLeft: z.number().nonnegative().nullable().optional(),
+  /** Present once the organization has subscribed: its invite link and free months earned. */
+  referral: z
+    .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
+    .nullable()
+    .optional(),
 });
 export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
@@ -1833,7 +1885,7 @@ export type AppBootstrap = z.infer<typeof AppBootstrapSchema>;
 export const ExportManifestSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
-  bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }).extend({
+  bot: BotSchema.pick({ name: true, description: true, instructions: true }).extend({
     color: z.string().optional(),
     avatarSet: BotAvatarSetSchema.optional(),
   }),

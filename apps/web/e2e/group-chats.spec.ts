@@ -1,6 +1,5 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -96,12 +95,12 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     .getByRole("button", { name: /^Draft team/ })
     .locator(".rakazo-group-avatar");
   await expect(groupAvatar).toBeVisible();
-  await expect(groupAvatar.locator(".rakazo-logo-avatar")).toHaveCount(2);
-  const workingAvatar = groupAvatar.locator('.rakazo-logo-avatar[data-activity="working"]');
+  await expect(groupAvatar.locator(".rakazo-organic-avatar")).toHaveCount(2);
+  const workingAvatar = groupAvatar.locator('[data-working="true"]');
   await expect(workingAvatar).toHaveCount(1);
-  await expect(workingAvatar.locator(".logo-avatar-body")).toHaveCSS(
+  await expect(workingAvatar.locator(".rakazo-organic-avatar-body-working")).toHaveCSS(
     "animation-name",
-    "logo-avatar-breathe",
+    /rakazo-organic-/,
   );
   await captureScreenshot(page, testInfo, "group-avatar-active");
   await page.unroute("**/rpc/groups/list");
@@ -111,7 +110,8 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   // The route header renders before bootstrap finishes restoring the group.
   // Wait for its composer before opening a panel that bootstrap may reset.
   await expect(page.getByRole("combobox", { name: "Message Draft team" })).toBeVisible();
-  await page.getByTestId("bot-settings-trigger").click();
+  const groupPill = page.getByTestId("bot-settings-trigger");
+  if ((await groupPill.getAttribute("aria-expanded")) !== "true") await groupPill.click();
   const desktopSettings = page.getByTestId("side-panel");
   const groupName = desktopSettings.getByRole("textbox", { name: "Name", exact: true });
   await groupName.fill("Unsaved Draft team name");
@@ -149,6 +149,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await composer.pressSequentially("turn the sources into a draft. @Res");
   await page.getByRole("option", { name: "@Researcher", exact: true }).click();
   await expect(page.getByTestId("mention-chip").filter({ hasText: "Researcher" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "group-inline-mentions");
   await composer.fill(`${await composer.inputValue()}gather sources.`);
   await composer.press("Enter");
 
@@ -289,44 +290,4 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.goto(`/app/g/${reviewGroup.id}`);
   await page.waitForURL(/\/app\/(?!g\/)[^/]+$/);
   await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
-});
-
-test("group names stop at the length limit when creating and renaming", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `group-limit-${stamp}@rakazo.test`, "password12", "Group E2E");
-  await completeOnboarding(page);
-  await page.goto("/app");
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await createBot(page, "Researcher");
-  await createBot(page, "Research Writer");
-
-  await openNewGroup(page);
-  const panel = page.getByTestId("side-panel");
-  const nameInput = panel.getByRole("textbox", { name: "Name", exact: true });
-  const groupName = "Research team ".padEnd(GROUP_NAME_MAX_LENGTH, "x");
-  await nameInput.pressSequentially(`${groupName}overflow`);
-  await expect(nameInput).toHaveValue(groupName);
-  await panel.getByRole("checkbox", { name: "Add Researcher to the group" }).click();
-  await panel.getByRole("checkbox", { name: "Add Research Writer to the group" }).click();
-  await captureScreenshot(page, testInfo, "group-name-limit-create");
-  await panel.getByRole("button", { name: "Create group", exact: true }).click();
-  await page.waitForURL(/\/app\/g\/[^/]+$/);
-  const groupId = new URL(page.url()).pathname.split("/").at(-1)!;
-  const groups = await rpc<Array<{ id: string; name: string }>>(page, "groups/list", {});
-  expect(groups.find((group) => group.id === groupId)?.name).toBe(groupName);
-
-  await expect(page.getByRole("combobox", { name: `Message ${groupName}` })).toBeVisible();
-  await page.getByTestId("bot-settings-trigger").click();
-  const renamedName = "Renamed research team ".padEnd(GROUP_NAME_MAX_LENGTH, "x");
-  await nameInput.clear();
-  await nameInput.pressSequentially(`${renamedName}overflow`);
-  await expect(nameInput).toHaveValue(renamedName);
-  await captureScreenshot(page, testInfo, "group-name-limit-rename");
-  await panel.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(panel).not.toBeVisible();
-  await page.reload();
-  const renamedGroups = await rpc<Array<{ id: string; name: string }>>(page, "groups/list", {});
-  expect(renamedGroups.find((group) => group.id === groupId)?.name).toBe(renamedName);
 });

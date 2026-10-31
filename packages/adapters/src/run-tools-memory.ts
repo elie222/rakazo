@@ -8,9 +8,30 @@ import { appendMemoryFact } from "./memory-tools.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
+/** Cross-chat history requires a surviving direct human request in this app thread. */
+export function historyMyChatsAllowed(
+  run: { trigger: string; threadId: string },
+  source: { role: string; threadId: string } | null,
+  external: boolean,
+): boolean {
+  return (
+    !external &&
+    (run.trigger === "user" || run.trigger === "follow_up") &&
+    source?.role === "user" &&
+    source.threadId === run.threadId
+  );
+}
+
 async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { deps, run } = ctx;
   const { name, args } = call;
+  const crossChat =
+    name === "search_history"
+      ? args.scope === "my_chats"
+      : typeof args.threadId === "string" && args.threadId !== run.threadId;
+  // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
+  const allowMyChats =
+    crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
   const scope = {
     spaceId: run.spaceId,
     userId: run.userId,
@@ -18,6 +39,8 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     botId: run.botId,
     channelId: ctx.source.channelId,
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
+    allowMyChats,
+    searchAt: run.createdAt,
   };
   const response =
     name === "search_history"

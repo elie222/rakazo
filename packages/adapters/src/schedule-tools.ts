@@ -1,5 +1,6 @@
 import type { ConnectorProvider, JobPublisher } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
+import type { RoutineWatch } from "@rakazo/contracts";
 import { RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
 import {
   cronFromPreset,
@@ -689,8 +690,8 @@ export async function cancelScheduleFromTool(
   return { ok: true as const, routineId: existing.id, name: existing.name };
 }
 
-/** Creating unattended shell work requires explicit approval, including JSON tool input. */
-export function commandWatchFromTool(value: unknown): string | undefined {
+/** The watch a `schedule_create` call asks for, including JSON tool input. */
+export function watchFromTool(value: unknown): RoutineWatch | undefined {
   if (typeof value === "string") {
     try {
       value = JSON.parse(value);
@@ -699,5 +700,11 @@ export function commandWatchFromTool(value: unknown): string | undefined {
     }
   }
   const parsed = RoutineWatchSchema.safeParse(value);
-  return parsed.success && parsed.data.kind === "command" ? parsed.data.command : undefined;
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Creating unattended shell work requires explicit approval, including JSON tool input. */
+export function commandWatchFromTool(value: unknown): string | undefined {
+  const watch = watchFromTool(value);
+  return watch?.kind === "command" ? watch.command : undefined;
 }

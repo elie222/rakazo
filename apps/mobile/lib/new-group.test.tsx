@@ -210,9 +210,9 @@ vi.mock("../components/native-action-button", () => ({
   ),
 }));
 const bots = [
-  { id: "bot-1", name: "Researcher", title: "Reads papers" },
-  { id: "bot-2", name: "Writer", title: "Drafts prose" },
-  { id: "bot-3", name: "Support", title: "Helps out" },
+  { id: "bot-1", name: "Researcher" },
+  { id: "bot-2", name: "Writer" },
+  { id: "bot-3", name: "Support" },
 ] as MobileBot[];
 let root: Root;
 let container: HTMLDivElement;
@@ -284,7 +284,7 @@ it("adds and removes chips, hides picked and archived bots, and clears filters o
   ]);
   await start();
   expect(button("Archived")).toBeUndefined();
-  await type("  PROSE ");
+  await type("  WRIT ");
   expect(button("Researcher")).toBeUndefined();
   await click("Writer");
   expect(button("Writer")).toBeUndefined();

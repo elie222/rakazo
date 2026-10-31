@@ -1,0 +1,38 @@
+---
+import { DOCS_NAV, docsPath } from "../docs";
+
+interface Props {
+  currentPath: string;
+  class?: string;
+}
+
+const { currentPath, class: className } = Astro.props;
+---
+
+<nav class:list={["docs-nav", className]} aria-label="Docs">
+  {
+    DOCS_NAV.map((section) => (
+      <div class="docs-nav__section">
+        <p>{section.title}</p>
+        <ul>
+          {section.pages.map((page) => (
+            <li>
+              <a
+                href={docsPath(page.slug)}
+                aria-current={docsPath(page.slug) === currentPath ? "page" : undefined}
+              >
+                {page.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))
+  }
+  <div class="docs-nav__section">
+    <p>Reference</p>
+    <ul>
+      <li><a href="/integrations/">Integrations</a></li>
+    </ul>
+  </div>
+</nav>

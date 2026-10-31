@@ -9,7 +9,7 @@ import {
   signup,
 } from "./helpers";
 
-test("Ask mode asks before a change, and approvals settings shape what asks", async ({
+test("A change asks without an approval model, and approvals settings shape what asks", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -74,7 +74,7 @@ test("Ask mode asks before a change, and approvals settings shape what asks", as
   await settings.getByTestId("settings-nav-confirmations").click();
   await expect(settings.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
   const mode = settings.getByTestId("approval-mode");
-  await expect(mode.getByRole("button", { name: "Ask", exact: true })).toHaveAttribute(
+  await expect(mode.getByRole("button", { name: "Auto", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

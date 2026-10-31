@@ -4,6 +4,7 @@ import type {
   AdapterContext,
   AgentHomeStore,
   ConnectorProvider,
+  ConnectorTool,
   JobPublisher,
   SandboxProvider,
   SecretStore,
@@ -26,7 +27,7 @@ import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
-import { nativeShellCommandArgv } from "./native-shell.js";
+import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -445,8 +446,9 @@ async function readComputer(
           },
         })
       : undefined;
-    const shellEnvironment =
-      bot.computer.kind === "desktop" ? await deps.sandbox.environment?.(computer, ctx) : undefined;
+    const shellEnvironment = usesNativeShell(bot.computer.kind)
+      ? await deps.sandbox.environment?.(computer, ctx)
+      : undefined;
     const argv = shellEnvironment
       ? nativeShellCommandArgv(watch.command ?? "", shellEnvironment)
       : ["sh", "-lc", watch.command ?? ""];
@@ -580,7 +582,7 @@ async function readTool(
       resolved.tool.name,
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
-    readOnly: resolved.tool.readOnly,
+    readOnly: declaredRead(resolved.tool),
     rules: (await listApprovalRules(deps.prisma, {
       userId: routine.userId,
       spaceId: routine.spaceId,
@@ -817,5 +819,10 @@ export async function validateRoutineWatch(
       )
     )?.tool;
   if (!tool) throw new RoutineWatchError(`No connected integration has a tool named ${name}.`);
-  assertWatchToolReadOnly(name, tool.readOnly);
+  assertWatchToolReadOnly(name, declaredRead(tool));
+}
+
+/** A batch runs whatever actions its arguments name, so it is never a declared read. */
+function declaredRead(tool: ConnectorTool): boolean | undefined {
+  return tool.batch ? undefined : tool.readOnly;
 }

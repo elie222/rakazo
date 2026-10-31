@@ -174,13 +174,22 @@ function botSecretOriginSchema(allowPrivateHttpOrigin: boolean) {
     );
 }
 
+export const BOT_SECRET_ORIGIN_MISSING_MESSAGE =
+  "Missing. Add the site's address, such as https://www.example.com";
+
 export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: boolean }) {
   const originSchema = botSecretOriginSchema(options?.allowPrivateHttpOrigin === true);
   return z
     .object({
       name: BotSecretName,
       // Empty for a command variable, which has no site. Every other type needs an origin.
-      origin: z.string().max(2048).default(""),
+      origin: z
+        .string()
+        .max(2048)
+        .default("")
+        .describe(
+          "The site's address, such as https://www.example.com. Required unless auth is command.",
+        ),
       auth: BotSecretAuth,
     })
     .superRefine((destination, ctx) => {
@@ -194,6 +203,15 @@ export function botSecretDestinationSchema(options?: { allowPrivateHttpOrigin?: 
         }
         const nameIssue = commandVariableNameIssue(destination.name);
         if (nameIssue) ctx.addIssue({ code: "custom", path: ["name"], message: nameIssue });
+        return;
+      }
+      if (destination.origin === "") {
+        // Say it is missing: "Expected an HTTPS origin" reads as a bad value, and models resend it.
+        ctx.addIssue({
+          code: "custom",
+          path: ["origin"],
+          message: BOT_SECRET_ORIGIN_MISSING_MESSAGE,
+        });
         return;
       }
       const origin = originSchema.safeParse(destination.origin);
@@ -292,10 +310,111 @@ export function decodeLoginSecret(plaintext: string): LoginSecretValue {
   };
 }
 
+// A field starts visible only when every word of its label is one of these and at least one is
+// an identifier. Any other word, a misspelling or a look-alike letter included, keeps it hidden.
+// English and Hebrew.
+const IDENTIFIER_WORDS = new Set([
+  "id",
+  "user",
+  "username",
+  "login",
+  "email",
+  "mail",
+  "phone",
+  "mobile",
+  "cell",
+  "tel",
+  "telephone",
+  "account",
+  "member",
+  "customer",
+  "זהות",
+  "תז",
+  "טלפון",
+  "נייד",
+  "פלאפון",
+  "סלולרי",
+  "מייל",
+  "אימייל",
+  "דואל",
+  "משתמש",
+  "חשבון",
+  "לקוח",
+  "חבר",
+]);
+const FILLER_WORDS = new Set([
+  "number",
+  "no",
+  "num",
+  "name",
+  "address",
+  "or",
+  "and",
+  "of",
+  "your",
+  "the",
+  "last",
+  "first",
+  "digit",
+  "digits",
+  "national",
+  "tax",
+  "employee",
+  "e",
+  "תעודת",
+  "מספר",
+  "שם",
+  "כתובת",
+  "או",
+  "של",
+  "ו",
+  "אחרונות",
+  "ספרות",
+  "לאומי",
+  "עובד",
+  "מס",
+]);
+
+function labelWords(label: string): string[] {
+  return (
+    label
+      .normalize("NFKC")
+      .normalize("NFD")
+      .replace(/[\p{M}\p{Cf}]/gu, "")
+      .toLowerCase()
+      // Spaces and punctuation separate words; any other symbol or emoji is a word of its own, so a
+      // label with one is not made only of known words.
+      .match(/[\p{L}\p{N}.'"׳״]+|[^\p{L}\p{N}\p{Z}\s\p{P}№]/gu)
+      ?.map((word) => word.replace(/[.'"׳״]/g, ""))
+      .filter(Boolean) ?? []
+  );
+}
+
+function knownWord(word: string, known: ReadonlySet<string>): boolean {
+  // Hebrew attaches "the" to a word: הטלפון.
+  return known.has(word) || (word.startsWith("ה") && known.has(word.slice(1)));
+}
+
+/** Whether a label is made only of identifier and plain filler words, such as "Phone number". */
+export function isIdentifierLabel(label: string): boolean {
+  const words = labelWords(label);
+  return (
+    words.some((word) => knownWord(word, IDENTIFIER_WORDS)) &&
+    words.every(
+      (word) =>
+        /^\p{N}+$/u.test(word) ||
+        knownWord(word, IDENTIFIER_WORDS) ||
+        knownWord(word, FILLER_WORDS),
+    )
+  );
+}
+
 /**
  * The empty fields a login card starts with. The default Username and Password card starts as
- * logins always have, Username visible; fields the bot names all start hidden, since only the
- * person may let one show.
+ * logins always have, Username visible. Fields the bot names start hidden, except those whose
+ * label is made only of identifier words (ID number, phone, email), which a sign-in without a
+ * password field needs typed into a text field. The system decides this from the label alone; the bot
+ * can't preset a field, and the person can switch any of them before saving.
  */
 export function loginCardFields(requested: readonly string[] | undefined): LoginFieldInput[] {
   if (!requested) {
@@ -305,7 +424,7 @@ export function loginCardFields(requested: readonly string[] | undefined): Login
       hidden: index > 0,
     }));
   }
-  return requested.map((label) => ({ label, value: "", hidden: true }));
+  return requested.map((label) => ({ label, value: "", hidden: !isIdentifierLabel(label) }));
 }
 
 /**
