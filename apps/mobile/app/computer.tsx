@@ -33,6 +33,7 @@ import { ComputerMaintenanceActions } from "../components/computer-maintenance-a
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
+import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import { useAppForeground } from "../lib/app-foreground";
 import type { ComputerStatus } from "../lib/computer";
@@ -543,7 +544,27 @@ export default function Computer() {
           disabled={bootPending}
           onPress={() => void openComputer({ takeControl: false })}
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
-        />
+        >
+          <View
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              padding: 8,
+              borderRadius: 12,
+              backgroundColor: tokens.card,
+            }}
+          >
+            <NativeSymbol
+              ios="arrow.up.left.and.arrow.down.right"
+              android="expand-outline"
+              size={20}
+              color={tokens.foreground}
+            />
+          </View>
+        </Pressable>
       </View>
       <View
         style={{

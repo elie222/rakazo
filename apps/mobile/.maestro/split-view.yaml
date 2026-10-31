@@ -71,3 +71,19 @@ tags:
     duration: 1500
 - waitForAnimationToEnd
 - takeScreenshot: "34-split-list-widened"
+
+# The computer opens beside the same list, then expands only when requested.
+- tapOn: "Open computer"
+- extendedWaitUntil:
+    visible: "Take control"
+    timeout: 20000
+- assertVisible: "Account"
+- takeScreenshot: "35-split-computer"
+- tapOn: "Open computer"
+- extendedWaitUntil:
+    visible: "Close computer"
+    timeout: 10000
+- assertNotVisible: "Account"
+- takeScreenshot: "36-computer-full-window"
+- tapOn: "Close computer"
+- assertVisible: "Account"
