@@ -12,6 +12,7 @@ import {
   chatUserBubbleColors,
   dismissableAskMessageIds,
   foldPeerReplies,
+  groupBotsForSidebar,
   isActive,
   isRunWorking,
   memberName,
@@ -277,8 +278,12 @@ function SpaceShell() {
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computer, computerOpen, setComputerOpen, booting, commitComputer } = computerState;
+  const cycleBots = useMemo(
+    () => groupBotsForSidebar(bots, botSections).flatMap((group) => group.bots),
+    [bots, botSections],
+  );
   const dialogs = useShellDialogs({
-    bots,
+    bots: cycleBots,
     activeId: active?.id,
     onSelectBot: selectBot,
     computerOpen,
