@@ -1577,9 +1577,23 @@ def focus_holds(client: CdpClient, session_id: str) -> bool | None:
         return None
 
 
-def page_mark(client: CdpClient, session_id: str) -> tuple[dict[str, Any], int]:
-    """The main frame and its navigation count, taken before a type step touches the page."""
-    frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+def frame_in_tree(client: CdpClient, session_id: str, frame_id: str | None = None,
+                  timeout_s: float = 10.0) -> dict[str, Any] | None:
+    """The session's root frame, or the frame frame_id in its tree."""
+    stack = [client.call("Page.getFrameTree", session_id=session_id, timeout_s=timeout_s)["frameTree"]]
+    while stack:
+        node = stack.pop()
+        if frame_id is None or node["frame"]["id"] == frame_id:
+            return node["frame"]
+        stack += node.get("childFrames") or []
+    return None
+
+
+def page_mark(client: CdpClient, session_id: str, frame_id: str | None = None) -> tuple[dict[str, Any], int]:
+    """The frame typed into (the main frame by default) and its navigation count, taken before a type step."""
+    frame = frame_in_tree(client, session_id, frame_id)
+    if frame is None:
+        raise Settled(STALE_REF)
     return frame, client.navigations(session_id, frame["id"])
 
 
@@ -1600,7 +1614,7 @@ def type_keys(client: CdpClient, session_id: str, text: str, multiline: bool,
     def moved_on(holds: bool | None) -> bool:
         if holds is not None and client.navigations(session_id, frame_id) == navigations:
             return False
-        wait_for_new_document(client, session_id, frame.get("loaderId"))
+        wait_for_new_document(client, session_id, frame_id, frame.get("loaderId"))
         return True
 
     # Enter in a one-line field would submit its form.
@@ -1621,13 +1635,13 @@ def type_keys(client: CdpClient, session_id: str, text: str, multiline: bool,
     return moved_on(focus_holds(client, session_id))
 
 
-def wait_for_new_document(client: CdpClient, session_id: str, loader_id: Any) -> None:
-    """Give a page that began loading another document the settle budget to replace the old one."""
+def wait_for_new_document(client: CdpClient, session_id: str, frame_id: str, loader_id: Any) -> None:
+    """Give a frame that began loading another document the settle budget to replace the old one."""
     deadline = time.monotonic() + SETTLE_SECONDS
     while time.monotonic() < deadline:
         try:
-            frame = client.call("Page.getFrameTree", session_id=session_id, timeout_s=SETTLE_SECONDS)
-            if frame["frameTree"]["frame"].get("loaderId") != loader_id:
+            frame = frame_in_tree(client, session_id, frame_id, timeout_s=SETTLE_SECONDS)
+            if frame is None or frame.get("loaderId") != loader_id:
                 return
         except Exception:  # noqa: BLE001
             return
@@ -2115,7 +2129,7 @@ def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched
             upload(client, frame.session, ref, step["files"])
             return False
         if kind == "type":
-            mark = page_mark(client, frame.session)
+            mark = page_mark(client, frame.session, frame.id)
             whole = json.dumps(len(step["text"]) > 1)
             focus = eval_json(client, frame.session,
                               f"window.__rakazoPageBrowser.focusForKeys({json.dumps(ref)}, {whole})")

@@ -2020,6 +2020,29 @@ class PageBrowserTest(unittest.TestCase):
         self.assertEqual(keys, [("keyDown", "1", "s-auth"), ("keyUp", "1", "s-auth"),
                                 ("keyDown", "2", "s-auth"), ("keyUp", "2", "s-auth")])
 
+    def test_typing_stops_when_a_frame_of_the_page_s_own_process_navigates(self):
+        browser = FrameBrowser()
+        original_answer, original_call = browser.answer, browser.call
+
+        def answer(frame, expression):
+            if "focusForKeys(" in expression:
+                return {"focused": True}
+            if "focusHolds()" in expression:
+                return True
+            return original_answer(frame, expression)
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            result = original_call(method, params, session_id=session_id, timeout_s=timeout_s)
+            if method == "Input.dispatchKeyEvent" and (params or {}).get("type") == "keyUp":
+                browser.client._handle_event({"method": "Page.frameRequestedNavigation", "sessionId": "top",
+                                              "params": {"frameId": "same", "url": SHOP_PAGE + "/next"}})
+            return result
+        browser.answer, browser.client.call = answer, call
+        with patch.object(helper, "SETTLE_SECONDS", 0.1):
+            result = browser.act([{"kind": "type", "ref": "f11", "text": "12"}], "same")
+        self.assertFalse(result["ok"])
+        self.assertIn("after 1 of 2 characters", result["error"])
+
     def test_navigate_returns_the_page_it_reached_beside_the_navigation(self):
         client = Mock()
         client.deadline = None
