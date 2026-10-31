@@ -219,9 +219,9 @@ export function routinesRoutes(ctx: RouterContext) {
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
         const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
-        // An explicit on/off (the editor always sends one) must not undo an enable, a disable or
-        // a finished one-shot that landed after the read.
-        const writesActive = input.active !== undefined;
+        // An explicit on/off must not undo an enable, a disable or a finished one-shot that landed
+        // after the read; neither may a schedule change computed from the old on/off state.
+        const writesActive = input.active !== undefined || scheduleChanged || watchChanged;
         // Re-check the parent in the write itself so an archive that lands after the read wins.
         // Model and schedule patches must also match the snapshot they were computed from, so a
         // tick that fired after the read is not rewound onto an occurrence that already ran.

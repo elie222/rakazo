@@ -7465,6 +7465,19 @@ describe("routines.update", () => {
     });
   });
 
+  it("rejects a schedule change when an enable landed after the read", async () => {
+    // The editor omits an unchanged on/off; the new schedule was computed for a paused routine.
+    const { call, update, enqueue } = fixture(false, false, { crons: ["0 9 * * *"] });
+    update.mockImplementationOnce(async (args) => {
+      expect(args.where).toMatchObject({ active: false });
+      throw Object.assign(new Error("not found"), { code: "P2025" });
+    });
+    expect(
+      (await call({ crons: ["0 10 * * *"], active: undefined, runAt: undefined })).status,
+    ).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it("rejects an explicit on/off when a disable landed after the read", async () => {
     // The editor sends `active` with every save. A disable that commits between the read and
     // the write must not be undone by a rename that still says "on".
