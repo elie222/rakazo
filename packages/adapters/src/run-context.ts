@@ -371,6 +371,7 @@ export function restoreTurnCheckpointEffects(
   ctx: RunContext,
   turnCheckpoint: string,
   model: { provider: string; id: string },
+  computerMode?: "main" | "computer",
 ): string | undefined {
   const effects = ctx.state.effects;
   try {
@@ -378,6 +379,18 @@ export function restoreTurnCheckpointEffects(
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));
+    if (computerMode) {
+      // Only the authenticated saved role authorizes a runtime transition. Do not
+      // add it to the executor's tool table or mask a connector wire-name collision.
+      if (
+        saved.computerMode?.version !== 1 ||
+        saved.computerMode.mode !== computerMode ||
+        available.has("enter_computer_mode") ||
+        available.has("leave_computer_mode")
+      )
+        return undefined;
+      available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
+    }
     if (
       saved.messages.some(
         (message) =>

@@ -31,6 +31,13 @@ import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
+  COMPUTER_MODE_TOOLS,
+  computerSelection,
+  computerTarget,
+  computerTransitionTool,
+  restoreComputerModels,
+} from "./pi-runtime-computer-mode.js";
+import {
   assistantText,
   messageHasToolCall,
   modelFailure,
@@ -74,6 +81,7 @@ import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
+import type { ComputerModeCheckpoint } from "./turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
@@ -217,6 +225,13 @@ export class PiAgentRuntime implements AgentRuntime {
       let trackedBudget: ToolCallBudget | undefined;
       let resumeHost: ToolHost | undefined;
       try {
+        const savedMode = request.turnCheckpoint
+          ? restoreTurnCheckpoint(request.turnCheckpoint, request.model).computerMode
+          : undefined;
+        if (savedMode) {
+          const pinned = await restoreComputerModels(request, savedMode);
+          request = { ...request, model: pinned.main, computerModel: pinned.computer };
+        }
         const selectedModel = resolveRuntimeModel(request.model);
         if (!selectedModel.model) {
           queue.push({
@@ -239,6 +254,17 @@ export class PiAgentRuntime implements AgentRuntime {
           apiKey,
           credentials: selectedModel.credentials,
         };
+        const computer = request.computerModel ? computerTarget(request.computerModel) : undefined;
+        let mode = savedMode?.mode ?? "main";
+        let mainTarget = initialModelTarget;
+        let computerMode: ComputerModeCheckpoint | undefined = computer
+          ? {
+              version: 1,
+              mode,
+              main: computerSelection(request.model),
+              computer: computerSelection(computer.config),
+            }
+          : undefined;
         const host: ToolHost = {
           queue,
           context,
@@ -246,7 +272,8 @@ export class PiAgentRuntime implements AgentRuntime {
           onContextDecision: this.onContextDecision,
           modelCallObserver: this.modelCallObserver,
           request,
-          activeModel: initialModelTarget,
+          activeModel: mode === "computer" ? computer! : initialModelTarget,
+          computerModeAllowed: computer ? () => mode === "computer" : undefined,
           models,
           model: completionModel,
           apiKey,
@@ -261,7 +288,8 @@ export class PiAgentRuntime implements AgentRuntime {
           pendingShells: [],
         };
         resumeHost = host;
-        const tools = toAgentTools(toolDefs, host);
+        const allTools = toAgentTools(toolDefs, host);
+        let tools = allTools;
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         let hasCurrentImages = Boolean(
@@ -270,11 +298,12 @@ export class PiAgentRuntime implements AgentRuntime {
             initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
+        // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
-          ? restoreTurnCheckpoint(request.turnCheckpoint, {
-              provider: model.provider,
-              id: model.id,
-            })
+          ? restoreTurnCheckpoint(
+              request.turnCheckpoint,
+              mode === "computer" && computer ? computer.model : model,
+            )
           : undefined;
         const history =
           restored?.messages ??
@@ -368,7 +397,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
-        const fallbackState: FallbackStreamState = {
+        let fallbackState: FallbackStreamState = {
           request,
           getActive: () => activeStreamTarget,
           signal,
@@ -438,6 +467,88 @@ export class PiAgentRuntime implements AgentRuntime {
             host.apiKey = target.credentials?.accessToken ?? target.apiKey;
           },
         };
+        const mainFallbackState = fallbackState;
+        const computerFallbackState: FallbackStreamState | undefined = computer
+          ? {
+              ...fallbackState,
+              request: { ...request, model: computer.config, fallbackModels: [] },
+              attempted: new Set(),
+              backupOutcomes: new Map(),
+            }
+          : undefined;
+        const setTarget = (target: RuntimeModelTarget) => {
+          // Keep message origin metadata: Pi's per-provider serializers translate foreign
+          // reasoning signatures and tool/result IDs together, including after resume.
+          activeStreamTarget = target;
+          host.activeModel = target;
+          host.models = target.models;
+          host.model = target.model;
+          host.apiKey = target.credentials?.accessToken ?? target.apiKey;
+          contextPolicy = contextPolicyFor(target);
+          if (agent) {
+            agent.state.model = target.model;
+            agent.state.thinkingLevel = thinkingLevelFor(target.model, target.config.thinkingLevel);
+          }
+        };
+        const modeTools = () => {
+          if (!computer) return allTools;
+          const transition = computerTransitionTool(
+            mode,
+            async () => {
+              const next = mode === "main" ? computer : mainTarget;
+              await request.onModelChange?.(next.config.provider, next.config.id);
+              signal.throwIfAborted();
+              if (mode === "main") {
+                mainTarget = {
+                  ...activeStreamTarget,
+                  config: {
+                    ...activeStreamTarget.config,
+                    thinkingLevel: agent.state.thinkingLevel,
+                  },
+                };
+                mode = "computer";
+                fallbackState = computerFallbackState!;
+                setTarget(computer);
+              } else {
+                mode = "main";
+                fallbackState = mainFallbackState;
+                setTarget(mainTarget);
+              }
+              computerMode = {
+                version: 1,
+                mode,
+                main: computerSelection(mainTarget.config),
+                computer: computerSelection(computer.config),
+              };
+              fallbackState.messagesBeforeSwitch = agent.state.messages.length;
+              tools = modeTools();
+              agent.state.tools = tools;
+            },
+            signal,
+          );
+          if (
+            allTools.some((tool) =>
+              ["enter_computer_mode", "leave_computer_mode"].includes(tool.name),
+            )
+          )
+            throw new Error("Computer mode tool name collision");
+          return [
+            ...allTools.filter(
+              (tool) => mode === "computer" || !COMPUTER_MODE_TOOLS.has(tool.label),
+            ),
+            transition,
+          ];
+        };
+        tools = modeTools();
+        if (computer) {
+          fallbackState = mode === "computer" ? computerFallbackState! : mainFallbackState;
+          setTarget(activeStreamTarget);
+          if (savedMode)
+            await request.onModelChange?.(
+              activeStreamTarget.config.provider,
+              activeStreamTarget.config.id,
+            );
+        }
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
@@ -447,9 +558,10 @@ export class PiAgentRuntime implements AgentRuntime {
               ctx,
               withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
             ),
-          getApiKey: hasBackups
-            ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
-            : async () => apiKey,
+          getApiKey:
+            hasBackups || computer
+              ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
+              : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
               (text) => {
@@ -464,10 +576,20 @@ export class PiAgentRuntime implements AgentRuntime {
               turnSignal,
             );
           },
-          prepareNextTurnWithContext: async () => {
-            if (!request.claimSteering) return undefined;
+          prepareNextTurnWithContext: async (turn) => {
+            const update = computer
+              ? {
+                  context: { ...turn.context, tools },
+                  model: activeStreamTarget.model,
+                  thinkingLevel: thinkingLevelFor(
+                    activeStreamTarget.model,
+                    activeStreamTarget.config.thinkingLevel,
+                  ),
+                }
+              : undefined;
+            if (!request.claimSteering) return update;
             const steering = await request.claimSteering([...seenSteeringIds]);
-            if (steering.length === 0) return undefined;
+            if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
@@ -492,12 +614,14 @@ export class PiAgentRuntime implements AgentRuntime {
               type: "steered",
               fromRunUser: steering.some((item) => item.origin === "user"),
             });
-            return undefined;
+            return update;
           },
           initialState: {
             systemPrompt,
-            model: completionModel,
-            thinkingLevel,
+            model: activeStreamTarget.model,
+            thinkingLevel: computer
+              ? thinkingLevelFor(activeStreamTarget.model, activeStreamTarget.config.thinkingLevel)
+              : thinkingLevel,
             tools,
             messages: history,
           },
@@ -526,6 +650,16 @@ export class PiAgentRuntime implements AgentRuntime {
               ));
           const checkpoint = {
             version: 1 as const,
+            ...(computerMode
+              ? {
+                  computerMode: {
+                    ...computerMode,
+                    main: computerSelection(
+                      mode === "main" ? activeStreamTarget.config : mainTarget.config,
+                    ),
+                  },
+                }
+              : {}),
             provider: activeStreamTarget.model.provider,
             model: activeStreamTarget.model.id,
             systemPrompt,

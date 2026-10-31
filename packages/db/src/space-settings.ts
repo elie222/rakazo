@@ -9,6 +9,8 @@ type OverrideClient = Pick<PrismaClient, "spaceSettingOverride">;
 type CopyClient = Pick<
   PrismaClient,
   | "spaceSettingOverride"
+  | "spaceModelPreference"
+  | "userModelPreference"
   | "spaceModelRoleChoice"
   | "userModelRoleChoice"
   | "spaceVoicePreference"
@@ -107,6 +109,7 @@ async function clearSpaceCopy(tx: CopyClient, scope: Scope, setting: SpaceSettin
   const member = { spaceId: scope.spaceId, userId: scope.userId };
   if (setting === "models") {
     await tx.spaceModelRoleChoice.deleteMany({ where: member });
+    await tx.spaceModelPreference.deleteMany({ where: member });
   } else if (setting === "voice") {
     await tx.spaceVoicePreference.deleteMany({ where: member });
   } else if (setting === "credentials") {
@@ -123,6 +126,18 @@ async function copyAccountIntoSpace(tx: CopyClient, scope: Scope, setting: Space
   if (setting === "credentials") return;
   const member = { spaceId: scope.spaceId, userId: scope.userId };
   if (setting === "models") {
+    const preferences = await tx.userModelPreference.findMany({ where: { userId: scope.userId } });
+    if (preferences.length)
+      await tx.spaceModelPreference.createMany({
+        data: preferences.map((row) => ({
+          ...member,
+          credentialId: row.credentialId,
+          computerProvider: row.computerProvider,
+          computerCredentialId: row.computerCredentialId,
+          computerModelId: row.computerModelId,
+          computerThinkingLevel: row.computerThinkingLevel,
+        })),
+      });
     const rows = await tx.userModelRoleChoice.findMany({ where: { userId: scope.userId } });
     if (rows.length) {
       await tx.spaceModelRoleChoice.createMany({

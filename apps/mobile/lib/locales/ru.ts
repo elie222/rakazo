@@ -1,4 +1,10 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Unavailable: "Недоступно",
+  "Computer thinking": "Уровень рассуждений при работе с компьютером",
+  "Computer-use model": "Модель для работы с компьютером",
+  "Default (Medium)": "По умолчанию (Средний)",
+  "Same as main model": "Как у основной модели",
+  "Use provider default": "Использовать настройку провайдера",
   "How other bots see it": "Как его видят другие боты",
   "Share to": "Отправить в",
   "{count} files": "Файлов: {count}",

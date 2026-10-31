@@ -1511,6 +1511,15 @@ msgstr "Компьютер спит. Откройте его, чтобы раз�
 msgid "Computer is stopped"
 msgstr "Компьютер остановлен"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Computer thinking"
+msgstr "Уровень рассуждений при работе с компьютером"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Computer-use model"
+msgstr "Модель для работы с компьютером"
+
 #: src/components/ComputerDeviceSettings.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Computers"
@@ -2403,6 +2412,10 @@ msgstr "По умолчанию"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "По умолчанию ({0})"
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Default (Medium)"
+msgstr "По умолчанию (Средний)"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
@@ -3473,6 +3486,7 @@ msgstr "Загрузка поставщиков голосовой связи…
 #: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -4925,6 +4939,7 @@ msgstr "Восстановление вашего рабочего простр�
 #: src/components/integrations/skills-dialog.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/PluginSubmissionsPanel.tsx
@@ -5028,6 +5043,10 @@ msgstr "Запускается, когда этот бот получает пр
 #: src/pages/PluginsOverlay.tsx
 msgid "Sales & CRM"
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Same as main model"
+msgstr "Как у основной модели"
 
 #: src/lib/cron.ts
 msgid "Saturday"
@@ -5787,6 +5806,7 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
+#: src/pages/model-settings/computer-model-settings.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -6066,6 +6086,10 @@ msgstr "Введите ответ"
 msgid "Unassigned"
 msgstr "Без раздела"
 
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Unavailable"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Отменить"
@@ -6211,6 +6235,10 @@ msgstr ""
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
+
+#: src/pages/model-settings/computer-model-settings.tsx
+msgid "Use provider default"
+msgstr "Использовать настройку провайдера"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"

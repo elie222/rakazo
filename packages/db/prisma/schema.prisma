@@ -608,6 +608,12 @@ model SpaceModelPreference {
   credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
   modelId      String?
   thinkingLevel String?
+  // Explicit target identity; null pins retain the legacy source-connection default.
+  // No target FK: a deleted connection must stay visible as unavailable, not silently inherit.
+  computerProvider String?
+  computerCredentialId String?
+  computerModelId String?
+  computerThinkingLevel String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
@@ -671,6 +677,7 @@ model Bot {
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?
+  computerModel     Json?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
@@ -2085,6 +2092,13 @@ model UserModelRoleChoice {
 
 /// A connection's own model and effort, which belong to the connection in every Space.
 model UserModelPreference {
+  hasMainPreference Boolean @default(true)
+  // Explicit target identity; null pins retain the legacy source-connection default.
+  // No target FK: a deleted connection must stay visible as unavailable, not silently inherit.
+  computerProvider String?
+  computerCredentialId String?
+  computerModelId String?
+  computerThinkingLevel String?
   userId        String
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   credentialId  String

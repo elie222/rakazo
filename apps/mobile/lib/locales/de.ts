@@ -1,4 +1,10 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Unavailable: "Nicht verfügbar",
+  "Computer thinking": "Denken bei Computernutzung",
+  "Computer-use model": "Modell für Computernutzung",
+  "Default (Medium)": "Standard (Mittel)",
+  "Same as main model": "Wie das Hauptmodell",
+  "Use provider default": "Anbieterstandard verwenden",
   "How other bots see it": "So sehen andere Bots ihn",
   "Share to": "Teilen mit",
   "{count} files": "{count} Dateien",

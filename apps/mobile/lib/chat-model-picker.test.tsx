@@ -109,6 +109,7 @@ vi.mock("./api", () => ({
         ? { provider: "cloudflare-workers-ai", providerName: "Cloudflare Workers AI" }
         : undefined;
     const result = mocks.rpc(procedure, input);
+    if (procedure === "models/computer") return { selection: null, options: [] };
     if (procedure === "models/connect") {
       await result;
       const saved = input as {

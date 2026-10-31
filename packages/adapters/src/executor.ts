@@ -72,6 +72,7 @@ import {
   renewComputerExecutionLease,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
+import { computerCheckpointResolver, resolveComputerRunModel } from "./computer-model-settings.js";
 import { teamBotWorkspaceDirectory } from "./computer-support.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
 import {
@@ -111,6 +112,7 @@ import { modelAcceptsImageInput } from "./model-vision.js";
 import { usesNativeShell } from "./native-shell.js";
 import { paymentWalletConnected } from "./payment-wallets.js";
 import { isRetiredModelCredentialError } from "./pi-oauth.js";
+import { restoreComputerModels } from "./pi-runtime-computer-mode.js";
 import { loadPurchaseRedactions } from "./purchase-service.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
 import { backOffRoutineAfterAccountError } from "./routine-backoff.js";
@@ -205,6 +207,7 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
+import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {
@@ -441,6 +444,48 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // integration and computer setup must not occupy a queue dispatch slot.
         onRunStarted?.();
         dispatchHandedOff = Boolean(onRunStarted);
+        // A saved computer turn owns both identities. Resolve them before consulting
+        // today's main selection, whose connection may have changed while paused.
+        let turnCheckpoint: string | undefined;
+        let checkpointLoadError: Error | undefined;
+        try {
+          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+        } catch (error) {
+          checkpointLoadError =
+            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
+        }
+        const storedTurnCheckpoint = Boolean(turnCheckpoint);
+        const resolveCheckpointModel = (
+          provider: string,
+          id: string,
+          connectionId: string,
+          effort?: string,
+        ) =>
+          resolveConnectedModel(
+            run,
+            provider,
+            id,
+            (values) => runSecrets.push(...values),
+            true,
+            effort ?? null,
+            connectionId,
+          );
+        const checkpointIdentity = { provider: run.modelProvider ?? "", id: run.modelId ?? "" };
+        const computerCheckpoint = turnCheckpoint ?? takeoverResume?.checkpoint;
+        const checkpointModelResolver = computerCheckpointResolver(
+          computerCheckpoint,
+          checkpointIdentity,
+          resolveCheckpointModel,
+        );
+        const savedComputerMode = checkpointModelResolver
+          ? restoreTurnCheckpoint(computerCheckpoint!, checkpointIdentity).computerMode
+          : undefined;
+        const pinnedComputerModels = savedComputerMode
+          ? await restoreComputerModels(
+              { resolveFallbackModel: checkpointModelResolver },
+              savedComputerMode,
+            )
+          : undefined;
         const sourceBlocks =
           run.trigger === "messaging" && run.sourceMessageId
             ? ((
@@ -490,7 +535,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               status: true,
             },
           }),
-          resolveMemberMainModel(deps, run),
+          pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
@@ -534,7 +579,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const modelChoice = runModelChoice(run, bot);
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
-          hasModelOverride && modelChoice.modelProvider
+          !pinnedComputerModels && hasModelOverride && modelChoice.modelProvider
             ? await findConnectedModelCredential(
                 deps.prisma,
                 deps.secretStore,
@@ -744,6 +789,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const pinError =
+          !pinnedComputerModels &&
           run.modelPinned &&
           !(
             (await modelCreditBillingEnabled(deps)) &&
@@ -751,15 +797,22 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           )
             ? pinnedModelCredentialError(modelChoice, overrideCredential)
             : undefined;
-        const selected = selectConfiguredModel({
-          override: modelChoice,
-          overrideCredential,
-          main,
-          hostedProvider: (await modelCreditBillingEnabled(deps))
-            ? resolveDeploymentModel().provider
-            : undefined,
-          defaults: { settings, deployment: runDeployment },
-        });
+        const selected = pinnedComputerModels
+          ? {
+              provider: pinnedComputerModels.main.provider,
+              id: pinnedComputerModels.main.id,
+              thinkingLevel: pinnedComputerModels.main.thinkingLevel,
+              credential: null,
+            }
+          : selectConfiguredModel({
+              override: modelChoice,
+              overrideCredential,
+              main,
+              hostedProvider: (await modelCreditBillingEnabled(deps))
+                ? resolveDeploymentModel().provider
+                : undefined,
+              defaults: { settings, deployment: runDeployment },
+            });
         const selectedProvider = selected.provider ?? runtimeFallback?.provider;
         const selectedModelId = selected.id ?? runtimeFallback?.id;
         // A missing or refused connection of the user's own fails every scheduled run alike.
@@ -780,6 +833,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           return;
         }
         if (
+          !pinnedComputerModels &&
           run.modelPinned &&
           (selected.provider !== modelChoice.modelProvider || selected.id !== modelChoice.modelId)
         ) {
@@ -855,15 +909,25 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               id: selectedModelId,
               credential: selected.credential,
               thinkingLevel: selected.thinkingLevel,
-              resolved: await resolveModelKey(
-                deps,
-                run.userId,
-                run.spaceId,
-                selected.credential,
-                selectedProvider,
-                selectedModelId,
-                (values) => runSecrets.push(...values),
-              ),
+              resolved: pinnedComputerModels
+                ? {
+                    ...pinnedComputerModels.main,
+                    apiKey: pinnedComputerModels.main.apiKey,
+                    callObserver: pinnedComputerModels.main.callObserver,
+                    oauth: pinnedComputerModels.main.oauth?.credential,
+                    persistOAuth: pinnedComputerModels.main.oauth?.persist,
+                    retireOAuth: pinnedComputerModels.main.oauth?.retire,
+                    redact: [],
+                  }
+                : await resolveModelKey(
+                    deps,
+                    run.userId,
+                    run.spaceId,
+                    selected.credential,
+                    selectedProvider,
+                    selectedModelId,
+                    (values) => runSecrets.push(...values),
+                  ),
             };
           } catch (error) {
             // An incompatible saved model or a dead (already retired) credential is a
@@ -1010,7 +1074,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           runModelId,
           resolved.acceptsImages,
         );
-        const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
+
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId, {
               id: bot.id,
@@ -1044,6 +1108,44 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ));
           }
         }
+        const mainRunModel: AgentRunRequest["model"] = pinnedComputerModels?.main ?? {
+          provider: runModelProvider,
+          id: runModelId,
+          ...(credential ? { connectionId: credential.id } : {}),
+          apiKey: resolved.oauth ? undefined : resolved.apiKey,
+          callObserver: resolved.callObserver,
+          ...cloudflareRunFields(resolved),
+          baseUrl: resolved.baseUrl,
+          apiProtocol: resolved.apiProtocol,
+          headers: resolved.headers,
+          allowPrivateEndpoint: resolved.allowPrivateEndpoint,
+          cacheCapabilities: resolved.cacheCapabilities,
+          contextWindow: resolved.contextWindow,
+
+          reasoning: resolved.reasoning,
+          maxTokens: resolved.maxTokens,
+          acceptsImages: resolved.acceptsImages,
+          maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+          thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
+          oauth: resolved.oauth
+            ? {
+                credential: resolved.oauth,
+                persist: resolved.persistOAuth,
+                retire: resolved.retireOAuth,
+              }
+            : undefined,
+        };
+        // Saved identities win on resume, including when the bot/default was cleared meanwhile.
+        const computerModel =
+          pinnedComputerModels?.computer ??
+          (scripted || checkpointModelResolver
+            ? undefined
+            : await resolveComputerRunModel(
+                { prisma: deps.prisma, resolve: resolveCheckpointModel },
+                { userId: run.userId, spaceId: run.spaceId },
+                mainRunModel,
+                bot.computerModel,
+              ));
         const sourceMessage =
           (run.trigger === "user" || run.trigger === "follow_up") && run.sourceMessageId
             ? await deps.prisma.message.findUnique({
@@ -1059,6 +1161,10 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const callEndRun = run.trigger === "call_end";
         const callClientNonceForRun = callEndRun ? run.clientNonce : sourceClientNonce;
         const voiceCall = callEndRun || isCallClientNonce(sourceClientNonce);
+        const acceptsImages =
+          deps.runtime.describe().capabilities.scripted ||
+          modelSeesImages ||
+          Boolean(computerModel || checkpointModelResolver);
         const graphicalToolsAllowed = graphical && acceptsImages && !heldForTakeover;
         const pageBrowserAllowed =
           graphical && browser.describe().capabilities.page && !heldForTakeover;
@@ -1137,15 +1243,6 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
         // connectorReadRequiresApproval; approvals from earlier attempts are read back from effects.
         const searchResultUrls = new Set<string>();
-        let turnCheckpoint: string | undefined;
-        let checkpointLoadError: Error | undefined;
-        try {
-          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
-        } catch (error) {
-          checkpointLoadError =
-            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
-        }
-        const storedTurnCheckpoint = Boolean(turnCheckpoint);
         const initiallyTainted =
           !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
@@ -1347,10 +1444,19 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             )}\n\n${taskPrompt}`
           : taskPrompt;
         if (turnCheckpoint) {
-          turnCheckpoint = restoreTurnCheckpointEffects(ctx, turnCheckpoint, {
-            provider: runModelProvider,
-            id: runModelId,
-          });
+          turnCheckpoint = restoreTurnCheckpointEffects(
+            ctx,
+            turnCheckpoint,
+            {
+              provider: runModelProvider,
+              id: runModelId,
+            },
+            savedComputerMode?.mode,
+          );
+          if (checkpointModelResolver && !turnCheckpoint)
+            throw new Error(
+              "Pinned computer mode checkpoint cannot resume with the available tools",
+            );
         }
         const approvalContinuation = turnCheckpoint
           ? undefined
@@ -1486,7 +1592,8 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             !backupsUnavailable.has(candidate) &&
             (candidate.provider !== runModelProvider ||
               candidate.modelId !== runModelId ||
-              (candidate.credentialId !== undefined && candidate.credentialId !== credential?.id)),
+              (candidate.credentialId !== undefined &&
+                candidate.credentialId !== mainRunModel.connectionId)),
         );
         const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
           JSON.stringify([provider, modelId, credentialId ?? null]);
@@ -1575,64 +1682,46 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                   ),
               ),
               tools,
-              model: {
-                provider: runModelProvider,
-                id: runModelId,
-                ...(credential ? { connectionId: credential.id } : {}),
-                apiKey: resolved.oauth ? undefined : resolved.apiKey,
-                callObserver: resolved.callObserver,
-                ...cloudflareRunFields(resolved),
-                baseUrl: resolved.baseUrl,
-                apiProtocol: resolved.apiProtocol,
-                headers: resolved.headers,
-                allowPrivateEndpoint: resolved.allowPrivateEndpoint,
-                cacheCapabilities: resolved.cacheCapabilities,
-                contextWindow: resolved.contextWindow,
-
-                reasoning: resolved.reasoning,
-                maxTokens: resolved.maxTokens,
-                acceptsImages: resolved.acceptsImages,
-                maxImagesPerPrompt: resolved.maxImagesPerPrompt,
-                thinkingLevel: thinkingLevel ?? resolved.thinkingLevel ?? null,
-                oauth: resolved.oauth
-                  ? {
-                      credential: resolved.oauth,
-                      persist: resolved.persistOAuth,
-                      retire: resolved.retireOAuth,
-                    }
-                  : undefined,
-              },
+              model: mainRunModel,
+              computerModel,
               fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,
                 id: modelId,
                 ...(credentialId ? { connectionId: credentialId } : {}),
               })),
-              resolveFallbackModel: fallbackModelKeys.size
-                ? async (provider, modelId, connectionId) => {
-                    const key = fallbackKey(provider, modelId, connectionId);
-                    if (!fallbackModelKeys.has(key))
-                      throw new Error("Backup model is not selected");
-                    return resolveConnectedModel(
-                      { userId: run.userId, spaceId: run.spaceId },
-                      provider,
-                      modelId,
-                      (values) => runSecrets.push(...values),
-                      true,
-                      fallbackModels.find(
-                        (candidate) =>
-                          fallbackKey(
-                            candidate.provider,
-                            candidate.modelId,
-                            candidate.credentialId,
-                          ) === key,
-                      )?.thinkingLevel ?? null,
-                      connectionId,
-                    );
-                  }
-                : undefined,
+              resolveFallbackModel:
+                checkpointModelResolver || fallbackModelKeys.size
+                  ? async (provider, modelId, connectionId) => {
+                      if (checkpointModelResolver?.has(provider, modelId, connectionId))
+                        return checkpointModelResolver(provider, modelId, connectionId);
+                      const key = fallbackKey(provider, modelId, connectionId);
+                      if (!fallbackModelKeys.has(key))
+                        throw new Error("Backup model is not selected");
+                      return resolveConnectedModel(
+                        { userId: run.userId, spaceId: run.spaceId },
+                        provider,
+                        modelId,
+                        (values) => runSecrets.push(...values),
+                        true,
+                        fallbackModels.find(
+                          (candidate) =>
+                            fallbackKey(
+                              candidate.provider,
+                              candidate.modelId,
+                              candidate.credentialId,
+                            ) === key,
+                        )?.thinkingLevel ?? null,
+                        connectionId,
+                      );
+                    }
+                  : undefined,
               onModelChange: async (provider, modelId) => {
-                if (!fallbackModelIds.has(fallbackKey(provider, modelId))) {
-                  throw new Error("Backup model is not selected");
+                const roleModel =
+                  [mainRunModel, computerModel].some(
+                    (model) => model?.provider === provider && model.id === modelId,
+                  ) || checkpointModelResolver?.hasModel(provider, modelId);
+                if (!roleModel && !fallbackModelIds.has(fallbackKey(provider, modelId))) {
+                  throw new Error("Model is not selected");
                 }
                 const updated = await deps.prisma.run.updateMany({
                   where: {

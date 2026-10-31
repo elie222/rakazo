@@ -91,6 +91,7 @@ function setup(
     }),
   };
   const tx = {
+    spaceModelPreference: { deleteMany: vi.fn(), createMany: vi.fn() },
     userModelRoleChoice,
     spaceModelRoleChoice,
     spaceSettingOverride,
@@ -227,6 +228,27 @@ describe("model catalog offered to pickers", () => {
       openrouter.filter((entry) => entry.id.endsWith(":batch")).map((entry) => entry.id),
     ).toEqual([saved]);
     expect(openrouter.some((entry) => entry.id === "anthropic/claude-haiku-5.5")).toBe(true);
+  });
+});
+
+describe("computer settings RPC boundary", () => {
+  it("rejects requests captured for a different account", async () => {
+    const { call } = setup();
+    for (const procedure of ["models/computer", "models/setComputer"]) {
+      const result = await call(procedure, {
+        target: { kind: "connection", credentialId: "credential" },
+        selection: null,
+        expectedUserId: "another-user",
+      });
+      expect(result.response.status).toBe(403);
+    }
+  });
+  it("refuses another account's connection", async () => {
+    const { call } = setup();
+    const result = await call("models/computer", {
+      target: { kind: "connection", credentialId: "someone-else" },
+    });
+    expect(result.response.status).toBe(404);
   });
 });
 

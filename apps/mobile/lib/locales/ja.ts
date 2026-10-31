@@ -1,4 +1,10 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Unavailable: "利用できません",
+  "Computer thinking": "コンピューター操作の思考レベル",
+  "Computer-use model": "コンピューター操作モデル",
+  "Default (Medium)": "既定（中）",
+  "Same as main model": "メインモデルと同じ",
+  "Use provider default": "プロバイダーの既定値を使用",
   "How other bots see it": "他のボットからの見え方",
   "Share to": "共有先",
   "{count} files": "{count}個のファイル",

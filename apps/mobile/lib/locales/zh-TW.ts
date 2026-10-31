@@ -1,4 +1,10 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
+  Unavailable: "無法使用",
+  "Computer thinking": "電腦操作思考強度",
+  "Computer-use model": "電腦操作模型",
+  "Default (Medium)": "預設（中等）",
+  "Same as main model": "與主模型相同",
+  "Use provider default": "使用供應商預設模型",
   "How other bots see it": "其他機器人如何瞭解它",
   "Share to": "分享到",
   "{count} files": "{count} 個檔案",
