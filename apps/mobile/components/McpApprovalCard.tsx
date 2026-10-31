@@ -15,6 +15,7 @@ const styles = StyleSheet.create({
   badge: { alignItems: "center", borderRadius: 8, height: 28, justifyContent: "center", width: 28 },
   badgeText: { fontSize: 12, fontWeight: "600" },
   card: {
+    width: "100%",
     maxWidth: 576,
     borderRadius: 18,
     paddingHorizontal: 16,
