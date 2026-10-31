@@ -269,7 +269,7 @@ export function useComputerState({
   }, [computerOpen]);
   const screenRequest = useRef(0);
   const computerVisible = useRef(false);
-  computerVisible.current = panel === "computer" || computerOpen;
+  computerVisible.current = panel === "overview" || computerOpen;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? activeId;
 
@@ -462,7 +462,7 @@ export function useComputerControls({
     }, 4000);
   }, []);
   useEffect(() => {
-    if (panel !== "computer") releaseComputerRecovery();
+    if (panel !== "overview") releaseComputerRecovery();
   }, [panel, releaseComputerRecovery]);
   useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const computerBot =
@@ -537,7 +537,7 @@ export function useComputerControls({
   }
 
   useEffect(() => {
-    if (panel !== "computer") {
+    if (panel !== "overview") {
       autoBooted.current = null;
       return;
     }
@@ -611,7 +611,7 @@ export function useComputerControls({
 
   useEffect(() => {
     const heartbeatBotId = computerBot?.id ?? active?.id;
-    if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
+    if ((panel !== "overview" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
     // A computer panel left open in a hidden window must not keep the computer awake.
     const ping = () => {

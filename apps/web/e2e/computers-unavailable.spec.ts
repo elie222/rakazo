@@ -56,7 +56,7 @@ test("unavailable computers explain setup and open computer settings", async ({
   );
   await page.reload();
 
-  await openBotPanelTab(page, "Computer");
+  await openBotPanelTab(page, "Overview");
   const preview = page.getByTestId("computer-preview");
   const hint = preview.getByTestId("computers-unavailable-hint");
   await expect(hint).toBeVisible();

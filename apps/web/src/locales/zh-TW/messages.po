@@ -882,6 +882,10 @@ msgstr "詢問"
 msgid "Ask rule"
 msgstr "審批規則"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "休眠中"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4325,6 +4329,10 @@ msgstr "其他模型…"
 msgid "Output"
 msgstr "輸出"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "總覽"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4997,8 +5005,8 @@ msgstr "輪換金鑰"
 msgid "Routine"
 msgstr "例行任務"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "例行任務"
 
@@ -6328,6 +6336,10 @@ msgstr "排隊等候…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "等待中…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "喚醒"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

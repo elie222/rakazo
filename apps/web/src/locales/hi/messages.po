@@ -881,6 +881,10 @@ msgstr "पूछें"
 msgid "Ask rule"
 msgstr "स्वीकृति नियम"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "स्लीप में"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "अन्य मॉडल…"
 msgid "Output"
 msgstr "आउटपुट"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "अवलोकन"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr ""
 msgid "Routine"
 msgstr "रूटीन"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "रूटीन्स"
 
@@ -6327,6 +6335,10 @@ msgstr "कतार में प्रतीक्षा…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "प्रतीक्षा…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "जगाएँ"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

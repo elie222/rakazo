@@ -111,7 +111,7 @@ export function useRoutineEditor({
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
-        onBack: () => setPanel("routines"),
+        onBack: () => setPanel("overview"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
           await ensureWebhookSecret(active.id);
@@ -265,7 +265,7 @@ export function useRoutineEditor({
             setDeleteRoutineTarget(editingRoutine);
             return;
           }
-          setPanel("routines");
+          setPanel("overview");
         },
       } satisfies ComponentProps<typeof RoutineEditor>)
     : null;
@@ -281,7 +281,7 @@ export function useRoutineEditor({
           setEditingRoutine((current) => (current?.id === target.id ? null : current));
           if (activeBotId.current !== target.botId) return;
           await refreshThread(target.botId);
-          if (activeBotId.current === target.botId) setPanel("routines");
+          if (activeBotId.current === target.botId) setPanel("overview");
         },
       }
     : null;

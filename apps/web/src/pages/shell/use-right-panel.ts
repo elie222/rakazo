@@ -149,7 +149,7 @@ export function useRightPanelRestore({
       const routine = saved.routineId
         ? routines.find((item) => item.id === saved.routineId)
         : undefined;
-      if (saved.routineId && !routine) next = "routines";
+      if (saved.routineId && !routine) next = "overview";
       restoreRoutine(routine ?? null);
     }
     pendingPanelRestore.current = null;

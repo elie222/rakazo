@@ -80,8 +80,7 @@ export function ShellSidePanel({
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup || panel === "import-agent"));
-  const botTab =
-    panel === "computer" || panel === "routines" || panel === "settings" ? panel : null;
+  const botTab = panel === "overview" || panel === "settings" ? panel : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
     const group = await rpc.groups.create(input);
@@ -109,7 +108,7 @@ export function ShellSidePanel({
               ) : null}
               <div className="ml-auto flex gap-1">
                 {active &&
-                panel === "computer" &&
+                panel === "overview" &&
                 !computerOpen &&
                 computerPanelNeedsMaintenance(computer?.state, booting) ? (
                   <ComputerMaintenanceActions
@@ -185,7 +184,7 @@ export function ShellSidePanel({
               tab={botTab}
               onTabChange={(tab: BotPanelTab) => {
                 setPanel(tab);
-                if (tab === "computer") void refreshThread(active.id).catch(() => undefined);
+                if (tab === "overview") void refreshThread(active.id).catch(() => undefined);
               }}
               computer={computerPanel}
               routines={routinesPanel}

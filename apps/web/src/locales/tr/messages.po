@@ -881,6 +881,10 @@ msgstr "Sor"
 msgid "Ask rule"
 msgstr "Onay kuralı"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "Uykuda"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "Başka model…"
 msgid "Output"
 msgstr "Çıktı"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "Genel bakış"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr ""
 msgid "Routine"
 msgstr "Rutin"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Rutinler"
 
@@ -6327,6 +6335,10 @@ msgstr "Sırada bekleniyor…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "Bekleniyor…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "Uyandır"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

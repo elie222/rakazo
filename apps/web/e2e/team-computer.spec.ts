@@ -20,6 +20,7 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
     if (request.url().endsWith("/rpc/computer/takeover")) takeovers += 1;
   });
   await openComputerPanel(page);
+  await captureScreenshot(page, testInfo, "overview-computer-asleep");
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   const chrome = page.getByTestId("computer-chrome");
@@ -56,6 +57,12 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   await checkViewOnly();
   expect(takeovers).toBe(1);
   await captureScreenshot(page, testInfo, "computer-released-view-only");
+  await page.getByRole("button", { name: "Close computer" }).click();
+  await expect(page.getByTitle("Bot screen preview")).toBeVisible();
+  await captureScreenshot(page, testInfo, "overview-computer-running");
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
+  await expect(take).toBeVisible();
 
   // A release that fails keeps the computer open so it can be retried.
   await take.click();
@@ -114,7 +121,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
 
-  await openBotPanelTab(page, "Computer");
+  await openBotPanelTab(page, "Overview");
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel.getByRole("button", { name: /Take control/i })).toHaveCount(0);
   await page.getByTestId("computer-preview").hover();
@@ -160,7 +167,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
 });
 
 async function openComputerPanel(page: Page) {
-  await openBotPanelTab(page, "Computer");
+  await openBotPanelTab(page, "Overview");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await expect(page.getByTestId("computer-preview-open")).toHaveCount(1);
 }

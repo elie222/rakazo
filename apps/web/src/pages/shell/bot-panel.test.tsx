@@ -258,8 +258,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
   expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    "Computer",
-    "Routines",
+    "Overview",
     "Advanced",
   ]);
   expect(

@@ -881,6 +881,10 @@ msgstr "לשאול"
 msgid "Ask rule"
 msgstr "כלל אישור"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "במצב שינה"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "מודל אחר…"
 msgid "Output"
 msgstr "פלט"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "סקירה"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr "החלפת מפתח"
 msgid "Routine"
 msgstr "רוטינה"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "רוטינות"
 
@@ -6327,6 +6335,10 @@ msgstr "ממתין בתור…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "ממתין…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "הער"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

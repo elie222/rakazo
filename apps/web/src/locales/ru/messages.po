@@ -881,6 +881,10 @@ msgstr "Спрашивать"
 msgid "Ask rule"
 msgstr "Правило подтверждения"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "Спит"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "Другая модель…"
 msgid "Output"
 msgstr "Вывод"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "Обзор"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr "Сменить ключ"
 msgid "Routine"
 msgstr "Задача"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Задачи"
 
@@ -6327,6 +6335,10 @@ msgstr "Ожидание в очереди…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "Ожидание…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "Разбудить"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"
