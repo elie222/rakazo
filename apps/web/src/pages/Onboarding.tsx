@@ -42,6 +42,7 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { FoundModelPicker } from "../components/FoundModelPicker";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -264,7 +265,6 @@ export function OnboardingPage() {
       cloudflareRoutingReady &&
       (isOpenAiCompatible ? openAiCompatibleReady : acceptsKey && apiKey.trim()),
   );
-  const otherModelLabel = t`Other model…`;
   // Subscriptions and the common API providers first; every other provider follows.
   const providerOptions = useMemo(() => {
     const byId = new Map(providers.map((entry) => [entry.provider, entry]));
@@ -301,13 +301,6 @@ export function OnboardingPage() {
   const modelItems = useMemo(
     () => modelsForProvider.map((entry) => ({ value: entry.id, label: entry.label })),
     [modelsForProvider],
-  );
-  const probeModelItems = useMemo(
-    () => [
-      ...probeModels.map((id) => ({ value: id, label: id })),
-      { value: CUSTOM_MODEL_OPTION, label: otherModelLabel },
-    ],
-    [otherModelLabel, probeModels],
   );
 
   function invalidatePreflight() {
@@ -652,38 +645,16 @@ export function OnboardingPage() {
                         <Trans>Model</Trans>
                       </span>
                       {probeModels.length && !manualModelId ? (
-                        <Select
+                        <FoundModelPicker
+                          models={probeModels}
                           value={modelId}
-                          onValueChange={(value) => {
-                            if (typeof value !== "string") return;
-                            const next = value;
+                          onChange={(next) => {
                             invalidatePreflight();
-                            if (next === CUSTOM_MODEL_OPTION) {
-                              setManualModelId(true);
-                              setModelId("");
-                            } else {
-                              setManualModelId(false);
-                              setModelId(next);
-                            }
+                            setManualModelId(next === CUSTOM_MODEL_OPTION);
+                            setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
                           }}
-                          items={probeModelItems}
-                        >
-                          <SelectTrigger aria-label={t`Models from server`} className="mt-2 w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {probeModels.map((id) => (
-                                <SelectItem key={id} value={id}>
-                                  {id}
-                                </SelectItem>
-                              ))}
-                              <SelectItem value={CUSTOM_MODEL_OPTION}>
-                                <Trans>Other model…</Trans>
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
+                          otherValue={CUSTOM_MODEL_OPTION}
+                        />
                       ) : (
                         <Input
                           value={modelId}

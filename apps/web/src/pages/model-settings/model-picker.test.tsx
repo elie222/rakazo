@@ -52,6 +52,12 @@ async function key(element: Element | null, value: string) {
   });
 }
 
+const extraOptions = Array.from({ length: 10 }, (_, index) => ({
+  ...deepseekEntry,
+  id: `extra-${index}`,
+  label: `Extra ${index}`,
+}));
+
 async function renderPicker(options: ModelCatalogEntry[]) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -109,14 +115,10 @@ it("warns only on text-only models in the picker", async () => {
     await act(async () => {
       trigger.click();
     });
-    const searchInput = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
-    expect(document.getElementById(searchInput.getAttribute("aria-labelledby")!)?.textContent).toBe(
-      "Search models",
-    );
+    expect(document.querySelector('input[aria-label="Search models"]')).toBeNull();
     expect(document.querySelector('[role="listbox"]')?.getAttribute("aria-label")).toBe(
       "Model options",
     );
-    expect(activeOption(searchInput)?.textContent).toBe("DeepSeek Chat");
     const options = [...document.querySelectorAll('[role="option"]')];
     // The label stays the model name; the icon is for eyes, the description for screen readers.
     expect(
@@ -152,6 +154,7 @@ it("warns only on text-only models in the picker", async () => {
 
 it("highlights the last model when ArrowUp reopens a searched picker", async () => {
   const view = await renderPicker([
+    ...extraOptions,
     deepseekEntry,
     { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision" },
     { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
@@ -189,7 +192,7 @@ it("navigates model rows with Home, End, and arrows before selecting", async () 
   try {
     const trigger = view.container.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
     await act(async () => trigger.click());
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    const input = document.querySelector<HTMLElement>("[cmdk-root]")!;
     await key(input, "End");
     expect(document.querySelector('[role="option"][aria-selected="true"]')?.textContent).toBe(
       "Reasoner",
@@ -209,7 +212,7 @@ it("navigates model rows with Home, End, and arrows before selecting", async () 
 });
 
 it("ignores selection for an empty search and resets search when reopened", async () => {
-  const view = await renderPicker([deepseekEntry]);
+  const view = await renderPicker([deepseekEntry, ...extraOptions]);
   try {
     const trigger = view.container.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
     await act(async () => trigger.click());
@@ -228,7 +231,7 @@ it("ignores selection for an empty search and resets search when reopened", asyn
     expect(
       document.querySelector<HTMLInputElement>('input[aria-label="Search models"]')?.value,
     ).toBe("");
-    expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(11);
   } finally {
     await view.unmount();
   }
@@ -254,6 +257,7 @@ it("closes when the selected model changes outside the picker", async () => {
 it("associates the active option immediately when filtering commits new rows", async () => {
   const view = await renderPicker([
     deepseekEntry,
+    ...extraOptions,
     { ...deepseekEntry, id: "vision-small", label: "Vision Small" },
     { ...deepseekEntry, id: "vision-large", label: "Vision Large" },
   ]);

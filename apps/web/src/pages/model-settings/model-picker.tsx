@@ -1,12 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { filterModelCatalog } from "@rakazo/core";
+import { listSearch, modelCatalogSearchText } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
+  ListSearchInput,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -15,6 +15,7 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { TextOnlyMark } from "../../components/TextOnlyMark";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
+import { useListSearch } from "../../lib/use-list-search";
 
 function optionValue(option: ModelCatalogEntry) {
   return `${option.provider}:${option.id}`;
@@ -48,13 +49,17 @@ export function ModelPicker({
   );
   const selected = options[selectedIndex];
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const {
+    query,
+    setQuery,
+    showSearch,
+    visible: filteredOptions,
+  } = useListSearch(options, { text: modelCatalogSearchText });
   const [activeValue, setActiveValue] = useState(selected ? optionValue(selected) : "");
   useEffect(() => {
     setOpen(false);
   }, [selected?.provider, selectedIndex, value]);
 
-  const filteredOptions = useMemo(() => filterModelCatalog(options, query), [options, query]);
   const groups = useMemo(() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const option of filteredOptions) {
@@ -106,10 +111,11 @@ export function ModelPicker({
         <PopoverContent
           align="start"
           sideOffset={8}
-          initialFocus={searchRef}
+          initialFocus={showSearch ? searchRef : undefined}
           className="w-(--anchor-width) gap-0 overflow-hidden p-0 motion-reduce:animate-none"
         >
           <Command
+            tabIndex={showSearch ? undefined : 0}
             ref={(command) => {
               if (!command || !searchRef.current) return;
               // cmdk can retain a stale selectedItemId when a controlled value changes
@@ -126,17 +132,21 @@ export function ModelPicker({
             value={activeValue}
             onValueChange={setActiveValue}
           >
-            <CommandInput
-              ref={searchRef}
-              value={query}
-              onValueChange={(next) => {
-                setQuery(next);
-                const first = filterModelCatalog(options, next)[0];
-                setActiveValue(first ? optionValue(first) : "");
-              }}
-              aria-label={t`Search models`}
-              placeholder={t`Search`}
-            />
+            {showSearch ? (
+              <ListSearchInput
+                command
+                inputRef={searchRef}
+                query={query}
+                setQuery={(next) => {
+                  setQuery(next);
+                  const first = listSearch(options, next, { text: modelCatalogSearchText })
+                    .visible[0];
+                  setActiveValue(first ? optionValue(first) : "");
+                }}
+                label={t`Search models`}
+                placeholder={t`Search`}
+              />
+            ) : null}
             <CommandList label={t`Model options`} className="rk-scroll max-h-64">
               <CommandEmpty>
                 <Trans>No matching models</Trans>
