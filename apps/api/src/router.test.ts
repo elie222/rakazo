@@ -597,6 +597,13 @@ describe("model setup gate", () => {
           avatarStyle: "robot",
         }),
       },
+      // A bot that follows the main model.
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" } }),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ modelProvider: null, modelId: null, thinkingLevel: null }]),
+      },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
         findUnique: vi
