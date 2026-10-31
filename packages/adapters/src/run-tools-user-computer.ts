@@ -66,7 +66,8 @@ export function userComputerAppName(value: unknown): string {
  * The user's own computer always asks a person first, in every approval mode and whatever the
  * rules allow, until they choose "Allow in this space"; a block still refuses it. These tools run
  * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
- * this space traces back to that approval. Screen control is approved per app.
+ * this space traces back to that approval. Removing every paired computer ends it, so pairing again
+ * asks again. Screen control is approved per app.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -76,9 +77,12 @@ export async function userComputerGate(
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
   const { deps, run } = ctx;
+  const pairedSince = await deps.userDevices?.pairedSince(run.userId);
+  if (!pairedSince) return "ask";
   const where = {
     spaceId: run.spaceId,
     status: { in: ["approved", "executing", "completed", "uncertain"] },
+    createdAt: { gte: pairedSince },
     run: { userId: run.userId },
   };
   if (!USER_COMPUTER_SCREEN_TOOLS.has(name)) {

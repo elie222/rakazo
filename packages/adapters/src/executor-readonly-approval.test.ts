@@ -184,11 +184,19 @@ function fixture({
     sourceMessageId: sourceRole ? "source-1" : null,
     leaseFence: 0,
   };
+  const createdAt = new Map<string, Date>();
   const externalEffect = {
     findFirst: vi.fn(
-      async ({ where }: { where: { kind: string; status: { in: string[] } } }) =>
+      async ({
+        where,
+      }: {
+        where: { kind: string; status: { in: string[] }; createdAt?: { gte: Date } };
+      }) =>
         effects.find(
-          (effect) => effect.kind === where.kind && where.status.in.includes(effect.status),
+          (effect) =>
+            effect.kind === where.kind &&
+            where.status.in.includes(effect.status) &&
+            !(where.createdAt && createdAt.get(effect.id)! < where.createdAt.gte),
         ) ?? null,
     ),
     findMany: vi.fn(
@@ -220,6 +228,7 @@ function fixture({
     ),
     create: vi.fn(async ({ data }: { data: Omit<Effect, "id"> }) => {
       const effect = { ...data, id: `effect-${effects.length + 1}` };
+      createdAt.set(effect.id, new Date());
       effects.push(effect);
       return { ...effect };
     }),
@@ -2704,11 +2713,11 @@ describe("retry of an action a person denied in the same run", () => {
 
 describe("user_computer_shell", () => {
   const device = { deviceId: "device-1", name: "Laptop", platform: "darwin" };
-  function devices(connected = true, paired = connected) {
+  function devices(connected = true, paired = connected, pairedAt = new Date(0)) {
     const requests: Array<{ userId: string; request: HostComputerRequest }> = [];
     const gateway = {
       connected: vi.fn(async (_userId: string) => (connected ? device : null)),
-      hasDevice: vi.fn(async (_userId: string) => paired),
+      pairedSince: vi.fn(async (_userId: string) => (paired ? pairedAt : null)),
       async *request<T>(userId: string, request: HostComputerRequest) {
         requests.push({ userId, request });
         if (request.method === "environment") {
@@ -2742,7 +2751,6 @@ describe("user_computer_shell", () => {
       expect(f.instructions()).not.toContain(offlineLine);
     }
     expect(gateway.connected).toHaveBeenCalledWith("user-1");
-    expect(gateway.hasDevice).not.toHaveBeenCalled();
   });
 
   it("tells the bot the owner's paired computer is offline instead of offering it", async () => {
@@ -2752,7 +2760,7 @@ describe("user_computer_shell", () => {
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).toContain(offlineLine);
     expect(f.instructions()).not.toContain(line);
-    expect(gateway.hasDevice).toHaveBeenCalledWith("user-1");
+    expect(gateway.pairedSince).toHaveBeenCalledWith("user-1");
   });
 
   it.each<[string, Parameters<typeof fixture>[0]]>([
@@ -2866,6 +2874,7 @@ describe("user_computer_shell", () => {
       where: {
         spaceId: "space-1",
         status: { in: ["approved", "executing", "completed", "uncertain"] },
+        createdAt: { gte: new Date(0) },
         run: { userId: "user-1" },
         kind: "user_computer_shell",
       },
@@ -2873,6 +2882,20 @@ describe("user_computer_shell", () => {
     });
     expect(f.results.at(-1)).toEqual({ stdout: "pi.local\n", stderr: "", code: 0 });
     expect(f.effects.map((effect) => effect.status)).toEqual(["completed", "completed"]);
+  });
+
+  it("asks again after the computer is removed and paired again", async () => {
+    const { gateway } = devices();
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([call("hostname")]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    await f.run();
+    gateway.pairedSince.mockResolvedValue(new Date(Date.now() + 60_000));
+    f.setCalls([call("uptime", "call-2")]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
   });
 
   it("refuses with a block rule", async () => {
@@ -2926,7 +2949,7 @@ describe("user computer screen control", () => {
         name: "Laptop",
         platform,
       })),
-      hasDevice: vi.fn(async (_userId: string) => true),
+      pairedSince: vi.fn(async (_userId: string) => new Date(0)),
       async *request<T>(_userId: string, request: HostComputerRequest) {
         requests.push(request);
         yield (
