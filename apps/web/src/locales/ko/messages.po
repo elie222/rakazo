@@ -620,7 +620,6 @@ msgstr ""
 msgid "Adding…"
 msgstr "추가 중…"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -634,6 +633,10 @@ msgstr "고급 설정"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "고급..."
+
+#: src/components/AccountDataSettings.tsx
+msgid "Agent from another app"
+msgstr "다른 앱의 에이전트"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -664,7 +667,6 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "허용"
@@ -684,10 +686,6 @@ msgstr "한 번 허용"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Allow rule"
-msgstr "허용 규칙"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -877,10 +875,6 @@ msgstr ""
 msgid "Ask"
 msgstr "묻기"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Ask rule"
-msgstr "승인 규칙"
-
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -1003,14 +997,9 @@ msgstr "Bearer 토큰"
 msgid "Billing"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "차단"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Block rule"
-msgstr "차단 규칙"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1181,10 +1170,6 @@ msgstr "취소됨"
 msgid "Cancelled"
 msgstr "취소됨"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Candidate rule"
-msgstr "변경할 규칙"
-
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr ""
@@ -1212,6 +1197,10 @@ msgstr "변경 중…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "차트를 표시하지 못했습니다: {error}"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat"
+msgstr "채팅"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -2037,10 +2026,6 @@ msgstr "샘플 음성을 재생하지 못했습니다."
 msgid "Could not preview plugin"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Could not preview rule"
-msgstr "규칙을 미리 볼 수 없습니다"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "모델 서버에 연결하지 못했습니다."
@@ -2355,10 +2340,6 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron 표현식"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Current"
-msgstr "현재"
-
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2389,6 +2370,7 @@ msgstr "봇 아바타 맞춤설정"
 msgid "Dark"
 msgstr "다크"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2437,6 +2419,7 @@ msgstr "OpenClaw 기본값"
 msgid "Default scope"
 msgstr "기본 기억 범위"
 
+#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2865,6 +2848,7 @@ msgstr "표 확장"
 msgid "expired"
 msgstr "만료됨"
 
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "내보내기"
@@ -3208,6 +3192,10 @@ msgstr "이 모델에는 이미지 입력이 설정되어 있지 않습니다."
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "이미지 업로드 영역"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import"
+msgstr "가져오기"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4036,10 +4024,6 @@ msgstr ""
 msgid "No matching models"
 msgstr "일치하는 모델 없음"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "No matching rule"
-msgstr "일치하는 규칙 없음"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "아직 연결된 MCP 서버가 없습니다."
@@ -4496,8 +4480,6 @@ msgstr "POST 대상"
 msgid "Preferences"
 msgstr "환경설정"
 
-#: src/components/ApprovalRulePreview.tsx
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4741,7 +4723,6 @@ msgstr "제어권 넘기기"
 msgid "Reload"
 msgstr "새로고침"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5008,6 +4989,10 @@ msgstr ""
 #: src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "행"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Rules"
+msgstr "규칙"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5547,6 +5532,10 @@ msgstr ""
 msgid "Speech model"
 msgstr "음성 모델"
 
+#: src/components/AccountAccess.tsx
+msgid "SSO"
+msgstr "SSO"
+
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO를 일시적으로 사용할 수 없습니다. 다시 시도하세요."
@@ -5725,10 +5714,6 @@ msgstr "API 키 테스트"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "연결 테스트"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Test rule"
-msgstr "규칙 테스트"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
@@ -6007,7 +5992,6 @@ msgstr "도구 인수는 JSON 객체여야 합니다"
 msgid "Tool arguments must be JSON"
 msgstr "도구 인수는 JSON이어야 합니다"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "도구 이름"
@@ -6494,6 +6478,10 @@ msgstr "직접 조작 중"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "사용 중인 Anthropic"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Your data"
+msgstr "내 데이터"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

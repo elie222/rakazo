@@ -6,6 +6,7 @@ import { fetchAccountSecurity, requestAccountDeletionCode } from "../lib/account
 import { authClient } from "../lib/auth";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText } from "../lib/user-error";
+import { SettingsRow } from "./SettingsRows";
 
 export function AccountAccess({
   onSecurity,
@@ -52,39 +53,22 @@ export function AccountAccess({
     }
   }
   return (
-    <div className="space-y-3">
-      {security?.sso && !security.ssoLinked ? (
+    <SettingsRow
+      label={<Trans>Delete account</Trans>}
+      control={
         <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() =>
-            void action(async () => {
-              const result = await runSsoFlow(
-                (disableRedirect, callbackURL) =>
-                  authClient.linkSocial({
-                    disableRedirect,
-                    provider: "oidc",
-                    callbackURL: callbackURL(window.location.href),
-                    errorCallbackURL: callbackURL(window.location.href),
-                  }),
-                [window.location.href],
-              );
-              if (result.error) throw new Error(authErrorText(result.error, t`Could not continue`));
-            }, true)
-          }
+          variant="secondary"
+          size="sm"
+          data-testid="delete-account"
+          className="text-destructive hover:text-destructive"
+          onClick={() => setOpen((value) => !value)}
         >
-          <Trans>Link SSO</Trans>
+          <Trans>Delete</Trans>
         </Button>
-      ) : null}
-      <Button
-        variant="outline"
-        className="text-destructive hover:text-destructive"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Trans>Delete account</Trans>
-      </Button>
+      }
+    >
       {open ? (
-        <div className="space-y-3">
+        <div className="mt-3 space-y-3">
           <p className="text-sm">
             <Trans>This permanently deletes your account and data.</Trans>
           </p>
@@ -190,10 +174,50 @@ export function AccountAccess({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
           {error}
         </p>
       ) : null}
-    </div>
+    </SettingsRow>
+  );
+}
+
+/** Links the organization's SSO identity to an account that signed up another way. */
+export function LinkSsoRow() {
+  const { t } = useLingui();
+  const [error, setError] = useState<string | null>(null);
+  async function link() {
+    setError(null);
+    try {
+      const result = await runSsoFlow(
+        (disableRedirect, callbackURL) =>
+          authClient.linkSocial({
+            disableRedirect,
+            provider: "oidc",
+            callbackURL: callbackURL(window.location.href),
+            errorCallbackURL: callbackURL(window.location.href),
+          }),
+        [window.location.href],
+      );
+      if (result.error) setError(authErrorText(result.error, t`Could not continue`));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t`Could not continue`);
+    }
+  }
+  return (
+    <SettingsRow
+      label={<Trans>SSO</Trans>}
+      control={
+        <Button variant="secondary" size="sm" onClick={() => void link()}>
+          <Trans>Link SSO</Trans>
+        </Button>
+      }
+    >
+      {error ? (
+        <p role="alert" className="mt-2 text-[12.5px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </SettingsRow>
   );
 }

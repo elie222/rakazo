@@ -621,7 +621,6 @@ msgstr "已新增"
 msgid "Adding…"
 msgstr "正在新增…"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -635,6 +634,10 @@ msgstr "進階"
 #: src/pages/RoutineEditor.tsx
 msgid "Advanced..."
 msgstr "進階..."
+
+#: src/components/AccountDataSettings.tsx
+msgid "Agent from another app"
+msgstr "來自其他應用程式的代理"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
@@ -665,7 +668,6 @@ msgstr "所有狀態"
 msgid "All time"
 msgstr "不限時間"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow"
 msgstr "允許"
@@ -685,10 +687,6 @@ msgstr "允許一次"
 #: src/lib/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
 msgstr ""
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Allow rule"
-msgstr "允許規則"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -878,10 +876,6 @@ msgstr "成品"
 msgid "Ask"
 msgstr "詢問"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Ask rule"
-msgstr "審批規則"
-
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -1004,14 +998,9 @@ msgstr "Bearer 權杖"
 msgid "Billing"
 msgstr "帳務"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Block"
 msgstr "封鎖"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Block rule"
-msgstr "禁止規則"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1182,10 +1171,6 @@ msgstr "已取消"
 msgid "Cancelled"
 msgstr "已取消"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Candidate rule"
-msgstr "候選規則"
-
 #: src/pages/Artifacts.tsx
 msgid "Card view"
 msgstr "卡片檢視"
@@ -1213,6 +1198,10 @@ msgstr "正在修改…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "圖表渲染失敗：{error}"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat"
+msgstr "聊天"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -2038,10 +2027,6 @@ msgstr "無法播放測試片段"
 msgid "Could not preview plugin"
 msgstr ""
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Could not preview rule"
-msgstr "無法預覽規則"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "無法連線到模型伺服器。"
@@ -2356,10 +2341,6 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron 表示式"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "Current"
-msgstr "目前"
-
 #: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
@@ -2390,6 +2371,7 @@ msgstr "自訂機器人頭像"
 msgid "Dark"
 msgstr "深色"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Data"
 msgstr ""
@@ -2438,6 +2420,7 @@ msgstr "OpenClaw 預設內容"
 msgid "Default scope"
 msgstr "預設範圍"
 
+#: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
@@ -2866,6 +2849,7 @@ msgstr "展開表格"
 msgid "expired"
 msgstr "已過期"
 
+#: src/components/AccountDataSettings.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "匯出"
@@ -3209,6 +3193,10 @@ msgstr "此模型尚未設定圖片輸入。"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "圖片上傳區域"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Import"
+msgstr "匯入"
 
 #: src/components/AccountDataSettings.tsx
 #: src/pages/shell/agent-import.tsx
@@ -4037,10 +4025,6 @@ msgstr "此頁面沒有符合的成品。"
 msgid "No matching models"
 msgstr "沒有符合的模型"
 
-#: src/components/ApprovalRulePreview.tsx
-msgid "No matching rule"
-msgstr "未匹配規則"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "還沒有 MCP 伺服器。"
@@ -4497,8 +4481,6 @@ msgstr "POST 到"
 msgid "Preferences"
 msgstr "偏好設定"
 
-#: src/components/ApprovalRulePreview.tsx
-#: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/skills-dialog.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Preview"
@@ -4742,7 +4724,6 @@ msgstr "交還控制權"
 msgid "Reload"
 msgstr "重新載入"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
 #: src/components/integrations/plugin-marketplace.tsx
 #: src/components/LoginFields.tsx
@@ -5009,6 +4990,10 @@ msgstr "在你離線時執行的例行任務"
 #: src/components/markdown-copy.tsx
 msgid "Row"
 msgstr "列"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Rules"
+msgstr "規則"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -5548,6 +5533,10 @@ msgstr "說話中"
 msgid "Speech model"
 msgstr "語音模型"
 
+#: src/components/AccountAccess.tsx
+msgid "SSO"
+msgstr "SSO"
+
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO 暫時不可用，請重試。"
@@ -5726,10 +5715,6 @@ msgstr "測試 API 金鑰"
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "測試連線"
-
-#: src/components/ApprovalRulePreview.tsx
-msgid "Test rule"
-msgstr "測試規則"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
@@ -6008,7 +5993,6 @@ msgstr "工具參數必須是 JSON 物件"
 msgid "Tool arguments must be JSON"
 msgstr "工具參數必須是 JSON"
 
-#: src/components/ApprovalRulePreview.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Tool name"
 msgstr "工具名稱"
@@ -6495,6 +6479,10 @@ msgstr "你已接管"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "你的 Anthropic"
+
+#: src/components/AccountDataSettings.tsx
+msgid "Your data"
+msgstr "你的資料"
 
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Your defaults"

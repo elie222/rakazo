@@ -53,7 +53,6 @@ import {
   AgentSkillSchema,
   AppBootstrapSchema,
   ApprovalModeSchema,
-  ApprovalRulePreviewSchema,
   ArtifactSchema,
   ArtifactVersionSchema,
   ArtifactWithContentSchema,
@@ -1130,33 +1129,6 @@ export const appContract = {
   },
   approvalRules: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
-    preview: oc
-      .input(
-        settingsScopeInput.extend({
-          id: Id,
-          effect: z.enum(["always_allow", "deny", "remove"]),
-          sample: z.object({
-            tools: z
-              .array(
-                z.object({
-                  name: z.string().trim().min(1).max(200),
-                  connectorKind: z.string().trim().min(1).max(200).optional(),
-                  readOnly: z.boolean().optional(),
-                }),
-              )
-              .min(1)
-              .max(20),
-            wrapper: z
-              .object({
-                name: z.string().trim().min(1).max(200),
-                connectorKind: z.string().trim().min(1).max(200).optional(),
-              })
-              .optional(),
-            site: z.string().trim().min(1).max(253).optional(),
-          }),
-        }),
-      )
-      .output(ApprovalRulePreviewSchema),
     set: oc
       .input(
         settingsScopeInput.extend({
