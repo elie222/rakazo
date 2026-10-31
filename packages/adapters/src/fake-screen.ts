@@ -56,7 +56,7 @@ export class FakeScreenServer {
   private start() {
     this.listening ??= new Promise<number>((resolve, reject) => {
       const server = http.createServer((req, res) => {
-        const { pathname } = new URL(req.url ?? "/", "http://fake-screen.invalid");
+        const pathname = req.url?.split("?")[0];
         if (pathname !== "/embed.html" || (req.method !== "GET" && req.method !== "HEAD")) {
           res.writeHead(404).end();
           return;

@@ -1,3 +1,4 @@
+import { connect } from "node:net";
 import {
   addScreenProxyCapability,
   openScreenCapability,
@@ -35,6 +36,18 @@ describe("FakeScreenServer", () => {
     expect(html).not.toMatch(/<script|https?:\/\//);
 
     expect((await fetch(new URL("/other", url))).status).toBe(404);
+    const malformed = await new Promise<string>((resolve, reject) => {
+      const socket = connect(Number(url.port), url.hostname, () =>
+        socket.end("GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"),
+      );
+      let reply = "";
+      socket.on("data", (chunk) => {
+        reply += chunk;
+      });
+      socket.on("end", () => resolve(reply));
+      socket.on("error", reject);
+    });
+    expect(malformed).toMatch(/^HTTP\/1\.1 404/);
   });
 
   it("reuses one listener and stops serving once closed", async () => {
