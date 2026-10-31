@@ -43,8 +43,8 @@ describe("computer control HTTP boundary", () => {
       [];
     const result = { completed: 1, ...(observe ? { observation } : {}) };
     const origin = await listen(async (req, res) => {
-      // Local tools can probe any listening loopback port; only desktop calls are recorded.
-      if (req.method !== "POST" || req.url !== "/v1/desktop") {
+      // Local tools probe new loopback ports with `GET /`, which no control call sends.
+      if (req.method === "GET" && req.url === "/") {
         req.resume();
         res.writeHead(404).end();
         return;
@@ -89,8 +89,8 @@ describe("computer control HTTP boundary", () => {
   it("sends token-authenticated actions to the inspected host mapping without a container IP", async () => {
     const authorizations: Array<string | undefined> = [];
     const origin = await listen((req, res) => {
-      // Local tools can probe any listening loopback port; only desktop calls count.
-      if (req.method !== "POST" || req.url !== "/v1/desktop") {
+      // Local tools probe new loopback ports with `GET /`, which no control call sends.
+      if (req.method === "GET" && req.url === "/") {
         req.resume();
         res.writeHead(404).end();
         return;
@@ -162,9 +162,9 @@ describe("computer control HTTP boundary", () => {
       async (destination) => {
         const targetRequests: Array<{ method?: string; authorization?: string }> = [];
         const target: http.RequestListener = (req, res) => {
-          // Local tools can probe any listening loopback port; a control call never goes to
-          // the root, so a root request is a probe and is not recorded.
-          if (req.url === "/") {
+          // Local tools probe new loopback ports with `GET /`, which no control call or
+          // redirect sends, so it is not recorded.
+          if (req.method === "GET" && req.url === "/") {
             req.resume();
             res.writeHead(404).end();
             return;
