@@ -15,6 +15,10 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { createThreadMessage } from "@rakazo/db";
 import { sessionCookieHeader } from "../index.js";
+import {
+  createScreenshotModelQuotaFetch,
+  SCREENSHOT_MODEL_CONNECTION,
+} from "../model-quota-screenshot-fixture.js";
 import { runProcess } from "./process.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -53,6 +57,13 @@ async function main() {
     env: process.env,
     stdio: "inherit",
   });
+  execFileSync("adb", [
+    "shell",
+    "pm",
+    "grant",
+    "com.rakazo.app",
+    "android.permission.POST_NOTIFICATIONS",
+  ]);
   const thirdParties = new ThirdPartyConnectorEmulator();
   const pipedream = new PipedreamConnector(
     {
@@ -73,6 +84,7 @@ async function main() {
     composio: new ComposioConnector({ client: new FakeComposioClient() }),
     pipedream,
     email: new EmailEmulator(),
+    modelQuotaFetch: createScreenshotModelQuotaFetch(),
     remoteConnectors: {
       fetch: thirdParties.fetch,
       resolveHostname: thirdParties.resolveHostname,
@@ -89,9 +101,16 @@ async function main() {
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
-    for (const { name: flow, window } of process.env.MOBILE_KEYBOARD_ONLY === "true"
-      ? [{ name: "keyboard-lifecycle", window: undefined }]
-      : FLOWS) {
+    const flows =
+      process.env.MOBILE_KEYBOARD_ONLY === "true"
+        ? [{ name: "keyboard-lifecycle", window: undefined }]
+        : process.env.MOBILE_SCREENSHOTS_ONLY === "usage"
+          ? [{ name: "usage", window: undefined }]
+          : FLOWS;
+    if (process.env.MOBILE_SCREENSHOTS_ONLY && process.env.MOBILE_SCREENSHOTS_ONLY !== "usage") {
+      throw new Error('MOBILE_SCREENSHOTS_ONLY only supports "usage"');
+    }
+    for (const { name: flow, window } of flows) {
       // A failed reset is reported without hiding why the flow failed.
       let flowFailed = false;
       let flowError: unknown;
@@ -220,6 +239,7 @@ function configureEnvironment() {
 
 async function seedFixture(app: App, prisma: PrismaClient) {
   const cookie = await signup(app);
+  await rpc(app, cookie, "models/connect", SCREENSHOT_MODEL_CONNECTION);
   const researcher = await rpc<{ id: string }>(app, cookie, "bots/create", {
     name: "Researcher",
     title: "Product research",

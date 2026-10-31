@@ -149,6 +149,7 @@ import {
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
 import { ModelHeadersSchema } from "./model-headers.js";
+import { ModelQuotaSchema } from "./model-quota.js";
 import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import { PaymentWalletStatusSchema } from "./payments.js";
 import { MessageReactionSchema } from "./reactions.js";
@@ -346,6 +347,9 @@ export const appContract = {
     apply: oc.input(ServerUpdateRequestSchema).output(ServerUpdateRunSchema),
   },
   models: {
+    quota: oc
+      .input(z.object({ credentialId: Id, fresh: z.boolean().optional() }))
+      .output(ModelQuotaSchema),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

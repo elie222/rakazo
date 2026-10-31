@@ -23,6 +23,7 @@ const settingsScreens = new Set([
   "skills",
   "space",
   "team-conversation",
+  "usage",
   "vault",
   "voice",
   "wallet",

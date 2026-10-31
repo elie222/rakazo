@@ -29,5 +29,12 @@ pnpm ios:screenshots -- --section settings
 
 For iPhone Duo screenshots, set `SIM_UDID` to the iPhone Duo simulator, opened.
 
+The full catalog skips the Usage screen because it needs deterministic provider
+quota data. Capture that screen with a disposable API and database using
+`pnpm ios:usage-screenshot`. Set `RAKAZO_API_URL` to the local address already
+configured in the installed simulator app, and provide `SIM_UDID` plus the
+three `RAKAZO_SCREENSHOT_*` account variables from the command above. The API
+port must be free while the screenshot runs.
+
 Output defaults to `test-report/ios-screenshots` (gitignored). Override it with
 `IOS_SCREENSHOT_OUT`. Open `index.html` in that folder. Maestro must be on `PATH`.

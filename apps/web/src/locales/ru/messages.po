@@ -360,6 +360,10 @@ msgstr "{provider} не ответил вовремя. Повторите поп
 msgid "{remaining} left"
 msgstr "Осталось: {remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "Осталось {remaining}%"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
@@ -432,6 +436,10 @@ msgstr ""
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "Учётные данные подписки надежно сохранены."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "А–Я"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -693,6 +701,10 @@ msgstr "Правило разрешения"
 msgid "Allow writing"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "Лимит"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr ""
@@ -700,6 +712,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "Разрешено один раз"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "По алфавиту"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -820,6 +836,7 @@ msgstr "Применить"
 msgid "Approval boundaries"
 msgstr "Границы одобрения"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "Модель проверки действий"
@@ -980,6 +997,10 @@ msgstr "Назад"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Вернуться ко входу"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "Резервные сначала"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -1470,6 +1491,11 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "Переменная команды"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -2013,6 +2039,10 @@ msgstr "Не удалось загрузить этот чат."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "Не удалось загрузить этот файл."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "Не удалось загрузить использование"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3386,9 +3416,17 @@ msgstr "Последняя проверка {0}: есть изменения"
 msgid "Last check {0}: no changes"
 msgstr "Последняя проверка {0}: без изменений"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "Последние известные данные"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "Позже"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "Сначала с меньшим остатком"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3455,6 +3493,11 @@ msgstr "Загрузить более ранние запуски"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "Автоматически загружать изображения из интернета"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "Загрузка"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3530,6 +3573,7 @@ msgstr "Низкий"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "Основная модель"
@@ -3821,6 +3865,7 @@ msgstr "понедельник"
 msgid "month"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Ежемесячно"
@@ -3845,6 +3890,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "Больше действий с компьютером"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "Сначала с большим остатком"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4016,6 +4065,10 @@ msgstr "Нет аутентификации"
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "Ни один бот не подходит"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "Нет подключённых провайдеров"
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -4303,6 +4356,10 @@ msgstr "Необязательное значение заголовка"
 msgid "Or paste an API key"
 msgstr "Или вставьте ключ API"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "Порядок"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Ключ API организации"
@@ -4396,6 +4453,7 @@ msgstr "Вставьте OpenAI-совместимый адрес со свое�
 msgid "Paste the reply"
 msgstr "Вставьте ответ"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "Вставьте свой ключ API"
@@ -4520,6 +4578,10 @@ msgstr "Предыдущая страница"
 msgid "Previous settings sections"
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "Основная сначала"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr ""
@@ -4561,6 +4623,14 @@ msgstr "Запрос на слияние"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "В очереди"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "Квота"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "Квота недоступна"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4697,6 +4767,7 @@ msgstr "URI перенаправления"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "Обновить"
 
@@ -4740,6 +4811,10 @@ msgstr "Передать управление"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "Перезагрузить"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "Остаток квоты"
 
 #: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
@@ -4904,6 +4979,10 @@ msgstr "Сбросить пароль"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "Сбросить пароль"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr "Сброс"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5284,6 +5363,10 @@ msgstr "Имя сервера"
 msgid "Server URL"
 msgstr "URL-адрес сервера"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "Сеанс"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5501,6 +5584,10 @@ msgstr "Только что добавлено что-то с таким же и
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Что-то из выбранного здесь не работает. Снимите отметку и повторите попытку."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "Сортировка"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -6144,6 +6231,10 @@ msgstr "Обновить инструкции?"
 msgid "Update progress"
 msgstr "Ход обновления"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "Обновлено"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6181,7 +6272,7 @@ msgstr "Загрузить"
 msgid "Urgent"
 msgstr ""
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "Использование"
@@ -6305,6 +6396,10 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "Посмотреть использование"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -6365,6 +6460,10 @@ msgstr "Будни"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "По выходным"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr "За неделю"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6541,3 +6640,7 @@ msgstr "У вашего голосового провайдера закончи
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Ваш голосовой провайдер отклонил ключ."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Я–А"
