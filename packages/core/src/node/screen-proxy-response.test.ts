@@ -18,6 +18,16 @@ describe("screen proxy response isolation", () => {
     },
   );
 
+  it("lets the sandboxed page send credentials, and only it", () => {
+    const sandboxed = safeScreenProxyResponseHeaders({ "content-type": "text/javascript" }, "null");
+    expect(sandboxed["access-control-allow-origin"]).toBe("null");
+    expect(sandboxed["access-control-allow-credentials"]).toBe("true");
+    expect(sandboxed.vary).toBe("Origin");
+    const other = safeScreenProxyResponseHeaders({}, "https://elsewhere.example");
+    expect(other["access-control-allow-origin"]).toBe("*");
+    expect(other["access-control-allow-credentials"]).toBeUndefined();
+  });
+
   it("retains upstream restrictions as separate policies that cannot loosen the sandbox", () => {
     const policies = [
       "sandbox allow-same-origin allow-scripts",
