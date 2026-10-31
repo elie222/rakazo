@@ -1,17 +1,22 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
-import { toggleEnabledModelId } from "@rakazo/core";
+import { MODEL_SEARCH_THRESHOLD, matchesSearchQuery, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
   Disclosure,
   Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
   Label,
   ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
+import { Search } from "lucide-react";
+import { useMemo, useState } from "react";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
 
@@ -96,6 +101,12 @@ export function CompatibleModelFields({
   | "updateBaseUrl"
 >) {
   const { t } = useLingui();
+  const [query, setQuery] = useState("");
+  const visibleRows = useMemo(
+    () =>
+      query.trim() ? compatibleRows.filter((id) => matchesSearchQuery(query, id)) : compatibleRows,
+    [compatibleRows, query],
+  );
   return (
     <div className="block text-[13.5px] text-muted-foreground">
       <label className="block" htmlFor="model-base-url">
@@ -178,8 +189,22 @@ export function CompatibleModelFields({
           />
         )}
         {compatibleRows.length ? (
-          <div className="mt-3 grid gap-2">
-            {compatibleRows.map((id) => (
+          <div className="mt-3 grid gap-2" data-testid="compatible-model-rows">
+            {compatibleRows.length > MODEL_SEARCH_THRESHOLD ? (
+              <InputGroup className="h-10">
+                <InputGroupAddon>
+                  <Search size={16} strokeWidth={1.8} aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  aria-label={t`Search models`}
+                  placeholder={t`Search`}
+                  autoComplete="off"
+                />
+              </InputGroup>
+            ) : null}
+            {visibleRows.map((id) => (
               <Label key={id} className="font-normal text-foreground">
                 <Checkbox
                   checked={id === modelId || enabledModelIds.includes(id)}
@@ -193,6 +218,11 @@ export function CompatibleModelFields({
                 <span className="min-w-0 break-all">{id}</span>
               </Label>
             ))}
+            {visibleRows.length ? null : (
+              <p>
+                <Trans>No matching models</Trans>
+              </p>
+            )}
           </div>
         ) : null}
         {probeModels.length && !compatibleRows.includes(modelId) ? (

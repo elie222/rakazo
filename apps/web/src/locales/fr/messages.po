@@ -4025,6 +4025,7 @@ msgstr "Aucun catalogue d'applications géré n'est configuré sur ce déploieme
 msgid "No matching artifacts on this page."
 msgstr "Aucun artefact correspondant sur cette page."
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
@@ -5136,6 +5137,7 @@ msgstr "Portées (facultatif)"
 msgid "Screen not connected"
 msgstr "Écran non connecté"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5169,6 +5171,7 @@ msgstr "Rechercher par domaine"
 msgid "Search integrations.sh"
 msgstr "Rechercher sur integrations.sh"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
