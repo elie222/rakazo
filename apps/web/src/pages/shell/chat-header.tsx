@@ -11,6 +11,7 @@ export function ChatHeader({
   activeGroup,
   activeSnapshot,
   phoneCallsEnabled,
+  voiceReady,
   inCall,
   panelOpen,
   onOpenNavigation,
@@ -22,6 +23,8 @@ export function ChatHeader({
   activeGroup: Group | undefined;
   activeSnapshot: ThreadSnapshot | null;
   phoneCallsEnabled: boolean;
+  /** False while the voice status loads or no voice is connected; the button then opens voice settings. */
+  voiceReady: boolean;
   inCall: boolean;
   panelOpen: boolean;
   onOpenNavigation: () => void;
@@ -78,6 +81,7 @@ export function ChatHeader({
               aria-label={inCall ? t`Open call` : t`Call`}
               onClick={() => onCall(active)}
               data-active={inCall ? "" : undefined}
+              data-voice-ready={voiceReady ? "" : undefined}
               className="app-no-drag"
             >
               <Phone strokeWidth={1.6} className="size-[17px]" />
