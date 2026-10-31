@@ -44,7 +44,7 @@ export function AgentAccessControl({
     });
 
   return (
-    <div data-testid="agent-access" className="flex flex-wrap items-center gap-1 text-[13px]">
+    <div data-testid="agent-access" className="flex flex-wrap items-center gap-1 text-xs">
       <span className="text-muted-foreground">
         <Trans>Agents</Trans>
       </span>
@@ -55,7 +55,7 @@ export function AgentAccessControl({
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="h-7 gap-1 px-1.5 text-[13px] font-normal text-foreground"
+              className="h-6 gap-1 px-1.5 text-xs font-normal text-foreground"
             />
           }
         >

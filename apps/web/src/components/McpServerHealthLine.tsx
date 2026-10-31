@@ -21,7 +21,7 @@ export function McpServerHealthLine({
   const toolCount = health.toolCount;
   const checked = health.checkedAt ? formatRelativeTime(health.checkedAt) : "";
   const checkedLabel = checked ? (
-    <span className="font-normal text-muted-foreground">
+    <span className="text-muted-foreground">
       <Trans>Checked {checked}</Trans>
     </span>
   ) : null;
@@ -32,7 +32,7 @@ export function McpServerHealthLine({
         role="status"
         data-testid="mcp-health"
         data-status="checking"
-        className="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
         <span>
@@ -48,7 +48,7 @@ export function McpServerHealthLine({
         role="status"
         data-testid="mcp-health"
         data-status="installing"
-        className="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
         <span>
@@ -64,11 +64,13 @@ export function McpServerHealthLine({
         role="status"
         data-testid="mcp-health"
         data-status="ok"
-        className="mt-2 flex items-center gap-1.5 text-xs font-medium text-success"
+        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
       >
-        <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
+        <CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-success" />
         <span className="flex flex-wrap gap-x-2">
-          <Trans>Running</Trans>
+          <span className="text-success">
+            <Trans>Running</Trans>
+          </span>
           {toolCount === null ? null : (
             <span>
               <Plural value={toolCount} one="# tool" other="# tools" />
@@ -83,7 +85,7 @@ export function McpServerHealthLine({
   if (health.status === "error") {
     return (
       <div data-testid="mcp-health" data-status="error" className="mt-2">
-        <p role="status" className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+        <p role="status" className="flex items-center gap-1.5 text-xs text-destructive">
           <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
           <span className="flex flex-wrap gap-x-2">
             {health.code === MCP_OAUTH_CLIENT_REQUIRED ? (
@@ -118,7 +120,7 @@ export function McpServerHealthLine({
       role="status"
       data-testid="mcp-health"
       data-status="unknown"
-      className="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+      className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
     >
       <CircleDashed aria-hidden="true" className="size-3.5 shrink-0" />
       <span>

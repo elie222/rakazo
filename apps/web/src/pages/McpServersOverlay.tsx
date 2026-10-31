@@ -822,7 +822,7 @@ export function McpServersOverlay({
       <li key={server.id} data-testid="mcp-server" className="space-y-1.5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">{server.name}</div>
+            <div className="truncate text-sm font-medium text-foreground">{server.name}</div>
             <p className="truncate text-xs text-muted-foreground">
               {server.endpoint ?? server.command ?? server.slug}
             </p>
@@ -881,7 +881,7 @@ export function McpServersOverlay({
         <McpServerHealthLine health={server.health} checking={testing} />
         {statusText ? (
           <p
-            className={`text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
+            className={`text-xs ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
           >
             {statusText}
           </p>
@@ -915,7 +915,7 @@ export function McpServersOverlay({
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[600px]"
+        className="flex max-h-[calc(100%-2rem)] w-[600px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[600px]"
       >
         <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border px-6 py-5">
           <DialogTitle className="text-heading2 text-foreground">
