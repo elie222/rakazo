@@ -2,10 +2,8 @@ import path from "node:path";
 import { RAKAZO_CLOUD_URL } from "./setup-config.js";
 
 /**
- * The only relying party a build is associated with (`webcredentials:` entitlement): the hosted
- * server's domain, or `RAKAZO_PASSKEY_RP_ID` when a self-hoster builds the app for their own
- * domain. The bundler inlines the variable, so the app and its entitlements must be built with
- * the same value.
+ * The only relying party a build is associated with (`webcredentials:` entitlement). The bundler
+ * inlines `RAKAZO_PASSKEY_RP_ID`, so the app and its entitlements must be built with the same value.
  */
 export const PASSKEY_RP_ID =
   process.env.RAKAZO_PASSKEY_RP_ID?.trim().toLowerCase() || new URL(RAKAZO_CLOUD_URL).hostname;
@@ -32,9 +30,8 @@ const DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}
 
 /**
  * Adds the passkey association to the app's base entitlements for a build signed by `teamId`.
- * `developerMode` is for a development-signed build whose domain Apple's CDN cannot reach (a
- * server on a private network or VPN): macOS then fetches the association file itself, which
- * it only does for an app carrying `get-task-allow` while associated-domains developer mode is on.
+ * `developerMode` lets a development build fetch the association itself when Apple's CDN cannot
+ * reach the domain; macOS only honors it for an app carrying `get-task-allow`.
  */
 export function passkeyEntitlements(
   base: string,
