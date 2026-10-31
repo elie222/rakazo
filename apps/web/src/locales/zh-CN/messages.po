@@ -1453,10 +1453,6 @@ msgstr "第 {index} 列"
 msgid "Comfortable"
 msgstr "舒适"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "即将推出"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -3407,10 +3403,6 @@ msgstr "让机器人在 MEMORY.md 之外，按语义保存和回忆事实。"
 msgid "Light"
 msgstr "浅色"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Linear 工单"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -4337,10 +4329,6 @@ msgstr "第 {page} 页，共 {count} 页"
 msgid "Page not found"
 msgstr "找不到页面"
 
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "PagerDuty 事件"
-
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "通行密钥"
@@ -5264,10 +5252,6 @@ msgstr "正在发送…"
 msgid "Sent"
 msgstr "已发送"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Sentry 告警"
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr "请填写 Serenity 端点。"
@@ -5708,10 +5692,6 @@ msgstr "团队电脑"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 消息"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "未启用 Teams"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"

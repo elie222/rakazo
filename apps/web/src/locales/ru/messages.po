@@ -1453,10 +1453,6 @@ msgstr "столбец {index}"
 msgid "Comfortable"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Coming soon"
-msgstr "Скоро"
-
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Command"
@@ -3407,10 +3403,6 @@ msgstr "Позволяет ботам сохранять и находить ф�
 msgid "Light"
 msgstr "Светлая"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Linear issue"
-msgstr "Задача Linear"
-
 #: src/pages/SpaceSearch.tsx
 msgid "Link"
 msgstr ""
@@ -4337,10 +4329,6 @@ msgstr "Страница {page} из {count}"
 msgid "Page not found"
 msgstr "Страница не найдена"
 
-#: src/pages/RoutineEditor.tsx
-msgid "PagerDuty incident"
-msgstr "Инцидент PagerDuty"
-
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
 msgstr "Ключ доступа"
@@ -5264,10 +5252,6 @@ msgstr "Отправка…"
 msgid "Sent"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Sentry alert"
-msgstr "Оповещение Sentry"
-
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Serenity endpoint is required."
 msgstr ""
@@ -5708,10 +5692,6 @@ msgstr "Командный компьютер"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Сообщение Teams"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Teams not enabled"
-msgstr "Teams не настроен"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
