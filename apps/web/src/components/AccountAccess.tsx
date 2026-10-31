@@ -97,16 +97,17 @@ export function AccountAccess({
                   disabled={pending}
                   onClick={() =>
                     void action(async () => {
+                      const returnTo = ssoReturnURL(false);
                       const result = await runSsoFlow(
                         (disableRedirect, callbackURL) =>
                           authClient.signIn.social({
                             disableRedirect,
                             provider: "oidc",
                             additionalData: { reauthenticate: true },
-                            callbackURL: callbackURL(window.location.href),
-                            errorCallbackURL: callbackURL(window.location.href),
+                            callbackURL: callbackURL(returnTo),
+                            errorCallbackURL: callbackURL(returnTo),
                           }),
-                        [window.location.href],
+                        [returnTo],
                       );
                       if (result.error)
                         throw new Error(authErrorText(result.error, t`Could not continue`));
@@ -191,19 +192,18 @@ export function LinkSsoRow() {
   });
   async function link() {
     setError(null);
-    // Marks a failed link's return so its error shows on this row, not under Delete account.
-    const failed = new URL(window.location.href);
-    failed.searchParams.set(LINK_RETURN, "1");
+    const returnTo = ssoReturnURL(false);
+    const failed = ssoReturnURL(true);
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
           authClient.linkSocial({
             disableRedirect,
             provider: "oidc",
-            callbackURL: callbackURL(window.location.href),
-            errorCallbackURL: callbackURL(failed.href),
+            callbackURL: callbackURL(returnTo),
+            errorCallbackURL: callbackURL(failed),
           }),
-        [window.location.href, failed.href],
+        [returnTo, failed],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
     } catch (cause) {
@@ -229,6 +229,15 @@ export function LinkSsoRow() {
 }
 
 const LINK_RETURN = "sso-link";
+
+/** This page without an earlier redirect's result; a failed link's return is marked as one. */
+function ssoReturnURL(failedLink: boolean): string {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("error");
+  url.searchParams.delete(LINK_RETURN);
+  if (failedLink) url.searchParams.set(LINK_RETURN, "1");
+  return url.href;
+}
 
 /** The error an SSO redirect came back with, for the flow that started it. */
 function redirectError(flow: "link" | "delete"): string | null {

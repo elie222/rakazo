@@ -100,6 +100,12 @@ it("shows a failed link's redirect error on the SSO row, not under Delete accoun
     const alerts = host.querySelectorAll('[role="alert"]');
     expect(alerts).toHaveLength(1);
     expect(host.firstElementChild?.contains(alerts[0]!)).toBe(true);
+    await click("Delete");
+    await click("Sign in again");
+    const clean = `${window.location.origin}/`;
+    expect(authClient.signIn.social).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCallbackURL: `popup:${clean}` }),
+    );
   } finally {
     window.history.replaceState(null, "", "/");
   }
