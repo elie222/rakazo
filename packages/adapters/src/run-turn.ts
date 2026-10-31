@@ -55,6 +55,7 @@ import {
   flushProgress,
   nextProgressNonce,
   publishMidTurnNarration,
+  publishNarrationBeforeAsk,
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
@@ -336,6 +337,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+  await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
   const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
   const safeActions = event.actions?.map((action) => ({

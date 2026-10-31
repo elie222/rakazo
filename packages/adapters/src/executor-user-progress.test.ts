@@ -711,6 +711,82 @@ describe("notes that can't be posted as messages", () => {
   });
 });
 
+describe("text written before a question", () => {
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+  const ask = (text: string): AgentRuntimeEvent[] => [
+    { type: "text", text },
+    { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+    { type: "ask", text: "Which order?", actions: [{ id: "choice-1", label: "Art first" }] },
+  ];
+
+  it("posts a long answer whole, ahead of the question, on a fresh turn", async () => {
+    const answer =
+      `Here is the estimate. ${"Each level takes one session to build. ".repeat(15)}`.trim();
+    const { messages, pauseRunForInput, prisma, finalizeRun } = await runTurn(
+      "",
+      false,
+      undefined,
+      [],
+      "fyi",
+      { runtimeEvents: ask(answer) },
+    );
+    expect(answer.length).toBeGreaterThan(500);
+    expect(sentTexts(messages)).toEqual([answer]);
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+    expect(pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [expect.objectContaining({ kind: "ask", text: "Which order?" })],
+      }),
+    );
+    expect(prisma.message.create.mock.invocationCallOrder[0]).toBeLessThan(
+      pauseRunForInput.mock.invocationCallOrder[0]!,
+    );
+    expect(finalizeRun).not.toHaveBeenCalled();
+  });
+
+  it("brings back the notes held on earlier steps, in order", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "I looked at the level files." },
+        { type: "tool", name: "read_file", args: {}, executionId: "call-1" },
+        ...ask("Three pyramids are left."),
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([
+      "I looked at the level files.\n\nThree pyramids are left.",
+    ]);
+  });
+
+  it("redacts the text like the reply", async () => {
+    const { messages } = await runTurn("", false, undefined, ["fake-secret-value"], "fyi", {
+      runtimeEvents: ask("The fake-secret-value is set."),
+    });
+    expect(sentTexts(messages)).toEqual(["The [redacted] is set."]);
+  });
+
+  it("posts nothing extra when the bot asks with no text before the question", async () => {
+    const { messages, pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [
+        { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+        { type: "ask", text: "Which order?" },
+      ],
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the text out of chat on runs that hold narration back", async () => {
+    const { messages, pauseRunForInput } = await runTurn("", true, undefined, [], "fyi", {
+      runtimeEvents: ask("Three pyramids are left."),
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(pauseRunForInput).toHaveBeenCalledOnce();
+  });
+});
+
 describe("a message from the person while the bot works", () => {
   const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
     messages.map((message) =>
