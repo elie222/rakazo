@@ -659,10 +659,10 @@ export default function BotSettingsScreen() {
               </View>
               <View style={styles.row}>
                 <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
-                  {t("Manage the bots it creates")}
+                  {t("Manage other bots")}
                 </Text>
                 <NativeSwitch
-                  accessibilityLabel={t("Manage the bots it creates")}
+                  accessibilityLabel={t("Manage other bots")}
                   onValueChange={(value) => {
                     if (!botId) return;
                     setError(null);

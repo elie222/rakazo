@@ -283,7 +283,7 @@ it("shows the profile and the Advanced tab's controls", async () => {
     memoryScope: "Memory scope",
     voice: "Voice",
     readAloud: "Read replies aloud",
-    fleetManagement: "Manage the bots it creates",
+    fleetManagement: "Manage other bots",
   };
   const controls = [...advanced.querySelectorAll("h3, span, label, div")].flatMap((node) =>
     Object.entries(labels)

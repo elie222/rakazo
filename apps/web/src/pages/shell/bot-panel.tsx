@@ -734,7 +734,7 @@ export function BotSettings({
               </div>
               <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
                 <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
-                  <Trans>Manage the bots it creates</Trans>
+                  <Trans>Manage other bots</Trans>
                 </label>
                 <Switch
                   id={`${ids}-fleet-management`}
