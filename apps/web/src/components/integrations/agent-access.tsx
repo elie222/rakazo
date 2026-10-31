@@ -73,7 +73,7 @@ export function AgentAccessControl({
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="-ms-1.5 h-7 gap-1 px-1.5 text-xs font-normal text-foreground"
+              className="h-7 gap-1 px-1.5 text-xs font-normal text-foreground"
             />
           }
         >

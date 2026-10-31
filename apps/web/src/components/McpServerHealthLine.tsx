@@ -1,13 +1,13 @@
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import type { McpServerHealth } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { Disclosure } from "@rakazo/ui-web";
-import { CircleCheck, CircleDashed, LoaderCircle, TriangleAlert } from "lucide-react";
+import { CircleDashed, LoaderCircle, TriangleAlert } from "lucide-react";
 
 /**
- * Primary status of a configured MCP server: whether the last launch/discovery worked.
- * Never colour-only: every state pairs an icon with text, and a failure opens its raw log
- * from the status itself so the row stays compact.
+ * What needs attention on a configured MCP server; a working one shows nothing. Never
+ * colour-only: every state pairs an icon with text, and a failure opens its raw log from the
+ * status itself so the row stays compact.
  */
 export function McpServerHealthLine({
   health,
@@ -17,15 +17,13 @@ export function McpServerHealthLine({
   /** A Test connection run is in flight; shown until the server reports installing. */
   checking?: boolean;
 }) {
-  const toolCount = health.toolCount;
-
   if (checking && health.status !== "installing") {
     return (
       <p
         role="status"
         data-testid="mcp-health"
         data-status="checking"
-        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
         <span>
@@ -41,7 +39,7 @@ export function McpServerHealthLine({
         role="status"
         data-testid="mcp-health"
         data-status="installing"
-        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground"
       >
         <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
         <span>
@@ -51,28 +49,7 @@ export function McpServerHealthLine({
     );
   }
 
-  if (health.status === "ok") {
-    return (
-      <p
-        role="status"
-        data-testid="mcp-health"
-        data-status="ok"
-        className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
-      >
-        <CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-success" />
-        <span className="flex flex-wrap gap-x-2">
-          <span className="text-success">
-            <Trans>Running</Trans>
-          </span>
-          {toolCount === null ? null : (
-            <span>
-              <Plural value={toolCount} one="# tool" other="# tools" />
-            </span>
-          )}
-        </span>
-      </p>
-    );
-  }
+  if (health.status === "ok") return null;
 
   if (health.status === "error") {
     const summary = (
@@ -86,7 +63,7 @@ export function McpServerHealthLine({
       </span>
     );
     return (
-      <div data-testid="mcp-health" data-status="error" className="mt-2">
+      <div data-testid="mcp-health" data-status="error">
         {health.message ? (
           <Disclosure data-testid="mcp-health-details" summary={summary}>
             <pre
@@ -108,7 +85,7 @@ export function McpServerHealthLine({
       role="status"
       data-testid="mcp-health"
       data-status="unknown"
-      className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
     >
       <CircleDashed aria-hidden="true" className="size-3.5 shrink-0" />
       <span>

@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import { Trans, useLingui } from "@lingui/react/macro";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
@@ -811,80 +811,28 @@ export function McpServersOverlay({
         (server.oauthStatus === "none" && server.health.status !== "ok"));
     const pending = oauthPending === server.id;
     const testing = testingIds.has(server.id);
+    const working = server.health.status === "ok" && !testing;
     return (
-      <li key={server.id} data-testid="mcp-server" className="space-y-1.5 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-foreground">{server.name}</div>
-            <p className="truncate text-xs text-muted-foreground">
-              {server.endpoint ?? server.command ?? server.slug}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {signInFirst ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={pending}
-                onClick={() => void connectOAuth(server)}
-              >
-                {oauthActionLabel(server, pending)}
-              </Button>
+      <li
+        key={server.id}
+        data-testid="mcp-server"
+        className="flex items-start justify-between gap-3 py-3"
+      >
+        <div className="min-w-0 space-y-0.5">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate text-sm font-medium text-foreground">{server.name}</span>
+            {working && server.health.toolCount !== null ? (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                <Plural value={server.health.toolCount} one="# tool" other="# tools" />
+              </span>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t`Actions for ${server.name}`}
-                  />
-                }
-              >
-                <Ellipsis />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => startEditing(server)}>
-                  <Trans>Edit</Trans>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={testing || server.health.status === "installing"}
-                  onClick={() => void testServer(server)}
-                >
-                  <Trans>Test connection</Trans>
-                </DropdownMenuItem>
-                {oauth && !signInFirst ? (
-                  <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
-                    {oauthActionLabel(server, pending)}
-                  </DropdownMenuItem>
-                ) : null}
-                {oauth && server.oauthStatus !== "none" ? (
-                  <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
-                    <Trans>Disconnect</Trans>
-                  </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(server)}>
-                  <Trans>Delete</Trans>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
-        </div>
-        <McpServerHealthLine health={server.health} checking={testing} />
-        {server.oauthStatus === "reconnect" ? (
-          <p className="text-xs text-warning">
-            <Trans>OAuth expired</Trans>
+          <p className="truncate text-xs text-muted-foreground">
+            {server.endpoint ?? server.command ?? server.slug}
           </p>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-x-4">
-          <AgentAccessControl
-            bots={bots}
-            access={accessOf(server)}
-            disabled={!assignmentsReady}
-            onChange={(access) => void setServerAgents(server, access)}
-          />
+          <McpServerHealthLine health={server.health} checking={testing} />
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
           {server.installId ? null : (
             <AvailabilityControl
               kind="mcpServer"
@@ -893,6 +841,57 @@ export function McpServersOverlay({
               onChanged={() => serversQuery.refetch()}
             />
           )}
+          <AgentAccessControl
+            bots={bots}
+            access={accessOf(server)}
+            disabled={!assignmentsReady}
+            onChange={(access) => void setServerAgents(server, access)}
+          />
+          {signInFirst ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => void connectOAuth(server)}
+            >
+              {oauthActionLabel(server, pending)}
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label={t`Actions for ${server.name}`} />
+              }
+            >
+              <Ellipsis />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => startEditing(server)}>
+                <Trans>Edit</Trans>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={testing || server.health.status === "installing"}
+                onClick={() => void testServer(server)}
+              >
+                <Trans>Test connection</Trans>
+              </DropdownMenuItem>
+              {oauth && !signInFirst ? (
+                <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
+                  {oauthActionLabel(server, pending)}
+                </DropdownMenuItem>
+              ) : null}
+              {oauth && server.oauthStatus !== "none" ? (
+                <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
+                  <Trans>Disconnect</Trans>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={() => setDeleting(server)}>
+                <Trans>Delete</Trans>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </li>
     );
@@ -939,7 +938,7 @@ export function McpServersOverlay({
           {formOpen ? (
             renderForm()
           ) : (
-            <ul className="-my-4 divide-y divide-border">{servers.map(renderServer)}</ul>
+            <ul className="-my-3 divide-y divide-border">{servers.map(renderServer)}</ul>
           )}
         </div>
         {deleting ? (
