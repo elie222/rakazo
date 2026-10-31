@@ -9,7 +9,8 @@ space, whoever created it. It is controlled per bot and is on for new bots.
 Open a bot's settings, expand **Advanced** and turn on **Manage other bots**. The switch is on web,
 the Electron desktop app (which hosts the web UI) and mobile bot settings.
 
-- New bots start with it on. Older bots and imported bots keep the setting they had.
+- New bots start with it on, including imported agents. Older bots, and bots loaded with
+  [**Import data**](./account.md), keep the setting they had.
 - It is checked again each time a tool is called, so turning it off takes effect immediately.
 - Subagents get none of the bot management tools, not even `list_fleet`.
 
