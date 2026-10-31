@@ -241,6 +241,9 @@ export default function Account() {
     <SettingsRow
       accessible
       title={t("Usage")}
+      accessibilityRole="button"
+      chevron="right"
+      onPress={() => router.push("/usage")}
       detail={
         usage
           ? t("{runs} runs, {tokens} tokens", {

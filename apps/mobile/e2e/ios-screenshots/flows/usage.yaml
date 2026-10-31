@@ -1,0 +1,21 @@
+appId: com.rakazo.app
+name: Usage
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///usage"
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "OpenCode Go"
+    timeout: 15000
+- assertVisible: "Session"
+- assertVisible: "Weekly"
+- assertVisible: "Monthly"
+- assertVisible: "46% remaining"
+- assertVisible: "Sort by"
+- assertVisible: "Most remaining"
+- takeScreenshot: 01-usage

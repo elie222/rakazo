@@ -360,6 +360,10 @@ msgstr "{provider}响应超时。请重试。"
 msgid "{remaining} left"
 msgstr "剩余 {remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "剩余 {remaining}%"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {# 个席位} other {# 个席位}}"
@@ -432,6 +436,10 @@ msgstr "已在 <0>{0}</0> 打开登录页。请在那里输入验证码，这个
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -693,6 +701,10 @@ msgstr "允许规则"
 msgid "Allow writing"
 msgstr "允许写入"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "额度"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr ""
@@ -700,6 +712,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "已允许一次"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "按字母顺序"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -820,6 +836,7 @@ msgstr "应用"
 msgid "Approval boundaries"
 msgstr "审批边界"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "审批模型"
@@ -981,6 +998,14 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登录"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "备用模型优先"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1092,6 +1117,10 @@ msgstr "浏览"
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "浏览 MCP 服务器"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1470,6 +1499,11 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "命令变量"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -2013,6 +2047,10 @@ msgstr "无法加载此对话。"
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "无法加载此文件。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "无法加载用量"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3120,6 +3158,10 @@ msgstr "隐藏"
 msgid "Hide"
 msgstr "隐藏"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "隐藏密码"
@@ -3368,6 +3410,10 @@ msgstr "保留记忆"
 msgid "key"
 msgstr "密钥"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
+msgstr ""
+
 #: src/components/LoginFields.tsx
 msgid "Label"
 msgstr "标签"
@@ -3386,9 +3432,17 @@ msgstr "上次检查 {0}：有变化"
 msgid "Last check {0}: no changes"
 msgstr "上次检查 {0}：无变化"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "上次已知用量"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "稍后"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "剩余最少"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3455,6 +3509,11 @@ msgstr "加载更早的运行记录"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "自动加载网络图片"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "加载中"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3530,6 +3589,7 @@ msgstr "低"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "只能用小写字母、数字、连字符和下划线，并且以字母开头。"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "主模型"
@@ -3821,6 +3881,7 @@ msgstr "周一"
 msgid "month"
 msgstr "月"
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "每月"
@@ -3845,6 +3906,10 @@ msgstr "更多应用"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "更多电脑操作"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "剩余最多"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4017,6 +4082,10 @@ msgstr "无认证"
 msgid "No bots match"
 msgstr "没有匹配的 Bot"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "没有已连接的提供商"
+
 #: src/components/AskCard.tsx
 msgid "No longer active"
 msgstr "已停用"
@@ -4102,6 +4171,10 @@ msgstr "还没有工单"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "无触发器"
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
+msgstr ""
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4303,6 +4376,10 @@ msgstr "可选请求头值"
 msgid "Or paste an API key"
 msgstr "或粘贴 API 密钥"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "顺序"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "组织 API 密钥"
@@ -4396,6 +4473,7 @@ msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 Rakazo 会补上 /v1�
 msgid "Paste the reply"
 msgstr "粘贴回复"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "粘贴你的 API 密钥"
@@ -4520,6 +4598,10 @@ msgstr "上一页"
 msgid "Previous settings sections"
 msgstr "上一组设置项"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "主模型优先"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "优先级"
@@ -4561,6 +4643,14 @@ msgstr "拉取请求"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "排队中"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "配额"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "配额不可用"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4697,6 +4787,7 @@ msgstr "重定向 URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "刷新"
 
@@ -4740,6 +4831,10 @@ msgstr "交还控制权"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "重新加载"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "剩余配额"
 
 #: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
@@ -4904,6 +4999,10 @@ msgstr "重置密码"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "重置你的密码"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr "重置时间"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5284,6 +5383,10 @@ msgstr "服务器名称"
 msgid "Server URL"
 msgstr "服务器 URL"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "会话"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5501,6 +5604,10 @@ msgstr "刚刚添加了同名项目。请重试。"
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "所选的某项在此无法使用。取消勾选后重试。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "排序方式"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -6144,6 +6251,10 @@ msgstr "更新指令？"
 msgid "Update progress"
 msgstr "更新进度"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "已更新"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "更新于 {updated}"
@@ -6181,10 +6292,14 @@ msgstr "上传"
 msgid "Urgent"
 msgstr "紧急"
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "用量"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
@@ -6305,6 +6420,10 @@ msgstr "查看全部"
 msgid "View source"
 msgstr "查看源代码"
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "查看用量"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -6365,6 +6484,15 @@ msgstr "工作日"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "周末"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr "每周"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6541,3 +6669,7 @@ msgstr "你的语音提供方额度已用完。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供方拒绝了该密钥。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"

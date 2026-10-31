@@ -20,6 +20,7 @@ tags:
 - extendedWaitUntil:
     visible: "Sign up for Rakazo"
     timeout: 30000
+- runFlow: helpers/server.yaml
 - takeScreenshot: "02-sign-up"
 - tapOn: "Sign in"
 - runFlow:
@@ -29,7 +30,7 @@ tags:
     commands:
       - assertVisible: "Sign in to Rakazo"
       - takeScreenshot: "01-sign-in"
-      - tapOn: "Use a custom server"
+      - tapOn: "Use a custom server|Custom server.*"
 - assertVisible: "Server"
 - takeScreenshot: "03-server"
 - runFlow: helpers/server.yaml
@@ -103,6 +104,18 @@ tags:
     timeout: 10000
 - assertVisible: "Approval model"
 - takeScreenshot: "11-models"
+
+- openLink: "rakazo:///usage"
+- extendedWaitUntil:
+    visible: "OpenCode Go"
+    timeout: 10000
+- assertVisible: "Session"
+- assertVisible: "Weekly"
+- assertVisible: "Monthly"
+- assertVisible: "46% remaining"
+- assertVisible: "Sort by"
+- assertVisible: "Most remaining"
+- takeScreenshot: "11b-usage"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:

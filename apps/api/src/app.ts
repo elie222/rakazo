@@ -249,6 +249,7 @@ type CreateAppOverrides = Partial<AppEnv> & {
   pluginRepoFetcher?: PluginRepoFetcher;
   pluginMarketplaceRead?: PluginTextReader;
   modelConnectionFetch?: typeof fetch;
+  modelQuotaFetch?: typeof fetch;
   logger?: Logger;
   runtime?: AgentRuntime;
   contextStrategy?: AgentContextStrategy;
@@ -270,6 +271,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     billing: billingOverride,
     remoteConnectors,
     modelConnectionFetch,
+    modelQuotaFetch,
     pluginRepoFetcher,
     pluginMarketplaceRead,
     logger: loggerOverride,
@@ -765,6 +767,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
+    modelQuotaFetch,
     // The scripted runtime never calls a provider, so neither does its connect.
     modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,

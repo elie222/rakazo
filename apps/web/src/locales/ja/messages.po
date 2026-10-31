@@ -360,6 +360,10 @@ msgstr "{provider}の応答に時間がかかりすぎました。もう一度�
 msgid "{remaining} left"
 msgstr "残り{remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "残り{remaining}%"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr "{seats, plural, one {#席} other {#席}}"
@@ -432,6 +436,10 @@ msgstr "<0>{0}</0>でログイン用のタブが開きました。そこでこ�
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "サブスクリプションの認証情報は安全に保存されています。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -693,6 +701,10 @@ msgstr "許可ルール"
 msgid "Allow writing"
 msgstr "書き込みを許可"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "利用枠"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr ""
@@ -700,6 +712,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "今回のみ許可しました"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "アルファベット順"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -820,6 +836,7 @@ msgstr "適用"
 msgid "Approval boundaries"
 msgstr "承認の範囲"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "承認モデル"
@@ -981,6 +998,14 @@ msgstr "戻る"
 msgid "Back to sign in"
 msgstr "ログインに戻る"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "バックアップを先に"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "ベースURL"
@@ -1092,6 +1117,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "MCPサーバーを探す"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1470,6 +1499,11 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "コマンド変数"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -2013,6 +2047,10 @@ msgstr "このチャットを読み込めませんでした。"
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "このファイルを読み込めませんでした。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "使用量を読み込めませんでした"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3120,6 +3158,10 @@ msgstr "非表示"
 msgid "Hide"
 msgstr "非表示"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "パスワードを非表示"
@@ -3368,6 +3410,10 @@ msgstr "メモリを保持"
 msgid "key"
 msgstr "キー"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
+msgstr ""
+
 #: src/components/LoginFields.tsx
 msgid "Label"
 msgstr "ラベル"
@@ -3386,9 +3432,17 @@ msgstr "前回の確認 {0}: 変更あり"
 msgid "Last check {0}: no changes"
 msgstr "前回の確認 {0}: 変更なし"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "最後に確認した使用量"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "後で"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "残量が少ない順"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3455,6 +3509,11 @@ msgstr "過去の実行を読み込む"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "Web画像を自動で読み込む"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "読み込み中"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3530,6 +3589,7 @@ msgstr "低"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "小文字、数字、ハイフン、アンダースコアのみ使用でき、先頭は文字にしてください。"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "メインモデル"
@@ -3821,6 +3881,7 @@ msgstr "月曜日"
 msgid "month"
 msgstr "月"
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "毎月"
@@ -3845,6 +3906,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "コンピューターのその他の操作"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "残量が多い順"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4017,6 +4082,10 @@ msgstr "認証なし"
 msgid "No bots match"
 msgstr "一致するボットはありません"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "接続済みのプロバイダーはありません"
+
 #: src/components/AskCard.tsx
 msgid "No longer active"
 msgstr "現在は無効"
@@ -4102,6 +4171,10 @@ msgstr "チケットはまだありません"
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "トリガーなし"
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
+msgstr ""
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4303,6 +4376,10 @@ msgstr "ヘッダー値（任意）"
 msgid "Or paste an API key"
 msgstr "またはAPIキーを貼り付け"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "順序"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "組織のAPIキー"
@@ -4396,6 +4473,7 @@ msgstr "サーバーのOpenAI互換アドレスを貼り付けてください。
 msgid "Paste the reply"
 msgstr "返信を貼り付け"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "APIキーを貼り付け"
@@ -4520,6 +4598,10 @@ msgstr "前のページ"
 msgid "Previous settings sections"
 msgstr "前の設定セクション"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "プライマリを先に"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "優先度"
@@ -4561,6 +4643,14 @@ msgstr "プルリクエスト"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "待機中"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "利用枠"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "利用枠を取得できません"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4697,6 +4787,7 @@ msgstr "リダイレクトURI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "更新"
 
@@ -4740,6 +4831,10 @@ msgstr "操作を戻す"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "再読み込み"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "残りの利用枠"
 
 #: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
@@ -4904,6 +4999,10 @@ msgstr "パスワードをリセット"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "パスワードをリセット"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr "リセット"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5284,6 +5383,10 @@ msgstr "サーバー名"
 msgid "Server URL"
 msgstr "サーバーURL"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "セッション"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5501,6 +5604,10 @@ msgstr "同じ名前のものが追加されたところです。もう一度お
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "選択した項目の一部はここでは使えません。チェックを外してもう一度お試しください。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "並べ替え"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -6144,6 +6251,10 @@ msgstr "指示を更新しますか？"
 msgid "Update progress"
 msgstr "更新の進行状況"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "更新日時"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr "更新日: {updated}"
@@ -6181,10 +6292,14 @@ msgstr "アップロード"
 msgid "Urgent"
 msgstr "緊急"
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "使用量"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
@@ -6305,6 +6420,10 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "使用量を表示"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -6365,6 +6484,15 @@ msgstr "平日"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "週末"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr "週間"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6541,3 +6669,7 @@ msgstr "音声プロバイダーのクレジットが不足しています。"
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "音声プロバイダーのキーが拒否されました。"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"

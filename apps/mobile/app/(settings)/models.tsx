@@ -1,8 +1,9 @@
 import {
+  COMMANDCODE_BASE_URL,
   canonicalPiProviderId,
-  isOllamaCloudBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
@@ -150,7 +151,7 @@ export default function Models() {
       }),
     );
 
-  /** Every provider, popular first, plus the Ollama Cloud preset of the compatible one. */
+  /** Every provider, popular first, plus compatible service presets. */
   const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
@@ -162,23 +163,32 @@ export default function Models() {
     }
     const all = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
     if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      all.push({
-        id: OPENAI_COMPATIBLE_PROVIDER_ID,
-        name: t("Ollama Cloud"),
-        baseUrl: OLLAMA_CLOUD_BASE_URL,
-      });
+      all.push(
+        {
+          id: OPENAI_COMPATIBLE_PROVIDER_ID,
+          name: t("Ollama Cloud"),
+          baseUrl: OLLAMA_CLOUD_BASE_URL,
+        },
+        {
+          id: OPENAI_COMPATIBLE_PROVIDER_ID,
+          name: t("CommandCode"),
+          baseUrl: COMMANDCODE_BASE_URL,
+        },
+      );
     return all;
   }, [catalog, t]);
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    const ollama = credentials.some(
-      (entry) =>
-        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && isOllamaCloudBaseUrl(entry.baseUrl),
-    );
     return allProviders.filter((provider) =>
-      provider.baseUrl ? !ollama : !connected.has(canonicalPiProviderId(provider.id)),
+      provider.baseUrl
+        ? !credentials.some(
+            (entry) =>
+              entry.provider === provider.id &&
+              savedCompatibleEndpointMatches(entry.baseUrl ?? "", provider.baseUrl),
+          )
+        : !connected.has(canonicalPiProviderId(provider.id)),
     );
   }, [allProviders, credentials]);
 

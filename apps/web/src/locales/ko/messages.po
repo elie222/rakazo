@@ -360,6 +360,10 @@ msgstr "{provider}의 응답 시간이 초과되었습니다. 다시 시도하�
 msgid "{remaining} left"
 msgstr "남은 시간 {remaining}"
 
+#: src/components/usage/connection-quota.tsx
+msgid "{remaining}% remaining"
+msgstr "{remaining}% 남음"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
 msgstr ""
@@ -432,6 +436,10 @@ msgstr ""
 #: src/pages/model-settings/use-model-settings.ts
 msgid "A subscription credential is stored securely."
 msgstr "구독 인증 정보가 안전하게 저장되어 있습니다."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "A–Z"
+msgstr "A–Z"
 
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
@@ -693,6 +701,10 @@ msgstr "허용 규칙"
 msgid "Allow writing"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Allowance"
+msgstr "한도"
+
 #: src/components/AskCard.tsx
 msgid "Allowed in this space"
 msgstr ""
@@ -700,6 +712,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "한 번 허용됨"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Alphabetical"
+msgstr "가나다순"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
@@ -820,6 +836,7 @@ msgstr "적용"
 msgid "Approval boundaries"
 msgstr "승인이 필요한 범위"
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "승인 모델"
@@ -981,6 +998,14 @@ msgstr "뒤로"
 msgid "Back to sign in"
 msgstr "로그인으로 돌아가기"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Backups first"
+msgstr "백업 먼저"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Balance"
+msgstr ""
+
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
 msgstr "서버 주소"
@@ -1091,6 +1116,10 @@ msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
+msgstr ""
+
+#: src/components/usage/connection-quota.tsx
+msgid "Budget"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -1470,6 +1499,11 @@ msgstr ""
 #: src/components/VaultSettings.tsx
 msgid "Command variable"
 msgstr "명령 변수"
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/Onboarding.tsx
+msgid "CommandCode"
+msgstr "CommandCode"
 
 #: src/pages/Board.tsx
 msgid "Comment"
@@ -2013,6 +2047,10 @@ msgstr "이 채팅을 불러오지 못했습니다."
 #: src/components/ArtifactFileCard.tsx
 msgid "Could not load this file."
 msgstr "파일을 불러오지 못했습니다."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Could not load usage"
+msgstr "사용량을 불러오지 못했습니다"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
@@ -3120,6 +3158,10 @@ msgstr "숨김"
 msgid "Hide"
 msgstr "숨기기"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Hide connections without usage"
+msgstr ""
+
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "비밀번호 숨기기"
@@ -3368,6 +3410,10 @@ msgstr "기억은 유지"
 msgid "key"
 msgstr "key"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Key limit"
+msgstr ""
+
 #: src/components/LoginFields.tsx
 msgid "Label"
 msgstr "레이블"
@@ -3386,9 +3432,17 @@ msgstr "마지막 확인 {0}: 변경됨"
 msgid "Last check {0}: no changes"
 msgstr "마지막 확인 {0}: 변경 없음"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Last known usage"
+msgstr "마지막으로 확인된 사용량"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Least remaining"
+msgstr "잔여량 적은 순"
 
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
@@ -3455,6 +3509,11 @@ msgstr "이전 실행 불러오기"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Load web images automatically"
 msgstr "웹 이미지 자동으로 불러오기"
+
+#: src/components/usage/connection-quota.tsx
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Loading"
+msgstr "불러오는 중"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3530,6 +3589,7 @@ msgstr "낮음"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Main model"
 msgstr "기본 모델"
@@ -3821,6 +3881,7 @@ msgstr "월요일"
 msgid "month"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
 #: src/lib/cron.ts
 msgid "Monthly"
 msgstr "매월"
@@ -3845,6 +3906,10 @@ msgstr ""
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "More computer actions"
 msgstr "컴퓨터 작업 더보기"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Most remaining"
+msgstr "잔여량 많은 순"
 
 #: src/pages/ModelRoleSettings.tsx
 msgid "Move down"
@@ -4017,6 +4082,10 @@ msgstr "인증 없음"
 msgid "No bots match"
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "No connected providers"
+msgstr "연결된 제공업체 없음"
+
 #: src/components/AskCard.tsx
 msgid "No longer active"
 msgstr "이미 종료된 요청입니다"
@@ -4102,6 +4171,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "트리거 없음"
+
+#: src/components/usage/connection-quota.tsx
+msgid "No usage limit"
+msgstr ""
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -4303,6 +4376,10 @@ msgstr "선택 사항인 헤더 값"
 msgid "Or paste an API key"
 msgstr "또는 API 키 붙여넣기"
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Order"
+msgstr "순서"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "조직 API 키"
@@ -4396,6 +4473,7 @@ msgstr "서버의 OpenAI 호환 주소를 붙여넣으세요. 필요하면 Rakaz
 msgid "Paste the reply"
 msgstr "답변 붙여넣기"
 
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "API 키를 붙여넣으세요"
@@ -4520,6 +4598,10 @@ msgstr "이전 페이지"
 msgid "Previous settings sections"
 msgstr ""
 
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Primary first"
+msgstr "기본 모델 먼저"
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr ""
@@ -4561,6 +4643,14 @@ msgstr "풀 리퀘스트"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "대기 중"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota"
+msgstr "할당량"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Quota unavailable"
+msgstr "할당량을 확인할 수 없음"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Rakazo"
@@ -4697,6 +4787,7 @@ msgstr "리디렉션 URI"
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/components/ModelCredits.tsx
+#: src/components/usage/connection-quota.tsx
 msgid "Refresh"
 msgstr "새로고침"
 
@@ -4740,6 +4831,10 @@ msgstr "제어권 넘기기"
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
 msgstr "새로고침"
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Remaining quota"
+msgstr "남은 할당량"
 
 #: src/components/ApprovalRulePreview.tsx
 #: src/components/ApprovalRulesSettings.tsx
@@ -4904,6 +4999,10 @@ msgstr "비밀번호 재설정"
 #: src/pages/Auth.tsx
 msgid "Reset your password"
 msgstr "비밀번호를 재설정하세요"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Resets"
+msgstr "초기화"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Resetting…"
@@ -5284,6 +5383,10 @@ msgstr "서버 이름"
 msgid "Server URL"
 msgstr "서버 URL"
 
+#: src/components/usage/connection-quota.tsx
+msgid "Session"
+msgstr "세션"
+
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
@@ -5501,6 +5604,10 @@ msgstr "같은 이름의 항목이 방금 추가되었습니다. 다시 시도�
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "선택한 항목 중 여기서 작동하지 않는 것이 있습니다. 선택을 해제하고 다시 시도하세요."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Sort by"
+msgstr "정렬 기준"
 
 #: src/components/markdown-copy.tsx
 msgid "Sort by {column}"
@@ -6144,6 +6251,10 @@ msgstr "지침을 업데이트할까요?"
 msgid "Update progress"
 msgstr ""
 
+#: src/components/usage/connection-quota.tsx
+msgid "Updated"
+msgstr "업데이트됨"
+
 #: src/components/VaultSettings.tsx
 msgid "Updated {updated}"
 msgstr ""
@@ -6181,10 +6292,14 @@ msgstr "업로드"
 msgid "Urgent"
 msgstr ""
 
-#: src/components/SidebarFooter.tsx
+#: src/components/usage/usage-popover.tsx
 #: src/pages/settings-nav.ts
 msgid "Usage"
 msgstr "사용량"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Usage not reported by this provider"
+msgstr ""
 
 #. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
 #. placeholder {0}: deviceTimezone.replaceAll("_", " ")
@@ -6305,6 +6420,10 @@ msgstr ""
 msgid "View source"
 msgstr ""
 
+#: src/components/usage/usage-popover.tsx
+msgid "View usage"
+msgstr "사용량 보기"
+
 #: src/pages/settings-nav.ts
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/SpaceSettingOverrides.tsx
@@ -6365,6 +6484,15 @@ msgstr "주중"
 #: src/lib/cron.ts
 msgid "Weekends"
 msgstr "주말"
+
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly"
+msgstr "주간"
+
+#. placeholder {0}: window.label
+#: src/components/usage/connection-quota.tsx
+msgid "Weekly · {0}"
+msgstr ""
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
@@ -6541,3 +6669,7 @@ msgstr "음성 서비스 크레딧이 모두 소진되었습니다."
 #: src/lib/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "음성 서비스에서 키를 거부했습니다."
+
+#: src/components/usage/provider-quota-stack.tsx
+msgid "Z–A"
+msgstr "Z–A"

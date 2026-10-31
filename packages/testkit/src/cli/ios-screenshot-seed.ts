@@ -1,5 +1,6 @@
 import { createDb, createThreadMessage } from "@rakazo/db";
 import { sessionCookieHeader } from "../index.js";
+import { SCREENSHOT_MODEL_CONNECTION } from "../model-quota-screenshot-fixture.js";
 
 const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
@@ -41,9 +42,20 @@ export async function seedIosScreenshotFixture(input: {
   email: string;
   emptyEmail: string;
   password: string;
+  includeQuotaProvider?: boolean;
 }): Promise<IosScreenshotFixture> {
   const populated = await ensureUser(input.apiUrl, input.email, input.password, "Screenshot User");
   const empty = await ensureUser(input.apiUrl, input.emptyEmail, input.password, "Empty User");
+  if (input.includeQuotaProvider) {
+    const credentials = await rpc<Array<{ provider: string }>>(
+      input.apiUrl,
+      populated.headers,
+      "models/credentials",
+    );
+    if (!credentials.some(({ provider }) => provider === SCREENSHOT_MODEL_CONNECTION.provider)) {
+      await rpc(input.apiUrl, populated.headers, "models/connect", SCREENSHOT_MODEL_CONNECTION);
+    }
+  }
   for (const bot of await rpc<BotRow[]>(input.apiUrl, empty.headers, "bots/list")) {
     await rpc(input.apiUrl, empty.headers, "bots/remove", { botId: bot.id, deleteMemories: false });
   }

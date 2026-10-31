@@ -18,6 +18,7 @@ const models = vi.hoisted(() => ({
   forRole: vi.fn(),
   setRole: vi.fn(),
   credentials: vi.fn(),
+  quota: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
   rename: vi.fn(),
@@ -334,6 +335,13 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  models.quota.mockResolvedValue({
+    credentialId: "connection",
+    status: "unsupported",
+    observedAt: null,
+    checkedAt: new Date().toISOString(),
+    windows: [],
+  });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
   models.forRole.mockImplementation(() => models.list());
@@ -902,7 +910,12 @@ it("lists not-connected providers by name alone", async () => {
   const view = await renderSettings();
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["DeepSeek", "OpenAI-compatible", "Ollama Cloud"]);
+    expect(pickerOptions()).toEqual([
+      "DeepSeek",
+      "OpenAI-compatible",
+      "Ollama Cloud",
+      "CommandCode",
+    ]);
     expect(document.querySelectorAll("[cmdk-group-heading]")).toHaveLength(0);
   } finally {
     await view.unmount();
@@ -1111,6 +1124,32 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
   }
 });
 
+it("opens the CommandCode preset with a required API key", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "CommandCode");
+    expect(baseUrlField(view.container).value).toBe("https://api.commandcode.ai/provider/v1");
+    expect(
+      [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
+    ).toHaveLength(0);
+    const key = compatibleKeyField(view.container);
+    expect(key.required).toBe(true);
+    expect(key.placeholder).toBe("Paste your API key");
+    const modelId = view.container.querySelector('input[aria-label="Model id"]');
+    if (!(modelId instanceof HTMLInputElement))
+      throw new Error("Missing compatible model id field");
+    await typeInto(modelId, "glm-5.3-flash");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(key, "fixture-commandcode-key");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("offers a saved Ollama connection's models without the Ollama preset", async () => {
   models.list.mockResolvedValue([compatibleEntry]);
   models.credentials.mockResolvedValue([
@@ -1126,7 +1165,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
   const view = await renderSettings(false);
   try {
     await openPicker("Change Main model");
-    expect(pickerOptions()).toEqual(["fixture-model"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "CommandCode"]);
   } finally {
     await view.unmount();
   }
@@ -1147,7 +1186,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   const view = await renderSettings(false);
   try {
     await openPicker("Add fallback");
-    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
+    expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud", "CommandCode"]);
     await choose("Ollama Cloud");
     expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");
   } finally {

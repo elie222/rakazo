@@ -43,5 +43,10 @@
     "id": "settings",
     "title": "Settings",
     "flow": "flows/settings.yaml"
+  },
+  {
+    "id": "usage",
+    "title": "Usage",
+    "flow": "flows/usage.yaml"
   }
 ]
