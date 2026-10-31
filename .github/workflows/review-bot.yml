@@ -1,16 +1,12 @@
 name: Review bot
 
-# Greptile reviews PRs by default. A PR labeled review:coderabbit goes to
-# CodeRabbit instead (.coderabbit.yaml opts it in, greptile.json opts it out).
-# The label is added when Greptile replies that it can no longer review, or,
-# while the CODERABBIT_UNTIL repository variable holds a later date
-# (YYYY-MM-DD), to every new PR.
-#
-# pull_request_target so fork PRs can be labeled on open; this workflow never
-# checks out or runs PR code.
+# Greptile reviews PRs by default. The review:coderabbit label hands a PR to
+# CodeRabbit when Greptile says "Reactivate Greptile", CODERABBIT_UNTIL holds
+# a future date (YYYY-MM-DD), or Greptile stays silent for about 15 minutes.
+# pull_request_target allows labeling fork PRs; no PR code is checked out or run.
 on:
   pull_request_target:
-    types: [opened, reopened]
+    types: [opened, reopened, ready_for_review]
   pull_request_review:
     types: [submitted]
 
@@ -19,16 +15,20 @@ permissions: {}
 jobs:
   label:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     if: >-
-      (github.event_name == 'pull_request_target' && vars.CODERABBIT_UNTIL != '') ||
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
       (github.event.review.user.login == 'greptile-apps[bot]' &&
         contains(github.event.review.body, 'Reactivate Greptile'))
+    concurrency:
+      group: review-bot-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       issues: write
       pull-requests: write
+      checks: read
     steps:
-      - name: Hand the PR to CodeRabbit
+      - name: Hand the PR to CodeRabbit when needed
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -36,6 +36,38 @@ jobs:
           EVENT: ${{ github.event_name }}
           UNTIL: ${{ vars.CODERABBIT_UNTIL }}
         run: |
-          if [[ "$EVENT" == pull_request_review || "$(date -u +%F)" < "$UNTIL" ]]; then
-            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+          if [[ "$EVENT" == pull_request_review ]]; then
+            reason='Greptile requested reactivation'
+          elif [[ "$(date -u +%F)" < "$UNTIL" ]]; then
+            reason='CODERABBIT_UNTIL is active'
+          else
+            sleep 900
+            pr=$(gh api "repos/$REPO/pulls/$PR")
+            if [[ $(jq -r '.state' <<< "$pr") != open ]]; then
+              echo 'Skipping: PR is closed'
+              exit 0
+            fi
+            if [[ $(jq -r '.draft' <<< "$pr") == true ]]; then
+              echo 'Skipping: PR is a draft'
+              exit 0
+            fi
+            if jq -e 'any(.labels[]; .name == "review:coderabbit")' <<< "$pr" > /dev/null; then
+              echo 'Skipping: PR already uses CodeRabbit'
+              exit 0
+            fi
+            engaged=$(
+              for endpoint in "pulls/$PR/reviews" "issues/$PR/comments" "pulls/$PR/comments"; do
+                gh api --paginate "repos/$REPO/$endpoint" \
+                  --jq '.[] | select(.user.login == "greptile-apps[bot]") | .id'
+              done
+              gh api --paginate "repos/$REPO/commits/$(jq -r '.head.sha' <<< "$pr")/check-runs" \
+                --jq '.check_runs[] | select(.app.slug // "" | test("greptile"; "i")) | .id'
+            )
+            if [[ -n "$engaged" ]]; then
+              echo 'Skipping: Greptile has engaged with the PR'
+              exit 0
+            fi
+            reason='Greptile has not engaged after 15 minutes'
           fi
+          gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+          echo "Handed PR to CodeRabbit: $reason"
