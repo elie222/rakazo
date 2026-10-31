@@ -1,4 +1,4 @@
-import type { Locator, Page, TestInfo } from "@playwright/test";
+import type { Locator, Page, Route, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { signupRequiresEmailVerification } from "@rakazo/core";
 
@@ -359,4 +359,12 @@ export async function presentMainDeploymentDefault(page: Page, provider: string,
     body.json.deploymentPrimary = { provider, modelId };
     await route.fulfill({ response, json: body });
   });
+}
+
+export async function makeAdmin(route: Route, path: "me" | "bootstrap") {
+  const response = await route.fetch();
+  const body = (await response.json()) as { json?: Record<string, unknown> };
+  const me = path === "me" ? body.json : (body.json?.me as Record<string, unknown> | undefined);
+  if (me) me.isAdmin = true;
+  await route.fulfill({ response, json: body });
 }

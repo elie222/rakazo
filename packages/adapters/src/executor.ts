@@ -205,24 +205,20 @@ import {
 } from "./thread-artifacts.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import { appendToolCompletionAudit } from "./tool-completion-audit.js";
-import { verbatimMcpServerSet } from "./verbatim-mcp-result.js";
 import { createWebProvider } from "./web-provider-factory.js";
 
+/** Same reach as the MCP connector: servers assigned to the bot or shared with every bot. */
 async function verbatimMcpServersForRun(prisma: ExecutorDeps["prisma"], botId: string) {
-  const assignments = prisma.botMcpServer;
-  if (!assignments?.findMany) return undefined;
-  const rows = await assignments.findMany({
-    where: { botId, server: { verbatimResults: true } },
-    select: { server: { select: { id: true, slug: true, verbatimResults: true } } },
+  if (!prisma.mcpServer?.findMany) return undefined;
+  const servers = await prisma.mcpServer.findMany({
+    where: {
+      verbatimResults: true,
+      OR: [{ allBots: true }, { assignments: { some: { botId } } }],
+    },
+    select: { id: true, slug: true },
   });
-  if (!Array.isArray(rows)) return undefined;
-  return verbatimMcpServerSet(
-    rows.flatMap((row) => {
-      const server = row.server;
-      if (!server) return [];
-      return [{ id: server.id, slug: server.slug, verbatimResults: server.verbatimResults }];
-    }),
-  );
+  if (!servers?.length) return undefined;
+  return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
 }
 
 export function createRunExecutor(executorDeps: ExecutorDeps) {

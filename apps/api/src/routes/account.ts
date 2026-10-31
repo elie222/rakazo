@@ -27,6 +27,8 @@ import {
   selectVoicePreference,
   voicePreferenceTarget,
 } from "@rakazo/db";
+import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../access-grants.js";
+import { requireAdmin } from "../admins.js";
 import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
 import type { BillingService } from "../billing.js";
 import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
@@ -110,6 +112,20 @@ export function accountRoutes(ctx: RouterContext) {
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
+      }),
+    },
+    accessGrants: {
+      list: authed.accessGrants.list.handler(async ({ context }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return listAccessGrants(deps.prisma);
+      }),
+      create: authed.accessGrants.create.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return createAccessGrant(deps.prisma, context.actor.userId, input);
+      }),
+      revoke: authed.accessGrants.revoke.handler(async ({ context, input }) => {
+        await requireGrantAdmin(deps, context.actor);
+        return revokeAccessGrant(deps.prisma, input.id);
       }),
     },
     preferences: {
@@ -414,4 +430,10 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
 function requireBilling(deps: RouterDeps): BillingService {
   if (!deps.billing) throw new ORPCError("NOT_FOUND", { message: "Billing is not enabled" });
   return deps.billing;
+}
+
+async function requireGrantAdmin(deps: RouterDeps, actor: Actor) {
+  await requireAdmin(deps, actor.userId);
+  if (!deps.billing?.modelCreditsEnabled)
+    throw new ORPCError("NOT_FOUND", { message: "Model credits are not enabled" });
 }

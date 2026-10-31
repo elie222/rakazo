@@ -123,6 +123,22 @@ describe("bounded context selection", () => {
     expect(JSON.stringify(fitting.messages)).toContain(link);
     expect(JSON.stringify(fitting.messages)).not.toContain("Tool result truncated");
   });
+  it("blames a whole MCP result only when shortening it would make the turn fit", () => {
+    const call = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call", name: "mcp__mail__get_message", arguments: {} }],
+    };
+    const result = { role: "toolResult", toolCallId: "call", content: "x ".repeat(2_000) };
+    const huge = user("y ".repeat(20_000));
+    expect(() =>
+      selectContext([call, result, huge], {
+        budget,
+        strategy: "retrieval",
+        protectedIndexes: [0, 2],
+        verbatimMcpServers: { ids: [], slugs: ["mail"] },
+      }),
+    ).toThrow("Required context exceeds the model context budget");
+  });
   it("keeps and shortens the unread tool step after steering", () => {
     const oldCall = {
       role: "assistant",

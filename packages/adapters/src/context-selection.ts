@@ -634,6 +634,8 @@ export function selectContext<T extends ContextMessage>(
         };
       }
       if (keptVerbatimWhole) {
+        // Throws the generic error when shortening the kept results would not make it fit either.
+        selectContext(messages, { ...options, verbatimMcpServers: undefined });
         throw new ContextBudgetError(
           used + fixed,
           options.budget.contextWindow - options.budget.outputReserve,
