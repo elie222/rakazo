@@ -10,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
-import { memo, useMemo, useState } from "react";
+import { memo, useContext, useMemo, useState } from "react";
 import type { TextProps } from "react-native";
 import { Alert, Pressable, Text, View } from "react-native";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../../lib/api";
@@ -22,7 +22,12 @@ import { allowsSpace } from "../../lib/ask-action-label";
 import { plainAskTitle } from "../../lib/ask-title";
 import { t, useI18n } from "../../lib/i18n";
 import { isInlineImageBlock } from "../../lib/inline-image";
-import { UserMentionsContext, userMentionTargets } from "../../lib/message-mentions";
+import {
+  mentionedBots,
+  textWithMentions,
+  UserMentionsContext,
+  userMentionTargets,
+} from "../../lib/message-mentions";
 import { messagePresentationSegments } from "../../lib/message-presentation";
 import { useResolvedAppearance } from "../../lib/native";
 import { speakerColorFor } from "../../lib/thread-message-text";
@@ -711,6 +716,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   );
 });
 
+const OPEN_BOT_ACTION = "open-bot:";
+
 function MessageTextCard({
   message,
   speaker,
@@ -729,13 +736,37 @@ function MessageTextCard({
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const contentText = blockText(message);
+  const { t } = useI18n();
+  const userMentions = useContext(UserMentionsContext);
   if (!contentText) return null;
+  // The surface is one accessibility element, so the bots a message names are offered as its
+  // actions too; a tap on the name still opens the chat for everyone else.
+  const bots =
+    message.role === "user" && userMentions
+      ? mentionedBots(textWithMentions(contentText, userMentions.targets))
+      : [];
+  const accessibilityActions = bots.length
+    ? [
+        ...(actionProps.accessibilityActions ?? []),
+        ...bots.map((bot) => ({
+          name: `${OPEN_BOT_ACTION}${bot.id}`,
+          label: t("Open {name}", { name: bot.name }),
+        })),
+      ]
+    : actionProps.accessibilityActions;
   // The menu wrapper owns surface gestures; links and code controls remain responders.
   const Surface = doubleTapSurface ? View : Pressable;
   return (
     <Surface
       {...actionProps}
       accessible
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={(event) => {
+        const actionName = event.nativeEvent.actionName;
+        const bot = bots.find((candidate) => `${OPEN_BOT_ACTION}${candidate.id}` === actionName);
+        if (bot) userMentions?.onOpenBot(bot.id, bot.name);
+        else actionProps.onAccessibilityAction?.(event);
+      }}
       onLongPress={doubleTapSurface ? undefined : actionProps.onLongPress}
       style={{
         flexShrink: 1,

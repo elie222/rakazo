@@ -168,6 +168,12 @@ vi.mock("react-native", () => {
         "data-mention-colors": JSON.stringify(
           segments.map((segment) => (segment.props as { style?: { color?: string } }).style?.color),
         ),
+        "data-mention-backgrounds": JSON.stringify(
+          segments.map(
+            (segment) =>
+              (segment.props as { style?: { backgroundColor?: string } }).style?.backgroundColor,
+          ),
+        ),
         "data-mention-weights": JSON.stringify(
           segments.map(
             (segment) => (segment.props as { style?: { fontWeight?: string } }).style?.fontWeight,
@@ -347,7 +353,7 @@ describe("thread composer isolation", () => {
     press("@{name}");
     type("ask @Helper now");
     expect(JSON.parse(field().dataset.mentionColors!)).toEqual([null, "token-link", null]);
-    expect(field().dataset.mentionBackgrounds).toBeUndefined();
+    expect(JSON.parse(field().dataset.mentionBackgrounds!)).toEqual([null, null, null]);
   });
 
   it("keeps a backspace at the end of a mention as a selection first, then removes it with its space", () => {

@@ -35,6 +35,12 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("@rakazo/chat-ui/native", () => ({
   ChatMarkdown: ({ children }: { children?: ReactNode }) => createElement("p", null, children),
+  // Stands in for the real link finder, which has its own tests: explicit URLs and emails.
+  plainTextLinkParts: (text: string) =>
+    text
+      .split(/(https?:\/\/\S+|[^\s@]+@[^\s@]+\.[a-z]+)/)
+      .filter(Boolean)
+      .map((value, index) => ({ type: index % 2 ? "link" : "text", value, href: value })),
   LinkifiedText: ({ children }: { children?: ReactNode }) => createElement("b", null, children),
 }));
 vi.mock("../components/bot-avatar", () => ({
@@ -115,6 +121,15 @@ describe("sent message mentions", () => {
     render("@everyone hi", "user", members.slice(0, 1));
     expect(container.querySelector("[data-symbol]")).toBeNull();
     expect(container.textContent).toBe("@everyone hi");
+  });
+
+  it("keeps a link whole when its address contains a member's name", () => {
+    render("see https://example.test/@Ada, then ask @Ada");
+    expect(container.querySelectorAll('span[role="link"]')).toHaveLength(1);
+    expect(container.textContent).toBe("see https://example.test/@Ada, then ask Ada");
+    render("https://example.test/@Ben?x=1");
+    expect(container.querySelector("[data-avatar]")).toBeNull();
+    expect(container.textContent).toBe("https://example.test/@Ben?x=1");
   });
 
   it("leaves text without a known name and bot replies as they were", () => {
