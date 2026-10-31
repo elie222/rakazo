@@ -1,5 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
+import { runHistoryWriteBlock } from "./run-history-write.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Group turns use channel inputs and their own outputs, never private thread history. */
@@ -152,15 +153,7 @@ export async function assertRunCanWriteHistory(
       leaseFence: true,
     },
   });
-  if (!run || (run.status === "cancelled" && !options?.allowCancelled)) {
-    throw new RunHistoryWriteError();
-  }
-  if (
-    lease &&
-    (run.leaseFence !== lease.fence || (run.leaseOwner !== null && run.leaseOwner !== lease.owner))
-  ) {
-    throw new RunHistoryWriteError();
-  }
+  if (runHistoryWriteBlock(run, options) || !run) throw new RunHistoryWriteError();
   return run;
 }
 
