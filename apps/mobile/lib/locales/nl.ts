@@ -1114,6 +1114,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Always open {site}": "{site} altijd openen",
   "Trusted sites": "Vertrouwde sites",
   "Run history": "Rungeschiedenis",
+  "No reply": "Geen antwoord",
   "No runs yet": "Nog geen runs",
   "Load older runs": "Oudere runs laden",
   "Could not load run history": "Rungeschiedenis laden mislukt",

@@ -4068,6 +4068,10 @@ msgstr "कोई OpenClaw, Hermes या एजेंट दस्तावे�
 msgid "No remote MCP servers found"
 msgstr ""
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "कोई जवाब नहीं"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx

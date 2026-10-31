@@ -62,6 +62,7 @@ vi.mock("@rakazo/ui-web", async () => {
       "FieldGroup",
       "FieldLabel",
       "FieldTitle",
+      "SectionHeading",
       "Tabs",
       "TabsList",
       "TabsTrigger",

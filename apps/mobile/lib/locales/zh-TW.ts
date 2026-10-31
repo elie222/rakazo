@@ -1130,6 +1130,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Always open {site}": "一律開啟 {site}",
   "Trusted sites": "受信任的網站",
   "Run history": "執行紀錄",
+  "No reply": "未回覆",
   "No runs yet": "還沒有執行紀錄",
   "Load older runs": "載入更早的執行紀錄",
   "Could not load run history": "無法載入執行歷史紀錄",

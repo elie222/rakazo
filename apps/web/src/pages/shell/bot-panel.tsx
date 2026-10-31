@@ -28,6 +28,7 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  SectionHeading,
   Switch,
   Tabs,
   TabsContent,
@@ -559,9 +560,9 @@ export function BotSettings({
         {/* Stays mounted so scratchpad and knowledge drafts survive a tab switch. */}
         <TabsContent value="settings" keepMounted data-testid="bot-settings-advanced">
           <section className="mt-6">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            <SectionHeading variant="label" className="mb-2">
               <Trans>Notifications</Trans>
-            </h3>
+            </SectionHeading>
             <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
               <div>
                 <label
@@ -941,7 +942,9 @@ function SettingsGroup({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-medium text-muted-foreground">{label}</h3>
+      <SectionHeading variant="label" className="mb-2">
+        {label}
+      </SectionHeading>
       <div className={`space-y-3 [&>*]:mt-0 ${plain ? "" : "rounded-xl bg-muted/50 p-4"}`}>
         {children}
       </div>

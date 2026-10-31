@@ -4069,6 +4069,10 @@ msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
 msgid "No remote MCP servers found"
 msgstr "找不到遠端 MCP 伺服器"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "未回覆"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx

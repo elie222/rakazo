@@ -4068,6 +4068,10 @@ msgstr "לא נמצאו קבצי OpenClaw, Hermes או מסמך סוכן."
 msgid "No remote MCP servers found"
 msgstr "לא נמצאו שרתי MCP מרוחקים"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "אין תשובה"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx

@@ -22,6 +22,7 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
+  SectionHeading,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -857,9 +858,9 @@ export function McpServersOverlay({
             </CardContent>
           </Card>
           <div>
-            <h2 className="text-[15px] font-medium text-foreground">
+            <SectionHeading as="h2">
               <Trans>Configured servers</Trans>
-            </h2>
+            </SectionHeading>
             <div className="mt-3 space-y-2">
               {servers.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">

@@ -4068,6 +4068,10 @@ msgstr "No OpenClaw, Hermes or agent document found."
 msgid "No remote MCP servers found"
 msgstr "No remote MCP servers found"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "No reply"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx

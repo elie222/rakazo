@@ -4068,6 +4068,10 @@ msgstr "OpenClaw, Hermes 또는 에이전트 문서를 찾지 못했습니다."
 msgid "No remote MCP servers found"
 msgstr ""
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "No reply"
+msgstr "답장 없음"
+
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/command-palette.tsx
