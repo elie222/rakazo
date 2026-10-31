@@ -150,12 +150,14 @@ private struct Delivery {
 
 /// Sends with the app's own session and the same procedures as the composer, so the bot runs it
 /// as a message the user sent. Without a chosen bot it goes to the one whose chat was opened last.
-private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) async throws -> Delivery {
+private func send(
+  _ message: String, file: IntentFile?, to bot: BotEntity?, timeout: TimeInterval = 60
+) async throws -> Delivery {
   guard let target = target(bot) else { throw MessageBotError.noBot }
   let botId = target.botId
   let session = try RakazoSession.load()
   let spaceId = target.spaceId ?? session.selectedSpaceId
-  try await session.requireConsent(["botId": botId], spaceId: spaceId)
+  try await session.requireConsent(["botId": botId], spaceId: spaceId, timeout: timeout)
   var input: [String: Any] = [
     "botId": botId,
     "text": message.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -174,8 +176,15 @@ private func send(_ message: String, file: IntentFile?, to bot: BotEntity?) asyn
     input["artifactIds"] = [artifact.id]
     input["imageHandling"] = "confirm"
   }
-  let sent: Sent = try await session.rpc("threads/send", input, spaceId: spaceId)
+  let sent: Sent = try await session.rpc(
+    "threads/send", input, spaceId: spaceId, timeout: timeout)
   return Delivery(session: session, botId: botId, spaceId: spaceId, runId: sent.runId)
+}
+
+/// A voice message goes to the bot whose chat was opened last; its reply arrives as a notification.
+/// Its island waits on the send, so a lost connection gives up sooner than a typed message would.
+func sendToLastBot(_ message: String) async throws {
+  _ = try await send(message, file: nil, to: nil, timeout: 15)
 }
 
 /// The bot's text for the run, once it finishes or stops to wait for the user; nil if it is still
@@ -238,6 +247,11 @@ struct RakazoShortcuts: AppShortcutsProvider {
       phrases: ["Start a voice chat in \(.applicationName)"],
       shortTitle: "Start Voice Chat",
       systemImageName: "waveform")
+    AppShortcut(
+      intent: RecordVoiceMessageIntent(),
+      phrases: ["Record a message in \(.applicationName)"],
+      shortTitle: "Record Message",
+      systemImageName: "mic")
   }
 }
 
@@ -352,11 +366,14 @@ private struct RakazoSession {
   }
 
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
-  func requireConsent(_ target: [String: String], spaceId: String?) async throws {
+  func requireConsent(
+    _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
+  ) async throws {
     let uses = ["model", "memory"]
     var input: [String: Any] = target
     input["uses"] = uses
-    let consent: ConsentStatus = try await rpc("aiConsent/status", input, spaceId: spaceId)
+    let consent: ConsentStatus = try await rpc(
+      "aiConsent/status", input, spaceId: spaceId, timeout: timeout)
     guard consent.recipients.allSatisfy({ $0.allowed || !uses.contains($0.use) }) else {
       throw MessageBotError.consentRequired
     }
