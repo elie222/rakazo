@@ -196,3 +196,84 @@ it("includes the server-derived first line and author role for an id-only reply"
   expect(text).not.toContain("Second line");
   expect(text).toContain("Why?");
 });
+
+describe("reply quote authors in a group thread", () => {
+  const speakers = {
+    spaceId: "space-1",
+    botId: "bot-boris",
+    botName: "Boris",
+    names: new Map([["bot-anya", "Anya"]]),
+  };
+  const botTarget = {
+    ...target,
+    role: "bot",
+    botId: "bot-anya",
+    blocks: [{ kind: "text", text: "Bluebird." }],
+  };
+  const quoteOf = (text: string) => JSON.parse(text.split("\n")[2]!);
+
+  it("names a bot target and the user in a stored message's quote", () => {
+    const reply = {
+      id: "reply",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "Who said that?" }],
+      replyToMessageId: target.id,
+    };
+    expect(
+      quoteOf(messageToAgentHistoryText({ ...reply, replyTo: botTarget }, speakers)).author,
+    ).toBe("Anya");
+    expect(
+      quoteOf(
+        messageToAgentHistoryText(
+          { ...reply, replyTo: { ...target, role: "user", botId: null } },
+          speakers,
+        ),
+      ).author,
+    ).toBe("User");
+    expect(
+      quoteOf(
+        messageToAgentHistoryText(
+          { ...reply, replyTo: { ...botTarget, botId: "bot-boris" } },
+          speakers,
+        ),
+      ).author,
+    ).toBe("Boris");
+  });
+
+  it("looks up the author of a target outside the history window", async () => {
+    const { prisma, findFirst } = harness({ ...botTarget, botId: "bot-old" });
+    const findMany = vi.fn(async () => [{ id: "bot-old", name: "Olga" }]);
+    const context = await loadReplyContext(
+      { ...prisma, bot: { findMany } } as unknown as PrismaClient,
+      "thread-1",
+      "user-reply",
+      speakers,
+    );
+    expect(findFirst).toHaveBeenCalledOnce();
+    expect(findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["bot-old"] }, spaceId: "space-1" },
+      select: { id: true, name: true },
+    });
+    expect(quoteOf(context!).author).toBe("Olga");
+  });
+
+  it("does not look up a target that is already named", async () => {
+    const { prisma } = harness(botTarget);
+    const findMany = vi.fn();
+    const context = await loadReplyContext(
+      { ...prisma, bot: { findMany } } as unknown as PrismaClient,
+      "thread-1",
+      "user-reply",
+      speakers,
+    );
+    expect(findMany).not.toHaveBeenCalled();
+    expect(quoteOf(context!).author).toBe("Anya");
+  });
+
+  it("adds no author to a direct chat's quote", async () => {
+    const { prisma } = harness(botTarget);
+    const context = await loadReplyContext(prisma, "thread-1", "user-reply");
+    expect(quoteOf(context!)).not.toHaveProperty("author");
+  });
+});

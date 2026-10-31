@@ -526,12 +526,20 @@ export interface AgentRunRequest {
   routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
+  /** Group threads: the label ("User") the model sees on the prompt, the same as on history. */
+  promptSpeaker?: string;
   instructions: string;
   history: Array<{
     id?: string;
     createdAt?: string;
     role: "user" | "assistant" | "system";
     content: string;
+    /**
+     * Who wrote this message when it is neither this bot nor the human of a direct chat: another
+     * bot's current name, or "User" for the human in a group thread. The runtime shows such a
+     * message to the model as a user turn that starts with "[speaker]: ". Never a real person's name.
+     */
+    speaker?: string;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
   }>;

@@ -564,6 +564,45 @@ describe("runtime context policy", () => {
     expect(prepared.messages.at(-1)).toEqual(context.messages.at(-1));
     expect(policy.getDecision()!.estimatedInputTokens).toBeLessThan(32768);
   });
+  it("shows who spoke in navigation snapshots of a group thread", () => {
+    const { request, context } = fixture();
+    // Replayed as the new history shapes: another bot as a labelled user turn, own reply as assistant.
+    request.history[10] = { ...request.history[10]!, role: "assistant", speaker: "Anya" };
+    request.history[11] = { ...request.history[11]!, role: "assistant" };
+    Object.assign(context.messages[10]!, {
+      content: `[Anya]: ${request.history[10]!.content}`,
+    });
+    context.messages[11] = {
+      role: "assistant",
+      content: [{ type: "text", text: request.history[11]!.content }],
+      rakazoHistory: true,
+      rakazoMessageId: "message-11",
+    } as unknown as Message;
+    const prepared = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: "snapshots",
+    }).prepareContext(context, model);
+    const catalog = String(prepared.messages[0]!.content);
+    expect(catalog).toContain("message message-10 at 2026-01-01T00:00:00Z; Anya]");
+    expect(catalog).toContain("message message-11 at 2026-01-01T00:00:00Z; assistant]");
+    expect(catalog).toContain("message message-12 at 2026-01-01T00:00:00Z; user]");
+  });
+  it("still matches a legacy checkpoint's replayed own reply to its stored message", () => {
+    const { request, context } = fixture(12);
+    request.history[3] = { ...request.history[3]!, role: "assistant" };
+    context.messages[3] = {
+      role: "user",
+      content: `Assistant: ${request.history[3]!.content}`,
+      timestamp: 0,
+      rakazoHistory: true,
+    } as Message;
+    const prepared = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: "snapshots",
+    }).prepareContext(context, { ...model, contextWindow: 8000 });
+    expect(String(prepared.messages[0]!.content)).toContain("message message-3 at");
+    expect(String(prepared.messages[0]!.content)).toContain("; assistant]");
+  });
   it("uses fake-clock warmth from matching model requests, expiry only selects existing snapshots", () => {
     let now = 0;
     const tracker = new ContextCacheTracker(() => now);

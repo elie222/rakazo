@@ -242,6 +242,17 @@ describe("directory", () => {
 });
 
 describe("group members roster", () => {
+  it("tells the model how the transcript labels speakers, once", () => {
+    const context = renderGroupMembersContext("Ops", [{ id: "b_1", name: "Anya" }], {
+      id: "b_1",
+      name: "Anya",
+    });
+    const lines = context.split("\n").filter((line) => line.includes('"[Name]:"'));
+    expect(lines).toEqual([
+      'In the conversation so far, messages from other members start with "[Name]:", messages from the user start with "[User]:", and your own earlier messages carry no label. Never begin your replies with a label.',
+    ]);
+  });
+
   it("lists descriptions so group bots can pick a specialist", () => {
     const context = renderGroupMembersContext(
       "Launch desk",

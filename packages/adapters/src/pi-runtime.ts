@@ -296,11 +296,17 @@ export class PiAgentRuntime implements AgentRuntime {
                 ...initialSteering.map((item) => item.messageId),
               ],
         );
-        const initialPrompt = initialSteering.length
-          ? `${request.prompt}\n\nAdditional user context:\n${initialSteering
-              .map((item) => item.text)
-              .join("\n")}`
-          : request.prompt;
+        // In a group the person's mid-run messages carry the same label as their history and
+        // prompt; the raw text stays what ids and content are matched on.
+        const steeringText = (item: AgentSteeringMessage) =>
+          request.promptSpeaker && item.origin === "user"
+            ? speakerText(request.promptSpeaker, item.text)
+            : item.text;
+        const promptWithSteering = (text: (item: AgentSteeringMessage) => string) =>
+          initialSteering.length
+            ? `${request.prompt}\n\nAdditional user context:\n${initialSteering.map(text).join("\n")}`
+            : request.prompt;
+        const initialPrompt = promptWithSteering((item) => item.text);
         const systemPrompt =
           restored?.systemPrompt ??
           (request.instructions ||
@@ -345,8 +351,9 @@ export class PiAgentRuntime implements AgentRuntime {
         let sentContext: { context: Context; sourceLength: number } | undefined;
         const prepareContext = (ctx: Context, m: Model<Api>) => {
           const prepared = contextPolicy.prepareContext(ctx, m);
+          // The checkpoint keeps what the policy chose; the opening turn is added to each call.
           sentContext = { context: prepared, sourceLength: ctx.messages.length };
-          return prepared;
+          return withLeadingUser(prepared);
         };
         const usageHooks = {
           prepareContext,
@@ -477,7 +484,7 @@ export class PiAgentRuntime implements AgentRuntime {
               const text =
                 item.origin === "user"
                   ? midTaskMessagePrompt(
-                      item.text,
+                      steeringText(item),
                       toolDefs.some((tool) => tool.name === "message_user"),
                     )
                   : midTaskMessageFromPrompt(item.text, item.origin);
@@ -862,16 +869,26 @@ export class PiAgentRuntime implements AgentRuntime {
                 agent.state.messages.push({
                   role: "user",
                   content: images.length
-                    ? [{ type: "text", text: item.text }, ...images]
-                    : item.text,
+                    ? [{ type: "text", text: steeringText(item) }, ...images]
+                    : steeringText(item),
                   timestamp: Date.now(),
                 });
+              }
+              // A run cannot continue from an assistant message. What trails here is this
+              // bot's own earlier text, which the restored transcript already carries.
+              for (let last = agent.state.messages.at(-1); isHistoryReply(last); ) {
+                agent.state.messages.pop();
+                last = agent.state.messages.at(-1);
               }
               toolWorkPendingFinal = true;
               await agent.continue();
             }
           } else {
-            await agent.prompt(initialPrompt, images?.length ? images : undefined);
+            const modelPrompt = promptWithSteering(steeringText);
+            await agent.prompt(
+              request.promptSpeaker ? speakerText(request.promptSpeaker, modelPrompt) : modelPrompt,
+              images?.length ? images : undefined,
+            );
           }
         } finally {
           try {
@@ -1012,11 +1029,44 @@ function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
   }));
 }
 
+/**
+ * Provider, api and model stamped on replayed own replies. None matches a real model, so Pi
+ * replays them as plain text from another model: no signatures or reasoning, same on every provider.
+ */
+const HISTORY_ASSISTANT = { api: "rakazo-history", provider: "rakazo-history", model: "history" };
+const NO_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+/** Stands in for the opening turn when the window starts on a bot message (Bedrock needs a user first). */
+const CONVERSATION_START = "[Conversation start]";
+
+type HistoryMessage = Message & {
+  rakazoHistory: true;
+  rakazoMessageId?: string;
+  rakazoCreatedAt?: string;
+};
+
+/** What the model reads for a message by someone other than this bot or the human of a direct chat. */
+function speakerText(speaker: string, text: string): string {
+  return `[${speaker}]: ${text}`;
+}
+
+/**
+ * Replays stored messages with their real roles. This bot's own replies are assistant turns;
+ * a message with a `speaker` (another bot, or the human in a group) is a user turn that starts
+ * with "[speaker]: ". The label exists only here: it is never stored or shown in the app.
+ * Content is a pure function of the message, so replayed history is stable for prompt caching.
+ */
 function toHistory(
   history: AgentRunRequest["history"],
   prompt: string,
   sourceMessageId?: string | null,
-) {
+): HistoryMessage[] {
   let duplicatePromptIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
@@ -1034,18 +1084,61 @@ function toHistory(
       : history.filter((_, index) => index !== duplicatePromptIndex);
   return prior
     .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => {
-      const text = m.role === "assistant" ? `Assistant: ${m.content}` : m.content;
-      const images = m.role === "assistant" ? [] : toPiImages(m.images);
-      return {
-        role: "user" as const,
-        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
-        timestamp: Date.now(),
-        rakazoHistory: true,
+    .flatMap((m): HistoryMessage[] => {
+      const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
+      const common = {
+        timestamp: Number.isNaN(created) ? 0 : created,
+        rakazoHistory: true as const,
         rakazoMessageId: m.id,
         rakazoCreatedAt: m.createdAt,
       };
+      if (m.role === "assistant" && !m.speaker) {
+        // A reply that holds only tool work has no text to replay.
+        if (!m.content.trim()) return [];
+        return [
+          {
+            role: "assistant" as const,
+            content: [{ type: "text" as const, text: m.content }],
+            ...HISTORY_ASSISTANT,
+            usage: NO_USAGE,
+            stopReason: "stop" as const,
+            ...common,
+          },
+        ];
+      }
+      const text = m.speaker ? speakerText(m.speaker, m.content) : m.content;
+      // Pictures ride on the human's turn only, never on a bot's.
+      const images = m.role === "assistant" ? [] : toPiImages(m.images);
+      return [
+        {
+          role: "user" as const,
+          content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+          ...common,
+        },
+      ];
     });
+}
+
+function isHistoryReply(message: Message | undefined): boolean {
+  return (
+    message?.role === "assistant" &&
+    Boolean((message as Message & { rakazoHistory?: true }).rakazoHistory)
+  );
+}
+
+/**
+ * Every provider needs the first message to be the user's (Bedrock rejects anything else, and
+ * chat templates assume it), but a window or a trim can start on one of this bot's replies.
+ * Called on each model call, so it holds whatever the context policy kept.
+ */
+function withLeadingUser(context: Context): Context {
+  const first = context.messages.findIndex((message) => (message.role as string) !== "system");
+  if (first < 0 || context.messages[first]!.role === "user") return context;
+  const start: Message = { role: "user", content: CONVERSATION_START, timestamp: 0 };
+  return {
+    ...context,
+    messages: [...context.messages.slice(0, first), start, ...context.messages.slice(first)],
+  };
 }
 
 function withoutSteeringMessages(

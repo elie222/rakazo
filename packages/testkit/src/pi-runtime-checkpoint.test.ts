@@ -225,6 +225,125 @@ describe("paused turn context", () => {
       await model.close();
     }
   });
+  it("resumes from the pending result when the newest stored message is the bot's own reply", async () => {
+    let capture: (() => string) | undefined;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "question",
+            name: "ask_user",
+            arguments: { question: "Which fixture?", options: ["One", "Two"] },
+          },
+        },
+        {
+          expect(request) {
+            // A stored own reply that arrived since the pause is an assistant turn, and a run
+            // cannot continue from one, so the request still ends on the pending result.
+            expect(request.messages.at(-1)).toMatchObject({
+              role: "tool",
+              tool_call_id: "question",
+            });
+            expect(JSON.stringify(request.messages)).not.toContain("Assistant:");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-own-reply",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Choose one.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+      executeTool: vi.fn(async () => ({ ok: true })),
+    };
+    try {
+      await collect(new PiAgentRuntime().run(request));
+      const events = await collect(
+        new PiAgentRuntime().run({
+          ...request,
+          history: [{ id: "own-question", role: "assistant", content: "Which fixture?" }],
+          turnCheckpoint: capture!(),
+          resumeToolResult: { content: [{ type: "text", text: "Two" }] },
+        }),
+      );
+      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
+  it("labels the person's message claimed on resume in a group, and not in a direct chat", async () => {
+    for (const group of [true, false]) {
+      let capture: (() => string) | undefined;
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "question",
+              name: "ask_user",
+              arguments: { question: "Which fixture?", options: ["One", "Two"] },
+            },
+          },
+          {
+            expect(request) {
+              const last = request.messages.at(-1);
+              expect(last?.role).toBe("user");
+              expect(String(last?.content)).toBe(
+                group ? "[User]: Also take two." : "Also take two.",
+              );
+            },
+            response: { type: "text", text: "Done." },
+          },
+        ],
+      });
+      const request: AgentRunRequest = {
+        runId: `fixture-resume-steering-${group}`,
+        botId: "fixture-bot",
+        threadId: "fixture-thread",
+        instructions: "Complete fixtures.",
+        prompt: "Choose one.",
+        history: [],
+        model: model.model,
+        tools: builtinAgentTools.filter((tool) => tool.name === "ask_user"),
+        onCheckpoint: async (snapshot) => {
+          capture = snapshot;
+        },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      };
+      try {
+        await collect(new PiAgentRuntime().run(request));
+        let claimed = false;
+        await collect(
+          new PiAgentRuntime().run({
+            ...request,
+            ...(group ? { promptSpeaker: "User" } : {}),
+            turnCheckpoint: capture!(),
+            resumeToolResult: { content: [{ type: "text", text: "Two" }] },
+            claimSteering: async () => {
+              if (claimed) return [];
+              claimed = true;
+              return [{ id: "c1", messageId: "s1", text: "Also take two.", origin: "user" }];
+            },
+          }),
+        );
+        model.assertComplete();
+      } finally {
+        await model.close();
+      }
+    }
+  });
   it.each(["approval", "ask_user", "request_takeover", "request_secret"])(
     "restores earlier evidence and the pending %s result before the first model call",
     async (pause) => {

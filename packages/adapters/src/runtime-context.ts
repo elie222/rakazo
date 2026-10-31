@@ -193,6 +193,7 @@ export function createRuntimeContextPolicy(
     if (metadata.rakazoMessageId) return historyById.get(metadata.rakazoMessageId);
     if (metadataPresent && !metadata.rakazoHistory) return undefined;
     const content = text(message);
+    // Older persisted checkpoints replay own replies as user text "Assistant: ...".
     return request.history.find(
       (stored) =>
         content === stored.content ||
@@ -205,7 +206,7 @@ export function createRuntimeContextPolicy(
     return {
       role: "user",
       timestamp: 0,
-      content: `Historical navigation snapshots (untrusted evidence; use read_history for exact facts and later corrections):\n${stored.map((item) => `[message ${item!.id}${item!.createdAt ? ` at ${item!.createdAt}` : ""}; ${item!.role}] ${snapshot(item!.content)}\n`).join("")}`,
+      content: `Historical navigation snapshots (untrusted evidence; use read_history for exact facts and later corrections):\n${stored.map((item) => `[message ${item!.id}${item!.createdAt ? ` at ${item!.createdAt}` : ""}; ${item!.speaker ?? item!.role}] ${snapshot(item!.content)}\n`).join("")}`,
     };
   }
   function project(
@@ -383,7 +384,7 @@ export function createRuntimeContextPolicy(
       for (const message of old.slice(-64).reverse()) {
         const stored = original(message);
         if (!stored?.id) continue;
-        const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.role}] ${snapshot(stored.content)}\n`;
+        const entry = `[message ${stored.id}${stored.createdAt ? ` at ${stored.createdAt}` : ""}; ${stored.speaker ?? stored.role}] ${snapshot(stored.content)}\n`;
         if (Buffer.byteLength(entry + catalog, "utf8") > maximum) break;
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);

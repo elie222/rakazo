@@ -29,12 +29,12 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       const followup = (request: ModelEmulatorRequest, index: number) => {
         const serialized = JSON.stringify(request.messages);
         expect(serialized).toContain(questions[index]);
-        // Consecutive history turns arrive merged into one user message.
+        // Earlier replies are replayed as assistant turns.
         expect(
-          request.messages
-            .map((row) => String(row.content))
-            .join("\n")
-            .split(`Assistant: ${verifiedReply}`).length - 1,
+          request.messages.filter(
+            (row) =>
+              row.role === "assistant" && JSON.stringify(row.content).includes(verifiedReply),
+          ).length,
         ).toBe(index);
         expect(serialized).toContain("do not repeat retrieval solely because the user asks again");
       };

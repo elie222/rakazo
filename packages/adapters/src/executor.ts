@@ -93,6 +93,7 @@ import {
   MAX_RECALLED_MEMORIES,
   selectCompactedHistory,
 } from "./history-compaction.js";
+import { historySpeaker, loadThreadSpeakers, USER_SPEAKER } from "./history-speakers.js";
 import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { HostedModelCreditsRequiredError } from "./model-credit-observer.js";
@@ -596,21 +597,33 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
         const discoveredPromise = deps.connector
           ? deps.connector.discoverTools(context)
           : Promise.resolve([]);
+        // Group threads only: who wrote each message, so the model can tell the bots and the
+        // user apart. Direct chats stay plain user/assistant turns.
+        const speakers = await loadThreadSpeakers(
+          deps.prisma,
+          thread,
+          { spaceId: run.spaceId, bot },
+          messages,
+        );
         const threadContext = threadContextForRun(
           run.trigger,
           {
-            messages: [...messages].reverse().map((m) => ({
-              id: m.id,
-              createdAt: m.createdAt?.toISOString(),
-              seq: m.seq,
-              role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
-                | "user"
-                | "assistant"
-                | "system",
-              content: isPartialReplyClientNonce(m.clientNonce)
-                ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
-                : messageToAgentHistoryText(m),
-            })),
+            messages: [...messages].reverse().map((m) => {
+              const speaker = historySpeaker(speakers, m);
+              return {
+                id: m.id,
+                createdAt: m.createdAt?.toISOString(),
+                seq: m.seq,
+                role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+                  | "user"
+                  | "assistant"
+                  | "system",
+                ...(speaker ? { speaker } : {}),
+                content: isPartialReplyClientNonce(m.clientNonce)
+                  ? `${messageToAgentHistoryText(m, speakers)}\n\n${PARTIAL_REPLY_NOTE}`
+                  : messageToAgentHistoryText(m, speakers),
+              };
+            }),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
           },
@@ -622,11 +635,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           summary: threadContext.summary,
           historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
         });
-        let history = compactedHistory.history.map(({ id, role, content, createdAt }) => ({
+        let history = compactedHistory.history.map(({ id, role, content, createdAt, speaker }) => ({
           id,
           createdAt,
           role,
           content,
+          ...(speaker ? { speaker } : {}),
         }));
         const historyMessages = messages.map((message) => ({
           id: message.id,
@@ -1359,7 +1373,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
               (request) => redactSecrets(JSON.stringify(request), runSecrets),
               { exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)) },
             );
-        const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+        const replyContext = await loadReplyContext(
+          deps.prisma,
+          thread.id,
+          run.sourceMessageId,
+          speakers,
+        );
         let userTimeZone: string | null | undefined;
         try {
           userTimeZone = (
@@ -1530,6 +1549,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
                 });
               },
               prompt,
+              ...(speakers && run.trigger === "user" ? { promptSpeaker: USER_SPEAKER } : {}),
               // Keep an explicit executor override, but let the runtime select
               // cache-aware context for connections declaring a cache window.
               contextStrategy: deps.contextStrategy,
