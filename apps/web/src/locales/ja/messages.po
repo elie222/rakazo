@@ -881,6 +881,10 @@ msgstr "確認"
 msgid "Ask rule"
 msgstr "確認ルール"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "スリープ中"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "その他のモデル…"
 msgid "Output"
 msgstr "出力"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "概要"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr "キーをローテーション"
 msgid "Routine"
 msgstr "ルーティン"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "ルーティン"
 
@@ -6327,6 +6335,10 @@ msgstr "順番待ち…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "待機中…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "起動"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

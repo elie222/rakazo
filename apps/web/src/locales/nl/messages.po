@@ -881,6 +881,10 @@ msgstr "Vragen"
 msgid "Ask rule"
 msgstr "Goedkeuringsregel"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "Slaapt"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "Ander model…"
 msgid "Output"
 msgstr "Uitvoer"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "Overzicht"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr "Sleutel roteren"
 msgid "Routine"
 msgstr "Routine"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Routines"
 
@@ -6327,6 +6335,10 @@ msgstr "In de wachtrij…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "Wachten…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "Wekken"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"

@@ -12,9 +12,9 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
   await completeOnboarding(page);
 
-  await openBotPanelTab(page, "Computer");
+  await openBotPanelTab(page, "Overview");
   const sidePanel = page.getByTestId("side-panel");
-  await expect(sidePanel).toHaveAttribute("data-panel", "computer");
+  await expect(sidePanel).toHaveAttribute("data-panel", "overview");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);
   await expect(sidePanel.getByTestId("teach-start-button")).toHaveCount(0);
   await expect(sidePanel.getByRole("button", { name: "Recover computer" })).toHaveCount(0);

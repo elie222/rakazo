@@ -35,7 +35,7 @@ const screenUrl = vi.fn(async () => ({
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
-    panel: "computer",
+    panel: "overview",
     activeId: "bot-1",
     activeBotId: { current: "bot-1" },
   });

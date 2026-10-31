@@ -1,6 +1,5 @@
 export type Panel =
-  | "computer"
-  | "routines"
+  | "overview"
   | "settings"
   | "routine"
   | "create-group"
@@ -10,14 +9,7 @@ export type Panel =
 export type RightPanelState = { panel: Panel; routineId?: string };
 
 /** Panels that are safe to remember across reloads. */
-const durablePanels: readonly Panel[] = [
-  "computer",
-  "routines",
-  "settings",
-  "routine",
-  "group-settings",
-  null,
-];
+const durablePanels: readonly Panel[] = ["overview", "settings", "routine", "group-settings", null];
 
 export function rightPanelStorageKey(
   userId: string,
@@ -31,6 +23,14 @@ export function rightPanelStorageKey(
 export function readRightPanelState(key: string): RightPanelState {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    // Computer and Routines were separate tabs before they merged into Overview.
+    if (
+      value &&
+      typeof value === "object" &&
+      "panel" in value &&
+      (value.panel === "computer" || value.panel === "routines")
+    )
+      return { panel: "overview" };
     if (
       !value ||
       typeof value !== "object" ||

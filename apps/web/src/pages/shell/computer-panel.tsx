@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerStatus } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
 import { Maximize2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../components/ComputersUnavailableHint";
@@ -45,6 +46,31 @@ export function ComputerPanel({
   onOpenComputerSettings,
   onOpen,
 }: ComputerPanelProps) {
+  // A preview box invites a click that boots a paid computer, so an idle one is a single row.
+  const idle =
+    !computerOpen &&
+    !booting &&
+    !computerBooting &&
+    !computerScreenError &&
+    !showComputerRecoveryHint &&
+    computer?.kind !== "desktop" &&
+    (!computer || computer.state === "stopped" || computer.state === "suspended");
+  if (idle) {
+    return (
+      <div
+        data-testid="computer-preview"
+        data-state="idle"
+        className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 py-2.5 ps-4 pe-2.5"
+      >
+        <span className="text-sm text-muted-foreground">
+          <Trans>Asleep</Trans>
+        </span>
+        <Button variant="secondary" size="sm" data-testid="computer-preview-open" onClick={onOpen}>
+          <Trans>Wake</Trans>
+        </Button>
+      </div>
+    );
+  }
   const canOpen = !computerScreenError && !showingRecoveryHint;
   // The Open pill replaces the status text on hover; fade it so they never overlap.
   const hideOnHover = canOpen

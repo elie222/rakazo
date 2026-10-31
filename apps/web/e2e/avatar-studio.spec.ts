@@ -55,7 +55,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await expect(studio.locator(".rakazo-logo-avatar").first()).toBeVisible();
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
-  await openBotPanelTab(page, "Computer");
+  await openBotPanelTab(page, "Overview");
   await page.getByTestId("bot-settings").getByTestId("avatar-studio-trigger").click();
   await expect(
     page.getByTestId("avatar-studio").getByRole("tab", { name: "Rakazo", exact: true }),

@@ -22,14 +22,18 @@ describe("right panel preferences", () => {
     writeRightPanelState("user-a:space-a:bot-a", null, "routine-a");
     expect(readRightPanelState("user-a:space-a:bot-a")).toEqual({ panel: null });
   });
-  it("remembers the Routines tab", () => {
+  it("remembers the Overview tab", () => {
     const entries = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => entries.get(key) ?? null,
       setItem: (key: string, value: string) => entries.set(key, value),
     });
-    writeRightPanelState("state", "routines");
-    expect(readRightPanelState("state")).toEqual({ panel: "routines" });
+    writeRightPanelState("state", "overview");
+    expect(readRightPanelState("state")).toEqual({ panel: "overview" });
+  });
+  it.each(["computer", "routines"])("reopens the former %s tab as Overview", (panel) => {
+    vi.stubGlobal("localStorage", { getItem: () => JSON.stringify({ panel }) });
+    expect(readRightPanelState("state")).toEqual({ panel: "overview" });
   });
   it.each([
     "not json",
@@ -53,7 +57,7 @@ describe("right panel preferences", () => {
       },
     });
     expect(readRightPanelState("state")).toEqual({ panel: null });
-    expect(() => writeRightPanelState("state", "computer")).not.toThrow();
+    expect(() => writeRightPanelState("state", "overview")).not.toThrow();
   });
   it("skips the ephemeral create-group panel and builds scoped keys", () => {
     const entries = new Map<string, string>();
@@ -63,10 +67,10 @@ describe("right panel preferences", () => {
     });
     const key = rightPanelStorageKey("user-a", "space-a", "bot", "bot-a");
     expect(key).toBe("rakazo:right-panel-state:user-a:space-a:bot:bot-a");
-    writeRightPanelState(key, "computer");
+    writeRightPanelState(key, "overview");
     writeRightPanelState(key, "create-group");
     // An import is not reopened after a reload either.
     writeRightPanelState(key, "import-agent");
-    expect(readRightPanelState(key)).toEqual({ panel: "computer" });
+    expect(readRightPanelState(key)).toEqual({ panel: "overview" });
   });
 });

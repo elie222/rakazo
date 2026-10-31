@@ -881,6 +881,10 @@ msgstr "Demander"
 msgid "Ask rule"
 msgstr "Règle de confirmation"
 
+#: src/pages/shell/computer-panel.tsx
+msgid "Asleep"
+msgstr "En veille"
+
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
 msgid "at {0}"
@@ -4324,6 +4328,10 @@ msgstr "Autre modèle…"
 msgid "Output"
 msgstr "Sortie"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Overview"
+msgstr "Aperçu"
+
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4996,8 +5004,8 @@ msgstr "Tourner la clé"
 msgid "Routine"
 msgstr "Routine"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Routines"
 msgstr "Routines"
 
@@ -6327,6 +6335,10 @@ msgstr "En attente dans la file…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "En attente…"
+
+#: src/pages/shell/computer-panel.tsx
+msgid "Wake"
+msgstr "Réveiller"
 
 #: src/pages/settings-nav.ts
 msgid "Wallet"
