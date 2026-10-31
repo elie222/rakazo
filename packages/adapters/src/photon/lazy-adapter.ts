@@ -35,6 +35,14 @@ const LINE_SEP = "~";
  */
 export const PHOTON_LISTEN_WINDOW_MS = 60_000;
 
+/**
+ * Spectrum's stream has no acknowledgement to withhold, so a message whose
+ * processing fails is never redelivered. Retry it here instead, like the
+ * Telegram adapter's polling checkpoint; downstream client nonces make a
+ * repeat that partly succeeded harmless.
+ */
+export const PHOTON_STREAM_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
 export function encodePhotonThreadId({ chatGuid, phone }: PhotonThreadId): string {
   return phone ? `${THREAD_PREFIX}${chatGuid}${LINE_SEP}${phone}` : `${THREAD_PREFIX}${chatGuid}`;
 }
@@ -63,6 +71,7 @@ export class LazyPhotonAdapter implements Adapter {
   private implementation: iMessageAdapter | undefined;
   private listening: ReturnType<typeof setInterval> | undefined;
   private window: AbortController | undefined;
+  private readonly retries = new Set<ReturnType<typeof setTimeout>>();
   constructor(readonly config: PhotonAdapterConfig) {}
 
   get userName() {
@@ -85,8 +94,44 @@ export class LazyPhotonAdapter implements Adapter {
   }
   async initialize(chat: ChatInstance) {
     const adapter = await this.load();
-    await adapter.initialize(chat);
-    if (this.config.pollInboundMessages && !this.config.webhookSecret) this.startListening(adapter);
+    const streaming = this.config.pollInboundMessages && !this.config.webhookSecret;
+    await adapter.initialize(streaming ? this.retryingChat(chat) : chat);
+    if (streaming) this.startListening(adapter);
+  }
+
+  /** The Chat instance the adapter sees while streaming: each delivery retries on failure. */
+  private retryingChat(chat: ChatInstance): ChatInstance {
+    const process = (
+      ...[adapter, threadId, message, options, attempt = 0]: [
+        ...Parameters<ChatInstance["processMessage"]>,
+        number?,
+      ]
+    ) => {
+      const task = chat.processMessage(adapter, threadId, message, options);
+      task.catch((error: unknown) => {
+        const delay = PHOTON_STREAM_RETRY_DELAYS_MS[attempt];
+        getLogger().warn("photon inbound processing failed", {
+          error: String(error),
+          retrying: delay !== undefined,
+        });
+        if (delay === undefined || !this.listening) return;
+        const timer = setTimeout(() => {
+          this.retries.delete(timer);
+          // The first attempt already marked the message seen.
+          process(adapter, threadId, message, { ...options, deduplicate: false }, attempt + 1);
+        }, delay);
+        timer.unref?.();
+        this.retries.add(timer);
+      });
+      return task;
+    };
+    return new Proxy(chat, {
+      get: (target, key) => {
+        if (key === "processMessage") return process;
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   }
 
   /** Stop consuming the inbound stream; the surface calls this on shutdown. */
@@ -95,18 +140,16 @@ export class LazyPhotonAdapter implements Adapter {
     this.listening = undefined;
     this.window?.abort();
     this.window = undefined;
+    for (const timer of this.retries) clearTimeout(timer);
+    this.retries.clear();
   }
 
   private startListening(adapter: iMessageAdapter) {
     if (this.listening) return;
     const options: WebhookOptions = {
-      // Spectrum's stream has no acknowledgement to withhold, so unlike the
-      // webhook path a failed delivery cannot be redelivered; as with Telegram
-      // long-polling it is logged.
+      // Failures are retried by retryingChat; nothing needs to wait here.
       waitUntil: (task) => {
-        task.catch((error: unknown) => {
-          getLogger().warn("photon inbound processing failed", { error: String(error) });
-        });
+        task.catch(() => undefined);
       },
     };
     const listen = () => {
