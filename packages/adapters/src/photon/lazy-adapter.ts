@@ -100,7 +100,9 @@ export class LazyPhotonAdapter implements Adapter {
   private startListening(adapter: iMessageAdapter) {
     if (this.listening) return;
     const options: WebhookOptions = {
-      // Nothing awaits stream deliveries; the inbound sink reports its own failures.
+      // Spectrum's stream has no acknowledgement to withhold, so unlike the
+      // webhook path a failed delivery cannot be redelivered; as with Telegram
+      // long-polling it is logged.
       waitUntil: (task) => {
         task.catch((error: unknown) => {
           getLogger().warn("photon inbound processing failed", { error: String(error) });
