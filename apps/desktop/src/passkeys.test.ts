@@ -14,10 +14,6 @@ describe("associatedPasskeyRpIds", () => {
   const resourcesPath = "/Applications/Rakazo.app/Contents/Resources";
   const profile = "/Applications/Rakazo.app/Contents/embedded.provisionprofile";
 
-  it("is the hosted server's domain", () => {
-    expect(PASSKEY_RP_ID).toBe(new URL(RAKAZO_CLOUD_URL).hostname);
-  });
-
   it("lists the hosted domain only for a packaged macOS app with an embedded profile", () => {
     const exists = (file: string) => file === profile;
     expect(
@@ -88,6 +84,11 @@ describe("self-hosted passkey domain", () => {
     vi.resetModules();
     return import("./passkeys.js");
   }
+
+  it("defaults to the hosted server's domain", async () => {
+    const passkeys = await load("");
+    expect(passkeys.PASSKEY_RP_ID).toBe(new URL(RAKAZO_CLOUD_URL).hostname);
+  });
 
   it("associates the build with RAKAZO_PASSKEY_RP_ID", async () => {
     const passkeys = await load(" Rakazo.Example.org ");
