@@ -299,28 +299,19 @@ describe("jsonSchemaParameters", () => {
     });
   });
 
-  it("keeps a typed additionalProperties map typed", () => {
+  it("sends a map with a value schema as an open object", () => {
     const schema = jsonSchemaParameters({
       type: "object",
-      properties: { headers: { type: "object", additionalProperties: { type: "string" } } },
+      properties: {
+        empty: { type: "object", additionalProperties: {} },
+        ref: { type: "object", additionalProperties: { $ref: "#/$defs/Value" } },
+      },
+      $defs: { Value: { type: "number" } },
     });
-    expect(JSON.parse(JSON.stringify(schema)).properties.headers).toEqual({
-      type: "object",
-      properties: {},
-      additionalProperties: { type: "string" },
-    });
-  });
-
-  it("keeps an unconstrained additionalProperties map open to any value", () => {
-    const schema = jsonSchemaParameters({
-      type: "object",
-      properties: { metadata: { type: "object", additionalProperties: {} } },
-    });
-    expect(JSON.parse(JSON.stringify(schema)).properties.metadata).toEqual({
-      type: "object",
-      properties: {},
-      additionalProperties: true,
-    });
+    const wire = JSON.parse(JSON.stringify(schema)).properties;
+    for (const field of [wire.empty, wire.ref]) {
+      expect(field).toEqual({ type: "object", properties: {}, additionalProperties: true });
+    }
   });
 
   it("keeps a string enum's allowed values, in order, as a plain enum", () => {
