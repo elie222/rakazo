@@ -7,6 +7,7 @@ import { LocalKeyProvider, withLocalMasterKeys } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AwsKmsKeyProvider, awsKmsConfigFromEnv } from "./aws-kms-key-provider.js";
 import { contentKeyProviderFromEnv } from "./key-provider-factory.js";
+import { unwrapEnv, wrapEnvValue } from "./wrapped-env.js";
 
 const KEY_ARN = "arn:aws:kms:eu-central-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
 const NEXT_KEY_ARN =
@@ -174,8 +175,25 @@ describe("AWS KMS key provider", () => {
     expect(() => awsKmsConfigFromEnv({ ...kmsEnv, AWS_KMS_SECRET_ACCESS_KEY: "" })).toThrow(
       "AWS_KMS_SECRET_ACCESS_KEY",
     );
+    expect(awsKmsConfigFromEnv({ AWS_KMS_KEY_ARN: KEY_ARN, AWS_KMS_PROFILE: "fake" })).toEqual({
+      keyArn: KEY_ARN,
+      profile: "fake",
+    });
+    expect(() => awsKmsConfigFromEnv({ ...kmsEnv, AWS_KMS_PROFILE: "fake" })).toThrow(
+      "AWS_KMS_PROFILE",
+    );
+    expect(() => awsKmsConfigFromEnv({ AWS_KMS_KEY_ARN: KEY_ARN })).toThrow("AWS_KMS_PROFILE");
     const alias = "arn:aws:kms:eu-central-1:111122223333:alias/rakazo";
     expect(() => new AwsKmsKeyProvider({ ...config, keyArn: alias })).toThrow("AWS_KMS_KEY_ARN");
+  });
+});
+
+describe("wrapped environment values under AWS KMS", () => {
+  it("binds the variable name into the KMS encryption context", async () => {
+    const env = { BETTER_AUTH_SECRET: await wrapEnvValue(aws(), "BETTER_AUTH_SECRET", "fake") };
+    expect(kms.state.contexts.at(-1)).toMatchObject({ "rakazo:space": "env:BETTER_AUTH_SECRET" });
+    await unwrapEnv(env, aws());
+    expect(env.BETTER_AUTH_SECRET).toBe("fake");
   });
 });
 

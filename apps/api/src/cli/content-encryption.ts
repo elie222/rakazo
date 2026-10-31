@@ -6,6 +6,7 @@ import {
   createSecretStore,
   EncryptedSecretStore,
   LocalArtifactStore,
+  unwrapEnvFromKeyManager,
   upgradeLegacySecrets,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -25,6 +26,7 @@ import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
 import { createSecretMigrationRepository } from "../secret-migration.js";
 
 loadRootEnv();
+await unwrapEnvFromKeyManager();
 
 const USAGE = `Usage: content-encryption <command> [--dry-run]
   status               Rows and artifacts still in plaintext, keys per master key
