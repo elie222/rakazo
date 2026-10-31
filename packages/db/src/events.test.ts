@@ -710,6 +710,58 @@ describe("finalizeComputerControlRelease", () => {
     );
   });
 
+  it("locks the control run's thread before it writes the run row", async () => {
+    // clearThread locks the thread row before it cancels runs; the release must match
+    // that order, or the two transactions can wait on each other's rows.
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      computer: {
+        findFirst: vi.fn().mockResolvedValue({ controlRunId: "run-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({ thread: { id: "thread-1" } }),
+      },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1", status: "waiting_takeover" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 8 }) },
+      event: {
+        create: vi.fn().mockResolvedValue({
+          ...event(7),
+          type: "computer.takeover.released",
+          payload: { holder: "none", leaseId: "lease-1", reason: "done" },
+        }),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(prisma, {
+        spaceId: "workspace-1",
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseId: "lease-1",
+        holder: "none",
+        reason: "done",
+      }),
+    ).resolves.toEqual({ runId: "run-1" });
+
+    const threadLock = tx.$queryRaw.mock.calls.findIndex((call) =>
+      Array.isArray(call[0]) ? call[0][0].includes("FROM threads") : false,
+    );
+    expect(threadLock).toBeGreaterThanOrEqual(0);
+    expect(tx.$queryRaw.mock.invocationCallOrder[threadLock]!).toBeLessThan(
+      tx.run.updateMany.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("clears the lease even if its controlling bot was deleted", async () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([]),
@@ -4392,6 +4444,7 @@ describe("clearThread", () => {
       bot: { update: vi.fn() },
     };
     const prisma = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4405,7 +4458,10 @@ describe("clearThread", () => {
       where: { runId: { in: ["run-1"] } },
       data: { expiresAt: new Date(0) },
     });
-    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+    // The legacy execution binding is cleared after the transaction commits, so the
+    // transaction never reaches for the computer row under the thread-row lock.
+    expect(tx.computer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["run-1"] } },
       data: {
         executionRunId: null,
@@ -4432,6 +4488,12 @@ describe("clearThread", () => {
         ],
       },
     });
+    // The thread row locks before the runs are cancelled, matching the takeover
+    // release order (computer, thread, run), so neither path waits on a row the
+    // other holds while reaching for the thread.
+    expect(tx.thread.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      tx.run.updateManyAndReturn.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("scopes group clear lease cleanup to cancelled run ids", async () => {
@@ -4469,6 +4531,7 @@ describe("clearThread", () => {
       chatGroup: { update: vi.fn() },
     };
     const prisma = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4497,7 +4560,7 @@ describe("clearThread", () => {
       where: { runId: { in: ["group-run-1", "group-run-2"] } },
       data: { expiresAt: new Date(0) },
     });
-    expect(tx.computer.updateMany).toHaveBeenCalledWith({
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
       where: { executionRunId: { in: ["group-run-1", "group-run-2"] } },
       data: {
         executionRunId: null,
