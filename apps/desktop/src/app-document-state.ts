@@ -2,7 +2,7 @@
  * Empty `#root` shells and session-pending skeletons count as loaded HTML but are
  * not a usable app. After session resolves, wait for a bootstrapped shell
  * (`data-ready` / shell-ready mark) or a route surface the web app marks with
- * `data-rakazo-surface` (welcome, onboarding) so a bare Suspense fallback or
+ * `data-rakazo-surface` (entry pages, onboarding) so a bare Suspense fallback or
  * pre-bootstrap ShellPage cannot pass. Only a usable page may carry that marker,
  * never a loading state. Plain e2e fixtures omit the Rakazo app-state marker.
  * Runs in the renderer.

@@ -74,7 +74,7 @@ test(
 );
 
 test(
-  "signed-out welcome fits a narrow phone and offers sign in",
+  "signed-out / opens sign-in, which fits a narrow phone and offers sign up",
   { tag: "@nightly" },
   async ({ page }, testInfo) => {
     await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
@@ -85,14 +85,13 @@ test(
     );
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto("/");
-    const main = page.getByRole("main");
-    await expect(main.getByRole("heading", { name: "Rakazo", level: 1 })).toBeVisible();
-    await expect(main.getByRole("button", { name: "Sign up", exact: true })).toBeVisible();
-    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 320);
-    await captureScreenshot(page, testInfo, "logged-out-welcome-phone");
-    await main.getByRole("link", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/sign-in$/);
     await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 320);
+    await captureScreenshot(page, testInfo, "logged-out-sign-in-phone");
+    await page.getByRole("link", { name: "Sign up", exact: true }).click();
+    await expect(page).toHaveURL(/\/sign-up$/);
+    await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
   },
 );
 
@@ -102,7 +101,7 @@ test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await captureScreenshot(page, testInfo, "not-found");
   await page.getByRole("link", { name: "Go home" }).click();
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
 });
 
 test("logout protects bot deep links and sign-in restores the session", async ({
@@ -161,13 +160,13 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
   await page.goto("/");
-  await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
-  await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();
-  await page.getByRole("button", { name: /Sign up/ }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+  // Sign-in stays blank until its options load; capture the form, not the wait.
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "37-logged-out-root");
+  await page.getByRole("link", { name: "Sign up" }).click();
   await expect(page).toHaveURL(/\/sign-up$/);
   await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
-  await page.goto("/");
-  await captureScreenshot(page, testInfo, "37-logged-out-welcome");
 
   await page.goto(protectedBotPath);
   await page.waitForURL((url) => url.pathname === "/sign-in");
