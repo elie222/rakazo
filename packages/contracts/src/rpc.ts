@@ -44,6 +44,8 @@ import {
   VaultRevealInput,
 } from "./bot-secrets.js";
 import {
+  AccessGrantInputSchema,
+  AccessGrantSchema,
   AccountItemSchema,
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
@@ -286,6 +288,12 @@ export const appContract = {
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  /** Admins only, on deployments that sell model credits. */
+  accessGrants: {
+    list: oc.output(z.array(AccessGrantSchema)),
+    create: oc.input(AccessGrantInputSchema).output(AccessGrantSchema),
+    revoke: oc.input(z.object({ id: Id })).output(AccessGrantSchema),
   },
   preferences: {
     update: oc

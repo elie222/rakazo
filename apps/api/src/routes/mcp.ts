@@ -26,7 +26,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { isAdmin } from "../admins.js";
+import { requireAdmin } from "../admins.js";
 import {
   assertNameFreeWhereAvailable,
   lockOwner,
@@ -81,10 +81,6 @@ export function mcpRoutes(ctx: RouterContext) {
     authed,
   } = ctx;
   const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
-  const requireAdmin = async (actor: Actor) => {
-    if (!(await isAdmin(deps, actor.userId)))
-      throw new ORPCError("FORBIDDEN", { message: "Admins only" });
-  };
   /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
   const removeInstall = async (actor: Actor, id: string) => {
     const notify: Array<{ threadId: string; seq: number }> = [];
@@ -138,11 +134,11 @@ export function mcpRoutes(ctx: RouterContext) {
         };
       }),
       submissions: authed.marketplace.submissions.handler(async ({ context, input }) => {
-        await requireAdmin(context.actor);
+        await requireAdmin(deps, context.actor.userId);
         return listPluginSubmissions(deps.prisma, input.status);
       }),
       review: authed.marketplace.review.handler(async ({ context, input }) => {
-        await requireAdmin(context.actor);
+        await requireAdmin(deps, context.actor.userId);
         return reviewPluginSubmission(deps, input, context.signal);
       }),
     },
