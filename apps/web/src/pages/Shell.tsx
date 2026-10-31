@@ -250,7 +250,9 @@ function SpaceShell() {
     if (settingsSpaceGone) setOverlay(null);
   }, [settingsSpaceGone]);
   // The app menu owns Cmd+, because macOS takes it before the page sees a keydown.
-  useEffect(() => desktopBridge()?.settings?.onOpen(() => openSettings("general")), []);
+  const openSettingsRef = useRef(openSettings);
+  openSettingsRef.current = openSettings;
+  useEffect(() => desktopBridge()?.settings?.onOpen(() => openSettingsRef.current("general")), []);
 
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
