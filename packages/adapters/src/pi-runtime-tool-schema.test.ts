@@ -315,6 +315,35 @@ describe("jsonSchemaParameters", () => {
     expect(() => parseConnectorToolArgs(wire, { id: "a", arguments: "q" })).toThrow();
   });
 
+  it.each([undefined, false])(
+    "preserves root definitions for nested object references with additionalProperties=%s",
+    (additionalProperties) => {
+      const inputSchema = {
+        type: "object",
+        $defs: {
+          P: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+        },
+        properties: { arguments: { type: "object", $ref: "#/$defs/P" } },
+        required: ["arguments"],
+        ...(additionalProperties === false ? { additionalProperties } : {}),
+      };
+      const original = JSON.stringify(inputSchema);
+      const schema = jsonSchemaParameters(inputSchema, { description: "Tool parameters" });
+      const wire = JSON.parse(JSON.stringify(schema));
+      expect(wire).toEqual({ ...inputSchema, description: "Tool parameters" });
+      expect(parseConnectorToolArgs(wire, { arguments: { query: "q" } })).toEqual({
+        arguments: { query: "q" },
+      });
+      expect(() => parseConnectorToolArgs(wire, { arguments: {} })).toThrow();
+      expect(() => parseConnectorToolArgs(wire, {})).toThrow();
+      expect(JSON.stringify(inputSchema)).toBe(original);
+    },
+  );
+
   it("keeps the lazy catalog's executed-tool arguments free-form", () => {
     const execute = lazyCatalogTools("connectors", "mcp", "MCP").find(
       (tool) => tool.name === "connectors_execute_tool",

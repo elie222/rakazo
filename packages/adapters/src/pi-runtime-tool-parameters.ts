@@ -238,12 +238,17 @@ export function jsonSchemaParameters(
       typeof Type.Optional
     >;
   }
+  // Nested fields can retain references to definitions on this object.
+  const objectOptions = {
+    ...(schema.$defs !== undefined ? { $defs: schema.$defs } : {}),
+    ...options,
+  };
   // Preserve closed objects (e.g. request_secret destination oneOf branches).
   // Type.Object defaults to open, which would let connectionId+replace match both
   // anyOf variants after conversion.
   return schema.additionalProperties === false
-    ? Type.Object(fields, { ...options, additionalProperties: false })
-    : Type.Object(fields, options);
+    ? Type.Object(fields, { ...objectOptions, additionalProperties: false })
+    : Type.Object(fields, objectOptions);
 }
 
 type FieldOptions = { description?: string };
