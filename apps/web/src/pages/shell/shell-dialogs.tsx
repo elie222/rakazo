@@ -45,10 +45,12 @@ export function useShellDialogs({
   bots,
   activeId,
   onSelectBot,
+  overlayOpen,
 }: {
   bots: Bot[];
   activeId: string | undefined;
   onSelectBot: (botId: string) => void;
+  overlayOpen: boolean;
 }) {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
@@ -95,7 +97,7 @@ export function useShellDialogs({
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const step = isSwitchBotHotkey(event) ? 1 : isSwitchBotBackHotkey(event) ? -1 : null;
-      if (step === null || dialogOpen || isEditableTarget(event.target)) return;
+      if (step === null || dialogOpen || overlayOpen || isEditableTarget(event.target)) return;
       const botId = cycleBotId(bots, activeId, step);
       if (!botId) return;
       event.preventDefault();
@@ -103,7 +105,7 @@ export function useShellDialogs({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, bots, dialogOpen, onSelectBot]);
+  }, [activeId, bots, dialogOpen, onSelectBot, overlayOpen]);
   return {
     deleteTarget,
     setDeleteTarget,

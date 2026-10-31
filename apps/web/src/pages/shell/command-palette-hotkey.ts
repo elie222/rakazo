@@ -14,22 +14,20 @@ export function isCreateMenuHotkey(event: KeyboardEvent) {
 }
 
 /**
- * Ctrl-Tab in the desktop app; Cmd/Ctrl-Shift-] in a browser, which owns Ctrl-Tab.
- * Whether Shift is held changes the key on most layouts, so the bracket also matches its shifted form.
+ * Ctrl-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowRight in a browser, which owns Ctrl-Tab.
+ * Arrow keys rather than brackets: Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs.
  */
 export function isSwitchBotHotkey(event: KeyboardEvent) {
   if (event.repeat || event.altKey) return false;
   if (!event.metaKey && event.ctrlKey && !event.shiftKey && event.key === "Tab") return true;
-  if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return false;
-  return event.key === "]" || event.key === "}" || event.code === "BracketRight";
+  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowRight";
 }
 
-/** Ctrl-Shift-Tab in the desktop app; Cmd/Ctrl-Shift-[ in a browser. */
+/** Ctrl-Shift-Tab in the desktop app; Cmd/Ctrl-Shift-ArrowLeft in a browser. */
 export function isSwitchBotBackHotkey(event: KeyboardEvent) {
   if (event.repeat || event.altKey) return false;
   if (!event.metaKey && event.ctrlKey && event.shiftKey && event.key === "Tab") return true;
-  if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return false;
-  return event.key === "[" || event.key === "{" || event.code === "BracketLeft";
+  return (event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "ArrowLeft";
 }
 
 /** The next id in roster order, wrapping at both ends. */

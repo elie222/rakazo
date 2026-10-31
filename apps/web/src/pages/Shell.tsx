@@ -270,6 +270,7 @@ function SpaceShell() {
     bots,
     activeId: active?.id,
     onSelectBot: selectBot,
+    overlayOpen: overlay !== null,
   });
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),

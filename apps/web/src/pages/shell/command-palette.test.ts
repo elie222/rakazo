@@ -52,16 +52,18 @@ describe("isSwitchBotHotkey", () => {
     expect(isSwitchBotHotkey(keyEvent({ key: "Tab", ctrlKey: true, repeat: true }))).toBe(false);
   });
 
-  it("matches Cmd/Ctrl-Shift-] in the browser", () => {
-    expect(isSwitchBotHotkey(keyEvent({ key: "]", metaKey: true, shiftKey: true }))).toBe(true);
-    expect(isSwitchBotHotkey(keyEvent({ key: "}", ctrlKey: true, shiftKey: true }))).toBe(true);
-    expect(
-      isSwitchBotHotkey(
-        keyEvent({ key: "Unidentified", code: "BracketRight", metaKey: true, shiftKey: true }),
-      ),
-    ).toBe(true);
-    expect(isSwitchBotHotkey(keyEvent({ key: "]", metaKey: true }))).toBe(false);
-    expect(isSwitchBotHotkey(keyEvent({ key: "[", metaKey: true, shiftKey: true }))).toBe(false);
+  it("matches Cmd/Ctrl-Shift-ArrowRight in the browser", () => {
+    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", metaKey: true, shiftKey: true }))).toBe(
+      true,
+    );
+    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", ctrlKey: true, shiftKey: true }))).toBe(
+      true,
+    );
+    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowRight", metaKey: true }))).toBe(false);
+    expect(isSwitchBotHotkey(keyEvent({ key: "ArrowLeft", metaKey: true, shiftKey: true }))).toBe(
+      false,
+    );
+    expect(isSwitchBotHotkey(keyEvent({ key: "]", metaKey: true, shiftKey: true }))).toBe(false);
   });
 });
 
@@ -76,11 +78,18 @@ describe("isSwitchBotBackHotkey", () => {
     );
   });
 
-  it("matches Cmd/Ctrl-Shift-[ in the browser", () => {
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "[", metaKey: true, shiftKey: true }))).toBe(true);
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "{", ctrlKey: true, shiftKey: true }))).toBe(true);
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "[", metaKey: true }))).toBe(false);
-    expect(isSwitchBotBackHotkey(keyEvent({ key: "]", metaKey: true, shiftKey: true }))).toBe(
+  it("matches Cmd/Ctrl-Shift-ArrowLeft in the browser", () => {
+    expect(
+      isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", metaKey: true, shiftKey: true })),
+    ).toBe(true);
+    expect(
+      isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", ctrlKey: true, shiftKey: true })),
+    ).toBe(true);
+    expect(isSwitchBotBackHotkey(keyEvent({ key: "ArrowLeft", metaKey: true }))).toBe(false);
+    expect(
+      isSwitchBotBackHotkey(keyEvent({ key: "ArrowRight", metaKey: true, shiftKey: true })),
+    ).toBe(false);
+    expect(isSwitchBotBackHotkey(keyEvent({ key: "[", metaKey: true, shiftKey: true }))).toBe(
       false,
     );
   });
