@@ -13,6 +13,7 @@ import type {
   PageBrowserResult,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import type { FakeBrowserProviderOptions } from "./fake-browser.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
 
@@ -217,6 +218,10 @@ export class ComputerBrowserProvider implements BrowserProvider {
       return result;
     } catch (error) {
       context.signal.throwIfAborted();
+      // The request was refused before it reached the page: settled, nothing was done.
+      if (error instanceof SandboxRequestRejectedError) {
+        return { ok: false, uncertain: false, error: error.message };
+      }
       return {
         uncertain: request.command === "act",
         ok: false,

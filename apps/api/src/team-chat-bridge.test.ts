@@ -2145,6 +2145,8 @@ describe("team chat bridge", () => {
       where: {
         OR: [
           { userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" },
+          { userId: "owner-1", spaceId: "space-1", kind: "run-code:run-1" },
+          { userId: "owner-1", spaceId: "space-1", kind: "run-code-spent:run-1" },
           { userId: "owner-1", spaceId: "space-1", kind: { startsWith: "run-login:run-1:" } },
         ],
       },

@@ -546,8 +546,49 @@ EVAL_HELPERS = r"""
     cardMasked.add(el);
   }
   function unmaskCard(el) {
+    for (const node of codeSlots.get(el) || []) {
+      if (cardMasked.delete(node)) node.style.removeProperty("-webkit-text-security");
+    }
+    codeSlots.delete(el);
     if (!cardMasked.delete(el)) return;
     el.style.removeProperty("-webkit-text-security");
+  }
+  // A code box often sits over slot elements that draw each digit; the nearest ancestor (up to
+  // three up) that shows the code is drawn as dots too, so a screenshot never reads it.
+  const codeSlots = new WeakMap();
+  // What a slot widget shows of a code: its characters, whatever their case, without dashes.
+  const codeShown = (text) => String(text).replace(/[\s-]+/g, "").toLowerCase();
+  function maskCodeSlots(el, code) {
+    const digits = codeShown(code);
+    if (!digits || !el.isConnected) return;
+    const held = codeSlots.get(el) || [];
+    let node = el.parentElement;
+    for (let level = 0; level < 3 && node && node !== document.body && node !== document.documentElement;
+         level++, node = node.parentElement) {
+      const shown = codeShown(node.innerText ?? node.textContent ?? "");
+      if (!shown.includes(digits)) continue;
+      if (!cardMasked.has(node)) maskCard(node);
+      if (!held.includes(node)) held.push(node);
+      break;
+    }
+    codeSlots.set(el, held);
+  }
+  // Whether an input is made for a one-time code: it says so, or takes digits, or is named or
+  // labelled like one, or holds a code's length. One box per digit is not one: those need the user.
+  function looksLikeCodeBox(el) {
+    if (!(el instanceof HTMLInputElement) || el.maxLength === 1) return false;
+    if ((el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes("one-time-code")) return true;
+    if ((el.getAttribute("inputmode") || "").toLowerCase() === "numeric") return true;
+    if (el.maxLength >= 4 && el.maxLength <= 12) return true;
+    const label = [...(el.labels || [])].map((box) => box.textContent).join(" ");
+    const named = [el.name, el.id, el.getAttribute("aria-label"), el.placeholder, label, nameOf(el)].join(" ");
+    return /otp|one.?time|code|token|2fa|mfa|verif|\bpin\b|passcode|קוד|אימות/i.test(named);
+  }
+  function numericBox(el) {
+    const mode = (el.getAttribute("inputmode") || "").toLowerCase();
+    const pattern = (el.getAttribute("pattern") || "").trim();
+    return mode === "numeric" || mode === "decimal" || el.type === "tel"
+      || /^(\\d|\[0-9\])([*+]|\{\d+(,\d*)?\})?$/.test(pattern);
   }
   let cardTarget = null;
   function cardFields(token) {
@@ -1088,6 +1129,9 @@ EVAL_HELPERS = r"""
     fill(ref, value, origin, field) {
       // A purchase's card detail, bound to the merchant's origin like a saved login to its site.
       const card = field === "card";
+      // A code the user entered for this page: a visible field like a username, but drawn as dots
+      // and only into a box that looks made for a code.
+      const code = field === "code";
       // Checked in the same evaluation as the fill, so a navigation cannot slip in between.
       // Private-LAN plain HTTP is not a login target, even when the page origin matches.
       if (origin || card) {
@@ -1096,11 +1140,13 @@ EVAL_HELPERS = r"""
         if (!saved || saved.protocol !== "https:" || location.protocol !== "https:") {
           throw refused(card
             ? "A card can only be filled on HTTPS. Open the merchant's checkout with browser_navigate, then fill again."
+            : code ? "A code can only be filled on HTTPS. Open the site with browser_navigate, then fill again."
             : "Website logins can only be filled on HTTPS. Open the saved site with browser_navigate, then fill again.");
         }
         if (location.origin !== saved.origin) {
           throw refused(card
             ? "The page is not on the merchant's site for this purchase. Open the merchant's checkout with browser_navigate, then fill again."
+            : code ? "The page is not on the site this code was asked for. Open that site with browser_navigate, then fill again."
             : "The page is not on the site this login was saved for. Open the saved site with browser_navigate, then fill again.");
         }
       }
@@ -1114,13 +1160,19 @@ EVAL_HELPERS = r"""
       if (card && !(el instanceof HTMLInputElement && ["text", "tel", "password"].includes(el.type))) {
         throw refused("A card can only be typed into a card field.");
       }
-      const password = Boolean(origin) && !card && field !== "username";
+      const password = Boolean(origin) && !card && !code && field !== "username";
       if (password && !(el instanceof HTMLInputElement && el.type === "password")) {
         throw refused("A saved password can only be typed into a password field.");
       }
       if (origin && !card && !password && !(el instanceof HTMLInputElement && ["text", "email", "tel"].includes(el.type))) {
-        throw refused("A saved username can only be typed into a text, email, or telephone field.");
+        throw refused(code ? "A code can only be typed into a text, email, or telephone field."
+          : "A saved username can only be typed into a text, email, or telephone field.");
       }
+      if (code && !looksLikeCodeBox(el)) {
+        throw refused("This field doesn't look like a code box; ask the user to take over.");
+      }
+      // A numeric box takes the digits of a code written with dashes.
+      if (code && numericBox(el)) value = String(value).replaceAll("-", "");
       if (el instanceof HTMLSelectElement) {
         chooseOption(el, String(value));
         el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1137,17 +1189,23 @@ EVAL_HELPERS = r"""
           if (origin) {
             Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, "");
             throw refused(card ? "This field didn't accept the card, so it was cleared."
+              : code ? "This field didn't accept the code, so it was cleared."
               : "This field didn't accept the saved login, so it was cleared.");
           }
           throw new Error("Input did not accept the requested value");
         }
         if (origin) loginFilled.add(el);
         else loginFilled.delete(el);
-        // Screenshots reach the model too, so a card is drawn as dots, like a password.
-        if (card) maskCard(el);
+        // Screenshots reach the model too, so a card or a code is drawn as dots, like a password.
+        if (card || code) maskCard(el);
         else unmaskCard(el);
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
+        if (code) {
+          // The widget may draw its slots right away or a moment later.
+          maskCodeSlots(el, value);
+          setTimeout(() => { if (cardMasked.has(el)) maskCodeSlots(el, value); }, 50);
+        }
       } else if (el.isContentEditable) {
         // Let Chromium deliver beforeinput and native editing, including editor cancellation.
         // Select the existing content so one Input.insertText replaces it, even for long text.

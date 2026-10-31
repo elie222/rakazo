@@ -164,6 +164,21 @@ it.each([
       cardField: "track2",
     },
   ],
+  ["a code fill without its origin", { kind: "fill", ref: "e1", text: "123456", field: "code" }],
+  [
+    "a code fill without its ref",
+    { kind: "fill", text: "123456", origin: "https://login.example.test", field: "code" },
+  ],
+  [
+    "a code typed by key presses",
+    {
+      kind: "type",
+      ref: "e1",
+      text: "123456",
+      origin: "https://login.example.test",
+      field: "code",
+    },
+  ],
   [
     "a pay token without the merchant's origin",
     { kind: "pay_token", text: "lpt_fake_secret", merchantAccountId: "acct_fake123" },
@@ -181,7 +196,9 @@ it.each([
     },
     body: JSON.stringify({ command: "act", actions: [action] }),
   });
-  expect(response.status).toBeGreaterThanOrEqual(400);
+  // The refusal is the supervisor's own, with a code that proves nothing was sent to the computer.
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ ok: false, code: "invalid_browser_request" });
   expect(mock.exec).not.toHaveBeenCalled();
 });
 
@@ -228,6 +245,7 @@ it.each([
     { text: "fake-password-1", origin: "https://login.example.test", field: "password" },
   ],
   ["card", { text: "4242424242424242", origin: "https://shop.example.test", field: "card" }],
+  ["one-time code", { text: "123456", origin: "https://login.example.test", field: "code" }],
   [
     "ref-less card",
     {

@@ -269,6 +269,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Genehmige diesen Server, damit dein Agent seine Tools nutzen kann.",
   "Answered: {answer}": "Beantwortet: {answer}",
+  "Only enter a code {host} sent you.": "Gib nur einen Code ein, den {host} dir geschickt hat.",
   Archive: "Archivieren",
   Attach: "Anhängen",
   "Attach file": "Datei anhängen",

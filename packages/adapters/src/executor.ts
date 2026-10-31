@@ -54,6 +54,7 @@ import {
   commandCredentialRedactions,
   loadBotCommandEnvironment,
   loadLoginPasswordRedactions,
+  loadRunCodeRedactions,
   loadRunLoginRedactions,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
@@ -468,6 +469,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           savedLoginPasswordRedactions,
           purchaseRedactions,
           runLoginRedactions,
+          runCodeRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -506,6 +508,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
           deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],
           loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),
+          loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),
         ]);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
@@ -526,6 +529,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ...savedLoginPasswordRedactions,
           ...purchaseRedactions,
           ...runLoginRedactions,
+          ...runCodeRedactions,
         );
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(
           initialBotCommandEnvironment,

@@ -264,6 +264,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Keur deze server goed zodat je agent zijn tools kan gebruiken.",
   "Answered: {answer}": "Beantwoord: {answer}",
+  "Only enter a code {host} sent you.": "Voer alleen een code in die {host} je heeft gestuurd.",
   Archive: "Archiveren",
   Attach: "Bijvoegen",
   "Attach file": "Bestand bijvoegen",

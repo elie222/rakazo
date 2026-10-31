@@ -1,4 +1,5 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import * as Logging from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -789,7 +790,7 @@ describe("browser tools", () => {
     [
       "an unsupported kind",
       [{ kind: "press", ref: "e1" }],
-      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret, fill_card, fill_pay_token",
+      "browser_act action 0 needs kind: click, fill, type, upload, fill_secret, fill_card, fill_pay_token, fill_code",
     ],
     ["no actions", [], "browser_act requires at least one action"],
     [
@@ -1056,5 +1057,241 @@ describe("browser tools on dropdowns and stale refs", () => {
     });
     expect(acted).not.toHaveProperty("fallback");
     expect(acted).not.toHaveProperty("note");
+  });
+});
+
+describe("browser_act fill_code", () => {
+  const origin = "https://login.example.test";
+
+  it("parses a ref and nothing the model could put a code in", () => {
+    expect(parseBrowserActions([{ kind: "fill_code", ref: "e1", text: "123456" }])).toEqual([
+      { kind: "fill_code", ref: "e1" },
+    ]);
+    expect(() => parseBrowserActions([{ kind: "fill_code" }])).toThrow(/requires ref/);
+  });
+
+  function held(overrides: { claim?: () => Promise<boolean> } = {}) {
+    return {
+      text: "123456",
+      origin,
+      claim: overrides.claim ?? vi.fn(async () => true),
+      restore: vi.fn(async () => undefined),
+    };
+  }
+
+  async function fillCode(options: { completed: number; code?: ReturnType<typeof held> }) {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act").mockResolvedValue({
+      ok: options.completed > 0,
+      completed: options.completed,
+      uncertain: false,
+      url: `${origin}/verify`,
+      title: "Code 123456",
+      tree: "input value=123456",
+    });
+    const code = options.code ?? held();
+    const result = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "fill_code", ref: "e1" }] },
+      { resolveCodeFill: async () => code, redactions: () => ["123456"] },
+    );
+    return { act, result, code };
+  }
+
+  it("types the code into a code box bound to its site, and hides it from the result", async () => {
+    const { act, result, code } = await fillCode({ completed: 1 });
+    expect(act.mock.calls[0]?.[1].actions).toEqual([
+      { kind: "fill", ref: "e1", text: "123456", origin, field: "code" },
+    ]);
+    expect(code.claim).toHaveBeenCalledOnce();
+    expect(code.restore).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain("123456");
+  });
+
+  it("gives the code back when the page took nothing, so it can be tried on the right page", async () => {
+    const { code } = await fillCode({ completed: 0 });
+    expect(code.claim).toHaveBeenCalledOnce();
+    expect(code.restore).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a code spent when the page did not clearly refuse it", async () => {
+    for (const refusal of [{ uncertain: true }, {}]) {
+      const browser = new FakeBrowserProvider();
+      vi.spyOn(browser, "act").mockResolvedValue({
+        ok: false,
+        completed: 0,
+        url: `${origin}/verify`,
+        title: "Verify",
+        error: "socket closed",
+        ...refusal,
+      });
+      const code = held();
+      await browserActFromTool(
+        browser,
+        computer,
+        context,
+        { actions: [{ kind: "fill_code", ref: "e1" }] },
+        { resolveCodeFill: async () => code },
+      );
+      expect(code.claim).toHaveBeenCalledOnce();
+      expect(code.restore).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps a code spent when the call failed with an unknown outcome", async () => {
+    const browser = new FakeBrowserProvider();
+    vi.spyOn(browser, "act").mockRejectedValue(new Error("socket closed"));
+    const code = held();
+    await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "fill_code", ref: "e1" }] },
+      { resolveCodeFill: async () => code },
+    );
+    expect(code.claim).toHaveBeenCalledOnce();
+    expect(code.restore).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the fill when a refused code cannot be given back", async () => {
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      const code = held();
+      code.restore.mockRejectedValue(new Error("database down: 123456"));
+      const { result } = await fillCode({ completed: 0, code });
+      expect(result).toMatchObject({ ok: false });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("123456");
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  describe("when the computer's page browser fails to take the step", () => {
+    const dockerComputer: ComputerRef = {
+      id: "c2",
+      botId: "b1",
+      kind: "docker",
+      providerRef: "c2",
+    };
+
+    async function fillThrough(failure: Error) {
+      const browser = new ComputerBrowserProvider({
+        liveDriver: async () => {
+          throw failure;
+        },
+      });
+      const code = held();
+      const result = await browserActFromTool(
+        browser,
+        dockerComputer,
+        context,
+        { actions: [{ kind: "fill_code", ref: "e1" }] },
+        { resolveCodeFill: async () => code },
+      );
+      return { code, result };
+    }
+
+    it("gives the code back when the supervisor refused the request before running anything", async () => {
+      const { code, result } = await fillThrough(new SandboxRequestRejectedError());
+      expect(code.claim).toHaveBeenCalledOnce();
+      expect(code.restore).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({ ok: false, uncertain: false, completed: 0 });
+    });
+
+    it.each([
+      ["a failed request", new Error("page browser failed: 500")],
+      ["another refusal", new Error("page browser failed: 400")],
+      ["a transport error", new TypeError("fetch failed")],
+      ["a timeout", new Error("Page browser timed out; the page may be busy")],
+    ])("keeps the code spent after %s", async (_name, failure) => {
+      const { code, result } = await fillThrough(failure);
+      expect(code.claim).toHaveBeenCalledOnce();
+      expect(code.restore).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ ok: false, uncertain: true });
+    });
+  });
+
+  it("refuses a second fill_code in the same batch, before the page is asked", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const code = held();
+    const result = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      {
+        actions: [
+          { kind: "fill_code", ref: "e1" },
+          { kind: "fill_code", ref: "e2" },
+        ],
+      },
+      { resolveCodeFill: async () => code },
+    );
+    expect(result).toEqual({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: "browser_act takes one fill_code at a time",
+    });
+    expect(code.claim).not.toHaveBeenCalled();
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it("refuses when another fill took the code first, before the page is asked", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const result = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "fill_code", ref: "e1" }] },
+      { resolveCodeFill: async () => held({ claim: async () => false }) },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      completed: 0,
+      error: expect.stringContaining("No code"),
+    });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it("settles a missing code before the page is touched, without echoing a lookup failure", async () => {
+    const browser = new FakeBrowserProvider();
+    const act = vi.spyOn(browser, "act");
+    const noCode = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "fill_code", ref: "e1" }] },
+      { resolveCodeFill: async () => ({ error: "No code is waiting." }) },
+    );
+    expect(noCode).toEqual({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: "No code is waiting.",
+    });
+    const broken = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "fill_code", ref: "e1" }] },
+      {
+        resolveCodeFill: async () => {
+          throw new Error("canary-123456");
+        },
+      },
+    );
+    expect(broken).toEqual({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: "This code could not be loaded.",
+    });
+    expect(JSON.stringify(broken)).not.toContain("canary");
+    expect(act).not.toHaveBeenCalled();
   });
 });

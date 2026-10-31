@@ -471,6 +471,7 @@ describe("parametersFor OpenAI wire fidelity", () => {
       "credential",
       "fields",
       "label",
+      "oneTimeCode",
       "purpose",
       "replace",
     ]);

@@ -4,14 +4,15 @@ import {
   encodeLoginSecret,
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
+  normalizeOneTimeCode,
   SecretAskPurpose,
 } from "@rakazo/contracts";
 import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
-import { runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
+import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import { resolveDuplicateEffectGate } from "./approval-effect.js";
-import { encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
+import { encodeRunCode, encodeRunLogin, prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
 export function normalizeSecretAskPurpose(purpose: string | undefined): SecretAskPurpose {
@@ -151,9 +152,11 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
           ask.credential?.auth.type === "login"
             ? loginAnswerValue(ask.loginFields, input)
             : undefined;
+        const code = ask.oneTimeCode ? normalizeOneTimeCode(input.answer) : undefined;
         if (
           input.answer.length > BOT_SECRET_VALUE_MAX_LENGTH ||
-          (ask.credential && run.userId !== input.answeredByUserId) ||
+          (ask.oneTimeCode && !code) ||
+          ((ask.credential || ask.oneTimeCode) && run.userId !== input.answeredByUserId) ||
           (ask.credential?.auth.type === "login"
             ? !login
             : input.username !== undefined || input.fields !== undefined)
@@ -163,7 +166,7 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
               throw new Error("Secret request changed; retry");
             },
           });
-        const plaintext = login ? encodeLoginSecret(login) : input.answer;
+        const plaintext = login ? encodeLoginSecret(login) : (code ?? input.answer);
         const scope = { userId: run.userId, spaceId: input.spaceId, botId: run.botId };
         // With "Save to Vault" off, the login stays with this run, bound to the card's site.
         const runLogin =
@@ -180,7 +183,11 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 plaintext,
               })
             : await secretStore.put(
-                runLogin ? encodeRunLogin(runLogin.origin, plaintext) : plaintext,
+                ask.oneTimeCode
+                  ? encodeRunCode(ask.oneTimeCode.origin, plaintext)
+                  : runLogin
+                    ? encodeRunLogin(runLogin.origin, plaintext)
+                    : plaintext,
                 {
                   operationId: input.runId,
                   traceId: input.runId,
@@ -197,7 +204,8 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                 value.botId !== run.botId ||
                 value.plaintext !== plaintext ||
                 value.remember !== !runLogin ||
-                JSON.stringify(value.credential) !== JSON.stringify(ask.credential)
+                JSON.stringify(value.credential) !== JSON.stringify(ask.credential) ||
+                JSON.stringify(value.oneTimeCode) !== JSON.stringify(ask.oneTimeCode)
               )
                 throw new Error("Secret request changed; retry");
               // Answering a login card again, saved or not, replaces this run's unsaved one.
@@ -210,6 +218,16 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                   },
                 });
               }
+              // A newer answer replaces a code the page has not taken yet.
+              if (ask.oneTimeCode) {
+                await value.tx.secret.deleteMany({
+                  where: {
+                    userId: run.userId,
+                    spaceId: input.spaceId,
+                    kind: runCodeKind(input.runId),
+                  },
+                });
+              }
               if ("store" in prepared) await prepared.store(value.tx);
               else
                 await value.tx.secret.create({
@@ -217,9 +235,11 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                     id: prepared.id,
                     userId: run.userId,
                     spaceId: input.spaceId,
-                    kind: runLogin
-                      ? runLoginKind(input.runId, runLogin.name)
-                      : runSecretKind(input.runId),
+                    kind: ask.oneTimeCode
+                      ? runCodeKind(input.runId)
+                      : runLogin
+                        ? runLoginKind(input.runId, runLogin.name)
+                        : runSecretKind(input.runId),
                     ciphertext: prepared.ciphertext,
                   },
                 });

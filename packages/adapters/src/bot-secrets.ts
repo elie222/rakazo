@@ -21,11 +21,20 @@ import {
   LOGIN_FIELD_LIMIT,
   LoginFieldLabels,
   loginCommandName,
+  ONE_TIME_CODE_MIN_LENGTH,
+  OneTimeCodeTarget,
   SecretHttpRequest,
   sameLoginFieldLabel,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { lockSpaceSettings, runLoginKind, settingsTarget, withTransactionRetry } from "@rakazo/db";
+import {
+  lockSpaceSettings,
+  runCodeKind,
+  runCodeSpentKind,
+  runLoginKind,
+  settingsTarget,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
@@ -238,10 +247,16 @@ export async function findCommandVariableConflict(
   )?.name;
 }
 
+/** The bot must tell the user why it falls back to a takeover, so the refusal says so. */
+const NOT_HTTPS_CODE =
+  "Codes can only be typed on HTTPS pages, and this page isn't HTTPS. Ask the user to take over and tell them that is why.";
+
 export type RequestSecretDestinationResult = {
   /** Metadata only. The protected value is never part of this result. */
   destination?: BotSecretDestination;
   connectionId?: string;
+  /** The HTTPS origin a texted or emailed code is for. */
+  oneTimeCodeOrigin?: string;
   error?: string;
 };
 
@@ -269,7 +284,27 @@ export function resolveRequestSecretDestination(
   }
   const connectionId = connectionIdArgument(args.connectionId);
   if (connectionId) return { connectionId };
-  return { error: "Provide either a reusable credential destination or a connectionId." };
+  if (args.oneTimeCode !== undefined) {
+    const target = OneTimeCodeTarget.safeParse(args.oneTimeCode);
+    if (target.success) return { oneTimeCodeOrigin: target.data.origin };
+    const origin = isPlainObject(args.oneTimeCode) ? args.oneTimeCode.origin : undefined;
+    return {
+      error:
+        typeof origin === "string" && URL.canParse(origin) && new URL(origin).protocol === "http:"
+          ? NOT_HTTPS_CODE
+          : "oneTimeCode needs the HTTPS origin of the page that asked for the code.",
+    };
+  }
+  return {
+    error:
+      "Provide either a reusable credential destination, a connectionId, or oneTimeCode for a code the page asked for.",
+  };
+}
+
+/** `{ origin }` only, reduced to the site: a code is never tied to a path, query or userinfo. */
+export function oneTimeCodeArgument(value: unknown): unknown {
+  if (!isPlainObject(value)) return value === undefined ? undefined : {};
+  return { origin: originMetadata(value.origin) ?? "invalid-origin" };
 }
 
 /** Labels only, also from `{ label, hidden }` objects, so a bot's `hidden` is never recorded. */
@@ -860,6 +895,45 @@ export function encodeRunLogin(origin: string, login: string): string {
   return JSON.stringify({ origin, login });
 }
 
+const RunCodeValue = z.object({ origin: z.string(), code: z.string() });
+
+/** A code answered in chat, kept with the site it is for until it is typed there. */
+export function encodeRunCode(origin: string, code: string): string {
+  return JSON.stringify({ origin, code });
+}
+
+/** The run's code row as stored, or nothing when it cannot be read; only the error name is logged. */
+export async function readRunCode(
+  secretStore: Pick<SecretStore, "load">,
+  row: { id: string; ciphertext: string },
+): Promise<{ origin: string; code: string } | undefined> {
+  try {
+    return RunCodeValue.parse(JSON.parse(await secretStore.load(row.ciphertext, row.id)));
+  } catch (error) {
+    getLogger().warn("one-time code could not be read", {
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Every form of a code the model could be handed: as is, without dashes, URL-encoded, and as a
+ * page draws it per character or in two groups (input-otp widgets put each digit in its own
+ * element, which a snapshot reads as one digit per line).
+ */
+export function oneTimeCodeRedactions(code: string): string[] {
+  const forms = new Set([code, code.replaceAll("-", ""), encodeURIComponent(code)]);
+  const joins = ["\n", "\r\n", " ", "\t", "-", " - "];
+  for (const base of [code, code.replaceAll("-", "")]) {
+    for (const join of joins) forms.add([...base].join(join));
+    const half = Math.ceil(base.length / 2);
+    for (const join of joins) forms.add(`${base.slice(0, half)}${join}${base.slice(half)}`);
+  }
+  // A short form would blank ordinary text in every later result.
+  return [...forms].filter((form) => form.length >= ONE_TIME_CODE_MIN_LENGTH);
+}
+
 const RunLoginValue = z.object({ origin: z.string(), login: z.string() });
 
 function decodeRunLogin(plaintext: string): LoginSecretValue & { origin: string } {
@@ -987,5 +1061,84 @@ export async function resolveLoginFill(input: {
     hidden: field.hidden,
     origin: destination.origin,
     redactions: loginFillRedactions(fields),
+  };
+}
+
+/**
+ * Redaction forms of this run's codes, those waiting and those the page took, from the start of
+ * every attempt: a filled code stays on its page and in what the run has read.
+ */
+export async function loadRunCodeRedactions(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+  runId: string,
+): Promise<string[]> {
+  const rows = await prisma.secret.findMany({
+    where: {
+      userId: scope.userId,
+      spaceId: scope.spaceId,
+      kind: { in: [runCodeKind(runId), runCodeSpentKind(runId)] },
+    },
+    select: { id: true, ciphertext: true },
+  });
+  const forms = new Set<string>();
+  for (const row of rows) {
+    const held = await readRunCode(secretStore, row);
+    for (const form of held ? oneTimeCodeRedactions(held.code) : []) forms.add(form);
+  }
+  return [...forms];
+}
+
+const NO_CODE_WAITING =
+  "No code is waiting. Use request_secret with oneTimeCode to ask the user for it first.";
+
+/**
+ * This run's code for a page fill. Like a login's, the caller must pass `origin` to the page
+ * browser, which refuses to fill unless the page is still on it. The code is only read here:
+ * `claim` takes it for one fill, atomically, so two fills never both get it, and `restore` gives
+ * it back when the page refused, so the fill can be tried again on the right page. A claimed code
+ * stays as a spent row, which the run keeps hiding until it ends.
+ */
+export async function resolveCodeFill(input: {
+  prisma: PrismaClient;
+  secretStore: SecretStore;
+  scope: BotSecretScope;
+  runId: string;
+}): Promise<
+  | {
+      text: string;
+      origin: string;
+      redactions: string[];
+      claim: () => Promise<boolean>;
+      restore: () => Promise<void>;
+    }
+  | { error: string }
+> {
+  const where = { userId: input.scope.userId, spaceId: input.scope.spaceId };
+  const row = await input.prisma.secret.findFirst({
+    where: { ...where, kind: runCodeKind(input.runId) },
+    select: { id: true, ciphertext: true },
+  });
+  if (!row) return { error: NO_CODE_WAITING };
+  const held = await readRunCode(input.secretStore, row);
+  if (!held) return { error: "This code could not be loaded." };
+  if (!URL.canParse(held.origin) || new URL(held.origin).protocol !== "https:")
+    return { error: NOT_HTTPS_CODE };
+  const move = async (from: string, to: string) =>
+    (
+      await input.prisma.secret.updateMany({
+        where: { id: row.id, kind: from },
+        data: { kind: to },
+      })
+    ).count === 1;
+  return {
+    text: held.code,
+    origin: held.origin,
+    redactions: oneTimeCodeRedactions(held.code),
+    claim: () => move(runCodeKind(input.runId), runCodeSpentKind(input.runId)),
+    restore: async () => {
+      await move(runCodeSpentKind(input.runId), runCodeKind(input.runId));
+    },
   };
 }

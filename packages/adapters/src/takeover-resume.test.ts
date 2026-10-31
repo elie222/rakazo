@@ -7,11 +7,17 @@ import {
 } from "./takeover-resume.js";
 
 const HANDED_BACK_NOTE =
-  "The user handed the computer back. Continue using the current screen state. Do not request takeover again.";
+  "The user handed the computer back. Continue using the current screen state. Do not request takeover again for this same step.";
 const UNFINISHED_NOTE =
-  "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again unless you still cannot proceed.";
+  "The takeover ended without the user completing it. Continue without assuming that step was done. Do not request takeover again for this same step unless you still cannot proceed.";
 
 describe("takeoverResumeFromRelease", () => {
+  it("only rules out asking for the same step again, so a later code can still be asked for", () => {
+    for (const reason of ["done", "skipped"]) {
+      expect(takeoverResumeFromRelease(reason).promptNote).toContain("for this same step");
+    }
+  });
+
   it("tells the bot the computer was handed back after I'm done or a plain release", () => {
     for (const reason of ["done", "released", undefined]) {
       const resume = takeoverResumeFromRelease(reason);

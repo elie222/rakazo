@@ -251,6 +251,12 @@ export class PageBrowserSession {
           if (!CARD_INPUT_TYPES.has(inputType)) {
             throw new FillRefused("A card can only be typed into a card field.");
           }
+        } else if (action.field === "code") {
+          if (!USERNAME_INPUT_TYPES.has(inputType)) {
+            throw new FillRefused(
+              "A code can only be typed into a text, email, or telephone field.",
+            );
+          }
         } else if (action.field !== "username" && inputType !== "password") {
           // A password goes only into a password field, which never displays it.
           throw new FillRefused("A saved password can only be typed into a password field.");

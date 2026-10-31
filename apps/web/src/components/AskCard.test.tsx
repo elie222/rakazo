@@ -603,3 +603,70 @@ it("undoes a settings change from chat while it still holds", async () => {
   });
   expect(button("Restored")?.disabled).toBe(true);
 });
+
+const codeCard: AskBlock = {
+  kind: "ask",
+  text: "Enter the code",
+  input: "secret",
+  purpose: "otp",
+  oneTimeCode: { origin: "https://login.example.test" },
+  status: "pending",
+};
+
+it("asks for a one-time code in a masked numeric field, with the site and no Save to Vault", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  await render(codeCard, undefined, onAnswer);
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Code"]')!;
+  expect(input.type).toBe("password");
+  expect(input.inputMode).toBe("numeric");
+  expect(input.autocomplete).toBe("one-time-code");
+  expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(button("Save")).toBeUndefined();
+  await type("Code", "123 456");
+  await act(async () => button("Continue")!.click());
+  expect(onAnswer).toHaveBeenCalledWith("123 456", undefined);
+});
+
+it("leaves a one-time code to the run's user, and reads Sent once answered", async () => {
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={codeCard}
+        canAnswer
+        canDismiss={false}
+        onAnswer={async () => {}}
+        onDismiss={async () => {}}
+      />,
+    ),
+  );
+  expect(container.querySelector("input")).toBeNull();
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.textContent).toContain("Only enter a code login.example.test sent you.");
+  await render({ ...codeCard, status: "answered", answer: "" });
+  expect(container.textContent).toContain("Sent");
+  expect(container.textContent).not.toContain("Saved");
+});
+
+it("shows the bot's label on a code card as plain text beneath the site's own title", async () => {
+  await render({
+    ...codeCard,
+    text: "Code for login.example.test",
+    detail: "Your **bank** [link](https://evil.example)",
+  });
+  const detail = [...container.querySelectorAll("div")].find((node) =>
+    node.textContent?.startsWith("Your **bank**"),
+  );
+  expect(detail?.textContent).toBe("Your **bank** [link](https://evil.example)");
+  expect(detail?.querySelector("a, strong")).toBeNull();
+  // Other secret cards keep hiding a detail they do not use.
+  await render({ ...secretCard, detail: "hidden detail" });
+  expect(container.textContent).not.toContain("hidden detail");
+});
+
+it("keeps the other secret cards off the numeric keyboard", async () => {
+  await render(secretCard);
+  const input = container.querySelector<HTMLInputElement>("input")!;
+  expect(input.inputMode).toBe("");
+  expect(input.autocomplete).toBe("off");
+});

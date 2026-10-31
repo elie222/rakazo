@@ -1,7 +1,7 @@
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName } from "@rakazo/core";
-import { runLoginKind, runSecretKind } from "@rakazo/db";
+import { runCodeKind, runLoginKind, runSecretKind } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   completeExternalEffect,
@@ -20,6 +20,8 @@ import {
   generateBotSecret,
   listBotSecrets,
   normalizeSecretDestination,
+  oneTimeCodeRedactions,
+  readRunCode,
   requestedLoginFields,
   requestWithBotSecret,
   resolveRequestSecretDestination,
@@ -106,6 +108,7 @@ export const secretTools: ToolHandlers = {
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     const destination = resolvedSecret.destination;
     const connectionId = resolvedSecret.connectionId;
+    const codeOrigin = resolvedSecret.oneTimeCodeOrigin;
     const loginFields =
       destination?.auth.type === "login" ? requestedLoginFields(args.fields) : undefined;
     if (loginFields?.error) return call.finish({ error: loginFields.error });
@@ -159,17 +162,32 @@ export const secretTools: ToolHandlers = {
         call.claimedEffect = false;
       }
     }
-    const secretKind = runSecretKind(runId);
-    const storedSecret = await deps.prisma.secret.findFirst({
+    const secretKind = codeOrigin ? runCodeKind(runId) : runSecretKind(runId);
+    let storedSecret = await deps.prisma.secret.findFirst({
       where: {
         spaceId: run.spaceId,
         userId: run.userId,
         kind: secretKind,
       },
     });
+    // A card not yet answered means a code left from an earlier one is stale, and one that cannot
+    // be read is no code: ask again.
+    const heldCode =
+      storedSecret && codeOrigin ? await readRunCode(deps.secretStore, storedSecret) : undefined;
+    if (storedSecret && codeOrigin && (!heldCode || applied?.effect.status === "intended")) {
+      await deps.prisma.secret.deleteMany({ where: { id: storedSecret.id } });
+      if (!heldCode && applied?.effect.status !== "intended") {
+        return call.finish({
+          error: "The code could not be read. Ask for it again with request_secret oneTimeCode.",
+        });
+      }
+      storedSecret = null;
+    }
     if (storedSecret) {
-      const plaintext = await deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
-      ctx.secrets.push(plaintext);
+      const plaintext = heldCode
+        ? heldCode.code
+        : await deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
+      ctx.secrets.push(...(heldCode ? oneTimeCodeRedactions(plaintext) : [plaintext]));
       // Keep the tail the old redactor still holds; a fresh instance drops it.
       reply.pendingProgress += reply.redactor.finish();
       reply.redactor = createStreamingRedactor(ctx.secrets);
@@ -190,6 +208,14 @@ export const secretTools: ToolHandlers = {
           const early = await call.claimOrReturn("approved");
           if (early !== undefined) return early;
         }
+      }
+      // The code waits for browser_act fill_code, which deletes it once the page took it.
+      if (codeOrigin) {
+        return call.finish({
+          ok: true,
+          submitted: true,
+          note: "The user entered the code. Type it with browser_act fill_code {ref}; you never see it.",
+        });
       }
       // Claim executing (above), take the secret, then connector complete().
       // Retries without a secret reconcile via connectionReady / settle_attempt.
@@ -289,6 +315,10 @@ export const secretTools: ToolHandlers = {
       }
       return settleUncertainEffect(deps.prisma, recordedForAsk.effect.id, "request_secret");
     }
+    // A code card names the site itself, so a label cannot pose as another one.
+    const askText = codeOrigin
+      ? `Code for ${new URL(codeOrigin).host}`
+      : String(args.label ?? "Code");
     if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
       return pauseForSecret(ctx);
     }
@@ -306,11 +336,16 @@ export const secretTools: ToolHandlers = {
       blocks: [
         {
           kind: "ask",
-          text: String(args.label ?? "Code"),
+          text: askText,
+          // The site is the server's words in the title; the bot's own label is plain detail.
+          ...(codeOrigin && args.label ? { detail: String(args.label).slice(0, 200) } : {}),
           input: "secret",
           ...(destination ? { credential: destination } : {}),
+          ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
           ...(loginFields?.labels ? { loginFields: loginFields.labels } : {}),
-          purpose: normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
+          purpose: codeOrigin
+            ? "otp"
+            : normalizeSecretAskPurpose(args.purpose ? String(args.purpose) : undefined),
           status: "pending",
         },
       ],
@@ -325,11 +360,7 @@ export const secretTools: ToolHandlers = {
     }
     await notifyRun(deps, run, {
       kind: "help",
-      ...secretAskNotification(
-        displayName(bot.name, "Bot"),
-        String(args.label ?? "Code"),
-        ctx.secrets,
-      ),
+      ...secretAskNotification(displayName(bot.name, "Bot"), askText, ctx.secrets),
       botId: bot.id,
       threadId: thread.id,
     });

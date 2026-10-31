@@ -1,7 +1,9 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { encodeRunCode } from "./bot-secrets.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
+import { EncryptedSecretStore } from "./secrets.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
 
 const secret = 'zq"xv\\mk';
@@ -122,5 +124,128 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
 
   it.each(["open_path", "launch_app"])("%s acts when the screen is free", async (name) => {
     expect((await runScreenTool(name, false, false)).act).toHaveBeenCalledOnce();
+  });
+});
+
+describe("browser_act fill_code", () => {
+  const code = "482913";
+  const origin = "https://login.example.test";
+  const secretStore = new EncryptedSecretStore("test-only-encryption-key");
+
+  /** A run holding a code its user entered for the page, and a page with a field for it. */
+  async function runWithCode(held: { origin: string } | null = { origin }) {
+    const browser = new FakeBrowserProvider({
+      pages: {
+        [`${origin}/verify`]: {
+          title: "Verify",
+          html: `<!doctype html><html><head><title>Verify</title></head><body>
+            <input aria-label="Code" /></body></html>`,
+        },
+      },
+    });
+    await browser.navigate(computer, { url: `${origin}/verify` }, context);
+    const rows: Array<Record<string, unknown>> = [];
+    if (held) {
+      const stored = await secretStore.put(
+        encodeRunCode(held.origin, code),
+        {
+          operationId: "run-1",
+          traceId: "run-1",
+          spaceId: "space",
+          userId: "u",
+          signal: context.signal,
+        },
+        { ephemeral: true },
+      );
+      rows.push({ ...stored, userId: "u", spaceId: "space", kind: "run-code:run-1" });
+    }
+    const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
+      Object.entries(where).every(([key, value]) => row[key] === value);
+    const ctx = {
+      deps: {
+        prisma: {
+          taughtSkill: { findFirst: async () => null },
+          secret: {
+            findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+              rows.find((row) => matches(row, where)) ?? null,
+            updateMany: async ({
+              where,
+              data,
+            }: {
+              where: Record<string, unknown>;
+              data: Record<string, unknown>;
+            }) => {
+              const found = rows.filter((row) => matches(row, where));
+              for (const row of found) Object.assign(row, data);
+              return { count: found.length };
+            },
+          },
+        },
+        secretStore,
+      },
+      run: { id: "run-1", spaceId: "space", userId: "u", botId: "b1" },
+      bot: { id: "b1" },
+      context,
+      computer: {
+        heldForTakeover: false,
+        graphicalToolsAllowed: false,
+        mode: "private",
+        checkpoint: { markDirty: () => {} },
+        get: async () => computer,
+      },
+      tools: { disabled: new Set<string>() },
+      providers: { browser },
+      secrets: [] as string[],
+      state: {
+        screen: { unchangedVisualStreak: { count: 0 } },
+        reply: {
+          pendingProgress: "",
+          redactor: { finish: () => "" },
+        },
+      },
+    };
+    const fill = async () => {
+      const snapshot = (await browser.snapshot(computer, {}, context)) as {
+        elements: Array<{ ref: string; name: string }>;
+      };
+      const ref = snapshot.elements.find((element) => element.name === "Code")!.ref;
+      const call = {
+        name: "browser_act",
+        args: { actions: [{ kind: "fill_code", ref }] },
+        finish: async (result: unknown) => result,
+      };
+      const result = (await pageBrowserTool(ctx as never, call as never)) as {
+        content?: Array<{ text: string }>;
+        details?: unknown;
+      };
+      return `${result.content?.map((part) => part.text).join("") ?? ""}${JSON.stringify(result.details ?? result)}`;
+    };
+    return { ctx, rows, fill };
+  }
+
+  it("types the code once, never shows it to the bot, and has none left to type again", async () => {
+    const { ctx, rows, fill } = await runWithCode();
+    const first = await fill();
+    expect(first).toContain('"ok":true');
+    expect(first).not.toContain(code);
+    expect(ctx.secrets).toContain(code);
+    // The page took it: it stays only to be hidden, and is never typed again.
+    expect(rows).toMatchObject([{ kind: "run-code-spent:run-1" }]);
+    const second = await fill();
+    expect(second).toContain("No code is waiting");
+    expect(second).not.toContain(code);
+  });
+
+  it("refuses when the run has no code, and touches nothing", async () => {
+    const { fill } = await runWithCode(null);
+    expect(await fill()).toContain("No code is waiting");
+  });
+
+  it("refuses a code kept for plain HTTP, and keeps it", async () => {
+    const { rows, fill } = await runWithCode({ origin: "http://login.example.test" });
+    const result = await fill();
+    expect(result).toContain("isn't HTTPS");
+    expect(result).not.toContain(code);
+    expect(rows).toHaveLength(1);
   });
 });

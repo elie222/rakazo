@@ -240,6 +240,27 @@ export type BotSecretDestination = z.infer<typeof BotSecretDestination>;
 
 export const BOT_SECRET_VALUE_MAX_LENGTH = 16_384;
 
+/** The one page a texted or emailed code may be typed into: HTTPS only, and it is never saved. */
+export const OneTimeCodeTarget = z.object({ origin: botSecretOriginSchema(false) });
+export type OneTimeCodeTarget = z.infer<typeof OneTimeCodeTarget>;
+
+export const ONE_TIME_CODE_MIN_LENGTH = 4;
+export const ONE_TIME_CODE_MAX_LENGTH = 12;
+
+/**
+ * The code as typed into a page: spaces dropped ("123 456"), then groups of letters and digits
+ * joined by single dashes, at least 4 of them and at most 12 characters in all. Anything shorter
+ * or odder is not a code, so it is never kept or redacted.
+ */
+export function normalizeOneTimeCode(answer: string): string | undefined {
+  const code = answer.replace(/\s+/g, "");
+  return code.length <= ONE_TIME_CODE_MAX_LENGTH &&
+    code.replaceAll("-", "").length >= ONE_TIME_CODE_MIN_LENGTH &&
+    /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/.test(code)
+    ? code
+    : undefined;
+}
+
 export const LOGIN_FIELD_LIMIT = 8;
 export const LoginFieldLabel = z.string().trim().min(1).max(64);
 /** What a login asks for when no field labels are given, and what a saved username/password pair reads as. */

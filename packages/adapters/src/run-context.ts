@@ -415,7 +415,9 @@ export function restoreTurnCheckpointEffects(
         for (const call of message.content) {
           if (call.type !== "toolCall" || unresolved.has(call)) continue;
           const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
-          if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
+          // A code request counts like any tool: each one is its own card.
+          const single = tool?.name === "connect_app" || tool?.name === "request_secret";
+          if (tool && (!single || call.arguments.oneTimeCode !== undefined))
             nextMutatingEffectOccurrence(
               ctx,
               tool.name,

@@ -1081,7 +1081,7 @@ export type BrowserActStep =
        * field) or visible field ("username"), or an approved purchase's card detail. A card fill
        * always carries `origin`.
        */
-      field?: "username" | "password" | "card";
+      field?: "username" | "password" | "card" | "code";
     }
   | {
       kind: "fill";

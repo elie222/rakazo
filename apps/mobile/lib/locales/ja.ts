@@ -251,6 +251,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "このサーバーを承認すると、エージェントがそのツールを使用できるようになります。",
   "Answered: {answer}": "回答済み: {answer}",
+  "Only enter a code {host} sent you.": "{host} から送られたコードだけを入力してください。",
   Archive: "アーカイブ",
   Attach: "添付",
   "Attach file": "ファイルを添付",

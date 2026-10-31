@@ -256,6 +256,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "批准此服务器后，Agent 才能使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "仅输入 {host} 发给你的验证码。",
   Archive: "归档",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "归档会保留全部内容，可以撤销。删除不可恢复。",

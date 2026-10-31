@@ -209,6 +209,200 @@ describe("live page helper saved-login fill", () => {
   });
 });
 
+describe("live page helper one-time code fill", () => {
+  const origin = "https://login.example.test";
+  const html = `
+    <input aria-label="Code" inputmode="numeric" autocomplete="one-time-code" />
+    <input aria-label="Password" type="password" />
+    <input aria-label="Notes" type="text" />
+  `;
+  const MASK = "-webkit-text-security";
+
+  function fillCode(
+    boxes: string,
+    label: string,
+    code = "123456",
+    url = `${origin}/verify`,
+    at = origin,
+  ) {
+    const { domWindow, browser } = installPageHelper(url, boxes);
+    const ref = refFor(label, browser.snapshot().elements);
+    return { domWindow, browser, fill: () => browser.fill(ref, code, at, "code") };
+  }
+
+  it("types a code on its HTTPS site only, and refuses another site or plain HTTP", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/verify`, html);
+    const code = refFor("Code", browser.snapshot().elements);
+    expect(() => browser.fill(code, "123456", "https://evil.example.test", "code")).toThrow(
+      /Refused: The page is not on the site this code was asked for/,
+    );
+    expect(() => browser.fill(code, "123456", "http://login.example.test", "code")).toThrow(
+      /Refused: A code can only be filled on HTTPS/,
+    );
+    expect(fieldValue(domWindow, "Code")).toBe("");
+    browser.fill(code, "123456", origin, "code");
+    expect(fieldValue(domWindow, "Code")).toBe("123456");
+  });
+
+  it("refuses a code on a page that moved to plain HTTP or another site", () => {
+    for (const url of ["http://login.example.test/verify", "https://other.example.test/verify"]) {
+      const { domWindow, fill } = fillCode(html, "Code", "123456", url);
+      expect(fill).toThrow();
+      expect(fieldValue(domWindow, "Code")).toBe("");
+    }
+  });
+
+  it("draws the filled box as dots and keeps its value out of snapshots", () => {
+    const { domWindow, browser, fill } = fillCode(html, "Code");
+    const box = domWindow.document.querySelector<HTMLInputElement>('[aria-label="Code"]')!;
+    // jsdom drops vendor properties, so watch the CSSOM calls Chrome applies.
+    const set = vi.spyOn(box.style, "setProperty");
+    fill();
+    expect(set).toHaveBeenCalledWith(MASK, "disc", "important");
+    const entry = browser.snapshot().elements.find((element) => element.name === "Code")!;
+    expect(entry.value).toBeUndefined();
+    expect(browser.snapshot().tree).not.toContain("123456");
+  });
+
+  it("types a code only into a text, email or telephone box, never a password box", () => {
+    const { domWindow, browser } = installPageHelper(`${origin}/verify`, html);
+    expect(() =>
+      browser.fill(refFor("Password", browser.snapshot().elements), "123456", origin, "code"),
+    ).toThrow(/Refused: A code can only be typed into a text, email, or telephone field/);
+    expect(fieldValue(domWindow, "Password")).toBe("");
+  });
+
+  it("drops a code's dashes for a numeric box and keeps them for a text one", () => {
+    const numeric = `<input aria-label="Verification code" inputmode="numeric" />
+      <input aria-label="Phone code" type="tel" />
+      <input aria-label="Digits code" pattern="[0-9]*" />
+      <input aria-label="Digits two code" pattern="\\d{6}" />`;
+    for (const label of ["Verification code", "Phone code", "Digits code", "Digits two code"]) {
+      const { domWindow, fill } = fillCode(numeric, label, "123-456");
+      fill();
+      expect(fieldValue(domWindow, label)).toBe("123456");
+    }
+    const text = fillCode(`<input aria-label="Sign-in code" />`, "Sign-in code", "AB-1234");
+    text.fill();
+    expect(fieldValue(text.domWindow, "Sign-in code")).toBe("AB-1234");
+  });
+
+  it.each([
+    ['<input aria-label="Code" />', "Code"],
+    ['<input aria-label="Enter OTP" />', "OTP"],
+    ['<input name="verification" aria-label="Field" />', "Field"],
+    ['<input placeholder="Passcode" aria-label="Field" />', "Field"],
+    ['<input id="mfa_token" aria-label="Field" />', "Field"],
+    ['<input aria-label="Field" inputmode="numeric" />', "Field"],
+    ['<input aria-label="Field" autocomplete="one-time-code" />', "Field"],
+    ['<input aria-label="Field" maxlength="6" />', "Field"],
+    ['<label for="x">Security PIN</label><input id="x" />', "Security PIN"],
+    ['<input aria-label="קוד אימות" />', "קוד"],
+  ])("takes %s for a code box", (boxes, label) => {
+    const { domWindow, fill } = fillCode(boxes, label);
+    fill();
+    expect(domWindow.document.querySelector("input")!.value).toBe("123456");
+  });
+
+  it.each([
+    ['<input aria-label="Email" />', "Email"],
+    ['<input aria-label="Search" />', "Search"],
+    ['<input aria-label="Shipping address" />', "Shipping"],
+    ['<input aria-label="Field" maxlength="1" />', "Field"],
+    ['<input aria-label="Digit 1 of code" maxlength="1" />', "Digit"],
+    ['<input aria-label="Field" maxlength="40" />', "Field"],
+  ])("refuses %s, which does not look like a code box", (boxes, label) => {
+    const { domWindow, fill } = fillCode(boxes, label);
+    expect(fill).toThrow(
+      "Refused: This field doesn't look like a code box; ask the user to take over.",
+    );
+    expect(domWindow.document.querySelector("input")!.value).toBe("");
+  });
+
+  describe("a code box over slot elements that draw each digit", () => {
+    const slots = `<div id="outer"><div id="widget">
+      <input aria-label="Code" autocomplete="one-time-code" maxlength="6" />
+      <div>·</div><div>·</div><div>·</div><div>·</div><div>·</div><div>·</div>
+    </div><p>Resend</p></div>`;
+
+    function widget(delayMs?: number) {
+      const { domWindow, browser } = installPageHelper(`${origin}/verify`, slots);
+      const document = domWindow.document;
+      const input = document.querySelector<HTMLInputElement>("input")!;
+      const draw = () =>
+        [...document.querySelectorAll("#widget > div")].forEach((slot, at) => {
+          slot.textContent = input.value.replaceAll("-", "")[at] ?? "·";
+        });
+      input.addEventListener("input", () =>
+        delayMs === undefined ? draw() : void setTimeout(draw, delayMs),
+      );
+      const widgetBox = document.getElementById("widget")!;
+      const outer = document.getElementById("outer")!;
+      const set = vi.spyOn(widgetBox.style, "setProperty");
+      const remove = vi.spyOn(widgetBox.style, "removeProperty");
+      const outerSet = vi.spyOn(outer.style, "setProperty");
+      const ref = refFor("Code", browser.snapshot().elements);
+      return { browser, ref, set, remove, outerSet, document };
+    }
+
+    it("draws the slots as dots too, right away", () => {
+      const { browser, ref, set, outerSet } = widget();
+      browser.fill(ref, "123456", origin, "code");
+      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+      // Only the nearest ancestor that shows the code.
+      expect(outerSet).not.toHaveBeenCalled();
+    });
+
+    it("draws them as dots when the widget draws its slots a moment later", async () => {
+      const { browser, ref, set } = widget(10);
+      browser.fill(ref, "123456", origin, "code");
+      expect(set).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+    });
+
+    it("finds a code written with dashes shown without them, and gives the slots back when the box is refilled", () => {
+      const { browser, ref, set, remove } = widget();
+      browser.fill(ref, "12-34-56", origin, "code");
+      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+      expect(remove).not.toHaveBeenCalled();
+      browser.fill(ref, "plain text");
+      expect(remove).toHaveBeenCalledWith("-webkit-text-security");
+    });
+
+    it("matches slots drawn in another case", () => {
+      const { browser, ref, set, document } = widget();
+      const input = document.querySelector<HTMLInputElement>("input")!;
+      const slots = [...document.querySelectorAll("#widget > div")];
+      input.addEventListener("input", () =>
+        slots.forEach((slot, at) => {
+          slot.textContent = (input.value[at] ?? "·").toUpperCase();
+        }),
+      );
+      browser.fill(ref, "ab12cd", origin, "code");
+      expect(set).toHaveBeenCalledWith("-webkit-text-security", "disc", "important");
+    });
+
+    it("keeps the code out of the snapshot's listing of the box", () => {
+      const { browser, ref } = widget();
+      browser.fill(ref, "123456", origin, "code");
+      const snapshot = browser.snapshot();
+      expect(snapshot.elements.find((element) => element.name === "Code")?.value).toBeUndefined();
+    });
+  });
+
+  it("clears a box that only partly accepts the code, saying code", () => {
+    const { domWindow, fill } = fillCode(
+      '<input aria-label="Code" type="email" />',
+      "Code",
+      // An email box trims surrounding spaces, so what it holds differs from what was set.
+      " 123456 ",
+    );
+    expect(fill).toThrow(/^Refused: This field didn't accept the code, so it was cleared\.$/);
+    expect(fieldValue(domWindow, "Code")).toBe("");
+  });
+});
+
 describe("live page helper card fill", () => {
   const html = `
     <input aria-label="Card number" />

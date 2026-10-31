@@ -278,6 +278,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Approve this server to let your agent use its tools.":
     "Одобрите сервер, чтобы агент мог использовать его инструменты.",
   "Answered: {answer}": "Отвечено: {answer}",
+  "Only enter a code {host} sent you.": "Вводите только код, который вам прислал {host}.",
   Archive: "Архивировать",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "Архивирование сохраняет всё и обратимо. Удаление необратимо.",

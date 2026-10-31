@@ -22,6 +22,7 @@ export const BROWSER_ACT_KINDS = [
   "fill_secret",
   "fill_card",
   "fill_pay_token",
+  "fill_code",
 ] as const;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
 
@@ -41,7 +42,14 @@ export type CardFillStep = {
 };
 /** The model never supplies or sees the token. */
 export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
-export type BrowserActInput = BrowserActStep | SecretFillStep | CardFillStep | PayTokenFillStep;
+/** Types the code the user entered for the run's last code request; the model never sees it. */
+export type CodeFillStep = { kind: "fill_code"; ref: string };
+export type BrowserActInput =
+  | BrowserActStep
+  | SecretFillStep
+  | CardFillStep
+  | PayTokenFillStep
+  | CodeFillStep;
 /** desktopTools: the run also has computer_act, so a page-tool failure can fall back to it. */
 export type PageToolOptions = { desktopTools?: boolean };
 export type ResolveSecretFill = (
@@ -51,6 +59,17 @@ export type ResolveSecretFill = (
 export type ResolveCardFill = (
   step: CardFillStep,
 ) => Promise<{ text: string; origin: string } | { error: string }>;
+
+/** `claim` takes the code for this one fill; `restore` gives it back if the page refused. */
+export type ResolveCodeFill = (step: CodeFillStep) => Promise<
+  | {
+      text: string;
+      origin: string;
+      claim: () => Promise<boolean>;
+      restore: () => Promise<void>;
+    }
+  | { error: string }
+>;
 
 export type ResolvePayTokenFill = (
   step: PayTokenFillStep,
@@ -120,6 +139,7 @@ export async function browserActFromTool(
     resolveSecretFill?: ResolveSecretFill;
     resolveCardFill?: ResolveCardFill;
     resolvePayTokenFill?: ResolvePayTokenFill;
+    resolveCodeFill?: ResolveCodeFill;
     redactions?: () => string[];
     /** Maps a bot-facing workspace path to its path in the computer's home. */
     resolveUploadPath?: (path: string) => string;
@@ -129,6 +149,10 @@ export async function browserActFromTool(
 ) {
   try {
     const actions: BrowserActStep[] = [];
+    // The code this batch types, with the action that types it.
+    let codeTyped:
+      | { index: number; claim: () => Promise<boolean>; restore: () => Promise<void> }
+      | undefined;
     // Resolve every saved login and card before acting, so a missing one cannot leave a
     // half-filled form.
     for (const step of parseBrowserActions(args.actions)) {
@@ -164,6 +188,32 @@ export async function browserActFromTool(
         if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
         const { text, origin, merchantAccountId } = resolved;
         actions.push({ kind: "pay_token", text, origin, merchantAccountId });
+        continue;
+      }
+      if (step.kind === "fill_code") {
+        // One code is one fill: a second in the same batch would only be a replay.
+        if (codeTyped) throw new BrowserToolInputError("browser_act takes one fill_code at a time");
+        let resolved: Awaited<ReturnType<ResolveCodeFill>>;
+        try {
+          resolved = options.resolveCodeFill
+            ? await options.resolveCodeFill(step)
+            : { error: "Codes are unavailable here." };
+        } catch (error) {
+          context.signal.throwIfAborted();
+          getLogger().warn("one-time code could not be loaded for a fill", {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+          return { ...refusedInput("This code could not be loaded."), completed: 0 };
+        }
+        if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
+        codeTyped = { index: actions.length, claim: resolved.claim, restore: resolved.restore };
+        actions.push({
+          kind: "fill",
+          ref: step.ref,
+          text: resolved.text,
+          origin: resolved.origin,
+          field: "code",
+        });
         continue;
       }
       if (step.kind !== "fill_secret" && step.kind !== "fill_card") {
@@ -213,7 +263,23 @@ export async function browserActFromTool(
         });
       }
     }
+    // Taken just before the page is asked, by one call only, so two fills never both type it.
+    if (codeTyped && !(await codeTyped.claim())) {
+      return {
+        ...refusedInput("No code is waiting. Use request_secret with oneTimeCode."),
+        completed: 0,
+      };
+    }
     const result = await browser.act(computer, { actions, signal: context.signal }, context);
+    // A code the page took is spent. One it clearly refused goes back, so a fill on the right page
+    // can use it; any doubt about the outcome keeps it spent, never typed twice.
+    if (codeTyped && result.uncertain === false && result.completed <= codeTyped.index) {
+      await codeTyped.restore().catch((error: unknown) =>
+        getLogger().warn("one-time code could not be restored", {
+          errorName: error instanceof Error ? error.name : typeof error,
+        }),
+      );
+    }
     return redactBrowserResult(formatBrowserResult(result, options), options.redactions?.() ?? []);
   } catch (error) {
     context.signal.throwIfAborted();
@@ -273,6 +339,7 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
       return { kind, ...(ref ? { ref } : {}), purchase, field: field as PurchaseCardField };
     }
     if (!ref) throw new BrowserToolInputError(`browser_act action ${index} requires ref`);
+    if (kind === "fill_code") return { kind, ref };
     if (kind === "upload") {
       const paths = Array.isArray(action.paths)
         ? action.paths.map((path) => (typeof path === "string" ? path.trim() : ""))

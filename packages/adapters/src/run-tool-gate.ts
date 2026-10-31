@@ -342,9 +342,11 @@ export async function gateToolCall(
     nextApprovedTool || name === "request_secret" || needsApprovalEarly || gated;
   // Count before choosing a key so an approved replay (occurrence 0 / base
   // key) cannot collide with a later identical-args call in this attempt.
-  // request_secret stays single-use: retries must reuse the same card.
+  // request_secret stays single-use: retries must reuse the same card. A code is the exception:
+  // a wrong or expired one needs a new card, so each request counts, and a retry still finds its
+  // own through the saved turn.
   const occurrence =
-    name === "request_secret" || name === "connect_app"
+    (name === "request_secret" && args.oneTimeCode === undefined) || name === "connect_app"
       ? 0
       : nextMutatingEffectOccurrence(
           ctx,

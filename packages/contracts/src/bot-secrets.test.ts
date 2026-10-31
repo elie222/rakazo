@@ -11,6 +11,8 @@ import {
   LOGIN_FIELD_LIMIT,
   LoginFieldLabels,
   loginCardFields,
+  normalizeOneTimeCode,
+  OneTimeCodeTarget,
   SecretHttpRequest,
 } from "./bot-secrets.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./domain.js";
@@ -555,5 +557,54 @@ describe("command variables", () => {
       BotSecretDestinationInput.safeParse({ name: "api", origin: "", auth: { type: "bearer" } })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("one-time code contracts", () => {
+  it.each([
+    ["482913", "482913"],
+    [" 482 913 ", "482913"],
+    ["G-482913", "G-482913"],
+    ["1234", "1234"],
+    ["abcd1234efgh", "abcd1234efgh"],
+    ["123-456", "123-456"],
+    ["12-34-56", "12-34-56"],
+  ])("takes %j as %j", (typed, code) => {
+    expect(normalizeOneTimeCode(typed)).toBe(code);
+  });
+
+  it.each([
+    "",
+    "   ",
+    "ok",
+    "123",
+    "x".repeat(13),
+    "12 34 56 78 90 12 3",
+    "----",
+    "1---",
+    "a-b-",
+    "-1234",
+    "12--34",
+    "1-2-3",
+    "12.34",
+    "12_34",
+    "١٢٣٤٥٦",
+  ])("takes %j as no code", (typed) => {
+    expect(normalizeOneTimeCode(typed)).toBeUndefined();
+  });
+
+  it("is for an HTTPS origin only, never a path, credentials or plain HTTP", () => {
+    expect(OneTimeCodeTarget.safeParse({ origin: "https://login.example.test" }).success).toBe(
+      true,
+    );
+    for (const origin of [
+      "http://login.example.test",
+      "http://192.168.1.20",
+      "https://user:pass@example.test",
+      "https://login.example.test/verify",
+      "",
+    ]) {
+      expect(OneTimeCodeTarget.safeParse({ origin }).success).toBe(false);
+    }
   });
 });

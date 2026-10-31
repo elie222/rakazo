@@ -240,6 +240,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   Approve: "核准",
   "Approve this server to let your agent use its tools.": "核准此伺服器，讓代理程式使用它的工具。",
   "Answered: {answer}": "已回答：{answer}",
+  "Only enter a code {host} sent you.": "僅輸入 {host} 傳給你的驗證碼。",
   Archive: "封存",
   "Archive keeps everything and can be undone. Delete is permanent.":
     "封存會保留全部內容，可以復原。刪除不可恢復。",

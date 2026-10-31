@@ -12,6 +12,19 @@ export class SandboxRateLimitError extends Error {
   }
 }
 
+/**
+ * The sandbox supervisor refused a page browser request while parsing it, before anything was
+ * sent to the computer, so nothing ran. It is the only refusal that proves that.
+ */
+export const INVALID_BROWSER_REQUEST = "invalid_browser_request";
+export class SandboxRequestRejectedError extends Error {
+  readonly code = INVALID_BROWSER_REQUEST;
+  constructor() {
+    super("The page browser could not accept this request, so nothing was done.");
+    this.name = "SandboxRequestRejectedError";
+  }
+}
+
 /** The organization spent this month's computer allowance, so no computer that bills starts. */
 export class SandboxAllowanceUsedError extends Error {
   readonly code = "SANDBOX_ALLOWANCE_USED";
