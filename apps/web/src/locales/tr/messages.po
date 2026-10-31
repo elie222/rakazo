@@ -642,6 +642,7 @@ msgstr "Başka bir uygulamadan ajan"
 msgid "Agents:"
 msgstr "Agent'lar:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""

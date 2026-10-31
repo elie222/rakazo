@@ -9,10 +9,15 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { connectMcpOauth } from "../lib/mcp-connect";
 import { McpServersOverlay } from "./McpServersOverlay";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), test: vi.fn(), update: vi.fn() }));
-const access = vi.hoisted(() => ({ all: vi.fn(), replace: vi.fn(), bots: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  test: vi.fn(),
+  update: vi.fn(),
+  agents: vi.fn(),
+}));
+const access = vi.hoisted(() => ({ all: vi.fn(), bots: vi.fn() }));
 const api = vi.hoisted(() => ({
-  mcp: { servers: mocks, assignments: { all: access.all, replace: access.replace } },
+  mcp: { servers: mocks, assignments: { all: access.all } },
   bots: { list: access.bots },
 }));
 // One space, so no "Available in" choice appears.
@@ -94,7 +99,7 @@ let client: QueryClient;
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   access.all.mockReset().mockResolvedValue([]);
-  access.replace.mockReset().mockResolvedValue([]);
+  mocks.agents.mockReset();
   access.bots.mockReset().mockResolvedValue([]);
 });
 
@@ -440,14 +445,15 @@ it.each([
   try {
     await act(async () => root.render(overlay()));
     const agentButtons = () =>
-      Array.from(host.querySelectorAll("button")).filter((button) => button.textContent === "Ada");
-    // One in the add form and one on the server's card.
+      Array.from(host.querySelectorAll("button")).filter((button) =>
+        ["All", "Ada"].includes(button.textContent ?? ""),
+      );
     await vi.waitFor(() => expect(agentButtons()).toHaveLength(2));
     for (const button of agentButtons()) {
       expect(button.disabled).toBe(true);
       await act(async () => button.click());
     }
-    expect(access.replace).not.toHaveBeenCalled();
+    expect(mocks.agents).not.toHaveBeenCalled();
     if (state === "failed") {
       await vi.waitFor(() => expect(host.textContent).toContain("Could not load MCP servers"));
     }
@@ -456,9 +462,14 @@ it.each([
   }
 });
 
-it("lets agent access change once assignments have loaded", async () => {
-  mocks.list.mockReset().mockResolvedValue([server("docs")]);
-  access.bots.mockResolvedValue([{ id: "bot_1", name: "Ada" }]);
+it("narrows a server shared with every agent to the ones left selected", async () => {
+  const shared = { ...server("docs"), allBots: true };
+  mocks.list.mockReset().mockResolvedValue([shared]);
+  mocks.agents.mockResolvedValue({ server: { ...shared, allBots: false }, assignments: [] });
+  access.bots.mockResolvedValue([
+    { id: "bot_1", name: "Ada" },
+    { id: "bot_2", name: "Grace" },
+  ]);
   access.all.mockResolvedValue([
     { botId: "bot_1", serverId: "other", allowAllTools: true, allowedTools: [] },
   ]);
@@ -466,20 +477,16 @@ it("lets agent access change once assignments have loaded", async () => {
   const root = createRoot(host);
   try {
     await act(async () => root.render(overlay()));
-    const cardButton = () =>
-      Array.from(host.querySelectorAll("button")).filter(
-        (button) => button.textContent === "Ada",
-      )[1];
-    await vi.waitFor(() => expect(cardButton()?.disabled).toBe(false));
-    await act(async () => cardButton()!.click());
-    // The bot keeps the assignment it already had.
-    expect(access.replace).toHaveBeenCalledWith({
-      botId: "bot_1",
-      assignments: [
-        { botId: "bot_1", serverId: "other", allowAllTools: true, allowedTools: [] },
-        { serverId: "docs", allowAllTools: true, allowedTools: [] },
-      ],
-    });
+    const button = (name: string) =>
+      Array.from(host.querySelectorAll("button")).find((item) => item.textContent === name);
+    await vi.waitFor(() => expect(button("Ada")?.disabled).toBe(false));
+    expect(button("All")?.querySelector("svg")).not.toBeNull();
+    mocks.list.mockResolvedValue([{ ...shared, allBots: false }]);
+    await act(async () => button("Ada")!.click());
+    expect(mocks.agents).toHaveBeenCalledWith({ id: "docs", allBots: false, botIds: ["bot_2"] });
+    await vi.waitFor(() => expect(button("All")?.querySelector("svg")).toBeNull());
+    await act(async () => button("All")!.click());
+    expect(mocks.agents).toHaveBeenLastCalledWith({ id: "docs", allBots: true, botIds: [] });
   } finally {
     await act(async () => root.unmount());
   }

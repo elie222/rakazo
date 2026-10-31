@@ -642,6 +642,7 @@ msgstr "किसी दूसरे ऐप से एजेंट"
 msgid "Agents:"
 msgstr "एजेंट:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""

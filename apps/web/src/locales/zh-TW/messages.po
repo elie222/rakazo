@@ -643,6 +643,7 @@ msgstr "來自其他應用程式的代理"
 msgid "Agents:"
 msgstr "代理程式："
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""

@@ -642,6 +642,7 @@ msgstr "Agente de outro app"
 msgid "Agents:"
 msgstr "Agentes:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""

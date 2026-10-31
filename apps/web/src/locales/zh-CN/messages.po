@@ -642,6 +642,7 @@ msgstr "来自其他应用的智能体"
 msgid "Agents:"
 msgstr "Agent："
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr "全部"

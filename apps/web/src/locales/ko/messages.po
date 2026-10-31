@@ -642,6 +642,7 @@ msgstr "다른 앱의 에이전트"
 msgid "Agents:"
 msgstr "사용 Bot:"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "All"
 msgstr ""
