@@ -54,5 +54,8 @@ The app checks for updates and downloads them in the background. When one is rea
 
 - Cmd+N (Ctrl+N): create a bot, group or space.
 - Cmd+K (Ctrl+K): jump to any bot.
+- Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
+- Cmd+Shift+] / Cmd+Shift+[ (Ctrl+Shift+] / Ctrl+Shift+[ on Windows and Linux): switch to
+  the next or previous bot in the browser.
 
 The dock icon shows a badge count of unread chats.

@@ -14,7 +14,12 @@ import type { createSpaceRpc } from "../../lib/rpc";
 import { selectSpace } from "../../lib/rpc";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
-import { isCommandPaletteHotkey } from "./command-palette-hotkey";
+import {
+  cycleBotId,
+  isCommandPaletteHotkey,
+  isSwitchBotBackHotkey,
+  isSwitchBotHotkey,
+} from "./command-palette-hotkey";
 import type { CreateBotDialogInput } from "./create-bot-dialog";
 import { CreateBotDialog } from "./create-bot-dialog";
 import {
@@ -30,8 +35,21 @@ import {
 type ChatTarget = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 type SectionTarget = { section: BotSection; spaceId: string };
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+}
+
 /** Which of the shell's dialogs and menus are open, and on what. */
-export function useShellDialogs() {
+export function useShellDialogs({
+  bots,
+  activeId,
+  onSelectBot,
+}: {
+  bots: Bot[];
+  activeId: string | undefined;
+  onSelectBot: (botId: string) => void;
+}) {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
@@ -53,6 +71,18 @@ export function useShellDialogs() {
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const dialogOpen =
+    deleteTarget !== null ||
+    deleteGroupTarget !== null ||
+    deleteSpaceTarget !== null ||
+    spaceMenu !== null ||
+    clearTarget !== null ||
+    newSectionTarget !== null ||
+    renameSectionTarget !== null ||
+    deleteSectionTarget !== null ||
+    newSpaceOpen ||
+    createBotOpen ||
+    commandPaletteOpen;
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!isCommandPaletteHotkey(event)) return;
@@ -62,6 +92,18 @@ export function useShellDialogs() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const step = isSwitchBotHotkey(event) ? 1 : isSwitchBotBackHotkey(event) ? -1 : null;
+      if (step === null || dialogOpen || isEditableTarget(event.target)) return;
+      const botId = cycleBotId(bots, activeId, step);
+      if (!botId) return;
+      event.preventDefault();
+      onSelectBot(botId);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, bots, dialogOpen, onSelectBot]);
   return {
     deleteTarget,
     setDeleteTarget,

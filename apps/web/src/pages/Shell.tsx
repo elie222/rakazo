@@ -236,7 +236,6 @@ function SpaceShell() {
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
-  const dialogs = useShellDialogs();
   const [botMenu, setBotMenu] = useState<{ kind: "bot" | "group"; id: string } | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
@@ -260,6 +259,18 @@ function SpaceShell() {
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ?? bots[0]);
+  const selectBot = useCallback(
+    (id: string) => {
+      setMobileSidebarOpen(false);
+      navigate(`/app/${id}`);
+    },
+    [navigate, setMobileSidebarOpen],
+  );
+  const dialogs = useShellDialogs({
+    bots,
+    activeId: active?.id,
+    onSelectBot: selectBot,
+  });
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
     [active?.color, active?.id],
