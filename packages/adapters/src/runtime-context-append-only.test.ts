@@ -20,6 +20,7 @@ const model = {
 type Step =
   | { tool: "shell"; text: string }
   | { tool: "browser_snapshot"; text: string }
+  | { tool: "request_takeover"; text: string }
   | { tool: "computer_observe"; screenshot: true }
   | { steer: string };
 
@@ -138,12 +139,15 @@ function simulateRun(
     cacheTracker?: ContextCacheTracker;
     tick?: () => void;
     systemPrompt?: (step: number) => string;
+    /** A resumed run: the restored transcript, and the step number its new calls start from. */
+    resume?: { messages: Message[]; firstStep: number };
   } = {},
 ) {
   const policy = createRuntimeContextPolicy(input, undefined, {
     cacheTracker: options.cacheTracker,
   });
-  const messages = initialMessages(input);
+  const messages = options.resume ? [...options.resume.messages] : initialMessages(input);
+  const offset = options.resume?.firstStep ?? 0;
   const sent: Context[] = [];
   const send = (step: number) => {
     const context = policy.prepareContext(
@@ -159,7 +163,8 @@ function simulateRun(
     options.tick?.();
     return context;
   };
-  for (const [index, step] of steps.entries()) {
+  for (const [position, step] of steps.entries()) {
+    const index = position + offset;
     const context = send(index);
     if ("steer" in step) {
       messages.push({ role: "user", content: step.steer, timestamp: 1000 + index });
@@ -191,7 +196,7 @@ function simulateRun(
       timestamp: 1000 + index,
     } as Message);
   }
-  send(steps.length);
+  send(steps.length + offset);
   return sent;
 }
 
@@ -220,20 +225,21 @@ const toolHeavyRun: Step[] = [
 
 describe("append-only run transcript", () => {
   it.each(["current", "retrieval", "snapshots", "cache-aware"] as const)(
-    "never rewrites what a %s run already sent",
+    "rewrites what a %s run already sent only to drop older screenshots",
     (contextStrategy) => {
       const sent = simulateRun(request({ contextStrategy }), toolHeavyRun);
       expect(sent).toHaveLength(toolHeavyRun.length + 1);
-      expect(rewrites(sent)).toEqual([]);
+      // The third and fourth screenshots each push the oldest one out of the request.
+      expect(rewrites(sent)).toEqual([9, 12]);
       for (const context of sent) expect(staleThinking(context)).toEqual([]);
-      // Old tool output, page state and screenshots stay as first sent; nothing was trimmed.
+      // Old tool output and page state stay as first sent.
       const last = JSON.stringify(sent.at(-1));
       expect(last).toContain("first log line");
       expect(last).toContain("page one");
       expect(last).not.toContain("Tool result truncated");
       expect(last).not.toContain("Earlier page state trimmed");
-      expect(imageCount(sent.at(-1)!)).toBe(4);
-      expect(thinkingCount(sent.at(-1)!)).toBe(toolHeavyRun.length - 1);
+      expect(imageCount(sent.at(-1)!)).toBe(2);
+      expect(last.match(/Older screenshot removed/g)).toHaveLength(2);
     },
   );
 
@@ -256,7 +262,8 @@ describe("append-only run transcript", () => {
         now += now % 2 ? 1 : 400_000;
       },
     });
-    expect(rewrites(sent)).toEqual([]);
+    // Only the two calls that drop an older screenshot differ from what came before.
+    expect(rewrites(sent)).toEqual([9, 12]);
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
   });
 
@@ -324,7 +331,7 @@ describe("append-only run transcript", () => {
     expect(thinkingCount(rebuilt)).toBeLessThan(thinkingCount(sent[first! - 1]!));
   });
 
-  it("rebuilds at the model's image limit and keeps the two latest screenshots", () => {
+  it("keeps the two latest screenshots under a larger model image limit without rebuilding", () => {
     const input = request({
       contextStrategy: "retrieval",
       model: { provider: "synthetic-provider", id: "synthetic-model", maxImagesPerPrompt: 5 },
@@ -334,8 +341,8 @@ describe("append-only run transcript", () => {
       screenshot: true,
     }));
     const sent = simulateRun(input, steps);
-    expect(sent.map(imageCount)).toEqual([0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 2]);
-    expect(rewrites(sent)).toEqual([6, 10]);
+    expect(sent.map(imageCount)).toEqual([0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+    expect(rewrites(sent)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
   });
 
@@ -726,11 +733,15 @@ describe("append-only run transcript boundaries", () => {
     expect(extendsPrevious({ ...first, messages: live.slice(0, 1) }, next)).toBe(true);
   });
 
-  it("never sends more than one image under a one-image limit", () => {
+  it.each([1, 2])("never sends more than %i image(s) under that model limit", (limit) => {
     const input = request(
       {
         contextStrategy: "retrieval",
-        model: { provider: "synthetic-provider", id: "synthetic-model", maxImagesPerPrompt: 1 },
+        model: {
+          provider: "synthetic-provider",
+          id: "synthetic-model",
+          maxImagesPerPrompt: limit,
+        },
       },
       0,
     );
@@ -739,19 +750,117 @@ describe("append-only run transcript boundaries", () => {
       screenshot: true,
     }));
     const sent = simulateRun(input, steps);
-    expect(sent.map(imageCount)).toEqual([0, 1, 1, 1, 1, 1, 1]);
+    expect(sent.map(imageCount)).toEqual(
+      Array.from({ length: 7 }, (_, call) => Math.min(call, limit)),
+    );
     for (const context of sent) expect(staleThinking(context)).toEqual([]);
   });
 
-  it("rebuilds an unlimited run once sixteen stale screenshots could be dropped", () => {
+  it("never sends more than two screenshots and keeps the messages before the oldest dropped one", () => {
     const input = request({ contextStrategy: "retrieval" }, 0);
     const steps: Step[] = Array.from({ length: 24 }, () => ({
       tool: "computer_observe",
       screenshot: true,
     }));
     const sent = simulateRun(input, steps);
-    expect(Math.max(...sent.map(imageCount))).toBe(17);
-    expect(rewrites(sent)).toEqual([18]);
-    expect(imageCount(sent[18]!)).toBe(2);
+    expect(Math.max(...sent.map(imageCount))).toBe(2);
+    // Every older frame stays in the transcript as a note instead of vanishing.
+    expect(JSON.stringify(sent.at(-1)).match(/Older screenshot removed/g)).toHaveLength(22);
+    for (const [index, context] of sent.entries()) {
+      expect(staleThinking(context)).toEqual([]);
+      if (index < 3) continue;
+      // Each call drops the image of the screenshot before the latest two: its predecessor's
+      // request is otherwise the same up to that message.
+      const before = sent[index - 1]!.messages;
+      const frame = context.messages.findIndex(
+        (message) => message.role === "toolResult" && message.toolCallId === `call-${index - 3}`,
+      );
+      expect(JSON.stringify(context.messages.slice(0, frame))).toBe(
+        JSON.stringify(before.slice(0, frame)),
+      );
+    }
+    // Thinking written before the first dropped frame survives; after it, it is gone.
+    const last = sent.at(-1)!.messages;
+    const firstDropped = last.findIndex(
+      (message) => message.role === "toolResult" && message.toolCallId === "call-0",
+    );
+    const thinkingAt = last.flatMap((message, index) =>
+      message.role === "assistant"
+        ? [[index, thinkingCount({ messages: [message] })] as const]
+        : [],
+    );
+    expect(thinkingAt.filter(([index]) => index < firstDropped).map(([, count]) => count)).toEqual([
+      1,
+    ]);
+    expect(thinkingAt.filter(([index]) => index > firstDropped).every(([, count]) => !count)).toBe(
+      true,
+    );
+  });
+
+  it("resumes after a takeover with its request, resume note and latest screenshots intact", () => {
+    const input = request({ contextStrategy: "retrieval" }, 0);
+    const screenshots = (count: number): Step[] =>
+      Array.from({ length: count }, () => ({ tool: "computer_observe", screenshot: true }));
+    const paused = simulateRun(input, [
+      ...screenshots(4),
+      { tool: "request_takeover", text: '{"ok":true}' },
+    ]);
+    const note = "The user handed the computer back. Continue using the current screen state.";
+    // The checkpoint holds what the paused run last sent; the resume note follows it.
+    const restored = [
+      ...paused.at(-1)!.messages,
+      { role: "user", content: note, timestamp: 2000 } as Message,
+    ];
+    const resumed = simulateRun(input, screenshots(3), {
+      resume: { messages: restored, firstStep: 10 },
+    });
+    const frames = (context: Context) =>
+      context.messages.flatMap((message) =>
+        message.role === "toolResult" && message.content.some((part) => part.type === "image")
+          ? [message.toolCallId]
+          : [],
+      );
+    // The first call after the takeover still shows the screen as it was handed over.
+    expect(frames(resumed[0]!)).toEqual(["call-2", "call-3"]);
+    expect(frames(resumed.at(-1)!)).toEqual(["call-11", "call-12"]);
+    for (const context of resumed) {
+      expect(imageCount(context)).toBeLessThanOrEqual(2);
+      expect(staleThinking(context)).toEqual([]);
+      const text = JSON.stringify(context.messages);
+      expect(text).toContain(note);
+      expect(
+        context.messages.some(
+          (message) => message.role === "toolResult" && message.toolName === "request_takeover",
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("trims a restored transcript that still holds every screenshot on its first call", () => {
+    const input = request({ contextStrategy: "retrieval" }, 0);
+    const restored: Message[] = [
+      { role: "user", content: input.prompt, timestamp: 1 },
+      ...Array.from({ length: 4 }, (_, index) => [
+        {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: `call-${index}`, name: "computer_observe", arguments: {} },
+          ],
+          timestamp: 10 + index,
+        } as unknown as Message,
+        {
+          role: "toolResult",
+          toolCallId: `call-${index}`,
+          toolName: "computer_observe",
+          content: [{ type: "image", data: `frame-${index}`, mimeType: "image/png" }],
+          details: { frameId: `frame-${index}` },
+          isError: false,
+          timestamp: 10 + index,
+        } as Message,
+      ]).flat(),
+    ];
+    const [first] = simulateRun(input, [], { resume: { messages: restored, firstStep: 10 } });
+    expect(imageCount(first!)).toBe(2);
+    expect(JSON.stringify(first!.messages).match(/Older screenshot removed/g)).toHaveLength(2);
   });
 });

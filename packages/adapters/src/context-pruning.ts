@@ -3,6 +3,7 @@ import type { Message } from "@earendil-works/pi-ai";
 type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
+const SCREENSHOT_REMOVED_NOTE = "[Older screenshot removed; observe again if needed]";
 
 export class ModelImageLimitError extends Error {}
 
@@ -69,8 +70,8 @@ function textLength(message: ToolResultMessage): number {
 
 /**
  * Keep the latest screenshots within an optional model image budget. The runtime context policy
- * applies this only when it rebuilds a run's transcript; between rebuilds screenshots accumulate
- * up to the model's limit, so a rebuild keeps at most the default two to leave room for more.
+ * applies this to every request, so a run never carries more than the default two (fewer under a
+ * smaller model limit). An older frame keeps its result text and gains a one-line note.
  */
 export function pruneComputerScreenshotContext(
   messages: Message[],
@@ -103,7 +104,10 @@ export function pruneComputerScreenshotContext(
     transformed ??= [...messages];
     transformed[index] = {
       ...message,
-      content: message.content.filter((part) => part.type !== "image"),
+      content: [
+        ...message.content.filter((part) => part.type !== "image"),
+        { type: "text", text: SCREENSHOT_REMOVED_NOTE },
+      ],
     };
   }
   return transformed ?? messages;
