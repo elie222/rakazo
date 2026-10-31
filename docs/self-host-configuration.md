@@ -136,6 +136,8 @@ The API listens on `API_HOST` (default `127.0.0.1`) and `API_PORT` (default `310
 unless a container or a trusted reverse proxy must reach it; the Compose files set this for you.
 The published-images stack publishes the web app on `127.0.0.1:5173` and the API on
 `127.0.0.1:3100`; set `RAKAZO_WEB_PORT` or `RAKAZO_API_PORT` to use other host ports.
+For LAN access, set `RAKAZO_WEB_BIND` as described in
+[Connecting a phone on the same network](./self-host-clients.md#connecting-a-phone-on-the-same-network).
 
 ## Outbound proxy
 
