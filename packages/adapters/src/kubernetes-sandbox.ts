@@ -626,6 +626,12 @@ export class KubernetesSandboxProvider implements SandboxProvider {
               { name: "VNC_RESOLUTION", value: "1280x800" },
             ],
             ports: [{ name: "screen", containerPort: READY_PORT, protocol: "TCP" }],
+            // Matches the Docker computer: no capabilities, no privilege escalation, default seccomp.
+            securityContext: {
+              allowPrivilegeEscalation: false,
+              capabilities: { drop: ["ALL"] },
+              seccompProfile: { type: "RuntimeDefault" },
+            },
             readinessProbe: {
               tcpSocket: { port: READY_PORT },
               initialDelaySeconds: 1,
