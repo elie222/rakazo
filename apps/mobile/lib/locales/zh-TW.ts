@@ -373,6 +373,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Could not share image": "無法分享圖片",
   "Loading image…": "正在載入圖片…",
   "Open image {name}": "開啟圖片 {name}",
+  "Open {name}": "開啟 {name}",
   "Tap to open": "點按開啟",
   "Could not open message": "無法開啟訊息",
   "Could not play a sample": "無法播放示例",

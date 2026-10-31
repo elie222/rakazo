@@ -168,6 +168,17 @@ vi.mock("react-native", () => {
         "data-mention-colors": JSON.stringify(
           segments.map((segment) => (segment.props as { style?: { color?: string } }).style?.color),
         ),
+        "data-mention-backgrounds": JSON.stringify(
+          segments.map(
+            (segment) =>
+              (segment.props as { style?: { backgroundColor?: string } }).style?.backgroundColor,
+          ),
+        ),
+        "data-mention-weights": JSON.stringify(
+          segments.map(
+            (segment) => (segment.props as { style?: { fontWeight?: string } }).style?.fontWeight,
+          ),
+        ),
         readOnly: true,
         "data-style": JSON.stringify(style),
         "data-scroll-enabled": scrollEnabled,
@@ -192,7 +203,14 @@ vi.mock("../components/glass-surface", () => ({
     createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("./native", () => ({ useMobileTokens: () => ({}), useResolvedAppearance: () => "light" }));
+vi.mock("../components/bot-avatar", () => ({
+  BotAvatar: ({ identity, size }: { identity?: string; size?: number }) =>
+    createElement("span", { "data-avatar": identity, "data-size": size }),
+}));
+vi.mock("./native", () => ({
+  useMobileTokens: () => ({ link: "token-link" }),
+  useResolvedAppearance: () => "light",
+}));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 
 const skill = {
@@ -329,12 +347,119 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('button[aria-label="Remove mention {name}"]')).toBeNull();
   });
 
-  it("colors a bot mention with the bot's identity color", () => {
+  it("tints a mention in the link color without a background", () => {
     render({ composerMentionTargets: [{ ...bot, color: "#3366FF" }] });
     type("ask @He");
     press("@{name}");
     type("ask @Helper now");
-    expect(JSON.parse(field().dataset.mentionColors!)).toEqual([null, "#3366FF", null]);
+    expect(JSON.parse(field().dataset.mentionColors!)).toEqual([null, "token-link", null]);
+    expect(JSON.parse(field().dataset.mentionBackgrounds!)).toEqual([null, null, null]);
+  });
+
+  it("keeps a backspace at the end of a mention as a selection first, then removes it with its space", () => {
+    type("ask @He");
+    press("@{name}");
+    type("ask @Helper now");
+    select(11);
+    type("ask @Helpe now");
+    expect(field().value).toBe("ask @Helper now");
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    select(11);
+    type("ask @Helpe now");
+    expect(field().value).toBe("ask now");
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 4, end: 4 });
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("needs two backspaces after picking a mention: select it, then remove it with its space", () => {
+    type("ask @He");
+    press("@{name}");
+    expect(field().value).toBe("ask @Helper ");
+    select(12);
+    type("ask @Helper");
+    expect(field().value).toBe("ask @Helper ");
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 12, end: 12 });
+    select(12);
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    type("ask @Helpe");
+    expect(field().value).toBe("ask ");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("keeps a mention coloured and apart from the next word when its space is backspaced mid-text", () => {
+    type("ask @He");
+    press("@{name}");
+    type("ask @Helper now");
+    select(12);
+    type("ask @Helpernow");
+    expect(field().value).toBe("ask @Helper now");
+    expect(JSON.parse(field().dataset.mentionColors!)).toEqual([null, "token-link", null]);
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    select(12);
+    type("ask @Helpernow");
+    expect(field().value).toBe("ask now");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("deselects a selected mention when the caret moves or other text is typed", () => {
+    type("ask @He");
+    press("@{name}");
+    type("ask @Helper now");
+    select(11);
+    type("ask @Helpe now");
+    // The native input reports the caret it was put back at.
+    select(11);
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    select(3);
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, null, null]);
+    select(11);
+    type("ask @Helpe now");
+    select(11);
+    expect(JSON.parse(field().dataset.mentionWeights!)).toEqual([null, "bold", null]);
+    type("ask @Helper! now");
+    expect(JSON.parse(field().dataset.mentionWeights!).every((w: unknown) => !w)).toBe(true);
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  function pickerRows() {
+    return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="@{name}"]')];
+  }
+
+  it("lists one row per bot with its avatar and name, at most five", () => {
+    const bots = ["Ada", "Ben", "Cleo", "Dan", "Eve", "Fay", "Gus"].map((name) => ({
+      kind: "bot" as const,
+      id: `bot-${name}`,
+      name,
+    }));
+    render({ composerMentionTargets: bots });
+    type("@");
+    const rows = pickerRows();
+    expect(rows.map((row) => row.textContent)).toEqual(["Ada", "Ben", "Cleo", "Dan", "Eve"]);
+    expect(rows[0]!.querySelector("[data-avatar]")!.getAttribute("data-avatar")).toBe("bot-Ada");
+    expect(rows[0]!.querySelector("[data-avatar]")!.getAttribute("data-size")).toBe("24");
+  });
+
+  it("puts everyone first in a group and filters by the words of a name", () => {
+    const everyone = { kind: "everyone", id: "everyone", name: "everyone" } as const;
+    const members = [
+      { kind: "bot", id: "bot-a", name: "Research Bot" },
+      { kind: "bot", id: "bot-b", name: "Chef" },
+    ] as const;
+    render({ composerMentionTargets: [everyone, ...members] });
+    type("@");
+    expect(pickerRows().map((row) => row.textContent)).toEqual([
+      "everyone",
+      "Research Bot",
+      "Chef",
+    ]);
+    type("@bo");
+    expect(pickerRows().map((row) => row.textContent)).toEqual(["Research Bot"]);
+    type("@al");
+    expect(pickerRows().map((row) => row.textContent)).toEqual(["everyone"]);
+    type("@zzz");
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
   });
 
   it("keeps inserted text when backspacing into a mention afterwards", () => {
@@ -343,7 +468,9 @@ describe("thread composer isolation", () => {
     act(() => composer.current!.insert("shared text"));
     select(11);
     type("ask @Helpe \nshared text");
-    expect(composer.current!.snapshot().promptText).toBe("ask  \nshared text");
+    select(11);
+    type("ask @Helpe \nshared text");
+    expect(composer.current!.snapshot().promptText).toBe("ask \nshared text");
     expect(JSON.parse(field().dataset.selection!)).toEqual({ start: 4, end: 4 });
     expect(composer.current!.snapshot().mentions).toEqual([]);
   });
@@ -474,10 +601,14 @@ describe("thread composer isolation", () => {
         select(end);
         if (order === "selection-first") select(end - 1);
         type(index === 0 ? "@Bo and @Bob " : "@Bob and @Bo ");
-        expect(field().value).toBe(index === 0 ? " and @Bob " : "@Bob and  ");
+        // The first backspace only selects the mention; the second removes it.
+        select(end);
+        if (order === "selection-first") select(end - 1);
+        type(index === 0 ? "@Bo and @Bob " : "@Bob and @Bo ");
+        expect(field().value).toBe(index === 0 ? "and @Bob " : "@Bob and ");
         expect(JSON.parse(field().dataset.selection!)).toEqual({
-          start: end - 4,
-          end: end - 4,
+          start: index === 0 ? 0 : 9,
+          end: index === 0 ? 0 : 9,
         });
         expect(composer.current!.snapshot().mentions).toMatchObject(
           index === 0 ? [bobGroup] : [bobBot],
@@ -548,7 +679,9 @@ describe("thread composer isolation", () => {
     pickMentionAt(1);
     select(7);
     type("@Helpe and @Helper Smith ");
-    expect(field().value).toBe(" and @Helper Smith ");
+    select(7);
+    type("@Helpe and @Helper Smith ");
+    expect(field().value).toBe("and @Helper Smith ");
     expect(composer.current!.snapshot().mentions).toEqual([longer]);
   });
 
@@ -607,11 +740,15 @@ describe("thread composer isolation", () => {
     press("@{name}");
     select(27);
     type("first @Helper  then @Helpe ");
-    expect(field().value).toBe("first @Helper  then  ");
+    select(27);
+    type("first @Helper  then @Helpe ");
+    expect(field().value).toBe("first @Helper  then ");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
     select(13);
-    type("first @Helpe  then  ");
-    expect(field().value).toBe("first   then  ");
+    type("first @Helpe  then ");
+    select(13);
+    type("first @Helpe  then ");
+    expect(field().value).toBe("first  then ");
     expect(composer.current!.snapshot().mentions).toEqual([]);
   });
 
@@ -774,6 +911,44 @@ describe("thread composer isolation", () => {
     render();
     expect(field().value).toBe("Hello @Helper ");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("opens the picker for a new @ after a restored draft with mentions is deleted key by key", () => {
+    type("Hello @He");
+    press("@{name}");
+    type("Hello @Helper and @He");
+    press("@{name}");
+    render({ threadKey: "bot-2" });
+    render();
+    expect(field().value).toBe("Hello @Helper and @Helper ");
+    // The native input deletes one character per key and keeps showing the text the composer
+    // gives back, such as a selected mention that is not deleted yet.
+    let caret = field().value.length;
+    for (let key = 0; key < 80 && field().value.length > 0; key += 1) {
+      const shown = field().value;
+      select(caret);
+      type(shown.slice(0, caret - 1) + shown.slice(caret));
+      const placed = field().dataset.selection;
+      caret = placed ? (JSON.parse(placed) as { start: number }).start : caret - 1;
+      select(caret);
+    }
+    expect(field().value).toBe("");
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+    type("@");
+    select(1);
+    expect(pickerRows()).toHaveLength(1);
+  });
+
+  it("keeps the picker open when the native input reports the text it already shows", () => {
+    type(" ");
+    select(0);
+    type("@ ");
+    select(1);
+    expect(pickerRows()).toHaveLength(1);
+    // The caret sits before the space; a repeated report must not move the query to the end.
+    type("@ ");
+    expect(pickerRows()).toHaveLength(1);
+    expect(field().value).toBe("@ ");
   });
 
   it("restores a draft after the app restarts", () => {

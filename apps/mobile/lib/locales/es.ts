@@ -279,6 +279,7 @@ export const ES_MESSAGES: Record<string, string> = {
   "Could not share image": "No se pudo compartir la imagen",
   "Loading image…": "Cargando imagen…",
   "Open image {name}": "Abrir imagen {name}",
+  "Open {name}": "Abrir {name}",
   "Tap to open": "Toca para abrir",
   "Could not open message": "No se pudo abrir el mensaje",
   "Could not send answer": "No se pudo enviar la respuesta",

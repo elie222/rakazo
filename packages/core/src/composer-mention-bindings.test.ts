@@ -6,6 +6,7 @@ import {
   composerMentionSegments,
   composerMentionsForPrompt,
   composerSelectedMentions,
+  resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
   updateComposerMentionBindings,
   validateComposerMentionBindings,
@@ -220,5 +221,116 @@ describe("completed mention occurrence bindings", () => {
     ).toEqual(bindings);
     expect(validateComposerMentionBindings("changed", bindings)).toEqual([]);
     expect(validateComposerMentionBindings(text, { name: "Bob" })).toEqual([]);
+  });
+});
+
+describe("two-step mention delete", () => {
+  const caret = (at: number) => ({ start: at, end: at });
+
+  it("keeps the text and selects the mention on the first backspace at its end", () => {
+    const result = resolveComposerMentionBackspace(
+      text,
+      "@Bo and @Bob ",
+      bindings,
+      { before: [caret(4)] },
+      null,
+    );
+    expect(result).toEqual({ text, bindings, caret: 4, selected: 0 });
+  });
+
+  it("selects the mention instead of deleting the space after it", () => {
+    const result = resolveComposerMentionBackspace(
+      text,
+      "@Boband @Bob ",
+      bindings,
+      { before: [caret(5)] },
+      null,
+    );
+    expect(result).toEqual({ text, bindings, caret: 5, selected: 0 });
+  });
+
+  it("removes the mention and its space on the second backspace from after the space", () => {
+    const result = resolveComposerMentionBackspace(
+      text,
+      "@Boband @Bob ",
+      bindings,
+      { before: [caret(5)] },
+      0,
+    );
+    expect(result).toEqual({
+      text: "and @Bob ",
+      bindings: [{ start: 4, end: 8, mention: group }],
+      caret: 0,
+      selected: null,
+    });
+  });
+
+  it("never leaves a mention glued to the next word in mid-text", () => {
+    const mid = "hi @Bob now";
+    const only = [{ start: 3, end: 7, mention: bot }];
+    const first = resolveComposerMentionBackspace(
+      mid,
+      "hi @Bobnow",
+      only,
+      { before: [caret(8)] },
+      null,
+    );
+    expect(first).toEqual({ text: mid, bindings: only, caret: 8, selected: 3 });
+    const second = resolveComposerMentionBackspace(
+      mid,
+      "hi @Bobnow",
+      only,
+      { before: [caret(8)] },
+      3,
+    );
+    expect(second).toEqual({ text: "hi now", bindings: [], caret: 3, selected: null });
+  });
+
+  it("removes the mention and the space after it on the second backspace", () => {
+    const result = resolveComposerMentionBackspace(
+      text,
+      "@Bo and @Bob ",
+      bindings,
+      { before: [caret(4)] },
+      0,
+    );
+    expect(result).toEqual({
+      text: "and @Bob ",
+      bindings: [{ start: 4, end: 8, mention: group }],
+      caret: 0,
+      selected: null,
+    });
+  });
+
+  it("removes only the mention when no space follows it", () => {
+    const result = resolveComposerMentionBackspace(
+      "hi @Bob",
+      "hi @Bo",
+      [{ start: 3, end: 7, mention: bot }],
+      { before: [caret(7)] },
+      3,
+    );
+    expect(result).toMatchObject({ text: "hi ", bindings: [], caret: 3, selected: null });
+  });
+
+  it("selects again when a different mention is selected", () => {
+    const result = resolveComposerMentionBackspace(
+      text,
+      "@Bob and @Bo ",
+      bindings,
+      { before: [caret(13)] },
+      0,
+    );
+    expect(result).toMatchObject({ text, caret: 13, selected: 9 });
+  });
+
+  it.each([
+    ["plain text", "@Bob nd @Bob ", { start: 6, end: 6 }],
+    ["the character after the space", "@Bob nd @Bob ", { start: 6, end: 6 }],
+    ["an insertion", "@Bob and @Bobx ", { start: 13, end: 13 }],
+  ] as [string, string, ComposerMentionRange][])("ignores %s", (_label, next, before) => {
+    expect(
+      resolveComposerMentionBackspace(text, next, bindings, { before: [before] }, null),
+    ).toBeNull();
   });
 });

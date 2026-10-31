@@ -278,6 +278,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not share image": "画像を共有できませんでした",
   "Loading image…": "画像を読み込み中…",
   "Open image {name}": "画像{name}を開く",
+  "Open {name}": "{name}を開く",
   "Tap to open": "タップして開く",
   "Could not open message": "メッセージを開けませんでした",
   "Could not send answer": "回答を送信できませんでした",
