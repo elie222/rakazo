@@ -55,6 +55,7 @@ import {
   flushProgress,
   nextProgressNonce,
   publishMidTurnNarration,
+  publishNarrationBeforeAsk,
   recordExplicitNoResponse,
   showNarrationStatus,
   tryFlushPendingTools,
@@ -336,6 +337,7 @@ async function onSteered(ctx: RunContext, event: RuntimeEvent<"steered">) {
 async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">) {
   const { deps, run, runId, bot, thread, workerId, fence } = ctx;
   if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+  await publishNarrationBeforeAsk(ctx);
   const safeText = redactSecrets(event.text, ctx.secrets);
   const safeDetail = event.detail ? redactSecrets(event.detail, ctx.secrets) : event.detail;
   const safeActions = event.actions?.map((action) => ({
@@ -463,7 +465,11 @@ async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">): Promi
   await flushProgress(ctx);
   // Queued first so the text written before this call becomes its note.
   reply.pendingToolNames.push(event.name);
-  const heldNote = event.name === "message_user" ? undefined : await publishMidTurnNarration(ctx);
+  // Text before ask_user stays pending: the run pauses next, and the question needs it.
+  const heldNote =
+    event.name === "message_user" || event.name === "ask_user"
+      ? undefined
+      : await publishMidTurnNarration(ctx);
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
