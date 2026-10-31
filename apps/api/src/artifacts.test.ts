@@ -504,6 +504,18 @@ describe("storeInboundAttachment", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it("stores a CSV that a chat platform labelled as Excel as CSV", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(4));
+    await expect(
+      store({ name: "sales.csv", mimeType: "application/vnd.ms-excel", fetch }),
+    ).rejects.toBe(reachedStorage);
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: "text/csv" }),
+      expect.anything(),
+    );
+  });
+
   it("rejects unsupported types and oversize downloads before storage", async () => {
     const { put, store } = setup();
     const fetch = vi.fn(async () => new Uint8Array(9));
