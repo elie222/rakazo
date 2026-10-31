@@ -166,7 +166,26 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     await expectRefused(
       await send({ groupId: group.id, text: "hello", mentions: [{ kind: "bot", id: beta.id }] }),
     );
+    // A message that names nobody wakes every member, Beta included.
+    await expectRefused(await send({ groupId: group.id, text: "hello" }));
     expect(await userMessages(group.thread!.id)).toBe(1);
+    // A reply to a member's message wakes that member alone.
+    const reply = (author: string) =>
+      createThreadMessage(system, {
+        threadId: group.thread!.id,
+        role: "bot",
+        botId: author,
+        blocks: [{ kind: "text", text: "Which colour?" }],
+      });
+    const alphaReply = await reply(botId);
+    const betaReply = await reply(beta.id);
+    expect(
+      (await send({ groupId: group.id, text: "blue", replyToMessageId: alphaReply.id })).status,
+    ).toBe(200);
+    await expectRefused(
+      await send({ groupId: group.id, text: "blue", replyToMessageId: betaReply.id }),
+    );
+    expect(await userMessages(group.thread!.id)).toBe(2);
     // A reaction wakes the bot that wrote the message.
     expect(await react({ groupId: group.id }, group.thread!.id, beta.id)).toEqual([]);
     expect(await react({ groupId: group.id }, group.thread!.id, botId)).toHaveLength(1);

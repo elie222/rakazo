@@ -37,6 +37,7 @@ import {
   markThreadRead,
   markThreadUnreadFrom,
   reactToThreadMessage,
+  replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
@@ -110,7 +111,15 @@ export function threadsRoutes(ctx: RouterContext) {
     // A bot with its own runnable model needs no main model.
     if (
       setup.needsModel &&
-      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input)))
+      !(await botsRunOwnModels(
+        deps,
+        actor,
+        sendTargetBotIds(
+          target,
+          input,
+          target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined,
+        ),
+      ))
     ) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }

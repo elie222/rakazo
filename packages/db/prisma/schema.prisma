@@ -889,6 +889,8 @@ model Run {
   // True when these columns are the model the run must keep. A later attempt
   // may record the model it used in the same columns without setting this.
   modelPinned          Boolean           @default(false)
+  // A group message that named nobody reached this member; it may end without a reply.
+  groupReplyOptional   Boolean           @default(false)
   error                String?
   leaseOwner           String?
   leaseFence           Int               @default(0)

@@ -251,6 +251,8 @@ export interface RunContext {
   scripted: boolean;
   script: ReturnType<typeof inferScript> | undefined;
   allowSilentEmptyRun: boolean;
+  /** A group message that named no member: this member may end without replying. */
+  groupReplyOptional: boolean;
   emptyResponseText: string | undefined;
   state: RunState;
   settleRunningHelpers: () => Promise<void>;

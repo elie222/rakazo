@@ -431,7 +431,7 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(botHasMessage).toBe(false);
   });
 
-  it("wakes exactly one bot on an unmentioned group send", async () => {
+  it("wakes every member, each free to stay silent, on an unmentioned group send", async () => {
     const cookie = await signup(app, `mention-group-default-${stamp}@rakazo.test`, "Group Default");
     const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "BotA",
@@ -455,10 +455,13 @@ describeWithDatabase("structured @ mention targets", () => {
       where: { threadId: group.threadId, trigger: "user" },
     });
     await rpc(app, cookie, "threads/send", { groupId: group.id, text: "hello team" });
-    const after = await prisma.run.count({
+    const runs = await prisma.run.findMany({
       where: { threadId: group.threadId, trigger: "user" },
+      select: { botId: true, groupReplyOptional: true },
     });
-    expect(after - before).toBe(1);
+    expect(runs.length - before).toBe(2);
+    expect(runs.map((run) => run.botId).sort()).toEqual([botA.id, botB.id].sort());
+    expect(runs.every((run) => run.groupReplyOptional)).toBe(true);
   });
 
   it("wakes a mentioned group member from typed bot chips and ignores non-members", async () => {

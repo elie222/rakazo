@@ -13,6 +13,7 @@ import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.j
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { GROUP_UNADDRESSED_REPLY_GUIDANCE } from "./run-replies.js";
 import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { userProgressClientNonce } from "./user-progress.js";
 
@@ -60,6 +61,10 @@ async function runTurn(
     runtime?: (request: AgentRunRequest) => AsyncGenerator<AgentRuntimeEvent>;
     /** Lets a test hold an event write open, to land runtime events while it waits. */
     appendGate?: (event: AppendEventInput) => Promise<void> | undefined;
+    /** The run belongs to a group chat; `optional` is whether the send named nobody. */
+    group?: { optional: boolean; namedWhileRunning?: boolean };
+    /** The run already put a message in the chat, such as an ask card answered by its button. */
+    priorBotMessage?: boolean;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -82,9 +87,12 @@ async function runTurn(
     trigger: options.trigger ?? (silent ? "bot_message" : "user"),
     sourceMessageId: "source-1",
     leaseFence: 0,
+    groupReplyOptional: options.group?.optional ?? false,
     ...(options.startedAt ? { startedAt: options.startedAt } : {}),
   };
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
+    // A later message that names the member reaches the run while it works.
+    if (options.group?.namedWhileRunning) run.groupReplyOptional = false;
     if (options.runtime) {
       yield* options.runtime(request);
       return;
@@ -133,7 +141,16 @@ async function runTurn(
         return { count: 1 };
       }),
     },
-    chatGroup: { findMany: vi.fn(async () => []) },
+    chatGroup: {
+      findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => ({
+        name: "Team",
+        members: [
+          { bot: { id: "bot-1", name: "Assistant", description: null } },
+          { bot: { id: "bot-2", name: "Other", description: null } },
+        ],
+      })),
+    },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
@@ -162,7 +179,7 @@ async function runTurn(
       })),
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
-        groupId: null,
+        groupId: options.group ? "group-1" : null,
         historyCompactionSummary: null,
         historyCompactedUpToSeq: null,
         nextMessageSeq: 3,
@@ -217,7 +234,11 @@ async function runTurn(
           ? { blocks: [{ kind: "channel_message", channelId: "channel-1" }] }
           : null,
       ),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }: { where?: { runId?: string; role?: string } } = {}) =>
+        options.priorBotMessage && where?.runId === run.id && where.role === "bot"
+          ? { id: "ask-1" }
+          : null,
+      ),
     },
     task: {
       findUniqueOrThrow: vi.fn(async () => ({
@@ -275,7 +296,7 @@ async function runTurn(
       }
     }),
   };
-  const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[] }) => ({
+  const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[]; markUnread?: boolean }) => ({
     continuationRunId: null,
   }));
   const append = vi.fn(async (event: AppendEventInput) => {
@@ -309,7 +330,7 @@ async function runTurn(
   expect(runtimeRun).toHaveBeenCalled();
   if (!options.runtimeFailure)
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
-  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun };
+  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun, run };
 }
 
 /** Notes saved on the final reply's steps, in order. */
@@ -1362,4 +1383,151 @@ it("terminal cancellation wins over a runtime's open thinking marker", async () 
   expect(result.finalizeRun).not.toHaveBeenCalledWith(
     expect.objectContaining({ outcome: "failed" }),
   );
+});
+
+describe("a group member the message named nobody for", () => {
+  const text = (value: string): AgentRuntimeEvent => ({ type: "text", text: value });
+  const tool: AgentRuntimeEvent = {
+    type: "tool",
+    name: "read_file",
+    args: {},
+    executionId: "call-1",
+  };
+  const done: AgentRuntimeEvent = { type: "done" };
+
+  function turn(optional: boolean, runtimeEvents: AgentRuntimeEvent[], splitText = false) {
+    return runTurn("", false, "", [], "request", {
+      group: { optional },
+      runtimeEvents,
+      splitText,
+    });
+  }
+
+  function guidance(result: Awaited<ReturnType<typeof runTurn>>) {
+    return result.runtimeRun.mock.calls[0]![0].instructions;
+  }
+
+  it("is told to decide before using tools, and ends silently on NO_RESPONSE", async () => {
+    const result = await turn(true, [text("NO_RESPONSE"), done]);
+    expect(guidance(result)).toContain(GROUP_UNADDRESSED_REPLY_GUIDANCE);
+    expect(result.finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "completed", blocks: [], markUnread: false }),
+    );
+    expect(result.messages).toEqual([]);
+  });
+
+  it("gets neither the guidance nor a silent ending when the message named it", async () => {
+    const result = await turn(false, [text("NO_RESPONSE"), done]);
+    expect(guidance(result)).not.toContain(GROUP_UNADDRESSED_REPLY_GUIDANCE);
+    expect(result.finalizeRun.mock.calls[0]![0].blocks).not.toEqual([]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it("keeps the steps and unread mark when tools ran before NO_RESPONSE", async () => {
+    const result = await turn(true, [tool, text("NO_RESPONSE"), done]);
+    const [{ blocks, markUnread }] = result.finalizeRun.mock.calls[0]!;
+    expect(blocks.map((block) => block.kind)).toEqual(["steps"]);
+    expect(markUnread).toBe(true);
+  });
+
+  it("is not silent after it already posted a progress message", async () => {
+    const result = await runTurn("", false, "", [], "request", {
+      group: { optional: true },
+      priorProgressText: "Let me check that for you.",
+      runtimeEvents: [text("NO_RESPONSE"), done],
+    });
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it.each([".", "…", "\u200c", " \n", "\u200c."])(
+    "ends silently on a reply of only placeholder characters: %j",
+    async (placeholder) => {
+      const result = await turn(true, [text(placeholder), done]);
+      expect(result.finalizeRun).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ blocks: [], markUnread: false }),
+      );
+      expect(result.messages).toEqual([]);
+      expect(result.savedEvents.filter((event) => event.type === "thread.progress")).toEqual([]);
+    },
+  );
+
+  it.each(["—", "✓", "-", "?", "👍"])("keeps a reply of only %j", async (mark) => {
+    const result = await turn(true, [text(mark), done]);
+    expect(result.finalizeRun.mock.calls[0]![0].blocks).toEqual([{ kind: "text", text: mark }]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it("is not silent after an earlier message of its own run, such as an ask card", async () => {
+    const result = await runTurn("", false, "", [], "request", {
+      group: { optional: true },
+      priorBotMessage: true,
+      runtimeEvents: [text("NO_RESPONSE"), done],
+    });
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it("keeps an emoji reply and a placeholder after tool work", async () => {
+    const emoji = await turn(true, [text("👍"), done]);
+    expect(emoji.finalizeRun.mock.calls[0]![0].blocks).toEqual([{ kind: "text", text: "👍" }]);
+    const worked = await turn(true, [tool, text("."), done]);
+    expect(worked.finalizeRun.mock.calls[0]![0].blocks.map((block) => block.kind)).toContain(
+      "steps",
+    );
+    expect(worked.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it("still posts a placeholder when the message named the member", async () => {
+    const result = await turn(false, [text("."), done]);
+    expect(result.finalizeRun.mock.calls[0]![0].blocks).toEqual([{ kind: "text", text: "." }]);
+  });
+
+  it("does not treat an empty finish as silence", async () => {
+    const result = await turn(true, [done]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ blocks: [{ kind: "text", text: "done." }], markUnread: true }),
+    );
+  });
+
+  it("still posts and marks unread a real reply", async () => {
+    const result = await turn(true, [text("Here is the plan."), done]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [{ kind: "text", text: "Here is the plan." }],
+        markUnread: true,
+      }),
+    );
+  });
+
+  it("shows no live text while it could still turn out to be NO_RESPONSE", async () => {
+    const result = await turn(true, [text("NO_RESPONSE"), done], true);
+    const progress = result.savedEvents.filter((event) => event.type === "thread.progress");
+    expect(JSON.stringify(progress)).not.toContain("NO_");
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ blocks: [] }));
+  });
+
+  it("holds the text back past an activity line too", async () => {
+    const result = await turn(true, [
+      text("NO_RESPONSE"),
+      { type: "progress", text: "Reading the page", activity: true },
+      done,
+    ]);
+    const progress = result.savedEvents.filter((event) => event.type === "thread.progress");
+    expect(JSON.stringify(progress)).toContain("Reading the page");
+    expect(JSON.stringify(progress)).not.toContain("NO_RESPONSE");
+  });
+
+  it("streams a real reply live", async () => {
+    const result = await turn(true, [text("Here is the plan."), done], true);
+    const progress = result.savedEvents.filter((event) => event.type === "thread.progress");
+    expect(JSON.stringify(progress)).toContain("Here is the plan.");
+  });
+
+  it("no longer ends silently once a later message names it", async () => {
+    const result = await runTurn("", false, "", [], "request", {
+      group: { optional: true, namedWhileRunning: true },
+      runtimeEvents: [text("NO_RESPONSE"), done],
+    });
+    expect(result.finalizeRun.mock.calls[0]![0].blocks).not.toEqual([]);
+    expect(result.finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
 });

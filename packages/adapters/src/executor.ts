@@ -28,6 +28,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  renderGroupMembersContext,
   userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -84,7 +85,7 @@ import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import type { FleetRun } from "./fleet-tools.js";
-import { loadBotGroupDirectory, loadGroupContext } from "./group-handoff.js";
+import { loadBotGroupDirectory, loadGroupRoster } from "./group-handoff.js";
 import {
   formatCompactedSummary,
   formatRecalledMemory,
@@ -160,7 +161,12 @@ import {
   runtimeFallbackModel,
 } from "./run-model.js";
 import { createReplyState } from "./run-progress.js";
-import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty, runReplyGuidance } from "./run-replies.js";
+import {
+  DELEGATED_EMPTY_NOTICE,
+  GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  runAllowsSilentEmpty,
+  runReplyGuidance,
+} from "./run-replies.js";
 import {
   notifyRoutineRetryAttemptsExhausted,
   retryRoutineRun,
@@ -664,6 +670,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           ),
         );
         const currentRunRequiresImageInput = confirmedRunImages.length > 0;
+        const groupRoster = thread.groupId
+          ? await loadGroupRoster(deps.prisma, thread.groupId)
+          : undefined;
+        // The send decided whether the message named this member; one it named nobody for
+        // reached every member, and each may end its turn without a reply.
+        const groupReplyOptional =
+          groupRoster !== undefined && run.trigger === "user" && run.groupReplyOptional;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -1011,11 +1024,13 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           resolved.acceptsImages,
         );
         const acceptsImages = deps.runtime.describe().capabilities.scripted || modelSeesImages;
-        const groupContext = thread.groupId
-          ? await loadGroupContext(deps.prisma, thread.groupId, {
-              id: bot.id,
-              name: bot.name,
-            })
+        const groupContext = groupRoster
+          ? [
+              renderGroupMembersContext(groupRoster.name, groupRoster.members, bot),
+              groupReplyOptional ? GROUP_UNADDRESSED_REPLY_GUIDANCE : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n")
           : undefined;
         const hasMessagingIdentity = deps.messaging
           ? await deps.messaging.hasIdentity(bot.id)
@@ -1306,6 +1321,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           scripted,
           script,
           allowSilentEmptyRun,
+          groupReplyOptional,
           emptyResponseText,
           state,
           settleRunningHelpers: settleHelpers,
