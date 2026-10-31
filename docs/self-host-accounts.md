@@ -17,9 +17,15 @@ server integration credentials, or deployment updates, and cannot read deploymen
 
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions and add
-stdio MCP servers ([integrations](self-host-integrations.md)). An account counts only once its
-email is verified. It grants nothing else.
+`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
+MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+credits, give free access at `/admin/access`. An account counts only once its email is verified.
+It grants nothing else.
+
+A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
+months, or both. Whoever owns an organization with that verified email receives it the next time they
+open the app, whether they signed up before or after the grant. A grant can be revoked until it is
+received.
 
 ## Email verification and sign-in codes
 

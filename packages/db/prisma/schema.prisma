@@ -38,6 +38,7 @@ model User {
   accounts                    Account[]
   passkeys                    Passkey[]
   members                     Member[]
+  accessGrants                AccessGrant[]
   invitations                 Invitation[]
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
@@ -279,6 +280,23 @@ model Referral {
 
   @@index([referrerOrganizationId])
   @@map("referrals")
+}
+
+model AccessGrant {
+  id             String    @id @default(cuid())
+  email          String
+  creditCents    Int       @default(0)
+  freeMonths     Int       @default(0)
+  createdById    String?
+  createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  organizationId String?
+  appliedAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("access_grants")
 }
 
 model PluginSubmission {
