@@ -2020,6 +2020,23 @@ class PageBrowserTest(unittest.TestCase):
         self.assertEqual(keys, [("keyDown", "1", "s-auth"), ("keyUp", "1", "s-auth"),
                                 ("keyDown", "2", "s-auth"), ("keyUp", "2", "s-auth")])
 
+    def test_typing_into_a_frame_that_drops_characters_counts_the_step_as_done_as_on_the_page(self):
+        browser = FrameBrowser()
+        original = browser.answer
+
+        def answer(frame, expression):
+            if "focusForKeys(" in expression:
+                return {"focused": True}
+            if "focusHolds()" in expression:
+                return True
+            if "typed(" in expression:
+                return False
+            return original(frame, expression)
+        browser.answer = answer
+        result = browser.act([{"kind": "type", "ref": "f21", "text": "12"}], "auth")
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"], result["error"]),
+                         (False, 1, False, helper.NOT_KEPT))
+
     def test_typing_stops_when_a_frame_of_the_page_s_own_process_navigates(self):
         browser = FrameBrowser()
         original_answer, original_call = browser.answer, browser.call

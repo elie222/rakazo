@@ -1569,6 +1569,13 @@ class TypingStopped(RuntimeError):
     """Typing ended before the last key. The message never repeats any of the text."""
 
 
+NOT_KEPT = "The page did not keep every character typed. Check the field in this snapshot before trying again."
+
+
+class KeysNotKept(RuntimeError):
+    """Every key was pressed, but the field did not keep them all: the step ran, its result is wrong."""
+
+
 def focus_holds(client: CdpClient, session_id: str) -> bool | None:
     """Whether keys still reach the field or its code boxes; None once its document is gone."""
     try:
@@ -2139,8 +2146,7 @@ def frame_step(client: CdpClient, session_id: str, step: dict[str, Any], touched
                 moved = type_keys(client, frame.session, step["text"], multiline=bool(focus.get("multiline")),
                                   mark=mark)
                 if not moved and not typed_in_full(client, frame.session, ref, step["text"]):
-                    raise Settled("The page did not keep every character typed. "
-                                  "Check the field in this snapshot before trying again.")
+                    raise KeysNotKept(NOT_KEPT)
                 return moved
         if step.get("origin"):
             frame_site_check(client, frame, step)
@@ -2470,6 +2476,9 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                     except Exception:  # noqa: BLE001
                         snap = {"uncertain": True}
                     return {"uncertain": False, **snap, "ok": False, "completed": completed, "error": str(stopped)}
+                except KeysNotKept:
+                    return {"uncertain": False, **snapshot(client, session_id), "ok": False,
+                            "completed": completed + 1, "error": NOT_KEPT}
                 completed += 1
                 uncertain = False
                 continue
@@ -2519,8 +2528,7 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                     uncertain = False
                     if not page_changed and not typed_in_full(client, session_id, ref, step["text"]):
                         return {"uncertain": False, **snapshot(client, session_id), "ok": False, "completed": completed,
-                                "error": "The page did not keep every character typed. "
-                                         "Check the field in this snapshot before trying again."}
+                                "error": NOT_KEPT}
                     continue
             if kind == "click":
                 uncertain = True
