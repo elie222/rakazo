@@ -124,7 +124,7 @@ export function buildApprovalAskBlock(
         : {}),
       status: "pending",
       actions: [
-        { id: "allow", label: "Allow for this chat" },
+        { id: "allow", label: "Allow in this space" },
         { id: "deny", label: "Deny" },
       ],
     };
@@ -142,7 +142,7 @@ export function buildApprovalAskBlock(
       detailFormat: "code",
       status: "pending",
       actions: [
-        { id: "allow", label: "Allow for this chat" },
+        { id: "allow", label: "Allow in this space" },
         { id: "deny", label: "Deny" },
       ],
     };

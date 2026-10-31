@@ -661,6 +661,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "New password": "新しいパスワード",
   "Passwords do not match": "パスワードが一致しません",
   "Allow once": "今回のみ許可",
+  "Allow in this space": "このスペースで許可",
+  "Allowed in this space": "このスペースで許可しました",
   "Always allow": "常に許可",
   "Always allow this tool": "このツールを常に許可",
   "Always allow {site}": "{site} を常に許可",

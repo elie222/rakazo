@@ -674,8 +674,8 @@ msgid "Allow cross-space bot communication"
 msgstr "允许跨空间机器人通信"
 
 #: src/components/AskCard.tsx
-msgid "Allow for this chat"
-msgstr "允许本次聊天"
+msgid "Allow in this space"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Allow once"
@@ -694,8 +694,8 @@ msgid "Allow writing"
 msgstr "允许写入"
 
 #: src/components/AskCard.tsx
-msgid "Allowed for this chat"
-msgstr "已允许本次聊天"
+msgid "Allowed in this space"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Allowed once"

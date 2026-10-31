@@ -2815,7 +2815,7 @@ describe("user_computer_shell", () => {
     expect(requests).toEqual([]);
   });
 
-  it("asks first, even in never-ask mode with an allow rule, then runs without asking for the rest of the chat", async () => {
+  it("asks first, even in never-ask mode with an allow rule, then runs without asking again in this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,
@@ -2836,7 +2836,7 @@ describe("user_computer_shell", () => {
             text: "Run on your computer?",
             detail: "ssh pi.local hostname",
             actions: [
-              { id: "allow", label: "Allow for this chat" },
+              { id: "allow", label: "Allow in this space" },
               { id: "deny", label: "Deny" },
             ],
           }),
@@ -2861,6 +2861,16 @@ describe("user_computer_shell", () => {
     f.setCalls([call("ssh pi.local uptime", "call-2")]);
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    // Any chat of this user in this space counts, not just this one.
+    expect(f.prisma.externalEffect.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        spaceId: "space-1",
+        status: { in: ["approved", "executing", "completed", "uncertain"] },
+        run: { userId: "user-1" },
+        kind: "user_computer_shell",
+      },
+      select: { id: true },
+    });
     expect(f.results.at(-1)).toEqual({ stdout: "pi.local\n", stderr: "", code: 0 });
     expect(f.effects.map((effect) => effect.status)).toEqual(["completed", "completed"]);
   });
@@ -2941,7 +2951,7 @@ describe("user computer screen control", () => {
           kind: "ask",
           text: `Use ${app} on your computer?`,
           actions: [
-            { id: "allow", label: "Allow for this chat" },
+            { id: "allow", label: "Allow in this space" },
             { id: "deny", label: "Deny" },
           ],
         }),
@@ -2967,7 +2977,7 @@ describe("user computer screen control", () => {
     expect(disabled.offeredTools()).not.toContain("user_computer_act");
   });
 
-  it("asks per app, then uses an allowed app for the rest of the chat", async () => {
+  it("asks per app, then uses an allowed app across this space", async () => {
     const { gateway, requests } = devices();
     const f = fixture({
       ...ownRun,

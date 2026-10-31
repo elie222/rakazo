@@ -676,6 +676,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "New password": "Neues Passwort",
   "Passwords do not match": "Die Passwörter stimmen nicht überein",
   "Allow once": "Einmal erlauben",
+  "Allow in this space": "In diesem Space erlauben",
+  "Allowed in this space": "In diesem Space erlaubt",
   "Always allow": "Immer erlauben",
   "Always allow this tool": "Dieses Tool immer erlauben",
   "Always allow {site}": "{site} immer erlauben",

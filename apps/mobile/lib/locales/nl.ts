@@ -673,6 +673,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "New password": "Nieuw wachtwoord",
   "Passwords do not match": "Wachtwoorden komen niet overeen",
   "Allow once": "Een keer toestaan",
+  "Allow in this space": "Toestaan in deze space",
+  "Allowed in this space": "Toegestaan in deze space",
   "Always allow": "Altijd toestaan",
   "Always allow this tool": "Deze tool altijd toestaan",
   "Always allow {site}": "{site} altijd toestaan",

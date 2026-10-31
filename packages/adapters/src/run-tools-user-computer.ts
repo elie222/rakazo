@@ -64,10 +64,9 @@ export function userComputerAppName(value: unknown): string {
 
 /**
  * The user's own computer always asks a person first, in every approval mode and whatever the
- * rules allow, until they choose "Allow for this chat"; a block still refuses it. Any effect of
- * this tool past "intended" in a run the owner started in this chat traces back to that approval.
- * Screen control is approved per app. Clearing the chat detaches those runs' messages, so it
- * asks again.
+ * rules allow, until they choose "Allow in this space"; a block still refuses it. These tools run
+ * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
+ * this space traces back to that approval. Screen control is approved per app.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -76,16 +75,11 @@ export async function userComputerGate(
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
-  const { deps, run, bot, thread } = ctx;
+  const { deps, run } = ctx;
   const where = {
     spaceId: run.spaceId,
     status: { in: ["approved", "executing", "completed", "uncertain"] },
-    run: {
-      threadId: thread.id,
-      botId: bot.id,
-      userId: run.userId,
-      sourceMessage: { is: { threadId: thread.id } },
-    },
+    run: { userId: run.userId },
   };
   if (!USER_COMPUTER_SCREEN_TOOLS.has(name)) {
     const allowed = await deps.prisma.externalEffect.findFirst({

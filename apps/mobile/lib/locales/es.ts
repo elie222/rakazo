@@ -638,6 +638,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "New password": "Nueva contraseña",
   "Passwords do not match": "Las contraseñas no coinciden",
   "Allow once": "Permitir una vez",
+  "Allow in this space": "Permitir en este espacio",
+  "Allowed in this space": "Permitido en este espacio",
   "Always allow": "Permitir siempre",
   "Always allow this tool": "Permitir siempre esta herramienta",
   "Always allow {site}": "Permitir siempre {site}",

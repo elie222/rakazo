@@ -674,8 +674,8 @@ msgid "Allow cross-space bot communication"
 msgstr "Allow cross-space bot communication"
 
 #: src/components/AskCard.tsx
-msgid "Allow for this chat"
-msgstr "Allow for this chat"
+msgid "Allow in this space"
+msgstr "Allow in this space"
 
 #: src/components/AskCard.tsx
 msgid "Allow once"
@@ -694,8 +694,8 @@ msgid "Allow writing"
 msgstr "Allow writing"
 
 #: src/components/AskCard.tsx
-msgid "Allowed for this chat"
-msgstr "Allowed for this chat"
+msgid "Allowed in this space"
+msgstr "Allowed in this space"
 
 #: src/components/AskCard.tsx
 msgid "Allowed once"
