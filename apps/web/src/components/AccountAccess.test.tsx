@@ -82,15 +82,27 @@ async function click(label: string) {
 it("uses the shared desktop flow for linking", async () => {
   await render();
   await click("Link SSO");
-  expect(runSsoFlow).toHaveBeenCalledWith(expect.any(Function), [window.location.href]);
+  const failed = `${window.location.origin}${window.location.pathname}?sso-link=1`;
+  expect(runSsoFlow).toHaveBeenCalledWith(expect.any(Function), [window.location.href, failed]);
   expect(authClient.linkSocial).toHaveBeenCalledWith(
     expect.objectContaining({
       provider: "oidc",
       disableRedirect: true,
       callbackURL: `popup:${window.location.href}`,
-      errorCallbackURL: `popup:${window.location.href}`,
+      errorCallbackURL: `popup:${failed}`,
     }),
   );
+});
+it("shows a failed link's redirect error on the SSO row, not under Delete account", async () => {
+  window.history.replaceState(null, "", "/?sso-link=1&error=account_not_linked");
+  try {
+    await render();
+    const alerts = host.querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(host.firstElementChild?.contains(alerts[0]!)).toBe(true);
+  } finally {
+    window.history.replaceState(null, "", "/");
+  }
 });
 it("uses the shared desktop flow for account-bound deletion reauthentication", async () => {
   await render();

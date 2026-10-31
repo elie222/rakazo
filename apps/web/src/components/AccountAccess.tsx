@@ -21,7 +21,7 @@ export function AccountAccess({
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(() => {
-    const code = new URLSearchParams(window.location.search).get("error");
+    const code = redirectError("delete");
     return code ? authErrorText({ code }, t`Could not continue`) : null;
   });
   const [attempt, setAttempt] = useState(0);
@@ -185,9 +185,15 @@ export function AccountAccess({
 /** Links the organization's SSO identity to an account that signed up another way. */
 export function LinkSsoRow() {
   const { t } = useLingui();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    const code = redirectError("link");
+    return code ? authErrorText({ code }, t`Could not continue`) : null;
+  });
   async function link() {
     setError(null);
+    // Marks a failed link's return so its error shows on this row, not under Delete account.
+    const failed = new URL(window.location.href);
+    failed.searchParams.set(LINK_RETURN, "1");
     try {
       const result = await runSsoFlow(
         (disableRedirect, callbackURL) =>
@@ -195,9 +201,9 @@ export function LinkSsoRow() {
             disableRedirect,
             provider: "oidc",
             callbackURL: callbackURL(window.location.href),
-            errorCallbackURL: callbackURL(window.location.href),
+            errorCallbackURL: callbackURL(failed.href),
           }),
-        [window.location.href],
+        [window.location.href, failed.href],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
     } catch (cause) {
@@ -220,4 +226,12 @@ export function LinkSsoRow() {
       ) : null}
     </SettingsRow>
   );
+}
+
+const LINK_RETURN = "sso-link";
+
+/** The error an SSO redirect came back with, for the flow that started it. */
+function redirectError(flow: "link" | "delete"): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.has(LINK_RETURN) === (flow === "link") ? params.get("error") : null;
 }
