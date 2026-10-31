@@ -11,8 +11,15 @@ vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
+const store = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => store.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => void store.set(key, value),
+  deleteItemAsync: async (key: string) => void store.delete(key),
+}));
 
 import { resumeLiveNotifications } from "./live-notifications";
+import { saveServerHeaders } from "./server-headers";
 
 describe("Android live notification resume", () => {
   beforeEach(() => {
@@ -26,6 +33,20 @@ describe("Android live notification resume", () => {
       "token-1",
       "space-1",
       "de",
+      "",
+    );
+  });
+
+  it("hands the server's custom headers to the native poller", async () => {
+    await saveServerHeaders("https://app.example.test", { "CF-Access-Client-Id": "id" });
+    await resumeLiveNotifications("https://app.example.test", "token-1", "space-1");
+    await saveServerHeaders("https://app.example.test", {});
+    expect(native.resume).toHaveBeenCalledWith(
+      "https://app.example.test",
+      "token-1",
+      "space-1",
+      "de",
+      JSON.stringify({ "CF-Access-Client-Id": "id" }),
     );
   });
 

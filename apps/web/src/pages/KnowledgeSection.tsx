@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
@@ -186,9 +186,9 @@ function MemoryDocumentList({
   return (
     <section className={compact ? "mt-6" : undefined}>
       {compact ? (
-        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+        <SectionHeading variant="label" className="mb-2">
           <Trans>Memory</Trans>
-        </h3>
+        </SectionHeading>
       ) : null}
       <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
         {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}

@@ -61,7 +61,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   ).toBeVisible();
   const planSelect = page.getByRole("combobox", { name: "Monthly credits" });
   await expect(planSelect).toHaveCSS("height", "48px");
-  await expect(planSelect).toContainText("$20 / month");
+  await expect(planSelect).toContainText("$30 / month");
   await planSelect.click();
   const options = page.locator('[data-slot="select-content"]');
   await expect
@@ -75,7 +75,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   expect(optionsBox!.y).toBeGreaterThanOrEqual(triggerBox!.y + triggerBox!.height);
   await captureScreenshot(page, testInfo, "billing-credit-options");
   await page.keyboard.press("Escape");
-  await expect(page.getByText("All $20 goes to model usage.", { exact: true })).toBeVisible();
+  await expect(page.getByText("All $30 goes to model usage.", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-choice");
   let purchase: { amountCents: number; monthly: boolean } | undefined;
   await page.route("**/rpc/billing/purchaseCredits", async (route) => {
@@ -84,20 +84,20 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
       access: true,
       creditPurchasesEnabled: true,
       funding: "credits",
-      balanceUsd: 20,
-      monthlyAmountCents: 2000,
+      balanceUsd: 30,
+      monthlyAmountCents: 3000,
       state: "active",
       hasCustomer: true,
-      price: { ...price, amount: 2000 },
+      price: { ...price, amount: 3000 },
       computerHoursLeft: 13,
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
   await page.getByRole("button", { name: "Subscribe to Rakazo credits", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
-  expect(purchase).toEqual({ amountCents: 2000, monthly: true });
+  expect(purchase).toEqual({ amountCents: 3000, monthly: true });
   const settings = await openUserSettings(page, "billing");
-  await expect(settings.getByText("$20.00", { exact: true })).toBeVisible();
+  await expect(settings.getByText("$30.00", { exact: true })).toBeVisible();
   await expect(settings.getByText("Computer hours left", { exact: true })).toBeVisible();
   await expect(settings.getByText("13", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-balance");

@@ -8,13 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Self-hosted deployments can run several Photon projects, each giving a person its own iMessage number, so different bots are reachable over iMessage, using `PHOTON_PROJECT_ID_<NAME>` and `PHOTON_PROJECT_SECRET_<NAME>` pairs ([integrations](docs/self-host-integrations.md)).
+- iMessage through [Photon](https://photon.codes): set `PHOTON_PROJECT_ID` and `PHOTON_PROJECT_SECRET` to link a bot to an iMessage number, with no public URL needed ([integrations](docs/self-host-integrations.md)).
 - A server running on macOS offers a keyless **macOS** voice provider that reads replies with the voices installed on that Mac. Speech is rendered into a clip, so it plays and stops on the listener's device like any other voice ([macOS voices](docs/self-host-models.md#macos-voices)).
 - `MASTER_KEY_PROVIDER=aws-kms` wraps content keys with an AWS KMS key, so the master key no longer sits on the server. `content-encryption rotate` moves existing keys over ([content encryption](docs/content-encryption.md#external-key-management)).
+- With a key manager configured, secrets in `.env` such as `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` can be stored wrapped by it, so a copy of `.env` no longer holds usable secrets. The API, worker and server CLIs unwrap them at startup, and `AWS_KMS_PROFILE` lets those CLIs use short-lived AWS credentials from a laptop ([wrapped settings](docs/content-encryption.md#wrapped-settings)).
 - Ollama Cloud preset in Models settings on web and mobile, using an OpenAI-compatible connection with model discovery and no deployment configuration.
 - Optional point-in-time recovery for the production Compose database: an opt-in sidecar streams encrypted WAL and daily base backups to any S3-compatible bucket, so a lost server costs about a minute of writes instead of up to a day, and `pitr.sh restore` recovers to any moment in the retention window. Off unless enabled; enabling reloads Postgres without restarting it ([point-in-time recovery](docs/self-host-backups.md#point-in-time-recovery)).
 
 ### Fixed
 
+- `RAKAZO_LOCAL_MAX_TOKENS` is now the output limit a local model is asked for. It was only a ceiling, so
+  every request still asked for 4096 tokens and a longer reply was cut off and retried. The limit stays
+  within a quarter of `RAKAZO_LOCAL_CONTEXT_WINDOW`, and a max-tokens value set on the connection
+  overrides it.
 - A bot with more than twenty MCP tools reaches them through the lazy tool catalog, and every call through it arrived with empty arguments, so a search or scrape failed with "expected string, received undefined". A free-form object parameter no longer carries an empty `properties` map, which grammar-constrained providers read as "no keys allowed", so the arguments the model builds arrive intact.
 - Arguments of a stdio MCP server, which can carry tokens, are stored encrypted with its other credentials and are no longer returned to clients; leaving them blank when editing keeps them. Arguments saved earlier move into encrypted storage automatically when the API starts.
 - Approval rules judge each action in a Composio batch even when Composio is connected as an MCP server, so "Always allow" on one action no longer allows every other action through that server.

@@ -21,6 +21,7 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { RouterDeps } from "../router.js";
 import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
 import { withSerializableRetry } from "../serializable-retry.js";
 import { assertTeachingSendAllowed } from "../taught-skills.js";
@@ -70,6 +71,22 @@ const HANG_UP_PROMPT =
 
 /** A send with routines that already has runs saved under its nonce. */
 class SavedSubmission extends Error {}
+
+/** A chat reply hands the screen back to the bot whose run it steers, in a group as in a DM. */
+export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadTarget) {
+  return async (runId: string) => {
+    const botId =
+      target.kind === "bot"
+        ? target.botId
+        : (
+            await deps.prisma.run.findUnique({
+              where: { id: runId, spaceId: actor.spaceId },
+              select: { botId: true },
+            })
+          )?.botId;
+    if (botId) await releaseComputerControl(deps, actor, botId, "done", runId);
+  };
+}
 
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
@@ -123,9 +140,7 @@ export function threadsRoutes(ctx: RouterContext) {
       actor,
       target,
       input,
-      target.kind === "bot"
-        ? (runId) => releaseComputerControl(deps, actor, target.botId, "done", runId)
-        : undefined,
+      takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
@@ -302,9 +317,7 @@ export function threadsRoutes(ctx: RouterContext) {
           context.actor,
           target,
           { ...input, mayStartTurn },
-          target.kind === "bot"
-            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
-            : undefined,
+          takeoverReleaser(deps, context.actor, target),
         );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {

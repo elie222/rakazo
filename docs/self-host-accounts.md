@@ -17,9 +17,15 @@ server integration credentials, or deployment updates, and cannot read deploymen
 
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions and add
-stdio MCP servers ([integrations](self-host-integrations.md)). An account counts only once its
-email is verified. It grants nothing else.
+`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
+MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+credits, give free access at `/admin/access`. An account counts only once its email is verified.
+It grants nothing else.
+
+A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
+months, or both. Whoever owns an organization with that verified email receives it the next time they
+open the app, whether they signed up before or after the grant. A grant can be revoked until it is
+received.
 
 ## Email verification and sign-in codes
 
@@ -210,8 +216,17 @@ desktop app uses the system passkey sheet, which only serves the domain the rele
 associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
-built for that domain (the app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
-time). To let a build use this server's passkeys, set:
+built for that domain. The iOS app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
+time. A macOS desktop build takes it from `RAKAZO_PASSKEY_RP_ID` (default `app.rakazo.com`): set
+it to the same domain for `pnpm build` and for `scripts/passkey-entitlements.ts`, then package with
+electron-builder's `-c.mac.entitlements` set to that script's output and `-c.mac.provisioningProfile`
+set to a profile for your App ID with the Associated Domains capability, as the release workflow
+does. Without both, macOS ignores the association and the app hides passkeys. When Apple's CDN
+cannot reach the server (a private network or a VPN such as Tailscale), also set
+`RAKAZO_PASSKEY_DEVELOPER_MODE=1` for either build: a development-signed app then fetches the
+association file itself, once associated-domains developer mode is on (Settings > Developer on
+iOS, `sudo swcutil developer-mode -e true` on macOS, where the app must also live in
+`/Applications`). To let a build use this server's passkeys, set:
 
 ```bash
 # iOS and the macOS desktop app (dev.rakazo.desktop): <Apple Team ID>.<bundle id>, comma-separated.

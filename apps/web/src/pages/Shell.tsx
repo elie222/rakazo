@@ -57,6 +57,7 @@ import { desktopBridge } from "../lib/desktop";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
+import type { Panel } from "../lib/right-panel-state";
 import { rightPanelStorageKey } from "../lib/right-panel-state";
 import { createSpaceRpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
@@ -77,6 +78,7 @@ import { Composer } from "./shell/composer";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
 import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
+import type { ImportSetupTarget } from "./shell/import-setup-card";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
 import { ShellSidebar } from "./shell/shell-sidebar";
@@ -187,6 +189,9 @@ function SpaceShell() {
   );
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
+  const lastBotTab = useRef<Panel>("routines");
+  if (panel === "routines" || panel === "computer" || panel === "settings")
+    lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
@@ -608,6 +613,54 @@ function SpaceShell() {
     importSetupOpen.current = false;
     void refreshActiveThread();
   }, [overlay, searchParams, refreshActiveThread]);
+  const setOverlayRef = useRef(setOverlay);
+  useLayoutEffect(() => {
+    setOverlayRef.current = setOverlay;
+  }, [setOverlay]);
+  const replyToMessage = useCallback(
+    (message: ThreadMessage) => {
+      composer.setReplyTarget(message);
+      composer.setReplyQuote(null);
+    },
+    [composer.setReplyQuote, composer.setReplyTarget],
+  );
+  const quoteMessage = useCallback(
+    (message: ThreadMessage, quote: string) => {
+      composer.setReplyTarget(message);
+      composer.setReplyQuote(quote);
+    },
+    [composer.setReplyQuote, composer.setReplyTarget],
+  );
+  const markMessageUnread = useCallback(
+    (message: ThreadMessage) => {
+      if (groupId) read.markGroupUnreadFrom(groupId, message.id);
+      else if (active?.id) void read.markBotUnread(active.id, message.id).catch(() => undefined);
+    },
+    [active?.id, groupId, read.markBotUnread, read.markGroupUnreadFrom],
+  );
+  const openPeerMessages = useCallback(
+    (peer: { peerBotId: string; peerBotName: string }) => {
+      setPeerConversation(peer);
+    },
+    [setPeerConversation],
+  );
+  const openImportSetup = useCallback(
+    (target: ImportSetupTarget) => {
+      importSetupOpen.current = true;
+      if (target.kind === "models")
+        setOverlayRef.current({ kind: "settings", section: "models", spaceId: null });
+      else if (target.kind === "mcp")
+        setOverlayRef.current({ kind: "mcp", serverId: target.serverId });
+      else {
+        setSearchParams((current) => {
+          const next = new URLSearchParams(current);
+          next.set("routine", target.routineId);
+          return next;
+        });
+      }
+    },
+    [setSearchParams],
+  );
   const stopTeaching = useCallback(async () => {
     const id = activeBotId.current;
     if (!id || teachBusy) return;
@@ -900,7 +953,7 @@ function SpaceShell() {
               if (chatPanelOpen) setPanel(null);
               else if (inGroup) setPanel("group-settings");
               else if (active) {
-                setPanel("computer");
+                setPanel(lastBotTab.current);
                 // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
                 void refreshThread(active.id).catch(() => undefined);
               }
@@ -926,6 +979,7 @@ function SpaceShell() {
               scrollRef={thread.messageScroll}
               scrollRequest={scrollRequest}
               onScrollRequestHandled={clearScrollRequest}
+              followRequest={composer.sentCount}
               artifactTarget={transcriptArtifactTarget}
               markedUnreadMessageId={read.markedUnreadMessageId}
               transcript={transcript}
@@ -946,25 +1000,12 @@ function SpaceShell() {
               onLoadOlder={loadOlder}
               onOpenBot={openBot}
               onAnswer={composer.answerMessage}
-              onReply={(message) => {
-                composer.setReplyTarget(message);
-                composer.setReplyQuote(null);
-              }}
-              onMarkUnread={(message: ThreadMessage) => {
-                // The next open of this chat starts the New divider at this message.
-                if (groupId) read.markGroupUnreadFrom(groupId, message.id);
-                else if (active)
-                  void read.markBotUnread(active.id, message.id).catch(() => undefined);
-              }}
-              onQuote={(message, quote) => {
-                composer.setReplyTarget(message);
-                composer.setReplyQuote(quote);
-              }}
+              onReply={replyToMessage}
+              onMarkUnread={markMessageUnread}
+              onQuote={quoteMessage}
               onReact={composer.reactToMessage}
               onJumpToMessage={jumpToReplyMessage}
-              onOpenPeerMessages={(peer) => {
-                setPeerConversation(peer);
-              }}
+              onOpenPeerMessages={openPeerMessages}
               memberName={resolveTranscriptMemberName}
               peerBot={resolveTranscriptBot}
               onRefresh={refreshActiveThread}
@@ -974,17 +1015,7 @@ function SpaceShell() {
               speakingMessageId={speakingMessageId}
               onSpeak={speakMessage}
               onOpenComputer={computerControls.onOpenComputer}
-              onOpenImportSetup={(target) => {
-                importSetupOpen.current = true;
-                if (target.kind === "models") openSettings("models");
-                else if (target.kind === "mcp")
-                  setOverlay({ kind: "mcp", serverId: target.serverId });
-                else {
-                  const next = new URLSearchParams(searchParams);
-                  next.set("routine", target.routineId);
-                  setSearchParams(next);
-                }
-              }}
+              onOpenImportSetup={openImportSetup}
             />
           )}
         </div>

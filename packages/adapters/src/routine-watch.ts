@@ -6,6 +6,7 @@ import type {
   ConnectorProvider,
   ConnectorTool,
   JobPublisher,
+  PaymentWalletProvider,
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
@@ -22,12 +23,13 @@ import {
   parseComputerMode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { shellCommandEnvironment } from "./bot-secrets.js";
+import { loadLoginPasswordRedactions, shellCommandEnvironment } from "./bot-secrets.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { loadPurchaseRedactions } from "./purchase-service.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -57,8 +59,9 @@ export type RoutineWatchDeps = {
   connector?: ConnectorProvider;
   /** The shell tool's desktop-protection guard: why a command is refused on a graphical computer. */
   commandRefusal?: (command: string) => string | undefined;
-  /** Decrypts Vault command credentials. Absent, a command watch runs without them. */
+  /** Decrypts Vault credentials. Absent, a command watch runs without them. */
   secretStore?: SecretStore;
+  paymentWallet?: PaymentWalletProvider | null;
 };
 
 export type RoutineWatchTarget = {
@@ -125,6 +128,8 @@ type Reading = {
   entries?: Record<string, string>;
   /** Shown when the reading differs from the last one. */
   detail: string | null;
+  /** Hidden from a change description, which can name items from the last reading. */
+  secrets?: readonly string[];
 };
 
 /** Pure: decides baseline / unchanged / changed and describes the change. */
@@ -147,7 +152,10 @@ export function compareReading(
   }
   const detail =
     reading.entries && previous.entries
-      ? describeEntryChanges(previous.entries, reading.entries)
+      ? redactSecrets(
+          describeEntryChanges(previous.entries, reading.entries),
+          reading.secrets ?? [],
+        )
       : reading.detail;
   return { changed: true, state: { ...base, outcome: "changed", detail } };
 }
@@ -254,7 +262,7 @@ export function readItems(
   );
   return count > MAX_TRACKED_ENTRIES
     ? { fingerprint, detail: `${count} watched items; something among them changed.` }
-    : { fingerprint, entries, detail: null };
+    : { fingerprint, entries, detail: null, secrets };
 }
 
 /** A result as JSON: the parsed text of an MCP or text result, or the data itself. */
@@ -436,16 +444,23 @@ async function readComputer(
     // without a model or per-run approval: equivalent to the bot running it itself.
     const secrets = new Set<string>();
     const secretStore = deps.secretStore;
-    const commandEnvironment = secretStore
-      ? await shellCommandEnvironment({
-          prisma: deps.prisma,
-          secretStore,
-          scope: { spaceId: routine.spaceId, userId: routine.userId },
-          registerRedactions: (values) => {
-            for (const value of values) secrets.add(value);
-          },
-        })
-      : undefined;
+    const [commandEnvironment, loginRedactions, purchaseRedactions] = secretStore
+      ? await Promise.all([
+          shellCommandEnvironment({
+            prisma: deps.prisma,
+            secretStore,
+            scope: { spaceId: routine.spaceId, userId: routine.userId },
+            registerRedactions: (values) => {
+              for (const value of values) secrets.add(value);
+            },
+          }),
+          loadLoginPasswordRedactions(deps.prisma, secretStore, routine),
+          deps.paymentWallet
+            ? loadPurchaseRedactions({ prisma: deps.prisma, secretStore }, routine)
+            : [],
+        ])
+      : [undefined, [], []];
+    for (const value of [...loginRedactions, ...purchaseRedactions]) secrets.add(value);
     const shellEnvironment = usesNativeShell(bot.computer.kind)
       ? await deps.sandbox.environment?.(computer, ctx)
       : undefined;

@@ -15,5 +15,7 @@ await build({
   // Only the release workflow's builds report errors; local and agent builds never do.
   define: {
     "process.env.RAKAZO_DESKTOP_RELEASE": JSON.stringify(process.env.RAKAZO_DESKTOP_RELEASE ?? ""),
+    // Self-hosted builds associated with their own passkey domain (see src/passkeys.ts).
+    "process.env.RAKAZO_PASSKEY_RP_ID": JSON.stringify(process.env.RAKAZO_PASSKEY_RP_ID ?? ""),
   },
 });

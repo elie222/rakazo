@@ -6,7 +6,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { FoldedTranscript } from "@rakazo/core";
+import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
   expandPeerReplies,
   groupVoiceChats,
@@ -57,6 +57,7 @@ export const Transcript = memo(function Transcript({
   scrollRef,
   scrollRequest,
   onScrollRequestHandled,
+  followRequest,
   artifactTarget,
   transcript,
   showToolActivity,
@@ -93,6 +94,8 @@ export const Transcript = memo(function Transcript({
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollRequest: { messageId: string; nonce: number } | null;
   onScrollRequestHandled: () => void;
+  /** Changes when you send: the view moves to the end and follows the reply. */
+  followRequest: number;
   artifactTarget: ArtifactTarget;
   transcript: FoldedTranscript<ThreadMessage>;
   showToolActivity: boolean;
@@ -140,6 +143,7 @@ export const Transcript = memo(function Transcript({
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
   const following = useRef(true);
+  const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
   const autoScrollTimer = useRef<number | undefined>(undefined);
@@ -163,10 +167,31 @@ export const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
-  const mentionView = useMemo(() => projectBotMentions(messages), [messages]);
+  const committedMentions = useRef(new Map<string, ChildBotBlock[]>());
+  const mentionView = useMemo(() => {
+    const view = projectBotMentions(messages);
+    for (const [id, mentions] of view.mentions) {
+      const previous = committedMentions.current.get(id);
+      if (
+        previous?.length === mentions.length &&
+        mentions.every((block, index) => block === previous[index])
+      ) {
+        view.mentions.set(id, previous);
+      }
+    }
+    return view;
+  }, [messages]);
+  // A progress tick rebuilds this view. The jump still reads the latest fold, without a new
+  // callback that would rerender every memoized message.
+  const mentionViewRef = useRef(mentionView);
+  useLayoutEffect(() => {
+    mentionViewRef.current = mentionView;
+    committedMentions.current = mentionView.mentions;
+  }, [mentionView]);
   const jumpToMessage = useCallback(
-    (messageId: string) => onJumpToMessage(mentionView.foldedInto.get(messageId) ?? messageId),
-    [mentionView, onJumpToMessage],
+    (messageId: string) =>
+      onJumpToMessage(mentionViewRef.current.foldedInto.get(messageId) ?? messageId),
+    [onJumpToMessage],
   );
   const reactionView = useMemo(
     () => projectMessageReactions(mentionView.visibleMessages),
@@ -231,6 +256,15 @@ export const Transcript = memo(function Transcript({
     });
   }, [messageById]);
 
+  // A click, selection or small nudge that ends near the end leaves the reader at the
+  // latest message, so new messages keep following; scrolling away beyond it does not.
+  const followIfNearEnd = useCallback(() => {
+    const element = scrollRef.current;
+    if (element && !jumpScrolling.current && transcriptIsNearEnd(element)) {
+      following.current = true;
+    }
+  }, [scrollRef]);
+
   // Keyboard and assistive-tech selections never reach a mouseup, so the pill
   // lifecycle listens on selectionchange; the mouse flag keeps it hidden while
   // a drag is still in flight.
@@ -242,6 +276,8 @@ export const Transcript = memo(function Transcript({
     };
     const onMouseUp = () => {
       selectingWithMouse.current = false;
+      // Clicks and selection drags end here even when released over the composer.
+      followIfNearEnd();
       evaluateSelection();
     };
     const onSelectionChange = () => {
@@ -267,7 +303,7 @@ export const Transcript = memo(function Transcript({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onWindowBlur);
     };
-  }, [evaluateSelection]);
+  }, [evaluateSelection, followIfNearEnd]);
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
@@ -299,7 +335,6 @@ export const Transcript = memo(function Transcript({
   }, [scrollRef]);
 
   const scrolledJump = useRef<number | null>(null);
-  const jumpScrolling = useRef(false);
   const jumpScrollTimer = useRef<number | undefined>(undefined);
   const endJumpScroll = useCallback(() => {
     jumpScrolling.current = false;
@@ -342,9 +377,19 @@ export const Transcript = memo(function Transcript({
     onScrollRequestHandled();
   }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled, exchanges.lineOf]);
 
+  const followedRequest = useRef(followRequest);
   useLayoutEffect(() => {
+    if (followedRequest.current === followRequest) return;
+    followedRequest.current = followRequest;
+    snapToEnd();
+  }, [followRequest, snapToEnd]);
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
     if (following.current) snapToEnd();
-  }, [messages, running, snapToEnd]);
+    // Content can grow below a reader who is not following without any scroll event.
+    else if (element) setAtEnd(transcriptIsNearEnd(element));
+  }, [messages, running, scrollRef, snapToEnd]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;
@@ -393,6 +438,7 @@ export const Transcript = memo(function Transcript({
           autoScrolling.current = false;
           following.current = false;
         }}
+        onScrollEnd={followIfNearEnd}
         onWheel={(event) => {
           if (event.deltaY < 0) {
             lastScrollTop.current = event.currentTarget.scrollTop;
@@ -535,7 +581,7 @@ export const Transcript = memo(function Transcript({
                       onAddRoutine={onAddRoutine}
                       voiceReady={voiceReady}
                       speaking={speakingMessageId === message.id}
-                      onSpeak={() => onSpeak(message)}
+                      onSpeak={onSpeak}
                       onOpenComputer={onOpenComputer}
                       onOpenImportSetup={onOpenImportSetup}
                       showToolActivity={showToolActivity}

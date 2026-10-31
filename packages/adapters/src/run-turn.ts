@@ -532,7 +532,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string) {
   }
   await ctx.computer.checkpoint.flush();
   ctx.state.terminalCheckpointComplete = true;
-  const stuckText = loopGuardStopText(humanizeToolName(toolName), ctx.state.toolCallStreak.count);
+  const stuckText = loopGuardStopText(humanizeToolName(toolName), ctx.state.toolCallStreak);
   await ctx.settleRunningHelpers();
   const stopped = await deps.events.finalizeRun({
     spaceId: run.spaceId,
