@@ -41,11 +41,15 @@ export function AgentAccessControl({
     <Trans>No bots</Trans>
   ) : (
     <>
-      <span className="flex">
+      <span className="flex gap-0.5">
         {picked.slice(0, SHOWN_AVATARS).map((bot) => (
-          <span key={bot.id} className="-ms-1 rounded-full ring-2 ring-dialog first:ms-0">
-            <BotAvatar color={bot.color} avatarSet={bot.avatarSet} identity={bot.id} size={18} />
-          </span>
+          <BotAvatar
+            key={bot.id}
+            color={bot.color}
+            avatarSet={bot.avatarSet}
+            identity={bot.id}
+            size={18}
+          />
         ))}
       </span>
       {picked.length > SHOWN_AVATARS ? (
