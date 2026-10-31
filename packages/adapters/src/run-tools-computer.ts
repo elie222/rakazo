@@ -35,6 +35,7 @@ import {
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
 import { nativeShellCommandArgv, usesNativeShell } from "./native-shell.js";
+import { purchaseApprovalOf } from "./purchase-gate.js";
 import { resolvePurchaseCardFill, resolvePurchasePayTokenFill } from "./purchase-service.js";
 import type { RunContext } from "./run-context.js";
 import { addRunSecrets } from "./run-context.js";
@@ -164,6 +165,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
           {
             desktopTools,
             redactions,
+            approvedPurchase: purchaseApprovalOf(args.purchaseApproval),
             // Team bots may send only their own folder or shared/ off the computer; a
             // private computer's helper already confines uploads to its home folder.
             uploadRoots:
@@ -198,6 +200,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               );
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
+              ctx.state.walletHosts.add(new URL(resolved.origin).host);
               return { text: resolved.text, origin: resolved.origin };
             },
             resolvePayTokenFill: async (step) => {
@@ -211,6 +214,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               if ("error" in resolved) return resolved;
               addRunSecrets(ctx, resolved.redactions);
               const { text, origin, merchantAccountId } = resolved;
+              ctx.state.walletHosts.add(new URL(origin).host);
               return { text, origin, merchantAccountId };
             },
           },

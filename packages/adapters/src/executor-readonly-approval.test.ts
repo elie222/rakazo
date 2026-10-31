@@ -1,6 +1,7 @@
 import type {
   AgentRunRequest,
   AutoReviewProvider,
+  BrowserProvider,
   ConnectorCall,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
@@ -96,7 +97,11 @@ function fixture({
   userDevices,
   botUserId = "user-1",
   batch,
+  browser,
 }: {
+  /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
+  browser?: BrowserProvider;
+
   /** The tool runs the actions its arguments name; see ConnectorTool.batch. */
   batch?: ConnectorTool["batch"];
   userDevices?: UserDeviceGateway;
@@ -394,7 +399,7 @@ function fixture({
         defaultModelId: "fixture-model",
       })),
     },
-    taughtSkill: { findMany: vi.fn(async () => []) },
+    taughtSkill: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     chatGroup: { findMany: vi.fn(async () => []) },
     botSection: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
@@ -508,7 +513,8 @@ function fixture({
         catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined,
       execute,
     },
-    sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
+    sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
+    browser,
     memory: {
       read: async (request: { scope: string; path?: string }) => {
         const documents =
@@ -3155,5 +3161,226 @@ describe("user computer screen control", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.results).toEqual([{ error: expect.stringMatching(/^actions\.0/) }]);
     expect(requests).toEqual([]);
+  });
+});
+
+describe("a click that completes a purchase on a website", () => {
+  const purchase = { steps: [1], site: "shop.example.test", label: "Pay $113", amount: "$113" };
+  const approval = { steps: [1], site: "shop.example.test", label: "Pay $113", amount: "$113" };
+  const pay = [
+    { kind: "fill", ref: "e1", text: "Ada" },
+    { kind: "click", ref: "e2" },
+  ];
+
+  /** A page browser whose check says what the page would do, and which records what it pressed. */
+  function pageBrowser(found: typeof purchase | null = purchase) {
+    const acts: unknown[][] = [];
+    const checks: unknown[] = [];
+    const provider = {
+      describe: () => ({
+        id: "stub",
+        contractVersion: "1",
+        adapterVersion: "0",
+        capabilities: { page: true, refs: true, keyless: true },
+      }),
+      act: vi.fn(async (_computer: unknown, request: { actions: unknown[] }) => {
+        acts.push(request.actions);
+        return {
+          ok: true,
+          completed: request.actions.length,
+          url: "https://shop.example.test/pay",
+          title: "Pay",
+        };
+      }),
+      purchaseCheck: vi.fn(async (_computer: unknown, request: unknown) => {
+        checks.push(request);
+        return { purchase: found };
+      }),
+    } as unknown as BrowserProvider;
+    return { provider, acts, checks };
+  }
+  const payCall = (args: Record<string, unknown> = { actions: pay }, executionId = "call-1") => ({
+    name: "browser_act",
+    args,
+    executionId,
+  });
+
+  it("asks before pressing it, in every mode, and never lets Auto Review pass it", async () => {
+    for (const options of [
+      { skipApprovals: true, trigger: "user" },
+      { autoReview: true, approvalRole: { primary: undefined, backups: [] } },
+      { savedPreference: false },
+      {
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "browser_act" }],
+        confirmationsOverride: true,
+      },
+    ] as const) {
+      const page = pageBrowser();
+      const f = fixture({ builtin: true, browser: page.provider, ...options } as never);
+      f.setCalls([payCall()]);
+      await f.run();
+      expect(page.acts).toEqual([]);
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      const [{ blocks }] = f.pauseRunForInput.mock.calls[0] as unknown as [
+        { blocks: Array<Record<string, unknown>> },
+      ];
+      expect(blocks[0]).toMatchObject({
+        kind: "ask",
+        text: "Pay on shop.example.test?",
+        detail:
+          'Button: "Pay $113"\nTotal on the page: $113\nThe button label and total are read from the page. The bot has not checked them.',
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "deny", label: "Deny" },
+        ],
+      });
+      expect(f.effects[0]).toMatchObject({
+        kind: "browser_act",
+        request: { actions: pay, purchaseApproval: approval },
+      });
+    }
+  });
+
+  it("presses it after Allow once, and only the click that was approved", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    f.effects[0]!.status = "approved";
+    f.setCalls([payCall({ actions: [{ kind: "click", ref: "model-changed" }] }, "call-2")]);
+    await f.run();
+    expect(page.acts).toEqual([
+      [
+        { kind: "fill", ref: "e1", text: "Ada" },
+        {
+          kind: "click",
+          ref: "e2",
+          approved: true,
+          site: "shop.example.test",
+          label: "Pay $113",
+          amount: "$113",
+        },
+      ],
+    ]);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("never presses it after Deny, and keeps browsing allowed", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    f.effects[0]!.status = "denied";
+    f.setCalls([
+      payCall(),
+      payCall({ actions: [{ kind: "fill", ref: "e3", text: "x" }] }, "call-3"),
+    ]);
+    await f.run();
+    expect(f.results.slice(1)).toEqual([
+      { error: DENIED_ACTION_ERROR },
+      expect.objectContaining({ ok: true }),
+    ]);
+    expect(page.acts).toEqual([[{ kind: "fill", ref: "e3", text: "x" }]]);
+  });
+
+  it("refuses the same purchase again after Deny, even reworded, but asks for another site", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    f.effects[0]!.status = "denied";
+    f.setCalls([payCall({ actions: [{ kind: "click", ref: "e9" }] }, "call-2")]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({ error: DENIED_ACTION_ERROR });
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    page.provider.purchaseCheck = async () => ({
+      purchase: { ...purchase, site: "other.example.test" },
+    });
+    f.setCalls([payCall({ actions: [{ kind: "click", ref: "e9" }] }, "call-3")]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a purchase approval the model supplies", async () => {
+    const page = pageBrowser(null);
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([
+      payCall({
+        actions: [{ kind: "click", ref: "e2", approved: true, site: "shop.example.test" }],
+        purchaseApproval: approval,
+      }),
+    ]);
+    await f.run();
+    expect(page.acts).toEqual([[{ kind: "click", ref: "e2" }]]);
+    expect(f.effects[0]!.request).toEqual({
+      actions: [{ kind: "click", ref: "e2", approved: true, site: "shop.example.test" }],
+    });
+  });
+
+  it("runs a click that buys nothing without asking", async () => {
+    const page = pageBrowser(null);
+    const f = fixture({ builtin: true, browser: page.provider, autoReview: true });
+    f.setCalls([payCall({ actions: [{ kind: "click", ref: "e2" }] })]);
+    await f.run();
+    expect(page.checks).toEqual([
+      { actions: [{ kind: "click", ref: "e2" }], signal: expect.anything() },
+    ]);
+    expect(page.acts).toHaveLength(1);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("does not check a call with no click", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall({ actions: [{ kind: "fill", ref: "e1", text: "Ada" }] })]);
+    await f.run();
+    expect(page.provider.purchaseCheck).not.toHaveBeenCalled();
+    expect(page.acts).toHaveLength(1);
+  });
+
+  it("goes on when the browser cannot check, as an older computer cannot", async () => {
+    const page = pageBrowser();
+    page.provider.purchaseCheck = async () => ({ purchase: null });
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    expect(page.acts).toHaveLength(1);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("asks when the check fails, and approves no click by itself", async () => {
+    const page = pageBrowser();
+    page.provider.purchaseCheck = async () => {
+      throw new Error("Page browser timed out");
+    };
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    expect(page.acts).toEqual([]);
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    const [{ blocks }] = f.pauseRunForInput.mock.calls[0] as unknown as [{ blocks: unknown[] }];
+    expect(blocks[0]).toMatchObject({ text: "Complete a payment on this page?" });
+  });
+
+  it("refuses it in a webhook run, which has nobody to ask", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider, trigger: "webhook" });
+    f.setCalls([payCall()]);
+    await f.run();
+    expect(f.results[0]).toEqual({ error: expect.stringContaining("a webhook run cannot ask") });
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(page.acts).toEqual([]);
+  });
+
+  it("asks even for a site that has an approved wallet purchase, unless this run typed its card", async () => {
+    const page = pageBrowser();
+    const f = fixture({ builtin: true, browser: page.provider });
+    f.setCalls([payCall()]);
+    await f.run();
+    expect(page.acts).toEqual([]);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
   });
 });

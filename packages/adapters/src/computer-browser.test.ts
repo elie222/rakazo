@@ -323,6 +323,101 @@ describe("page browser safety", () => {
     expect(result).not.toHaveProperty("tree");
   });
 
+  it("passes on the purchase a refused click would have completed", async () => {
+    const purchase = { site: "shop.example.test", label: "Pay $5", amount: "$5" };
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        purchase,
+        error: "This click would complete a purchase",
+      }),
+    });
+    const result = await provider.act(
+      computer,
+      { actions: [{ kind: "click", ref: "e1" }] },
+      baseContext,
+    );
+    expect(result).toMatchObject({ ok: false, uncertain: false, purchase });
+    expect(result).not.toHaveProperty("fallback");
+  });
+
+  it("checks for a purchase without acting, and answers none when the computer cannot tell", async () => {
+    const commands: unknown[] = [];
+    const answer = {
+      ok: true,
+      url: "https://shop.example.test/pay",
+      title: "Pay",
+      site: "shop.example.test",
+      origin: "https://shop.example.test",
+      purchase: {
+        steps: [1, "x", 2.5],
+        label: "Pay $5",
+        amount: "$5",
+        amountFrom: "button",
+        reason: "card_form",
+      },
+    };
+    let reply: Record<string, unknown> = answer;
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async (_computer, request) => {
+        commands.push(request);
+        return reply;
+      },
+    });
+    const actions = [{ kind: "fill" }, { kind: "click", ref: "e1" }];
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: {
+        steps: [1],
+        site: "shop.example.test",
+        label: "Pay $5",
+        amount: "$5",
+        amountSource: "button",
+      },
+    });
+    expect(commands).toEqual([{ command: "purchase_check", actions }]);
+    reply = { ...answer, purchase: null };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // An older image: the helper does not know the command.
+    reply = { ok: false, error: "unknown command: purchase_check", fallback: "computer_act" };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // So is a computer without a page browser, or a supervisor from before the check.
+    for (const error of [
+      "Page browser is not attached to this computer's Chrome.",
+      "page browser failed: 400",
+    ]) {
+      reply = { ok: false, error, fallback: "computer_act" };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: null,
+      });
+    }
+    // Any other failure asks, naming no page and approving no click: a check that started and broke,
+    // or a 500, which only an unhandled error answers.
+    for (const error of [
+      "unknown command: purchase_check, and then some",
+      "page browser failed: 500",
+      "Page browser timed out; the page may be busy or blocked by a dialog. Inspect the screen before continuing.",
+      "The page did not answer in time.",
+      "No unambiguous visible browser tab. Use desktop tools to select a tab.",
+      "Page browser unavailable or interrupted. Inspect the screen before continuing.",
+    ]) {
+      reply = { ok: false, error, fallback: "computer_act" };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
+      });
+    }
+    const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };
+    expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    expect(commands).toHaveLength(11);
+  });
+
   it("keeps the page snapshot a settled refusal sends", async () => {
     const error = "A saved password can only be typed into a password field.";
     const elements = [

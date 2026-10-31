@@ -533,11 +533,34 @@ app.post("/computers/:id/browser", async (c) => {
       }),
       z.object({ command: z.literal("snapshot") }),
       z.object({
+        command: z.literal("purchase_check"),
+        // Only clicks are looked at; `desktop` asks about a click or key on the screen instead.
+        actions: z
+          .array(z.object({ kind: z.string().max(40), ref: z.string().max(200).optional() }))
+          .max(24)
+          .optional(),
+        desktop: z.boolean().optional(),
+        enter: z.boolean().optional(),
+        unplaced: z.boolean().optional(),
+        points: z
+          .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+          .max(24)
+          .optional(),
+      }),
+      z.object({
         command: z.literal("act"),
         actions: z
           .array(
             z.discriminatedUnion("kind", [
-              z.object({ kind: z.literal("click"), ref: z.string().min(1).max(200) }),
+              z.object({
+                kind: z.literal("click"),
+                ref: z.string().min(1).max(200),
+                // The user approved a purchase click on this site (see rakazo-page-browser).
+                approved: z.boolean().optional(),
+                site: z.string().min(1).max(253).optional(),
+                label: z.string().max(200).optional(),
+                amount: z.string().max(100).optional(),
+              }),
               z.object({
                 kind: z.literal("upload"),
                 ref: z.string().min(1).max(200),

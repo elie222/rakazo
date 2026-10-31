@@ -21,6 +21,8 @@ import type {
   BrowserCapabilities,
   BrowserNavigateRequest,
   BrowserNavigateResult,
+  BrowserPurchaseCheckRequest,
+  BrowserPurchaseCheckResult,
   BrowserSnapshotRequest,
   BrowserSnapshotResult,
   CloudAgentCapabilities,
@@ -603,6 +605,15 @@ export interface BrowserProvider {
     request: BrowserActRequest,
     context: AdapterContext,
   ): Promise<BrowserActResult>;
+  /**
+   * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
+   * A browser that cannot tell, such as an older computer image, answers none.
+   */
+  purchaseCheck?(
+    computer: ComputerRef,
+    request: BrowserPurchaseCheckRequest,
+    context: AdapterContext,
+  ): Promise<BrowserPurchaseCheckResult>;
 }
 
 /**

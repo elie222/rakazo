@@ -1,8 +1,24 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { FakeBrowserProvider } from "./fake-browser.js";
+import type * as PurchaseServiceModule from "./purchase-service.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "./takeover-resume.js";
+
+vi.mock("./purchase-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof PurchaseServiceModule>()),
+  resolvePurchaseCardFill: async () => ({
+    text: "4242424242424242",
+    origin: "https://shop.example.test",
+    redactions: [],
+  }),
+  resolvePurchasePayTokenFill: async () => ({
+    text: "tok",
+    origin: "https://pay.example.test:8443",
+    merchantAccountId: "acct_1",
+    redactions: [],
+  }),
+}));
 
 const secret = 'zq"xv\\mk';
 const url = "https://example.test/echo";
@@ -122,5 +138,41 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
 
   it.each(["open_path", "launch_app"])("%s acts when the screen is free", async (name) => {
     expect((await runScreenTool(name, false, false)).act).toHaveBeenCalledOnce();
+  });
+});
+
+describe("a run remembers the sites it typed an approved wallet purchase into", () => {
+  it.each([
+    [{ kind: "fill_card", ref: "e1", purchase: "p1", field: "number" }, "shop.example.test"],
+    [{ kind: "fill_pay_token", purchase: "p1" }, "pay.example.test:8443"],
+  ])("%j", async (action, host) => {
+    const walletHosts = new Set<string>();
+    const browser = new FakeBrowserProvider({
+      pages: { [url]: { title: "Pay", html: "<input aria-label='Card' />" } },
+    });
+    await browser.navigate(computer, { url }, context);
+    const ctx = {
+      deps: { prisma: { taughtSkill: { findFirst: async () => null } }, paymentWallet: {} },
+      run: { spaceId: "space", botId: "b1" },
+      bot: { id: "b1" },
+      context,
+      computer: {
+        heldForTakeover: false,
+        mode: "private",
+        checkpoint: { markDirty: () => {} },
+        get: async () => computer,
+      },
+      tools: { disabled: new Set<string>() },
+      providers: { browser },
+      secrets: [],
+      state: { walletHosts, screen: { unchangedVisualStreak: { count: 0 } } },
+    };
+    const call = {
+      name: "browser_act",
+      args: { actions: [action] },
+      finish: async (r: unknown) => r,
+    };
+    await pageBrowserTool(ctx as never, call as never);
+    expect([...walletHosts]).toEqual([host]);
   });
 });

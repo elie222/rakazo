@@ -891,6 +891,57 @@ describe("browser tools", () => {
   });
 });
 
+describe("browser tools and purchase approval", () => {
+  const click = (ref: string) => ({ kind: "click", ref });
+  const actWith = async (args: Record<string, unknown>, approvedPurchase?: unknown) => {
+    const seen: unknown[][] = [];
+    const browser = new FakeBrowserProvider();
+    browser.act = async (_computer, request) => {
+      seen.push(request.actions);
+      return { ok: true, completed: request.actions.length, url: "", title: "" };
+    };
+    await browserActFromTool(browser, computer, context, args, {
+      approvedPurchase: approvedPurchase as never,
+    });
+    return seen[0];
+  };
+
+  it("never takes an approval from the model's own steps", async () => {
+    const given = { kind: "click", ref: "e1", approved: true, site: "shop.example.test" };
+    expect(parseBrowserActions([given])).toEqual([{ kind: "click", ref: "e1" }]);
+    expect(
+      await actWith({ actions: [given], purchaseApproval: { steps: [0], site: "x.test" } }),
+    ).toEqual([{ kind: "click", ref: "e1" }]);
+  });
+
+  it("marks only the clicks the user approved, for the site they approved", async () => {
+    const approval = { steps: [2], site: "shop.example.test", label: "Pay $5", amount: "$5" };
+    expect(
+      await actWith(
+        {
+          actions: [click("e1"), { kind: "fill", ref: "e2", text: "x" }, click("e3"), click("e4")],
+        },
+        approval,
+      ),
+    ).toEqual([
+      { kind: "click", ref: "e1" },
+      { kind: "fill", ref: "e2", text: "x" },
+      {
+        kind: "click",
+        ref: "e3",
+        approved: true,
+        site: "shop.example.test",
+        label: "Pay $5",
+        amount: "$5",
+      },
+      { kind: "click", ref: "e4" },
+    ]);
+    expect(await actWith({ actions: [{ kind: "fill", ref: "e2", text: "x" }] }, approval)).toEqual([
+      { kind: "fill", ref: "e2", text: "x" },
+    ]);
+  });
+});
+
 describe("browser tools on dropdowns and stale refs", () => {
   const html = `<!doctype html><html><head><title>Returns</title></head><body>
     <select aria-label="Year"><option value="">Choose</option>

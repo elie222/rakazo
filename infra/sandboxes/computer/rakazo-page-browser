@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import stat
 import struct
@@ -20,7 +21,7 @@ import time
 import threading
 import urllib.request
 from urllib.parse import urlsplit
-from typing import Any
+from typing import Any, Callable
 
 
 def display_num() -> int:
@@ -144,6 +145,12 @@ STILL_MOVING = "The page was still moving when the click was about to land. Clic
 FILE_CHOOSER = ("That click opened a file chooser, which the page tools cannot use. "
                 "Find the page's file upload element in the snapshot and use upload with the file paths.")
 
+PURCHASE_CHANGED = ("The page changed since the user approved this purchase, so the click was not made. "
+                    "Call browser_act again with only this click; that asks the user again.")
+PURCHASE_CHECK_SECONDS = 15.0
+PURCHASE_REFUSED = ("This click would complete a purchase, so the user must approve it. "
+                    "Call browser_act again with only this click; that asks the user.")
+
 # How Chromium begins every Network event it sends.
 NETWORK_EVENT = b'{"method":"Network.'
 
@@ -154,6 +161,8 @@ class CdpClient:
         self._sock: socket.socket | None = None
         self._buf = bytearray()
         self._next_id = 1
+        # When set (time.time()), every call fails cleanly by then instead of waiting out its own timeout.
+        self.deadline: float | None = None
         self.context_id: int | None = None
         self._pending: dict[int, dict[str, Any] | None] = {}
         # Worlds live in Chromium until navigation; rediscover them per CLI process.
@@ -455,6 +464,10 @@ class CdpClient:
         payload: dict[str, Any] = {"id": msg_id, "method": method, "params": params or {}}
         if session_id:
             payload["sessionId"] = session_id
+        if self.deadline is not None:
+            if time.time() >= self.deadline:
+                raise RuntimeError("The page did not answer in time.")
+            timeout_s = min(timeout_s, self.deadline - time.time())
         self._pending[msg_id] = None
         self._send_frame(json.dumps(payload).encode("utf-8"))
         deadline = time.time() + timeout_s
@@ -482,6 +495,10 @@ class CdpClient:
         raise TimeoutError(f"CDP call timed out: {method}")
 
 
+class NoVisibleTab(RuntimeError):
+    """The browser shows no page at all."""
+
+
 def attach_page(client: CdpClient) -> str:
     targets = client.call("Target.getTargets").get("targetInfos") or []
     pages = [t for t in targets if isinstance(t, dict) and t.get("type") == "page"]
@@ -505,7 +522,8 @@ def attach_page(client: CdpClient) -> str:
     elif len(candidates) == 1:
         selected = candidates[0][0]
     else:
-        raise RuntimeError("No unambiguous visible browser tab. Use desktop tools to select a tab.")
+        error = NoVisibleTab if not candidates else RuntimeError
+        raise error("No unambiguous visible browser tab. Use desktop tools to select a tab.")
     ensure_world(client, selected)
     return selected
 
@@ -894,6 +912,163 @@ EVAL_HELPERS = r"""
     const problem = landingProblem(el, x, y, moved);
     if (problem) throw settled(problem);
   }
+  // Purchase steps: the click that pays, books or orders is the one the user must approve. Read in this
+  // isolated world, so the page cannot hide a button or fake an approval; it can only word its own text.
+  const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
+  const CARD_NAMING = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|(?<![a-z])(?:cvv2?|cvc2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|מספר[\s_-]*כרטיס|כרטיס[\s_-]*אשראי/i;
+  // A gift card, voucher or coupon number is not the card that pays.
+  const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
+  function cardLike(el) {
+    if (!(el instanceof HTMLInputElement) || !["text", "tel", "number", "password"].includes(el.type) || !visible(el)) return false;
+    const tokens = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+    if (CARD_TOKENS.some((token) => tokens.includes(token))) return true;
+    const naming = [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
+      ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
+    return CARD_NAMING.test(naming) && !NOT_A_CARD.test(naming);
+  }
+  const pageCards = () => [...document.querySelectorAll("input")].filter(cardLike);
+  // What the control says, in each way it can say it: its own text or value, its aria label, its title.
+  const tidy = (text) => clean(String(text ?? "").replace(/[‎‏‪-‮ ]/g, " "));
+  function wordsOf(el) {
+    const root = el.getRootNode();
+    const named = (el.getAttribute("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean)
+      .map((id) => root.getElementById?.(id)?.textContent || "").join(" ");
+    return [el instanceof HTMLInputElement ? el.value || el.getAttribute("alt") : el.innerText || el.textContent,
+      named, el.getAttribute("aria-label"), el.getAttribute("title")].map(tidy).filter(Boolean);
+  }
+  // A phrase compares without its case, outer punctuation or icons.
+  const phrase = (text) => text.toLowerCase().replace(/^[^\p{L}\p{N}$€£₪¥]+|[^\p{L}\p{N})]+$/gu, "");
+  const CURRENCY = "[$€£₪¥]|usd|eur|gbp|ils|nis";
+  const SPENDS = `${CURRENCY}|\\d`;
+  // The last step of an order. Each starts the phrase, so "to checkout", "continue to payment", "add to
+  // cart", "pay later" and a lone "confirm" or "continue" are not final steps.
+  const FINAL_STEP = [
+    new RegExp(`^(?:pay|pay now|pay securely|pay (?:with|using|by|via) .+|pay (?:${SPENDS}).*)$`),
+    /^make (?:a |the |my )?payment\b/,
+    new RegExp(`^send (?:money|payment|funds|(?:${CURRENCY})\\s?\\d.*)`),
+    /^confirm (?:the |your |my )?(?:transfer|payment|bid|purchase)\b/,
+    /^commit to buy\b/,
+    /^request to book\b/,
+    /^place (?:a |the |your |my )?bid\b/,
+    // "Buy", "Buy now", "Buy it", "Buy this", "Buy $5"; not "Buy gift cards".
+    new RegExp(`^buy(?: now| it| this| it now)?$|^buy (?:${SPENDS})`),
+    /^purchase\b(?! (?:history|orders?|details|options|agreement|terms))/,
+    /^place (?:your |my |the )?order\b/,
+    /^(?:complete|finish|finalize|confirm|submit|review and place) (?:your |my |the )?(?:order|purchase|booking|reservation|payment|checkout)\b/,
+    /^(?:confirm|agree|accept|authori[sz]e) (?:and|&) (?:pay|book|purchase|order)\b/,
+    /^authori[sz]e payment\b/,
+    /^(?:book|order|reserve) and pay\b/,
+    // "Book now" and "Order now" often only open a checkout: a final step when the label has an amount.
+    new RegExp(`^(?:book|order|reserve) now\\b.*(?:${SPENDS})`),
+    new RegExp(`^(?:subscribe|donate|upgrade|start (?:my )?(?:free )?(?:trial|subscription)).*(?:${SPENDS})`),
+    /^(?:שלם|שלמו|תשלום עכשיו|אישור (?:והזמנה|הזמנה|תשלום|רכישה|ותשלום)|ביצוע (?:הזמנה|תשלום|רכישה)|קנה|קנו|רכוש|רכשו)(?:\s|$)/,
+    // "הזמן" and "להזמנה" also open a booking page or a meeting: a final step with an amount.
+    new RegExp(`^(?:הזמן|הזמינו|להזמנה)(?:\\s|$).*(?:${SPENDS})`),
+  ];
+  // "Pay bill", "Pay invoice": a final step only for a control that submits a form or sits in a card form,
+  // so a plan toggle such as "Pay monthly" asks nothing.
+  const PAY_WORD = /^pay (?!later\b|in\b|over\b|with\b)\S+$/;
+  const inPaymentForm = (el) => {
+    const form = el.form || el.closest("form");
+    return Boolean(form) && (submittedForm(el) !== null || [...form.elements].some(cardLike));
+  };
+  const isFinalStep = (words, el) => words.some((word) => FINAL_STEP.some((pattern) => pattern.test(phrase(word)))
+    || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
+  // Controls on a payment page that never pay.
+  const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל)(?:\s|$)/;
+  const MONEY = new RegExp(`(?:[$€£₪¥]\\s?\\d[\\d.,]*|\\d[\\d.,]*\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?\\d[\\d.,]*)`, "gi");
+  const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
+  const moneyIn = (text, last) => {
+    const found = String(text).match(MONEY);
+    return found ? found[last ? found.length - 1 : 0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
+  };
+  // The amount the page shows next to its total, the last one when it shows several.
+  function totalShown() {
+    const lines = String(document.body?.innerText || "").split("\n").slice(0, 400);
+    let found = "";
+    lines.forEach((line, i) => {
+      if (!TOTAL.test(line.slice(0, 200))) return;
+      found = moneyIn(line.slice(0, 200), true) || moneyIn(lines[i + 1] || "", false) || found;
+    });
+    return found;
+  }
+  // Cookie notices and site menus come around every page; they are not the checkout.
+  function inSurroundings(el) {
+    if (el.closest(SURROUNDINGS) && !el.closest("main, [role=main], form")) return true;
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      if (NOTICE.test(`${node.id} ${typeof node.className === "string" ? node.className : ""}`)) return true;
+    }
+    return false;
+  }
+  const isPlainLink = (el) => el.tagName.toLowerCase() === "a" && el.getAttribute("role") !== "button"
+    && !el.hasAttribute("onclick") && !["", "#"].includes((el.getAttribute("href") || "").trim())
+    && !/^javascript:/i.test(el.getAttribute("href") || "");
+  // A control that presses something, as opposed to a field, a choice or a link to another page.
+  function pressable(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "button") return true;
+    if (tag === "input") return ["submit", "button", "image"].includes(el.type);
+    if (["select", "textarea", "summary", "label"].includes(tag) || el.isContentEditable) return false;
+    if (tag === "a") return !isPlainLink(el);
+    const role = el.getAttribute("role");
+    return role === "button" || (!role && isInteractive(el));
+  }
+  function submittedForm(el) {
+    if (el instanceof HTMLButtonElement) return el.type === "submit" ? el.form : null;
+    if (el instanceof HTMLInputElement) return ["submit", "image"].includes(el.type) ? el.form : null;
+    return null;
+  }
+  // Page text is cut by characters, not code units, so a cut never leaves half an emoji.
+  const cut = (text, max) => Array.from(text).slice(0, max).join("");
+  // `frame`: the page shows a payment provider's card frame, which only the caller can vouch for.
+  function purchaseOf(el, frame) {
+    const words = wordsOf(el);
+    const form = submittedForm(el);
+    let reason = null;
+    if (form && ([...form.elements].some(cardLike) || (frame && form.querySelector("iframe,frame")))) reason = "card_form";
+    else if ((el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLAnchorElement
+        || el.getAttribute("role") === "button") && isFinalStep(words, el)) reason = "final_step";
+    else if ((frame || pageCards().length) && pressable(el) && !inSurroundings(el)
+        && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
+    if (!reason) return null;
+    return shownPurchase(reason, words[0] || "");
+  }
+  // What the card shows: the button's text, and the amount the button names or else the page's total.
+  function shownPurchase(reason, label) {
+    const named = moneyIn(label, false);
+    return { reason, label: cut(label, 80), amount: named || totalShown(), amountFrom: named ? "button" : "page" };
+  }
+  // The control a click at this spot of the page presses, unless it lands on a field, label or nothing.
+  function pressedControl(hit) {
+    const field = "input:not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea, select, label, [contenteditable]";
+    for (let node = hit; node && node !== document.documentElement; node = node.parentElement || node.getRootNode().host) {
+      // A click on a label presses its control: a submit button pays, a field or anything else does not.
+      if (node instanceof HTMLLabelElement && node.control) {
+        const control = node.control;
+        return !control.matches?.(field) && (pressable(control) || control.matches?.("a, button, input, [role=button]"))
+          ? control : null;
+      }
+      if (node.matches?.(field)) return null;
+      if (pressable(node) || node.matches?.("a, button, input, [role=button]")) return node;
+    }
+    return null;
+  }
+  // The window's page starts below its toolbar: where a point of the screen is in the page, or null when the
+  // window's place is not known (a zoomed page, a scaled screen).
+  const TOOLBAR_HEIGHT = 87;
+  function pagePoint(x, y) {
+    if (window.devicePixelRatio !== 1 || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    // Calibrated for a window with the plain toolbar and no side panel or docked tools: anything else moves
+    // the page, so a spot cannot be placed.
+    if (window.outerWidth !== window.innerWidth
+        || Math.abs(window.outerHeight - window.innerHeight - TOOLBAR_HEIGHT) > 2) return null;
+    const side = (window.outerWidth - window.innerWidth) / 2;
+    const left = window.screenX + side;
+    const top = window.screenY + (window.outerHeight - window.innerHeight - side);
+    const at = [x - left, y - top];
+    return { x: at[0], y: at[1], inside: at[0] >= 0 && at[1] >= 0 && at[0] < window.innerWidth && at[1] < window.innerHeight,
+      scrollX: window.pageXOffset, scrollY: window.pageYOffset };
+  }
   // When the page last changed, so an action's result waits for what it set in motion to be drawn.
   let lastChange = performance.now();
   new MutationObserver(() => { lastChange = performance.now(); })
@@ -1005,6 +1180,50 @@ EVAL_HELPERS = r"""
     },
     hasCardField() {
       return ["cc-number", "cc-exp", "cc-csc", "postal-code"].some((token) => cardFields(token).length > 0);
+    },
+    // Whether a click on ref would complete a purchase, with what the page says about it; `frames` says
+    // the page has frames, so the caller can look for a payment provider's. A stale ref counts as none.
+    purchaseIntent(ref, frame = false) {
+      const el = refMap.get(String(ref));
+      const live = Boolean(el?.isConnected) && visible(el) && !el.matches(":disabled");
+      return { purchase: live ? purchaseOf(el, frame) : null, host: location.host,
+        frames: Boolean(document.querySelector("iframe,frame")) };
+    },
+    // Where a point of the screen (x, y) is in this page, or null when that cannot be told.
+    pagePoint(x, y) {
+      return pagePoint(x, y);
+    },
+    // What a click at a spot of this page (in viewport coordinates) would press: the purchase it completes, or
+    // `frame: true` when the spot is inside a frame, whose own page must be asked.
+    purchaseAt(x, y, frame = false) {
+      const hit = elementAtPoint(x, y);
+      const control = hit && !["iframe", "frame", "object", "embed"].includes(hit.tagName.toLowerCase())
+        ? pressedControl(hit) : null;
+      return { purchase: control && !control.matches(":disabled") ? purchaseOf(control, frame) : null,
+        inFrame: Boolean(hit) && ["iframe", "frame", "object", "embed"].includes(hit.tagName.toLowerCase()),
+        scroll: [window.pageXOffset, window.pageYOffset],
+        host: location.host, frames: Boolean(document.querySelector("iframe,frame")) };
+    },
+    // The same for a node the browser found at a spot inside a frame of this process.
+    purchaseOfNode(node, frame = false) {
+      const control = node instanceof Element ? pressedControl(node) : null;
+      return control && !control.matches(":disabled") ? purchaseOf(control, frame) : null;
+    },
+    // The same for a click or key on the screen when the spot is not known: the page shows a card form or a
+    // payment frame, or a control worded as a final step. For a key (`enter`), the control with focus first.
+    paymentPage(frame = false, enter = false) {
+      const active = enter ? document.activeElement : null;
+      const typingIn = active?.form && [...active.form.elements].some(cardLike) ? active.form : null;
+      const submit = typingIn && [...typingIn.elements].find((el) => submittedForm(el) === typingIn);
+      const focused = typingIn ? shownPurchase("card_form", submit ? wordsOf(submit)[0] || "" : "")
+        : active && active !== document.body ? purchaseOf(pressedControl(active) || active, frame) : null;
+      if (focused) return { purchase: focused, host: location.host, frames: Boolean(document.querySelector("iframe,frame")) };
+      const cards = pageCards();
+      const final = [...document.querySelectorAll("button, input, a, [role=button]")].find((el) =>
+        pressable(el) && visible(el) && !el.matches(":disabled") && isFinalStep(wordsOf(el), el));
+      const shown = Boolean(frame || cards.length || final);
+      return { purchase: shown ? shownPurchase("payment_page", final ? wordsOf(final)[0] || "" : "") : null,
+        host: location.host, frames: Boolean(document.querySelector("iframe,frame")) };
     },
     // Screenshots reach the model, so the field is drawn as dots before any key lands in it.
     focusCard() {
@@ -1813,6 +2032,253 @@ def click_at(client: CdpClient, session_id: str, ref: str, x: float, y: float) -
                                              "clickCount": 1}, session_id=session_id)
 
 
+def shows_payment_frame(client: CdpClient, session_id: str) -> bool:
+    try:
+        return bool(payment_frames(client, session_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def page_purchase(client: CdpClient, session_id: str, expression: Callable[[bool], str],
+                  world: int | None = None) -> dict[str, Any] | None:
+    """What the page helper says about a purchase, asked again with the payment frame the page shows."""
+    where = {} if world is None else {"context_id": world}
+    found = eval_json(client, session_id, expression(False), **where)
+    if not isinstance(found, dict):
+        return None
+    if found.get("purchase") is None and found.get("frames") and shows_payment_frame(client, session_id):
+        found = eval_json(client, session_id, expression(True), **where)
+    return found if isinstance(found, dict) else None
+
+
+# Zero-width, bidirectional and tag characters, which the card does not show.
+INVISIBLE = re.compile("[\U000E0000-\U000E007F\u200B-\u200F\u2060-\u2064\u202A-\u202E\u2066-\u2069\uFEFF]")
+
+
+def shown(text: Any) -> str:
+    """Page text as the card shows it: no invisible characters, one space between words."""
+    return " ".join(INVISIBLE.sub("", str(text or "")).split())
+
+
+def click_purchase(client: CdpClient, session_id: str, ref: str) -> dict[str, Any] | None:
+    """The page's host and what a click on ref would buy, or None when the click buys nothing.
+
+    A check that fails, whatever the page did to make it fail, answers with what the page itself shows."""
+    try:
+        found = page_purchase(client, session_id, lambda frame: "window.__rakazoPageBrowser.purchaseIntent("
+                              + json.dumps(ref) + ", " + json.dumps(frame) + ")")
+    except Exception:  # noqa: BLE001
+        buying = signals_or_ask(client, session_id, False)
+        if not buying:
+            return None
+        try:
+            host = eval_json(client, session_id, "location.host")
+        except Exception:  # noqa: BLE001
+            host = ""
+        return {"purchase": buying, "host": host if isinstance(host, str) else ""}
+    return found if found and isinstance(found.get("purchase"), dict) else None
+
+
+# What the card shows when not even the page's own signals can be read: the check asks rather than allows.
+UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
+
+
+def signals_or_ask(client: CdpClient, session_id: str, enter: bool) -> dict[str, Any] | None:
+    """After a failed purchase check: the payment the page itself shows, and a page that cannot be read asks."""
+    try:
+        return page_signals(client, session_id, enter, float("inf"), frames=False)
+    except Exception:  # noqa: BLE001
+        return dict(UNREADABLE_PURCHASE)
+
+
+def frame_ids(tree: dict[str, Any]) -> list[str]:
+    """A frame tree's frames, the root first."""
+    return [tree["frame"]["id"]] + [found for child in tree.get("childFrames") or [] for found in frame_ids(child)]
+
+
+DESKTOP_DEADLINE_SECONDS = 8.0
+# Elements that hold another document.
+FRAME_ELEMENTS = ("IFRAME", "FRAME", "OBJECT", "EMBED")
+
+
+class Deadline(RuntimeError):
+    """The desktop check ran out of time."""
+
+
+def check_deadline(deadline: float) -> None:
+    if time.monotonic() > deadline:
+        raise Deadline()
+
+
+def desktop_frames(client: CdpClient, session_id: str, deadline: float = float("inf")) -> list[tuple[str, str, int]]:
+    """Every frame of the page, of any origin: (session, frame, world) with the helpers in each.
+
+    The frames of the page's own session (same-origin and same-process ones, at any depth) and every
+    auto-attached frame session, at most 32 in all. A frame that cannot be reached is left out.
+    """
+    sessions = [(session_id, None)]
+    try:
+        client.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True,
+                                             "filter": [{"type": "iframe"}]}, session_id=session_id)
+        sessions += [(child, child) for child in client.frame_sessions(session_id)[:32]]
+    except Exception:  # noqa: BLE001
+        pass
+    found: list[tuple[str, str, int]] = []
+    for frame_session, own in sessions:
+        check_deadline(deadline)
+        try:
+            if own:
+                client.call("Page.enable", session_id=frame_session)
+            ids = frame_ids(client.call("Page.getFrameTree", session_id=frame_session)["frameTree"])
+        except Exception:  # noqa: BLE001
+            continue
+        for frame_id in ids[1:] if own is None else ids:
+            if len(found) >= 32:
+                return found
+            check_deadline(deadline)
+            try:
+                world = world_in(client, frame_session, frame_id)
+                eval_json(client, frame_session, EVAL_HELPERS, context_id=world)
+                found.append((frame_session, frame_id, world))
+            except Exception:  # noqa: BLE001
+                continue
+    return found
+
+
+def page_signals(client: CdpClient, session_id: str, enter: bool, deadline: float,
+                 frames: bool = True) -> dict[str, Any] | None:
+    """The purchase the page shows without a spot to look at: in the page itself, else in any of its frames."""
+    ask = "window.__rakazoPageBrowser.paymentPage(%s, " + json.dumps(enter) + ")"
+    found = page_purchase(client, session_id, lambda frame: ask % json.dumps(frame))
+    if found and isinstance(found.get("purchase"), dict):
+        return found["purchase"]
+    for frame_session, _, world in desktop_frames(client, session_id, deadline) if frames else []:
+        try:
+            inside = eval_json(client, frame_session, ask % "false", context_id=world)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(inside, dict) and isinstance(inside.get("purchase"), dict):
+            return inside["purchase"]
+    return None
+
+
+def purchase_at_point(client: CdpClient, session_id: str, world: int | None, x: float, y: float,
+                      deadline: float, depth: int = 0) -> tuple[str, dict[str, Any] | None]:
+    """What a click at (x, y) of this page's viewport presses: ("buy", purchase), ("none", None) when it
+    lands on nothing that pays, or ("unknown", None) when a frame it lands in cannot be looked into."""
+    check_deadline(deadline)
+    try:
+        found = page_purchase(client, session_id, lambda frame: "window.__rakazoPageBrowser.purchaseAt("
+                              + json.dumps(x) + ", " + json.dumps(y) + ", " + json.dumps(frame) + ")", world)
+    except Deadline:
+        raise
+    except Exception:  # noqa: BLE001
+        return "unknown", None
+    if not found:
+        return "unknown", None
+    if isinstance(found.get("purchase"), dict):
+        return "buy", found["purchase"]
+    if not found.get("inFrame"):
+        return "none", None
+    if depth >= 3:
+        return "unknown", None
+    scroll_x, scroll_y = found.get("scroll") or [0, 0]
+    try:
+        # The browser's own hit-test, which counts from the top of the page and goes into frames of this process.
+        hit = client.call("DOM.getNodeForLocation", {"x": x + scroll_x, "y": y + scroll_y,
+                                                     "includeUserAgentShadowDOM": True}, session_id=session_id)
+        main = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]["id"]
+        node = client.call("DOM.describeNode", {"backendNodeId": hit["backendNodeId"]}, session_id=session_id)["node"]
+        is_frame = str(node.get("nodeName", "")).upper() in FRAME_ELEMENTS
+        if hit.get("frameId") != main and not is_frame:
+            frame_world = world_in(client, session_id, hit["frameId"])
+            eval_json(client, session_id, EVAL_HELPERS, context_id=frame_world)
+            resolved = client.call("DOM.resolveNode", {"backendNodeId": hit["backendNodeId"],
+                                                       "executionContextId": frame_world}, session_id=session_id)
+            result = client.call("Runtime.callFunctionOn", {
+                "objectId": resolved["object"]["objectId"], "returnByValue": True,
+                "functionDeclaration": "function () { return window.__rakazoPageBrowser.purchaseOfNode(this, false); }",
+            }, session_id=session_id)
+            value = (result.get("result") or {}).get("value")
+            return ("buy", value) if isinstance(value, dict) else ("none", None)
+        if not is_frame:
+            return "unknown", None
+        # A frame of another process: its own session answers, for the spot as that frame's page sees it.
+        for child in client.frame_sessions(session_id)[:32]:
+            check_deadline(deadline)
+            frame = client.call("Page.getFrameTree", session_id=child)["frameTree"]["frame"]
+            owner = client.call("DOM.getFrameOwner", {"frameId": frame["id"]}, session_id=session_id)
+            if owner.get("backendNodeId") != hit["backendNodeId"]:
+                continue
+            box = client.call("DOM.getBoxModel", {"backendNodeId": hit["backendNodeId"]},
+                              session_id=session_id)["model"]["content"]
+            client.call("Page.enable", session_id=child)
+            child_world = world_in(client, child, frame["id"])
+            eval_json(client, child, EVAL_HELPERS, context_id=child_world)
+            # The box is where the frame is in the viewport, scroll included.
+            return purchase_at_point(client, child, child_world, x - box[0], y - box[1], deadline, depth + 1)
+    except Deadline:
+        raise
+    except Exception:  # noqa: BLE001
+        return "unknown", None
+    return "unknown", None
+
+
+def desktop_purchase(client: CdpClient, session_id: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """The purchase a click or key on the screen would complete, or None.
+
+    Each click is looked up on the page at its spot and asks only when it lands on a control that pays; a
+    spot outside the browser window asks nothing. A key, or a spot that cannot be placed or looked into,
+    asks when the page shows a payment by itself.
+    """
+    deadline = time.monotonic() + DESKTOP_DEADLINE_SECONDS
+    enter = args.get("enter") is True
+    points = [(p["x"], p["y"]) for p in (args.get("points") or [])[:24]
+              if isinstance(p, dict) and all(isinstance(p.get(k), (int, float)) for k in ("x", "y"))]
+    unknown = enter or not points or args.get("unplaced") is True
+    try:
+        for x, y in points:
+            placed = eval_json(client, session_id, f"window.__rakazoPageBrowser.pagePoint({json.dumps(x)}, {json.dumps(y)})")
+            if not isinstance(placed, dict):
+                unknown = True
+            elif placed.get("inside"):
+                verdict, found = purchase_at_point(client, session_id, None, placed["x"], placed["y"], deadline)
+                if verdict == "buy":
+                    return found
+                unknown = unknown or verdict == "unknown"
+        return page_signals(client, session_id, enter, deadline) if unknown else None
+    except Exception:  # noqa: BLE001
+        # Out of time, or a lookup failed: what the page itself already shows still asks.
+        return signals_or_ask(client, session_id, enter)
+
+
+def purchase_check(client: CdpClient, session_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Which of these clicks would complete a purchase, or whether a click or key on the screen would.
+
+    Nothing is pressed. A ref that no longer names an element on the page counts as none: act asks again.
+    """
+    actions = args.get("actions") or []
+    if not isinstance(actions, list) or len(actions) > 24:
+        raise RuntimeError("Expected up to 24 actions")
+    ensure_helpers(client, session_id)
+    where = eval_json(client, session_id, "({origin: location.origin, host: location.host, url: location.href, "
+                      "title: (document.title || '').slice(0, 200)})")
+    steps, first = [], None
+    for index, step in enumerate(actions):
+        if not isinstance(step, dict) or step.get("kind") != "click" or not isinstance(step.get("ref"), str):
+            continue
+        found = click_purchase(client, session_id, step["ref"])
+        if found:
+            steps.append(index)
+            first = first or found["purchase"]
+    if args.get("desktop") is True and not steps:
+        first = desktop_purchase(client, session_id, args)
+    purchase = {"steps": steps, "label": first["label"], "amount": first["amount"],
+                "amountFrom": first.get("amountFrom", "page"), "reason": first["reason"]} if first else None
+    return {"ok": True, "origin": where["origin"], "site": where["host"], "purchase": purchase,
+            "url": where["url"], "title": where["title"]}
+
+
 def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:
     if not actions or len(actions) > 24:
         raise RuntimeError("Expected 1 to 24 actions")
@@ -1839,6 +2305,16 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             step["kind"] != "fill" or not isinstance(step["origin"], str)
         ):
             raise RuntimeError("An origin applies only to fill")
+        if ("approved" in step or "site" in step) and (
+            step["kind"] != "click" or not isinstance(step.get("approved"), bool)
+            or not isinstance(step.get("site"), str)
+        ):
+            raise RuntimeError("An approval applies only to click, with the site it was given for")
+        if ("label" in step or "amount" in step) and (
+            step["kind"] != "click" or not isinstance(step.get("approved"), bool)
+            or not all(isinstance(step.get(key, ""), str) for key in ("label", "amount"))
+        ):
+            raise RuntimeError("An approved label and amount apply only to an approved click")
         # A card detail is hidden and checked only on an origin-bound fill.
         if step.get("field") == "card" and not step.get("origin"):
             raise RuntimeError("A card fill needs its origin")
@@ -1922,6 +2398,18 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                                          "Check the field in this snapshot before trying again."}
                     continue
             if kind == "click":
+                # Bought only on the user's word, for this site: an earlier step may have changed the page
+                # since the caller asked.
+                buying = click_purchase(client, session_id, ref)
+                if buying:
+                    approved = step.get("approved") is True and step.get("site") == buying["host"]
+                    # What the user saw on the card is what the button says and the total shows now.
+                    changed = approved and any(
+                        key in step and shown(step[key]) != shown(buying["purchase"].get(key)) for key in ("label", "amount"))
+                    if not approved or changed:
+                        return {"ok": False, "completed": completed, "uncertain": False,
+                                "purchase": {**buying["purchase"], "site": buying["host"]},
+                                "error": PURCHASE_CHANGED if changed else PURCHASE_REFUSED}
                 uncertain = True
                 aim = eval_json(client, session_id, f"window.__rakazoPageBrowser.aim({json.dumps(ref)})")
                 if isinstance(aim, dict) and aim.get("x") is not None:
@@ -2008,6 +2496,9 @@ def run(argv: list[str]) -> int:
     if raw_args.strip():
         args = json.loads(raw_args)
     port = cdp_port()
+    # The supervisor kills the helper at 25 s; a purchase check fails on its own well before, so the caller
+    # learns it failed (and asks) rather than finding a killed helper.
+    check_deadline_at = time.time() + PURCHASE_CHECK_SECONDS if command == "purchase_check" else None
     # Set once the browser answers: before that, no action can have reached the page.
     connected = False
     try:
@@ -2016,12 +2507,22 @@ def run(argv: list[str]) -> int:
         client = CdpClient(ws_url)
         client.connect()
         connected = True
+        client.deadline = check_deadline_at
         try:
-            session_id = attach_page(client)
+            try:
+                session_id = attach_page(client)
+            except NoVisibleTab:
+                if command != "purchase_check":
+                    raise
+                # No page is showing, so nothing on one can be bought.
+                print(json.dumps({"ok": True, "purchase": None, "origin": "", "site": "", "url": "", "title": ""}))
+                return 0
             if command == "navigate":
                 result = navigate(client, session_id, str(args.get("url") or ""))
             elif command == "snapshot":
                 result = snapshot(client, session_id)
+            elif command == "purchase_check":
+                result = purchase_check(client, session_id, args)
             elif command == "act":
                 actions = args.get("actions")
                 if not isinstance(actions, list):

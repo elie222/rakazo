@@ -21,7 +21,8 @@ export const MAX_FETCH_URL_LENGTH = 2_048;
 export const SITE_SENDING_TOOLS: ReadonlySet<string> = new Set(["web_fetch", "paid_request"]);
 
 /** A fleet card built from the resolved request: a title and the lines under it. */
-export type FleetCardSummary = { title: string; lines: string[] };
+/** `onceOnly`: the card never offers Always allow, as for a purchase. */
+export type FleetCardSummary = { title: string; lines: string[]; onceOnly?: boolean };
 
 /**
  * The child instruction card shows the whole new text, so its detail holds the longest
@@ -52,16 +53,17 @@ export function buildApprovalAskBlock(
       ),
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
-      actions: toolRequiresExplicitApproval(toolName)
-        ? [
-            { id: "allow", label: "Allow once" },
-            { id: "deny", label: "Deny" },
-          ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+      actions:
+        toolRequiresExplicitApproval(toolName) || options.summary.onceOnly
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
     };
   }
   if (toolName === "respond_agent_connection") {

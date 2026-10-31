@@ -123,6 +123,16 @@ def urlsplit_origin(url):
     return f"{parts.scheme}://{parts.netloc}"
 
 
+def helper_unplaced(test):
+    """desktop_purchase for a batch whose later click the caller marked unplaced, while one earlier click is a miss."""
+    asked = []
+    with patch.object(helper, "eval_json", return_value={"x": 1, "y": 2, "inside": True}), \
+            patch.object(helper, "purchase_at_point", return_value=("none", None)), \
+            patch.object(helper, "page_signals", side_effect=lambda *a, **k: asked.append(a) or test.BUY):
+        found = helper.desktop_purchase(Mock(), "session", {"points": [{"x": 1, "y": 2}], "unplaced": True})
+    return found, asked
+
+
 class PageBrowserTest(unittest.TestCase):
     def setUp(self):
         # The stand-in clients have no socket to listen on: waiting for events is just waiting.
@@ -164,6 +174,51 @@ class PageBrowserTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out[0]), {"ok": False, "error": "CDP not ready on port 9222: refused",
                                               "fallback": "computer_act", "uncertain": False})
+
+    def run_purchase_check(self, attach):
+        out = []
+        client = Mock()
+        with patch.object(helper, "wait_for_cdp"), patch.object(helper, "discover_ws_url", return_value="ws://x"), \
+                patch.object(helper, "CdpClient", return_value=client), \
+                patch.object(helper, "attach_page", side_effect=attach), \
+                patch.object(helper, "purchase_check", return_value={"ok": True, "purchase": None}) as check, \
+                patch("builtins.print", side_effect=out.append):
+            code = helper.run(["rakazo-page-browser", "purchase_check", json.dumps({"desktop": True})])
+        return code, json.loads(out[0]), client, check
+
+    def test_a_purchase_check_with_no_page_showing_finds_nothing_to_buy(self):
+        code, result, client, check = self.run_purchase_check(helper.NoVisibleTab("No unambiguous visible browser tab."))
+        self.assertEqual((code, result["ok"], result["purchase"]), (0, True, None))
+        check.assert_not_called()
+        # The check has its own deadline, well inside the supervisor's 25 s.
+        self.assertLessEqual(client.deadline - helper.time.time(), helper.PURCHASE_CHECK_SECONDS)
+        self.assertLess(helper.PURCHASE_CHECK_SECONDS, 25)
+
+    def test_a_purchase_check_that_cannot_pick_a_page_fails(self):
+        code, result, _, _ = self.run_purchase_check(RuntimeError("No unambiguous visible browser tab."))
+        self.assertEqual((code, result["ok"]), (0, False))
+        # Elsewhere, no page showing is still the error it was.
+        out = []
+        with patch.object(helper, "wait_for_cdp"), patch.object(helper, "discover_ws_url", return_value="ws://x"), \
+                patch.object(helper, "CdpClient", return_value=Mock(deadline=None)), \
+                patch.object(helper, "attach_page", side_effect=helper.NoVisibleTab("No unambiguous visible browser tab.")), \
+                patch("builtins.print", side_effect=out.append):
+            helper.run(["rakazo-page-browser", "snapshot", "{}"])
+        self.assertFalse(json.loads(out[0])["ok"])
+
+    def test_attach_page_says_when_no_page_is_showing_at_all(self):
+        client = Mock()
+        client.call.return_value = {"targetInfos": []}
+        with self.assertRaises(helper.NoVisibleTab):
+            helper.attach_page(client)
+
+    def test_a_call_past_the_deadline_fails_cleanly_without_waiting(self):
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client._sock = Mock()
+        client.deadline = helper.time.time() - 1
+        with self.assertRaisesRegex(RuntimeError, "did not answer in time"):
+            client.call("Runtime.evaluate", {"expression": "1"})
+        client._sock.sendall.assert_not_called()
 
     def test_closed_extended_frame_does_not_spin(self):
         for partial in (b"\x81\x7e", b"\x81\x7f", b"\x81\x80"):
@@ -363,7 +418,7 @@ class PageBrowserTest(unittest.TestCase):
 
     def test_preserves_completed_actions_when_next_response_is_lost(self):
         with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate:
-            evaluate.side_effect = [True, {}, True, TimeoutError("lost response")]
+            evaluate.side_effect = [True, {}, {}, True, {}, TimeoutError("lost response")]
             result = helper.act(Mock(), "session", [
                 {"kind": "click", "ref": "first"}, {"kind": "click", "ref": "second"},
             ])
@@ -1351,6 +1406,383 @@ class PageBrowserTest(unittest.TestCase):
             result = helper.snapshot(client, "session", 0.0)
         self.assertEqual(result["loading"], True)
         self.assertEqual(calls, [])
+
+    def buying_page(self, host="shop.example.test"):
+        def page(expression):
+            if "purchaseIntent(" in expression:
+                purchase = {"reason": "card_form", "label": "Pay $113", "amount": "$113"}
+                return {"purchase": purchase, "host": host, "frames": False}
+            return self.click_page(expression)
+        return page
+
+    def test_a_click_that_completes_a_purchase_is_refused_unless_the_user_approved_it(self):
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.buying_page())
+        self.assertEqual((result["ok"], result["completed"], result["uncertain"]), (False, 0, False))
+        self.assertEqual(result["error"], helper.PURCHASE_REFUSED)
+        self.assertEqual(result["purchase"], {"reason": "card_form", "label": "Pay $113", "amount": "$113",
+                                              "site": "shop.example.test"})
+        self.assertNotIn("fallback", result)
+        self.assertEqual(self.mouse_types(sent), [])
+
+    def test_an_approved_purchase_click_is_pressed_only_on_the_site_it_was_approved_for(self):
+        approved = {"kind": "click", "ref": "e1", "approved": True, "site": "shop.example.test"}
+        result, sent = self.scripted_act([approved], self.buying_page())
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved", "mousePressed", "mouseReleased"])
+        for step in ({**approved, "site": "other.example.test"}, {**approved, "approved": False},
+                     {"kind": "click", "ref": "e1"}):
+            with self.subTest(step=step):
+                result, sent = self.scripted_act([step], self.buying_page())
+                self.assertEqual((result["ok"], result["error"]), (False, helper.PURCHASE_REFUSED))
+                self.assertEqual(self.mouse_types(sent), [])
+
+    def test_only_the_approved_click_of_a_batch_is_pressed(self):
+        calls = {"purchase": 0}
+
+        def page(expression):
+            if "purchaseIntent(" in expression:
+                calls["purchase"] += 1
+                if calls["purchase"] == 1:
+                    return {"purchase": None, "host": "shop.example.test", "frames": False}
+            return self.buying_page()(expression)
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}, {"kind": "click", "ref": "e2"}], page)
+        self.assertEqual((result["ok"], result["completed"], result["error"]), (False, 1, helper.PURCHASE_REFUSED))
+        self.assertEqual(self.mouse_types(sent).count("mousePressed"), 1)
+
+    def test_an_approval_applies_only_to_a_click_with_its_site(self):
+        for step in ({"kind": "fill", "ref": "e1", "text": "x", "approved": True, "site": "a.test"},
+                     {"kind": "click", "ref": "e1", "approved": True}):
+            with self.subTest(step=step), patch.object(helper, "ensure_helpers") as ensure:
+                with self.assertRaisesRegex(RuntimeError, "approval applies only"):
+                    helper.act(Mock(), "session", [step])
+                ensure.assert_not_called()
+
+    def test_a_page_with_a_payment_frame_is_asked_again_with_the_frame(self):
+        asked = []
+
+        def page(expression):
+            if "purchaseIntent(" in expression:
+                asked.append(expression.rsplit(", ", 1)[1])
+                purchase = {"reason": "payment_page", "label": "Submit", "amount": ""} if "true" in asked[-1] else None
+                return {"purchase": purchase, "host": "shop.example.test", "frames": True}
+            return self.click_page(expression)
+        with patch.object(helper, "shows_payment_frame", return_value=True):
+            result, _ = self.scripted_act([{"kind": "click", "ref": "e1"}], page)
+        self.assertEqual(asked, ["false)", "true)"])
+        self.assertEqual(result["error"], helper.PURCHASE_REFUSED)
+
+    def failing_check_page(self, signals, origin=False):
+        """A page whose purchase check throws, as a page can make it, while it shows `signals` by itself."""
+        def page(expression):
+            if "purchaseIntent(" in expression:
+                raise RuntimeError("Maximum call stack size exceeded")
+            if "paymentPage(" in expression:
+                return {"purchase": signals, "host": "shop.example.test", "frames": False}
+            if expression == "location.host":
+                return "shop.example.test"
+            if origin and "location.origin" in expression:
+                return {"origin": "https://shop.example.test", "host": "shop.example.test",
+                        "url": "https://shop.example.test/pay", "title": "Pay"}
+            return self.click_page(expression)
+        return page
+
+    def test_a_click_whose_purchase_check_fails_is_refused_on_a_payment_page(self):
+        signals = {"reason": "payment_page", "label": "Pay $113", "amount": "$113"}
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.failing_check_page(signals))
+        self.assertEqual((result["ok"], result["error"]), (False, helper.PURCHASE_REFUSED))
+        self.assertEqual(result["purchase"]["site"], "shop.example.test")
+        self.assertEqual(self.mouse_types(sent), [])
+        # A page that shows no payment by itself is not held up by a check that failed.
+        result, sent = self.scripted_act([{"kind": "click", "ref": "e1"}], self.failing_check_page(None))
+        self.assertTrue(result["ok"])
+        self.assertIn("mousePressed", self.mouse_types(sent))
+
+    def test_purchase_check_names_a_click_whose_check_fails_on_a_payment_page(self):
+        signals = {"reason": "payment_page", "label": "Pay $113", "amount": "$113"}
+        found = self.purchase_check({"actions": [{"kind": "click", "ref": "e1"}]},
+                                    self.failing_check_page(signals, origin=True))
+        self.assertEqual(found["purchase"]["steps"], [0])
+        self.assertEqual(found["purchase"]["label"], "Pay $113")
+
+    def test_a_page_that_cannot_be_read_at_all_asks(self):
+        with patch.object(helper, "page_signals", side_effect=RuntimeError("helper gone")):
+            self.assertEqual(helper.signals_or_ask(Mock(), "session", False), helper.UNREADABLE_PURCHASE)
+            with patch.object(helper, "eval_json", return_value={"x": 1, "y": 2, "inside": True}), \
+                    patch.object(helper, "purchase_at_point", side_effect=RuntimeError("too deep")):
+                found = helper.desktop_purchase(Mock(), "session", {"points": [{"x": 1, "y": 2}]})
+        self.assertEqual(found, helper.UNREADABLE_PURCHASE)
+
+    def test_a_spot_whose_look_up_fails_is_unknown_and_running_out_of_time_still_stops(self):
+        with patch.object(helper, "page_purchase", side_effect=RuntimeError("Maximum call stack size exceeded")):
+            self.assertEqual(helper.purchase_at_point(Mock(), "session", None, 1, 2, float("inf")), ("unknown", None))
+        with patch.object(helper, "page_purchase", side_effect=helper.Deadline()):
+            with self.assertRaises(helper.Deadline):
+                helper.purchase_at_point(Mock(), "session", None, 1, 2, float("inf"))
+
+    def purchase_check(self, args, page):
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json", side_effect=lambda *a, **k: page(a[2])):
+            return helper.purchase_check(Mock(), "session", args)
+
+    def test_purchase_check_names_the_clicks_that_would_buy_and_presses_nothing(self):
+        def page(expression):
+            if "location.origin" in expression:
+                return {"origin": "https://shop.example.test", "host": "shop.example.test",
+                        "url": "https://shop.example.test/pay", "title": "Pay"}
+            if "purchaseIntent(\"e3\"" in expression:
+                return {"purchase": {"reason": "final_step", "label": "Pay now", "amount": "$5"},
+                        "host": "shop.example.test", "frames": False}
+            return {"purchase": None, "host": "shop.example.test", "frames": False}
+        actions = [{"kind": "fill", "ref": "e1"}, {"kind": "click", "ref": "e2"}, {"kind": "click", "ref": "e3"}]
+        self.assertEqual(self.purchase_check({"actions": actions}, page), {
+            "ok": True, "origin": "https://shop.example.test", "site": "shop.example.test",
+            "url": "https://shop.example.test/pay", "title": "Pay",
+            "purchase": {"steps": [2], "label": "Pay now", "amount": "$5", "amountFrom": "page",
+                         "reason": "final_step"}})
+        none = self.purchase_check({"actions": actions[:2]}, page)
+        self.assertIsNone(none["purchase"])
+
+    def test_purchase_check_for_the_screen_asks_about_the_page_and_whether_enter_was_pressed(self):
+        seen = []
+
+        def page(expression):
+            if "location.origin" in expression:
+                return {"origin": "https://shop.example.test", "host": "shop.example.test", "url": "u", "title": ""}
+            seen.append(expression)
+            return {"purchase": {"reason": "payment_page", "label": "", "amount": "$9"},
+                    "host": "shop.example.test", "frames": False}
+        checked = self.purchase_check({"desktop": True, "enter": True}, page)
+        self.assertEqual(checked["purchase"], {"steps": [], "label": "", "amount": "$9", "amountFrom": "page",
+                                               "reason": "payment_page"})
+        self.assertEqual(seen, ["window.__rakazoPageBrowser.paymentPage(false, true)"])
+
+    def test_an_approved_click_is_refused_when_the_button_or_total_is_not_what_the_user_saw(self):
+        approved = {"kind": "click", "ref": "e1", "approved": True, "site": "shop.example.test",
+                    "label": "Pay $113", "amount": "$113"}
+        result, sent = self.scripted_act([approved], self.buying_page())
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.mouse_types(sent), ["mouseMoved", "mousePressed", "mouseReleased"])
+        # Invisible characters and spacing are not what the user saw either way.
+        spaced = {**approved, "label": "Pay\u200b  $113 "}
+        self.assertTrue(self.scripted_act([spaced], self.buying_page())[0]["ok"])
+        for changed in ({**approved, "amount": "$999"}, {**approved, "label": "Pay now"}):
+            with self.subTest(changed=changed):
+                result, sent = self.scripted_act([changed], self.buying_page())
+                self.assertEqual((result["ok"], result["error"]), (False, helper.PURCHASE_CHANGED))
+                self.assertEqual(self.mouse_types(sent), [])
+
+    def test_an_approved_label_and_amount_apply_only_to_an_approved_click(self):
+        for step in ({"kind": "click", "ref": "e1", "label": "Pay"},
+                     {"kind": "click", "ref": "e1", "approved": True, "site": "a.test", "amount": 5}):
+            with self.subTest(step=step), patch.object(helper, "ensure_helpers") as ensure:
+                with self.assertRaisesRegex(RuntimeError, "label and amount"):
+                    helper.act(Mock(), "session", [step])
+                ensure.assert_not_called()
+
+    def desktop_check(self, browser, enter=False):
+        with patch.object(helper, "ensure_helpers"):
+            return helper.purchase_check(browser.client, "session", {"desktop": True, "enter": enter})
+
+    class FrameCheckout(CardBrowser):
+        """A page whose card form is inside a frame of an origin nobody listed."""
+
+        def __init__(self, shows, **kwargs):
+            super().__init__(**kwargs)
+            self.shows = shows
+            self.asked = []
+
+        def evaluate(self, expression, in_frame):
+            if "location.origin, host" in expression:
+                return {"origin": MERCHANT, "host": "shop.example.test", "url": MERCHANT + "/", "title": ""}
+            if "paymentPage(" in expression:
+                self.asked.append(in_frame)
+                buying = {"reason": "payment_page", "label": "Pay", "amount": "$5"}
+                return {"purchase": buying if in_frame and self.shows else None, "host": "x", "frames": True}
+            return super().evaluate(expression, in_frame)
+
+    def test_a_desktop_check_looks_in_frames_of_any_origin_and_any_signal_counts(self):
+        browser = self.FrameCheckout(True, frame_url="https://checkout.unlisted.example/embed")
+        checked = self.desktop_check(browser)
+        self.assertEqual(checked["purchase"], {"steps": [], "label": "Pay", "amount": "$5", "amountFrom": "page",
+                                               "reason": "payment_page"})
+        self.assertEqual(checked["site"], "shop.example.test")
+        self.assertIn(True, browser.asked)
+        quiet = self.FrameCheckout(False, frame_url="https://checkout.unlisted.example/embed")
+        self.assertIsNone(self.desktop_check(quiet)["purchase"])
+        self.assertEqual(set(quiet.asked), {False, True})
+
+    def test_a_desktop_check_looks_in_the_frames_of_the_pages_own_process_too(self):
+        browser = self.FrameCheckout(True)
+        real_call = browser.call
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            if method == "Page.getFrameTree" and session_id == "session":
+                return {"frameTree": {"frame": {"id": "main"}, "childFrames": [
+                    {"frame": {"id": "inner"}, "childFrames": [{"frame": {"id": "deeper"}}]}]}}
+            if method == "Target.setAutoAttach":
+                return {}
+            if method == "Page.createIsolatedWorld":
+                return {"executionContextId": 2 if params["frameId"] == "deeper" else 3}
+            return real_call(method, params, session_id=session_id, timeout_s=timeout_s)
+        browser.client.call = call
+        self.assertIsNotNone(self.desktop_check(browser)["purchase"])
+        self.assertEqual(self.desktop_check(self.FrameCheckout(False))["purchase"], None)
+
+    def test_a_desktop_check_that_finds_the_page_itself_does_not_search_frames(self):
+        browser = self.FrameCheckout(True)
+        with patch.object(helper, "desktop_frames") as frames, \
+                patch.object(helper, "page_purchase", return_value={"purchase": {
+                    "reason": "payment_page", "label": "", "amount": ""}, "host": "h", "frames": False}):
+            self.assertIsNotNone(self.desktop_check(browser)["purchase"])
+        frames.assert_not_called()
+
+    def point_check(self, points, placed, verdicts, signals=None, enter=False):
+        """desktop_purchase with the page placing each point as `placed` says and `verdicts` for what is there."""
+        asked = []
+        with patch.object(helper, "eval_json", side_effect=lambda *a, **k: placed.pop(0)), \
+                patch.object(helper, "purchase_at_point", side_effect=lambda *a: verdicts.pop(0)), \
+                patch.object(helper, "page_signals", side_effect=lambda *a, **k: asked.append(a) or signals):
+            found = helper.desktop_purchase(Mock(), "session", {
+                "points": [{"x": x, "y": y} for x, y in points], "enter": enter})
+        return found, asked
+
+    BUY = {"reason": "final_step", "label": "Pay", "amount": "$5", "amountFrom": "button"}
+
+    def test_a_click_asks_only_when_its_spot_lands_on_a_control_that_pays(self):
+        inside = {"x": 10, "y": 20, "inside": True}
+        found, asked = self.point_check([(1, 2)], [inside], [("buy", self.BUY)])
+        self.assertEqual(found, self.BUY)
+        # A spot that lands on something else asks nothing, even on a page that shows a payment.
+        found, asked = self.point_check([(1, 2)], [inside], [("none", None)], signals=self.BUY)
+        self.assertIsNone(found)
+        self.assertEqual(asked, [])
+        # So does a spot in the toolbar or outside the window.
+        found, asked = self.point_check([(1, 2)], [{"x": 10, "y": -40, "inside": False}], [], signals=self.BUY)
+        self.assertEqual((found, asked), (None, []))
+        # The first spot that pays is the one asked about.
+        found, _ = self.point_check([(1, 2), (3, 4)], [inside, inside], [("none", None), ("buy", self.BUY)])
+        self.assertEqual(found, self.BUY)
+
+    def test_a_click_that_cannot_be_placed_or_looked_into_asks_when_the_page_shows_a_payment(self):
+        inside = {"x": 10, "y": 20, "inside": True}
+        for placed, verdicts in (([None], []), ([inside], [("unknown", None)])):
+            with self.subTest(placed=placed):
+                found, asked = self.point_check([(1, 2)], list(placed), list(verdicts), signals=self.BUY)
+                self.assertEqual(found, self.BUY)
+                self.assertEqual(len(asked), 1)
+                found, _ = self.point_check([(1, 2)], list(placed), list(verdicts), signals=None)
+                self.assertIsNone(found)
+
+    def test_a_click_the_caller_could_not_place_asks_when_the_page_shows_a_payment(self):
+        found, asked = helper_unplaced(self)
+        self.assertEqual(found, self.BUY)
+        self.assertEqual(len(asked), 1)
+
+    def test_a_key_asks_about_the_page_whatever_is_clicked_with_it(self):
+        found, asked = self.point_check([(1, 2)], [{"x": 1, "y": 2, "inside": True}], [("none", None)],
+                                        signals=self.BUY, enter=True)
+        self.assertEqual(found, self.BUY)
+        self.assertEqual(asked[0][2], True)
+        found, asked = self.point_check([], [], [], signals=self.BUY, enter=True)
+        self.assertEqual(found, self.BUY)
+
+    def test_a_desktop_check_that_runs_out_of_time_asks_when_the_page_itself_shows_a_payment(self):
+        with patch.object(helper, "DESKTOP_DEADLINE_SECONDS", -1.0), \
+                patch.object(helper, "eval_json", return_value={"x": 1, "y": 2, "inside": True}), \
+                patch.object(helper, "page_signals", return_value=self.BUY) as signals:
+            found = helper.desktop_purchase(Mock(), "session", {"points": [{"x": 1, "y": 2}]})
+        self.assertEqual(found, self.BUY)
+        self.assertFalse(signals.call_args.kwargs["frames"])
+        with patch.object(helper, "DESKTOP_DEADLINE_SECONDS", -1.0), \
+                patch.object(helper, "eval_json", return_value=None), \
+                patch.object(helper, "page_signals", return_value=None):
+            self.assertIsNone(helper.desktop_purchase(Mock(), "session", {"enter": True}))
+
+    def test_a_desktop_check_whose_lookup_fails_asks_when_the_page_itself_shows_a_payment(self):
+        with patch.object(helper, "eval_json", return_value={"x": 1, "y": 2, "inside": True}), \
+                patch.object(helper, "purchase_at_point", side_effect=RecursionError("too deep")), \
+                patch.object(helper, "page_signals", return_value=self.BUY) as signals:
+            found = helper.desktop_purchase(Mock(), "session", {"points": [{"x": 1, "y": 2}]})
+        self.assertEqual(found, self.BUY)
+        self.assertFalse(signals.call_args.kwargs["frames"])
+
+    def test_frame_enumeration_stops_at_its_deadline(self):
+        browser = self.FrameCheckout(True, frame_url="https://checkout.unlisted.example/embed")
+        with self.assertRaises(helper.Deadline):
+            helper.desktop_frames(browser.client, "session", deadline=0.0)
+
+    class FrameHit(CardBrowser):
+        """A page whose spot lands in a frame: the browser finds `node` there, and the frame answers `value`."""
+
+        def __init__(self, hit_frame, node_name, value=None, scroll=(0, 100), **kwargs):
+            super().__init__(**kwargs)
+            self.hit_frame, self.node_name, self.value, self.scroll = hit_frame, node_name, value, scroll
+            self.expressions = []
+
+        def evaluate(self, expression, in_frame):
+            if "purchaseAt(" in expression:
+                self.expressions.append((in_frame, expression))
+                if in_frame:
+                    return {"purchase": self.value, "inFrame": False, "scroll": [0, 0]}
+                return {"purchase": None, "inFrame": True, "scroll": list(self.scroll), "frames": False}
+            return super().evaluate(expression, in_frame)
+
+        def call(self, method, params=None, *, session_id=None, timeout_s=30.0):
+            if method == "DOM.getNodeForLocation":
+                self.sent.append((method, params, session_id))
+                return {"frameId": self.hit_frame, "backendNodeId": 7}
+            if method == "DOM.describeNode":
+                return {"node": {"nodeName": self.node_name}}
+            if method == "DOM.getBoxModel":
+                return {"model": {"content": [200, 300, 700, 300, 700, 500, 200, 500]}}
+            if method == "Runtime.callFunctionOn" and "returnByValue" in params and "purchaseOfNode" in \
+                    params.get("functionDeclaration", ""):
+                self.sent.append((method, params, session_id))
+                return {"result": {"value": self.value}}
+            return super().call(method, params, session_id=session_id, timeout_s=timeout_s)
+
+    def at_point(self, browser):
+        return helper.purchase_at_point(browser.client, "session", None, 50, 60, float("inf"))
+
+    def test_a_spot_inside_a_frame_of_the_same_process_is_looked_up_in_that_frame(self):
+        buy = {"reason": "final_step", "label": "Pay", "amount": "", "amountFrom": "page"}
+        browser = self.FrameHit("child", "BUTTON", buy)
+        self.assertEqual(self.at_point(browser), ("buy", buy))
+        asked = [params for method, params, _ in browser.sent if method == "DOM.getNodeForLocation"]
+        # The browser counts from the top of the page: the spot plus the scroll.
+        self.assertEqual(asked, [{"x": 50, "y": 160, "includeUserAgentShadowDOM": True}])
+        self.assertEqual(self.at_point(self.FrameHit("child", "BUTTON", None)), ("none", None))
+
+    def test_a_spot_inside_a_frame_of_another_process_is_asked_of_that_frame_at_its_own_spot(self):
+        buy = {"reason": "final_step", "label": "Pay", "amount": "", "amountFrom": "page"}
+        browser = self.FrameHit("main", "IFRAME", buy)
+        real_call = browser.call
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            if method == "Page.getFrameTree" and session_id == "frame-session":
+                return {"frameTree": {"frame": {"id": "other", "url": "https://checkout.unlisted.example/"}}}
+            if method == "DOM.getFrameOwner":
+                return {"backendNodeId": 7}
+            return real_call(method, params, session_id=session_id, timeout_s=timeout_s)
+        browser.client.call = call
+        browser.client._handle_event({"method": "Target.attachedToTarget", "sessionId": "session", "params": {
+            "sessionId": "frame-session", "targetInfo": {"type": "iframe", "url": "https://x"}}})
+        self.assertEqual(self.at_point(browser), ("buy", buy))
+        inside = [expression for in_frame, expression in browser.expressions if in_frame]
+        # Page spot (50, 160) in a frame at (200, 300) in the viewport.
+        self.assertTrue(any("purchaseAt(-150, -240," in expression for expression in inside), inside)
+
+    def test_a_spot_inside_a_frame_that_cannot_be_found_is_unknown(self):
+        browser = self.FrameHit("main", "IFRAME", None)
+        self.assertEqual(self.at_point(browser), ("unknown", None))
+        failing = self.FrameHit("child", "BUTTON", None)
+        real_call = failing.client.call
+
+        def call(method, *args, **kwargs):
+            if method == "DOM.getNodeForLocation":
+                raise RuntimeError("no node")
+            return real_call(method, *args, **kwargs)
+        failing.client.call = call
+        self.assertEqual(self.at_point(failing), ("unknown", None))
 
     def test_click_on_a_native_select_sends_no_mouse_event(self):
         def page(expression):

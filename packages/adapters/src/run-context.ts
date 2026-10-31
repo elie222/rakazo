@@ -162,6 +162,11 @@ export interface RunState {
    */
   tainted: boolean;
   earlierAttempt: Promise<boolean> | undefined;
+  /**
+   * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
+   * the wallet owner approved paying there, so the pay click there asks nothing more.
+   */
+  walletHosts: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
 }

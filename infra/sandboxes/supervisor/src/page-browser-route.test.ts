@@ -392,6 +392,65 @@ it.each([["a", "b", "c"], [""], ["x".repeat(1025)]])(
   },
 );
 
+async function browserRequest(body: unknown) {
+  return supervisorApp.request("/computers/computer-upload/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+it("forwards a purchase approval on a click step, and nothing else on it", async () => {
+  const click = {
+    kind: "click",
+    ref: "e1",
+    approved: true,
+    site: "shop.example.test",
+    label: "Pay $5",
+    amount: "$5",
+  };
+  expect(
+    await (await browserRequest({ command: "act", actions: [{ ...click, extra: 1 }] })).json(),
+  ).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join("")).actions[0]).toEqual(click);
+});
+
+it("forwards a purchase check without acting", async () => {
+  const body = {
+    command: "purchase_check",
+    actions: [{ kind: "click", ref: "e1" }, { kind: "fill_card" }],
+    desktop: true,
+    enter: false,
+    points: [{ x: 640, y: 400 }],
+    unplaced: true,
+  };
+  expect(await (await browserRequest(body)).json()).toMatchObject({ ok: true });
+  expect(JSON.parse(mock.stdin.join(""))).toEqual(body);
+  const helper = mock.exec.mock.calls.find(([options]) =>
+    options.Cmd.includes("/usr/local/bin/rakazo-page-browser"),
+  )!;
+  expect(helper[0].Cmd).toContain("purchase_check");
+});
+
+it.each([
+  { command: "purchase_check", actions: Array.from({ length: 25 }, () => ({ kind: "click" })) },
+  { command: "purchase_check", desktop: "yes" },
+  { command: "purchase_check", unplaced: "yes" },
+  { command: "purchase_check", points: [{ x: "1", y: 2 }] },
+  { command: "purchase_check", points: Array.from({ length: 25 }, () => ({ x: 1, y: 2 })) },
+  { command: "act", actions: [{ kind: "click", ref: "e1", site: "x".repeat(254) }] },
+  { command: "act", actions: [{ kind: "click", ref: "e1", label: "x".repeat(201) }] },
+  { command: "act", actions: [{ kind: "click", ref: "e1", amount: 5 }] },
+])("rejects a malformed purchase request before running commands: %j", async (body) => {
+  expect((await browserRequest(body)).status).toBeGreaterThanOrEqual(400);
+  expect(mock.exec).not.toHaveBeenCalled();
+});
+
 it.each([undefined, "5"])("forwards the upload size override only when set: %j", async (limit) => {
   const original = process.env.RAKAZO_BROWSER_UPLOAD_MAX_BYTES;
   try {

@@ -21,6 +21,13 @@ import { sanitizeConnectorError } from "./connector-safety.js";
 import { isFleetApprovalTool, prepareFleetRequest } from "./fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "./lazy-tool-catalog.js";
 import { paidRequestEffect, restorePaidRequest } from "./paid-request.js";
+import type { PurchaseApproval } from "./purchase-gate.js";
+import {
+  detectPurchase,
+  PURCHASE_CHECKED_TOOLS,
+  purchaseApprovalOf,
+  purchaseCardSummary,
+} from "./purchase-gate.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted, neverAsks } from "./run-context.js";
 import {
@@ -51,6 +58,8 @@ export interface ToolRequest {
   fleetSummary: FleetCardSummary | undefined;
   /** The owner must approve this call whatever the space's rules say. */
   ownerApproval: boolean;
+  /** This page tool call completes a purchase, which a person approves each time. */
+  purchase: PurchaseApproval | undefined;
 }
 
 type ToolError = { error: string };
@@ -260,6 +269,7 @@ export async function resolveToolRequest(
     replayEffectToolName,
     fleetSummary: undefined,
     ownerApproval: false,
+    purchase: undefined,
   };
 }
 
@@ -373,6 +383,20 @@ export async function prepareToolRequest(
     ) {
       return { error: "connection request is no longer pending" };
     }
+  }
+  if (PURCHASE_CHECKED_TOOLS.has(name)) {
+    // The approval is written here from what the page says; a model-supplied one is dropped, and an
+    // approved replay keeps the one the user saw.
+    const { purchaseApproval: given, ...rest } = args;
+    const approved = nextApprovedTool === name ? purchaseApprovalOf(given) : undefined;
+    args = approved ? args : rest;
+    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    if (purchase) {
+      args = { ...rest, purchaseApproval: purchase };
+      request.purchase = purchase;
+      request.fleetSummary = purchaseCardSummary(purchase);
+    }
+    if (purchase || given !== undefined) request.effectRequest = args;
   }
   request.args = args;
   if (name === "respond_agent_connection" || name === "update_bot" || isFleetApprovalTool(name))
