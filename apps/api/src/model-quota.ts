@@ -21,10 +21,16 @@ export async function readConnectionQuota(
   let accessToken: string | null = null;
   let accountId: string | undefined;
   let baseUrl: string | undefined;
+  let authKind: "api_key" | "oauth" | undefined;
   if (secret) {
     try {
       const stored = parseModelSecret(await ctx.deps.secrets.load(secret.ciphertext, secret.id));
-      if (row.provider === "opencode-go" && stored.kind === "api_key") {
+      authKind =
+        stored.kind === "api_key" ? "api_key" : stored.kind === "oauth" ? "oauth" : undefined;
+      if (
+        (row.provider === "opencode-go" || row.provider === "openrouter") &&
+        stored.kind === "api_key"
+      ) {
         accessToken = stored.key;
       } else if (row.provider === "openai-compatible" && stored.kind === "openai_compatible") {
         baseUrl = stored.baseUrl;
@@ -51,6 +57,7 @@ export async function readConnectionQuota(
       accessToken,
       accountId,
       baseUrl,
+      authKind,
     },
     { fresh: options.fresh ?? false },
   );

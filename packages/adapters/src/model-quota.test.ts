@@ -5,6 +5,7 @@ import {
   parseCodexQuota,
   parseCommandCodeQuota,
   parseGoQuota,
+  parseOpenRouterQuota,
   parseSyntheticQuota,
 } from "./model-quota.js";
 
@@ -32,7 +33,7 @@ const response = (body: unknown) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
 
 describe("model quota observations", () => {
-  it("accepts the weekly usage breakdown without treating it as another allowance", () => {
+  it("accepts the weekly usage breakdown and skips unknown limit kinds", () => {
     expect(
       parseClaudeQuota({
         ...claude,
@@ -40,14 +41,12 @@ describe("model quota observations", () => {
         limits: [
           { kind: "session", scope: null, percent: 0 },
           { kind: "weekly_all", scope: null, percent: 91 },
+          { kind: "unknown_scope", scope: null, percent: 0 },
         ],
       }),
     ).toHaveLength(2);
-    expect(() =>
-      parseClaudeQuota({ ...claude, limits: [{ kind: "unknown_scope", scope: null, percent: 0 }] }),
-    ).toThrow();
   });
-  it("ignores a weekly limit scoped to one model when reading the shared allowance", () => {
+  it("reports a weekly limit scoped to one model as that model's own window", () => {
     const limits = [
       { kind: "session", scope: null, percent: 0 },
       { kind: "weekly_all", scope: null, percent: 91 },
@@ -55,18 +54,22 @@ describe("model quota observations", () => {
         kind: "weekly_scoped",
         scope: { model: { id: null, display_name: "Model A" }, surface: null },
         percent: 20,
+        resets_at: "2030-03-20T12:00:00Z",
       },
+      { kind: "weekly_scoped", scope: null, percent: 20 },
+      { kind: "weekly_scoped", scope: { model: { display_name: "Model B" } }, percent: "20" },
     ];
-    expect(parseClaudeQuota({ ...claude, limits })).toMatchObject([
-      { id: "five_hour", usedPercent: 0 },
-      { id: "seven_day", usedPercent: 91 },
+    expect(parseClaudeQuota({ ...claude, limits })).toEqual([
+      expect.objectContaining({ id: "five_hour", usedPercent: 0, modelIds: null }),
+      expect.objectContaining({ id: "seven_day", usedPercent: 91, modelIds: null }),
+      {
+        id: "seven_day_model_model_a",
+        usedPercent: 20,
+        resetsAt: "2030-03-20T12:00:00.000Z",
+        modelIds: ["Model A"],
+        label: "Model A",
+      },
     ]);
-    expect(() =>
-      parseClaudeQuota({
-        ...claude,
-        limits: [...limits.slice(0, 2), { kind: "weekly_scoped", scope: null, percent: 20 }],
-      }),
-    ).toThrow();
   });
   it("keeps known zero distinct from unknown and preserves provider resets", () => {
     expect(parseClaudeQuota(claude)).toMatchObject([{ usedPercent: 0 }, { usedPercent: 91 }]);
@@ -89,8 +92,14 @@ describe("model quota observations", () => {
   ])("rejects incomplete or unknown limiting windows: %j", (value) => {
     expect(() => parseCodexQuota(value)).toThrow();
   });
-  it("does not apply an unmapped Claude model window to every model", () => {
-    expect(() => parseClaudeQuota({ ...claude, seven_day_sonnet: { utilization: 100 } })).toThrow();
+  it("keeps a model-specific Claude window off the shared allowance", () => {
+    expect(parseClaudeQuota({ ...claude, seven_day_sonnet: { utilization: 100 } })).toContainEqual(
+      expect.objectContaining({
+        id: "seven_day_model_sonnet",
+        modelIds: ["Sonnet"],
+        label: "Sonnet",
+      }),
+    );
   });
   it("refreshes admission reads instead of reusing the settings cache", async () => {
     let clock = Date.parse("2030-01-01T00:00:00Z");
@@ -414,4 +423,97 @@ it("rejects a Synthetic response without a usable request allowance", () => {
   expect(() =>
     parseSyntheticQuota({ ...synthetic, planWeeklyLimit: { percentRemaining: 140 } }),
   ).toThrow();
+});
+
+it("reads Synthetic's newer rolling and weekly token limits", () => {
+  expect(
+    parseSyntheticQuota({
+      rollingFiveHourLimit: { limit: 600, used: 150, resetsAt: "2030-03-17T17:00:00Z" },
+      weeklyTokenLimit: { percentRemaining: 80 },
+    }),
+  ).toEqual([
+    { id: "five_hour", usedPercent: 25, resetsAt: "2030-03-17T17:00:00.000Z", modelIds: null },
+    { id: "seven_day", usedPercent: 20, resetsAt: null, modelIds: null },
+  ]);
+});
+
+const openRouterKey = {
+  data: { usage: 12.5, limit: 20, limit_remaining: 5, limit_reset: "monthly", budgets: [] },
+};
+it("reads an OpenRouter key's limit and the account balance with the key", async () => {
+  const fetcher = vi.fn(async (url: string | URL | Request) =>
+    String(url).endsWith("/credits")
+      ? response({ data: { total_credits: 50, total_usage: 12.25 } })
+      : response(openRouterKey),
+  );
+  const result = await new ModelQuotaReader(fetcher).read({
+    ...connection,
+    provider: "openrouter",
+    authKind: "api_key",
+  });
+  expect(fetcher).toHaveBeenCalledWith(
+    "https://openrouter.ai/api/v1/key",
+    expect.objectContaining({
+      headers: { authorization: "Bearer test-access-token", accept: "application/json" },
+      redirect: "error",
+    }),
+  );
+  expect(result.view).toMatchObject({
+    status: "fresh",
+    windows: [{ id: "key_limit", usedPercent: 75, resetsAt: null }],
+    balance: { remaining: 37.75, currency: "USD" },
+  });
+  expect(JSON.stringify(result)).not.toContain("test-access-token");
+});
+it("keeps an OpenRouter key read when account credits are refused", async () => {
+  const fetcher = vi.fn(async (url: string | URL | Request) =>
+    String(url).endsWith("/credits")
+      ? new Response("{}", { status: 403 })
+      : response({ data: { usage: 3, limit: null, limit_remaining: null } }),
+  );
+  const result = await new ModelQuotaReader(fetcher).read({
+    ...connection,
+    provider: "openai-compatible",
+    baseUrl: "https://openrouter.ai/api/v1",
+  });
+  expect(result.view).toMatchObject({ status: "fresh", windows: [], balance: null });
+});
+it("never subtracts lifetime OpenRouter usage from a resetting limit", () => {
+  expect(
+    parseOpenRouterQuota(
+      {
+        data: {
+          usage: 900,
+          limit: 10,
+          limit_remaining: 10,
+          budgets: [
+            {
+              scope: "key_limit",
+              limit_usd: 10,
+              remaining_usd: 10,
+              resets_at: "2030-04-01T00:00:00Z",
+            },
+            { scope: "guardrail", limit_usd: 4, remaining_usd: 1 },
+          ],
+        },
+      },
+      null,
+    ).windows,
+  ).toEqual([
+    { id: "key_limit", usedPercent: 0, resetsAt: "2030-04-01T00:00:00.000Z", modelIds: null },
+    { id: "budget_1", usedPercent: 75, resetsAt: null, modelIds: null },
+  ]);
+  expect(() =>
+    parseOpenRouterQuota({ data: { usage: 1, limit: 10, limit_remaining: 11 } }, null),
+  ).toThrow();
+});
+it("reports an Anthropic API key as having no allowance to read", async () => {
+  const fetcher = vi.fn();
+  const result = await new ModelQuotaReader(fetcher).read({
+    ...connection,
+    provider: "anthropic",
+    authKind: "api_key",
+  });
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(result.view.status).toBe("unsupported");
 });

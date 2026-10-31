@@ -21,6 +21,15 @@ export function isSyntheticBaseUrl(baseUrl: string | undefined): boolean {
   }
 }
 
+export function isOpenRouterBaseUrl(baseUrl: string | undefined): boolean {
+  try {
+    const url = new URL(baseUrl ?? "");
+    return url.protocol === "https:" && url.hostname === "openrouter.ai";
+  } catch {
+    return false;
+  }
+}
+
 export function compatibleApiKeyRequired(baseUrl: string | undefined): boolean {
   return (
     isOllamaCloudBaseUrl(baseUrl) || isCommandCodeBaseUrl(baseUrl) || isOpenCodeGoBaseUrl(baseUrl)

@@ -30,6 +30,24 @@ describe("provider usage sorting", () => {
     ]);
   });
 
+  it("ranks by the shared allowance, not a window scoped to particular models", () => {
+    const scoped = quota(90);
+    scoped.windows.push({
+      id: "seven_day_model_a",
+      usedPercent: 99,
+      resetsAt: null,
+      modelIds: ["Model A"],
+    });
+    expect(
+      sortModelUsageEntries(
+        [
+          { id: "scoped", label: "A", quota: scoped, mainRank: null, approvalRank: null },
+          { id: "plain", label: "B", quota: quota(50), mainRank: null, approvalRank: null },
+        ],
+        "quota",
+      ).map((entry) => entry.id),
+    ).toEqual(["scoped", "plain"]);
+  });
   it("sorts model roles by their configured order and inverts only that order", () => {
     expect(sortModelUsageEntries(entries, "main-model").map((entry) => entry.id)).toEqual([
       "two",

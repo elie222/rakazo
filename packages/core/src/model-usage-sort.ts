@@ -127,12 +127,9 @@ export function sortModelUsageEntries<T extends ModelUsageSortEntry>(
 }
 
 function lowestRemaining(quota: ModelQuota | null | undefined): number | null {
-  if (
-    !quota ||
-    quota.status === "unsupported" ||
-    quota.status === "unavailable" ||
-    !quota.windows.length
-  )
+  // A window scoped to particular models does not limit the connection as a whole.
+  const shared = quota?.windows.filter((window) => window.modelIds === null) ?? [];
+  if (!quota || quota.status === "unsupported" || quota.status === "unavailable" || !shared.length)
     return null;
-  return Math.min(...quota.windows.map((window) => 100 - window.usedPercent));
+  return Math.min(...shared.map((window) => 100 - window.usedPercent));
 }
