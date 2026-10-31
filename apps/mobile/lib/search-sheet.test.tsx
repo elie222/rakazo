@@ -110,7 +110,9 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ width: 390 }),
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  Text: ({ children, accessibilityRole }: { children: ReactNode; accessibilityRole?: string }) => (
+    <span role={accessibilityRole}>{children}</span>
+  ),
   TextInput: ({
     ref,
     value,
@@ -148,15 +150,18 @@ vi.mock("react-native", () => ({
     data,
     renderItem,
     ListEmptyComponent,
+    ListFooterComponent,
   }: {
     data: { key: string }[];
     renderItem: (info: { item: unknown }) => ReactNode;
     ListEmptyComponent: ReactNode;
+    ListFooterComponent?: ReactNode;
   }) => (
     <div>
       {data.length
         ? data.map((item) => <div key={item.key}>{renderItem({ item })}</div>)
         : ListEmptyComponent}
+      {ListFooterComponent}
     </div>
   ),
 }));
@@ -272,6 +277,56 @@ it("ignores stale server responses and restores chats when cleared", async () =>
   expect(row("Found note, Message")).toBeNull();
   await type("");
   expect(row("Scout, Bot")).not.toBeNull();
+});
+it("says the search failed instead of no results, ignoring superseded and cleared requests", async () => {
+  const pending: {
+    resolve: (hits: (typeof message)[]) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+  state.search.mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        pending.push({ resolve, reject });
+      }),
+  );
+  async function search(text: string) {
+    await type(text);
+    await act(async () => vi.advanceTimersByTime(200));
+  }
+  await search("first");
+  await act(async () => pending[0]!.reject(new Error("Search is unavailable right now")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+  expect(container.textContent).not.toContain("No results");
+
+  await search("Scout");
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+  await act(async () => pending[1]!.reject(new Error("Search is unavailable right now")));
+  expect(row("Scout, Bot")).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+
+  await search("second");
+  expect(container.textContent).toBe("CloseSearching…");
+  await act(async () => pending[2]!.resolve([]));
+  expect(container.textContent).toBe("CloseNo results");
+
+  await search("third");
+  await search("fourth");
+  await act(async () => pending[3]!.reject(new Error("Search is unavailable right now")));
+  expect(container.textContent).toBe("CloseSearching…");
+  await act(async () => pending[4]!.resolve([message]));
+  expect(row("Found note, Message")).not.toBeNull();
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+
+  await search("fifth");
+  await type("");
+  await act(async () => pending[5]!.reject(new Error("Search is unavailable right now")));
+  expect(row("Scout, Bot")).not.toBeNull();
+  expect(container.textContent).not.toContain("Search is unavailable right now");
+  expect(state.search).toHaveBeenCalledTimes(6);
 });
 it.each([
   ["conversation", "Bot"],

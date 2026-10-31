@@ -58,3 +58,31 @@ test("sidebar search opens from its icon and closes without moving chats mid-cli
   await expect(runSearch).toBeVisible();
   await expect(runSearch).toHaveValue("");
 });
+
+test("a failed space search says so instead of No results", async ({ page }, testInfo) => {
+  await signup(
+    page,
+    `sidebar-search-failed-${Date.now()}@rakazo.test`,
+    "password12",
+    "Search Fail",
+  );
+  await completeOnboarding(page);
+  let failSearch = true;
+  await page.route("**/rpc/search/query", (route) =>
+    failSearch ? route.fulfill({ status: 502 }) : route.fallback(),
+  );
+  const sidebar = page.locator("aside").first();
+  await sidebar.getByTestId("sidebar-search-trigger").click();
+  const search = sidebar.getByRole("textbox", { name: "Search", exact: true });
+  await search.fill("quarterly notes");
+
+  const failure = sidebar.getByRole("alert");
+  await expect(failure).toHaveText("Could not reach the server");
+  await expect(sidebar.getByText("No results", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sidebar-search-failed");
+
+  failSearch = false;
+  await search.fill("quarterly notes again");
+  await expect(sidebar.getByText("No results", { exact: true })).toBeVisible();
+  await expect(failure).toHaveCount(0);
+});
