@@ -201,7 +201,8 @@ whose key it has not cached. Startup logs master keys it cannot unwrap.
 To run CLIs such as `content-encryption export` from a laptop with short-lived
 credentials, set `AWS_KMS_PROFILE` to a named AWS profile (including one from
 `aws login` or SSO) instead of the access key pair. Exactly one of the two must
-be set, and the key policy must allow that principal:
+be set, so leave the pair out of the laptop's `.env`, and the key policy must
+allow that principal:
 
 ```bash
 aws login --profile rakazo-kms
@@ -211,7 +212,9 @@ AWS_KMS_PROFILE=rakazo-kms pnpm -s --filter @rakazo/api content-encryption expor
 ### Wrapped settings
 
 With a key manager configured, any setting the API and worker read can be
-stored in `.env` wrapped, so a copy of `.env` holds no usable secret. Each
+stored in `.env` wrapped, so a copy of `.env` holds no usable application
+secret; the KMS credentials it still holds only work from the server's address
+(the `aws:SourceIp` condition above). Each
 process unwraps them once at startup. To wrap a value the API already has:
 
 ```bash
