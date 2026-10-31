@@ -229,9 +229,21 @@ export function jsonSchemaParameters(
   // Preserve closed objects (e.g. request_secret destination oneOf branches).
   // Type.Object defaults to open, which would let connectionId+replace match both
   // anyOf variants after conversion.
-  return schema.additionalProperties === false
-    ? Type.Object(fields, { ...options, additionalProperties: false })
-    : Type.Object(fields, options);
+  const additional = schema.additionalProperties;
+  if (additional === false) {
+    return Type.Object(fields, { ...options, additionalProperties: false });
+  }
+  // Keep declared open maps open on the wire too. Several providers' constrained decoders
+  // read `{type: "object", properties: {}}` without `additionalProperties` as closed and can
+  // only emit `{}`, so free-form arguments (Composio's COMPOSIO_MULTI_EXECUTE_TOOL
+  // `tools[].arguments`) arrived empty.
+  if (additional === true) {
+    return Type.Object(fields, { ...options, additionalProperties: true });
+  }
+  if (additional != null && typeof additional === "object" && !Array.isArray(additional)) {
+    return Type.Object(fields, { ...options, additionalProperties: jsonField(additional) });
+  }
+  return Type.Object(fields, options);
 }
 
 type FieldOptions = { description?: string };
