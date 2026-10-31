@@ -107,6 +107,11 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./live-notifications", { spy: true });
 vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async () => null,
+  setItemAsync: async () => undefined,
+  deleteItemAsync: async () => undefined,
+}));
 vi.mock("expo-notifications", () => ({
   getPresentedNotificationsAsync: vi.fn(async () => []),
   dismissNotificationAsync: vi.fn(async () => undefined),

@@ -31,7 +31,14 @@ export type Evidence = {
   priorMemory: string;
   toolNames: string[];
   /** Tool calls with arguments, by the 1-based step whose run made them. */
-  toolCalls: Array<{ step: number; name: string; args: Record<string, unknown> }>;
+  toolCalls: Array<{
+    step: number;
+    name: string;
+    args: Record<string, unknown>;
+    /** Ran through use_tool; `loaded` when an earlier find_tool returned it. */
+    viaUseTool?: boolean;
+    loaded?: boolean;
+  }>;
   finalStep: number;
   settings: SettingsSnapshot;
   /** Settings just before the final step. */

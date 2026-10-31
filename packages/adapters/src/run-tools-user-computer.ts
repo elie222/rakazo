@@ -64,10 +64,10 @@ export function userComputerAppName(value: unknown): string {
 
 /**
  * The user's own computer always asks a person first, in every approval mode and whatever the
- * rules allow, until they choose "Allow for this chat"; a block still refuses it. Any effect of
- * this tool past "intended" in a run the owner started in this chat traces back to that approval.
- * Screen control is approved per app. Clearing the chat detaches those runs' messages, so it
- * asks again.
+ * rules allow, until they choose "Allow in this space"; a block still refuses it. These tools run
+ * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
+ * this space traces back to that approval. Removing every paired computer ends it, so pairing again
+ * asks again. Screen control is approved per app.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -76,16 +76,14 @@ export async function userComputerGate(
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
-  const { deps, run, bot, thread } = ctx;
+  const { deps, run } = ctx;
+  const pairedSince = await deps.userDevices?.pairedSince(run.userId);
+  if (!pairedSince) return "ask";
   const where = {
     spaceId: run.spaceId,
     status: { in: ["approved", "executing", "completed", "uncertain"] },
-    run: {
-      threadId: thread.id,
-      botId: bot.id,
-      userId: run.userId,
-      sourceMessage: { is: { threadId: thread.id } },
-    },
+    createdAt: { gte: pairedSince },
+    run: { userId: run.userId },
   };
   if (!USER_COMPUTER_SCREEN_TOOLS.has(name)) {
     const allowed = await deps.prisma.externalEffect.findFirst({
@@ -96,18 +94,30 @@ export async function userComputerGate(
   }
   const app = userComputerAppName(args.app).toLowerCase();
   if (!app) return "ask";
-  const used = await deps.prisma.externalEffect.findMany({
-    where: { ...where, kind: { in: [...USER_COMPUTER_SCREEN_TOOLS] } },
-    select: { request: true },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
-  const allowed = used.some(
-    (effect) =>
-      userComputerAppName((effect.request as { app?: unknown } | null)?.app).toLowerCase() === app,
-  );
-  return allowed ? "allow" : "ask";
+  // Every screen action records an effect, so page through them rather than cap the search.
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await deps.prisma.externalEffect.findMany({
+      where: { ...where, kind: { in: [...USER_COMPUTER_SCREEN_TOOLS] } },
+      select: { id: true, request: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: SCREEN_APPROVAL_PAGE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    if (
+      page.some(
+        (effect) =>
+          userComputerAppName((effect.request as { app?: unknown } | null)?.app).toLowerCase() ===
+          app,
+      )
+    )
+      return "allow";
+    if (page.length < SCREEN_APPROVAL_PAGE) return "ask";
+    cursor = page.at(-1)!.id;
+  }
 }
+
+const SCREEN_APPROVAL_PAGE = 200;
 
 /** The working directory on the user's computer: their home or a folder inside it. */
 export function userComputerCwd(environment: HostComputerEnvironment, cwd: unknown): string {

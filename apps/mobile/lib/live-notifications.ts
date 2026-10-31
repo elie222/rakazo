@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { apiBaseWarning, normalizeApiBase } from "./endpoint";
 import { getActiveUiLocale, t } from "./i18n";
+import { serverHeaders } from "./server-headers";
 
 export interface LiveNotificationSettings {
   liveConnection: boolean;
@@ -26,14 +27,22 @@ type NativeNotifications = {
     token: string,
     spaceId: string,
     locale: string,
+    headers: string,
   ): Promise<void>;
-  resume(endpoint: string, token: string, spaceId: string, locale: string): Promise<void>;
+  resume(
+    endpoint: string,
+    token: string,
+    spaceId: string,
+    locale: string,
+    headers: string,
+  ): Promise<void>;
   /** Missing on native builds that predate pending reply invalidation. */
   resumeAfterMute?(
     endpoint: string,
     token: string,
     spaceId: string,
     locale: string,
+    headers: string,
     botId: string,
   ): Promise<void>;
   stop(clearSession: boolean): Promise<void>;
@@ -115,7 +124,14 @@ export async function setLiveNotificationSettings(
     const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
     if (!granted) throw new Error(t("Android blocked notifications."));
   }
-  await nativeNotifications.setSettings(settings, parsed.url, token, spaceId, getActiveUiLocale());
+  await nativeNotifications.setSettings(
+    settings,
+    parsed.url,
+    token,
+    spaceId,
+    getActiveUiLocale(),
+    nativeServerHeaders(parsed.url),
+  );
 }
 
 export async function resumeLiveNotifications(
@@ -127,17 +143,25 @@ export async function resumeLiveNotifications(
   if (!nativeNotifications || !token) return;
   const parsed = normalizeApiBase(endpoint);
   if (!parsed.ok || apiBaseWarning(parsed.url)) return;
+  const headers = nativeServerHeaders(parsed.url);
   if (mutedBotId && nativeNotifications.resumeAfterMute) {
     await nativeNotifications.resumeAfterMute(
       parsed.url,
       token,
       spaceId,
       getActiveUiLocale(),
+      headers,
       mutedBotId,
     );
   } else {
-    await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale());
+    await nativeNotifications.resume(parsed.url, token, spaceId, getActiveUiLocale(), headers);
   }
+}
+
+/** The Android poller calls the server itself, so it needs the server's headers too. */
+function nativeServerHeaders(apiBase: string): string {
+  const headers = serverHeaders(apiBase);
+  return Object.keys(headers).length ? JSON.stringify(headers) : "";
 }
 
 export async function stopLiveNotifications(clearSession = false): Promise<void> {

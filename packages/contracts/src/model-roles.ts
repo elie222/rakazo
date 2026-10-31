@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ModelCatalogEntry } from "./domain.js";
-import { ModelBackupChoiceSchema, modelChoiceListSchema, ThinkingLevelSchema } from "./domain.js";
-import { Id } from "./ids.js";
+import { ModelBackupChoiceSchema, modelChoiceListSchema } from "./domain.js";
+import { Id, ThinkingLevelSchema } from "./ids.js";
 
 /** Add purposes here; connections, persistence, pickers and backups stay shared. */
 export const ModelRoleSchema = z.enum(["main", "approval"]);

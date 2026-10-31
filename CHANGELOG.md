@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A bot with more than twenty MCP tools reaches them through the lazy tool catalog, and every call through it arrived with empty arguments, so a search or scrape failed with "expected string, received undefined". A free-form object parameter no longer carries an empty `properties` map, which grammar-constrained providers read as "no keys allowed", so the arguments the model builds arrive intact.
 - Arguments of a stdio MCP server, which can carry tokens, are stored encrypted with its other credentials and are no longer returned to clients; leaving them blank when editing keeps them. Arguments saved earlier move into encrypted storage automatically when the API starts.
 - Approval rules judge each action in a Composio batch even when Composio is connected as an MCP server, so "Always allow" on one action no longer allows every other action through that server.
 - Mobile threads now show work started by another client as soon as the run starts, without hiding waiting runs or another group member's error.

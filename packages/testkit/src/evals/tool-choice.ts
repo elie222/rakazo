@@ -149,6 +149,11 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
       id: `at most ${max} ${tool}`,
       pass: names.filter((name) => name === tool).length <= max,
     });
+  if (calls.some((call) => call.viaUseTool || call.name === "use_tool"))
+    criteria.push({
+      id: "use_tool runs only tools find_tool loaded",
+      pass: calls.every((call) => call.name !== "use_tool" && (!call.viaUseTool || call.loaded)),
+    });
   criteria.push(...stateCriteria("bot", expect.bot, evidence.settings.bot));
   criteria.push(...stateCriteria("user", expect.user, evidence.settings.user));
   if (expect.settingsUnchanged)

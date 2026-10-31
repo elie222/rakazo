@@ -207,6 +207,7 @@ export function GeneralSettingsPanels({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (!namePending) setEditingName(false);
               }
             }}

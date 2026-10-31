@@ -33,8 +33,8 @@ export async function connectedModelChoices(
 }
 
 /** Words and version numbers: "Gemini 3.8 Flash" is gemini, 3.8, flash. */
-function words(text: string): string[] {
-  return text.toLowerCase().match(/[a-z]+|\d+(?:\.\d+)*/g) ?? [];
+export function words(text: string): string[] {
+  return text.toLowerCase().match(/\p{L}+|\d+(?:\.\d+)*/gu) ?? [];
 }
 
 const isVersion = (word: string) => /^\d/.test(word);

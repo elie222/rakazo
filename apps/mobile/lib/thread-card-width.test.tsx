@@ -117,7 +117,10 @@ vi.mock("../components/inline-image-attachment", () => ({
     <button type="button" aria-label={name} onClick={onOpen} />
   ),
 }));
-vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }));
+vi.mock("../components/change-undo", () => ({
+  ChangeUndo: () => null,
+  isUndoableChange: () => false,
+}));
 
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import { MessageBubble } from "../components/thread/message-bubble";

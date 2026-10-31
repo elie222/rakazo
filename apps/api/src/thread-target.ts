@@ -312,6 +312,21 @@ async function lockAndLoadGroupMembers(
   }));
 }
 
+/** The bots a send wakes: the bot itself, or the group members it names (else the first). */
+export function sendTargetBotIds(
+  target:
+    | { kind: "bot"; botId: string }
+    | { kind: "group"; members: Array<{ botId: string; name: string }> },
+  input: { text?: string; mentions?: MentionTargetInput[] },
+): string[] {
+  if (target.kind === "bot") return [target.botId];
+  return resolveGroupTargetBotIds({
+    text: input.text ?? "",
+    members: target.members.map((member) => ({ id: member.botId, name: member.name })),
+    explicitMentions: splitMentionTargets(input.mentions).botMentionIds,
+  });
+}
+
 export async function resolveThreadTarget(
   prisma: PrismaClient,
   actor: Actor,
@@ -994,11 +1009,7 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      const targetBotIds = resolveGroupTargetBotIds({
-        text: input.text ?? "",
-        members: members.map((member) => ({ id: member.botId, name: member.name })),
-        explicitMentions: mentionTargets.botMentionIds,
-      });
+      const targetBotIds = sendTargetBotIds({ kind: "group", members }, input);
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -1223,7 +1234,7 @@ export async function reactToThreadMessage(
     messageId: string;
     reaction: MessageReaction;
     clientNonce: string;
-    /** False when a send could not start a run either (no model, teaching). */
+    /** False when a send to the reacted-to bot could not start a run either (no model, teaching). */
     mayStartTurn: boolean;
   },
   releaseTakeover?: (runId: string) => Promise<void>,

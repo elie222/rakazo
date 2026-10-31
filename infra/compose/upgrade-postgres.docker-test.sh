@@ -5,7 +5,10 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
 scratch="$(mktemp -d)"
-project="rakazo-pg-upgrade-test-$$"
+# CI jobs share one Docker daemon and start with the same low PIDs, so the PID alone can
+# match a run that is still going or one a cancelled job left behind; the scratch
+# directory's random name keeps every run apart.
+project="rakazo-pg-upgrade-test-$$-$(basename "${scratch}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 export COMPOSE_PROJECT_NAME="${project}"
 OLD_IMAGE="postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5"
 fail() { echo "FAIL: $*" >&2; exit 1; }

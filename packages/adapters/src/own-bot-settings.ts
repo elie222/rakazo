@@ -1,9 +1,15 @@
-import type { Actor } from "@rakazo/contracts";
+import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
+import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import { findDefaultVoiceCredential } from "@rakazo/db";
 import type { FleetPrepareDeps } from "./fleet-tools.js";
 import { modelLabel } from "./fleet-tools.js";
-import { connectedModelChoices, resolveModelChoice } from "./model-choice.js";
+import { connectedModelChoices, resolveModelChoice, words } from "./model-choice.js";
 import { prepareAllowedThinkingLevels, validateBotModelChange } from "./model-selection.js";
+import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "./openai-compatible-voice.js";
+import { createVoiceProvider } from "./voice-factory.js";
 
 export type OwnBotSettingsRow = {
   name: string;
@@ -15,13 +21,7 @@ export type OwnBotSettingsRow = {
   modelId: string | null;
   thinkingLevel: string | null;
   autoSpeak: boolean;
-};
-
-export type OwnBotSettingsData = {
-  modelProvider?: string | null;
-  modelId?: string | null;
-  thinkingLevel?: string | null;
-  autoSpeak?: boolean;
+  voiceId: string | null;
 };
 
 /** Ids listed per connected provider; the rest are reachable by name. */
@@ -59,6 +59,7 @@ export async function readOwnBotSettings(
     model: `${modelLabel(effective.provider, effective.model)}${bot.modelId ? "" : " (default)"}`,
     thinkingLevel: bot.thinkingLevel ?? "default",
     readAloud: bot.autoSpeak,
+    voice: bot.voiceId ?? "default",
     models: [...providers].map(([provider, ids]) => ({
       provider,
       ids: ids.slice(0, MODELS_PER_PROVIDER),
@@ -68,17 +69,90 @@ export async function readOwnBotSettings(
   };
 }
 
-/** The model, thinking and read-aloud fields of `update_bot`, checked like the settings screen. */
+/** The voices the settings screen offers: those of the user's default voice connection here. */
+export async function listDefaultVoices(
+  deps: {
+    prisma: PrismaClient;
+    secretStore: Pick<SecretStore, "load">;
+    mcpAllowPrivateEndpoint?: boolean;
+  },
+  scope: Pick<Actor, "userId" | "spaceId">,
+  context: AdapterContext,
+): Promise<VoiceInfo[] | null> {
+  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
+  const secret =
+    credential &&
+    (await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+    }));
+  if (!credential || !secret) return null;
+  const provider = createVoiceProvider(credential.provider, {
+    allowPrivateEndpoint:
+      credential.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
+      deps.mcpAllowPrivateEndpoint === true,
+  });
+  return provider.listVoices(await deps.secretStore.load(secret.ciphertext, secret.id), context);
+}
+
+const VOICES_SHOWN = 10;
+
+/** A voice by id or name as people say it; "default" follows the account's voice. */
+export function resolveVoiceChoice(
+  voices: readonly VoiceInfo[],
+  query: string,
+): { ok: true; voiceId: string | null } | { ok: false; error: string } {
+  const wanted = query.trim().toLowerCase();
+  if (wanted === "default") return { ok: true, voiceId: null };
+  const exact = voices.filter(
+    (voice) => voice.id.toLowerCase() === wanted || voice.label.toLowerCase() === wanted,
+  );
+  const asked = words(query);
+  const matches = exact.length
+    ? exact
+    : voices.filter((voice) => {
+        const have = new Set(words(voice.label));
+        return asked.length > 0 && asked.every((word) => have.has(word));
+      });
+  const [match] = matches;
+  if (match && matches.length === 1) return { ok: true, voiceId: match.id };
+  const named = (list: readonly VoiceInfo[]) =>
+    list
+      .slice(0, VOICES_SHOWN)
+      .map((voice) => voice.label)
+      .join(", ");
+  return {
+    ok: false,
+    error: matches.length
+      ? `"${query}" matches several voices. Ask the user which one: ${named(matches)}.`
+      : `No voice matches "${query}". Voices: ${named(voices)}.`,
+  };
+}
+
+/** The model, thinking, voice and read-aloud fields of `update_bot`, checked like the settings screen. */
 export async function prepareOwnBotSettings(
   deps: FleetPrepareDeps,
   scope: Pick<Actor, "userId" | "spaceId">,
   bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel">,
-  args: { model?: unknown; thinkingLevel?: unknown; readAloud?: unknown },
-): Promise<{ data: OwnBotSettingsData } | { error: string }> {
-  const data: OwnBotSettingsData = {};
+  args: { model?: unknown; thinkingLevel?: unknown; readAloud?: unknown; voice?: unknown },
+  listVoices: () => Promise<VoiceInfo[] | null> = async () => null,
+): Promise<{ data: BotSettingsValues } | { error: string }> {
+  const data: BotSettingsValues = {};
   if (args.readAloud !== undefined) {
     if (typeof args.readAloud !== "boolean") return { error: "readAloud must be true or false." };
     data.autoSpeak = args.readAloud;
+  }
+  if (typeof args.voice === "string" && args.voice.trim()) {
+    let voices: VoiceInfo[] | null;
+    try {
+      voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
+    } catch (error) {
+      if (error instanceof VoiceAccountError) return { error: error.message };
+      return { error: "Could not list voices right now; try again." };
+    }
+    if (!voices) return { error: "Connect a voice provider first." };
+    const voice = resolveVoiceChoice(voices, args.voice);
+    if (!voice.ok) return { error: voice.error };
+    data.voiceId = voice.voiceId;
   }
   const model = typeof args.model === "string" ? args.model.trim() : "";
   const level = typeof args.thinkingLevel === "string" ? args.thinkingLevel.trim() : "";
@@ -114,6 +188,6 @@ export async function prepareOwnBotSettings(
     data.modelProvider = validated.provider;
     data.modelId = validated.model;
   }
-  data.thinkingLevel = validated.thinkingLevel;
+  data.thinkingLevel = ThinkingLevelSchema.nullable().parse(validated.thinkingLevel);
   return { data };
 }
