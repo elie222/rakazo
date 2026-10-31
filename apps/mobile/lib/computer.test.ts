@@ -7,7 +7,6 @@ import {
   isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
-  probeScreenPage,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_RENEW_MS,
@@ -15,7 +14,6 @@ import {
   screenPageStatus,
   screenRenewReadAt,
   screenStreamKey,
-  screenUrlDropReason,
 } from "./computer.js";
 
 function computer(overrides: Partial<ComputerStatus> = {}): ComputerStatus {
@@ -73,50 +71,32 @@ describe("embeddableScreenUrl", () => {
     ).toBeNull();
   });
 
-  it("re-hosts a proxied screen sealed for a dev loopback onto the API origin, like the web client", () => {
-    expect(
-      embeddableScreenUrl(
-        "http://127.0.0.1:5173/novnc/session/view/1793271945188.tok/embed.html?autoconnect=true&resize=scale&view_only=true&path=websockify",
-        "https://rakazo.mayead.xyz",
-      ),
-    ).toBe(
-      "https://rakazo.mayead.xyz/novnc/session/view/1793271945188.tok/embed.html?autoconnect=true&resize=scale&view_only=true&path=websockify",
-    );
+  it("moves a proxied screen sealed for an unreachable address onto an HTTPS API origin", () => {
+    for (const sealed of [
+      "http://127.0.0.1:5173/novnc/session/view/1.t/embed.html?view_only=true",
+      "https://192.168.1.20/novnc/session/view/1.t/embed.html?view_only=true",
+    ]) {
+      expect(embeddableScreenUrl(sealed, "https://rakazo.example.test")).toBe(
+        "https://rakazo.example.test/novnc/session/view/1.t/embed.html?view_only=true",
+      );
+    }
   });
 
-  it("re-hosts a proxied screen sealed for a LAN address onto the API origin", () => {
+  it("keeps a proxied screen on its own public HTTPS host or for a local API", () => {
+    const remote = "https://screens.example.test/novnc/session/view/1.t/embed.html";
+    expect(embeddableScreenUrl(remote, "https://api.example.test")).toBe(remote);
     expect(
       embeddableScreenUrl(
-        "http://192.168.1.20:5173/novnc/session/view/1.t/embed.html?x=1",
-        "http://192.168.1.20:3100",
+        "http://127.0.0.1:5173/novnc/session/view/1.t/embed.html",
+        "http://10.0.2.2:3100",
       ),
-    ).toBe("http://192.168.1.20:3100/novnc/session/view/1.t/embed.html?x=1");
-  });
-
-  it("keeps a proxied screen on its own public https host", () => {
-    const url = "https://screens.example.test/novnc/session/view/1.t/embed.html";
-    expect(embeddableScreenUrl(url, "https://api.example.test")).toBe(url);
+    ).toBe("http://10.0.2.2:5173/novnc/session/view/1.t/embed.html");
   });
 
   it("keeps loopback screens when the API is also loopback", () => {
     const url = "http://127.0.0.1:16080/embed.html?view_only=true";
     expect(embeddableScreenUrl(url, "http://127.0.0.1:3100")).toBe(url);
     expect(embeddableScreenUrl(url, "http://localhost:3100")).toBe(url);
-  });
-
-  it("reports why a URL was dropped, without the sealed path", () => {
-    expect(
-      screenUrlDropReason("http://screen.example/embed?token=secret", "https://api.example"),
-    ).toBe("plain http to public host screen.example; the app only embeds https screens off-LAN");
-    expect(
-      screenUrlDropReason("http://localhost:16080/embed?token=secret", "https://api.example"),
-    ).toBe(
-      "plain http to public host api.example:16080; the app only embeds https screens off-LAN",
-    );
-    expect(
-      screenUrlDropReason("https://screen.example/embed?token=secret", "https://api.example"),
-    ).toBeNull();
-    expect(screenUrlDropReason("not a url", "https://api.example")).toBe("unparsable URL");
   });
 
   it("rewrites loopback screens onto the API host for a device or emulator", () => {
@@ -355,43 +335,6 @@ describe("screen page status", () => {
         throw new TypeError("Network request failed");
       }),
     ).resolves.toBeNull();
-  });
-});
-
-describe("screen page probe", () => {
-  const page = "https://app.example.test/novnc/session/view/1234.sealed";
-  const answering = (status: number) =>
-    vi.fn(
-      async (input: RequestInfo | URL) =>
-        ({
-          status,
-          url: String(input),
-          type: "default",
-          body: { cancel: async () => undefined },
-        }) as unknown as Response,
-    );
-
-  it("asks through the status-only probe URL", async () => {
-    const fetchImpl = answering(204);
-    await expect(probeScreenPage(page, fetchImpl)).resolves.toBe("ok");
-    expect(fetchImpl).toHaveBeenCalledWith(
-      `${page}?rakazo_probe=1`,
-      expect.objectContaining({ redirect: "manual" }),
-    );
-  });
-
-  it("reads a refused capability as expired, so the caller renews it", async () => {
-    await expect(probeScreenPage(page, answering(401))).resolves.toBe("expired");
-    await expect(probeScreenPage(page, answering(403))).resolves.toBe("expired");
-  });
-
-  it("reads any other answer as refused, and no answer as unreachable", async () => {
-    await expect(probeScreenPage(page, answering(503))).resolves.toBe("refused");
-    await expect(
-      probeScreenPage(page, async () => {
-        throw new TypeError("Network request failed");
-      }),
-    ).resolves.toBe("unreachable");
   });
 });
 

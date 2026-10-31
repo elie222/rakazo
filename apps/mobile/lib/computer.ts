@@ -1,7 +1,7 @@
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
 import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
-import { isRetryableError, SCREEN_PAGE_STATES, screenProbeUrl } from "@rakazo/core";
+import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
 import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
@@ -56,18 +56,14 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const api = new URL(apiBase);
-    // A proxied screen page is served by whatever server fronts /novnc for this deployment —
-    // for the app that is the server it already talks to. The seal may have been minted for
-    // a dev loopback or LAN address (an unset WEB_ORIGIN defaults to one); re-host it on the
-    // API origin, exactly as the web client re-hosts /novnc paths on its own origin.
-    if (parsed.pathname.startsWith("/novnc/session/") && parsed.origin !== api.origin) {
-      const publicHttpsElsewhere =
-        parsed.protocol === "https:" &&
-        !isLocalhostOrLoopbackIp(parsed.hostname) &&
-        !isPrivateNetworkHost(parsed.hostname);
-      if (!publicHttpsElsewhere) {
-        return `${api.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
-      }
+    // A deployment behind one HTTPS origin proxies /novnc/ there, like the web client relies on,
+    // even when WEB_ORIGIN still names an address this device cannot reach.
+    if (
+      api.protocol === "https:" &&
+      isProxiedScreenPage(url) &&
+      (parsed.protocol === "http:" || isPrivateNetworkHost(parsed.hostname))
+    ) {
+      return `${api.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
     if (isLocalhostOrLoopbackIp(parsed.hostname) && !isLocalhostOrLoopbackIp(api.hostname)) {
       parsed.hostname = api.hostname;
@@ -76,31 +72,6 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     return parsed.toString();
   } catch {
     return null;
-  }
-}
-
-/**
- * Why embeddableScreenUrl would drop a URL, for logs and support. Reports scheme and host
- * only — never the path or the sealed capability token inside it.
- */
-export function screenUrlDropReason(url: string, apiBase: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return `unsupported scheme ${parsed.protocol}`;
-    }
-    const api = new URL(apiBase);
-    const host =
-      isLocalhostOrLoopbackIp(parsed.hostname) && !isLocalhostOrLoopbackIp(api.hostname)
-        ? api.hostname
-        : parsed.hostname;
-    const origin = parsed.port ? `${host}:${parsed.port}` : host;
-    if (parsed.protocol === "http:" && !isPrivateNetworkHost(host)) {
-      return `plain http to public host ${origin}; the app only embeds https screens off-LAN`;
-    }
-    return null;
-  } catch {
-    return "unparsable URL";
   }
 }
 
@@ -261,35 +232,6 @@ export async function screenPageStatus(
   } catch {
     return null;
   }
-}
-
-/** What asking the screen proxy about a held page found, in the caller's terms. */
-export type ScreenPageProbe = "ok" | "expired" | "refused" | "unreachable";
-
-/**
- * Whether a page or probe status means the server refused the held capability itself.
- * 401 and 403 both mean the seal is dead or revoked: the answer is a fresh URL, not a retry.
- */
-export function capabilityRefused(status: number | null): boolean {
-  return status === 401 || status === 403;
-}
-
-/**
- * Ask the proxy about a screen page through its status-only probe, which the web server
- * answers itself right after the access check. A WebView cannot say why its page was
- * refused — a rejected capability can load as a black page — so callers ask this way:
- * only "expired" (401/403) means the held capability is stale and a fresh one is worth reading.
- */
-export async function probeScreenPage(
-  url: string,
-  fetchImpl: typeof fetch = fetch,
-  signal?: AbortSignal,
-): Promise<ScreenPageProbe> {
-  const status = await screenPageStatus(screenProbeUrl(url), fetchImpl, signal);
-  if (status === null || status === 0) return "unreachable";
-  if (capabilityRefused(status)) return "expired";
-  if (status >= 200 && status < 300) return "ok";
-  return "refused";
 }
 
 /**
