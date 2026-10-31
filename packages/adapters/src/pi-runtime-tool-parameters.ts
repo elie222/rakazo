@@ -217,6 +217,18 @@ export function jsonSchemaParameters(
       options,
     ) as unknown as ReturnType<typeof Type.Object>;
   }
+  // A property-less object (`{"type":"object"}`) describes a free-form object, and JSON Schema
+  // treats it identically to `{"type":"object","properties":{}}`. Grammar-constrained tool
+  // decoders do not: Fireworks reads the empty map as "no keys allowed" and emits `{}`, so a
+  // lazily loaded tool's `arguments` arrived empty. Emit the source schema unchanged (minus the
+  // map it never had) unless the object is explicitly closed.
+  if (
+    schema.properties == null &&
+    schema.additionalProperties == null &&
+    schema.patternProperties == null
+  ) {
+    return Type.Unsafe({ ...schema, ...options }) as unknown as ReturnType<typeof Type.Object>;
+  }
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
   const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
