@@ -6,6 +6,7 @@ import type {
   ChatInstance,
   EmojiValue,
   FormattedContent,
+  Logger,
   WebhookOptions,
 } from "chat";
 import { stringifyMarkdown } from "chat";
@@ -43,6 +44,19 @@ export const PHOTON_LISTEN_WINDOW_MS = 60_000;
  */
 export const PHOTON_STREAM_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
 
+// The adapter logs every stream re-arm at info; keep only its warnings and errors.
+const photonLogger: Logger = {
+  child: () => photonLogger,
+  debug: () => undefined,
+  info: () => undefined,
+  warn: (message, bindings) => getLogger().warn(`photon: ${message}`, logBindings(bindings)),
+  error: (message, bindings) => getLogger().error(`photon: ${message}`, logBindings(bindings)),
+};
+
+function logBindings(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
 export function encodePhotonThreadId({ chatGuid, phone }: PhotonThreadId): string {
   return phone ? `${THREAD_PREFIX}${chatGuid}${LINE_SEP}${phone}` : `${THREAD_PREFIX}${chatGuid}`;
 }
@@ -79,8 +93,10 @@ export class LazyPhotonAdapter implements Adapter {
   }
   private load() {
     this.loaded ??= (async () => {
-      const { createiMessageAdapter } = await import("@photon-ai/chat-adapter-imessage");
-      this.implementation = createiMessageAdapter({
+      // The constructor, unlike createiMessageAdapter, never falls back to IMESSAGE_* env vars.
+      const { iMessageAdapter } = await import("@photon-ai/chat-adapter-imessage");
+      this.implementation = new iMessageAdapter({
+        logger: photonLogger,
         projectId: this.config.projectId,
         projectSecret: this.config.projectSecret,
         ...(this.config.webhookSecret ? { webhookSecret: this.config.webhookSecret } : {}),

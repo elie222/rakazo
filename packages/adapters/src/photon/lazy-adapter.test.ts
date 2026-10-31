@@ -25,7 +25,10 @@ const fake = vi.hoisted(() => ({
 }));
 
 vi.mock("@photon-ai/chat-adapter-imessage", () => ({
-  createiMessageAdapter: (config: Record<string, unknown>) => {
+  iMessageAdapter: function iMessageAdapter({
+    logger: _logger,
+    ...config
+  }: Record<string, unknown>) {
     fake.created.push(config);
     return {
       userName: "imessage",
