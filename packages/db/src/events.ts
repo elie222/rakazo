@@ -438,6 +438,8 @@ export async function clearThread(
   // computer row while holding the thread row — the inverted half of a cycle with a
   // concurrent finalizeComputerControlRelease, which locks the computer first and the
   // thread second. This statement holds no other row, so it can wait out any holder.
+  // The clear is already committed: a failed sweep leaves a stale binding for the idle pass
+  // to clear, and must not report the clear itself as failed.
   if (committed.cancelledRunIds.length > 0) {
     await withTransactionRetry(() =>
       prisma.computer.updateMany({
@@ -448,7 +450,9 @@ export async function clearThread(
           executionLeaseExpiresAt: null,
         },
       }),
-    );
+    ).catch((error: unknown) => {
+      getLogger().error("legacy computer binding sweep after thread clear", error);
+    });
   }
   return {
     event: mapProductEvent(committed.event),

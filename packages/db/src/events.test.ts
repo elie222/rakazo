@@ -4407,6 +4407,52 @@ describe("claimSteering", () => {
 });
 
 describe("clearThread", () => {
+  it("reports a committed clear even when the legacy binding sweep fails", async () => {
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      thread: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ nextMessageSeq: 3, historyCompactionGeneration: 0 })
+          .mockResolvedValue({ nextEventSeq: 1 }),
+      },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "run-1", taskId: "task-1", userId: "user-1", spaceId: "workspace-1" },
+          ]),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id })),
+        ),
+      },
+      attempt: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
+      computerExecutionLease: { updateMany: vi.fn() },
+      computer: { updateMany: vi.fn() },
+      message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
+      event: {
+        deleteMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({ ...event(0), type: "thread.cleared" }),
+      },
+      bot: { update: vi.fn() },
+    };
+    const prisma = {
+      computer: { updateMany: vi.fn().mockRejectedValue(new Error("connection lost")) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      clearThread(
+        prisma,
+        { spaceId: "workspace-1", threadId: "thread-1", botId: "bot-1" },
+        new TestFanout(),
+      ),
+    ).resolves.toMatchObject({ event: { type: "thread.cleared" }, cancelledRunIds: ["run-1"] });
+    expect(prisma.computer.updateMany).toHaveBeenCalled();
+  });
+
   it("releases the computer execution lease without dropping the computer", async () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
