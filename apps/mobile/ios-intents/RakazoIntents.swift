@@ -200,7 +200,11 @@ private func reply(to sent: Delivery) async throws -> String? {
       .filter { $0.runId == sent.runId && $0.role == "bot" }
       .flatMap(\.blocks).compactMap(\.text).joined(separator: "\n\n")
     if text.isEmpty, active != nil { throw MessageBotError.needsYou }
-    return text
+    // Replies are markdown; Siri and the result dialog show plain text.
+    let options = AttributedString.MarkdownParsingOptions(
+      interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    return (try? AttributedString(markdown: text, options: options)).map { String($0.characters) }
+      ?? text
   }
   return nil
 }
