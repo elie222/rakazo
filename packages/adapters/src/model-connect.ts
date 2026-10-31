@@ -1,10 +1,5 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type {
-  ModelApiProtocol,
-  ModelConnectInput,
-  ModelCredential,
-  ThinkingLevel,
-} from "@rakazo/contracts";
+import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import {
   assertHeaderSafeApiKey,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
@@ -60,22 +55,6 @@ export function storedOpenAiCompatibleProbeKey(
     return undefined;
   }
   return previous.apiKey;
-}
-
-/** Reuse a saved wire protocol only for the endpoint it was saved for. */
-export function storedOpenAiCompatibleProbeProtocol(
-  baseUrl: string,
-  storedPlaintext?: string,
-): ModelApiProtocol | undefined {
-  const previous = tryParseModelSecret(storedPlaintext);
-  if (
-    previous?.kind !== "openai_compatible" ||
-    previous.apiProtocol === undefined ||
-    previous.baseUrl !== normalizeOpenAiCompatibleBaseUrl(baseUrl)
-  ) {
-    return undefined;
-  }
-  return previous.apiProtocol;
 }
 
 export function buildModelConnectPlaintext(

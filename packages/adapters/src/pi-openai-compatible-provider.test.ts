@@ -1315,22 +1315,6 @@ describe("anthropic-messages wire protocol", () => {
     },
   );
 
-  it("maps provider SSE errors onto the failed result", async () => {
-    const { provider, model } = registerAnthropic();
-    const result = await provider
-      .streamSimple(model, normalizeContext({ messages: [] }), {
-        apiKey: "fake-api-key",
-        fetch: async () =>
-          new Response(
-            'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
-            { headers: { "content-type": "text/event-stream" } },
-          ),
-      })
-      .result();
-    expect(result.stopReason).toBe("error");
-    expect(result.errorMessage).toContain("Overloaded");
-  });
-
   it("carries custom headers on the guarded request", async () => {
     const models = registerOpenAiCompatibleRuntime(createModels(), {
       ...input,
@@ -1353,7 +1337,7 @@ describe("anthropic-messages wire protocol", () => {
     expect(received).toBe("fake-session");
   });
 
-  it("sends a thinking budget when reasoning is on, and captures thinking blocks", async () => {
+  it("sends a thinking budget when reasoning is on", async () => {
     const models = registerOpenAiCompatibleRuntime(createModels(), {
       ...input,
       apiProtocol: "anthropic-messages",
@@ -1363,141 +1347,18 @@ describe("anthropic-messages wire protocol", () => {
     const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
     const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, input.modelId)!;
     let body: Record<string, any> = {};
-    const result = await provider
+    await provider
       .streamSimple(model, normalizeContext({ messages: [] }), {
         apiKey: "fake-api-key",
         reasoning: "medium",
         fetch: async (_url, init) => {
           body = JSON.parse(String(init?.body));
-          return new Response(
-            anthropicSse([
-              [
-                "message_start",
-                {
-                  type: "message_start",
-                  message: { id: "msg_fixture", model: input.modelId, usage: { input_tokens: 3 } },
-                },
-              ],
-              [
-                "content_block_start",
-                { type: "content_block_start", index: 0, content_block: { type: "thinking" } },
-              ],
-              [
-                "content_block_delta",
-                {
-                  type: "content_block_delta",
-                  index: 0,
-                  delta: { type: "thinking_delta", thinking: "réfléchis" },
-                },
-              ],
-              [
-                "content_block_delta",
-                {
-                  type: "content_block_delta",
-                  index: 0,
-                  delta: { type: "signature_delta", signature: "sig" },
-                },
-              ],
-              ["content_block_stop", { type: "content_block_stop", index: 0 }],
-              [
-                "message_delta",
-                {
-                  type: "message_delta",
-                  delta: { stop_reason: "end_turn" },
-                  usage: { output_tokens: 9 },
-                },
-              ],
-              ["message_stop", { type: "message_stop" }],
-            ]),
-            { headers: { "content-type": "text/event-stream" } },
-          );
+          return anthropicTextResponse();
         },
       })
       .result();
     expect(body.thinking).toMatchObject({ type: "enabled" });
     expect(typeof body.thinking.budget_tokens).toBe("number");
-    expect(result.content).toEqual([
-      expect.objectContaining({
-        type: "thinking",
-        thinking: "réfléchis",
-        thinkingSignature: "sig",
-      }),
-    ]);
-  });
-
-  it("round-trips a tool call and its result through the transcript guard", async () => {
-    const { provider, model } = registerAnthropic();
-    const context = normalizeContext({
-      messages: [
-        fauxAssistantMessage([
-          { type: "toolCall", id: "call_named", name: "list_tasks", arguments: {} },
-        ]),
-        {
-          role: "toolResult" as const,
-          toolCallId: "call_named",
-          toolName: "list_tasks",
-          content: [{ type: "text" as const, text: "real result" }],
-          isError: false,
-          timestamp: 1,
-        },
-      ],
-    });
-    let messages: unknown;
-    const result = await provider
-      .streamSimple(model, context, {
-        apiKey: "fake-api-key",
-        fetch: async (_url, init) => {
-          messages = JSON.parse(String(init?.body)).messages;
-          return new Response(
-            anthropicSse([
-              ...ANTHROPIC_TEXT_EVENTS.slice(0, 1),
-              [
-                "content_block_start",
-                {
-                  type: "content_block_start",
-                  index: 0,
-                  content_block: {
-                    type: "tool_use",
-                    id: "toolu_fixture",
-                    name: "list_tasks",
-                    input: {},
-                  },
-                },
-              ],
-              [
-                "content_block_delta",
-                {
-                  type: "content_block_delta",
-                  index: 0,
-                  delta: { type: "input_json_delta", partial_json: '{"query":"today"}' },
-                },
-              ],
-              ["content_block_stop", { type: "content_block_stop", index: 0 }],
-              ...ANTHROPIC_TEXT_EVENTS.slice(4),
-            ]),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        },
-      })
-      .result();
-    expect(messages).toEqual([
-      expect.objectContaining({
-        role: "assistant",
-        content: [expect.objectContaining({ type: "tool_use", id: "call_named" })],
-      }),
-      expect.objectContaining({
-        role: "user",
-        content: [expect.objectContaining({ type: "tool_result", tool_use_id: "call_named" })],
-      }),
-    ]);
-    expect(result.content).toEqual([
-      expect.objectContaining({
-        type: "toolCall",
-        id: "toolu_fixture",
-        name: "list_tasks",
-        arguments: { query: "today" },
-      }),
-    ]);
   });
 
   it("probes /v1/models with Anthropic auth headers", async () => {

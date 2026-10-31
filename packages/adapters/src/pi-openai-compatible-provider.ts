@@ -116,9 +116,7 @@ export function openAiCompatibleModel(
  */
 function anthropicMessagesBaseUrl(baseUrl: string): string {
   const url = new URL(baseUrl);
-  if (url.pathname.replace(/\/+$/, "").endsWith("/v1")) {
-    url.pathname = url.pathname.replace(/\/v1\/?$/, "/");
-  }
+  url.pathname = url.pathname.replace(/\/v1\/*$/, "");
   return url.toString().replace(/\/$/, "");
 }
 
@@ -198,28 +196,21 @@ export function createOpenAiCompatibleLookup(
   });
 }
 
+function isAuthHeader(name: string, value: string | null | undefined): boolean {
+  const lower = name.toLowerCase();
+  return (lower === "authorization" || lower === "x-api-key") && Boolean(value);
+}
+
 function headersCarryAuthorization(headers: HeadersInit): boolean {
-  if (headers instanceof Headers)
-    return Boolean(headers.get("authorization") ?? headers.get("x-api-key"));
-  if (Array.isArray(headers)) {
-    return headers.some(
-      ([name, value]) =>
-        (name.toLowerCase() === "authorization" || name.toLowerCase() === "x-api-key") &&
-        Boolean(value),
-    );
-  }
-  return Object.entries(headers).some(
-    ([name, value]) =>
-      (name.toLowerCase() === "authorization" || name.toLowerCase() === "x-api-key") &&
-      Boolean(value),
-  );
+  const entries =
+    headers instanceof Headers || Array.isArray(headers) ? [...headers] : Object.entries(headers);
+  return entries.some(([name, value]) => isAuthHeader(name, value));
 }
 
 /** Matches fetch: when init.headers is set it replaces Request headers entirely. */
 function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestInit): boolean {
   if (init?.headers !== undefined) return headersCarryAuthorization(init.headers);
-  if (!(input instanceof Request)) return false;
-  return Boolean(input.headers.get("authorization") ?? input.headers.get("x-api-key"));
+  return input instanceof Request ? headersCarryAuthorization(input.headers) : false;
 }
 
 export function createOpenAiCompatibleFetch(

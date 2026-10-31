@@ -76,12 +76,6 @@ type ModelSelection = {
   modelId?: string;
 };
 
-function protocolLabel(apiProtocol: ModelApiProtocol, t: (message: string) => string): string {
-  if (apiProtocol === "anthropic-messages") return t("Anthropic Messages");
-  if (apiProtocol === "responses") return t("Responses");
-  return t("Chat Completions");
-}
-
 type FeedbackAnchor = "probe" | "model" | "connection" | "limits";
 
 /** Connects or manages one provider for the model list that opened it. */
@@ -294,6 +288,12 @@ export default function ModelConnection() {
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
   const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
+  const protocolChoices: { key: ModelApiProtocol; label: string }[] = [
+    { key: "chat-completions", label: t("Chat Completions") },
+    { key: "responses", label: t("Responses") },
+    { key: "anthropic-messages", label: t("Anthropic Messages") },
+  ];
+  const apiProtocolLabel = protocolChoices.find((choice) => choice.key === apiProtocol)?.label;
 
   /** A staged effort above what the protocol runs clamps down to what it runs. */
   function clampStagedThinkingLevel(protocol: ModelApiProtocol) {
@@ -668,11 +668,7 @@ export default function ModelConnection() {
       ) : null}
       <MenuPickerMenu
         label={t("Protocol")}
-        choices={[
-          { key: "chat-completions", label: t("Chat Completions") },
-          { key: "responses", label: t("Responses") },
-          { key: "anthropic-messages", label: t("Anthropic Messages") },
-        ]}
+        choices={protocolChoices}
         value={apiProtocol}
         disabled={busy}
         onChange={(value) => {
@@ -682,13 +678,13 @@ export default function ModelConnection() {
         <View>
           <SettingsRow
             title={t("Protocol")}
-            value={protocolLabel(apiProtocol, t)}
+            value={apiProtocolLabel}
             chevron="down"
             accessibilityRole="button"
             accessible
             accessibilityLabel={t("Protocol")}
             accessibilityState={{ disabled: busy }}
-            accessibilityValue={{ text: protocolLabel(apiProtocol, t) }}
+            accessibilityValue={{ text: apiProtocolLabel }}
           />
         </View>
       </MenuPickerMenu>
