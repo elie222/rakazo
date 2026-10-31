@@ -778,6 +778,10 @@ msgstr "Respondido: {answer}"
 msgid "Anthropic API"
 msgstr "API de Anthropic"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Anthropic Messages"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "Cualquier modelo, con tu propia clave"
@@ -1212,6 +1216,10 @@ msgstr "Cambiando…"
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "No se pudo renderizar el gráfico: {error}"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Chat Completions"
+msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -4544,6 +4552,10 @@ msgstr "Programa: {name}"
 msgid "Protected input"
 msgstr "Entrada protegida"
 
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Protocol"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -4916,6 +4928,10 @@ msgstr "Cambiar el tamaño de la barra lateral de bots"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Cambiar tamaño del panel"
+
+#: src/pages/model-settings/compatible-model-fields.tsx
+msgid "Responses"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Restart to update"

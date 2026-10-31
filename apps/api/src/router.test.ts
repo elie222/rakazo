@@ -4444,6 +4444,44 @@ describe("OpenAI-compatible model probes", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
+  it("keeps the saved wire protocol for a replacement key at the same endpoint", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiProtocol: "anthropic-messages",
+        apiKey: "fake-saved-key",
+      }),
+    );
+    await client.models.probeOpenAiCompatible({
+      baseUrl,
+      credentialId: "cred-1",
+      apiKey: "fake-replacement-key",
+      headers: {},
+    });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-api-key")).toBe("fake-replacement-key");
+    expect(headers.get("authorization")).toBeNull();
+    expect(JSON.stringify(fetch.mock.calls[0]?.[1]?.headers)).not.toContain("fake-saved-key");
+  });
+
+  it("keeps a typed key on the default protocol without a connection id", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiProtocol: "anthropic-messages",
+        apiKey: "fake-saved-key",
+      }),
+    );
+    await client.models.probeOpenAiCompatible({ baseUrl, apiKey: "fake-typed-key" });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("authorization")).toBe("Bearer fake-typed-key");
+    expect(headers.get("x-api-key")).toBeNull();
+  });
+
   it("reuses saved headers for the same endpoint without exposing them", async () => {
     const { client, fetch, load } = fixture();
     load.mockResolvedValue(
@@ -4459,6 +4497,24 @@ describe("OpenAI-compatible model probes", () => {
       "fake-session-secret",
     );
     expect(JSON.stringify(response)).not.toContain("fake-session-secret");
+  });
+
+  it("reuses a saved wire protocol for the same endpoint, with its own auth headers", async () => {
+    const { client, fetch, load } = fixture();
+    load.mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        apiProtocol: "anthropic-messages",
+        apiKey: "fake-saved-key",
+      }),
+    );
+    const response = await client.models.probeOpenAiCompatible({ baseUrl });
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("x-api-key")).toBe("fake-saved-key");
+    expect(headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(headers.get("authorization")).toBeNull();
+    expect(response).toEqual({ models: ["test-model"] });
   });
 
   it("never uses another user's credential id for probe secrets", async () => {
