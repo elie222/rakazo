@@ -1,0 +1,184 @@
+import type { iMessageAdapter } from "@photon-ai/chat-adapter-imessage";
+import { getLogger } from "@rakazo/logging";
+import type {
+  Adapter,
+  AdapterPostableMessage,
+  ChatInstance,
+  EmojiValue,
+  FormattedContent,
+  WebhookOptions,
+} from "chat";
+import { stringifyMarkdown } from "chat";
+
+export interface PhotonAdapterConfig {
+  projectId: string;
+  projectSecret: string;
+  /** Per-webhook signing secret. When set, inbound arrives by webhook instead of the stream. */
+  webhookSecret?: string | undefined;
+  /** Consume Spectrum's inbound stream after initialize (the API process only). */
+  pollInboundMessages: boolean;
+}
+
+/** The adapter's native thread ids: "imessage:<chatGuid>" plus "~<line>" when pinned. */
+export interface PhotonThreadId {
+  chatGuid: string;
+  phone?: string;
+}
+
+const THREAD_PREFIX = "imessage:";
+const LINE_SEP = "~";
+
+/**
+ * How often the stream listener is re-armed. The adapter's pump stops for good
+ * when Spectrum's stream ends or errors; each re-arm restarts it if so and is a
+ * no-op while it runs.
+ */
+export const PHOTON_LISTEN_WINDOW_MS = 60_000;
+
+export function encodePhotonThreadId({ chatGuid, phone }: PhotonThreadId): string {
+  return phone ? `${THREAD_PREFIX}${chatGuid}${LINE_SEP}${phone}` : `${THREAD_PREFIX}${chatGuid}`;
+}
+
+export function decodePhotonThreadId(threadId: string): PhotonThreadId {
+  if (!threadId.startsWith(THREAD_PREFIX)) {
+    throw new Error(`Invalid iMessage thread ID: ${threadId}`);
+  }
+  const rest = threadId.slice(THREAD_PREFIX.length);
+  const sep = rest.indexOf(LINE_SEP);
+  const chatGuid = sep === -1 ? rest : rest.slice(0, sep);
+  if (!chatGuid) throw new Error(`Invalid iMessage thread ID: ${threadId}`);
+  return sep === -1 ? { chatGuid } : { chatGuid, phone: rest.slice(sep + 1) };
+}
+
+/**
+ * Photon (Spectrum Cloud) iMessage through Photon's own Chat SDK adapter.
+ * The adapter and spectrum-ts load only once used, so unconfigured processes
+ * never pay for them. Inbound arrives over Spectrum's outbound gRPC stream,
+ * so a server with no public HTTPS endpoint still receives messages; with a
+ * webhook secret it uses Spectrum's signed webhook instead.
+ */
+export class LazyPhotonAdapter implements Adapter {
+  readonly name = "imessage";
+  private loaded: Promise<iMessageAdapter> | undefined;
+  private implementation: iMessageAdapter | undefined;
+  private listening: ReturnType<typeof setInterval> | undefined;
+  private window: AbortController | undefined;
+  constructor(readonly config: PhotonAdapterConfig) {}
+
+  get userName() {
+    return this.implementation?.userName ?? "imessage";
+  }
+  private load() {
+    this.loaded ??= (async () => {
+      const { createiMessageAdapter } = await import("@photon-ai/chat-adapter-imessage");
+      this.implementation = createiMessageAdapter({
+        projectId: this.config.projectId,
+        projectSecret: this.config.projectSecret,
+        ...(this.config.webhookSecret ? { webhookSecret: this.config.webhookSecret } : {}),
+      });
+      return this.implementation;
+    })().catch((error: unknown) => {
+      this.loaded = undefined;
+      throw error;
+    });
+    return this.loaded;
+  }
+  async initialize(chat: ChatInstance) {
+    const adapter = await this.load();
+    await adapter.initialize(chat);
+    if (this.config.pollInboundMessages && !this.config.webhookSecret) this.startListening(adapter);
+  }
+
+  /** Stop consuming the inbound stream; the surface calls this on shutdown. */
+  async stopPolling() {
+    clearInterval(this.listening);
+    this.listening = undefined;
+    this.window?.abort();
+    this.window = undefined;
+  }
+
+  private startListening(adapter: iMessageAdapter) {
+    if (this.listening) return;
+    const options: WebhookOptions = {
+      // Nothing awaits stream deliveries; the inbound sink reports its own failures.
+      waitUntil: (task) => {
+        task.catch((error: unknown) => {
+          getLogger().warn("photon inbound processing failed", { error: String(error) });
+        });
+      },
+    };
+    const listen = () => {
+      // A fresh window each time keeps abort listeners from piling up on one signal.
+      this.window = new AbortController();
+      adapter
+        .startGatewayListener(options, PHOTON_LISTEN_WINDOW_MS, this.window.signal)
+        .then((response) => {
+          if (!response.ok) {
+            getLogger().warn("photon inbound listener did not start", { status: response.status });
+          }
+        })
+        .catch((error: unknown) => {
+          getLogger().warn("photon inbound listener failed", { error: String(error) });
+        });
+    };
+    listen();
+    this.listening = setInterval(listen, PHOTON_LISTEN_WINDOW_MS);
+    this.listening.unref?.();
+  }
+
+  async handleWebhook(request: Request, options?: WebhookOptions) {
+    return (await this.load()).handleWebhook(request, options);
+  }
+  async postMessage(threadId: string, message: AdapterPostableMessage) {
+    return (await this.load()).postMessage(threadId, message);
+  }
+  async editMessage(threadId: string, messageId: string, message: AdapterPostableMessage) {
+    return (await this.load()).editMessage(threadId, messageId, message);
+  }
+  async deleteMessage(threadId: string, messageId: string) {
+    await (await this.load()).deleteMessage(threadId, messageId);
+  }
+  async addReaction(threadId: string, messageId: string, emoji: EmojiValue | string) {
+    await (await this.load()).addReaction(threadId, messageId, emoji);
+  }
+  async removeReaction(threadId: string, messageId: string, emoji: EmojiValue | string) {
+    await (await this.load()).removeReaction(threadId, messageId, emoji);
+  }
+  async startTyping(threadId: string) {
+    await (await this.load()).startTyping(threadId);
+  }
+  async fetchMessage(threadId: string, messageId: string) {
+    return (await this.load()).fetchMessage(threadId, messageId);
+  }
+  async fetchMessages(threadId: string) {
+    return (await this.load()).fetchMessages(threadId);
+  }
+  async fetchThread(threadId: string) {
+    return (await this.load()).fetchThread(threadId);
+  }
+  async openDM(userId: string) {
+    return (await this.load()).openDM(userId);
+  }
+  async disconnect() {
+    await this.stopPolling();
+  }
+  parseMessage(raw: unknown) {
+    if (!this.implementation) throw new Error("Photon adapter is not initialized");
+    return this.implementation.parseMessage(raw);
+  }
+  renderFormatted(content: FormattedContent) {
+    return this.implementation?.renderFormatted(content) ?? stringifyMarkdown(content);
+  }
+  encodeThreadId(platformData: PhotonThreadId) {
+    return encodePhotonThreadId(platformData);
+  }
+  decodeThreadId(threadId: string) {
+    return decodePhotonThreadId(threadId);
+  }
+  channelIdFromThreadId(threadId: string) {
+    return threadId;
+  }
+  isDM(threadId: string) {
+    return decodePhotonThreadId(threadId).chatGuid.includes(";-;");
+  }
+}

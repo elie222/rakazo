@@ -20,6 +20,7 @@ import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
 import { Domain } from "./lark/thread-id.js";
+import { LazyPhotonAdapter } from "./photon/lazy-adapter.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
 /**
@@ -48,6 +49,9 @@ export interface MessagingEnvironmentValues {
   larkVerificationToken?: string | undefined;
   larkEncryptKey?: string | undefined;
   larkDomain?: string | undefined;
+  photonProjectId?: string | undefined;
+  photonProjectSecret?: string | undefined;
+  photonWebhookSecret?: string | undefined;
 }
 
 export function messagingEnvFromProcess(
@@ -76,6 +80,9 @@ export function messagingEnvFromProcess(
     larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
     larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
     larkDomain: clean(env.LARK_DOMAIN),
+    photonProjectId: clean(env.PHOTON_PROJECT_ID),
+    photonProjectSecret: clean(env.PHOTON_PROJECT_SECRET),
+    photonWebhookSecret: clean(env.PHOTON_WEBHOOK_SECRET),
   };
 }
 
@@ -292,6 +299,24 @@ export function messagingPlatformsFromEnv(
         // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
         encryptKey: env.larkEncryptKey ?? "",
         domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+      }),
+    });
+  }
+
+  // iMessage through Photon (Spectrum Cloud). Without a webhook secret the
+  // API process consumes Spectrum's outbound gRPC stream, so no public URL is
+  // needed; other processes only send. With one, Spectrum posts signed
+  // webhooks to /api/v1/messaging/webhook/photon and nothing streams.
+  if (env.photonProjectId && env.photonProjectSecret) {
+    platforms.push({
+      provider: "photon",
+      adapterName: "imessage",
+      capabilities: { direct: true, groups: false, receipt: "typing" },
+      adapter: new LazyPhotonAdapter({
+        projectId: env.photonProjectId,
+        projectSecret: env.photonProjectSecret,
+        webhookSecret: env.photonWebhookSecret,
+        pollInboundMessages: options.pollInboundMessages ?? false,
       }),
     });
   }

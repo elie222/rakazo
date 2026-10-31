@@ -4,6 +4,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   whatsapp: "WhatsApp",
   telegram: "Telegram",
   lark: "Feishu",
+  photon: "iMessage (Photon)",
 };
 
 /** User-facing name of a messaging provider (falls back to the raw id). */

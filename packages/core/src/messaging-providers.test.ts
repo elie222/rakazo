@@ -9,6 +9,7 @@ describe("messaging provider labels", () => {
   it("names known providers and falls back to the raw id", () => {
     expect(messagingProviderName("sendblue")).toBe("iMessage");
     expect(messagingProviderName("telegram")).toBe("Telegram");
+    expect(messagingProviderName("photon")).toBe("iMessage (Photon)");
     expect(messagingProviderName("teams")).toBe("teams");
   });
 

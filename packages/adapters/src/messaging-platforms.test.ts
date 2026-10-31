@@ -34,6 +34,8 @@ const fullEnv: MessagingEnvironmentValues = {
   larkAppId: "cli-fake",
   larkAppSecret: "lark-secret",
   larkVerificationToken: "lark-verify",
+  photonProjectId: "photon-project",
+  photonProjectSecret: "photon-secret",
 };
 
 function providers(env: MessagingEnvironmentValues): string[] {
@@ -43,7 +45,14 @@ function providers(env: MessagingEnvironmentValues): string[] {
 describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
-    expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+    expect(providers(fullEnv)).toEqual([
+      "sendblue",
+      "slack",
+      "whatsapp",
+      "telegram",
+      "lark",
+      "photon",
+    ]);
   });
 
   it("publishes the iMessage line so people know where to send a link code", () => {
@@ -195,6 +204,34 @@ describe("messagingPlatformsFromEnv", () => {
     },
   );
 
+  it("requires both Photon credentials and maps PHOTON_* process env", () => {
+    expect(providers({ ...fullEnv, photonProjectSecret: undefined })).not.toContain("photon");
+    expect(providers({ ...fullEnv, photonProjectId: undefined })).not.toContain("photon");
+    expect(
+      messagingEnvFromProcess({
+        PHOTON_PROJECT_ID: " photon-project ",
+        PHOTON_PROJECT_SECRET: " photon-secret ",
+        PHOTON_WEBHOOK_SECRET: " ",
+      }),
+    ).toMatchObject({
+      photonProjectId: "photon-project",
+      photonProjectSecret: "photon-secret",
+      photonWebhookSecret: undefined,
+    });
+  });
+
+  it("streams Photon inbound only in the process that owns the inbound sink", () => {
+    const photon = (pollInboundMessages?: boolean) =>
+      (
+        messagingPlatformsFromEnv(
+          { photonProjectId: "photon-project", photonProjectSecret: "photon-secret" },
+          pollInboundMessages === undefined ? {} : { pollInboundMessages },
+        )[0]!.adapter as unknown as { config: { pollInboundMessages: boolean } }
+      ).config.pollInboundMessages;
+    expect(photon()).toBe(false);
+    expect(photon(true)).toBe(true);
+  });
+
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
     const lark = messagingPlatformsFromEnv({
       larkAppId: "cli-fake",
@@ -272,6 +309,7 @@ describe("messagingPlatformsFromEnv", () => {
       files: true,
     });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });
 
