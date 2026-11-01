@@ -49,6 +49,7 @@ export function syncLogOutFailure(signedIn: boolean): void {
   } catch {
     return;
   }
+  if (!signedIn) clearComposerDrafts();
   logOutFailed = signedIn;
 }
 

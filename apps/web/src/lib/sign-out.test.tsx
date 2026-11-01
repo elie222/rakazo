@@ -115,6 +115,23 @@ describe("signOut", () => {
     expect(later).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    "clears saved drafts after a failed sign-out only when signed out (signedIn=%s)",
+    (signedIn) => {
+      sessionStorage.setItem(LOG_OUT_FAILED_KEY, "1");
+      syncLogOutFailure(signedIn);
+      expect(sessionStorage.getItem(LOG_OUT_FAILED_KEY)).toBeNull();
+      expect(readComposerDraft("bot:bot-1")).toBe(signedIn ? "unsent thought" : "");
+      expect(localStorage.getItem(composerDraftBindingsKey("bot:bot-1"))).toBe(
+        signedIn ? "{}" : null,
+      );
+      expect(hasUnsentComposerDraft()).toBe(signedIn);
+      expect(localStorage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("false");
+      // Consume any failure message before the next test.
+      mountSignOut("/sign-in").unmount();
+    },
+  );
+
   it("says nothing when the reloaded page is signed out", async () => {
     requestSignOut.mockRejectedValue(new Error("Network"));
     await signOut("/sign-in");
