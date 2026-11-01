@@ -166,14 +166,22 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
  * Derived from the runtime login's password, so it needs no setting of its own.
  */
 export function rlsBypassKey(connectionString: string | undefined): string {
-  let password: string;
-  try {
-    const url = new URL(connectionString ?? "");
-    password = decodeURIComponent(url.password) || (url.searchParams.get("password") ?? "");
-  } catch {
-    return "";
-  }
+  const { password } = credentials(connectionString);
   return password ? createHmac("sha256", password).update("rakazo rls bypass").digest("hex") : "";
+}
+
+// As pg reads them: query parameters win over the URL's userinfo.
+function credentials(connectionString: string | undefined): { user: string; password: string } {
+  let url: URL;
+  try {
+    url = new URL(connectionString ?? "");
+  } catch {
+    return { user: "", password: "" };
+  }
+  return {
+    user: url.searchParams.get("user") ?? decodeURIComponent(url.username),
+    password: url.searchParams.get("password") ?? decodeURIComponent(url.password),
+  };
 }
 
 // By login, for runAsSystemInTransaction, which only has the transaction's connection.
@@ -211,7 +219,7 @@ async function applySettings(client: PoolClient, settings: Settings): Promise<vo
 export function installDbContext(pool: Pool): void {
   const { connectionString } = pool.options;
   const bypassKey = rlsBypassKey(connectionString);
-  if (bypassKey) bypassKeys.set(decodeURIComponent(new URL(connectionString!).username), bypassKey);
+  if (bypassKey) bypassKeys.set(credentials(connectionString).user, bypassKey);
   type ConnectCallback = (
     err: Error | undefined,
     client: PoolClient | undefined,
