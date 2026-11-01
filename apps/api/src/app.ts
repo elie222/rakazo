@@ -137,7 +137,7 @@ import {
   installLogger,
   SERVICE_NAMES,
 } from "@rakazo/logging";
-import { requestLogging } from "@rakazo/logging/hono";
+import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -1548,11 +1548,13 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} computer unavailable`, {
       reason: unavailable.cause instanceof Error ? unavailable.cause.message : undefined,
     });
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: unavailable.message, cause: error });
   }
   // A provider kept another transaction busy past the wait; nothing failed, so the caller retries.
   if (error instanceof ProviderTransactionBusyError) {
     getLogger().warn(`rpc ${path.join("/")} provider transaction busy`);
+    markExpectedFailure();
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
   if (error instanceof SandboxRateLimitError) {
@@ -1571,13 +1573,16 @@ export function handleRpcError(
     getLogger().warn(`rpc ${path.join("/")} client disconnected`, {
       reason: error instanceof Error ? error.message : String(error),
     });
+    markExpectedFailure();
     return;
   }
   logUnexpectedRpcError(error, path);
 }
 
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
-  if (error instanceof ORPCError) return;
+  // A procedure's own 5xx (a store it depends on is down) would otherwise reach the collector
+  // only as an anonymous failed request; report it under the procedure with its cause.
+  if (error instanceof ORPCError && error.status < 500) return;
   const where = `rpc ${path.join("/")} failed`;
   getLogger().error(where, error);
 }
