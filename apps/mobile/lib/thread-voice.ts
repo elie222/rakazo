@@ -271,19 +271,21 @@ export function useThreadVoiceCall({
     latest.current = { botId, startVoiceCall };
   });
 
+  // A read-only chat leaves the request waiting until it is restored.
   useEffect(() => {
-    if (!botId) return;
-    const session = currentSessionGeneration();
-    if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
-      void startVoiceCall(true, session);
-    }
-    return onShortcutVoiceChat(() => {
+    if (!botId || readOnly) return;
+    const unsubscribe = onShortcutVoiceChat(() => {
       // A listener left over from the previous bot must not take its request for this one.
       if (latest.current.botId === botId && takeShortcutVoiceChat(botId)) {
         void latest.current.startVoiceCall(true);
       }
     });
-  }, [botId]);
+    const session = currentSessionGeneration();
+    if (takeRingOnArrival(botId, session) || takeShortcutVoiceChat(botId)) {
+      void startVoiceCall(true, session);
+    }
+    return unsubscribe;
+  }, [botId, readOnly]);
 
   return { startVoiceCall, openBotChat };
 }
