@@ -86,7 +86,7 @@ export function ThreadMessageList({
             // bottom), so its last message must be able to scroll clear of it.
             contentContainerStyle={{
               paddingTop: headerClearance.padding,
-              paddingBottom: 12 + 44 + 16,
+              paddingBottom: bottomInset + 12 + 44 + 16,
             }}
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             maintainVisibleContentPosition={messageListPosition}
@@ -139,6 +139,7 @@ export function ThreadMessageList({
       )}
       {showPinnedPage || state.detached ? (
         <JumpToLatestButton
+          bottomInset={bottomInset}
           unread={state.unread}
           onPress={() => {
             if (showPinnedPage) {
