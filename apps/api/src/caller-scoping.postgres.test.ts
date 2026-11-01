@@ -46,7 +46,10 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
 
   beforeAll(async () => {
     runtime = createDb(process.env.DATABASE_URL!);
-    owner = createDb(process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL!);
+    const ownerUrl = process.env.DATABASE_MIGRATION_URL;
+    if (!ownerUrl || ownerUrl === process.env.DATABASE_URL)
+      throw new Error("DATABASE_MIGRATION_URL must name the table owner login");
+    owner = createDb(ownerUrl);
     system = asSystem(runtime.prisma);
     for (const user of [userA, userB])
       await system.user.create({
