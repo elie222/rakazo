@@ -29,6 +29,10 @@ import {
   readOwnBotSettings,
 } from "./own-bot-settings.js";
 import type { RunContext } from "./run-context.js";
+import {
+  OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
+  OWN_INSTRUCTIONS_CHANGED_ERROR,
+} from "./run-context.js";
 import { mayOpenModelStream } from "./run-lifecycle.js";
 import { persistMessageInTransaction, publishMessage } from "./run-messages.js";
 import { fleetPrepareDeps } from "./run-model.js";
@@ -101,7 +105,8 @@ async function commitOwnInstructions(
       });
     } catch (error) {
       if (!(error instanceof InstructionConflictError)) throw error;
-      return { error: error.message };
+      // Re-reading cannot rebase this attempt, so point the model at a fresh run.
+      return { error: OWN_INSTRUCTIONS_CHANGED_ERROR };
     }
     if (!undoVersionId) return null;
     return persistMessageInTransaction(tx, run, "bot", [
@@ -124,6 +129,7 @@ async function commitOwnInstructions(
     await deps.events
       .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
       .catch((error) => getLogger().error("instruction update realtime notification", error));
+  ctx.state.ownInstructionsBaseline = input.instructions;
   return { ok: true };
 }
 
@@ -276,8 +282,11 @@ export const fleetTools: ToolHandlers = {
         voiceId: true,
       },
     });
-    if (!Object.values(args).some(argumentGiven))
+    if (!Object.values(args).some(argumentGiven)) {
+      // A read does not rebase the baseline: the text it returns has not shaped a model
+      // generation yet, and a truncated read would guard on text the model never saw.
       return call.finish(await readOwnBotSettings(modelDeps, run, live));
+    }
     const settings = await prepareOwnBotSettings(
       modelDeps,
       run,
@@ -327,11 +336,17 @@ export const fleetTools: ToolHandlers = {
       ]).catch((error) => getLogger().error("settings update card", error));
     }
     if (argumentGiven(instructions)) {
-      const set = await commitOwnInstructions(ctx, {
-        instructions: String(instructions),
-        reason: "Set in chat",
-        previousInstructions: live.instructions,
-      });
+      // An older checkpoint predates the baseline; this attempt must not guess.
+      const set =
+        ctx.state.ownInstructionsBaseline === undefined
+          ? ({ error: OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR } as const)
+          : await commitOwnInstructions(ctx, {
+              instructions: String(instructions),
+              reason: "Set in chat",
+              // The text the model worked from, not a fresh read: a change that landed since
+              // the attempt started conflicts instead of being overwritten.
+              previousInstructions: ctx.state.ownInstructionsBaseline,
+            });
       if ("error" in set)
         return call.finish({
           error: `${updated || Object.keys(settings.data).length ? "Your other changes were saved, but your instructions were not: " : ""}${set.error}`,
