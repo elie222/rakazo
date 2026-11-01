@@ -12,6 +12,8 @@ struct RecordVoiceMessageIntent: AppIntent {
   static let title: LocalizedStringResource = "Record Message"
   static let description = IntentDescription(
     "Talk, then pause or press again to send it to the bot you talked to last.")
+  // The session it sends with can be read only while the iPhone is unlocked.
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   @MainActor
   func perform() async throws -> some IntentResult {
@@ -20,7 +22,7 @@ struct RecordVoiceMessageIntent: AppIntent {
     if recorder.isRecording {
       await recorder.finish()
     } else {
-      await VoiceMessageAttributes.endAll()
+      await recorder.clearStaleActivities()
       try recorder.start()
     }
     return .result()
@@ -46,7 +48,17 @@ final class VoiceMessageRecorder {
   private var timer: Task<Void, Never>?
   private var started = Date()
 
+  private var clearedStale = false
+
   var isRecording: Bool { request != nil }
+
+  /// Ends activities an earlier launch left when iOS closed it mid-recording, once per launch, so
+  /// a message from this launch that is still sending keeps its island.
+  func clearStaleActivities() async {
+    guard !clearedStale else { return }
+    clearedStale = true
+    await VoiceMessageAttributes.endAll()
+  }
 
   func start() throws {
     // Permission prompts cannot show from the background; the app asks for both on its first call.
