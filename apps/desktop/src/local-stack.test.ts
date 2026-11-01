@@ -465,7 +465,7 @@ describe("LocalStackController", () => {
       STACK_PROJECT_NAME,
     ];
     expect(calls.map((call) => call.args)).toEqual([
-      ["compose", "version", "--short"],
+      ["compose", "version"],
       ["info", "--format", "{{.ServerVersion}}"],
       [...compose, "config", "--images"],
       [...compose, "pull"],

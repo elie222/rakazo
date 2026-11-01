@@ -204,7 +204,7 @@ test("This computer installs and starts the stack, then opens the app", async ()
   const compose =
     "compose --env-file .env -f docker-compose.images.yml --project-name rakazo-desktop";
   expect(await readLog()).toEqual([
-    `${stackDir} | ${IMAGE_TAG} | compose version --short`,
+    `${stackDir} | ${IMAGE_TAG} | compose version`,
     `${stackDir} | ${IMAGE_TAG} | info --format {{.ServerVersion}}`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} config --images`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} pull`,
