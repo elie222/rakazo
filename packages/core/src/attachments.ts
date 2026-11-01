@@ -126,17 +126,40 @@ export function messageBlockForArtifact(artifact: {
   };
 }
 
+/** Untrusted transcript text is bounded before it reaches a prompt. */
+const VOICE_TRANSCRIPT_MAX_CHARS = 4000;
+
+/** Keeps tabs and newlines, drops C0, DEL and C1 control characters, trims and bounds the text. */
+export function normalizeVoiceTranscript(value: string | null | undefined): string {
+  if (!value) return "";
+  const printable = Array.from(value)
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      if (code === 9 || code === 10) return true;
+      return code >= 32 && !(code >= 0x7f && code <= 0x9f);
+    })
+    .join("");
+  return printable.trim().slice(0, VOICE_TRANSCRIPT_MAX_CHARS);
+}
+
 export function promptTextForAttachments(
   text: string | undefined,
-  artifacts: Array<{ name: string; mimeType: string; size: number }>,
+  artifacts: Array<{
+    name: string;
+    mimeType: string;
+    size: number;
+    /** Spoken words transcribed from an inbound audio attachment. */
+    transcript?: string;
+  }>,
 ): string {
   const caption = text?.trim() ?? "";
   const notes = artifacts
     .filter((artifact) => !isAttachmentImageMimeType(artifact.mimeType))
-    .map(
-      (artifact) =>
-        `User attached file ${JSON.stringify(artifact.name)} (${artifact.mimeType}, ${artifact.size} bytes).`,
-    );
+    .map((artifact) => {
+      const note = `User attached file ${JSON.stringify(artifact.name)} (${artifact.mimeType}, ${artifact.size} bytes).`;
+      const transcript = normalizeVoiceTranscript(artifact.transcript);
+      return transcript ? `${note}\n[voice note transcript: ${transcript}]` : note;
+    });
   return [caption, ...notes].filter(Boolean).join("\n\n") || "See attached files.";
 }
 

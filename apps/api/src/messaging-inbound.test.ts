@@ -21,6 +21,7 @@ function createDeps(
     sendResult?: { messageId: string; runId: string | null; seq: number };
     routines?: Array<{ id: string; name: string; prompt: string }>;
     storeAttachment?: MessagingInboundDeps["storeAttachment"];
+    transcribe?: MessagingInboundDeps["transcribe"];
   } = {},
 ) {
   const identity =
@@ -283,6 +284,7 @@ function createDeps(
     signupPolicy,
     acknowledge,
     storeAttachment: overrides.storeAttachment,
+    transcribe: overrides.transcribe,
     runs,
     botReplies,
     sendUserMessage,
@@ -444,6 +446,166 @@ describe("createMessagingInboundHandler DM routing", () => {
     );
   });
 
+  it("adds a voice note transcript next to the stored audio file note", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes,
+      }),
+    );
+    const transcribe = vi.fn(async () => "spoken words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => bytes,
+        },
+      ],
+    });
+
+    expect(transcribe).toHaveBeenCalledWith({
+      spaceId: "ws-1",
+      userId: "user-1",
+      audio: bytes,
+      mimeType: "audio/ogg",
+    });
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          {
+            kind: "file",
+            artifactId: "artifact-2",
+            mimeType: "audio/ogg",
+            name: "voice.oga",
+            size: 10,
+          },
+        ],
+        prompt:
+          'User attached file "voice.oga" (audio/ogg, 10 bytes).' +
+          "\n[voice note transcript: spoken words]",
+      }),
+    );
+  });
+
+  it("keeps the file-only prompt when no provider can transcribe", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => null);
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'User attached file "voice.oga" (audio/ogg, 10 bytes).',
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("keeps the old prompt and still delivers when transcription fails", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => {
+      throw new Error("provider unreachable");
+    });
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "listen",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'listen\n\nUser attached file "voice.oga" (audio/ogg, 10 bytes).',
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("does not transcribe a non-audio attachment", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-3",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 42,
+        bytes: new Uint8Array([1]),
+      }),
+    );
+    const transcribe = vi.fn(async () => "words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "notes.pdf",
+          mimeType: "application/pdf",
+          size: 42,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'User attached file "notes.pdf" (application/pdf, 42 bytes).',
+      }),
+    );
+  });
+
   it("keeps a media-only DM deliverable when the download fails", async () => {
     const storeAttachment = vi.fn(async () => {
       throw new Error("download failed");
@@ -468,6 +630,100 @@ describe("createMessagingInboundHandler DM routing", () => {
         prompt: "[file: voice.oga (unavailable)]",
       }),
     );
+  });
+
+  it("downloads every attachment before transcribing", async () => {
+    const audio = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        bytes: attachment.mimeType.startsWith("audio/") ? audio : undefined,
+      }),
+    );
+    const transcribe = vi.fn(async () => "spoken words");
+    const deps = createDeps({ storeAttachment, transcribe });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+        {
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          size: 1,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+    expect(storeAttachment).toHaveBeenCalledTimes(2);
+    // A slow transcription must not eat the shared download deadline of later files.
+    const firstTranscribe = transcribe.mock.invocationCallOrder[0]!;
+    for (const order of storeAttachment.mock.invocationCallOrder) {
+      expect(order).toBeLessThan(firstTranscribe);
+    }
+  });
+
+  it("delivers the file without a transcript when transcription stalls past the budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = new Uint8Array([1, 2, 3]);
+      const storeAttachment = vi.fn(async () => ({
+        id: "artifact-1",
+        name: "voice.oga",
+        mimeType: "audio/ogg",
+        size: 3,
+        bytes: audio,
+      }));
+      const transcribe = vi.fn(() => new Promise<string | null>(() => {}));
+      const deps = createDeps({ storeAttachment, transcribe });
+      const pending = createMessagingInboundHandler(deps)({
+        ...dmEvent,
+        content: "",
+        attachments: [
+          { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(20_001);
+      await pending;
+      expect(transcribe).toHaveBeenCalledTimes(1);
+      expect(deps.sendUserMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'User attached file "voice.oga" (audio/ogg, 3 bytes).' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("puts the same normalized transcript in the routine payload", async () => {
+    const audio = new Uint8Array([1, 2, 3]);
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "voice.oga",
+      mimeType: "audio/ogg",
+      size: 3,
+      bytes: audio,
+    }));
+    const transcribe = vi.fn(async () => `hi\u0000 there\u007f${"a".repeat(5000)}`);
+    const deps = createDeps({
+      storeAttachment,
+      transcribe,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
+      ],
+    });
+    const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain("voiceTranscripts");
+    expect(prompt).toContain("hi there");
+    expect(prompt).not.toMatch(/\\u0000|\\u007f/);
+    expect(prompt).not.toMatch(/a{4001}/);
   });
 
   it("lists attachment names in the routine wake payload", async () => {
