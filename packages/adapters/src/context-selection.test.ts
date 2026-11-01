@@ -297,6 +297,20 @@ describe("bounded context selection", () => {
       expect(unread).not.toContain("Earlier result shortened");
     }
   });
+  it("shortens a large connector result without stalling", () => {
+    const messages = Array.from({ length: 1000 }, (_, index) => ({
+      messageId: `m${index}`,
+      subject: `subject ${index} `.repeat(20),
+      messageText: `body ${index} `.repeat(400),
+    }));
+    const startedAt = performance.now();
+    const shortened = shortenToolResultText(JSON.stringify({ data: { messages } }), 12_000);
+    expect(performance.now() - startedAt).toBeLessThan(3_000);
+    const parsed = JSON.parse(shortened);
+    expect(parsed.data.messages).toHaveLength(1000);
+    expect(parsed.data.messages[999].messageId).toBe("m999");
+    expect(parsed.data.messages[0].messageText).toContain("omitted evidence is unavailable");
+  });
   it("marks a protected result as read when an assistant reply follows it", () => {
     const selected = selectContext(
       [
