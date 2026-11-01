@@ -14,8 +14,16 @@ import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key"
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { ApprovalPausedToolResult, ApprovedEffectReplayQueue } from "./approval-effect.js";
-import { approvalPausedToolResult, approvedEffectOccurrence } from "./approval-effect.js";
+import type {
+  ApprovalPausedToolResult,
+  ApprovedEffectReplayQueue,
+  TerminatingToolResult,
+} from "./approval-effect.js";
+import {
+  approvalPausedToolResult,
+  approvedEffectOccurrence,
+  terminatingToolResult,
+} from "./approval-effect.js";
 import type { loadBotMessageContext } from "./bot-messages.js";
 import { partitionTools } from "./builtin-tool-bridge.js";
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
@@ -165,6 +173,11 @@ export interface RunState {
    * and so does a later attempt, including one with restored untrusted tool results.
    */
   tainted: boolean;
+  /**
+   * The taint refusal for owner settings was returned in this attempt. A model that calls
+   * again gets the turn ended instead of the same error a second time.
+   */
+  ownerSettingsRefused: boolean;
   earlierAttempt: Promise<boolean> | undefined;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -314,6 +327,25 @@ export function pauseForSecret(ctx: RunContext) {
 /** The owner chose Never ask for this space. */
 export async function neverAsks(ctx: RunContext) {
   return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
+}
+
+/**
+ * Refuse an owner-settings change in a run that read outside content. The first refusal
+ * explains the block; a repeat ends the turn, because a model that ignored the explanation
+ * would otherwise retry the same call without a bound.
+ */
+export function refuseOwnerSettingsChange(
+  ctx: RunContext,
+  error: string,
+): { error: string } | TerminatingToolResult {
+  if (ctx.state.ownerSettingsRefused) {
+    return terminatingToolResult(
+      "I can't change that here — make the change in Settings, or ask me again in a fresh chat.",
+      { refused: "owner-settings" },
+    );
+  }
+  ctx.state.ownerSettingsRefused = true;
+  return { error };
 }
 
 export async function isRunTainted(ctx: RunContext) {

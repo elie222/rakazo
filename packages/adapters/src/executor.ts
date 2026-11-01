@@ -1251,6 +1251,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
           overLimitActionCalls: 0,
           toolResults: new Map(),
           tainted: initiallyTainted,
+          ownerSettingsRefused: false,
           earlierAttempt: undefined,
           handedOff: false,
           terminalCheckpointComplete: false,

@@ -6,6 +6,21 @@ import { argumentGiven } from "./update-bot-patch.js";
 
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
 
+/** A tool result that ends the turn with a final reply instead of pausing it. */
+export type TerminatingToolResult = AgentToolExecutionResult & { terminate: true };
+
+export function terminatingToolResult(
+  text: string,
+  details: Record<string, unknown>,
+): TerminatingToolResult {
+  return {
+    kind: "agent_tool_result",
+    content: [{ type: "text", text }],
+    details,
+    terminate: true,
+  };
+}
+
 export interface ApprovedEffectReplay {
   kind: string;
   request: unknown;
