@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Ollama Cloud preset in Models settings on web and mobile, using an OpenAI-compatible connection with model discovery and no deployment configuration.
 - Optional point-in-time recovery for the production Compose database: an opt-in sidecar streams encrypted WAL and daily base backups to any S3-compatible bucket, so a lost server costs about a minute of writes instead of up to a day, and `pitr.sh restore` recovers to any moment in the retention window. Off unless enabled; enabling reloads Postgres without restarting it ([point-in-time recovery](docs/self-host-backups.md#point-in-time-recovery)).
 
+### Security
+
+- Hosts hardened with `harden-host.sh` now drop inbound IPv4 TCP packets that carry IP options and turn off multipath TCP, and production Caddy no longer listens with multipath TCP. This blocks the known path to CVE-2026-98432, a remote Linux kernel bug, until a fixed kernel is running. Rerun `harden-host.sh`, recreate Caddy, and reboot once your distribution ships the fixed kernel. The host check now reports updates waiting for a reboot ([production](docs/self-host-production.md)).
+
 ### Fixed
 
 - `RAKAZO_LOCAL_MAX_TOKENS` is now the output limit a local model is asked for. It was only a ceiling, so

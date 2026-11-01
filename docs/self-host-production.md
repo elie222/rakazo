@@ -13,7 +13,9 @@ sidecar is an explicit opt-in profile.
 Before deploying to a new Ubuntu host, create and verify a key-only `deploy` account, then apply the
 idempotent host-hardening baseline. It disables SSH passwords and root login, rate-limits SSH, allows
 only SSH/HTTP/HTTPS through UFW, enables fail2ban, unattended security updates, AppArmor, audit rules,
-and conservative kernel/network protections. Keep the provider console open until a fresh SSH login
+and conservative kernel/network protections, including dropping inbound IPv4 TCP packets that carry IP
+options and turning off multipath TCP. Unattended upgrades install kernel fixes but never reboot, so
+reboot after kernel updates. Keep the provider console open until a fresh SSH login
 succeeds after the script reloads SSH.
 
 ```bash
