@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
 import Models from "../app/(settings)/models";
@@ -29,6 +30,16 @@ const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
     apiProtocol: undefined as string | undefined,
     reasoning: false,
     thinkingLevel: undefined as string | undefined,
+    bots: [] as {
+      id: string;
+      name: string;
+      modelProvider: string | null;
+      modelId: string | null;
+    }[],
+    failBotList: false,
+    // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
+    failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
+    needsModel: false,
   },
 }));
 
@@ -54,8 +65,23 @@ vi.mock("./api", () => ({
         spaceId: "space-fixture",
         defaultProvider: "openai-compatible",
         defaultModel: "model-fixture",
+        needsModel: saved.needsModel,
       };
     if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "bots/list") {
+      if (saved.failBotList) throw new Error("offline");
+      return saved.bots;
+    }
+    if (procedure === "bots/update") {
+      const { botId } = input as { botId: string };
+      const failure = saved.failBotUpdates[botId];
+      if (failure !== "kept")
+        saved.bots = saved.bots.map((bot) =>
+          bot.id === botId ? { ...bot, modelProvider: null, modelId: null } : bot,
+        );
+      if (failure) throw new Error("offline");
+      return {};
+    }
     if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
@@ -137,7 +163,8 @@ vi.mock("./user-error", () => ({
   errorText: (_: unknown, fallback = "Something went wrong. Try again.") => fallback,
 }));
 vi.mock("./i18n", () => {
-  const t = (text: string) => text;
+  const t = (text: string, values: Record<string, string | number> = {}) =>
+    text.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
   return { useI18n: () => ({ t }) };
 });
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
@@ -407,6 +434,104 @@ describe("a Space's model override", () => {
     expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
     expect(connect?.[2]).toEqual({ requestContext: otherSpace });
   });
+
+  it("moves that Space's bots onto the main model in that Space", async () => {
+    params.spaceId = "space-other";
+    saved.bots = [
+      { id: "bot-own", name: "Archie", modelProvider: "anthropic", modelId: "claude-fixture" },
+    ];
+    try {
+      await remount(async () => {
+        await act(async () => root.render(createElement(Models)));
+      });
+      rpcCalls.length = 0;
+      await switchToSpaceDefault("Switch 1 bot to the space default?");
+      const sent = (procedure: string) => rpcCalls.find(([name]) => name === procedure)?.[2];
+      expect(sent("bots/update")).toEqual({ requestContext: otherSpace });
+      expect(sent("bots/list")).toMatchObject({ requestContext: otherSpace });
+      expect(container.textContent).toContain("1 bot now uses the space default.");
+    } finally {
+      saved.bots = [];
+    }
+  });
+});
+
+async function switchToSpaceDefault(confirmTitle: string) {
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === "Use space default",
+  );
+  await act(async () => button!.click());
+  expect(rpcCalls.some(([procedure]) => procedure === "bots/update")).toBe(false);
+  const [title, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+  expect(title).toBe(confirmTitle);
+  await act(async () => buttons!.find((choice) => choice.text === "Switch")!.onPress!());
+}
+
+it("moves bots off their own model onto the main model, keeping failed ones listed", async () => {
+  const pinned = (id: string, name: string) => ({
+    id,
+    name,
+    modelProvider: "anthropic",
+    modelId: "claude-fixture",
+  });
+  saved.bots = [
+    pinned("bot-archie", "Archie"),
+    pinned("bot-basil", "Basil"),
+    pinned("bot-nova", "Nova"),
+    pinned("bot-inbox", "Inbox"),
+    { id: "bot-default", name: "Scout", modelProvider: null, modelId: null },
+  ];
+  const renderModels = () =>
+    remount(async () => {
+      await act(async () => root.render(createElement(Models)));
+    });
+  try {
+    // An unreadable bot list hides only the bot group.
+    saved.failBotList = true;
+    await renderModels();
+    expect(container.textContent).toContain("Main model");
+    expect(container.textContent).not.toContain("Bot models");
+    expect(container.textContent).not.toContain("Could not load model settings");
+    saved.failBotList = false;
+    // Without a main model there is no default to move bots onto.
+    saved.needsModel = true;
+    await renderModels();
+    expect(container.textContent).toContain("Main model");
+    expect(container.textContent).not.toContain("Archie");
+    saved.needsModel = false;
+    await renderModels();
+    expect(container.textContent).toContain(
+      "4 bots have their own model: Archie, Basil, Nova, Inbox",
+    );
+    expect(container.textContent).not.toContain("Scout");
+
+    saved.failBotUpdates = { "bot-inbox": "kept", "bot-nova": "changed elsewhere" };
+    rpcCalls.length = 0;
+    await switchToSpaceDefault("Switch 4 bots to the space default?");
+    expect(container.textContent).toContain("2 bots now use the space default.");
+    expect(container.textContent).toContain("Could not switch Inbox. Try again.");
+    expect(container.textContent).toContain("1 bot has its own model: Inbox");
+    expect(container.textContent).not.toMatch(/Archie|Basil|Nova/);
+
+    saved.failBotUpdates = {};
+    rpcCalls.length = 0;
+    await switchToSpaceDefault("Switch 1 bot to the space default?");
+    expect(rpcCalls.filter(([procedure]) => procedure === "bots/update")).toEqual([
+      [
+        "bots/update",
+        { botId: "bot-inbox", modelProvider: null, modelId: null, thinkingLevel: null },
+        { requestContext: { headers: { "x-rakazo-space-id": "space-fixture" } } },
+      ],
+    ]);
+    expect(container.textContent).toContain("1 bot now uses the space default.");
+    expect(container.textContent).not.toContain("Could not switch");
+    expect(container.textContent).not.toContain("Use space default");
+  } finally {
+    saved.bots = [];
+    saved.failBotList = false;
+    saved.failBotUpdates = {};
+    saved.needsModel = false;
+  }
 });
 
 const PROTOCOL_LABELS = ["Chat Completions", "Responses", "Anthropic Messages"] as const;

@@ -1253,6 +1253,23 @@ export const JA_MESSAGES: Record<string, string> = {
   "Won't do": "対応しない",
   "Could not move the ticket": "チケットを移動できませんでした",
   "No tickets yet.": "チケットはまだありません。",
+  "Bot models": "ボットのモデル",
+  "1 bot has its own model:": "1個のボットが独自のモデルを使用しています:",
+  "{count} bots have their own model:": "{count}個のボットが独自のモデルを使用しています:",
+  "Use space default": "スペースのデフォルトを使用",
+  "Switching…": "切り替え中…",
+  "Switch 1 bot to the space default?": "1個のボットをスペースのデフォルトに切り替えますか？",
+  "Switch {count} bots to the space default?":
+    "{count}個のボットをスペースのデフォルトに切り替えますか？",
+  "Their own model is cleared. You can pick one again in each bot.":
+    "個別のモデル設定は解除されます。各ボットで再度選択できます。",
+  Switch: "切り替え",
+  "1 bot now uses the space default.":
+    "1個のボットがスペースのデフォルトを使用するようになりました。",
+  "{count} bots now use the space default.":
+    "{count}個のボットがスペースのデフォルトを使用するようになりました。",
+  "Could not switch {failedNames}. Try again.":
+    "{failedNames}を切り替えられませんでした。もう一度お試しください。",
 };
 
 export const PEER_MESSAGE_FORMS = { other: "{peer}とのメッセージ{count}件" };

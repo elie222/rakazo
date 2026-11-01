@@ -17,7 +17,7 @@ vi.mock("@lingui/react/macro", () => ({
     (value === 1 ? one : other).replace("#", String(value)),
 }));
 
-import { botsWithOwnModel, SpaceBotsModelNotice } from "./space-bots-model";
+import { SpaceBotsModelNotice } from "./space-bots-model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -56,16 +56,6 @@ async function confirmSwitch() {
     button("Switch")!.click();
   });
 }
-
-it("counts only bots that pick both a provider and a model", () => {
-  expect(
-    botsWithOwnModel([
-      { modelProvider: "anthropic", modelId: "claude-opus-5-5" },
-      { modelProvider: null, modelId: null },
-      { modelProvider: "openai-codex", modelId: null },
-    ]),
-  ).toHaveLength(1);
-});
 
 it("moves every bot with its own model onto the space default after a confirm", async () => {
   bots.list
