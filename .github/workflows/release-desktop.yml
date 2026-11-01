@@ -82,6 +82,11 @@ jobs:
             fi
           fi
 
+          if ! grep -qF "## [$version] - " CHANGELOG.md; then
+            echo "CHANGELOG.md has no [$version] section; prepare the release with the release skill first." >&2
+            exit 1
+          fi
+
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$tag_sha" >> "$GITHUB_OUTPUT"
@@ -479,9 +484,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-        run: >-
-          gh release create "$RELEASE_TAG" release-artifacts/*
-          --draft --generate-notes --title "Rakazo $RELEASE_TAG" --verify-tag
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The curated changelog section leads; GitHub appends the merged pull requests.
+          awk -v heading="## [$RELEASE_VERSION] - " '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" release-artifacts/* \
+            --draft --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes \
+            --title "Rakazo $RELEASE_TAG" --verify-tag
       - name: Publish the completed release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
