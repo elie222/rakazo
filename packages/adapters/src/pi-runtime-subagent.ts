@@ -122,6 +122,7 @@ export async function executeSubagent(
     depth: 1,
     agentNamespace: agentId,
     pendingShells: [],
+    modelResponses: undefined,
   };
   let contextPolicy = createRuntimeContextPolicy(
     {

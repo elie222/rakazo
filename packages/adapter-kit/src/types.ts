@@ -662,6 +662,8 @@ export type AgentRuntimeEvent =
       executionId: string;
       /** The model reached this deferred built-in through use_tool. */
       viaUseTool?: boolean;
+      /** Which model response made the call; calls from one response share it. */
+      response?: number;
     }
   | {
       type: "ask";
